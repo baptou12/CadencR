@@ -25,6 +25,24 @@ pub fn adapter_for_model(model: &str) -> Option<(&'static str, &'static dyn Agen
         .map(|(id, adapter)| (*id, *adapter))
 }
 
+/// Resolve the effective provider for a (configured_provider, model) pair.
+///
+/// Users commonly change *just* the model — e.g. at project level they pick
+/// `openai/gpt-5.4` — without touching the provider setting, which stays at
+/// the default. When that happens, route to the adapter that owns the model
+/// so the agent actually spawns on the right backend. Explicit non-default
+/// provider choices are always preserved.
+pub fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> String {
+    if provider_id == DEFAULT_PROVIDER {
+        if let Some(model) = model {
+            if let Some((adapter_id, _)) = adapter_for_model(model) {
+                return adapter_id.to_string();
+            }
+        }
+    }
+    provider_id
+}
+
 pub async fn provider_catalog_live() -> AgentCatalogResponse {
     let mut providers = Vec::with_capacity(ADAPTERS.len() + 1);
     for (_, adapter) in ADAPTERS {
@@ -65,7 +83,7 @@ pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &st
 
 #[cfg(test)]
 mod tests {
-    use super::{adapter_for_model, runtime_adapter, ADAPTERS};
+    use super::{adapter_for_model, resolve_effective_provider, runtime_adapter, ADAPTERS};
 
     #[test]
     fn runtime_adapter_registry_has_claude_and_opencode() {
@@ -92,5 +110,31 @@ mod tests {
             let entry = adapter.catalog_entry();
             assert_eq!(&entry.id, id, "catalog entry id mismatch for {id}");
         }
+    }
+
+    #[test]
+    fn resolve_effective_provider_reroutes_default_when_model_belongs_to_other_adapter() {
+        let routed =
+            resolve_effective_provider("claude_code".to_string(), Some("openai/gpt-5.4"));
+        assert_eq!(routed, "opencode");
+    }
+
+    #[test]
+    fn resolve_effective_provider_preserves_default_for_native_claude_model() {
+        let routed = resolve_effective_provider("claude_code".to_string(), Some("claude-opus-4-6"));
+        assert_eq!(routed, "claude_code");
+    }
+
+    #[test]
+    fn resolve_effective_provider_preserves_explicit_non_default_provider() {
+        // User explicitly chose opencode — don't rewrite even if the model looks claude-ish
+        let routed = resolve_effective_provider("opencode".to_string(), Some("claude-opus-4-6"));
+        assert_eq!(routed, "opencode");
+    }
+
+    #[test]
+    fn resolve_effective_provider_without_model_is_passthrough() {
+        let routed = resolve_effective_provider("claude_code".to_string(), None);
+        assert_eq!(routed, "claude_code");
     }
 }

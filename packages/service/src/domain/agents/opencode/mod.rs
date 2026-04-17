@@ -1,4 +1,5 @@
 mod events;
+mod mcp_config;
 mod model;
 pub(crate) mod permissions;
 mod prompt_parts;
@@ -8,6 +9,7 @@ mod session_resolution;
 mod stream_loop;
 mod stream_state;
 mod stream_synthesizer;
+mod tool_names;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -45,6 +47,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
         parse_opencode_permission_request(raw).map(|request| RuntimePermissionRequest {
             request_id: request.request_id,
+            tool_use_id: request.call_id,
             tool_name: request.tool_name,
             tool_input: request.tool_input,
             description: request.description,
@@ -100,6 +103,24 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         content: Value,
         config: RuntimeSpawnConfig,
     ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+        // OpenCode can't attach MCP servers per-session like the Claude CLI can —
+        // it reads them from opencode.json under the request directory, so the
+        // entries must be on disk before `ensure_running` caches the config.
+        let mcp_server_names: Vec<String> = match config.mcp_servers.as_ref() {
+            Some(servers) if !servers.is_empty() => {
+                mcp_config::ensure_worktree_opencode_config(&config.cwd, servers)
+                    .await
+                    .map_err(|e| {
+                        RuntimeError::new(format!(
+                            "failed to materialize opencode.json in {}: {e}",
+                            config.cwd.display()
+                        ))
+                    })?;
+                servers.keys().cloned().collect()
+            }
+            _ => Vec::new(),
+        };
+
         let server = opencode_sdk_rs::OpenCodeServer::ensure_running()
             .await
             .map_err(RuntimeError::from)?;
@@ -117,7 +138,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         let system_prompt = decorate_system_prompt(config.system_prompt.as_deref());
         let session_id = resolve_session_id(&client, &directory, config.resume_session_id).await?;
         let event_rx = dispatcher.subscribe(&session_id).await;
-        let session = OpenCodeSession::new(
+        let mut session = OpenCodeSession::new(
             client,
             dispatcher,
             session_id,
@@ -129,6 +150,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             server.pid,
             context_window,
         );
+        session.set_expected_mcp_servers(mcp_server_names);
         session.dispatch_input(content).await?;
         Ok(Box::new(session))
     }

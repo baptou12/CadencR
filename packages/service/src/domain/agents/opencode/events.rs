@@ -3,8 +3,8 @@ use serde_json::Value;
 use super::questions::build_question_tool_input;
 use crate::domain::agents::adapter::{
     RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
-    RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeStreamEvent, RuntimeUsage,
-    RuntimeUserContentBlock, RuntimeUserMessage,
+    RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeMcpServerStatus,
+    RuntimeStreamEvent, RuntimeUsage, RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
 fn metadata(session_id: String, usage: Option<RuntimeUsage>, raw: Value) -> RuntimeEventMetadata {
@@ -180,7 +180,24 @@ pub fn init_event(
     session_id: &str,
     model: Option<String>,
     context_window: Option<u64>,
+    expected_mcp_servers: &[String],
 ) -> RuntimeEvent {
+    // OpenCode reads MCP config from opencode.json at instance/directory creation
+    // and does not surface per-server health over its API. If we wrote the
+    // config (see opencode::mcp_config) we trust the server picked it up;
+    // the downstream MCP connectivity check in stream_reader uses this set
+    // to decide whether it has anything to verify.
+    let mcp_servers: Vec<RuntimeMcpServerStatus> = expected_mcp_servers
+        .iter()
+        .map(|name| RuntimeMcpServerStatus {
+            name: name.clone(),
+            status: "connected".to_string(),
+        })
+        .collect();
+    let raw_servers: Vec<Value> = mcp_servers
+        .iter()
+        .map(|s| serde_json::json!({ "name": s.name, "status": s.status }))
+        .collect();
     RuntimeEvent::new(
         metadata(
             session_id.to_string(),
@@ -190,12 +207,12 @@ pub fn init_event(
                 "subtype": "init",
                 "session_id": session_id,
                 "model": model.clone(),
-                "mcp_servers": [],
+                "mcp_servers": raw_servers,
             }),
         ),
         RuntimeEventKind::Init(RuntimeInitEvent {
             model,
-            mcp_servers: Vec::new(),
+            mcp_servers,
             context_window,
         }),
     )
@@ -210,6 +227,7 @@ pub fn permission_request_event(request: &opencode_sdk_rs::PermissionRequest) ->
                 "type": "opencode_permission_request",
                 "session_id": request.session_id,
                 "request_id": request.id,
+                "call_id": request.call_id,
                 "tool_name": request.tool_name,
                 "tool_input": request.tool_input,
                 "description": request.description,
@@ -299,7 +317,7 @@ pub fn message_part_to_runtime_block(part: &opencode_sdk_rs::MessagePart) -> Run
             id, name, input, ..
         } => RuntimeContentBlock::ToolUse {
             id: id.clone(),
-            name: name.clone(),
+            name: super::tool_names::canonical_cadence_tool_name(name),
             input: input.clone(),
         },
         _ => RuntimeContentBlock::Other,
@@ -347,7 +365,12 @@ fn message_part_to_json(part: &opencode_sdk_rs::MessagePart) -> Value {
         opencode_sdk_rs::MessagePart::ToolUse {
             id, name, input, ..
         } => {
-            serde_json::json!({ "type": "tool_use", "id": id, "name": name, "input": input })
+            serde_json::json!({
+                "type": "tool_use",
+                "id": id,
+                "name": super::tool_names::canonical_cadence_tool_name(name),
+                "input": input,
+            })
         }
         opencode_sdk_rs::MessagePart::ToolResult {
             id,

@@ -16,6 +16,7 @@ pub(super) fn spawn_event_loop(
     session_id: String,
     model: Option<String>,
     context_window: Option<u64>,
+    expected_mcp_servers: Vec<String>,
 ) {
     tokio::spawn(async move {
         let mut state = LoopState::new(session_id.clone(), model);
@@ -27,6 +28,7 @@ pub(super) fn spawn_event_loop(
                         &session_id,
                         state.current_model(),
                         context_window,
+                        &expected_mcp_servers,
                     ));
                 }
                 opencode_sdk_rs::SseEvent::MessageCreated(message)
@@ -135,6 +137,7 @@ mod tests {
             "ses_root".to_string(),
             Some("openai/gpt-5.4".to_string()),
             None,
+            Vec::new(),
         );
 
         for event in source_events {

@@ -6,6 +6,10 @@ use crate::domain::permission_bridge::extract_permission_preview;
 #[derive(Debug, Clone, PartialEq)]
 pub struct OpenCodePermissionRequest {
     pub request_id: String,
+    /// OpenCode's tool-invocation id (`call_...`). Distinct from `request_id`
+    /// (`per_...`) and needed to match the permission back to the tool-call
+    /// row in `agent_messages`. Missing on some upstream events.
+    pub call_id: Option<String>,
     pub tool_name: String,
     pub tool_input: Value,
     pub description: Option<String>,
@@ -42,6 +46,10 @@ pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest
 
     Some(OpenCodePermissionRequest {
         request_id: raw.get("request_id").and_then(Value::as_str)?.to_string(),
+        call_id: raw
+            .get("call_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
         tool_name: raw.get("tool_name").and_then(Value::as_str)?.to_string(),
         tool_input: raw
             .get("tool_input")
@@ -75,12 +83,26 @@ mod tests {
             payload,
             OpenCodePermissionRequest {
                 request_id: "req-1".to_string(),
+                call_id: None,
                 tool_name: "Bash".to_string(),
                 tool_input: json!({ "command": "git status" }),
                 description: Some("Run git status".to_string()),
                 preview: Some("git status".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn parses_call_id_when_present() {
+        let payload = parse_permission_request(&json!({
+            "type": "opencode_permission_request",
+            "request_id": "per_1",
+            "call_id": "call_1",
+            "tool_name": "cadence-plan_show_plan",
+            "tool_input": {},
+        }))
+        .unwrap();
+        assert_eq!(payload.call_id.as_deref(), Some("call_1"));
     }
 
     #[test]

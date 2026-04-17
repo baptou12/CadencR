@@ -114,6 +114,12 @@ pub struct RuntimePermissionResponse {
 #[derive(Debug, Clone)]
 pub struct RuntimePermissionRequest {
     pub request_id: String,
+    /// Runtime-side identifier of the specific tool invocation being gated —
+    /// `call_...` on OpenCode; maps to the `tool_use_id` column used when
+    /// updating `agent_messages` rows. Absent when the runtime doesn't
+    /// surface one (Claude Code doesn't surface these permission events at
+    /// all; it uses the direct `can_use_tool` hook instead).
+    pub tool_use_id: Option<String>,
     pub tool_name: String,
     pub tool_input: Value,
     pub description: Option<String>,

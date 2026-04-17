@@ -13,7 +13,7 @@ pub(super) fn part_block_from_message_part(part: &opencode_sdk_rs::MessagePart) 
         opencode_sdk_rs::MessagePart::Thinking { .. } => PartBlock::Thinking,
         opencode_sdk_rs::MessagePart::ToolUse { id, name, .. } => PartBlock::ToolUse {
             id: id.clone(),
-            name: name.clone(),
+            name: crate::domain::agents::opencode::tool_names::canonical_cadence_tool_name(name),
         },
         _ => PartBlock::Text,
     }

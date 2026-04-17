@@ -194,6 +194,7 @@ mod tests {
     fn permission_request_payload_preserves_options() {
         let payload = permission_request_payload(RuntimePermissionRequest {
             request_id: "req-1".into(),
+            tool_use_id: None,
             tool_name: "Read".into(),
             tool_input: json!({ "path": "/tmp/file" }),
             description: Some("read a file".into()),
@@ -219,6 +220,7 @@ mod tests {
             AgentSlot::Plan,
             RuntimePermissionRequest {
                 request_id: "req-2".into(),
+                tool_use_id: None,
                 tool_name: "Write".into(),
                 tool_input: json!({ "path": "/tmp/file" }),
                 description: None,

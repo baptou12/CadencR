@@ -116,6 +116,39 @@ pub fn spawn_workflow_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
+                        if let Some(kind) = crate::domain::workflow::permission_router::
+                            ApprovalKind::from_tool_name(&request.tool_name)
+                        {
+                            // OpenCode's MCP tool calls don't flow through
+                            // `can_use_tool`; the `"ask"` rules we write in
+                            // `opencode/mcp_config.rs` land here as
+                            // `permission.asked`. Run the same approval-gate UI
+                            // and let the normal permission response deliver
+                            // the decision back to the runtime.
+                            let tool_use_id = request
+                                .tool_use_id
+                                .clone()
+                                .unwrap_or_else(|| request.request_id.clone());
+                            crate::domain::workflow::permission_router::
+                                emit_plan_approval_gate_events(
+                                    feature_id,
+                                    &slot,
+                                    db_session_id,
+                                    &tool_use_id,
+                                    &request.tool_input,
+                                    kind,
+                                    &sender,
+                                    &write_pool,
+                                )
+                                .await;
+                            WsSessionPersistence::broadcast_turn_state(
+                                &turn_state_tx,
+                                feature_id,
+                                "askUser",
+                            );
+                            continue;
+                        }
+
                         let envelope = WsEnvelope::new(
                             "workflow",
                             "permission.request",
@@ -174,7 +207,11 @@ pub fn spawn_workflow_stream_reader(
                             let model_label = init.model.as_deref().unwrap_or("unknown");
                             debug!(slot = %slot, model = %model_label, context_window = ?usage_update.snapshot.context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
                         }
-                        if !init.mcp_servers.is_empty()
+                        // Workflow agents always require an MCP server. If the runtime
+                        // didn't report the expected server (or reported none at all),
+                        // fail loud — the previous `!is_empty()` gate silently let
+                        // tool-less agents run, stalling the workflow.
+                        if !expected_mcp_server.is_empty()
                             && !check_mcp_server_connected(
                                 &slot,
                                 db_session_id,
@@ -257,6 +294,25 @@ pub fn spawn_workflow_stream_reader(
                         &mut pending_queue_update,
                     )
                     .await;
+
+                    // Shared-subprocess runtimes (OpenCode) don't reliably emit a
+                    // Result event right after `mark_agent_done` — the session may
+                    // stay "busy" because the tool-call message isn't terminal. Once
+                    // the agent has signaled completion, interrupt and synthesize a
+                    // Result so cleanup advances the workflow instead of stalling.
+                    if agent_done_called && !completed_ok {
+                        info!(slot = %slot, "agent signaled completion — interrupting session and finalizing turn");
+                        finalize_agent_done(
+                            &slot,
+                            db_session_id,
+                            &queries,
+                            &sender,
+                            &write_pool,
+                        )
+                        .await;
+                        completed_ok = true;
+                        break;
+                    }
                 }
                 Some(Err(e)) => {
                     error_msg = Some(
@@ -315,6 +371,36 @@ async fn interrupt_and_pause(
         let _ = q.interrupt().await;
     }
     WsSessionPersistence::mark_paused_static(write_pool, db_session_id).await;
+}
+
+/// Finalize the turn when the agent has called `mark_agent_done` but the runtime
+/// hasn't produced a Result event on its own. Interrupts the session so the
+/// runtime stops generating, marks the DB session completed, and emits a
+/// synthetic Result envelope so the frontend clears its streaming state.
+async fn finalize_agent_done(
+    slot: &AgentSlot,
+    db_session_id: i64,
+    queries: &Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
+    sender: &WsSender,
+    write_pool: &SqlitePool,
+) {
+    if let Some(query_arc) = queries.get(slot) {
+        let q = query_arc.lock().await;
+        if let Err(e) = q.interrupt().await {
+            warn!(slot = %slot, error = %e, "interrupt after mark_agent_done failed");
+        }
+    }
+    WsSessionPersistence::mark_completed_static(write_pool, db_session_id).await;
+    let result_env = WsEnvelope::new(
+        "workflow",
+        "agent_stream",
+        to_value(WorkflowAgentStreamResultPayload {
+            agent_slot: slot.clone(),
+            session_id: db_session_id,
+            msg_type: "result".into(),
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(result_env).into()));
 }
 
 /// Handle a runtime stream error: log, mark paused, and send error envelope.

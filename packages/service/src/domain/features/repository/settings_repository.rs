@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 
 use super::super::models::{FeatureModelSettings, FeatureProviderSettings, FeatureSetting};
 use crate::domain::agents::runtime::{
-    default_provider_settings, runtime_setting_key, validate_agent_type,
+    runtime_setting_key, validate_agent_type,
 };
 use crate::error::AppError;
 
@@ -273,18 +273,21 @@ pub async fn get_feature_provider_settings(
 
     let (plan, prd, execute, risk, review, review_fixer, session, qa, retro) =
         row.unwrap_or_default();
-    let defaults = default_provider_settings();
 
+    // Return empty strings (not provider defaults) for unset fields so the
+    // frontend inheritance cascade can distinguish "inherit from parent" from
+    // "explicit override to claude_code". The workspace-level endpoint still
+    // falls back to defaults because it has no parent to inherit from.
     Ok(FeatureProviderSettings {
-        plan: plan.unwrap_or(defaults.plan),
-        prd: prd.unwrap_or(defaults.prd),
-        execute: execute.unwrap_or(defaults.execute),
-        risk: risk.unwrap_or(defaults.risk),
-        review: review.unwrap_or(defaults.review),
-        review_fixer: review_fixer.unwrap_or(defaults.review_fixer),
-        session: session.unwrap_or(defaults.session),
-        qa: qa.unwrap_or(defaults.qa),
-        retro: retro.unwrap_or(defaults.retro),
+        plan: plan.unwrap_or_default(),
+        prd: prd.unwrap_or_default(),
+        execute: execute.unwrap_or_default(),
+        risk: risk.unwrap_or_default(),
+        review: review.unwrap_or_default(),
+        review_fixer: review_fixer.unwrap_or_default(),
+        session: session.unwrap_or_default(),
+        qa: qa.unwrap_or_default(),
+        retro: retro.unwrap_or_default(),
     })
 }
 

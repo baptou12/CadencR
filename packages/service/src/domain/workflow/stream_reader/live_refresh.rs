@@ -3,7 +3,9 @@
 use axum::extract::ws::Message;
 use sqlx::SqlitePool;
 
-use crate::domain::agents::adapter::RuntimeEvent;
+use crate::domain::agents::adapter::{
+    RuntimeContentBlock, RuntimeEvent, RuntimeStreamEvent,
+};
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{send_feature_updated_envelope, to_value, WsSender};
 use crate::domain::ws_session::protocol::*;
@@ -52,6 +54,15 @@ pub async fn handle_live_refresh(
             agent_done_called,
         )
         .await;
+    } else if let Some(RuntimeStreamEvent::ContentBlockStart {
+        block: RuntimeContentBlock::ToolUse { name, .. },
+        ..
+    }) = runtime_event.stream_event()
+    {
+        // OpenCode surfaces tool_use as ContentBlockStart stream events rather
+        // than assistant messages with content — without this branch we'd miss
+        // `mark_agent_done` / phase-modifying tool calls and never advance.
+        handle_tool_use_name(name, agent_done_called, pending_feature_update, pending_queue_update);
     }
 }
 
@@ -63,25 +74,56 @@ fn handle_assistant_message(
 ) {
     let mut fields: Vec<&'static str> = Vec::new();
     for block in &message.content {
-        if let crate::domain::agents::adapter::RuntimeContentBlock::ToolUse { name, .. } = block {
+        if let RuntimeContentBlock::ToolUse { name, .. } = block {
             if is_completion_tool(name) {
                 *agent_done_called = true;
             }
-            if name.contains("create_phase") || name.contains("finalize_phases") {
-                fields.extend_from_slice(&["phases", "progress"]);
-                *pending_queue_update = true;
-            } else if name.contains("finalize_plan") {
-                fields.extend_from_slice(&["plan", "phases", "progress", "status"]);
-            } else if name.contains("save_plan") || name.contains("create_plan") {
-                fields.extend_from_slice(&["plan"]);
-            } else if name.contains("save_prd") || name.contains("create_prd") {
-                fields.extend_from_slice(&["prd"]);
-            }
+            extend_fields_for_tool(name, &mut fields, pending_queue_update);
         }
     }
     if !fields.is_empty() {
         fields.dedup();
         *pending_feature_update = Some(fields);
+    }
+}
+
+fn handle_tool_use_name(
+    name: &str,
+    agent_done_called: &mut bool,
+    pending_feature_update: &mut Option<Vec<&'static str>>,
+    pending_queue_update: &mut bool,
+) {
+    if is_completion_tool(name) {
+        *agent_done_called = true;
+    }
+    let mut fields: Vec<&'static str> = Vec::new();
+    extend_fields_for_tool(name, &mut fields, pending_queue_update);
+    if fields.is_empty() {
+        return;
+    }
+    match pending_feature_update {
+        Some(existing) => {
+            existing.extend(fields);
+            existing.dedup();
+        }
+        None => *pending_feature_update = Some(fields),
+    }
+}
+
+fn extend_fields_for_tool(
+    name: &str,
+    fields: &mut Vec<&'static str>,
+    pending_queue_update: &mut bool,
+) {
+    if name.contains("create_phase") || name.contains("finalize_phases") {
+        fields.extend_from_slice(&["phases", "progress"]);
+        *pending_queue_update = true;
+    } else if name.contains("finalize_plan") {
+        fields.extend_from_slice(&["plan", "phases", "progress", "status"]);
+    } else if name.contains("save_plan") || name.contains("create_plan") {
+        fields.extend_from_slice(&["plan"]);
+    } else if name.contains("save_prd") || name.contains("create_prd") {
+        fields.extend_from_slice(&["prd"]);
     }
 }
 
@@ -177,5 +219,41 @@ mod tests {
         ));
         assert!(!is_completion_tool("create_artifact"));
         assert!(!is_completion_tool("read_project_context"));
+    }
+
+    #[test]
+    fn tool_use_name_sets_agent_done_for_opencode_canonical_name() {
+        // OpenCode surfaces tool_use only as ContentBlockStart stream events;
+        // handle_tool_use_name is the path that still detects `mark_agent_done`
+        // so the workflow can finalize without an assistant-message fallback.
+        let mut agent_done_called = false;
+        let mut pending_feature_update = None;
+        let mut pending_queue_update = false;
+        handle_tool_use_name(
+            "mcp__cadence-plan__mark_agent_done",
+            &mut agent_done_called,
+            &mut pending_feature_update,
+            &mut pending_queue_update,
+        );
+        assert!(agent_done_called);
+    }
+
+    #[test]
+    fn tool_use_name_records_pending_queue_update_for_create_phase() {
+        let mut agent_done_called = false;
+        let mut pending_feature_update = None;
+        let mut pending_queue_update = false;
+        handle_tool_use_name(
+            "mcp__cadence-plan__create_phase",
+            &mut agent_done_called,
+            &mut pending_feature_update,
+            &mut pending_queue_update,
+        );
+        assert!(!agent_done_called);
+        assert!(pending_queue_update);
+        assert_eq!(
+            pending_feature_update.as_deref(),
+            Some(&["phases", "progress"][..])
+        );
     }
 }

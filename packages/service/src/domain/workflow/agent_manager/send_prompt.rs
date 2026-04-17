@@ -48,6 +48,21 @@ impl AgentManager {
         let q = query.lock().await;
         let result = q.respond_permission(runtime_response).await;
 
+        // Claude Code's `wait_for_approval` flips turn state inside the bridge,
+        // but the OpenCode path resolves approvals here and otherwise leaves
+        // the sidebar stuck on "askUser". Only plan/PRD approvals (synthetic
+        // `approval_<kind>_<feature_id>` ids) need this reset — regular per-tool
+        // permissions never set askUser in a way that sticks.
+        if result.is_ok() && response.request_id.starts_with("approval_") {
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                crate::domain::permission_bridge::turn_state_after_decision(
+                    response.decision,
+                ),
+            );
+        }
+
         Ok(result.is_ok())
     }
 

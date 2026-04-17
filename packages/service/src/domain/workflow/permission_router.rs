@@ -78,7 +78,6 @@ pub struct WorkflowPermissionBridge {
     pub worktree_path: PathBuf,
     pub session_cache: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub allowed_patterns: Arc<HashSet<String>>,
-    pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub db_session_id: i64,
     pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
@@ -96,11 +95,8 @@ impl RuntimeToolPermissionHandler for WorkflowPermissionBridge {
             "WorkflowPermissionBridge::can_use_tool called"
         );
 
-        // Intercept approval-gate tools (show_plan, show_prd)
-        let is_show_plan = request.tool_name.contains("show_plan");
-        let is_show_prd = !is_show_plan && request.tool_name.contains("show_prd");
-        if is_show_plan || is_show_prd {
-            return self.handle_approval_gate(&request, is_show_plan).await;
+        if let Some(kind) = ApprovalKind::from_tool_name(&request.tool_name) {
+            return self.handle_approval_gate(&request, kind).await;
         }
 
         // Standard permission resolution via shared bridge
@@ -126,68 +122,47 @@ impl RuntimeToolPermissionHandler for WorkflowPermissionBridge {
     }
 }
 
+/// Approval gate that `show_plan` / `show_prd` trigger before the tool runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalKind {
+    Plan,
+    Prd,
+}
+
+impl ApprovalKind {
+    /// Match on canonical MCP tool names (`mcp__cadence-plan__show_plan`, etc.).
+    /// Substring match covers both Claude Code's canonical form and OpenCode's
+    /// sanitized form (`cadence-plan_show_plan`).
+    pub fn from_tool_name(name: &str) -> Option<Self> {
+        if name.contains("show_plan") {
+            Some(Self::Plan)
+        } else if name.contains("show_prd") {
+            Some(Self::Prd)
+        } else {
+            None
+        }
+    }
+}
+
 impl WorkflowPermissionBridge {
     /// Handle approval-gate tools (show_plan, show_prd): emit WS events
     /// and block on the permission channel until the user approves/rejects.
     async fn handle_approval_gate(
         &self,
         request: &RuntimeToolPermissionRequest,
-        is_show_plan: bool,
+        kind: ApprovalKind,
     ) -> RuntimeToolPermissionResult {
-        let event_name = if is_show_plan {
-            "plan_ready"
-        } else {
-            "prd_ready"
-        };
-        info!(
-            feature_id = self.feature_id,
-            tool_name = %request.tool_name,
-            "approval gate detected, emitting {} and blocking", event_name
-        );
-
-        let gate_env = WsEnvelope::new(
-            "workflow",
-            event_name,
-            serde_json::json!({
-                "feature_id": self.feature_id,
-                "agent_slot": self.slot,
-            }),
-        );
-        let _ = self
-            .sender
-            .send(Message::Text(String::from(gate_env).into()));
-
-        let content = if is_show_plan {
-            self.emit_plan_approval_status().await;
-            self.emit_plan_content().await
-        } else {
-            self.emit_prd_content().await
-        };
-
-        // Persist plan/PRD content to pending_plan_approval so it survives app restart
-        if let Some(ref plan_md) = content {
-            let mut enriched = request.input.clone();
-            enriched["plan"] = serde_json::Value::String(plan_md.clone());
-            let json = serde_json::to_string(&enriched).unwrap_or_else(|_| "{}".to_string());
-            if let Err(e) =
-                sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-                    .bind(&json)
-                    .bind(self.db_session_id)
-                    .execute(&self.write_pool)
-                    .await
-            {
-                warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
-            }
-        }
-
-        self.attach_plan_to_tool_call(request, content).await;
-
-        let changed: &[&str] = if is_show_plan {
-            &["plan", "phases", "progress"]
-        } else {
-            &["prd"]
-        };
-        send_feature_updated_envelope(&self.sender, self.feature_id, changed);
+        emit_plan_approval_gate_events(
+            self.feature_id,
+            &self.slot,
+            self.db_session_id,
+            &request.tool_use_id,
+            &request.input,
+            kind,
+            &self.sender,
+            &self.write_pool,
+        )
+        .await;
 
         let result = permission_bridge::wait_for_approval(
             &self.response_rx,
@@ -197,14 +172,7 @@ impl WorkflowPermissionBridge {
         )
         .await;
 
-        if let Err(e) =
-            sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
-        {
-            warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
-        }
+        clear_pending_plan_approval(&self.write_pool, self.db_session_id).await;
 
         result
     }
@@ -293,212 +261,267 @@ impl WorkflowPermissionBridge {
         result
     }
 
-    async fn emit_plan_approval_status(&self) {
-        let _ = repo::set_workflow_status(
-            &self.write_pool,
-            self.feature_id,
-            WorkflowStatus::PlanApproval,
-        )
-        .await;
-        let status_env = WsEnvelope::new(
-            "workflow",
-            "status_changed",
-            to_value(WorkflowStatusChangedPayload {
-                feature_id: self.feature_id,
-                status: "plan_approval".to_string(),
-                previous_status: "planning".to_string(),
-            }),
-        );
-        let _ = self
-            .sender
-            .send(Message::Text(String::from(status_env).into()));
+}
+
+/// Emit the approval-gate WS events for `show_plan` / `show_prd` and persist
+/// `pending_plan_approval` for restart survival. Shared by the Claude Code
+/// `can_use_tool` bridge and the OpenCode stream-reader intercept.
+///
+/// Does **not** block — callers are responsible for waiting on the user's
+/// decision (Claude Code via `wait_for_approval`, OpenCode via OpenCode's own
+/// permission-reply RPC triggered by the frontend).
+pub async fn emit_plan_approval_gate_events(
+    feature_id: i64,
+    slot: &AgentSlot,
+    db_session_id: i64,
+    tool_use_id: &str,
+    tool_input: &serde_json::Value,
+    kind: ApprovalKind,
+    sender: &WsSender,
+    pool: &SqlitePool,
+) -> Option<String> {
+    let event_name = match kind {
+        ApprovalKind::Plan => "plan_ready",
+        ApprovalKind::Prd => "prd_ready",
+    };
+    info!(feature_id, ?kind, "approval gate detected, emitting {event_name}");
+
+    let gate_env = WsEnvelope::new(
+        "workflow",
+        event_name,
+        serde_json::json!({
+            "feature_id": feature_id,
+            "agent_slot": slot,
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(gate_env).into()));
+
+    let content = match kind {
+        ApprovalKind::Plan => {
+            emit_plan_approval_status(sender, pool, feature_id).await;
+            emit_plan_content(sender, pool, feature_id, slot, db_session_id).await
+        }
+        ApprovalKind::Prd => {
+            emit_prd_content(sender, pool, feature_id, slot, db_session_id).await
+        }
+    };
+
+    if let Some(ref plan_md) = content {
+        persist_pending_plan_approval(pool, db_session_id, tool_input, plan_md).await;
+        attach_plan_to_tool_call(pool, db_session_id, tool_use_id, plan_md).await;
     }
 
-    async fn emit_plan_content(&self) -> Option<String> {
-        let plan_id = match sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        {
-            Ok(Some(id)) => id,
-            Ok(None) => {
-                warn!(
-                    feature_id = self.feature_id,
-                    "no plan found when emitting plan_content"
-                );
-                return None;
-            }
-            Err(e) => {
-                warn!(feature_id = self.feature_id, error = %e, "failed to query plan");
-                return None;
-            }
-        };
+    let changed: &[&str] = match kind {
+        ApprovalKind::Plan => &["plan", "phases", "progress"],
+        ApprovalKind::Prd => &["prd"],
+    };
+    send_feature_updated_envelope(sender, feature_id, changed);
 
-        match self.fetch_plan_content(plan_id).await {
-            Some(content) => {
-                info!(
-                    feature_id = self.feature_id,
-                    plan_id,
-                    content_len = content.len(),
-                    "emitting plan_content"
-                );
-                let env = WsEnvelope::new(
-                    "workflow",
-                    "plan_content",
-                    serde_json::json!({
-                        "agent_slot": self.slot,
-                        "session_id": self.db_session_id,
-                        "content": content,
-                    }),
-                );
-                let _ = self.sender.send(Message::Text(String::from(env).into()));
-                Some(content)
-            }
-            None => {
-                warn!(
-                    feature_id = self.feature_id,
-                    plan_id, "fetch_plan_content returned None"
-                );
-                None
-            }
+    content
+}
+
+async fn persist_pending_plan_approval(
+    pool: &SqlitePool,
+    db_session_id: i64,
+    tool_input: &serde_json::Value,
+    plan_md: &str,
+) {
+    let mut enriched = tool_input.clone();
+    enriched["plan"] = serde_json::Value::String(plan_md.to_string());
+    // `enriched` is already a Value — serialization can't fail.
+    let json = serde_json::to_string(&enriched).expect("serializing JSON Value never fails");
+    if let Err(e) =
+        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
+            .bind(&json)
+            .bind(db_session_id)
+            .execute(pool)
+            .await
+    {
+        warn!(session_id = db_session_id, error = %e, "failed to persist pending_plan_approval");
+    }
+}
+
+async fn clear_pending_plan_approval(write_pool: &SqlitePool, db_session_id: i64) {
+    if let Err(e) =
+        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
+            .bind(db_session_id)
+            .execute(write_pool)
+            .await
+    {
+        warn!(session_id = db_session_id, error = %e, "failed to clear pending_plan_approval");
+    }
+}
+
+async fn emit_plan_approval_status(sender: &WsSender, write_pool: &SqlitePool, feature_id: i64) {
+    let _ = repo::set_workflow_status(write_pool, feature_id, WorkflowStatus::PlanApproval).await;
+    let status_env = WsEnvelope::new(
+        "workflow",
+        "status_changed",
+        to_value(WorkflowStatusChangedPayload {
+            feature_id,
+            status: "plan_approval".to_string(),
+            previous_status: "planning".to_string(),
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(status_env).into()));
+}
+
+async fn emit_plan_content(
+    sender: &WsSender,
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    slot: &AgentSlot,
+    db_session_id: i64,
+) -> Option<String> {
+    let content = fetch_plan_content(read_pool, feature_id).await?;
+    info!(feature_id, content_len = content.len(), "emitting plan_content");
+    let env = WsEnvelope::new(
+        "workflow",
+        "plan_content",
+        serde_json::json!({
+            "agent_slot": slot,
+            "session_id": db_session_id,
+            "content": content,
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(env).into()));
+    Some(content)
+}
+
+async fn emit_prd_content(
+    sender: &WsSender,
+    read_pool: &SqlitePool,
+    feature_id: i64,
+    slot: &AgentSlot,
+    db_session_id: i64,
+) -> Option<String> {
+    match sqlx::query_scalar::<_, String>(
+        "SELECT prd FROM features WHERE id = ? AND prd IS NOT NULL",
+    )
+    .bind(feature_id)
+    .fetch_optional(read_pool)
+    .await
+    {
+        Ok(Some(prd_content)) => {
+            info!(
+                feature_id,
+                content_len = prd_content.len(),
+                "emitting prd_content"
+            );
+            let env = WsEnvelope::new(
+                "workflow",
+                "prd_content",
+                serde_json::json!({
+                    "agent_slot": slot,
+                    "session_id": db_session_id,
+                    "content": prd_content,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(env).into()));
+            Some(prd_content)
+        }
+        Ok(None) => {
+            warn!(feature_id, "no PRD found when emitting prd_content");
+            None
+        }
+        Err(e) => {
+            warn!(feature_id, error = %e, "failed to query PRD");
+            None
         }
     }
+}
 
-    async fn emit_prd_content(&self) -> Option<String> {
-        match sqlx::query_scalar::<_, String>(
-            "SELECT prd FROM features WHERE id = ? AND prd IS NOT NULL",
-        )
-        .bind(self.feature_id)
-        .fetch_optional(&self.read_pool)
-        .await
-        {
-            Ok(Some(prd_content)) => {
-                info!(
-                    feature_id = self.feature_id,
-                    content_len = prd_content.len(),
-                    "emitting prd_content"
-                );
-                let env = WsEnvelope::new(
-                    "workflow",
-                    "prd_content",
-                    serde_json::json!({
-                        "agent_slot": self.slot,
-                        "session_id": self.db_session_id,
-                        "content": prd_content,
-                    }),
-                );
-                let _ = self.sender.send(Message::Text(String::from(env).into()));
-                Some(prd_content)
-            }
-            Ok(None) => {
-                warn!(
-                    feature_id = self.feature_id,
-                    "no PRD found when emitting prd_content"
-                );
-                None
-            }
-            Err(e) => {
-                warn!(feature_id = self.feature_id, error = %e, "failed to query PRD");
-                None
-            }
-        }
+async fn fetch_plan_content(read_pool: &SqlitePool, feature_id: i64) -> Option<String> {
+    #[derive(sqlx::FromRow)]
+    struct PlanRow {
+        id: i64,
+        title: String,
+        summary: Option<String>,
+        completion_conditions: Option<String>,
+    }
+    #[derive(sqlx::FromRow)]
+    struct PhaseRow {
+        step_number: i64,
+        title: String,
+        phase_type: Option<String>,
+        complexity: Option<i64>,
+        prompt: Option<String>,
+        commit_message: Option<String>,
+        depends_on: Option<String>,
     }
 
-    async fn fetch_plan_content(&self, plan_id: i64) -> Option<String> {
-        #[derive(sqlx::FromRow)]
-        struct PlanRow {
-            title: String,
-            summary: Option<String>,
-            completion_conditions: Option<String>,
-        }
-        #[derive(sqlx::FromRow)]
-        struct PhaseRow {
-            step_number: i64,
-            title: String,
-            phase_type: Option<String>,
-            complexity: Option<i64>,
-            prompt: Option<String>,
-            commit_message: Option<String>,
-            depends_on: Option<String>,
-        }
+    let plan: PlanRow = sqlx::query_as(
+        "SELECT id, title, summary, completion_conditions \
+         FROM plans WHERE feature_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(feature_id)
+    .fetch_optional(read_pool)
+    .await
+    .ok()??;
 
-        let plan: PlanRow =
-            sqlx::query_as("SELECT title, summary, completion_conditions FROM plans WHERE id = ?")
-                .bind(plan_id)
-                .fetch_optional(&self.read_pool)
-                .await
-                .ok()??;
+    let phases: Vec<PhaseRow> = sqlx::query_as(
+        "SELECT step_number, title, phase_type, complexity, prompt, commit_message, depends_on \
+         FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
+    )
+    .bind(plan.id)
+    .fetch_all(read_pool)
+    .await
+    .unwrap_or_default();
 
-        let phases: Vec<PhaseRow> = sqlx::query_as(
-            "SELECT step_number, title, phase_type, complexity, prompt, commit_message, depends_on \
-             FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",
-        )
-        .bind(plan_id)
-        .fetch_all(&self.read_pool)
-        .await
-        .unwrap_or_default();
-
-        let mut out = format!("# Plan: {}\n", plan.title);
-        if let Some(ref s) = plan.summary {
-            out.push_str(&format!("\n## Summary\n{s}\n"));
-        }
-        if let Some(ref s) = plan.completion_conditions {
-            out.push_str(&format!("\n## Completion Conditions\n{s}\n"));
-        }
-        if !phases.is_empty() {
-            out.push_str("\n## Phases\n");
-            for p in &phases {
-                let pt = p.phase_type.as_deref().unwrap_or("value");
-                let cx = p
-                    .complexity
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "-".to_string());
-                out.push_str(&format!(
-                    "\n### Phase {} — {} `[{}]` (complexity: {})\n",
-                    p.step_number, p.title, pt, cx,
-                ));
-                if let Some(ref deps) = p.depends_on {
-                    if !deps.is_empty() {
-                        out.push_str(&format!("**Depends on:** {deps}\n"));
-                    }
+    let mut out = format!("# Plan: {}\n", plan.title);
+    if let Some(ref s) = plan.summary {
+        out.push_str(&format!("\n## Summary\n{s}\n"));
+    }
+    if let Some(ref s) = plan.completion_conditions {
+        out.push_str(&format!("\n## Completion Conditions\n{s}\n"));
+    }
+    if !phases.is_empty() {
+        out.push_str("\n## Phases\n");
+        for p in &phases {
+            let pt = p.phase_type.as_deref().unwrap_or("value");
+            let cx = p
+                .complexity
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            out.push_str(&format!(
+                "\n### Phase {} — {} `[{}]` (complexity: {})\n",
+                p.step_number, p.title, pt, cx,
+            ));
+            if let Some(ref deps) = p.depends_on {
+                if !deps.is_empty() {
+                    out.push_str(&format!("**Depends on:** {deps}\n"));
                 }
-                if let Some(ref cm) = p.commit_message {
-                    if !cm.is_empty() {
-                        out.push_str(&format!("**Commit:** `{cm}`\n"));
-                    }
+            }
+            if let Some(ref cm) = p.commit_message {
+                if !cm.is_empty() {
+                    out.push_str(&format!("**Commit:** `{cm}`\n"));
                 }
-                if let Some(ref prompt) = p.prompt {
-                    if !prompt.is_empty() {
-                        out.push_str(&format!("\n{prompt}\n"));
-                    }
+            }
+            if let Some(ref prompt) = p.prompt {
+                if !prompt.is_empty() {
+                    out.push_str(&format!("\n{prompt}\n"));
                 }
             }
         }
-        Some(out)
     }
+    Some(out)
+}
 
-    /// Persist plan/PRD content into the tool_call row so the frontend can
-    /// render it after app restart.
-    async fn attach_plan_to_tool_call(
-        &self,
-        request: &RuntimeToolPermissionRequest,
-        content: Option<String>,
-    ) {
-        if let Some(plan_md) = content {
-            let enriched = serde_json::json!({ "plan": plan_md });
-            let enriched_str = enriched.to_string();
-            crate::domain::features::repository::retry_update_agent_message_content(
-                &self.write_pool,
-                self.db_session_id,
-                &request.tool_use_id,
-                &enriched_str,
-                &crate::domain::features::repository::ToolCallFilter::MessageType(
-                    "tool_call".to_string(),
-                ),
-            )
-            .await;
-        }
-    }
+async fn attach_plan_to_tool_call(
+    write_pool: &SqlitePool,
+    db_session_id: i64,
+    tool_use_id: &str,
+    plan_md: &str,
+) {
+    let enriched_str = serde_json::json!({ "plan": plan_md }).to_string();
+    crate::domain::features::repository::retry_update_agent_message_content(
+        write_pool,
+        db_session_id,
+        tool_use_id,
+        &enriched_str,
+        &crate::domain::features::repository::ToolCallFilter::MessageType(
+            "tool_call".to_string(),
+        ),
+    )
+    .await;
 }

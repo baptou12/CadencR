@@ -36,6 +36,7 @@ pub(super) struct OpenCodeSession {
     pub(super) pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
     pub(super) server_pid: Option<u32>,
     pub(super) context_window: Option<u64>,
+    pub(super) expected_mcp_servers: Vec<String>,
 }
 
 const COMMAND_DISPATCH_GRACE: Duration = Duration::from_millis(250);
@@ -68,7 +69,12 @@ impl OpenCodeSession {
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             server_pid,
             context_window,
+            expected_mcp_servers: Vec::new(),
         }
+    }
+
+    pub(super) fn set_expected_mcp_servers(&mut self, servers: Vec<String>) {
+        self.expected_mcp_servers = servers;
     }
 
     pub(super) async fn dispatch_input(&self, content: Value) -> Result<(), RuntimeError> {
@@ -184,6 +190,7 @@ impl AgentRuntimeSession for OpenCodeSession {
             session_id,
             model,
             self.context_window,
+            self.expected_mcp_servers.clone(),
         );
         spawn_local_result_forwarder(local_rx, tx);
         rx
@@ -222,25 +229,40 @@ impl AgentRuntimeSession for OpenCodeSession {
         &self,
         response: RuntimePermissionResponse,
     ) -> Result<(), RuntimeError> {
-        let pending = self
-            .pending_requests
-            .lock()
-            .await
-            .get(&response.request_id)
-            .copied()
-            .or_else(|| {
-                response
-                    .updated_input
-                    .as_ref()
-                    .and_then(|input| input.get("answers"))
-                    .map(|_| PendingRequestKind::Question)
-            });
+        // Resolve the incoming request_id to a real OpenCode runtime id. Workflow
+        // approval gates (show_plan/show_prd) arrive with a synthetic id like
+        // "approval_plan_881" that isn't in `pending_requests`; fall back to the
+        // unique pending Permission since OpenCode serializes tool execution so
+        // at most one permission is outstanding while an approval gate is open.
+        let (runtime_request_id, pending) = {
+            let pending = self.pending_requests.lock().await;
+            if let Some(kind) = pending.get(&response.request_id).copied() {
+                (response.request_id.clone(), Some(kind))
+            } else {
+                let mut perms = pending
+                    .iter()
+                    .filter(|(_, k)| matches!(k, PendingRequestKind::Permission));
+                match (perms.next(), perms.next()) {
+                    (Some((id, _)), None) => {
+                        (id.clone(), Some(PendingRequestKind::Permission))
+                    }
+                    _ => {
+                        let fallback = response
+                            .updated_input
+                            .as_ref()
+                            .and_then(|input| input.get("answers"))
+                            .map(|_| PendingRequestKind::Question);
+                        (response.request_id.clone(), fallback)
+                    }
+                }
+            }
+        };
 
         let result = match pending {
             Some(PendingRequestKind::Permission) => self
                 .client
                 .reply_permission_in_directory(
-                    &response.request_id,
+                    &runtime_request_id,
                     Some(&self.directory),
                     match response.decision {
                         RuntimePermissionDecision::AllowOnce => {
@@ -259,14 +281,14 @@ impl AgentRuntimeSession for OpenCodeSession {
                 if matches!(response.decision, RuntimePermissionDecision::Deny) {
                     return self
                         .client
-                        .reject_question_in_directory(&response.request_id, Some(&self.directory))
+                        .reject_question_in_directory(&runtime_request_id, Some(&self.directory))
                         .await
                         .map_err(RuntimeError::from);
                 }
 
                 self.client
                     .reply_question_in_directory(
-                        &response.request_id,
+                        &runtime_request_id,
                         Some(&self.directory),
                         extract_question_answers(
                             response.updated_input.as_ref(),
@@ -285,7 +307,7 @@ impl AgentRuntimeSession for OpenCodeSession {
             self.pending_requests
                 .lock()
                 .await
-                .remove(&response.request_id);
+                .remove(&runtime_request_id);
         }
         result
     }
@@ -376,5 +398,66 @@ mod tests {
             .unwrap();
 
         assert_eq!(dir.lock().await.as_deref(), Some("/tmp/worktree"));
+    }
+
+    #[tokio::test]
+    async fn permission_reply_resolves_synthetic_approval_id_to_unique_pending_permission() {
+        async fn reply(
+            State(path): State<Arc<Mutex<Option<String>>>>,
+            axum::extract::Path(id): axum::extract::Path<String>,
+        ) -> Json<serde_json::Value> {
+            *path.lock().await = Some(id);
+            Json(json!({ "ok": true }))
+        }
+
+        async fn event() -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
+            Sse::new(iter(Vec::<Result<Event, Infallible>>::new()))
+        }
+
+        let recorded = Arc::new(Mutex::new(None));
+        let app = Router::new()
+            .route("/permission/{id}/reply", post(reply))
+            .route("/event", get(event))
+            .with_state(Arc::clone(&recorded));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let client = opencode_sdk_rs::OpenCodeClient::with_base_url(format!("http://{addr}"));
+        let dispatcher =
+            opencode_sdk_rs::shared_dispatcher(client.clone(), Some("/tmp/worktree".to_string()))
+                .await;
+        let (_event_tx, event_rx) = mpsc::unbounded_channel();
+        let mut session = OpenCodeSession::new(
+            client,
+            dispatcher,
+            "ses_1".to_string(),
+            "build".to_string(),
+            None,
+            "/tmp/worktree".to_string(),
+            None,
+            event_rx,
+            None,
+            None,
+        );
+        session.pending_requests = Arc::new(Mutex::new(HashMap::from([(
+            "per_real_xyz".to_string(),
+            PendingRequestKind::Permission,
+        )])));
+
+        session
+            .respond_permission(RuntimePermissionResponse {
+                request_id: "approval_plan_881".to_string(),
+                decision: RuntimePermissionDecision::Deny,
+                feedback: Some("please revise".to_string()),
+                updated_input: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(recorded.lock().await.as_deref(), Some("per_real_xyz"));
+        assert!(session.pending_requests.lock().await.is_empty());
     }
 }
