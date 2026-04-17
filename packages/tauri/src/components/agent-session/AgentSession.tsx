@@ -69,7 +69,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : internalOpen;
 
-  const { scrollContainerRef, contentRef, autoScrollEnabled, setAutoScrollEnabled } = useAgentSessionScroll({
+  const { scrollContainerRef, contentRef, autoScrollEnabled, isLoadingOlder, setAutoScrollEnabled } = useAgentSessionScroll({
     isOpen, blocks, hasMore, onLoadOlder,
   });
 
@@ -241,7 +241,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
           </p>
         </div>
       )}
-      {hasMore && (
+      {isLoadingOlder && (
         <div className="flex justify-center py-2">
           <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
         </div>
@@ -357,12 +357,19 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
                   {emptyStateMessage}
                 </div>
               ) : (
-                <AgentStream
-                  blocks={blocks}
-                  isStreaming={isStreaming}
-                  showStreamingIndicator={shouldShowStreamingIndicator}
-                  basePath={projectPath}
-                />
+                <>
+                  {isLoadingOlder && (
+                    <div className="flex justify-center py-2">
+                      <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+                    </div>
+                  )}
+                  <AgentStream
+                    blocks={blocks}
+                    isStreaming={isStreaming}
+                    showStreamingIndicator={shouldShowStreamingIndicator}
+                    basePath={projectPath}
+                  />
+                </>
               )}
             </div>
           </div>

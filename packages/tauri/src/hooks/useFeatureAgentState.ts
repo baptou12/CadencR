@@ -236,6 +236,7 @@ export function useFeatureAgentState(featureId: number) {
   // dataVersion is incremented after processing new query data so that
   // afterMessageIds recomputes and the next fetch uses incremental cursors.
   const [dataVersion, setDataVersion] = useState(0);
+  const [olderHistoryVersion, setOlderHistoryVersion] = useState(0);
 
   // Reset accumulated state when feature changes (synchronous, not useEffect,
   // to avoid clearing the ref after useMemo populates it on the same render).
@@ -378,7 +379,7 @@ export function useFeatureAgentState(featureId: number) {
         oldestMessageId: acc?.oldestMessageId ?? s.oldestMessageId ?? null,
       };
     });
-  }, [query.data, parseQuestions]);
+  }, [olderHistoryVersion, query.data, parseQuestions]);
 
   // After processing new data, bump dataVersion so afterMessageIds recomputes
   // on the next render and subsequent fetches use incremental cursors.
@@ -427,7 +428,7 @@ export function useFeatureAgentState(featureId: number) {
     acc.oldestMessageId = serverSession.oldestMessageId ?? null;
 
     // Force re-render
-    setDataVersion((v) => v + 1);
+    setOlderHistoryVersion((v) => v + 1);
   }, [featureId]);
 
   return {

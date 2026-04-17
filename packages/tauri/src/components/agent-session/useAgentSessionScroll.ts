@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { toast } from "sonner";
 import type { AgentBlockData } from "../AgentBlock";
 
 const BOTTOM_EPSILON = 1;
+const LOAD_OLDER_THRESHOLD = 800;
 
 interface UseAgentSessionScrollOptions {
   isOpen: boolean;
@@ -14,6 +16,7 @@ interface UseAgentSessionScrollResult {
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   autoScrollEnabled: boolean;
+  isLoadingOlder: boolean;
   setAutoScrollEnabled: (enabled: boolean) => void;
 }
 
@@ -31,9 +34,49 @@ export function useAgentSessionScroll({
   const contentRef = useRef<HTMLDivElement>(null);
   const loadingOlderRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
   const programmaticScrollTopRef = useRef<number | null>(null);
   const previousScrollTopRef = useRef(0);
+  const isMountedRef = useRef(true);
+
+  const setOlderLoading = useCallback((loading: boolean): void => {
+    if (!isMountedRef.current) return;
+    setIsLoadingOlder(loading);
+  }, []);
+
+  const loadOlderIfNeeded = useCallback((reason: "scroll" | "bootstrap"): void => {
+    const el = scrollContainerRef.current;
+    if (!el || !hasMore || !onLoadOlder || loadingOlderRef.current) {
+      return;
+    }
+    if (reason === "scroll" && el.scrollTop >= LOAD_OLDER_THRESHOLD) return;
+    if (reason === "bootstrap" && el.scrollHeight > el.clientHeight) return;
+
+    loadingOlderRef.current = true;
+    setOlderLoading(true);
+    const prevHeight = el.scrollHeight;
+
+    void onLoadOlder()
+      .then(() => {
+        requestAnimationFrame(() => {
+          if (!isMountedRef.current) return;
+          el.scrollTop += el.scrollHeight - prevHeight;
+          previousScrollTopRef.current = el.scrollTop;
+          loadingOlderRef.current = false;
+          setOlderLoading(false);
+        });
+      })
+      .catch(() => {
+        loadingOlderRef.current = false;
+        setOlderLoading(false);
+        toast.error("Failed to load older messages");
+      });
+  }, [hasMore, onLoadOlder, setOlderLoading]);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+  }, []);
 
   const scrollToBottom = useCallback((): void => {
     const el = scrollContainerRef.current;
@@ -82,31 +125,14 @@ export function useAgentSessionScroll({
 
       previousScrollTopRef.current = scrollTop;
 
-      if (hasMore && onLoadOlder && !loadingOlderRef.current && scrollTop < 800) {
-        loadingOlderRef.current = true;
-        const prevHeight = el.scrollHeight;
-        onLoadOlder().then(() => {
-          requestAnimationFrame(() => {
-            el.scrollTop += el.scrollHeight - prevHeight;
-            loadingOlderRef.current = false;
-          });
-        }).catch(() => {
-          loadingOlderRef.current = false;
-        });
-      }
+      loadOlderIfNeeded("scroll");
     };
     el.addEventListener("scroll", onScroll, { passive: true });
 
-    // If the content is too short to scroll, trigger load-older immediately.
-    if (hasMore && onLoadOlder && !loadingOlderRef.current && el.scrollHeight <= el.clientHeight) {
-      loadingOlderRef.current = true;
-      onLoadOlder().finally(() => {
-        requestAnimationFrame(() => { loadingOlderRef.current = false; });
-      });
-    }
+    loadOlderIfNeeded("bootstrap");
 
     return () => el.removeEventListener("scroll", onScroll);
-  }, [hasMore, isOpen, onLoadOlder, setAutoScrollEnabled]);
+  }, [isOpen, loadOlderIfNeeded, setAutoScrollEnabled]);
 
   // Scroll to bottom on new content when autoscroll is active.
   useLayoutEffect(() => {
@@ -128,11 +154,12 @@ export function useAgentSessionScroll({
         if (autoScrollEnabledRef.current) {
           scrollEl.scrollTop = getBottomScrollTop(scrollEl);
         }
+        loadOlderIfNeeded("bootstrap");
       });
     });
     ro.observe(content);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, []);
+  }, [loadOlderIfNeeded]);
 
-  return { scrollContainerRef, contentRef, autoScrollEnabled, setAutoScrollEnabled };
+  return { scrollContainerRef, contentRef, autoScrollEnabled, isLoadingOlder, setAutoScrollEnabled };
 }

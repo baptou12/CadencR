@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { fireEvent, render, screen } from "@/test-utils";
+import { fireEvent, render, screen, waitFor } from "@/test-utils";
 import { AgentSession } from "./AgentSession";
 import type { AgentBlockData } from "../AgentBlock";
+import { toast } from "sonner";
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn() },
 }));
 
 vi.mock("@/api/generated", async (importOriginal) => ({
@@ -113,6 +118,17 @@ function renderSession(): { container: HTMLElement; scrollContainer: HTMLDivElem
   };
 }
 
+function mockContainerMetrics(scrollHeight: number, clientHeight: number): { restore: () => void } {
+  const scrollHeightMock = vi.spyOn(HTMLDivElement.prototype, "scrollHeight", "get").mockReturnValue(scrollHeight);
+  const clientHeightMock = vi.spyOn(HTMLDivElement.prototype, "clientHeight", "get").mockReturnValue(clientHeight);
+  return {
+    restore(): void {
+      scrollHeightMock.mockRestore();
+      clientHeightMock.mockRestore();
+    },
+  };
+}
+
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -174,5 +190,64 @@ describe("AgentSession auto-scroll", () => {
 
     await user.click(screen.getByRole("textbox"));
     expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("loads older history on mount when content is too short to scroll", async () => {
+    const metrics = mockContainerMetrics(300, 400);
+    const onLoadOlder = vi.fn(async () => {});
+
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
+    metrics.restore();
+  });
+
+  it("does not show the older-history spinner unless a fetch is in flight", () => {
+    const metrics = mockContainerMetrics(2000, 400);
+    const { container } = render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={vi.fn(async () => {})}
+      />,
+    );
+
+    expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
+    metrics.restore();
+  });
+
+  it("shows a toast when loading older history fails", async () => {
+    const metrics = mockContainerMetrics(300, 400);
+
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={vi.fn(async () => {
+          throw new Error("boom");
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
+    metrics.restore();
   });
 });
