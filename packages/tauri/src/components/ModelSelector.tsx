@@ -7,7 +7,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -225,6 +224,20 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     }
   }
 
+  function applySelection(agentType: AgentType, providerValue: string, modelValue: string): void {
+    if (providerValue !== getCurrentProviderValue(agentType)) {
+      handleProviderChange(agentType, providerValue);
+    }
+
+    if (modelValue !== getCurrentValue(agentType)) {
+      handleChange(agentType, modelValue);
+    }
+  }
+
+  function handleInheritSelection(agentType: AgentType): void {
+    applySelection(agentType, INHERIT_VALUE, INHERIT_VALUE);
+  }
+
   const providers = useMemo(() => (agentCatalog.data?.providers ?? []).map((provider) => ({
     id: provider.id,
     label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
@@ -316,11 +329,11 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="min-w-[260px]">
-                <DropdownMenuLabel className="text-xs">Provider</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
                 {level !== "global" && (
-                  <DropdownMenuItem onClick={() => handleProviderChange(agentType, "__inherit__")} className="text-xs">
-                    {getCurrentProviderValue(agentType) === "__inherit__" && <CheckIcon className="size-3 text-violet-400" />}
-                    Inherit provider
+                  <DropdownMenuItem onClick={() => handleInheritSelection(agentType)} className="text-xs">
+                    {(getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE) && <CheckIcon className="size-3 text-violet-400" />}
+                    Inherit selection
                   </DropdownMenuItem>
                 )}
                 {providers.map((provider) => (
@@ -334,33 +347,17 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                       {provider.id === getEffectiveSelection(agentType).providerId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="min-w-[240px]">
-                      <DropdownMenuItem
-                        onClick={() => handleProviderChange(agentType, provider.id)}
-                        className="text-xs"
-                        disabled={provider.disabled}
-                      >
-                        <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                        Use {provider.label}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
                       <DropdownMenuLabel className="text-xs">Model</DropdownMenuLabel>
                       {provider.disabled && (
                         <DropdownMenuItem disabled className="text-xs text-muted-foreground">
                           Coming soon
                         </DropdownMenuItem>
                       )}
-                      {level !== "global" && (
-                        <DropdownMenuItem onClick={() => handleChange(agentType, "__inherit__")} className="text-xs">
-                          {getCurrentValue(agentType) === "__inherit__" && <CheckIcon className="size-3 text-violet-400" />}
-                          Inherit model
-                        </DropdownMenuItem>
-                      )}
                       {!provider.disabled && provider.models.map((model) => (
                         <DropdownMenuItem
                           key={model.id}
                           onClick={() => {
-                            handleProviderChange(agentType, provider.id);
-                            handleChange(agentType, model.id);
+                            applySelection(agentType, provider.id, model.id);
                           }}
                           className="flex items-start justify-between gap-2 text-xs"
                           title={model.description}

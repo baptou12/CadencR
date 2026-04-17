@@ -183,7 +183,7 @@ describe("ModelSelector", () => {
 
   it("uses mutation callbacks so provider success and error toasts track the actual result", async () => {
     const user = userEvent.setup();
-    mockGetProjectProviderSettings.mockReturnValue({ data: {}, isLoading: false });
+    mockGetProjectProviderSettings.mockReturnValue({ data: { plan: "claude_code" }, isLoading: false });
     projectProviderMutationImpl.mockImplementation((options) => ({
       mutate: (variables) => {
         projectProviderMutate(variables);
@@ -193,7 +193,7 @@ describe("ModelSelector", () => {
 
     render(<ModelSelector level="project" projectId={42} />);
     await user.click(screen.getAllByRole("combobox")[0]);
-    await user.click(screen.getByText("Inherit provider"));
+    await user.click(screen.getByText("Inherit selection"));
 
     expect(projectProviderMutate).toHaveBeenCalledWith({
       projectId: 42,
@@ -266,5 +266,39 @@ describe("ModelSelector", () => {
 
     render(<ModelSelector level="global" />);
     expect(screen.getAllByRole("combobox")[0]).toHaveAttribute("title", "Opus 4.7 with 1M context");
+  });
+
+  it("does not render standalone provider actions", async () => {
+    const user = userEvent.setup();
+    mockAgentCatalog.mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "default", label: "Default" }],
+            default_model: "default",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "default/default", label: "Default" }],
+            default_model: "default/default",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ModelSelector level="global" />);
+    await user.click(screen.getAllByRole("combobox")[0]);
+
+    expect(screen.getByText("OpenCode")).toBeInTheDocument();
+    expect(screen.queryByText(/Use Claude Code/)).toBeNull();
+    expect(screen.queryByText(/Use OpenCode/)).toBeNull();
   });
 });

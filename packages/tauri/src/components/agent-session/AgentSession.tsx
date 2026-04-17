@@ -161,6 +161,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     visibleModels.find((m) => m.id === currentModelId)?.label ??
     currentModelId ?? "Model";
   const canChangeProvider = !!onProviderChange && status === "idle" && blocks.length === 0;
+  const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
   const selectableProviders = useMemo(
     () => providerOptions.filter((provider) => !provider.disabled && provider.models.length > 0),
     [providerOptions],
@@ -221,7 +222,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       currentModelId={currentModelId}
       currentModelLabel={currentModelLabel}
       models={visibleModels}
-      providers={providerOptions}
+      providers={canChangeProvider ? providerOptions : providerOptions.filter((provider) => provider.id === activeProviderId)}
       canChangeProvider={canChangeProvider}
       showDiffBar={showDiffBar}
       onViewDiff={onViewDiff}
@@ -236,7 +237,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       {isIdle && (
         <div className="flex h-full items-center justify-center">
           <p className="text-sm text-muted-foreground">
-            {collapsible ? "No output yet" : "Send a message to start a session with Claude Code."}
+            {emptyStateMessage}
           </p>
         </div>
       )}
@@ -306,8 +307,8 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   if (!collapsible) {
     return (
       <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto px-4 pt-4 pb-8" style={{ overflowAnchor: "none" }}>
-          <div ref={contentRef}>
+        <div ref={scrollContainerRef} className={cn("flex-1 overflow-auto px-4 pt-4 pb-8", isIdle && "flex")} style={{ overflowAnchor: "none" }}>
+          <div ref={contentRef} className={cn(isIdle && "flex min-h-full flex-1 items-center justify-center")}>
             {streamContent}
           </div>
         </div>
@@ -353,7 +354,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
             <div ref={contentRef}>
               {blocks.length === 0 && status === "idle" ? (
                 <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-                  No output yet
+                  {emptyStateMessage}
                 </div>
               ) : (
                 <AgentStream

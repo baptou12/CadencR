@@ -15,7 +15,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -169,9 +168,9 @@ export function MetaBar({
             </DropdownMenuTrigger>
           </ShortcutTooltip>
           <DropdownMenuContent align="start" className="min-w-[220px]">
-            <DropdownMenuLabel className="text-xs">Provider</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
             {providers.map((provider) => (
-                <DropdownMenuSub key={provider.id}>
+              <DropdownMenuSub key={provider.id}>
                 <DropdownMenuSubTrigger
                   className="text-xs data-[disabled]:text-muted-foreground"
                   disabled={provider.disabled}
@@ -185,14 +184,6 @@ export function MetaBar({
                     <DropdownMenuItem disabled className="text-xs text-muted-foreground">
                       Coming soon
                     </DropdownMenuItem>
-                  ) : canChangeProvider && onProviderChange ? (
-                    <>
-                      <DropdownMenuItem onClick={() => onProviderChange(provider.id)} className="text-xs">
-                        <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                        Use {provider.label}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                    </>
                   ) : null}
                   {!provider.disabled && provider.models.map((m) => (
                     <DropdownMenuItem

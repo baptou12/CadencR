@@ -138,7 +138,103 @@ describe("AgentSession", () => {
         onStop={onStop}
       />,
     );
-    expect(screen.getByText(/Send a message to start/)).toBeInTheDocument();
+    expect(screen.getByText("Send a message to start a session.")).toBeInTheDocument();
+  });
+
+  it("shows cross-provider models before a session starts without standalone provider actions", async () => {
+    const runtimeApi = await import("../api/agentRuntime");
+    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValueOnce({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus" }],
+            default_model: "opus",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" }],
+            default_model: "openai/gpt-5.3-codex",
+          },
+        ],
+      },
+      isLoading: false,
+    } as ReturnType<typeof runtimeApi.useAgentCatalog>);
+
+    const user = userEvent.setup();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[]}
+        status="idle"
+        onSend={onSend}
+        onStop={onStop}
+        onProviderChange={vi.fn()}
+        onModelChange={vi.fn()}
+        currentProviderId="claude_code"
+        currentModelId="opus"
+        runtimeProvider="claude_code"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Opus/i }));
+
+    expect(screen.getByText("OpenCode")).toBeInTheDocument();
+    expect(screen.queryByText(/Use Claude Code/)).toBeNull();
+    expect(screen.queryByText(/Use OpenCode/)).toBeNull();
+  });
+
+  it("locks the provider list once a session has history", async () => {
+    const runtimeApi = await import("../api/agentRuntime");
+    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValueOnce({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus" }],
+            default_model: "opus",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" }],
+            default_model: "openai/gpt-5.3-codex",
+          },
+        ],
+      },
+      isLoading: false,
+    } as ReturnType<typeof runtimeApi.useAgentCatalog>);
+
+    const user = userEvent.setup();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "hello")]}
+        status="completed"
+        onSend={onSend}
+        onStop={onStop}
+        onProviderChange={vi.fn()}
+        onModelChange={vi.fn()}
+        currentProviderId="claude_code"
+        currentModelId="opus"
+        runtimeProvider="claude_code"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Opus/i }));
+
+    expect(screen.queryByText("OpenCode")).toBeNull();
+    expect(screen.queryByText(/Use Claude Code/)).toBeNull();
+    expect(screen.queryByText(/Use OpenCode/)).toBeNull();
   });
 
   it("renders blocks content", () => {
