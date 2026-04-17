@@ -13,7 +13,7 @@ impl FinalizePlanTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
-        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id()).await?;
 
         let mut tx = self
             .ctx
@@ -47,7 +47,7 @@ impl FinalizePlanTool {
             .map_err(|e| format!("Failed to commit transaction: {e}"))?;
 
         // Populate the workflow queue after plan finalization
-        let feature_id = self.ctx.feature_id;
+        let feature_id = self.ctx.feature_id();
         let workflow_type = crate::domain::features::models::WorkflowType::FeatureBuild;
         let strategy = crate::domain::workflow::strategies::get_strategy(&workflow_type)
             .map_err(|e| format!("Strategy error: {e}"))?;

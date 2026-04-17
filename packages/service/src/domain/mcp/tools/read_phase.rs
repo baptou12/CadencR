@@ -30,7 +30,7 @@ impl ReadPhaseTool {
     }
 
     pub async fn call(&self, phase_id: i64) -> Result<String, String> {
-        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id()).await?;
 
         let p: PhaseRow = sqlx::query_as(
             "SELECT id, plan_id, step_number, title, status, complexity, commit_message, prompt, order_index, implementation_notes, deviations, phase_type, depends_on FROM phases WHERE id = ?",

@@ -1,5 +1,9 @@
+use std::future::Future;
+
 use rmcp::model::{CallToolResult, Content};
 use sqlx::SqlitePool;
+
+use crate::domain::mcp::context::CURRENT_FEATURE_ID;
 
 /// Extract a required i64 parameter from JSON args, returning a clear error if missing.
 pub fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, String> {
@@ -23,6 +27,19 @@ pub fn text_result(text: &str) -> CallToolResult {
 /// Wraps error message in an error tool result
 pub fn error_result(msg: &str) -> CallToolResult {
     CallToolResult::error(vec![Content::text(msg)])
+}
+
+/// Enter the `CURRENT_FEATURE_ID` task-local scope for `feature_id`, await
+/// `dispatch`, and convert the result into a `CallToolResult`. Keeps every MCP
+/// server's `call_tool` implementation free of subprocess-scope boilerplate.
+pub async fn dispatch_with_feature<Fut>(feature_id: i64, dispatch: Fut) -> CallToolResult
+where
+    Fut: Future<Output = Result<String, String>>,
+{
+    match CURRENT_FEATURE_ID.scope(feature_id, dispatch).await {
+        Ok(text) => text_result(&text),
+        Err(e) => error_result(&e),
+    }
 }
 
 /// Look up or create the plan for a feature.
@@ -56,12 +73,18 @@ pub async fn get_or_resolve_plan_id(
     pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<i64, String> {
+    // Models (especially via OpenAI-style strict JSON schemas) sometimes fill
+    // optional integer fields with the sentinel `0` instead of omitting them.
+    // Plan IDs are AUTOINCREMENT in SQLite and always start at 1, so `0` and
+    // negative values can never be valid — treat them as "not specified" and
+    // fall through to the feature-linked default, matching the behavior the
+    // tool description promises.
     match args["plan_id"].as_i64() {
-        Some(plan_id) => {
+        Some(plan_id) if plan_id > 0 => {
             verify_plan_ownership(pool, plan_id, feature_id).await?;
             Ok(plan_id)
         }
-        None => get_or_create_plan_id(pool, feature_id).await,
+        _ => get_or_create_plan_id(pool, feature_id).await,
     }
 }
 
@@ -101,4 +124,65 @@ pub async fn verify_phase_ownership(
         return Err(format!("Phase {phase_id} does not belong to this feature"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_or_resolve_plan_id;
+    use serde_json::json;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn pool_with_plans_schema() -> sqlx::SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE plans (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, title TEXT, status TEXT)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn plan_id_zero_falls_through_to_auto_resolve() {
+        let pool = pool_with_plans_schema().await;
+        // No plan row yet — auto-resolve should create one for feature 42.
+        let resolved = get_or_resolve_plan_id(&json!({ "plan_id": 0 }), &pool, 42)
+            .await
+            .expect("0 should be treated as unset and auto-resolve");
+        assert!(resolved > 0);
+
+        // Calling again with null should return the same plan.
+        let resolved_again = get_or_resolve_plan_id(&json!({ "plan_id": null }), &pool, 42)
+            .await
+            .unwrap();
+        assert_eq!(resolved, resolved_again);
+    }
+
+    #[tokio::test]
+    async fn explicit_positive_plan_id_is_verified() {
+        let pool = pool_with_plans_schema().await;
+        let created: i64 = sqlx::query_scalar(
+            "INSERT INTO plans (feature_id, title, status) VALUES (?, 'p', 'draft') RETURNING id",
+        )
+        .bind(7_i64)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        let resolved = get_or_resolve_plan_id(&json!({ "plan_id": created }), &pool, 7)
+            .await
+            .unwrap();
+        assert_eq!(resolved, created);
+
+        // Mismatched feature must fail.
+        let err = get_or_resolve_plan_id(&json!({ "plan_id": created }), &pool, 99)
+            .await
+            .unwrap_err();
+        assert!(err.contains("does not belong"), "unexpected err: {err}");
+    }
 }

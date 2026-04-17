@@ -31,8 +31,6 @@ fn test_mcp_config_serializes_correctly_for_cli() {
             "mcp-serve".to_string(),
             "--agent-type".to_string(),
             "plan".to_string(),
-            "--feature-id".to_string(),
-            "42".to_string(),
         ]),
         env: Some(HashMap::from([(
             "CADENCE_DB_PATH".to_string(),
@@ -70,8 +68,6 @@ fn test_mcp_config_serializes_correctly_for_cli() {
     assert!(args.contains(&"mcp-serve".to_string()));
     assert!(args.contains(&"--agent-type".to_string()));
     assert!(args.contains(&"plan".to_string()));
-    assert!(args.contains(&"--feature-id".to_string()));
-    assert!(args.contains(&"42".to_string()));
     assert!(args.contains(&"--db-path".to_string()));
 }
 
@@ -196,8 +192,6 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         .arg("mcp-serve")
         .arg("--agent-type")
         .arg("plan")
-        .arg("--feature-id")
-        .arg("1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

@@ -21,25 +21,13 @@ async fn main() -> anyhow::Result<()> {
     init_tracing(is_mcp);
 
     match &config.command {
-        Some(Command::McpServe {
-            agent_type,
-            feature_id,
-            phase_slug,
-            input_phase_slugs,
-        }) => {
+        Some(Command::McpServe { agent_type }) => {
             let db_path = config
                 .db_path
                 .clone()
                 .expect("--db-path or CADENCE_DB_PATH env var required for mcp-serve");
 
-            domain::mcp::stdio::run_mcp_stdio(
-                &db_path,
-                agent_type,
-                *feature_id,
-                phase_slug.clone(),
-                input_phase_slugs.clone(),
-            )
-            .await?;
+            domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type).await?;
         }
         None => {
             let db_path = config

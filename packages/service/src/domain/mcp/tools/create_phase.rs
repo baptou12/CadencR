@@ -24,7 +24,7 @@ impl CreatePhaseTool {
         phase_type: Option<String>,
         depends_on: Option<Vec<String>>,
     ) -> Result<String, String> {
-        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id()).await?;
 
         let max_idx: Option<i64> =
             sqlx::query_scalar("SELECT MAX(order_index) FROM phases WHERE plan_id = ?")
@@ -56,7 +56,7 @@ impl CreatePhaseTool {
         .map_err(|e| format!("Failed to create phase: {e}"))?;
 
         // Insert a draft queue item so the phase appears in the sidebar immediately
-        let feature_id = self.ctx.feature_id;
+        let feature_id = self.ctx.feature_id();
         let max_queue_order = repo::get_max_order_index_nullable(&self.ctx.write_pool, feature_id)
             .await
             .unwrap_or(None);

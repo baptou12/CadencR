@@ -198,13 +198,10 @@ impl AgentManager {
         resume_session_id: Option<&str>,
         include_mcp_instructions: bool,
         permissions: &PermissionRouter,
-        phase_slug: Option<&str>,
-        input_phase_slugs: Option<&[String]>,
         model_override: Option<&str>,
     ) -> Result<SpawnContext, String> {
-        let mcp_servers =
-            build_mcp_server_config(agent_type, self.feature_id, phase_slug, input_phase_slugs);
-        let expected_mcp_server = mcp_server_name(agent_type).to_string();
+        let mcp_servers = build_mcp_server_config(agent_type);
+        let expected_mcp_server = mcp_server_name(agent_type);
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {
             format!(
@@ -226,7 +223,6 @@ impl AgentManager {
             worktree_path: cwd.clone(),
             session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             allowed_patterns,
-            read_pool: self.read_pool.clone(),
             write_pool: self.write_pool.clone(),
             db_session_id,
             turn_state_tx: self.turn_state_tx.clone(),
@@ -236,18 +232,26 @@ impl AgentManager {
         let selection = self
             .resolve_runtime_selection(agent_type_str, project_id)
             .await;
-        let provider = selection.provider;
-        if runtime_adapter(&provider).is_none() {
-            return Err(format!(
-                "Runtime provider '{provider}' is not implemented yet for workflow agents"
-            ));
-        }
 
         // Model — prefer explicit override (e.g. from workflow phase definition)
         let model = match model_override.filter(|s| !s.is_empty()) {
             Some(m) => m.to_string(),
             None => selection.model,
         };
+
+        // Route based on the final model string when the configured provider is the
+        // default. This covers the common case where a user overrides the model at
+        // project/feature level (e.g. to `openai/gpt-5.4`) without touching the
+        // provider setting — we still need to spawn on OpenCode, not Claude Code.
+        let provider = crate::domain::agents::resolve_effective_provider(
+            selection.provider,
+            Some(&model),
+        );
+        if runtime_adapter(&provider).is_none() {
+            return Err(format!(
+                "Runtime provider '{provider}' is not implemented yet for workflow agents"
+            ));
+        }
         info!(feature_id = self.feature_id, agent_type = agent_type_str, provider = %provider, model = %model, "resolved agent runtime");
 
         if let Err(error) =
@@ -267,21 +271,31 @@ impl AgentManager {
             );
         }
 
-        // Build system prompt with CWD hint + optional MCP instructions
+        // Build system prompt with CWD hint + MCP instructions. Every Cadence
+        // MCP tool call requires `feature_id` in its args — this is the only
+        // thing that keeps tool calls correctly scoped under runtimes like
+        // OpenCode that share one MCP subprocess across every feature.
         let cwd_hint = format!(
             "IMPORTANT: Your working directory is {}. All file operations, git commands, and tool calls MUST use this directory. Do NOT navigate to or operate in any other directory.",
             cwd.display()
         );
+        let feature_id = self.feature_id;
         let mcp_suffix = if include_mcp_instructions {
-            "\n\n## MCP Tools\n\n\
-             The MCP tools will auto-resolve plan_id from your feature — you do NOT need to pass plan_id to any tool. \
-             Just omit it and the correct plan will be used automatically."
+            format!(
+                "\n\n## MCP Tools\n\n\
+                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadence MCP tool call (e.g. create_phase, update_plan, mark_agent_done). \
+                 This identifies which feature you are working on and is required for every call.\n\n\
+                 `plan_id` is auto-resolved from the feature when omitted — just leave it out."
+            )
         } else {
-            ""
+            format!(
+                "\n\n## MCP Tools\n\n\
+                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadence MCP tool call. This is required for every Cadence MCP tool."
+            )
         };
         let full_system_prompt = match system_prompt {
             Some(sp) if !sp.is_empty() => Some(format!("{cwd_hint}\n\n{sp}{mcp_suffix}")),
-            _ => Some(cwd_hint),
+            _ => Some(format!("{cwd_hint}{mcp_suffix}")),
         };
 
         let runtime_config = RuntimeSpawnConfig {

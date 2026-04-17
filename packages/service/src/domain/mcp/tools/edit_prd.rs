@@ -13,7 +13,7 @@ impl EditPrdTool {
 
     pub async fn call(&self, old_string: &str, new_string: &str) -> Result<String, String> {
         let row: (Option<String>,) = sqlx::query_as("SELECT prd FROM features WHERE id = ?")
-            .bind(self.ctx.feature_id)
+            .bind(self.ctx.feature_id())
             .fetch_one(&self.ctx.read_pool)
             .await
             .map_err(|e| format!("Feature not found: {e}"))?;
@@ -30,7 +30,7 @@ impl EditPrdTool {
 
         sqlx::query("UPDATE features SET prd = ? WHERE id = ?")
             .bind(&updated)
-            .bind(self.ctx.feature_id)
+            .bind(self.ctx.feature_id())
             .execute(&self.ctx.write_pool)
             .await
             .map_err(|e| format!("Failed to update PRD: {e}"))?;

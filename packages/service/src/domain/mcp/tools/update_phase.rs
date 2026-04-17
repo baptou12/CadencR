@@ -27,7 +27,7 @@ impl UpdatePhaseTool {
         phase_type: Option<String>,
         depends_on: Option<Vec<String>>,
     ) -> Result<String, String> {
-        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id()).await?;
 
         // Verify phase exists and is draft
         let status: String = sqlx::query_scalar("SELECT status FROM phases WHERE id = ?")

@@ -14,7 +14,7 @@ impl CreatePrdTool {
     pub async fn call(&self, prd: &str) -> Result<String, String> {
         sqlx::query("UPDATE features SET prd = ? WHERE id = ?")
             .bind(prd)
-            .bind(self.ctx.feature_id)
+            .bind(self.ctx.feature_id())
             .execute(&self.ctx.write_pool)
             .await
             .map_err(|e| format!("Failed to create PRD: {e}"))?;

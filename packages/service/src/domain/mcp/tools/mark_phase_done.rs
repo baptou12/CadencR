@@ -18,7 +18,7 @@ impl MarkPhaseDoneTool {
         implementation_notes: Option<String>,
         deviations: Option<String>,
     ) -> Result<String, String> {
-        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id).await?;
+        verify_phase_ownership(&self.ctx.read_pool, phase_id, self.ctx.feature_id()).await?;
 
         sqlx::query("UPDATE phases SET status = 'done', implementation_notes = ?, deviations = ? WHERE id = ?")
             .bind(&implementation_notes)
@@ -28,12 +28,8 @@ impl MarkPhaseDoneTool {
             .await
             .map_err(|e| format!("Failed to mark phase done: {e}"))?;
 
-        // Signal the done channel so the workflow engine knows this item completed
-        let mut guard = self.ctx.done_sender.lock().await;
-        if let Some(sender) = guard.take() {
-            let _ = sender.send(Some(format!("Phase {phase_id} done")));
-        }
-
+        // Workflow-layer completion detection watches the tool-use stream — see
+        // stream_reader::live_refresh::is_completion_tool.
         Ok(format!("Phase {phase_id} marked as done"))
     }
 }

@@ -39,7 +39,7 @@ impl ReadPlanTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
-        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id()).await?;
 
         let plan: PlanRow = sqlx::query_as(
             "SELECT id, feature_id, title, status, summary, context, clarifications, completion_conditions, created_at, updated_at FROM plans WHERE id = ?"

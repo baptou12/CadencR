@@ -47,6 +47,7 @@ impl AgentManager {
 
         let q = query.lock().await;
         let result = q.respond_permission(runtime_response).await;
+
         Ok(result.is_ok())
     }
 
@@ -237,8 +238,6 @@ impl AgentManager {
                 Some(runtime_session_id),
                 false,
                 permissions,
-                None,
-                None,
                 None,
             )
             .await?;

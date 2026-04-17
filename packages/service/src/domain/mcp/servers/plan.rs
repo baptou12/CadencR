@@ -14,7 +14,9 @@ use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
     create_phase::CreatePhaseTool,
     finalize_plan::FinalizePlanTool,
-    helpers::{error_result, get_or_resolve_plan_id, require_i64, require_str, text_result},
+    helpers::{
+        dispatch_with_feature, error_result, get_or_resolve_plan_id, require_i64, require_str,
+    },
     list_phases::ListPhasesTool,
     mark_agent_done::MarkAgentDoneTool,
     read_phase::ReadPhaseTool,
@@ -102,58 +104,50 @@ impl ServerHandler for PlanServer {
                 .as_ref()
                 .map(|m| serde_json::Value::Object(m.clone()))
                 .unwrap_or(serde_json::Value::Null);
-
-            // Helper: resolve plan_id from args or feature context
-            // Uses write_pool since get_or_resolve_plan_id may need to create a plan
-            let feature_id = self.ctx.feature_id;
+            let feature_id = match require_i64(&args, "feature_id") {
+                Ok(id) => id,
+                Err(e) => return Ok(error_result(&e)),
+            };
             let pool = &self.ctx.write_pool;
 
-            let result = match request.name.as_ref() {
-                "read_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
-                    Ok(v) => self.read_plan.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "list_phases" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
-                    Ok(v) => self.list_phases.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "read_phase" => match require_i64(&args, "phase_id") {
-                    Ok(v) => self.read_phase.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "create_phase" => {
-                    match (
-                        get_or_resolve_plan_id(&args, pool, feature_id).await,
-                        require_i64(&args, "step_number"),
-                        require_str(&args, "title"),
-                        require_str(&args, "prompt"),
-                    ) {
-                        (Ok(plan_id), Ok(step_number), Ok(title), Ok(prompt)) => {
-                            self.create_phase
-                                .call(
-                                    plan_id,
-                                    step_number,
-                                    title.to_string(),
-                                    prompt.to_string(),
-                                    args["complexity"].as_i64().map(|v| v as i8),
-                                    args["commit_message"].as_str().map(|s| s.to_string()),
-                                    args["phase_type"].as_str().map(|s| s.to_string()),
-                                    args["depends_on"].as_array().map(|arr| {
-                                        arr.iter()
-                                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                            .collect()
-                                    }),
-                                )
-                                .await
-                        }
-                        (Err(e), _, _, _)
-                        | (_, Err(e), _, _)
-                        | (_, _, Err(e), _)
-                        | (_, _, _, Err(e)) => Err(e),
+            Ok(dispatch_with_feature(feature_id, async move {
+                match request.name.as_ref() {
+                    "read_plan" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
+                        self.read_plan.call(plan_id).await
                     }
-                }
-                "update_phase" => match require_i64(&args, "phase_id") {
-                    Ok(phase_id) => {
+                    "list_phases" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
+                        self.list_phases.call(plan_id).await
+                    }
+                    "read_phase" => {
+                        let phase_id = require_i64(&args, "phase_id")?;
+                        self.read_phase.call(phase_id).await
+                    }
+                    "create_phase" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
+                        let step_number = require_i64(&args, "step_number")?;
+                        let title = require_str(&args, "title")?.to_string();
+                        let prompt = require_str(&args, "prompt")?.to_string();
+                        self.create_phase
+                            .call(
+                                plan_id,
+                                step_number,
+                                title,
+                                prompt,
+                                args["complexity"].as_i64().map(|v| v as i8),
+                                args["commit_message"].as_str().map(|s| s.to_string()),
+                                args["phase_type"].as_str().map(|s| s.to_string()),
+                                args["depends_on"].as_array().map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                        .collect()
+                                }),
+                            )
+                            .await
+                    }
+                    "update_phase" => {
+                        let phase_id = require_i64(&args, "phase_id")?;
                         self.update_phase
                             .call(
                                 phase_id,
@@ -171,14 +165,12 @@ impl ServerHandler for PlanServer {
                             )
                             .await
                     }
-                    Err(e) => Err(e),
-                },
-                "remove_phase" => match require_i64(&args, "phase_id") {
-                    Ok(v) => self.remove_phase.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "update_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
-                    Ok(plan_id) => {
+                    "remove_phase" => {
+                        let phase_id = require_i64(&args, "phase_id")?;
+                        self.remove_phase.call(phase_id).await
+                    }
+                    "update_plan" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
                         self.update_plan
                             .call(
                                 plan_id,
@@ -192,28 +184,23 @@ impl ServerHandler for PlanServer {
                             )
                             .await
                     }
-                    Err(e) => Err(e),
-                },
-                "show_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
-                    Ok(v) => self.show_plan.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "finalize_plan" => match get_or_resolve_plan_id(&args, pool, feature_id).await {
-                    Ok(v) => self.finalize_plan.call(v).await,
-                    Err(e) => Err(e),
-                },
-                "mark_agent_done" => {
-                    self.mark_agent_done
-                        .call(args["summary"].as_str().map(|s| s.to_string()))
-                        .await
+                    "show_plan" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
+                        self.show_plan.call(plan_id).await
+                    }
+                    "finalize_plan" => {
+                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
+                        self.finalize_plan.call(plan_id).await
+                    }
+                    "mark_agent_done" => {
+                        self.mark_agent_done
+                            .call(args["summary"].as_str().map(|s| s.to_string()))
+                            .await
+                    }
+                    other => Err(format!("Unknown tool: {other}")),
                 }
-                other => Err(format!("Unknown tool: {other}")),
-            };
-
-            Ok(match result {
-                Ok(text) => text_result(&text),
-                Err(e) => error_result(&e),
             })
+            .await)
         }
     }
 }

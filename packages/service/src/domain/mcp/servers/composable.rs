@@ -12,7 +12,7 @@ use rmcp::{
 };
 use serde_json::Value;
 
-use crate::domain::mcp::tools::helpers::{error_result, text_result};
+use crate::domain::mcp::tools::helpers::{dispatch_with_feature, error_result, require_i64};
 
 use super::server_info;
 
@@ -69,23 +69,24 @@ impl ServerHandler for ComposableServer {
                 .as_ref()
                 .map(|m| Value::Object(m.clone()))
                 .unwrap_or(Value::Null);
-
-            let name = request.name.as_ref();
+            let feature_id = match require_i64(&args, "feature_id") {
+                Ok(id) => id,
+                Err(e) => return Ok(error_result(&e)),
+            };
+            let name = request.name.clone();
             let handler = self
                 .tools
                 .iter()
-                .find(|t| t.tool.name.as_ref() == name)
-                .map(|t| &t.handler);
+                .find(|t| t.tool.name.as_ref() == name.as_ref())
+                .map(|t| t.handler.clone());
 
-            let result = match handler {
-                Some(h) => (h)(args).await,
-                None => Err(format!("Unknown tool: {name}")),
-            };
-
-            Ok(match result {
-                Ok(text) => text_result(&text),
-                Err(e) => error_result(&e),
+            Ok(dispatch_with_feature(feature_id, async move {
+                match handler {
+                    Some(h) => (h)(args).await,
+                    None => Err(format!("Unknown tool: {name}")),
+                }
             })
+            .await)
         }
     }
 }

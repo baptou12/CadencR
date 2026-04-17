@@ -14,7 +14,7 @@ use super::{
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-use crate::domain::agents::{adapter_for_model, runtime_adapter};
+use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 
@@ -29,17 +29,6 @@ fn resume_session_id_for_provider(
     }
     let adapter = runtime_adapter(provider_id)?;
     adapter.resolve_resume_session_id(runtime_session_id)
-}
-
-fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> String {
-    if provider_id == DEFAULT_PROVIDER {
-        if let Some(model) = model {
-            if let Some((adapter_id, _)) = adapter_for_model(model) {
-                return adapter_id.to_string();
-            }
-        }
-    }
-    provider_id
 }
 
 /// Handle session.init: DB-driven session creation.

@@ -24,7 +24,7 @@ impl UpdatePlanTool {
         clarifications: Option<String>,
         completion_conditions: Option<String>,
     ) -> Result<String, String> {
-        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id()).await?;
 
         let mut sets = Vec::new();
         let mut args = SqliteArguments::default();

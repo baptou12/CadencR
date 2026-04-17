@@ -24,7 +24,7 @@ impl ListPhasesTool {
     }
 
     pub async fn call(&self, plan_id: i64) -> Result<String, String> {
-        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id).await?;
+        verify_plan_ownership(&self.ctx.read_pool, plan_id, self.ctx.feature_id()).await?;
 
         let phases: Vec<PhaseRow> = sqlx::query_as(
             "SELECT id, step_number, title, status, phase_type, complexity, depends_on FROM phases WHERE plan_id = ? ORDER BY step_number, order_index",

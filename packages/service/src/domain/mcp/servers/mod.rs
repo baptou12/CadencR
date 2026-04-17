@@ -24,21 +24,43 @@ pub enum AgentType {
     Session,
 }
 
+impl AgentType {
+    pub const ALL: &'static [AgentType] = &[
+        AgentType::Plan,
+        AgentType::Prd,
+        AgentType::Execute,
+        AgentType::Qa,
+        AgentType::Review,
+        AgentType::Risk,
+        AgentType::Retro,
+        AgentType::Session,
+    ];
+
+    /// Short identifier used in `opencode.json` permission keys and DB rows
+    /// (the suffix after `cadence-` in `mcp_server_name`).
+    pub fn short_name(self) -> &'static str {
+        match self {
+            Self::Plan => "plan",
+            Self::Prd => "prd",
+            Self::Execute => "execute",
+            Self::Qa => "qa",
+            Self::Review => "review",
+            Self::Risk => "risk",
+            Self::Retro => "retro",
+            Self::Session => "session",
+        }
+    }
+}
+
 impl std::str::FromStr for AgentType {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "plan" => Ok(Self::Plan),
-            "prd" => Ok(Self::Prd),
-            "execute" => Ok(Self::Execute),
-            "qa" => Ok(Self::Qa),
-            "review" => Ok(Self::Review),
-            "risk" => Ok(Self::Risk),
-            "retro" => Ok(Self::Retro),
-            "session" => Ok(Self::Session),
-            other => Err(format!("Unknown agent type: {other}")),
-        }
+        AgentType::ALL
+            .iter()
+            .copied()
+            .find(|t| t.short_name() == s)
+            .ok_or_else(|| format!("Unknown agent type: {s}"))
     }
 }
 
@@ -132,17 +154,8 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
 }
 
 /// Returns the MCP server name string for the given agent type.
-pub fn mcp_server_name(agent_type: AgentType) -> &'static str {
-    match agent_type {
-        AgentType::Plan => "cadence-plan",
-        AgentType::Prd => "cadence-prd",
-        AgentType::Execute => "cadence-execute",
-        AgentType::Qa => "cadence-qa",
-        AgentType::Review => "cadence-review",
-        AgentType::Risk => "cadence-risk",
-        AgentType::Retro => "cadence-retro",
-        AgentType::Session => "cadence-session",
-    }
+pub fn mcp_server_name(agent_type: AgentType) -> String {
+    format!("cadence-{}", agent_type.short_name())
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -152,9 +165,39 @@ fn server_info(name: &str) -> ServerInfo {
     ServerInfo::new(caps).with_server_info(Implementation::new(name, "1.0.0"))
 }
 
+const FEATURE_ID_DESCRIPTION: &str =
+    "The feature this call operates on. Required on every Cadence MCP tool call — agents must pass the feature_id from their system prompt.";
+
+/// Inject `feature_id` into a schema's `properties` and `required` arrays.
+/// Every Cadence MCP tool needs it because the subprocess is feature-agnostic
+/// (see `context.rs::CURRENT_FEATURE_ID`).
+fn inject_feature_id(mut schema: serde_json::Value) -> serde_json::Value {
+    let obj = schema
+        .as_object_mut()
+        .expect("schema must be an object");
+    obj.entry("properties")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("properties must be an object")
+        .insert(
+            "feature_id".to_string(),
+            json!({ "type": "integer", "description": FEATURE_ID_DESCRIPTION }),
+        );
+    let required = obj
+        .entry("required")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .expect("required must be an array");
+    if !required.iter().any(|v| v.as_str() == Some("feature_id")) {
+        required.push(json!("feature_id"));
+    }
+    schema
+}
+
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
     let obj: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_value(schema).expect("schema must be an object");
+        serde_json::from_value(inject_feature_id(schema))
+            .expect("schema must be an object");
     Tool::new(name, description, obj)
 }
 

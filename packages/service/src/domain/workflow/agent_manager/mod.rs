@@ -149,8 +149,6 @@ impl AgentManager {
                 true,
                 permissions,
                 None,
-                None,
-                None,
             )
             .await?;
 
@@ -294,15 +292,6 @@ impl AgentManager {
             .config
             .as_deref()
             .and_then(|c| serde_json::from_str(c).ok());
-        let phase_slug_owned = config_json
-            .as_ref()
-            .and_then(|c| c.get("phase_slug"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let input_phase_slugs_owned: Option<Vec<String>> = config_json
-            .as_ref()
-            .and_then(|c| c.get("input_phase_slugs"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok());
         let model_override_owned = config_json
             .as_ref()
             .and_then(|c| c.get("model_override"))
@@ -321,8 +310,6 @@ impl AgentManager {
                 None,
                 include_mcp,
                 permissions,
-                phase_slug_owned.as_deref(),
-                input_phase_slugs_owned.as_deref(),
                 model_override_owned.as_deref(),
             )
             .await?;
