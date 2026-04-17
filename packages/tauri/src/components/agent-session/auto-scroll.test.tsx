@@ -87,6 +87,15 @@ function setScrollMetrics(
   el.scrollTop = scrollTop;
 }
 
+function setScrolledPosition(
+  el: HTMLDivElement,
+  scrollTop: number,
+  dims: { scrollHeight: number; clientHeight: number } = { scrollHeight: 1000, clientHeight: 200 },
+): void {
+  setScrollMetrics(el, { ...dims, scrollTop });
+  fireEvent.scroll(el);
+}
+
 function renderSession(): { container: HTMLElement; scrollContainer: HTMLDivElement; autoScrollButton: HTMLElement } {
   const view = render(
     <AgentSession
@@ -130,30 +139,38 @@ describe("AgentSession auto-scroll", () => {
   it("re-enables auto-scroll when the user manually reaches the bottom", () => {
     const { scrollContainer, autoScrollButton } = renderSession();
 
-    setScrollMetrics(scrollContainer, { scrollHeight: 1000, clientHeight: 200, scrollTop: 500 });
-    fireEvent.scroll(scrollContainer);
+    setScrolledPosition(scrollContainer, 800);
+    setScrolledPosition(scrollContainer, 500);
     expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
 
-    scrollContainer.scrollTop = 800;
-    fireEvent.scroll(scrollContainer);
+    setScrolledPosition(scrollContainer, 800);
     expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
   });
 
   it("does not disable auto-scroll for small near-bottom offsets", () => {
     const { scrollContainer, autoScrollButton } = renderSession();
 
-    setScrollMetrics(scrollContainer, { scrollHeight: 1000, clientHeight: 200, scrollTop: 720 });
-    fireEvent.scroll(scrollContainer);
+    setScrolledPosition(scrollContainer, 800);
+    setScrolledPosition(scrollContainer, 799);
 
     expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("disables auto-scroll after a small manual upward scroll", () => {
+    const { scrollContainer, autoScrollButton } = renderSession();
+
+    setScrolledPosition(scrollContainer, 800);
+    setScrolledPosition(scrollContainer, 798);
+
+    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
   });
 
   it("does not re-enable auto-scroll when the prompt is focused", async () => {
     const user = userEvent.setup();
     const { scrollContainer, autoScrollButton } = renderSession();
 
-    setScrollMetrics(scrollContainer, { scrollHeight: 1000, clientHeight: 200, scrollTop: 500 });
-    fireEvent.scroll(scrollContainer);
+    setScrolledPosition(scrollContainer, 800);
+    setScrolledPosition(scrollContainer, 500);
     expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("textbox"));

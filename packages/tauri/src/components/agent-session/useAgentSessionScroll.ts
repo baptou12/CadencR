@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { AgentBlockData } from "../AgentBlock";
 
-const AUTO_SCROLL_ATTACH_THRESHOLD = 64;
-const AUTO_SCROLL_DETACH_THRESHOLD = 160;
+const BOTTOM_EPSILON = 1;
 
 interface UseAgentSessionScrollOptions {
   isOpen: boolean;
@@ -16,10 +15,6 @@ interface UseAgentSessionScrollResult {
   contentRef: RefObject<HTMLDivElement | null>;
   autoScrollEnabled: boolean;
   setAutoScrollEnabled: (enabled: boolean) => void;
-}
-
-function getDistanceFromBottom(el: HTMLDivElement): number {
-  return el.scrollHeight - el.scrollTop - el.clientHeight;
 }
 
 function getBottomScrollTop(el: HTMLDivElement): number {
@@ -37,11 +32,16 @@ export function useAgentSessionScroll({
   const loadingOlderRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
+  const programmaticScrollTopRef = useRef<number | null>(null);
+  const previousScrollTopRef = useRef(0);
 
   const scrollToBottom = useCallback((): void => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    el.scrollTop = getBottomScrollTop(el);
+    const bottomScrollTop = getBottomScrollTop(el);
+    programmaticScrollTopRef.current = bottomScrollTop;
+    el.scrollTop = bottomScrollTop;
+    previousScrollTopRef.current = el.scrollTop;
   }, []);
 
   const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
@@ -56,17 +56,33 @@ export function useAgentSessionScroll({
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const onScroll = (): void => {
-      const distanceFromBottom = getDistanceFromBottom(el);
-      const isAtBottom = distanceFromBottom <= AUTO_SCROLL_ATTACH_THRESHOLD;
+    previousScrollTopRef.current = el.scrollTop;
 
-      if (isAtBottom) {
+    const onScroll = (): void => {
+      const scrollTop = el.scrollTop;
+      const distanceFromBottom = el.scrollHeight - scrollTop - el.clientHeight;
+      const atBottom = distanceFromBottom <= BOTTOM_EPSILON;
+
+      if (
+        programmaticScrollTopRef.current !== null &&
+        Math.abs(scrollTop - programmaticScrollTopRef.current) <= BOTTOM_EPSILON
+      ) {
+        programmaticScrollTopRef.current = null;
+        previousScrollTopRef.current = scrollTop;
+        return;
+      }
+
+      programmaticScrollTopRef.current = null;
+
+      if (atBottom) {
         setAutoScrollEnabled(true);
-      } else if (autoScrollEnabledRef.current && distanceFromBottom > AUTO_SCROLL_DETACH_THRESHOLD) {
+      } else if (autoScrollEnabledRef.current && scrollTop < previousScrollTopRef.current) {
         setAutoScrollEnabled(false);
       }
 
-      if (hasMore && onLoadOlder && !loadingOlderRef.current && el.scrollTop < 800) {
+      previousScrollTopRef.current = scrollTop;
+
+      if (hasMore && onLoadOlder && !loadingOlderRef.current && scrollTop < 800) {
         loadingOlderRef.current = true;
         const prevHeight = el.scrollHeight;
         onLoadOlder().then(() => {
