@@ -478,6 +478,7 @@ pub async fn get_feature_agent_state(
     let mut full_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
     // Track whether each session has older messages beyond what was fetched
     let mut has_more_map: HashMap<i64, bool> = HashMap::new();
+    let mut oldest_message_id_map: HashMap<i64, i64> = HashMap::new();
     if !full_fetch_ids.is_empty() {
         if limit.is_some() || !before_map.is_empty() {
             // Per-session paginated fetch: latest N messages (or before a cursor)
@@ -504,6 +505,9 @@ pub async fn get_feature_agent_state(
                 }
                 // Reverse to restore ASC order for block building
                 msgs.reverse();
+                if let Some(oldest_message_id) = msgs.first().map(|m| m.id) {
+                    oldest_message_id_map.insert(*sid, oldest_message_id);
+                }
 
                 // Fetch parent Agent/Task tool_call rows referenced by children
                 // in this page but not already present, so build_blocks can nest them.
@@ -693,7 +697,10 @@ pub async fn get_feature_agent_state(
                 was_compacted: s.was_compacted != 0,
                 draft_prompt: s.draft_prompt,
                 has_more: *has_more_map.get(&s.id).unwrap_or(&false),
-                oldest_message_id: msgs.first().map(|m| m.id),
+                oldest_message_id: oldest_message_id_map
+                    .get(&s.id)
+                    .copied()
+                    .or_else(|| msgs.first().map(|m| m.id)),
             }
         })
         .collect();
@@ -1357,6 +1364,60 @@ mod tests {
         // Should get messages with id < msg_ids[3], limited to 2
         assert_eq!(s.blocks.len(), 2);
         assert!(s.has_more, "should have more messages before these");
+    }
+
+    #[tokio::test]
+    async fn test_paginated_cursor_ignores_injected_parent_rows() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let feature_id = fid.0;
+        let session_id = insert_session(&pool, feature_id, "completed").await;
+
+        let parent_id = insert_message(
+            &pool,
+            session_id,
+            "tool_call",
+            r#"{"description":"task"}"#,
+            Some("Task"),
+            Some("task-1"),
+            None,
+        )
+        .await;
+        let first_child_id = insert_message(
+            &pool,
+            session_id,
+            "text",
+            "older child",
+            None,
+            None,
+            Some("task-1"),
+        )
+        .await;
+        insert_message(
+            &pool,
+            session_id,
+            "text",
+            "newer child",
+            None,
+            None,
+            Some("task-1"),
+        )
+        .await;
+        let before_id = insert_message(&pool, session_id, "text", "outside page", None, None, None).await;
+
+        let mut before_map = HashMap::new();
+        before_map.insert(session_id, before_id);
+        let state = get_feature_agent_state(&pool, feature_id, None, Some(2), Some(before_map))
+            .await
+            .unwrap();
+        let s = &state.sessions[0];
+
+        assert_eq!(s.oldest_message_id, Some(first_child_id));
+        assert!(s.has_more);
+        assert_ne!(s.oldest_message_id, Some(parent_id));
     }
 
     #[tokio::test]
