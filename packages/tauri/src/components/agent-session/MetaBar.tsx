@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import {
+  ArrowDownIcon,
   ChevronDownIcon,
   CheckIcon,
   Zap,
@@ -36,6 +37,9 @@ interface Provider {
 }
 
 export interface MetaBarProps {
+  showAutoScrollChip: boolean;
+  autoScrollEnabled: boolean;
+  onToggleAutoScroll: () => void;
   permissionMode?: "acceptEdits" | "plan";
   onPermissionModeToggle?: () => void;
   showWorktreeChip: boolean;
@@ -60,6 +64,9 @@ const CHIP =
   "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors";
 
 export function MetaBar({
+  showAutoScrollChip,
+  autoScrollEnabled,
+  onToggleAutoScroll,
   permissionMode,
   onPermissionModeToggle,
   showWorktreeChip,
@@ -89,6 +96,24 @@ export function MetaBar({
           "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)",
       }}
     >
+      {showAutoScrollChip && (
+        <button
+          type="button"
+          aria-pressed={autoScrollEnabled}
+          onClick={onToggleAutoScroll}
+          className={cn(
+            CHIP,
+            autoScrollEnabled
+              ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+              : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
+          )}
+        >
+          <ArrowDownIcon className="size-3" />
+          Auto-scroll
+          {autoScrollEnabled ? <CheckIcon className="size-3" /> : <span>Off</span>}
+        </button>
+      )}
+
       {/* Mode chip */}
       {onPermissionModeToggle && (
         <ShortcutTooltip label={permissionMode === "plan" ? "Plan mode" : "Auto mode"} keys={["shift", "Tab"]}>

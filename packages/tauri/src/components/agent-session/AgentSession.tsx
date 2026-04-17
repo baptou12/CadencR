@@ -51,7 +51,6 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const promptBarRef = useRef<AgentPromptBarHandle>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
-  const [promptBarFocused, setPromptBarFocused] = useState(false);
 
   const availableModels = useListModels();
   const loaderStyleSetting = useGetWorkspaceSetting(LOADER_STYLE_KEY);
@@ -71,8 +70,8 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : internalOpen;
 
-  const { scrollContainerRef, contentRef } = useAgentSessionScroll({
-    isOpen, blocks, promptBarFocused, hasMore, onLoadOlder,
+  const { scrollContainerRef, contentRef, autoScrollEnabled, setAutoScrollEnabled } = useAgentSessionScroll({
+    isOpen, blocks, hasMore, onLoadOlder,
   });
 
   // Auto-open when agent starts running (uncontrolled mode only)
@@ -201,13 +200,17 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   }, [activeProviderId, canChangeProvider, currentModelId, onModelChange, onProviderChange, selectableProviders, visibleModels]);
 
   const showWorktreeChip = !!onToggleWorktree && blocks.length === 0 && status === "idle";
+  const showAutoScrollChip = !!shouldShowPromptBar;
   const hasMeta =
-    !!onPermissionModeToggle || !!onModelChange || showDiffBar ||
+    showAutoScrollChip || !!onPermissionModeToggle || !!onModelChange || showDiffBar ||
     (todos && todos.length > 0) || !!runtimeSessionId || showWorktreeChip;
 
   // ---- Shared sub-sections ----
   const metaBar = hasMeta ? (
     <MetaBar
+      showAutoScrollChip={showAutoScrollChip}
+      autoScrollEnabled={autoScrollEnabled}
+      onToggleAutoScroll={() => setAutoScrollEnabled(!autoScrollEnabled)}
       permissionMode={permissionMode}
       onPermissionModeToggle={onPermissionModeToggle}
       showWorktreeChip={showWorktreeChip}
@@ -259,7 +262,6 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       pendingQuestions={pendingQuestions}
       onQuestionResponse={onAnswerSubmit}
       disableShortcuts={disableShortcuts}
-      onFocusChange={setPromptBarFocused}
       onCollapse={collapsible ? handleCollapse : undefined}
       permissionMode={permissionMode}
       onPermissionModeToggle={onPermissionModeToggle}

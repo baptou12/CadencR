@@ -48,7 +48,6 @@ interface AgentPromptBarProps {
   pendingQuestions?: AgentQuestion[];
   onQuestionResponse?: (response: AgentQuestionAnswers) => void;
   disableShortcuts?: boolean;
-  onFocusChange?: (focused: boolean) => void;
   onCollapse?: () => void;
   permissionMode?: "acceptEdits" | "plan";
   onPermissionModeToggle?: () => void;
@@ -92,7 +91,6 @@ export const AgentPromptBar = forwardRef<
     pendingQuestions,
     onQuestionResponse,
     disableShortcuts,
-    onFocusChange,
     onCollapse,
     onPermissionModeToggle,
     pendingPlanApproval,
@@ -329,7 +327,6 @@ export const AgentPromptBar = forwardRef<
           onEnterSend={handleEnterSend}
           onArrowUp={handleArrowUp}
           onArrowDown={handleArrowDown}
-          onFocusChange={onFocusChange}
           disabled={disabled}
           placeholder={
             isPaused

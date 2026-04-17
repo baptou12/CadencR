@@ -1,33 +1,70 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { AgentBlockData } from "../AgentBlock";
+
+const AUTO_SCROLL_ATTACH_THRESHOLD = 64;
+const AUTO_SCROLL_DETACH_THRESHOLD = 160;
 
 interface UseAgentSessionScrollOptions {
   isOpen: boolean;
   blocks: AgentBlockData[];
-  promptBarFocused: boolean;
   hasMore?: boolean;
   onLoadOlder?: () => Promise<void>;
+}
+
+interface UseAgentSessionScrollResult {
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+  contentRef: RefObject<HTMLDivElement | null>;
+  autoScrollEnabled: boolean;
+  setAutoScrollEnabled: (enabled: boolean) => void;
+}
+
+function getDistanceFromBottom(el: HTMLDivElement): number {
+  return el.scrollHeight - el.scrollTop - el.clientHeight;
+}
+
+function getBottomScrollTop(el: HTMLDivElement): number {
+  return Math.max(0, el.scrollHeight - el.clientHeight);
 }
 
 export function useAgentSessionScroll({
   isOpen,
   blocks,
-  promptBarFocused,
   hasMore,
   onLoadOlder,
-}: UseAgentSessionScrollOptions) {
+}: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const autoScrollRef = useRef(true);
   const loadingOlderRef = useRef(false);
+  const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
+  const autoScrollEnabledRef = useRef(autoScrollEnabled);
+
+  const scrollToBottom = useCallback((): void => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.scrollTop = getBottomScrollTop(el);
+  }, []);
+
+  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
+    autoScrollEnabledRef.current = enabled;
+    setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
+    if (enabled) {
+      scrollToBottom();
+    }
+  }, [scrollToBottom]);
 
   // Single scroll handler: autoscroll detection + load-older trigger.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const onScroll = () => {
-      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-      autoScrollRef.current = atBottom;
+    const onScroll = (): void => {
+      const distanceFromBottom = getDistanceFromBottom(el);
+      const isAtBottom = distanceFromBottom <= AUTO_SCROLL_ATTACH_THRESHOLD;
+
+      if (isAtBottom) {
+        setAutoScrollEnabled(true);
+      } else if (autoScrollEnabledRef.current && distanceFromBottom > AUTO_SCROLL_DETACH_THRESHOLD) {
+        setAutoScrollEnabled(false);
+      }
 
       if (hasMore && onLoadOlder && !loadingOlderRef.current && el.scrollTop < 800) {
         loadingOlderRef.current = true;
@@ -53,24 +90,14 @@ export function useAgentSessionScroll({
     }
 
     return () => el.removeEventListener("scroll", onScroll);
-  }, [isOpen, hasMore, onLoadOlder]);
-
-  // Re-enable autoscroll when prompt bar is focused.
-  useEffect(() => {
-    if (promptBarFocused) {
-      autoScrollRef.current = true;
-      const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    }
-  }, [promptBarFocused]);
+  }, [hasMore, isOpen, onLoadOlder, setAutoScrollEnabled]);
 
   // Scroll to bottom on new content when autoscroll is active.
   useLayoutEffect(() => {
-    const el = scrollContainerRef.current;
-    if (autoScrollRef.current && el) {
-      el.scrollTop = el.scrollHeight;
+    if (autoScrollEnabledRef.current) {
+      scrollToBottom();
     }
-  }, [blocks]);
+  }, [blocks, scrollToBottom]);
 
   // Catch async content height changes (e.g. CodeMirror rendering after useEffect).
   useEffect(() => {
@@ -82,8 +109,8 @@ export function useAgentSessionScroll({
     const ro = new ResizeObserver(() => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        if (autoScrollRef.current) {
-          scrollEl.scrollTop = scrollEl.scrollHeight;
+        if (autoScrollEnabledRef.current) {
+          scrollEl.scrollTop = getBottomScrollTop(scrollEl);
         }
       });
     });
@@ -91,5 +118,5 @@ export function useAgentSessionScroll({
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   }, []);
 
-  return { scrollContainerRef, contentRef };
+  return { scrollContainerRef, contentRef, autoScrollEnabled, setAutoScrollEnabled };
 }

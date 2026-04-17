@@ -49,7 +49,6 @@ interface PromptEditorProps {
   onArrowUp?: () => string | null;
   /** Called on ArrowDown for prompt history navigation. */
   onArrowDown?: () => string | null;
-  onFocusChange?: (focused: boolean) => void;
   disabled?: boolean;
   /** Initial text to populate the editor with (e.g. restored draft) */
   initialText?: string;
@@ -86,7 +85,7 @@ function AutoResizePlugin() {
 }
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading, onEnterSend, onArrowUp, onArrowDown, onFocusChange, disabled }, ref) {
+  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading, onEnterSend, onArrowUp, onArrowDown, disabled }, ref) {
     const editorRef = useRef<LexicalEditor | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -133,8 +132,6 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
                 disabled && "pointer-events-none opacity-50",
                 className,
               )}
-              onFocus={() => onFocusChange?.(true)}
-              onBlur={() => onFocusChange?.(false)}
               aria-disabled={disabled}
             />
           }
