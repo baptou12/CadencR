@@ -116,6 +116,7 @@ mod session_tool_reconciliation_tests {
             RuntimeEventMetadata {
                 session_id: Some("ses_1".to_string()),
                 usage: None,
+                context_window: None,
                 raw: serde_json::json!({}),
             },
             RuntimeEventKind::AssistantMessage {
@@ -134,6 +135,7 @@ mod session_tool_reconciliation_tests {
             RuntimeEventMetadata {
                 session_id: Some("ses_1".to_string()),
                 usage: None,
+                context_window: None,
                 raw: serde_json::json!({}),
             },
             RuntimeEventKind::StreamEvent {

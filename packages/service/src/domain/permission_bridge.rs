@@ -73,45 +73,45 @@ pub fn extract_permission_preview(input: &Value) -> Option<String> {
         "destination",
         "source",
     ]
-        .iter()
-        .find_map(|key| input.get(*key).and_then(Value::as_str))
-        .map(ToOwned::to_owned)
-        .or_else(|| extract_preview_from_nested_object(input.get("args")))
-        .or_else(|| {
-            input.get("metadata").and_then(|metadata| {
-                [
-                    "command",
-                    "path",
-                    "file_path",
-                    "filepath",
-                    "filePath",
-                    "directory",
-                    "dir",
-                    "cwd",
-                    "target",
-                    "destination",
-                    "source",
-                ]
-                .iter()
-                .find_map(|key| metadata.get(*key).and_then(Value::as_str))
-                .map(ToOwned::to_owned)
-                .or_else(|| extract_preview_from_nested_object(metadata.get("args")))
-            })
+    .iter()
+    .find_map(|key| input.get(*key).and_then(Value::as_str))
+    .map(ToOwned::to_owned)
+    .or_else(|| extract_preview_from_nested_object(input.get("args")))
+    .or_else(|| {
+        input.get("metadata").and_then(|metadata| {
+            [
+                "command",
+                "path",
+                "file_path",
+                "filepath",
+                "filePath",
+                "directory",
+                "dir",
+                "cwd",
+                "target",
+                "destination",
+                "source",
+            ]
+            .iter()
+            .find_map(|key| metadata.get(*key).and_then(Value::as_str))
+            .map(ToOwned::to_owned)
+            .or_else(|| extract_preview_from_nested_object(metadata.get("args")))
         })
-        .or_else(|| {
-            input
-                .get("always")
-                .and_then(Value::as_array)
-                .and_then(|items| items.iter().find_map(Value::as_str))
-                .map(ToOwned::to_owned)
-        })
-        .or_else(|| {
-            input
-                .get("patterns")
-                .and_then(Value::as_array)
-                .and_then(|patterns| patterns.iter().find_map(Value::as_str))
-                .map(ToOwned::to_owned)
-        })
+    })
+    .or_else(|| {
+        input
+            .get("always")
+            .and_then(Value::as_array)
+            .and_then(|items| items.iter().find_map(Value::as_str))
+            .map(ToOwned::to_owned)
+    })
+    .or_else(|| {
+        input
+            .get("patterns")
+            .and_then(Value::as_array)
+            .and_then(|patterns| patterns.iter().find_map(Value::as_str))
+            .map(ToOwned::to_owned)
+    })
 }
 
 fn extract_preview_from_nested_object(value: Option<&Value>) -> Option<String> {

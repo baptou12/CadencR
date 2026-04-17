@@ -168,6 +168,7 @@ mod session_subagents_tests {
             crate::domain::agents::adapter::RuntimeEventMetadata {
                 session_id: Some("s1".to_string()),
                 usage: None,
+                context_window: None,
                 raw: serde_json::json!({}),
             },
             crate::domain::agents::adapter::RuntimeEventKind::AssistantMessage {

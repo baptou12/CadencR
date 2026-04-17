@@ -5,13 +5,12 @@ use tracing::{debug, error, info};
 use crate::domain::agents::adapter::RuntimeMessageRx;
 use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::runtime_stream::{
-    capture_runtime_session_id, permission_request_payload, persist_usage,
-    update_context_window,
+    capture_runtime_session_id, permission_request_payload, persist_usage, RuntimeUsageState,
 };
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{
-    SessionEndedPayload, SessionErrorPayload, SessionMessagePayload,
-    SessionUsageUpdatePayload, WsEnvelope,
+    SessionEndedPayload, SessionErrorPayload, SessionMessagePayload, SessionUsageUpdatePayload,
+    WsEnvelope,
 };
 
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
@@ -28,17 +27,22 @@ pub(crate) fn spawn_stream_reader(
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
     sdk_sessions: SdkSessions,
     runtime_provider: String,
-    model: Option<&str>,
+    _model: Option<&str>,
     provider_context_window: Option<u64>,
 ) {
-    let initial_context_window = provider_context_window
-        .unwrap_or_else(|| {
-            model
-                .map(crate::domain::usage::context_window_for_model)
-                .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW)
-        });
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
+        // Seed from provider (opencode) or from the persisted session row
+        // when resuming; `None` means unknown until the first authoritative
+        // event arrives.
+        let initial_context_window: Option<u64> = match provider_context_window {
+            Some(cw) if cw > 0 => Some(cw),
+            _ => WsSessionPersistence::get_session_row(&write_pool, db_session_id)
+                .await
+                .and_then(|row| row.context_window)
+                .and_then(|cw| u64::try_from(cw).ok())
+                .filter(|cw| *cw > 0),
+        };
         let runtime_adapter = runtime_adapter(&runtime_provider);
         let mut persistence = WsSessionPersistence::with_session_id(
             write_pool.clone(),
@@ -48,7 +52,7 @@ pub(crate) fn spawn_stream_reader(
         // Capture the runtime session ID from the first event that has one.
         let mut needs_session_id_capture = true;
         let mut runtime_session_id: Option<String> = None;
-        let mut context_window: u64 = initial_context_window;
+        let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut last_runtime_activity = Instant::now();
         let mut last_provider_reconcile = Instant::now();
 
@@ -116,8 +120,7 @@ pub(crate) fn spawn_stream_reader(
                         let envelope = WsEnvelope::new(
                             "session",
                             "permission.request",
-                            serde_json::to_value(permission_request_payload(request))
-                            .unwrap(),
+                            serde_json::to_value(permission_request_payload(request)).unwrap(),
                         );
                         let _ = sender.send(Message::Text(String::from(envelope).into()));
                         WsSessionPersistence::broadcast_turn_state(
@@ -143,14 +146,12 @@ pub(crate) fn spawn_stream_reader(
                         send_runtime_session_id(&sender, &runtime_sid);
                     }
 
-                    if let Some(next_context_window) =
-                        update_context_window(&runtime_event, context_window)
-                    {
-                        context_window = next_context_window;
+                    let usage_update = usage_state.apply_event(runtime_adapter, &runtime_event);
+                    if usage_update.context_window_changed {
                         WsSessionPersistence::update_context_window(
                             &write_pool,
                             db_session_id,
-                            context_window,
+                            usage_update.snapshot.context_window,
                         )
                         .await;
                     }
@@ -158,20 +159,18 @@ pub(crate) fn spawn_stream_reader(
                     // Persist before forwarding (best-effort).
                     persistence.persist_runtime_event(&runtime_event).await;
 
-                    if let Some((input_tokens, output_tokens)) = persist_usage(
-                        &runtime_event,
-                        db_session_id,
-                        &write_pool,
-                    )
-                    .await
+                    let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    if usage_update.changed
+                        && (usage_update.snapshot.input_tokens > 0
+                            || usage_update.snapshot.output_tokens > 0)
                     {
                         let usage_env = WsEnvelope::new(
                             "session",
                             "usage_update",
                             serde_json::to_value(SessionUsageUpdatePayload {
-                                input_tokens,
-                                output_tokens,
-                                context_window,
+                                input_tokens: usage_update.snapshot.input_tokens,
+                                output_tokens: usage_update.snapshot.output_tokens,
+                                context_window: usage_update.snapshot.context_window,
                             })
                             .unwrap(),
                         );

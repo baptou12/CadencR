@@ -127,8 +127,11 @@ pub(super) async fn handle_permission_respond(
         match q.respond_permission(runtime_response).await {
             Ok(()) => {
                 if matches!(payload.decision, PermissionDecision::Deny) {
-                    WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id)
-                        .await;
+                    WsSessionPersistence::mark_completed_static(
+                        &app_state.write_pool,
+                        db_session_id,
+                    )
+                    .await;
                     let ended = WsEnvelope::new(
                         "session",
                         "ended",
@@ -340,12 +343,36 @@ pub(super) async fn handle_model_set(
     // Persist to DB
     WsSessionPersistence::update_model_static(&app_state.write_pool, db_session_id, &payload.model)
         .await;
+    // Seed the new model's context window ONLY when the target adapter can
+    // answer authoritatively right now (e.g. opencode knows its catalog
+    // windows). Never fall back to history — for Claude Code, the CLI is the
+    // source of truth and the window arrives on the first `result` event.
+    // Token counts are NOT reset: the conversation history has not changed,
+    // only the model has. The first `result` from the new model will stamp
+    // fresh token totals.
+    let target_adapter = adapter_for_model(&payload.model)
+        .map(|(_, a)| a)
+        .or_else(|| runtime_adapter(&handle.runtime_provider));
+    let seeded_window = match target_adapter {
+        Some(adapter) => adapter.context_window_for_model(&payload.model).await,
+        None => None,
+    };
+    WsSessionPersistence::update_context_window(
+        &app_state.write_pool,
+        db_session_id,
+        seeded_window,
+    )
+    .await;
 
     let reply = WsEnvelope::reply(
         &envelope.id,
         "session",
         "model.set.ok",
-        serde_json::to_value(serde_json::json!({ "model": payload.model })).unwrap(),
+        serde_json::to_value(serde_json::json!({
+            "model": payload.model,
+            "context_window": seeded_window,
+        }))
+        .unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }

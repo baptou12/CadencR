@@ -289,7 +289,7 @@ pub(crate) async fn handle_prompt_send(
                         WsSessionPersistence::update_context_window(
                             &app_state.write_pool,
                             db_session_id,
-                            cw,
+                            Some(cw),
                         )
                         .await;
                     }

@@ -89,9 +89,17 @@ impl WsSessionPersistence {
         .await;
     }
 
-    pub async fn update_context_window(pool: &SqlitePool, session_id: i64, context_window: u64) {
+    /// Write `context_window` to the session row. Pass `None` to clear the
+    /// value (unknown — until the provider reports one). The DB column is
+    /// nullable; callers that try to show a bar must treat NULL as "no data".
+    pub async fn update_context_window(
+        pool: &SqlitePool,
+        session_id: i64,
+        context_window: Option<u64>,
+    ) {
+        let bound = context_window.and_then(|cw| i64::try_from(cw).ok());
         let _ = sqlx::query("UPDATE agent_sessions SET context_window = ? WHERE id = ?")
-            .bind(context_window as i64)
+            .bind(bound)
             .bind(session_id)
             .execute(pool)
             .await;
@@ -142,7 +150,7 @@ mod session_state_tests {
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
-                context_window INTEGER NOT NULL DEFAULT 200000,
+                context_window INTEGER,
                 started_at TEXT,
                 ended_at TEXT,
                 pending_plan_approval TEXT,
@@ -330,5 +338,40 @@ mod session_state_tests {
     async fn test_broadcast_turn_state_no_receivers_does_not_panic() {
         let (tx, _) = tokio::sync::broadcast::channel(16);
         WsSessionPersistence::broadcast_turn_state(&tx, 1, "claude");
+    }
+
+    #[tokio::test]
+    async fn test_update_context_window_stores_known_value() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+
+        WsSessionPersistence::update_context_window(&pool, id, Some(1_000_000)).await;
+
+        let row: (Option<i64>,) =
+            sqlx::query_as("SELECT context_window FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, Some(1_000_000));
+    }
+
+    #[tokio::test]
+    async fn test_update_context_window_clears_to_null() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+
+        WsSessionPersistence::update_context_window(&pool, id, Some(200_000)).await;
+        WsSessionPersistence::update_context_window(&pool, id, None).await;
+
+        let row: (Option<i64>,) =
+            sqlx::query_as("SELECT context_window FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0, None);
     }
 }

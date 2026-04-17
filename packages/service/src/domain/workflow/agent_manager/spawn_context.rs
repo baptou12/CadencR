@@ -8,9 +8,11 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
+use crate::domain::agents::providers::provider_default_model;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::runtime_adapter;
 use crate::domain::mcp::servers::{mcp_server_name, AgentType};
+use crate::domain::settings::resolve_table_column_setting;
 use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
@@ -18,6 +20,11 @@ use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::permissions;
 
 use super::{AgentManager, SpawnContext};
+
+struct RuntimeSelection {
+    provider: String,
+    model: String,
+}
 
 impl AgentManager {
     /// Get the feature's working directory.
@@ -56,46 +63,124 @@ impl AgentManager {
             .flatten()
     }
 
-    /// Resolve a setting using the shared feature → project → global cascade.
-    pub(super) async fn resolve_setting(
+    async fn default_model_for_provider(&self, provider_id: &str) -> String {
+        provider_default_model(provider_id)
+            .await
+            .unwrap_or_else(|| "opus".to_string())
+    }
+
+    async fn global_setting(&self, key: &str) -> Option<String> {
+        crate::domain::workspace::repository::get_setting(&self.read_pool, key)
+            .await
+            .ok()
+            .flatten()
+            .filter(|value| !value.is_empty())
+    }
+
+    async fn scoped_table_setting(
         &self,
+        table: &str,
+        row_id: Option<i64>,
         key: &str,
-        project_id: Option<i64>,
-        default: Option<&str>,
     ) -> Option<String> {
-        crate::domain::settings::resolve_setting(
-            &self.read_pool,
-            key,
-            Some(self.feature_id),
-            project_id,
-            default,
+        match row_id {
+            Some(id) => resolve_table_column_setting(&self.read_pool, table, id, key).await,
+            None => None,
+        }
+    }
+
+    async fn apply_runtime_selection_scope(
+        &self,
+        parent: RuntimeSelection,
+        provider_override: Option<String>,
+        model_override: Option<String>,
+    ) -> RuntimeSelection {
+        let provider = provider_override.unwrap_or_else(|| parent.provider.clone());
+        let model = match model_override {
+            Some(model) => model,
+            None if provider != parent.provider => self.default_model_for_provider(&provider).await,
+            None => parent.model,
+        };
+
+        RuntimeSelection { provider, model }
+    }
+
+    async fn resolve_runtime_selection(
+        &self,
+        agent_type_str: &str,
+        project_id: Option<i64>,
+    ) -> RuntimeSelection {
+        let model_key = format!("model_{agent_type_str}");
+        let provider_key = crate::domain::agents::runtime::runtime_setting_key(agent_type_str);
+        let (
+            global_provider_override,
+            global_model_override,
+            project_provider_override,
+            project_model_override,
+            feature_provider_override,
+            feature_model_override,
+        ) = tokio::join!(
+            self.global_setting(&provider_key),
+            self.global_setting(&model_key),
+            self.scoped_table_setting("projects", project_id, &provider_key),
+            self.scoped_table_setting("projects", project_id, &model_key),
+            self.scoped_table_setting("features", Some(self.feature_id), &provider_key),
+            self.scoped_table_setting("features", Some(self.feature_id), &model_key),
+        );
+
+        let global_provider =
+            global_provider_override.unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
+        let global_model = match global_model_override {
+            Some(model) => model,
+            None => self.default_model_for_provider(&global_provider).await,
+        };
+
+        let project_selection = self
+            .apply_runtime_selection_scope(
+                RuntimeSelection {
+                    provider: global_provider,
+                    model: global_model,
+                },
+                project_provider_override,
+                project_model_override,
+            )
+            .await;
+
+        self.apply_runtime_selection_scope(
+            project_selection,
+            feature_provider_override,
+            feature_model_override,
         )
         .await
     }
 
-    /// Resolve the model for a given agent type.
+    /// Resolve the effective model for a given agent type.
+    ///
+    /// Model resolution is provider-aware: when a nearer provider override
+    /// changes the effective provider but does not set a model, we reset to
+    /// that provider's default model instead of inheriting a model id from a
+    /// different provider.
+    #[cfg(test)]
     pub(super) async fn resolve_model(
         &self,
         agent_type_str: &str,
         project_id: Option<i64>,
     ) -> String {
-        const DEFAULT_MODEL: &str = crate::api::DEFAULT_MODEL;
-        let db_key = format!("model_{agent_type_str}");
-        self.resolve_setting(&db_key, project_id, Some(DEFAULT_MODEL))
+        self.resolve_runtime_selection(agent_type_str, project_id)
             .await
-            .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+            .model
     }
 
     /// Resolve the runtime provider for a given agent type.
+    #[cfg(test)]
     pub(super) async fn resolve_provider(
         &self,
         agent_type_str: &str,
         project_id: Option<i64>,
     ) -> String {
-        let db_key = crate::domain::agents::runtime::runtime_setting_key(agent_type_str);
-        self.resolve_setting(&db_key, project_id, Some(DEFAULT_PROVIDER))
+        self.resolve_runtime_selection(agent_type_str, project_id)
             .await
-            .unwrap_or_else(|| DEFAULT_PROVIDER.to_string())
+            .provider
     }
 
     /// Build a SpawnContext with all the shared setup: MCP config, CWD, permission
@@ -148,7 +233,10 @@ impl AgentManager {
         };
 
         let project_id = self.get_project_id().await;
-        let provider = self.resolve_provider(agent_type_str, project_id).await;
+        let selection = self
+            .resolve_runtime_selection(agent_type_str, project_id)
+            .await;
+        let provider = selection.provider;
         if runtime_adapter(&provider).is_none() {
             return Err(format!(
                 "Runtime provider '{provider}' is not implemented yet for workflow agents"
@@ -158,7 +246,7 @@ impl AgentManager {
         // Model — prefer explicit override (e.g. from workflow phase definition)
         let model = match model_override.filter(|s| !s.is_empty()) {
             Some(m) => m.to_string(),
-            None => self.resolve_model(agent_type_str, project_id).await,
+            None => selection.model,
         };
         info!(feature_id = self.feature_id, agent_type = agent_type_str, provider = %provider, model = %model, "resolved agent runtime");
 

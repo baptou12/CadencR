@@ -16,11 +16,11 @@ use tracing::{debug, error, info, warn};
 use axum::extract::ws::Message;
 
 use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSessionHandle};
+use crate::domain::features::repository as repo;
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, persist_usage, workflow_permission_request_payload,
-    update_context_window,
+    RuntimeUsageState,
 };
-use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
@@ -42,14 +42,20 @@ pub fn spawn_workflow_stream_reader(
     active_items: Arc<DashMap<AgentSlot, i64>>,
     queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: Arc<DashMap<AgentSlot, String>>,
-    model: Option<&str>,
+    _model: Option<&str>,
     turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
 ) {
-    let initial_context_window = model
-        .map(|m| crate::domain::usage::context_window_for_model(m))
-        .unwrap_or(crate::api::DEFAULT_CONTEXT_WINDOW);
-
     tokio::spawn(async move {
+        // Seed from the persisted row when resuming a session — otherwise
+        // intermediate usage_update events published before the first
+        // `result` have no context window to report.
+        let initial_context_window: Option<u64> =
+            WsSessionPersistence::get_session_row(&write_pool, db_session_id)
+                .await
+                .and_then(|row| row.context_window)
+                .and_then(|cw| u64::try_from(cw).ok())
+                .filter(|cw| *cw > 0);
+
         debug!(slot = %slot, db_session_id, "workflow stream reader started");
         let runtime_adapter = crate::domain::agents::runtime_adapter(&runtime_provider);
 
@@ -73,7 +79,7 @@ pub fn spawn_workflow_stream_reader(
         let mut error_msg: Option<String> = None;
         let mut ws_detached = false;
         let mut needs_session_id_capture = true;
-        let mut context_window: u64 = initial_context_window;
+        let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
         let mut pending_queue_update = false;
 
@@ -150,14 +156,12 @@ pub fn spawn_workflow_stream_reader(
                         let _ = sender.send(Message::Text(String::from(sid_env).into()));
                     }
 
-                    if let Some(next_context_window) =
-                        update_context_window(&runtime_event, context_window)
-                    {
-                        context_window = next_context_window;
+                    let usage_update = usage_state.apply_event(runtime_adapter, &runtime_event);
+                    if usage_update.context_window_changed {
                         WsSessionPersistence::update_context_window(
                             &write_pool,
                             db_session_id,
-                            context_window,
+                            usage_update.snapshot.context_window,
                         )
                         .await;
                     }
@@ -168,7 +172,7 @@ pub fn spawn_workflow_stream_reader(
                         }
                         if !init.mcp_servers.is_empty() {
                             let model_label = init.model.as_deref().unwrap_or("unknown");
-                            debug!(slot = %slot, model = %model_label, context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
+                            debug!(slot = %slot, model = %model_label, context_window = ?usage_update.snapshot.context_window, mcp_servers = ?init.mcp_servers, "received init message from runtime");
                         }
                         if !init.mcp_servers.is_empty()
                             && !check_mcp_server_connected(
@@ -191,12 +195,10 @@ pub fn spawn_workflow_stream_reader(
                     }
 
                     persistence.persist_runtime_event(&runtime_event).await;
-                    if let Some((input_tokens, output_tokens)) = persist_usage(
-                        &runtime_event,
-                        db_session_id,
-                        &write_pool,
-                    )
-                    .await
+                    let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    if usage_update.changed
+                        && (usage_update.snapshot.input_tokens > 0
+                            || usage_update.snapshot.output_tokens > 0)
                     {
                         let usage_env = WsEnvelope::new(
                             "workflow",
@@ -204,9 +206,9 @@ pub fn spawn_workflow_stream_reader(
                             to_value(serde_json::json!({
                                 "agent_slot": slot,
                                 "session_id": db_session_id,
-                                "input_tokens": input_tokens,
-                                "output_tokens": output_tokens,
-                                "context_window": context_window,
+                                "input_tokens": usage_update.snapshot.input_tokens,
+                                "output_tokens": usage_update.snapshot.output_tokens,
+                                "context_window": usage_update.snapshot.context_window,
                             })),
                         );
                         let _ = sender.send(Message::Text(String::from(usage_env).into()));

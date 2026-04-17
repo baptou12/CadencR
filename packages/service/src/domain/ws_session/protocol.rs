@@ -152,7 +152,10 @@ pub struct ModeSetPayload {
 pub struct SessionUsageUpdatePayload {
     pub input_tokens: u64,
     pub output_tokens: u64,
-    pub context_window: u64,
+    /// Authoritative context window for the active model. `None` means
+    /// "unknown until the provider reports one" — distinct from 0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

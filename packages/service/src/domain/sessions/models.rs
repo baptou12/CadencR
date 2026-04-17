@@ -116,7 +116,7 @@ pub struct SessionState {
     #[serde(rename = "outputTokens")]
     pub output_tokens: i64,
     #[serde(rename = "contextWindow")]
-    pub context_window: i64,
+    pub context_window: Option<i64>,
     #[serde(rename = "wasCompacted")]
     pub was_compacted: bool,
     #[serde(rename = "draftPrompt")]

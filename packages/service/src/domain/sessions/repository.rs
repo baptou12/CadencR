@@ -689,7 +689,7 @@ pub async fn get_feature_agent_state(
                 pending_permission,
                 input_tokens: s.input_tokens.unwrap_or(0),
                 output_tokens: s.output_tokens.unwrap_or(0),
-                context_window: s.context_window.unwrap_or(200000),
+                context_window: s.context_window,
                 was_compacted: s.was_compacted != 0,
                 draft_prompt: s.draft_prompt,
                 has_more: *has_more_map.get(&s.id).unwrap_or(&false),

@@ -1251,6 +1251,7 @@ mod tests {
             crate::domain::agents::adapter::RuntimeEventMetadata {
                 session_id: Some("sess-opencode".to_string()),
                 usage: None,
+                context_window: None,
                 raw: serde_json::json!({
                     "type": "opencode_permission_request",
                     "request_id": "perm-1",

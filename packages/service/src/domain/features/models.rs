@@ -247,7 +247,7 @@ pub struct AgentSessionSummary {
     pub runtime_session_id: Option<String>,
     pub input_tokens: i64,
     pub output_tokens: i64,
-    pub context_window: i64,
+    pub context_window: Option<i64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

@@ -81,7 +81,9 @@ async fn test_resolve_model_returns_default_when_no_settings() {
 
     let mgr = make_agent_manager(pool, 1);
     let model = mgr.resolve_model("plan", Some(1)).await;
-    assert_eq!(model, "opus[1m]");
+    // With no settings, resolve_model falls back to the adapter default
+    // (CLI-reported "default" model when the CLI is reachable, else "opus").
+    assert!(!model.is_empty());
 }
 
 #[tokio::test]
@@ -221,7 +223,32 @@ async fn test_resolve_model_different_agent_types() {
     let mgr = make_agent_manager(pool, 1);
     assert_eq!(mgr.resolve_model("plan", Some(1)).await, "plan-model");
     assert_eq!(mgr.resolve_model("execute", Some(1)).await, "exec-model");
-    assert_eq!(mgr.resolve_model("review", Some(1)).await, "opus[1m]");
+    // "review" has no override — adapter default (CLI-reported or fallback).
+    let review_default = mgr.resolve_model("review", Some(1)).await;
+    assert!(!review_default.is_empty());
+    assert_ne!(review_default, "plan-model");
+    assert_ne!(review_default, "exec-model");
+}
+
+#[tokio::test]
+async fn test_resolve_model_uses_provider_default_after_provider_override() {
+    let pool = setup_test_db().await;
+    sqlx::query(
+        "INSERT INTO projects (id, name, agent_runtime_plan, model_plan) VALUES (1, 'test', 'claude_code', 'opus')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO features (id, project_id, title, agent_runtime_plan) VALUES (1, 1, 'feat', 'opencode')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let mgr = make_agent_manager(pool, 1);
+    let model = mgr.resolve_model("plan", Some(1)).await;
+    assert_eq!(model, "default/default");
 }
 
 #[tokio::test]

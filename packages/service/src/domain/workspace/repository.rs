@@ -1,11 +1,13 @@
 use super::models::{AgentProviderSettings, ModelSettings, Setting};
 use crate::error::AppError;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
-use crate::api::DEFAULT_MODEL;
+use crate::domain::agents::providers::provider_default_model;
 use crate::domain::agents::runtime::{
     default_provider_settings, runtime_setting_key, validate_agent_type,
 };
+
 const MODEL_KEYS: &[(&str, &str)] = &[
     ("plan", "model_plan"),
     ("prd", "model_prd"),
@@ -62,43 +64,49 @@ pub async fn list_settings(pool: &SqlitePool) -> Result<Vec<Setting>, AppError> 
 }
 
 pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppError> {
-    let mut plan = DEFAULT_MODEL.to_string();
-    let mut prd = DEFAULT_MODEL.to_string();
-    let mut execute = DEFAULT_MODEL.to_string();
-    let mut risk = DEFAULT_MODEL.to_string();
-    let mut review = DEFAULT_MODEL.to_string();
-    let mut review_fixer = DEFAULT_MODEL.to_string();
-    let mut session = DEFAULT_MODEL.to_string();
-    let mut qa = DEFAULT_MODEL.to_string();
-    let mut retro = DEFAULT_MODEL.to_string();
+    let provider_settings = get_provider_settings(pool).await?;
+    let provider_by_agent = [
+        ("plan", provider_settings.plan.as_str()),
+        ("prd", provider_settings.prd.as_str()),
+        ("execute", provider_settings.execute.as_str()),
+        ("risk", provider_settings.risk.as_str()),
+        ("review", provider_settings.review.as_str()),
+        ("review-fixer", provider_settings.review_fixer.as_str()),
+        ("session", provider_settings.session.as_str()),
+        ("qa", provider_settings.qa.as_str()),
+        ("retro", provider_settings.retro.as_str()),
+    ];
+    let mut defaults_by_provider = HashMap::new();
+    let mut models_by_agent = HashMap::new();
+
+    for (agent_type, provider_id) in provider_by_agent {
+        if !defaults_by_provider.contains_key(provider_id) {
+            let default_model = provider_default_model(provider_id)
+                .await
+                .unwrap_or_else(|| "opus".to_string());
+            defaults_by_provider.insert(provider_id.to_string(), default_model);
+        }
+        if let Some(default_model) = defaults_by_provider.get(provider_id) {
+            models_by_agent.insert(agent_type, default_model.clone());
+        }
+    }
 
     for (agent_type, db_key) in MODEL_KEYS {
-        let val = get_setting(pool, db_key).await?;
-        let model = val.unwrap_or_else(|| DEFAULT_MODEL.to_string());
-        match *agent_type {
-            "plan" => plan = model,
-            "prd" => prd = model,
-            "execute" => execute = model,
-            "risk" => risk = model,
-            "review" => review = model,
-            "review-fixer" => review_fixer = model,
-            "session" => session = model,
-            "qa" => qa = model,
-            "retro" => retro = model,
-            _ => {}
+        if let Some(model) = get_setting(pool, db_key).await? {
+            models_by_agent.insert(*agent_type, model);
         }
     }
 
     Ok(ModelSettings {
-        plan,
-        prd,
-        execute,
-        risk,
-        review,
-        review_fixer,
-        session,
-        qa,
-        retro,
+        plan: models_by_agent.remove("plan").unwrap_or_default(),
+        prd: models_by_agent.remove("prd").unwrap_or_default(),
+        execute: models_by_agent.remove("execute").unwrap_or_default(),
+        risk: models_by_agent.remove("risk").unwrap_or_default(),
+        review: models_by_agent.remove("review").unwrap_or_default(),
+        review_fixer: models_by_agent.remove("review-fixer").unwrap_or_default(),
+        session: models_by_agent.remove("session").unwrap_or_default(),
+        qa: models_by_agent.remove("qa").unwrap_or_default(),
+        retro: models_by_agent.remove("retro").unwrap_or_default(),
     })
 }
 
@@ -289,16 +297,30 @@ mod tests {
     async fn test_get_model_settings_defaults() {
         let pool = setup_test_db().await;
         let settings = get_model_settings(&pool).await.unwrap();
+        // All nine agent types share whatever the adapter reports as its
+        // default (live CLI value if warmed, else `FALLBACK_MODEL`).
+        let expected = &settings.plan;
+        assert!(!expected.is_empty());
+        assert_eq!(&settings.prd, expected);
+        assert_eq!(&settings.execute, expected);
+        assert_eq!(&settings.risk, expected);
+        assert_eq!(&settings.review, expected);
+        assert_eq!(&settings.review_fixer, expected);
+        assert_eq!(&settings.session, expected);
+        assert_eq!(&settings.qa, expected);
+        assert_eq!(&settings.retro, expected);
+    }
 
-        assert_eq!(settings.plan, DEFAULT_MODEL);
-        assert_eq!(settings.prd, DEFAULT_MODEL);
-        assert_eq!(settings.execute, DEFAULT_MODEL);
-        assert_eq!(settings.risk, DEFAULT_MODEL);
-        assert_eq!(settings.review, DEFAULT_MODEL);
-        assert_eq!(settings.review_fixer, DEFAULT_MODEL);
-        assert_eq!(settings.session, DEFAULT_MODEL);
-        assert_eq!(settings.qa, DEFAULT_MODEL);
-        assert_eq!(settings.retro, DEFAULT_MODEL);
+    #[tokio::test]
+    async fn test_get_model_settings_follow_workspace_provider_defaults() {
+        let pool = setup_test_db().await;
+        set_setting(&pool, "agent_runtime_plan", "opencode")
+            .await
+            .unwrap();
+
+        let settings = get_model_settings(&pool).await.unwrap();
+        assert_eq!(settings.plan, "default/default");
+        assert!(!settings.prd.is_empty());
     }
 
     #[tokio::test]
@@ -311,9 +333,9 @@ mod tests {
         let settings = get_model_settings(&pool).await.unwrap();
 
         assert_eq!(settings.plan, "claude-sonnet-3-5");
-        // Others remain default
-        assert_eq!(settings.prd, DEFAULT_MODEL);
-        assert_eq!(settings.execute, DEFAULT_MODEL);
+        // The other eight keep the adapter default.
+        assert_ne!(settings.prd, "claude-sonnet-3-5");
+        assert_eq!(&settings.prd, &settings.execute);
     }
 
     #[tokio::test]

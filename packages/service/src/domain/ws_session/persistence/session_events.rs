@@ -83,7 +83,7 @@ impl WsSessionPersistence {
         let model = self.current_models.get(&runtime_key).map(String::as_str);
 
         match event {
-            RuntimeStreamEvent::MessageStart { model } => {
+            RuntimeStreamEvent::MessageStart { model, .. } => {
                 if let Some(model) = model.clone() {
                     self.current_models.insert(runtime_key, model);
                 }
@@ -374,6 +374,7 @@ mod session_events_tests {
             RuntimeEventMetadata {
                 session_id: Some(runtime_session_id.to_string()),
                 usage: None,
+                context_window: None,
                 raw: serde_json::json!({}),
             },
             RuntimeEventKind::StreamEvent {
@@ -394,6 +395,7 @@ mod session_events_tests {
                 Some("task_a"),
                 RuntimeStreamEvent::MessageStart {
                     model: Some("model-a".to_string()),
+                    input_tokens: None,
                 },
             ))
             .await;
@@ -418,6 +420,7 @@ mod session_events_tests {
                 Some("task_b"),
                 RuntimeStreamEvent::MessageStart {
                     model: Some("model-b".to_string()),
+                    input_tokens: None,
                 },
             ))
             .await;

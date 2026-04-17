@@ -39,7 +39,7 @@ async fn table_has_column(pool: &SqlitePool, table: &str, key: &str) -> bool {
         .is_some()
 }
 
-async fn resolve_table_column_setting(
+pub(crate) async fn resolve_table_column_setting(
     pool: &SqlitePool,
     table: &str,
     row_id: i64,
