@@ -416,14 +416,31 @@ mod tests {
         app_state: &AppState,
         feature_id: i64,
     ) -> String {
-        let envelope = make_envelope(
-            "session",
-            "init",
-            serde_json::json!({
-                "cwd": "/tmp/test",
-                "feature_id": feature_id,
-            }),
-        );
+        init_session_with_payload(
+            tx,
+            rx,
+            sdk_sessions,
+            app_state,
+            SessionInitPayload {
+                provider: None,
+                model: None,
+                permission_mode: None,
+                system_prompt: None,
+                cwd: Some("/tmp/test".to_string()),
+                feature_id: Some(feature_id),
+            },
+        )
+        .await
+    }
+
+    async fn init_session_with_payload(
+        tx: &WsSender,
+        rx: &mut mpsc::UnboundedReceiver<Message>,
+        sdk_sessions: &SdkSessions,
+        app_state: &AppState,
+        payload: SessionInitPayload,
+    ) -> String {
+        let envelope = make_envelope("session", "init", serde_json::to_value(payload).unwrap());
         dispatch_envelope(envelope, tx, sdk_sessions, app_state).await;
 
         let msg = rx.recv().await.unwrap();
@@ -982,6 +999,40 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+
+        let db_id: i64 = session_id.parse().unwrap();
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&db_id).unwrap();
+        assert_eq!(handle.runtime_provider, "opencode");
+    }
+
+    #[tokio::test]
+    async fn test_init_preserves_base_system_prompt_for_opencode() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let session_id = init_session_with_payload(
+            &tx,
+            &mut rx,
+            &sdk_sessions,
+            &app_state,
+            SessionInitPayload {
+                provider: Some("opencode".to_string()),
+                model: None,
+                permission_mode: None,
+                system_prompt: Some("Base prompt".to_string()),
+                cwd: Some("/tmp/test".to_string()),
+                feature_id: Some(1),
+            },
+        )
+        .await;
+
+        let db_id: i64 = session_id.parse().unwrap();
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&db_id).unwrap();
+        let prompt = handle.config.system_prompt.as_deref().unwrap_or_default();
+        assert_eq!(prompt, "Base prompt");
     }
 
     #[tokio::test]

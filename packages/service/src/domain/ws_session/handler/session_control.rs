@@ -20,7 +20,10 @@ use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::question_answers::format_answers_plain_text;
 
-async fn session_has_messages(pool: &sqlx::SqlitePool, session_id: i64) -> Result<bool, sqlx::Error> {
+async fn session_has_messages(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM agent_messages WHERE session_id = ?)")
         .bind(session_id)
         .fetch_one(pool)

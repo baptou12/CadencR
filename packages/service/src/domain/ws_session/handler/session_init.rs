@@ -208,9 +208,7 @@ pub(super) async fn handle_init(
     if let Some(ref pm) = payload.permission_mode {
         runtime_config.permission_mode = Some(parse_permission_mode(pm));
     }
-    if let Some(ref sp) = payload.system_prompt {
-        runtime_config.system_prompt = Some(sp.clone());
-    }
+    runtime_config.system_prompt = payload.system_prompt.clone();
 
     info!(
         db_session_id,

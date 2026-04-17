@@ -27,6 +27,19 @@ pub struct OpenCodeAdapter;
 
 pub static OPENCODE_ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
 
+const RICH_MARKDOWN_INSTRUCTION: &str = "Format every non-trivial response using rich GitHub-flavored Markdown. Use real headings, lists, tables, and fenced code blocks when they improve readability. Do not use bold-only pseudo-headings as a substitute for headings. For example:\n\n## Summary\n- Item one\n- Item two\n\n```ts\nconst ok = true;\n```";
+
+fn decorate_system_prompt(system_prompt: Option<&str>) -> Option<String> {
+    let base = system_prompt
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty());
+
+    Some(match base {
+        Some(prompt) => format!("{RICH_MARKDOWN_INSTRUCTION}\n\n{prompt}"),
+        None => RICH_MARKDOWN_INSTRUCTION.to_string(),
+    })
+}
+
 #[async_trait]
 impl AgentRuntimeAdapter for OpenCodeAdapter {
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
@@ -101,6 +114,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             None => None,
         };
         let current_agent = permission_mode_agent(config.permission_mode.clone()).to_string();
+        let system_prompt = decorate_system_prompt(config.system_prompt.as_deref());
         let session_id = resolve_session_id(&client, &directory, config.resume_session_id).await?;
         let event_rx = dispatcher.subscribe(&session_id).await;
         let session = OpenCodeSession::new(
@@ -110,7 +124,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             current_agent,
             current_model,
             directory,
-            config.system_prompt,
+            system_prompt,
             event_rx,
             server.pid,
             context_window,
@@ -134,7 +148,10 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
 
-    use super::{session::OpenCodeSession, OpenCodeAdapter};
+    use super::{
+        decorate_system_prompt, session::OpenCodeSession, OpenCodeAdapter,
+        RICH_MARKDOWN_INSTRUCTION,
+    };
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, AgentRuntimeSession};
 
     #[test]
@@ -165,6 +182,19 @@ mod tests {
         assert!(adapter
             .parse_permission_request(&json!({ "type": "other_event" }))
             .is_none());
+    }
+
+    #[test]
+    fn decorate_system_prompt_prepends_markdown_instruction() {
+        let prompt = decorate_system_prompt(Some("Base prompt")).unwrap();
+        assert!(prompt.starts_with(RICH_MARKDOWN_INSTRUCTION));
+        assert!(prompt.ends_with("Base prompt"));
+    }
+
+    #[test]
+    fn decorate_system_prompt_uses_instruction_when_base_prompt_missing() {
+        let prompt = decorate_system_prompt(None).unwrap();
+        assert_eq!(prompt, RICH_MARKDOWN_INSTRUCTION);
     }
 
     #[tokio::test]
