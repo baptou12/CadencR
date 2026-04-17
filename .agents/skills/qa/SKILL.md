@@ -25,6 +25,11 @@ The Cadence stack has two servers:
 Check if they're already up and healthy:
 
 ```bash
+# Clear stale QA-run markers before checking server health
+export CADENCE_QA_RUN_DIR="/tmp/cadence-qa"
+mkdir -p "$CADENCE_QA_RUN_DIR"
+rm -f "$CADENCE_QA_RUN_DIR/dev.pid" "$CADENCE_QA_RUN_DIR/dev.pgid"
+
 # Health-check both servers (2-second timeout each)
 curl -sf --max-time 2 http://localhost:5005/api/health && echo "API: ok" || echo "API: down"
 curl -sf --max-time 2 http://localhost:1420 && echo "Frontend: ok" || echo "Frontend: down"
@@ -32,14 +37,18 @@ curl -sf --max-time 2 http://localhost:1420 && echo "Frontend: ok" || echo "Fron
 
 **If both are healthy**, skip to Step 2.
 
-**If either is down**, kill stale processes and restart the full stack:
+**If either is down**, start the full stack in a tracked process group and write logs to disk so the agent can inspect them during QA:
 
 ```bash
-# Kill anything on the dev ports
-lsof -ti:1420 -ti:5005 | xargs kill -9 2>/dev/null || true
-
-# Start the full stack from the project root (backgrounded)
-cd /workspace/cadence && pnpm dev &
+# Start the full stack from the project root and capture logs for later inspection
+sh -c 'cd /workspace/cadence && exec pnpm dev' \
+  >"$CADENCE_QA_RUN_DIR/dev.log" 2>&1 &
+DEV_PID=$!
+DEV_PGID=$(ps -o pgid= -p "$DEV_PID" | tr -d ' ')
+printf '%s\n' "$DEV_PID" > "$CADENCE_QA_RUN_DIR/dev.pid"
+printf '%s\n' "$DEV_PGID" > "$CADENCE_QA_RUN_DIR/dev.pgid"
+echo "QA started dev stack: pid=$DEV_PID pgid=$DEV_PGID"
+echo "QA dev log: $CADENCE_QA_RUN_DIR/dev.log"
 ```
 
 Then poll until both servers respond (timeout after 60 seconds):
@@ -54,6 +63,12 @@ done
 ```
 
 If servers don't come up within 60 seconds, report the failure and stop.
+
+If startup fails, inspect the captured log before continuing:
+
+```bash
+tail -n 200 /tmp/cadence-qa/dev.log
+```
 
 ## Step 2: Plan Test Procedures
 
@@ -112,6 +127,12 @@ cmux browser errors list
 cmux browser console list
 ```
 
+If the app behaved unexpectedly during startup or while testing, inspect the dev log too:
+
+```bash
+tail -n 200 /tmp/cadence-qa/dev.log
+```
+
 ### React controlled inputs
 
 `cmux browser fill` and `type` set the DOM value but do **not** trigger React's synthetic `onChange` on controlled inputs (`value={state}`). The input appears updated but React's internal state is stale, so blur/submit handlers use the old value.
@@ -163,4 +184,19 @@ After running all test cases, produce a concise report:
 
 Focus the report on failures — what broke and why. Passing tests get a one-liner each. If everything passed, say so and keep it short.
 
-Do NOT clean up the dev servers when done — the user likely wants them running.
+## Step 6: Clean Up Only What QA Started
+
+If Step 1 found both servers already healthy, do **not** stop them.
+
+If this QA run started the stack, stop that tracked process group at the end, even on failure:
+
+```bash
+if [ -f /tmp/cadence-qa/dev.pgid ]; then
+  DEV_PGID=$(cat /tmp/cadence-qa/dev.pgid)
+  kill -TERM -- "-$DEV_PGID" 2>/dev/null || true
+  sleep 2
+  kill -KILL -- "-$DEV_PGID" 2>/dev/null || true
+fi
+```
+
+Mention the log path in the final report if startup or runtime issues required inspection.
