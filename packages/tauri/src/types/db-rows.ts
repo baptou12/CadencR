@@ -104,6 +104,6 @@ export interface AgentSessionRow {
   pending_permission: string | null;
   input_tokens: number;
   output_tokens: number;
-  context_window: number;
+  context_window: number | null;
   was_compacted: number;
 }

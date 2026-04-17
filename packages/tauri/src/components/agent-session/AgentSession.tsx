@@ -16,8 +16,9 @@ import { AgentStream } from "../AgentStream";
 import { AgentPromptBar, type AgentPromptBarHandle } from "../AgentPromptBar";
 import { ContextUsageBar } from "../ContextUsageBar";
 import { AGENT_ICONS } from "../agent-icons";
-import { useGetFeatureWorkingDir, useListModels } from "../../api/generated";
+import { useGetFeatureWorkingDir } from "../../api/generated";
 import { useAgentCatalog } from "../../api/agentRuntime";
+import { normalizeContextWindow } from "@/types/agent";
 import { AGENT_LABELS, STATUS_BADGE } from "./constants";
 import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
@@ -52,9 +53,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   const containerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
-  const availableModels = useListModels();
   const loaderStyleSetting = useGetWorkspaceSetting(LOADER_STYLE_KEY);
-  const models = useMemo(() => availableModels.data ?? [], [availableModels.data]);
   const agentCatalog = useAgentCatalog();
   const cwdQuery = useGetFeatureWorkingDir(
     featureId ?? 0, projectId ?? 0,
@@ -124,7 +123,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
         id: provider.id,
         label: provider.label,
         disabled: provider.status !== "available",
-        models: provider.models.map((model) => ({ id: model.id, label: model.label })),
+        models: provider.models.map((model) => ({ id: model.id, label: model.label, description: model.description })),
       })),
     [agentCatalog.data],
   );
@@ -156,7 +155,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     return modelProviderId ?? runtimeProvider ?? currentProviderId ?? DEFAULT_PROVIDER;
   }, [currentProviderId, currentModelId, modelProviderId, providerSupportsModel, runtimeProvider]);
   const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
-  const visibleModels = activeProvider?.models.length ? activeProvider.models : models;
+  const visibleModels = activeProvider?.models ?? [];
   const currentModelLabel =
     allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)?.label ??
     visibleModels.find((m) => m.id === currentModelId)?.label ??
@@ -290,7 +289,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     <div className="shrink-0">
       {metaBar}
       {promptBar}
-      {contextUsage && (
+      {normalizeContextWindow(contextUsage?.contextWindow) != null && (
         <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
           <ContextUsageBar
             usage={contextUsage}

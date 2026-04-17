@@ -14,6 +14,7 @@ import {
   updateSession,
 } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
+import type { ContextUsageState } from "@/types/agent";
 export interface PersistedStatePayload {
   blocks: SessionEntry["blocks"];
   lifecycle: SessionEntry["lifecycle"];
@@ -26,6 +27,8 @@ export interface PersistedStatePayload {
   runtimeProvider?: string | null;
   runtimeSessionId?: string | null;
   pendingPlanApproval?: PendingPlanApproval | null;
+  contextUsage?: ContextUsageState | null;
+  hasFileChanges?: boolean;
 }
 
 export function applyApprovePlan(
@@ -181,6 +184,8 @@ export function applyPersistedState(
     runtimeProvider,
     runtimeSessionId,
     pendingPlanApproval,
+    contextUsage,
+    hasFileChanges,
   } = payload;
 
   const resolvedProviderId = currentProviderId ?? runtimeProvider ?? undefined;
@@ -197,6 +202,8 @@ export function applyPersistedState(
     ...(currentModelId ? { currentModelId } : {}),
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
+    ...(contextUsage !== undefined ? { contextUsage } : {}),
+    ...(hasFileChanges !== undefined ? { hasFileChanges } : {}),
     ...(pendingPlanApproval != null
       ? {
         pendingPlanApproval,

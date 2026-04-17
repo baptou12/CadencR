@@ -10,7 +10,6 @@ vi.mock("react-hotkeys-hook", () => ({
 
 vi.mock("@/api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/generated")>()),
-  useListModels: vi.fn(() => ({ data: [{ id: "opus", label: "Opus" }] })),
   useGetFeatureWorkingDir: vi.fn(() => ({ data: null })),
   useGetWorkspaceSetting: vi.fn(() => ({ data: null })),
   useListFiles: vi.fn(() => ({ data: [] })),
@@ -25,7 +24,7 @@ vi.mock("@/api/agentRuntime", () => ({
           id: "claude_code",
           label: "Claude Code",
           status: "available",
-          models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+          models: [{ id: "opus", label: "Opus" }],
           default_model: "opus",
         },
       ],

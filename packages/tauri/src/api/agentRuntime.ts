@@ -5,7 +5,12 @@ import { AGENT_TYPES, DEFAULT_PROVIDER, type AgentTypeSetting } from "../shared/
 export interface RuntimeModelOption {
   id: string;
   label: string;
-  context_window: number;
+  description?: string;
+  supports_effort?: boolean;
+  supported_effort_levels?: ("low" | "medium" | "high" | "xhigh" | "max")[];
+  supports_adaptive_thinking?: boolean;
+  supports_fast_mode?: boolean;
+  supports_auto_mode?: boolean;
 }
 
 export interface RuntimeProviderOption {

@@ -47,7 +47,7 @@ function toFeatureSession(
     permissionMode: "acceptEdits", pendingPlanApproval: agent?.pendingPlanApproval ?? null,
     inputTokens: agent?.inputTokens ?? 0,
     outputTokens: agent?.outputTokens ?? 0,
-    contextWindow: agent?.contextWindow ?? 200_000,
+    contextWindow: agent?.contextWindow ?? null,
     wasCompacted: false, draftPrompt: null,
     hasMore: agent?.hasMore ?? false,
     oldestMessageId: agent?.oldestMessageId ?? null,

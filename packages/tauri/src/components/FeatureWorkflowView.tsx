@@ -17,7 +17,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { NextStepsBar } from "@/components/NextStepsBar";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
-import type { ContextUsageState } from "@/types/agent";
+import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useActiveTab } from "@/hooks/useActiveTab";
@@ -73,13 +73,10 @@ export function FeatureWorkflowView({
   const contextUsageMap = useMemo(() => {
     const map = new Map<number, ContextUsageState>();
     for (const s of backend.sessionEntries) {
-      const total = s.inputTokens + s.outputTokens;
       map.set(s.sessionDbId, {
         inputTokens: s.inputTokens,
         outputTokens: s.outputTokens,
-        totalTokens: total,
-        contextWindow: s.contextWindow,
-        usageRatio: Math.min(1, s.contextWindow > 0 ? total / s.contextWindow : 0),
+        contextWindow: normalizeContextWindow(s.contextWindow),
         wasCompacted: s.wasCompacted,
       });
     }

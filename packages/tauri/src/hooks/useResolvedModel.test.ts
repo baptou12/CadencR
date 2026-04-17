@@ -5,12 +5,26 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useResolvedModel } from "./useResolvedModel";
 
 const mockSetModelMutate = vi.fn();
+const mockSetProviderMutate = vi.fn();
 
 type ModelData = Record<string, string>;
+type ProviderData = Record<string, string>;
 
 const mockFeatureSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
 const mockProjectSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
 const mockGlobalSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
+const mockFeatureProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
+const mockProjectProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
+const mockGlobalProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
+const mockAgentCatalog = vi.fn(() => ({
+  data: {
+    default_provider: "claude_code",
+    providers: [
+      { id: "claude_code", label: "Claude Code", status: "available", models: [], default_model: "default" },
+      { id: "opencode", label: "OpenCode", status: "available", models: [], default_model: "default/default" },
+    ],
+  },
+}));
 
 vi.mock("../api/generated", () => ({
   useGetFeatureModelSettings: () => mockFeatureSettings(),
@@ -25,6 +39,18 @@ vi.mock("../api/generated", () => ({
   getGetFeatureModelSettingsQueryKey: (id: number) => ["features", "modelSettings", id],
 }));
 
+vi.mock("../api/agentRuntime", () => ({
+  useAgentCatalog: () => mockAgentCatalog(),
+  useGetFeatureProviderSettings: () => mockFeatureProviderSettings(),
+  useGetProjectProviderSettings: () => mockProjectProviderSettings(),
+  useGetWorkspaceProviderSettings: () => mockGlobalProviderSettings(),
+  useSetFeatureProviderSetting: vi.fn(() => ({
+    mutate: (data: unknown) => {
+      mockSetProviderMutate(data);
+    },
+  })),
+}));
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient();
   return React.createElement(QueryClientProvider, { client: queryClient }, children);
@@ -33,17 +59,29 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe("useResolvedModel", () => {
   beforeEach(() => {
     mockSetModelMutate.mockClear();
+    mockSetProviderMutate.mockClear();
     // Default: all empty
     mockFeatureSettings.mockReturnValue({ data: {} });
     mockProjectSettings.mockReturnValue({ data: {} });
     mockGlobalSettings.mockReturnValue({ data: {} });
+    mockFeatureProviderSettings.mockReturnValue({ data: {} });
+    mockProjectProviderSettings.mockReturnValue({ data: {} });
+    mockGlobalProviderSettings.mockReturnValue({ data: {} });
+    mockAgentCatalog.mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          { id: "claude_code", label: "Claude Code", status: "available", models: [], default_model: "default" },
+          { id: "opencode", label: "OpenCode", status: "available", models: [], default_model: "default/default" },
+        ],
+      },
+    });
   });
 
-  it("returns DEFAULT_MODEL when no settings are configured", () => {
+  it("returns the catalog default model when no settings are configured", () => {
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    const model = result.current.resolveModel("plan");
-    expect(typeof model).toBe("string");
-    expect(model.length).toBeGreaterThan(0);
+    expect(result.current.resolveProvider("plan")).toBe("claude_code");
+    expect(result.current.resolveModel("plan")).toBe("default");
   });
 
   it("uses feature-level setting when available", () => {
@@ -94,14 +132,30 @@ describe("useResolvedModel", () => {
     expect(result.current.resolveModel("execute")).toBe("execute-model");
   });
 
-  it("resolveModel handles empty settings data gracefully", () => {
-    mockFeatureSettings.mockReturnValue({ data: {} });
-    mockProjectSettings.mockReturnValue({ data: {} });
-    mockGlobalSettings.mockReturnValue({ data: {} });
+  it("uses the new provider default when a nearer provider override changes providers", () => {
+    mockGlobalSettings.mockReturnValue({ data: { plan: "opus" } });
+    mockFeatureProviderSettings.mockReturnValue({ data: { plan: "opencode" } });
+
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    // Should fall through to DEFAULT_MODEL without throwing
-    expect(() => result.current.resolveModel("plan")).not.toThrow();
-    const model = result.current.resolveModel("plan");
-    expect(typeof model).toBe("string");
+    expect(result.current.resolveProvider("plan")).toBe("opencode");
+    expect(result.current.resolveModel("plan")).toBe("default/default");
+  });
+
+  it("keeps the inherited model when the provider does not change", () => {
+    mockProjectProviderSettings.mockReturnValue({ data: { plan: "claude_code" } });
+    mockGlobalSettings.mockReturnValue({ data: { plan: "default" } });
+
+    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    expect(result.current.resolveModel("plan")).toBe("default");
+  });
+
+  it("handleProviderChange calls setProviderMutation.mutate", () => {
+    const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
+    result.current.handleProviderChange("plan", "opencode");
+    expect(mockSetProviderMutate).toHaveBeenCalledWith({
+      featureId: 1,
+      providerType: "plan",
+      provider: "opencode",
+    });
   });
 });

@@ -13,12 +13,6 @@ import { customInstance, type ErrorType } from "../client";
 // Types — match the Rust models (snake_case JSON)
 // ---------------------------------------------------------------------------
 
-interface ModelInfo {
-  id: string;
-  label: string;
-  context_window: number;
-}
-
 interface BranchResponse {
   branch: string | null;
 }
@@ -513,10 +507,6 @@ export function getGetWorkspaceSettingQueryKey(key: string) {
   return ["workspace", "settings", key] as const;
 }
 
-function getListModelsQueryKey() {
-  return ["models"] as const;
-}
-
 export function getGetWorkspaceModelSettingsQueryKey() {
   return ["workspace", "model-settings"] as const;
 }
@@ -524,16 +514,6 @@ export function getGetWorkspaceModelSettingsQueryKey() {
 // ---------------------------------------------------------------------------
 // Workspace query hooks
 // ---------------------------------------------------------------------------
-
-export function useListModels(
-  options?: Omit<UseQueryOptions<ModelInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
-) {
-  return useQuery<ModelInfo[], ErrorType<unknown>>({
-    queryKey: getListModelsQueryKey(),
-    queryFn: () => customInstance({ method: "GET", url: "/api/models" }),
-    ...options,
-  });
-}
 
 export function useGetWorkspaceSetting(
   key: string,
@@ -1145,7 +1125,8 @@ export interface SessionState {
   pendingPermission: unknown | null;
   inputTokens: number;
   outputTokens: number;
-  contextWindow: number;
+  /** `null` when the provider hasn't reported an authoritative window yet. */
+  contextWindow: number | null;
   wasCompacted: boolean;
   draftPrompt: string | null;
   hasMore: boolean;

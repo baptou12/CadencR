@@ -83,10 +83,17 @@ export function parseInitializedPayload(payload: unknown): {
   };
 }
 
-export function parseModelPayload(payload: unknown): { model?: string } | null {
+export function parseModelPayload(payload: unknown): {
+  model?: string;
+  context_window?: number;
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { model: optionalString(record, "model") };
+  const contextWindow = optionalNumber(record, "context_window");
+  return {
+    model: optionalString(record, "model"),
+    context_window: contextWindow && contextWindow > 0 ? contextWindow : undefined,
+  };
 }
 
 export function parseProviderPayload(
@@ -183,14 +190,15 @@ export function parseEndedPayload(payload: unknown): { reason?: string } | null 
 export function parseUsagePayload(payload: unknown): {
   input_tokens: number;
   output_tokens: number;
-  context_window: number;
+  context_window?: number;
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
+  const contextWindow = optionalNumber(record, "context_window");
   return {
     input_tokens: optionalNumber(record, "input_tokens") ?? 0,
     output_tokens: optionalNumber(record, "output_tokens") ?? 0,
-    context_window: optionalNumber(record, "context_window") ?? 200000,
+    context_window: contextWindow && contextWindow > 0 ? contextWindow : undefined,
   };
 }
 

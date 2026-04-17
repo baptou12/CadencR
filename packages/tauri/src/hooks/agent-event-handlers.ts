@@ -40,7 +40,7 @@ export function createAgentSession(sessionId: number, agentType = "execute"): Ag
     runtimeSessionId: null,
     inputTokens: 0,
     outputTokens: 0,
-    contextWindow: 200_000,
+    contextWindow: null,
     hasFileChanges: false,
   };
 }
@@ -284,10 +284,18 @@ export function handleUsageUpdate(
   const usageSlot = parseAgentSlot(payload);
   const inputTokens = (payload.input_tokens ?? 0) as number;
   const outputTokens = (payload.output_tokens ?? 0) as number;
-  const contextWindow = (payload.context_window ?? 200_000) as number;
+  const rawContextWindow = payload.context_window;
+  const contextWindow =
+    typeof rawContextWindow === "number" && rawContextWindow > 0 ? rawContextWindow : null;
   set(state => {
     const key = resolveSlotKey(state.agents, usageSlot);
-    return patchAgent(state, key, { inputTokens, outputTokens, contextWindow });
+    const existing = state.agents.get(key);
+    const effectiveContextWindow = contextWindow ?? existing?.contextWindow ?? null;
+    return patchAgent(state, key, {
+      inputTokens,
+      outputTokens,
+      contextWindow: effectiveContextWindow,
+    });
   });
 }
 

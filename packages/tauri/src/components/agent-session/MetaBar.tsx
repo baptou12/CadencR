@@ -27,6 +27,7 @@ import { ProviderIcon } from "@/lib/provider-icons";
 interface Model {
   id: string;
   label: string;
+  description?: string;
 }
 
 interface Provider {
@@ -202,13 +203,17 @@ export function MetaBar({
                         }
                         onModelChange(m.id);
                       }}
-                      className="flex items-center justify-between gap-2 text-xs"
+                      className="flex items-start justify-between gap-2 text-xs"
+                      title={m.description}
                     >
-                      <span className="flex items-center gap-2">
-                        <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm" />
-                        {m.label}
+                      <span className="flex items-start gap-2 min-w-0">
+                        <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span className="truncate">{m.label}</span>
+                          {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                        </span>
                       </span>
-                      {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400" />}
+                      {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuSubContent>
@@ -219,13 +224,17 @@ export function MetaBar({
               <DropdownMenuItem
                 key={m.id}
                 onClick={() => onModelChange(m.id)}
-                className="flex items-center justify-between gap-2 text-xs"
+                className="flex items-start justify-between gap-2 text-xs"
+                title={m.description}
               >
-                <span className="flex items-center gap-2">
-                  <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm" />
-                  {m.label}
+                <span className="flex items-start gap-2 min-w-0">
+                  <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate">{m.label}</span>
+                    {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                  </span>
                 </span>
-                {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400" />}
+                {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

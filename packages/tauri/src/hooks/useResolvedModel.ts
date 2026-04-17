@@ -1,6 +1,10 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, type AgentTypeSetting } from "../shared/models";
+import {
+  DEFAULT_PROVIDER,
+  resolveRuntimeSelection,
+  type AgentTypeSetting,
+} from "../shared/models";
 import type { AgentType } from "../types/agent-types";
 import {
   useGetWorkspaceModelSettings,
@@ -10,6 +14,7 @@ import {
   useSetFeatureModelSetting,
 } from "../api/generated";
 import {
+  useAgentCatalog,
   useGetWorkspaceProviderSettings,
   useGetProjectProviderSettings,
   useGetFeatureProviderSettings,
@@ -18,13 +23,18 @@ import {
 
 /**
  * Hook that resolves the effective model for an agent type through the
- * settings hierarchy: feature → project → global → DEFAULT_MODEL.
+ * settings hierarchy: feature → project → global → provider-specific default.
+ *
+ * The fallback model is provider-aware: if a nearer provider override changes
+ * the effective provider, the model resets to that provider's default instead
+ * of inheriting a model id from a different provider.
  *
  * Returns the resolved model ID and a mutation to update the feature-level setting.
  */
 export function useResolvedModel(featureId: number, projectId: number) {
   const queryClient = useQueryClient();
 
+  const agentCatalog = useAgentCatalog();
   const featureSettings = useGetFeatureModelSettings(featureId);
   const projectSettings = useGetProjectModelSettings(projectId);
   const globalSettings = useGetWorkspaceModelSettings();
@@ -37,21 +47,33 @@ export function useResolvedModel(featureId: number, projectId: number) {
   });
   const setProviderMutation = useSetFeatureProviderSetting();
 
+  const resolveSelection = useCallback(
+    (agentType: AgentType) => resolveRuntimeSelection({
+      agentType: agentType as AgentTypeSetting,
+      providers: agentCatalog.data?.providers,
+      defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
+      globalModels: globalSettings.data,
+      globalProviders: globalProviderSettings.data,
+      projectModels: projectSettings.data,
+      projectProviders: projectProviderSettings.data,
+      featureModels: featureSettings.data,
+      featureProviders: featureProviderSettings.data,
+    }),
+    [
+      agentCatalog.data,
+      featureProviderSettings.data,
+      featureSettings.data,
+      globalProviderSettings.data,
+      globalSettings.data,
+      projectProviderSettings.data,
+      projectSettings.data,
+    ],
+  );
+
   /** Resolve model through the hierarchy for display */
   const resolveModel = useCallback(
-    (agentType: AgentType): string => {
-      const featureVal = featureSettings.data?.[agentType as keyof typeof featureSettings.data];
-      if (featureVal) return featureVal;
-
-      const projectVal = projectSettings.data?.[agentType as keyof typeof projectSettings.data];
-      if (projectVal) return projectVal;
-
-      const globalVal = globalSettings.data?.[agentType as keyof typeof globalSettings.data];
-      if (globalVal) return globalVal;
-
-      return DEFAULT_MODEL;
-    },
-    [featureSettings.data, projectSettings.data, globalSettings.data],
+    (agentType: AgentType): string => resolveSelection(agentType).modelId,
+    [resolveSelection],
   );
 
   const handleModelChange = useCallback(
@@ -62,19 +84,8 @@ export function useResolvedModel(featureId: number, projectId: number) {
   );
 
   const resolveProvider = useCallback(
-    (agentType: AgentType): string => {
-      const featureVal = featureProviderSettings.data?.[agentType as keyof typeof featureProviderSettings.data];
-      if (featureVal) return featureVal;
-
-      const projectVal = projectProviderSettings.data?.[agentType as keyof typeof projectProviderSettings.data];
-      if (projectVal) return projectVal;
-
-      const globalVal = globalProviderSettings.data?.[agentType as keyof typeof globalProviderSettings.data];
-      if (globalVal) return globalVal;
-
-      return DEFAULT_PROVIDER;
-    },
-    [featureProviderSettings.data, projectProviderSettings.data, globalProviderSettings.data],
+    (agentType: AgentType): string => resolveSelection(agentType).providerId,
+    [resolveSelection],
   );
 
   const handleProviderChange = useCallback(

@@ -73,7 +73,8 @@ export interface AgentSessionState {
   runtimeSessionId: string | null;
   inputTokens: number;
   outputTokens: number;
-  contextWindow: number;
+  /** `null` until the provider reports an authoritative context window. */
+  contextWindow: number | null;
   hasFileChanges: boolean;
   /** Whether older messages exist beyond current window */
   hasMore?: boolean;
@@ -101,7 +102,7 @@ export interface AgentSessionSummary {
   runtime_session_id: string | null;
   input_tokens: number;
   output_tokens: number;
-  context_window: number;
+  context_window: number | null;
 }
 
 export interface PlanSnapshot {

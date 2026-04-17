@@ -15,7 +15,7 @@ import { useGetFeatureAgentState, fetchFeatureAgentState } from "../api/generate
 import type { AgentBlock } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../types/agent-types";
-import type { AgentStatus, TodoItem } from "@/types/agent";
+import { normalizeContextWindow, type AgentStatus, type TodoItem } from "@/types/agent";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -210,7 +210,7 @@ export interface FeatureSession {
   pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
-  contextWindow: number;
+  contextWindow: number | null;
   wasCompacted: boolean;
   draftPrompt: string | null;
   hasMore: boolean;
@@ -371,7 +371,7 @@ export function useFeatureAgentState(featureId: number) {
         pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
         inputTokens: s.inputTokens ?? 0,
         outputTokens: s.outputTokens ?? 0,
-        contextWindow: s.contextWindow ?? 200000,
+        contextWindow: normalizeContextWindow(s.contextWindow),
         wasCompacted: s.wasCompacted ?? false,
         draftPrompt: getOptionalSessionString(s, "draftPrompt"),
         hasMore: acc?.hasMore ?? s.hasMore ?? false,

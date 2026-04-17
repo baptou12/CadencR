@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { DEFAULT_MODEL } from "../shared/models";
+import { FALLBACK_MODEL_ID } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
 import { lifecycleToStatus } from "./ws-turn-lifecycle";
@@ -341,11 +341,11 @@ describe("ws-session-store", () => {
     expect(session.conn).toBeNull();
   });
 
-  it("new session defaults currentModelId to DEFAULT_MODEL", async () => {
+  it("new session defaults currentModelId to FALLBACK_MODEL_ID", async () => {
     useWsSessionStore.getState().connect("s1");
     await tick();
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.currentModelId).toBe(DEFAULT_MODEL);
+    expect(session.currentModelId).toBe(FALLBACK_MODEL_ID);
   });
 
   it("initSession with model updates currentModelId in store", async () => {
@@ -357,13 +357,13 @@ describe("ws-session-store", () => {
     expect(session.currentModelId).toBe("claude-haiku-4-5-20251001");
   });
 
-  it("initSession without model keeps DEFAULT_MODEL", async () => {
+  it("initSession without model keeps FALLBACK_MODEL_ID", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
     store.initSession("s1", { cwd: "/tmp" });
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.currentModelId).toBe(DEFAULT_MODEL);
+    expect(session.currentModelId).toBe(FALLBACK_MODEL_ID);
   });
 
   it("session.initialized with model updates currentModelId from server", async () => {
@@ -462,6 +462,77 @@ describe("ws-session-store", () => {
       payload: { model: "haiku" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("haiku");
+  });
+
+  it("model.set.ok preserves tokens and keeps existing context window when backend omits it", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", {
+        currentModelId: "opus",
+        contextUsage: {
+          inputTokens: 12345,
+          outputTokens: 6789,
+          contextWindow: 200000,
+          wasCompacted: false,
+        },
+      }),
+    );
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "model.set.ok",
+      payload: { model: "sonnet" },
+    });
+
+    const usage = useWsSessionStore.getState().sessions["s1"].contextUsage;
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("sonnet");
+    expect(usage?.inputTokens).toBe(12345);
+    expect(usage?.outputTokens).toBe(6789);
+    // Backend did not seed a new window — keep the previous model's window
+    // so the bar stays visible until the next authoritative event.
+    expect(usage?.contextWindow).toBe(200000);
+  });
+
+  it("model.set.ok applies a seeded context window without resetting tokens", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", {
+        currentModelId: "opus",
+        contextUsage: {
+          inputTokens: 1000,
+          outputTokens: 200,
+          contextWindow: 200000,
+          wasCompacted: false,
+        },
+      }),
+    );
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "model.set.ok",
+      payload: { model: "claude-opus-4-7[1m]", context_window: 1_000_000 },
+    });
+
+    const usage = useWsSessionStore.getState().sessions["s1"].contextUsage;
+    expect(usage?.inputTokens).toBe(1000);
+    expect(usage?.outputTokens).toBe(200);
+    expect(usage?.contextWindow).toBe(1_000_000);
   });
 
   it("sets hasFileChanges when Write tool_call block is received", async () => {

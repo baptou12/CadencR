@@ -16,7 +16,7 @@ import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
 import type { TurnLifecycle } from "./ws-turn-lifecycle";
 import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
+import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 
 export type PermissionMode = "acceptEdits" | "plan";
 
@@ -87,7 +87,7 @@ export function createSessionEntry(): SessionEntry {
     permissionMode: "acceptEdits",
     pendingPlanApproval: null,
     currentProviderId: DEFAULT_PROVIDER,
-    currentModelId: DEFAULT_MODEL,
+    currentModelId: FALLBACK_MODEL_ID,
     runtimeProvider: DEFAULT_PROVIDER,
     runtimeSessionId: "",
     persistedLoaded: false,
@@ -154,6 +154,8 @@ export interface WsSessionStore {
     runtimeProvider?: string | null;
     runtimeSessionId?: string | null;
     pendingPlanApproval?: PendingPlanApproval | null;
+    contextUsage?: ContextUsageState | null;
+    hasFileChanges?: boolean;
   }) => void;
   loadOlderMessages: (sessionId: string) => Promise<void>;
 }

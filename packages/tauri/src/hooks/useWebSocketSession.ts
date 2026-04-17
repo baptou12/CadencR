@@ -6,7 +6,7 @@
  */
 
 import { useEffect } from "react";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../shared/models";
+import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { useGetFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -19,7 +19,7 @@ import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
-import type { ContextUsageState } from "@/types/agent";
+import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import type { AgentStatus } from "@/types/agent";
 import {
   type TurnLifecycle,
@@ -100,6 +100,17 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
       lastSession.pendingPlanApproval,
     );
 
+    const persistedContextUsage: ContextUsageState | null =
+      lastSession.inputTokens > 0 ||
+      lastSession.outputTokens > 0 ||
+      normalizeContextWindow(lastSession.contextWindow) != null
+        ? {
+            inputTokens: lastSession.inputTokens ?? 0,
+            outputTokens: lastSession.outputTokens ?? 0,
+            contextWindow: normalizeContextWindow(lastSession.contextWindow),
+            wasCompacted: lastSession.wasCompacted ?? false,
+          }
+        : null;
     store.setPersistedState(sessionId, {
       blocks: restoredBlocks,
       lifecycle: restoredLifecycle,
@@ -112,6 +123,8 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
       pendingPlanApproval: lastSession.pendingPlanApproval as PendingPlanApproval | null,
+      contextUsage: persistedContextUsage,
+      hasFileChanges: lastSession.hasFileChanges,
     });
   }, [featureId, agentStateQuery.data, persistedLoaded, sessionId, store]);
 
@@ -130,7 +143,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     pendingPlanApproval: session?.pendingPlanApproval ?? null,
     contextUsage: session?.contextUsage ?? null,
     currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
-    currentModelId: session?.currentModelId ?? DEFAULT_MODEL,
+    currentModelId: session?.currentModelId ?? FALLBACK_MODEL_ID,
     runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
     runtimeSessionId: session?.runtimeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,

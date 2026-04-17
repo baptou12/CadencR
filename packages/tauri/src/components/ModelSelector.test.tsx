@@ -35,7 +35,7 @@ const {
           id: "claude_code",
           label: "Claude Code",
           status: "available",
-          models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+          models: [{ id: "opus", label: "Opus" }],
           default_model: "opus",
         },
         {
@@ -136,7 +136,7 @@ describe("ModelSelector", () => {
             id: "claude_code",
             label: "Claude Code",
             status: "available",
-            models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+            models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
           },
           {
@@ -213,5 +213,58 @@ describe("ModelSelector", () => {
     const disabledProvider = screen.getByText("Codex CLI (Coming soon)");
     expect(disabledProvider).toBeInTheDocument();
     expect(disabledProvider.closest("[data-disabled]")).not.toBeNull();
+  });
+
+  it("uses the selected provider default model instead of inheriting a Claude model id", () => {
+    mockGetWorkspaceProviderSettings.mockReturnValue({ data: { plan: "opencode" }, isLoading: false });
+    mockAgentCatalog.mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "default", label: "Default" }],
+            default_model: "default",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "default/default", label: "Default" }],
+            default_model: "default/default",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ModelSelector level="global" />);
+
+    expect(screen.getAllByRole("combobox")[0]).toHaveTextContent("OpenCode / Default");
+  });
+
+  it("surfaces live model descriptions from the provider catalog", () => {
+    mockAgentCatalog.mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "default", label: "Default", description: "Opus 4.7 with 1M context" }],
+            default_model: "default",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ModelSelector level="global" />);
+    expect(screen.getAllByRole("combobox")[0]).toHaveAttribute("title", "Opus 4.7 with 1M context");
   });
 });

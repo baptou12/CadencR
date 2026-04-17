@@ -3,16 +3,23 @@ import { render, screen } from "@/test-utils";
 import { ContextUsageBar } from "./ContextUsageBar";
 import type { ContextUsageState } from "@/types/agent";
 
-function makeUsage(overrides: Partial<ContextUsageState> = {}): ContextUsageState {
-  return {
+function makeUsage(overrides: Partial<ContextUsageState> & { usageRatio?: number } = {}): ContextUsageState {
+  const ratio = overrides.usageRatio;
+  const { usageRatio: _ignored, ...rest } = overrides;
+  const base: ContextUsageState = {
     inputTokens: 10000,
     outputTokens: 0,
-    totalTokens: 10000,
     contextWindow: 200000,
-    usageRatio: 0.05,
     wasCompacted: false,
-    ...overrides,
+    ...rest,
   };
+  if (ratio != null && base.contextWindow && base.contextWindow > 0) {
+    // Adjust tokens so `usageRatio(base)` equals the requested ratio.
+    const target = Math.round(ratio * base.contextWindow);
+    base.inputTokens = target;
+    base.outputTokens = 0;
+  }
+  return base;
 }
 
 describe("ContextUsageBar", () => {
@@ -69,12 +76,39 @@ describe("ContextUsageBar", () => {
     expect(container.querySelector(".context-usage-glow")).not.toBeInTheDocument();
   });
 
-  it("does not render bar when totalTokens is 0", () => {
+  it("renders 0% with no fill when tokens are 0 but contextWindow is known", () => {
     const { container } = render(
-      <ContextUsageBar usage={makeUsage({ totalTokens: 0, usageRatio: 0 })} loaderStyle="normal" isStreaming={false} />
+      <ContextUsageBar
+        usage={makeUsage({ inputTokens: 0, outputTokens: 0, contextWindow: 1_000_000 })}
+        loaderStyle="normal"
+        isStreaming={false}
+      />,
     );
-    // Inner bar div should not be rendered
-    const bars = container.querySelectorAll(".h-full.rounded-full");
-    expect(bars).toHaveLength(0);
+    const bar = container.querySelector<HTMLDivElement>(".h-full.rounded-full");
+    expect(bar).not.toBeNull();
+    expect(bar!.style.width).toBe("0%");
+    expect(screen.getByText("0%")).toBeInTheDocument();
+  });
+
+  it("renders nothing when contextWindow is unknown (null)", () => {
+    const { container } = render(
+      <ContextUsageBar
+        usage={{ inputTokens: 0, outputTokens: 0, contextWindow: null, wasCompacted: false }}
+        loaderStyle="normal"
+        isStreaming={false}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("renders nothing when contextWindow is 0", () => {
+    const { container } = render(
+      <ContextUsageBar
+        usage={makeUsage({ inputTokens: 0, outputTokens: 0, contextWindow: 0 })}
+        loaderStyle="normal"
+        isStreaming={false}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
   });
 });

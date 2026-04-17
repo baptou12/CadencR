@@ -13,7 +13,13 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { AGENT_TYPES, DEFAULT_MODEL, DEFAULT_PROVIDER, type AgentTypeSetting } from "../shared/models";
+import {
+  AGENT_TYPES,
+  DEFAULT_PROVIDER,
+  resolveRuntimeSelection,
+  type AgentTypeSetting,
+  type RuntimeSelection,
+} from "../shared/models";
 import {
   useAgentCatalog,
   useGetFeatureProviderSettings,
@@ -143,53 +149,58 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     return <div className="text-sm text-destructive">Failed to load provider catalog.</div>;
   }
 
-  function getEffectiveModel(agentType: AgentType): string {
-    if (level === "feature") {
-      const projectVal = parentProjectSettings.data?.[agentType];
-      if (projectVal) return projectVal;
-    }
-    if (level !== "global") {
-      const globalVal = parentGlobalSettings.data?.[agentType];
-      if (globalVal) return globalVal;
-    }
-    return DEFAULT_MODEL;
+  function getSelection(agentType: AgentType, targetLevel: "global" | "project" | "feature"): RuntimeSelection {
+    return resolveRuntimeSelection({
+      agentType,
+      providers: agentCatalog.data?.providers,
+      defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
+      globalModels: globalSettings.data ?? parentGlobalSettings.data,
+      globalProviders: globalProviderSettings.data ?? parentGlobalProviderSettings.data,
+      ...(targetLevel !== "global"
+        ? {
+            projectModels: projectSettings.data ?? parentProjectSettings.data,
+            projectProviders: projectProviderSettings.data ?? parentProjectProviderSettings.data,
+          }
+        : {}),
+      ...(targetLevel === "feature"
+        ? {
+            featureModels: featureSettings.data,
+            featureProviders: featureProviderSettings.data,
+          }
+        : {}),
+    });
   }
 
-  function getEffectiveProvider(agentType: AgentType): string {
-    if (level === "feature") {
-      const projectVal = parentProjectProviderSettings.data?.[agentType];
-      if (projectVal) return projectVal;
-    }
-    if (level !== "global") {
-      const globalVal = parentGlobalProviderSettings.data?.[agentType];
-      if (globalVal) return globalVal;
-    }
-    return agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER;
+  function getEffectiveSelection(agentType: AgentType): RuntimeSelection {
+    if (level === "global") return getSelection(agentType, "global");
+    if (level === "project") return getSelection(agentType, "project");
+    return getSelection(agentType, "feature");
   }
 
   function getCurrentValue(agentType: AgentType): string {
     const val = settings?.[agentType];
-    if (level === "global") return val ?? DEFAULT_MODEL;
+    if (level === "global") return getSelection(agentType, "global").modelId;
     return val && val !== "" ? val : INHERIT_VALUE;
   }
 
   function getCurrentProviderValue(agentType: AgentType): string {
     const val = providerSettings?.[agentType];
-    if (level === "global") return val ?? DEFAULT_PROVIDER;
+    if (level === "global") return getSelection(agentType, "global").providerId;
     return val && val !== "" ? val : INHERIT_VALUE;
   }
 
   function isModelSelected(agentType: AgentType, providerId: string, modelId: string): boolean {
-    const selectedModelId = getCurrentValue(agentType) === INHERIT_VALUE
-      ? getEffectiveModel(agentType)
-      : getCurrentValue(agentType);
-    return providerId === getEffectiveProvider(agentType) && modelId === selectedModelId;
+    const selection = getEffectiveSelection(agentType);
+    return providerId === selection.providerId && modelId === selection.modelId;
   }
 
   function handleChange(agentType: AgentType, value: string): void {
     const modelId = value === INHERIT_VALUE ? "" : value;
     if (level === "global") {
-      globalMutation.mutate({ agentType, modelId: modelId || DEFAULT_MODEL });
+      globalMutation.mutate({
+        agentType,
+        modelId: modelId || getSelection(agentType, "global").modelId,
+      });
     } else if (level === "project" && projectId != null) {
       projectMutation.mutate({ projectId, modelType: agentType, model: modelId });
     } else if (level === "feature" && featureId != null) {
@@ -223,13 +234,11 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   })), [agentCatalog.data]);
 
   function getSelectedProvider(agentType: AgentType): string {
-    return getCurrentProviderValue(agentType) === INHERIT_VALUE
-      ? getEffectiveProvider(agentType)
-      : getCurrentProviderValue(agentType);
+    return getEffectiveSelection(agentType).providerId;
   }
 
   function getSelectedModel(agentType: AgentType): string {
-    return getCurrentValue(agentType) === INHERIT_VALUE ? getEffectiveModel(agentType) : getCurrentValue(agentType);
+    return getEffectiveSelection(agentType).modelId;
   }
 
   function getProviderLabel(providerId: string): string {
@@ -242,6 +251,12 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
         .find((provider) => provider.id === providerId)
         ?.models.find((model) => model.id === modelId)?.label ?? modelId
     );
+  }
+
+  function getModelDescription(providerId: string, modelId: string): string | undefined {
+    return agentCatalog.data?.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((model) => model.id === modelId)?.description;
   }
 
   return (
@@ -275,6 +290,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                   variant="outline"
                   role="combobox"
                   className="h-10 w-full justify-between gap-3 rounded-lg border-border/70 bg-background/80 px-3 text-left text-xs font-normal shadow-sm sm:min-w-[260px] sm:max-w-[360px]"
+                  title={getModelDescription(getSelectedProvider(agentType), getSelectedModel(agentType))}
                 >
                   <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
                     <ProviderIcon
@@ -315,7 +331,7 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                     >
                       <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
                       <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
-                      {provider.id === getEffectiveProvider(agentType) && <CheckIcon className="ml-1 size-3 text-violet-400" />}
+                      {provider.id === getEffectiveSelection(agentType).providerId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="min-w-[240px]">
                       <DropdownMenuItem
@@ -346,14 +362,20 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
                             handleProviderChange(agentType, provider.id);
                             handleChange(agentType, model.id);
                           }}
-                          className="flex items-center justify-between gap-2 text-xs"
+                          className="flex items-start justify-between gap-2 text-xs"
+                          title={model.description}
                         >
-                          <span className="flex items-center gap-2">
-                            <ProviderIcon providerId={provider.id} alt={model.label} className="size-3.5 rounded-sm" />
-                            {model.label}
+                          <span className="flex items-start gap-2 min-w-0">
+                            <ProviderIcon providerId={provider.id} alt={model.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="truncate text-foreground">{model.label}</span>
+                              {model.description && (
+                                <span className="truncate text-[11px] text-muted-foreground">{model.description}</span>
+                              )}
+                            </span>
                           </span>
                           {isModelSelected(agentType, provider.id, model.id) && (
-                            <CheckIcon className="size-3 text-violet-400" />
+                            <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
                           )}
                         </DropdownMenuItem>
                       ))}

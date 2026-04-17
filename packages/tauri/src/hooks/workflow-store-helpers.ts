@@ -83,7 +83,10 @@ export function hydrateFromSnapshotPatch(
           runtimeSessionId: existing.runtimeSessionId ?? session.runtime_session_id ?? null,
           inputTokens: session.input_tokens ?? existing.inputTokens,
           outputTokens: session.output_tokens ?? existing.outputTokens,
-          contextWindow: session.context_window || existing.contextWindow,
+          contextWindow:
+            session.context_window != null && session.context_window > 0
+              ? session.context_window
+              : existing.contextWindow,
           pendingPlanApproval: rest.pendingPlanApproval ?? existing.pendingPlanApproval,
         });
       }
@@ -104,7 +107,10 @@ export function hydrateFromSnapshotPatch(
         runtimeSessionId: session.runtime_session_id ?? null,
         inputTokens: session.input_tokens ?? 0,
         outputTokens: session.output_tokens ?? 0,
-        contextWindow: session.context_window || 200_000,
+        contextWindow:
+          session.context_window != null && session.context_window > 0
+            ? session.context_window
+            : null,
         hasFileChanges: false,
         pendingPlanApproval: rest?.pendingPlanApproval ?? null,
       });

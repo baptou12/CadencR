@@ -15,7 +15,6 @@ vi.mock("react-hotkeys-hook", () => ({
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
-  useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
   useGetFeatureWorkingDir: vi.fn(() => ({ data: null })),
 }));
 
@@ -28,7 +27,7 @@ vi.mock("../api/agentRuntime", () => ({
           id: "claude_code",
           label: "Claude Code",
           status: "available",
-          models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+          models: [{ id: "opus", label: "Opus" }],
           default_model: "opus",
         },
         {
@@ -326,14 +325,14 @@ describe("AgentSession", () => {
             id: "claude_code",
             label: "Claude Code",
             status: "available",
-            models: [{ id: "opus", label: "Opus", context_window: 200000 }],
+            models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
           },
           {
             id: "opencode",
             label: "OpenCode",
             status: "available",
-            models: [{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex", context_window: 200000 }],
+            models: [{ id: "openai/gpt-5.3-codex", label: "GPT-5.3 Codex" }],
             default_model: "openai/gpt-5.3-codex",
           },
         ],

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { DEFAULT_MODEL } from "../shared/models";
+import { FALLBACK_MODEL_ID } from "../shared/models";
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
@@ -96,12 +96,12 @@ describe("useWebSocketSession", () => {
     expect(result.current.isConnected).toBe(true);
   });
 
-  it("currentModelId defaults to DEFAULT_MODEL", async () => {
+  it("currentModelId defaults to FALLBACK_MODEL_ID before catalog loads", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve(); await Promise.resolve();
     });
-    expect(result.current.currentModelId).toBe(DEFAULT_MODEL);
+    expect(result.current.currentModelId).toBe(FALLBACK_MODEL_ID);
   });
 
   it("loads persisted history without a message limit", async () => {
@@ -1827,6 +1827,70 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.status).toBe("completed");
+
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    });
+  });
+
+  it("hydrates persisted token usage and context window from REST state", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        sessions: [
+          {
+            status: "idle",
+            blocks: [],
+            inputTokens: 25_000,
+            outputTokens: 4_000,
+            contextWindow: 1_000_000,
+            wasCompacted: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useWebSocketSession("hydrate-id", 99));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(result.current.contextUsage?.inputTokens).toBe(25_000);
+    expect(result.current.contextUsage?.outputTokens).toBe(4_000);
+    expect(result.current.contextUsage?.contextWindow).toBe(1_000_000);
+
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+    });
+  });
+
+  it("leaves contextUsage null when no tokens are persisted", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: {
+        sessions: [
+          {
+            status: "idle",
+            blocks: [],
+            inputTokens: 0,
+            outputTokens: 0,
+            contextWindow: null,
+            wasCompacted: false,
+          },
+        ],
+      },
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useWebSocketSession("hydrate-null-id", 100));
+    await act(async () => {
+      await Promise.resolve(); await Promise.resolve();
+    });
+
+    expect(result.current.contextUsage).toBeNull();
 
     (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
       data: undefined,

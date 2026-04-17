@@ -26,6 +26,7 @@ import {
   applyMutations,
   buildMessagePatch,
 } from "./ws-message-processing";
+import { normalizeContextWindow } from "@/types/agent";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
@@ -147,7 +148,24 @@ function handleSessionAction(
     case "model.set.ok": {
       const p = parseModelPayload(envelope.payload);
       if (p?.model) {
-        ctx.set(updateSession(ctx.get(), sessionId, { currentModelId: p.model }));
+        // A model switch does not alter conversation history, so tokens are
+        // preserved. `context_window` is updated only when the backend
+        // seeded one authoritatively — otherwise we mark the window as
+        // unknown (null) and wait for the next `usage_update`/`result`.
+        const existing = ctx.getSession(sessionId).contextUsage;
+        const nextContextWindow = p.context_window ?? existing?.contextWindow ?? null;
+        const nextUsage = existing
+          ? { ...existing, contextWindow: nextContextWindow }
+          : {
+              inputTokens: 0,
+              outputTokens: 0,
+              contextWindow: nextContextWindow,
+              wasCompacted: false,
+            };
+        ctx.set(updateSession(ctx.get(), sessionId, {
+          currentModelId: p.model,
+          contextUsage: nextUsage,
+        }));
       }
       break;
     }
@@ -199,16 +217,11 @@ function handleInitialized(
   }
   if (p.model) updates.currentModelId = p.model;
   if (p.input_tokens != null || p.output_tokens != null) {
-    const inputTokens = p.input_tokens ?? 0;
-    const outputTokens = p.output_tokens ?? 0;
-    const contextWindow = p.context_window || 200000;
-    const totalTokens = inputTokens + outputTokens;
+    const contextWindow = normalizeContextWindow(p.context_window) ?? session.contextUsage?.contextWindow ?? null;
     updates.contextUsage = {
-      inputTokens,
-      outputTokens,
-      totalTokens,
+      inputTokens: p.input_tokens ?? 0,
+      outputTokens: p.output_tokens ?? 0,
       contextWindow,
-      usageRatio: Math.min(1, totalTokens / contextWindow),
       wasCompacted: false,
     };
   }
@@ -349,17 +362,14 @@ function handleUsageUpdate(
 ): void {
   const u = parseUsagePayload(payload);
   if (!u) return;
-  const totalTokens = u.input_tokens + u.output_tokens;
-  const contextWindow = u.context_window || 200000;
-  const usageRatio = Math.min(1, totalTokens / contextWindow);
+  const session = ctx.getSession(sessionId);
+  const contextWindow = u.context_window ?? session.contextUsage?.contextWindow ?? null;
   ctx.set(updateSession(ctx.get(), sessionId, {
     contextUsage: {
       inputTokens: u.input_tokens,
       outputTokens: u.output_tokens,
-      totalTokens,
       contextWindow,
-      usageRatio,
-      wasCompacted: false,
+      wasCompacted: session.contextUsage?.wasCompacted ?? false,
     },
   }));
 }

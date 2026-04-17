@@ -16,7 +16,6 @@ const { mockGetSettings: _mockGetSettings, mockSetSetting: _mockSetSetting } = v
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
-  useListModels: vi.fn(() => ({ data: [{ id: "opus[1m]", label: "Opus (1M)" }] })),
   useGetProjectSettings: vi.fn(() => ({ data: [] })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
 }));
