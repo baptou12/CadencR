@@ -7,6 +7,7 @@ use std::process::Command;
 use crate::app_state::AppState;
 use crate::domain::features::models::*;
 use crate::domain::features::service;
+use crate::domain::settings_allowlist;
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -179,6 +180,12 @@ pub async fn set_feature_setting_handler(
     Path(id): Path<i64>,
     Json(body): Json<SetFeatureSettingRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
+    if !settings_allowlist::is_feature_key_allowed(&body.key) {
+        return Err(AppError::BadRequest(format!(
+            "unknown feature settings key: {}",
+            body.key
+        )));
+    }
     service::set_feature_setting(&state.write_pool, id, &body.key, &body.value).await?;
     Ok(Json(SuccessResponse { success: true }))
 }
@@ -278,15 +285,16 @@ pub async fn open_external_handler(
     let path =
         path.ok_or_else(|| AppError::NotFound("Feature working directory not found".to_string()))?;
 
+    // `--` stops the launched binary from parsing a flag-prefixed path as an option.
     match body.app {
         ExternalApp::Terminal => {
             if Command::new("open")
-                .args(["-a", "iTerm", &path])
+                .args(["-a", "iTerm", "--", &path])
                 .spawn()
                 .is_err()
             {
                 Command::new("open")
-                    .args(["-a", "Terminal", &path])
+                    .args(["-a", "Terminal", "--", &path])
                     .spawn()
                     .map_err(|_| {
                         AppError::BadRequest(
@@ -297,7 +305,7 @@ pub async fn open_external_handler(
             }
         }
         ExternalApp::Zed => {
-            Command::new("zed").arg(&path).spawn().map_err(|_| {
+            Command::new("zed").args(["--", &path]).spawn().map_err(|_| {
                 AppError::BadRequest("Zed editor not found. Install it from https://zed.dev and ensure the 'zed' CLI is in your PATH.".to_string())
             })?;
         }

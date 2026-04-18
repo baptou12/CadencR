@@ -9,6 +9,7 @@ pub mod projects;
 pub mod runtime_stream;
 pub mod sessions;
 pub mod settings;
+pub mod settings_allowlist;
 pub mod terminal;
 pub mod usage;
 pub mod workflow;

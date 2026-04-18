@@ -114,7 +114,8 @@ enum FetchError {
 }
 
 async fn get_oauth_token() -> Result<String, FetchError> {
-    let output = tokio::process::Command::new("security")
+    // Absolute path so PATH shadowing can't intercept the keychain tool.
+    let output = tokio::process::Command::new("/usr/bin/security")
         .args([
             "find-generic-password",
             "-s",

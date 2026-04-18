@@ -6,6 +6,7 @@ use serde::Serialize;
 use crate::app_state::AppState;
 use crate::domain::projects::models::*;
 use crate::domain::projects::service;
+use crate::domain::settings_allowlist;
 use crate::error::AppError;
 
 #[derive(Serialize, utoipa::ToSchema)]
@@ -55,6 +56,12 @@ pub async fn set_project_setting_handler(
     Path(id): Path<i64>,
     Json(body): Json<SetProjectSettingRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
+    if !settings_allowlist::is_project_key_allowed(&body.key) {
+        return Err(AppError::BadRequest(format!(
+            "unknown project settings key: {}",
+            body.key
+        )));
+    }
     service::set_project_setting(&state.write_pool, id, &body.key, &body.value).await?;
     Ok(Json(SuccessResponse { success: true }))
 }

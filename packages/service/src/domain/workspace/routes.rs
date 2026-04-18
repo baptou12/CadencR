@@ -4,6 +4,7 @@ use axum::Router;
 use serde::Serialize;
 
 use crate::app_state::AppState;
+use crate::domain::settings_allowlist;
 use crate::domain::workspace::models::*;
 use crate::domain::workspace::service;
 use crate::error::AppError;
@@ -35,6 +36,11 @@ pub async fn set_setting_handler(
     Path(key): Path<String>,
     Json(body): Json<SetSettingRequest>,
 ) -> Result<Json<SettingValueResponse>, AppError> {
+    if !settings_allowlist::is_workspace_key_allowed(&key) {
+        return Err(AppError::BadRequest(format!(
+            "unknown workspace settings key: {key}"
+        )));
+    }
     service::set_setting(&state.write_pool, &key, &body.value).await?;
     Ok(Json(SettingValueResponse {
         value: Some(body.value),
