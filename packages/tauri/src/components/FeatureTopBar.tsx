@@ -16,6 +16,7 @@ import {
   useOpenExternalHandler,
 } from "@/api/generated";
 import { ModelSelector } from "./ModelSelector";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { AutonomyLevel, WorktreeStatus } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
@@ -55,7 +56,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
 
   const { data: feature } = useGetFeature(featureId);
   // Live WS-pushed title from auto-naming (falls back to null).
-  const wsTitle = useFeatureTitle(featureId);
+  const { title: wsTitle, isAutoNaming } = useFeatureTitle(featureId);
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettingsMap = featureSettingsData ? Object.fromEntries(featureSettingsData.map(s => [s.key, s.value])) : {};
   const featureSettings = { ...featureSettingsMap };
@@ -139,7 +140,11 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
       )}
 
       <ProjectColorDot projectId={projectId} className="size-2.5" />
-      <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
+      {isAutoNaming ? (
+        <Skeleton className="h-5 w-40" />
+      ) : (
+        <h1 className="text-lg font-semibold">{wsTitle ?? feature.title}</h1>
+      )}
 
       <div className="flex-1" />
 

@@ -497,6 +497,7 @@ interface WorkspaceModelSettings {
   session: string;
   qa: string;
   retro: string;
+  auto_name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +599,7 @@ interface ProjectModelSettings {
   session: string;
   qa: string;
   retro: string;
+  auto_name: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -777,6 +779,7 @@ interface FeatureModelSettings {
   session: string;
   qa: string;
   retro: string;
+  auto_name: string;
 }
 
 // ---------------------------------------------------------------------------

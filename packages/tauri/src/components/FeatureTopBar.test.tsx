@@ -51,7 +51,7 @@ vi.mock("@/api/generated", () => ({
 }));
 
 vi.mock("@/hooks/useFeatureTitle", () => ({
-  useFeatureTitle: vi.fn(() => null),
+  useFeatureTitle: vi.fn(() => ({ title: null, isAutoNaming: false })),
 }));
 
 const mockSetAutonomyLevel = vi.fn();

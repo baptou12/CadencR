@@ -149,6 +149,8 @@ export interface WorkflowState {
 
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
+  /** True while the backend is generating a name for this feature. */
+  isAutoNaming: boolean;
 
   // Slash commands
   slashCommands: SlashCommand[];

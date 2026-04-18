@@ -18,9 +18,10 @@ const MODEL_KEYS: &[(&str, &str)] = &[
     ("session", "model_session"),
     ("qa", "model_qa"),
     ("retro", "model_retro"),
+    ("auto_name", "model_auto_name"),
 ];
 
-fn provider_keys() -> [(&'static str, String); 9] {
+fn provider_keys() -> [(&'static str, String); 10] {
     [
         ("plan", runtime_setting_key("plan")),
         ("prd", runtime_setting_key("prd")),
@@ -31,6 +32,7 @@ fn provider_keys() -> [(&'static str, String); 9] {
         ("session", runtime_setting_key("session")),
         ("qa", runtime_setting_key("qa")),
         ("retro", runtime_setting_key("retro")),
+        ("auto_name", runtime_setting_key("auto_name")),
     ]
 }
 
@@ -75,6 +77,7 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
         ("session", provider_settings.session.as_str()),
         ("qa", provider_settings.qa.as_str()),
         ("retro", provider_settings.retro.as_str()),
+        ("auto_name", provider_settings.auto_name.as_str()),
     ];
     let mut defaults_by_provider = HashMap::new();
     let mut models_by_agent = HashMap::new();
@@ -107,6 +110,7 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
         session: models_by_agent.remove("session").unwrap_or_default(),
         qa: models_by_agent.remove("qa").unwrap_or_default(),
         retro: models_by_agent.remove("retro").unwrap_or_default(),
+        auto_name: models_by_agent.remove("auto_name").unwrap_or_default(),
     })
 }
 
@@ -142,6 +146,7 @@ pub async fn get_provider_settings(pool: &SqlitePool) -> Result<AgentProviderSet
             "session" => settings.session = provider,
             "qa" => settings.qa = provider,
             "retro" => settings.retro = provider,
+            "auto_name" => settings.auto_name = provider,
             _ => {}
         }
     }
@@ -297,7 +302,7 @@ mod tests {
     async fn test_get_model_settings_defaults() {
         let pool = setup_test_db().await;
         let settings = get_model_settings(&pool).await.unwrap();
-        // All nine agent types share whatever the adapter reports as its
+        // All agent types share whatever the adapter reports as its
         // default (live CLI value if warmed, else `FALLBACK_MODEL`).
         let expected = &settings.plan;
         assert!(!expected.is_empty());
@@ -309,6 +314,7 @@ mod tests {
         assert_eq!(&settings.session, expected);
         assert_eq!(&settings.qa, expected);
         assert_eq!(&settings.retro, expected);
+        assert_eq!(&settings.auto_name, expected);
     }
 
     #[tokio::test]

@@ -213,6 +213,17 @@ export function parseFeatureRenamePayload(
   };
 }
 
+export function parseFeatureAutoNamingPayload(
+  payload: unknown,
+): { feature_id?: number; in_progress: boolean } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return {
+    feature_id: optionalNumber(record, "feature_id"),
+    in_progress: record.in_progress === true,
+  };
+}
+
 export function parseClearedPayload(
   payload: unknown,
 ): { previous_session_id?: string } | null {
