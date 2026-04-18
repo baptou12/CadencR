@@ -14,10 +14,12 @@ import {
 import { commentGutter } from "./diff-comment-gutter";
 import type { DiffComment } from "./DiffCommentWidget";
 
-function useNearViewport(ref: React.RefObject<HTMLElement | null>): boolean {
+function useNearViewport(ref: React.RefObject<HTMLElement | null>, disabled: boolean): boolean {
   const [isNearViewport, setIsNearViewport] = useState(false);
 
   useEffect(() => {
+    if (disabled || isNearViewport) return;
+
     const el = ref.current;
     if (!el) return;
 
@@ -33,8 +35,7 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>): boolean {
 
     observer.observe(el);
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [disabled, isNearViewport, ref]);
 
   return isNearViewport;
 }
@@ -48,6 +49,7 @@ export interface DiffFileBlockProps {
   diffMode: "unified" | "split";
   displayName: string;
   isCollapsed: boolean;
+  forceRender?: boolean;
   /** Comments for this file, grouped by line */
   commentLines?: CommentLineData[];
   /** Currently active comment widget (open form) */
@@ -66,6 +68,7 @@ export function DiffFileBlock({
   commitSha,
   diffMode,
   isCollapsed,
+  forceRender = false,
   commentLines,
   activeWidget,
   commentCallbacks,
@@ -74,10 +77,21 @@ export function DiffFileBlock({
   const filePath = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
 
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const isNearViewport = useNearViewport(sentinelRef);
+  const isNearViewport = useNearViewport(sentinelRef, isCollapsed);
   const editorViewRef = useRef<EditorView | null>(null);
+  const [hasBeenActivated, setHasBeenActivated] = useState(false);
 
-  const shouldRender = isNearViewport && !isCollapsed;
+  useEffect(() => {
+    if (isCollapsed) {
+      setHasBeenActivated(false);
+      return;
+    }
+    if (forceRender) {
+      setHasBeenActivated(true);
+    }
+  }, [forceRender, isCollapsed]);
+
+  const shouldRender = !isCollapsed && (forceRender || hasBeenActivated || isNearViewport);
 
   const { data: fileContent } = useGetFileContent(
     { featureId, filePath, mode, targetBranch, commitSha },
@@ -110,11 +124,15 @@ export function DiffFileBlock({
     dispatchCommentData(view, commentLines ?? [], activeWidget ?? null, commentCallbacks);
   }, [commentLines, activeWidget, commentCallbacks]);
 
-  if (!isNearViewport) {
+  if (isCollapsed) {
+    return null;
+  }
+
+  if (!shouldRender) {
     return <div ref={sentinelRef} style={{ minHeight: "200px" }} />;
   }
 
-  if (isCollapsed || !fileContent) return null;
+  if (!fileContent) return null;
 
   return (
     <ReadOnlyDiffView

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@/test-utils";
 
 const mocks = vi.hoisted(() => {
@@ -37,6 +37,10 @@ vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
 }));
 
 import { DiffViewer } from "./DiffViewer";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("DiffViewer", () => {
   it("shows loading state", () => {
@@ -80,5 +84,25 @@ index abc..def 100644
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByRole("button", { name: "Split" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unified" })).toBeInTheDocument();
+  });
+
+  it("does not emit nested button warnings for file headers", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const mockDiff = `diff --git a/src/foo.ts b/src/foo.ts
+index abc..def 100644
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,1 +1,2 @@
+ line1
++line2
+`;
+
+    mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
+
+    render(<DiffViewer featureId={1} mode="worktree" />);
+
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining("cannot be a descendant of <button>"),
+    );
   });
 });

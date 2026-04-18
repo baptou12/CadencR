@@ -80,6 +80,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   );
 
   const toggleFile = useCallback((fileName: string) => {
+    setSelectedFile(fileName);
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(fileName)) next.delete(fileName);
@@ -225,6 +226,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                     diffMode={diffMode}
                     displayName={displayName}
                     isCollapsed={isCollapsed}
+                    forceRender={selectedFile === displayName}
                     commentLines={commentLinesByFile.get(displayName)}
                     activeWidget={
                       activeCommentWidget?.filePath === displayName
@@ -297,15 +299,15 @@ function FileHeader({
 }) {
   return (
     <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}>
-      <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={onToggle}>
+      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onToggle}>
         {isCollapsed ? (
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
-        <span className="font-mono text-xs truncate">{displayName}</span>
-        <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
       </button>
+      <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
       <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
       <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
       {showViewedCheckbox && (
