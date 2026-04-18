@@ -100,7 +100,7 @@ describe("FeatureEditorTab", () => {
   });
 
   it("subscribes to file changes even when the file tree sidebar is hidden", () => {
-    render(<FeatureEditorTab featureId={1} projectPath="/project" />);
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
     expect(mockUseFileWatcher).toHaveBeenCalledWith("/project");
     expect(screen.queryByTestId("file-tree")).not.toBeInTheDocument();
