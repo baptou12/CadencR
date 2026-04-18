@@ -810,6 +810,7 @@ pub(super) async fn handle_clear(
         permission_mode: handle.desired_permission_mode.clone(),
         model: handle.desired_model.clone(),
         system_prompt: handle.config.system_prompt.clone(),
+        env: handle.config.env.clone(),
         ..RuntimeSpawnConfig::default()
     };
     handle.state = QueryState::Pending(fresh_options);

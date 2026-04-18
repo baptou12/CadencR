@@ -1,5 +1,13 @@
 mod catalog;
+pub mod custom_models;
 mod events;
+pub mod profiles;
+pub mod routes;
+
+/// Provider ID used to look up the Claude Code adapter in the provider
+/// registry. Centralised so the string doesn't get sprinkled across the
+/// codebase.
+pub const PROVIDER_ID: &str = "claude_code";
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -223,6 +231,22 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         ClaudeCodeAdapter::default_model_id(self).await
     }
 
+    async fn extra_models(
+        &self,
+        read_pool: &sqlx::SqlitePool,
+    ) -> Vec<ModelCatalogEntry> {
+        match custom_models::list_custom_models(read_pool).await {
+            Ok(models) => models,
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "failed to load claude_code custom models; returning empty"
+                );
+                Vec::new()
+            }
+        }
+    }
+
     fn context_window_for_event(
         &self,
         runtime_event: &RuntimeEvent,
@@ -262,6 +286,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
                 Box::new(ClaudeCanUseToolAdapter { inner: handler })
                     as Box<dyn claude_agent_sdk_rs::CanUseTool>
             }),
+            env: config.env,
             ..claude_agent_sdk_rs::Options::default()
         };
 

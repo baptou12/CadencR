@@ -1,9 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import type { ReactNode } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
+import { ProvidersTab } from "../components/settings/ProvidersTab";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DEFAULT_LOADER_STYLE, LOADER_STYLE_DETAILS, LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
@@ -13,19 +15,77 @@ import {
   getGetWorkspaceSettingQueryKey,
 } from "../api/generated";
 
+const SETTINGS_TABS = ["general", "providers"] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+function parseTab(value: unknown): SettingsTab {
+  return SETTINGS_TABS.includes(value as SettingsTab) ? (value as SettingsTab) : "general";
+}
+
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
+  validateSearch: (search: Record<string, unknown>): { tab?: SettingsTab } => {
+    if (search.tab && SETTINGS_TABS.includes(search.tab as SettingsTab)) {
+      return { tab: search.tab as SettingsTab };
+    }
+    return {};
+  },
 });
 
 function SettingsPage() {
+  const { tab } = Route.useSearch();
+  const navigate = useNavigate();
+  const activeTab = parseTab(tab);
+
+  const setTab = (next: SettingsTab) => {
+    void navigate({
+      to: "/settings",
+      search: next === "general" ? {} : { tab: next },
+      replace: true,
+    });
+  };
+
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1 border-b border-border px-6 pt-6 pb-0">
+      <div className="flex items-center gap-1 border-b border-border px-6 pt-6">
         <h1 className="text-2xl font-bold mr-6 pb-2">Settings</h1>
+        <SettingsTabButton active={activeTab === "general"} onClick={() => setTab("general")}>
+          General
+        </SettingsTabButton>
+        <SettingsTabButton active={activeTab === "providers"} onClick={() => setTab("providers")}>
+          Providers
+        </SettingsTabButton>
       </div>
 
-      <GeneralTab />
+      {activeTab === "providers" ? <ProvidersTab /> : <GeneralTab />}
     </div>
+  );
+}
+
+function SettingsTabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={[
+        "px-3 pb-2 text-sm font-medium -mb-px border-b-2 transition-colors",
+        active
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }
 

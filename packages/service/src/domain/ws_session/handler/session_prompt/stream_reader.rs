@@ -263,6 +263,7 @@ pub(crate) fn spawn_stream_reader(
                     model: handle.desired_model.clone(),
                     system_prompt: handle.config.system_prompt.clone(),
                     resume_session_id: runtime_session_id,
+                    env: handle.config.env.clone(),
                     ..RuntimeSpawnConfig::default()
                 };
 

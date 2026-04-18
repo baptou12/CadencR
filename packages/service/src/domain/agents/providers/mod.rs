@@ -1,8 +1,10 @@
 mod codex_cli;
 pub(crate) mod opencode;
 
+use sqlx::SqlitePool;
+
 use super::adapter::AgentRuntimeAdapter;
-use super::runtime::{AgentCatalogResponse, DEFAULT_PROVIDER};
+use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, DEFAULT_PROVIDER};
 
 /// All registered runtime adapters. Add new providers here.
 static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)] = &[
@@ -43,10 +45,31 @@ pub fn resolve_effective_provider(provider_id: String, model: Option<&str>) -> S
     provider_id
 }
 
-pub async fn provider_catalog_live() -> AgentCatalogResponse {
+/// Merge user-contributed `extra_models` into an adapter's model list. User
+/// entries win on id collision so descriptions and labels can be overridden.
+fn merge_extra_models(
+    mut base: Vec<ModelCatalogEntry>,
+    extra: Vec<ModelCatalogEntry>,
+) -> Vec<ModelCatalogEntry> {
+    for entry in extra {
+        if let Some(existing) = base.iter_mut().find(|m| m.id == entry.id) {
+            *existing = entry;
+        } else {
+            base.push(entry);
+        }
+    }
+    base
+}
+
+pub async fn provider_catalog_live(read_pool: &SqlitePool) -> AgentCatalogResponse {
     let mut providers = Vec::with_capacity(ADAPTERS.len() + 1);
     for (_, adapter) in ADAPTERS {
-        providers.push(adapter.catalog_entry_live().await);
+        let mut entry = adapter.catalog_entry_live().await;
+        let extra = adapter.extra_models(read_pool).await;
+        if !extra.is_empty() {
+            entry.models = merge_extra_models(entry.models, extra);
+        }
+        providers.push(entry);
     }
     providers.push(codex_cli::catalog_entry());
     AgentCatalogResponse {
@@ -83,7 +106,29 @@ pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &st
 
 #[cfg(test)]
 mod tests {
-    use super::{adapter_for_model, resolve_effective_provider, runtime_adapter, ADAPTERS};
+    use super::{
+        adapter_for_model, merge_extra_models, resolve_effective_provider, runtime_adapter,
+        ADAPTERS,
+    };
+    use crate::domain::agents::runtime::ModelCatalogEntry;
+
+    #[test]
+    fn merge_extra_models_appends_new_entries() {
+        let base = vec![ModelCatalogEntry::alias("opus", "Opus")];
+        let extra = vec![ModelCatalogEntry::alias("custom", "Custom")];
+        let merged = merge_extra_models(base, extra);
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[1].id, "custom");
+    }
+
+    #[test]
+    fn merge_extra_models_overrides_on_id_collision() {
+        let base = vec![ModelCatalogEntry::alias("opus", "Opus")];
+        let extra = vec![ModelCatalogEntry::alias("opus", "Opus (gateway)")];
+        let merged = merge_extra_models(base, extra);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].label, "Opus (gateway)");
+    }
 
     #[test]
     fn runtime_adapter_registry_has_claude_and_opencode() {

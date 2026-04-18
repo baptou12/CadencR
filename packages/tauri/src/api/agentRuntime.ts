@@ -105,6 +105,135 @@ export function useSetProjectProviderSetting(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Claude Code profiles & custom models
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_CLAUDE_PROFILE_NAME = "default";
+
+export interface ClaudeCodeProfile {
+  name: string;
+  env: Record<string, string>;
+}
+
+export interface ClaudeCodeProfilesResponse {
+  profiles: ClaudeCodeProfile[];
+  active: string;
+}
+
+export interface ClaudeCodeCustomModelsResponse {
+  models: RuntimeModelOption[];
+}
+
+export function useClaudeCodeProfiles() {
+  return useQuery({
+    queryKey: ["claude-code", "profiles"],
+    queryFn: () =>
+      customInstance<ClaudeCodeProfilesResponse>({
+        method: "GET",
+        url: "/api/claude-code/profiles",
+      }),
+  });
+}
+
+export function useUpsertClaudeCodeProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, env }: { name: string; env: Record<string, string> }) =>
+      customInstance<ClaudeCodeProfile>({
+        method: "PUT",
+        url: `/api/claude-code/profiles/${encodeURIComponent(name)}`,
+        data: { env },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
+    },
+  });
+}
+
+export function useDeleteClaudeCodeProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) =>
+      customInstance<{ ok: boolean }>({
+        method: "DELETE",
+        url: `/api/claude-code/profiles/${encodeURIComponent(name)}`,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
+    },
+  });
+}
+
+export function useSetActiveClaudeCodeProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) =>
+      customInstance<{ ok: boolean }>({
+        method: "PUT",
+        url: "/api/claude-code/profiles/active",
+        data: { name },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
+    },
+  });
+}
+
+export function useClaudeCodeCustomModels() {
+  return useQuery({
+    queryKey: ["claude-code", "custom-models"],
+    queryFn: () =>
+      customInstance<ClaudeCodeCustomModelsResponse>({
+        method: "GET",
+        url: "/api/claude-code/custom-models",
+      }),
+  });
+}
+
+export function useUpsertClaudeCodeCustomModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      modelId,
+      label,
+      description,
+    }: {
+      modelId: string;
+      label: string;
+      description?: string;
+    }) =>
+      customInstance<RuntimeModelOption>({
+        method: "PUT",
+        url: `/api/claude-code/custom-models/${encodeURIComponent(modelId)}`,
+        data: { label, description },
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["claude-code", "custom-models"] }),
+        queryClient.invalidateQueries({ queryKey: ["agent-catalog"] }),
+      ]);
+    },
+  });
+}
+
+export function useDeleteClaudeCodeCustomModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ modelId }: { modelId: string }) =>
+      customInstance<{ ok: boolean }>({
+        method: "DELETE",
+        url: `/api/claude-code/custom-models/${encodeURIComponent(modelId)}`,
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["claude-code", "custom-models"] }),
+        queryClient.invalidateQueries({ queryKey: ["agent-catalog"] }),
+      ]);
+    },
+  });
+}
+
 export function useGetFeatureProviderSettings(featureId: number, enabled = true) {
   return useQuery({
     queryKey: ["features", "provider-settings", featureId],

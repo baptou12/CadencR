@@ -51,6 +51,10 @@ pub struct RuntimeSpawnConfig {
     pub resume_session_id: Option<String>,
     pub mcp_servers: Option<HashMap<String, RuntimeMcpServerConfig>>,
     pub permission_handler: Option<Arc<dyn RuntimeToolPermissionHandler>>,
+    /// Extra env vars injected into the spawned runtime. Adapters decide how
+    /// to apply this (Claude Code merges it into the CLI subprocess env;
+    /// OpenCode currently ignores it since it speaks HTTP).
+    pub env: Option<HashMap<String, String>>,
 }
 
 impl Default for RuntimeSpawnConfig {
@@ -63,6 +67,7 @@ impl Default for RuntimeSpawnConfig {
             resume_session_id: None,
             mcp_servers: None,
             permission_handler: None,
+            env: None,
         }
     }
 }
@@ -419,6 +424,16 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Live catalog entry (may fetch from external service). Defaults to static.
     async fn catalog_entry_live(&self) -> super::runtime::ProviderCatalogEntry {
         self.catalog_entry()
+    }
+
+    /// Extra models contributed by user configuration (e.g. custom Claude Code
+    /// model aliases stored in SQLite). Returned entries are merged into the
+    /// adapter's catalog; on id collision the user entry wins.
+    async fn extra_models(
+        &self,
+        _read_pool: &sqlx::SqlitePool,
+    ) -> Vec<super::runtime::ModelCatalogEntry> {
+        Vec::new()
     }
 
     /// Preferred default model id for this provider.
