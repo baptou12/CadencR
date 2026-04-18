@@ -13,7 +13,7 @@ import { useEditorState } from "@/hooks/useEditorState";
 import { FileSymbolIcon } from "./file-icons";
 
 interface FileSearchDialogProps {
-  projectPath: string;
+  projectId: number;
   featureId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -22,7 +22,7 @@ interface FileSearchDialogProps {
 const DEBOUNCE_MS = 150;
 
 export default function FileSearchDialog({
-  projectPath,
+  projectId,
   featureId,
   open,
   onOpenChange,
@@ -34,7 +34,7 @@ export default function FileSearchDialog({
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
 
-  const { data, isLoading } = useFileSearch(projectPath, debouncedQuery || undefined, {
+  const { data, isLoading } = useFileSearch(projectId, featureId, debouncedQuery || undefined, {
     enabled: open,
     keepPreviousData: true,
   });

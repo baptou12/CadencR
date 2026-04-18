@@ -3,9 +3,10 @@ mod tests {
     use super::super::routes::ContentSearchParams;
     use super::super::service;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
-    fn create_test_project() -> TempDir {
+    fn create_test_project() -> (TempDir, PathBuf) {
         let dir = TempDir::new().unwrap();
         fs::write(
             dir.path().join("hello.rs"),
@@ -22,12 +23,14 @@ mod tests {
             "This is a test file\nWith multiple lines\nFor searching\n",
         )
         .unwrap();
-        dir
+        let canonical = fs::canonicalize(dir.path()).unwrap();
+        (dir, canonical)
     }
 
-    fn default_params(project_path: &str, query: &str) -> ContentSearchParams {
+    fn default_params(query: &str) -> ContentSearchParams {
         ContentSearchParams {
-            project_path: project_path.to_string(),
+            project_id: 0,
+            feature_id: None,
             query: query.to_string(),
             case_sensitive: false,
             whole_word: false,
@@ -41,9 +44,9 @@ mod tests {
 
     #[test]
     fn finds_basic_match() {
-        let dir = create_test_project();
-        let params = default_params(dir.path().to_str().unwrap(), "Hello");
-        let result = service::content_search(&params).unwrap();
+        let (_dir, root) = create_test_project();
+        let params = default_params("Hello");
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(!result.matches.is_empty(), "should find at least one match");
         let m = &result.matches[0];
@@ -53,9 +56,9 @@ mod tests {
 
     #[test]
     fn case_insensitive_by_default() {
-        let dir = create_test_project();
-        let params = default_params(dir.path().to_str().unwrap(), "hello");
-        let result = service::content_search(&params).unwrap();
+        let (_dir, root) = create_test_project();
+        let params = default_params("hello");
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(
             !result.matches.is_empty(),
@@ -65,10 +68,10 @@ mod tests {
 
     #[test]
     fn case_sensitive_filters() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "hello");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("hello");
         params.case_sensitive = true;
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(
             result.matches.is_empty(),
@@ -78,10 +81,10 @@ mod tests {
 
     #[test]
     fn whole_word_match() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "test");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("test");
         params.whole_word = true;
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
         // Should match "test" in test.txt but not partial matches
         for m in &result.matches {
@@ -94,10 +97,10 @@ mod tests {
 
     #[test]
     fn regex_search() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), r"fn \w+");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params(r"fn \w+");
         params.is_regex = true;
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(
             !result.matches.is_empty(),
@@ -107,13 +110,12 @@ mod tests {
 
     #[test]
     fn context_lines_returned() {
-        let dir = create_test_project();
-        let params = default_params(dir.path().to_str().unwrap(), "multiple");
-        let result = service::content_search(&params).unwrap();
+        let (_dir, root) = create_test_project();
+        let params = default_params("multiple");
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(!result.matches.is_empty());
         let m = &result.matches[0];
-        // "multiple" is on line 2 of test.txt, so context_before should have line 1
         assert!(
             !m.context_before.is_empty(),
             "should have context lines before"
@@ -126,12 +128,11 @@ mod tests {
 
     #[test]
     fn limit_truncates() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "a");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("a");
         params.limit = 1;
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
-        // Parallel walker may slightly overshoot, but truncated flag should be set
         assert!(
             result.truncated,
             "should be truncated when matches exceed limit"
@@ -140,10 +141,10 @@ mod tests {
 
     #[test]
     fn include_pattern_filters() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "fn");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("fn");
         params.include_pattern = Some("*.rs".to_string());
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
         for m in &result.matches {
             assert!(
@@ -156,10 +157,10 @@ mod tests {
 
     #[test]
     fn exclude_pattern_filters() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "fn");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("fn");
         params.exclude_pattern = Some("*.txt".to_string());
-        let result = service::content_search(&params).unwrap();
+        let result = service::content_search(&root, &params).unwrap();
 
         for m in &result.matches {
             assert!(
@@ -171,12 +172,11 @@ mod tests {
 
     #[test]
     fn skips_binary_files() {
-        let dir = create_test_project();
-        // Create a binary file with null bytes
-        fs::write(dir.path().join("binary.bin"), b"hello\x00world").unwrap();
+        let (_dir, root) = create_test_project();
+        fs::write(root.join("binary.bin"), b"hello\x00world").unwrap();
 
-        let params = default_params(dir.path().to_str().unwrap(), "hello");
-        let result = service::content_search(&params).unwrap();
+        let params = default_params("hello");
+        let result = service::content_search(&root, &params).unwrap();
 
         for m in &result.matches {
             assert!(!m.path.contains("binary.bin"), "should skip binary files");
@@ -185,19 +185,19 @@ mod tests {
 
     #[test]
     fn invalid_regex_returns_error() {
-        let dir = create_test_project();
-        let mut params = default_params(dir.path().to_str().unwrap(), "[invalid");
+        let (_dir, root) = create_test_project();
+        let mut params = default_params("[invalid");
         params.is_regex = true;
-        let result = service::content_search(&params);
+        let result = service::content_search(&root, &params);
 
         assert!(result.is_err(), "invalid regex should return error");
     }
 
     #[test]
     fn empty_query_returns_nothing() {
-        let dir = create_test_project();
-        let params = default_params(dir.path().to_str().unwrap(), "");
-        let result = service::content_search(&params).unwrap();
+        let (_dir, root) = create_test_project();
+        let params = default_params("");
+        let result = service::content_search(&root, &params).unwrap();
 
         assert!(
             result.matches.is_empty(),

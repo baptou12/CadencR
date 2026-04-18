@@ -503,9 +503,8 @@ async fn test_file_tree_includes_dotfiles() {
     let resp = server
         .client
         .get(format!(
-            "{}/api/editor/tree?project_path={}&dir_path=",
+            "{}/api/editor/tree?project_id=1&dir_path=",
             server.base_url,
-            repo_path.to_string_lossy()
         ))
         .send()
         .await

@@ -12,13 +12,11 @@ pub struct FileMatch {
     pub positions: Vec<u32>,
 }
 
-/// Validate that `file_path` (relative) resolved under `project_path` stays
-/// within the project directory.  Returns the canonical absolute path.
-pub fn validate_path(project_path: &str, relative_path: &str) -> Result<PathBuf, AppError> {
-    let project = std::fs::canonicalize(project_path)
-        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
-
-    let target = project.join(relative_path);
+/// Validate that `relative_path` joined under `project_root` (already
+/// canonical) stays within the project directory. Returns the canonical
+/// absolute path.
+pub fn validate_path(project_root: &Path, relative_path: &str) -> Result<PathBuf, AppError> {
+    let target = project_root.join(relative_path);
     let canonical = std::fs::canonicalize(&target).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::NotFound(format!("Path not found: {}", target.display()))
@@ -27,7 +25,7 @@ pub fn validate_path(project_path: &str, relative_path: &str) -> Result<PathBuf,
         }
     })?;
 
-    if !canonical.starts_with(&project) {
+    if !canonical.starts_with(project_root) {
         return Err(AppError::BadRequest(
             "Path is outside the project directory".to_string(),
         ));
@@ -37,15 +35,12 @@ pub fn validate_path(project_path: &str, relative_path: &str) -> Result<PathBuf,
 }
 
 /// Validate path for writing — the file may not exist yet, so we canonicalize
-/// the parent directory instead.
+/// the parent directory instead. `project_root` must already be canonical.
 pub fn validate_path_for_write(
-    project_path: &str,
+    project_root: &Path,
     relative_path: &str,
 ) -> Result<PathBuf, AppError> {
-    let project = std::fs::canonicalize(project_path)
-        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
-
-    let target = project.join(relative_path);
+    let target = project_root.join(relative_path);
 
     let parent = target
         .parent()
@@ -59,7 +54,7 @@ pub fn validate_path_for_write(
         }
     })?;
 
-    if !canonical_parent.starts_with(&project) {
+    if !canonical_parent.starts_with(project_root) {
         return Err(AppError::BadRequest(
             "Path is outside the project directory".to_string(),
         ));
@@ -93,14 +88,13 @@ pub fn build_gitignore(project_path: &Path) -> Option<ignore::gitignore::Gitigno
     builder.build().ok()
 }
 
-/// Return the `limit` most recently modified files under `project_path`.
-pub fn recent_files(project_path: &str, limit: usize) -> Result<Vec<String>, AppError> {
-    let project = std::fs::canonicalize(project_path)
-        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
-
+/// Return the `limit` most recently modified files under `project_root`.
+/// `project_root` must already be canonical.
+pub fn recent_files(project_root: &Path, limit: usize) -> Result<Vec<String>, AppError> {
+    let project = project_root;
     let mut entries: Vec<(String, SystemTime)> = Vec::new();
 
-    for result in ignore::WalkBuilder::new(&project).build() {
+    for result in ignore::WalkBuilder::new(project).build() {
         let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
         if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(true) {
             continue;
@@ -108,7 +102,7 @@ pub fn recent_files(project_path: &str, limit: usize) -> Result<Vec<String>, App
 
         let relative = entry
             .path()
-            .strip_prefix(&project)
+            .strip_prefix(project)
             .map_err(|e| AppError::Internal(e.to_string()))?
             .to_string_lossy()
             .to_string();
@@ -128,22 +122,22 @@ pub fn recent_files(project_path: &str, limit: usize) -> Result<Vec<String>, App
     Ok(entries.into_iter().map(|(path, _)| path).collect())
 }
 
-/// Fuzzy-search files under `project_path` matching `query`.
+/// Fuzzy-search files under `project_root` matching `query`.
 /// Returns up to `limit` results sorted by match score, with match positions.
+/// `project_root` must already be canonical.
 pub fn fuzzy_search_files(
-    project_path: &str,
+    project_root: &Path,
     query: &str,
     limit: usize,
 ) -> Result<Vec<FileMatch>, AppError> {
-    let project = std::fs::canonicalize(project_path)
-        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
+    let project = project_root;
 
     let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let mut matcher = Matcher::new(Config::DEFAULT);
     let mut scored: Vec<(String, u32, Vec<u32>)> = Vec::new();
     let mut buf = Vec::new();
 
-    for result in ignore::WalkBuilder::new(&project).build() {
+    for result in ignore::WalkBuilder::new(project).build() {
         let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
         if entry.file_type().map(|ft| ft.is_dir()).unwrap_or(true) {
             continue;
@@ -151,7 +145,7 @@ pub fn fuzzy_search_files(
 
         let relative = entry
             .path()
-            .strip_prefix(&project)
+            .strip_prefix(project)
             .map_err(|e| AppError::Internal(e.to_string()))?
             .to_string_lossy()
             .to_string();
@@ -174,7 +168,9 @@ pub fn fuzzy_search_files(
 }
 
 /// Search file contents for a pattern, returning matches with context lines.
+/// `project_root` must already be canonical.
 pub fn content_search(
+    project_root: &Path,
     params: &super::routes::ContentSearchParams,
 ) -> Result<super::routes::ContentSearchResponse, crate::error::AppError> {
     use super::routes::{ContentMatch, ContentSearchResponse};
@@ -186,8 +182,7 @@ pub fn content_search(
         });
     }
 
-    let project = std::fs::canonicalize(&params.project_path)
-        .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
+    let project = project_root.to_path_buf();
 
     // Build regex pattern
     let mut pattern_str = if params.is_regex {

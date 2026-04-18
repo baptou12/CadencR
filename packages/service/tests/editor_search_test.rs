@@ -20,12 +20,16 @@ fn setup_test_dir() -> TempDir {
     dir
 }
 
+fn canonical_root(dir: &TempDir) -> std::path::PathBuf {
+    fs::canonicalize(dir.path()).unwrap()
+}
+
 #[test]
 fn recent_files_returns_files_sorted_by_mtime() {
     let dir = setup_test_dir();
-    let path = dir.path().to_str().unwrap();
+    let root = canonical_root(&dir);
 
-    let files = service::recent_files(path, 10).unwrap();
+    let files = service::recent_files(&root, 10).unwrap();
 
     assert!(!files.is_empty());
     // main.rs was touched last, should be first
@@ -35,18 +39,18 @@ fn recent_files_returns_files_sorted_by_mtime() {
 #[test]
 fn recent_files_respects_limit() {
     let dir = setup_test_dir();
-    let path = dir.path().to_str().unwrap();
+    let root = canonical_root(&dir);
 
-    let files = service::recent_files(path, 1).unwrap();
+    let files = service::recent_files(&root, 1).unwrap();
     assert_eq!(files.len(), 1);
 }
 
 #[test]
 fn fuzzy_search_finds_matching_files() {
     let dir = setup_test_dir();
-    let path = dir.path().to_str().unwrap();
+    let root = canonical_root(&dir);
 
-    let results = service::fuzzy_search_files(path, "main", 10).unwrap();
+    let results = service::fuzzy_search_files(&root, "main", 10).unwrap();
 
     assert!(!results.is_empty());
     assert!(results[0].path.contains("main"));
@@ -56,29 +60,17 @@ fn fuzzy_search_finds_matching_files() {
 #[test]
 fn fuzzy_search_returns_empty_for_no_match() {
     let dir = setup_test_dir();
-    let path = dir.path().to_str().unwrap();
+    let root = canonical_root(&dir);
 
-    let results = service::fuzzy_search_files(path, "zzzznotfound", 10).unwrap();
+    let results = service::fuzzy_search_files(&root, "zzzznotfound", 10).unwrap();
     assert!(results.is_empty());
 }
 
 #[test]
 fn fuzzy_search_respects_limit() {
     let dir = setup_test_dir();
-    let path = dir.path().to_str().unwrap();
+    let root = canonical_root(&dir);
 
-    let results = service::fuzzy_search_files(path, "rs", 1).unwrap();
+    let results = service::fuzzy_search_files(&root, "rs", 1).unwrap();
     assert_eq!(results.len(), 1);
-}
-
-#[test]
-fn recent_files_errors_on_invalid_path() {
-    let result = service::recent_files("/nonexistent/path/xyz", 10);
-    assert!(result.is_err());
-}
-
-#[test]
-fn fuzzy_search_errors_on_invalid_path() {
-    let result = service::fuzzy_search_files("/nonexistent/path/xyz", "test", 10);
-    assert!(result.is_err());
 }

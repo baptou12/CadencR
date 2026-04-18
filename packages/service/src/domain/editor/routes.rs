@@ -1,4 +1,4 @@
-use axum::extract::{Json, Query};
+use axum::extract::{Json, Query, State};
 use axum::routing::{get, post};
 use axum::Router;
 use serde::{Deserialize, Serialize};
@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 
 use super::service;
 use crate::app_state::AppState;
+use crate::domain::projects::service::resolve_feature_editor_root;
 use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
@@ -14,7 +15,11 @@ use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ReadFileParams {
-    pub project_path: String,
+    pub project_id: i64,
+    /// Feature id scopes the read to the feature's worktree when one is
+    /// active. When absent, the read resolves against the project root.
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     pub file_path: String,
 }
 
@@ -26,7 +31,9 @@ pub struct ReadFileResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct WriteFileRequest {
-    pub project_path: String,
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     pub file_path: String,
     pub content: String,
 }
@@ -38,7 +45,9 @@ pub struct WriteFileResponse {
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct TreeParams {
-    pub project_path: String,
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     #[serde(default = "default_dir_path")]
     pub dir_path: String,
 }
@@ -63,9 +72,13 @@ pub struct FileTreeEntry {
     params(ReadFileParams),
     responses((status = 200, body = ReadFileResponse)))]
 pub async fn read_file_handler(
+    State(state): State<AppState>,
     Query(params): Query<ReadFileParams>,
 ) -> Result<axum::Json<ReadFileResponse>, AppError> {
-    let path = service::validate_path(&params.project_path, &params.file_path)?;
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
+            .await?;
+    let path = service::validate_path(&project_root, &params.file_path)?;
 
     let resp = tokio::task::spawn_blocking(move || -> Result<ReadFileResponse, AppError> {
         if service::is_binary(&path).map_err(|e| AppError::Internal(e.to_string()))? {
@@ -119,9 +132,12 @@ pub async fn read_file_handler(
     request_body = WriteFileRequest,
     responses((status = 200, body = WriteFileResponse)))]
 pub async fn write_file_handler(
+    State(state): State<AppState>,
     Json(body): Json<WriteFileRequest>,
 ) -> Result<axum::Json<WriteFileResponse>, AppError> {
-    let path = service::validate_path_for_write(&body.project_path, &body.file_path)?;
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, body.project_id, body.feature_id).await?;
+    let path = service::validate_path_for_write(&project_root, &body.file_path)?;
     let content = body.content;
 
     tokio::task::spawn_blocking(move || -> Result<(), AppError> {
@@ -142,18 +158,18 @@ pub async fn write_file_handler(
     params(TreeParams),
     responses((status = 200, body = Vec<FileTreeEntry>)))]
 pub async fn tree_handler(
+    State(state): State<AppState>,
     Query(params): Query<TreeParams>,
 ) -> Result<axum::Json<Vec<FileTreeEntry>>, AppError> {
-    let project_path = params.project_path;
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
+            .await?;
     let dir_path_param = params.dir_path;
 
     let entries = tokio::task::spawn_blocking(move || -> Result<Vec<FileTreeEntry>, AppError> {
-        let project_canonical = std::fs::canonicalize(&project_path)
-            .map_err(|e| AppError::BadRequest(format!("Invalid project path: {e}")))?;
+        let dir_path = service::validate_path(&project_root, &dir_path_param)?;
 
-        let dir_path = service::validate_path(&project_path, &dir_path_param)?;
-
-        let gitignore = service::build_gitignore(&project_canonical);
+        let gitignore = service::build_gitignore(&project_root);
 
         let mut entries: Vec<FileTreeEntry> = Vec::new();
 
@@ -176,7 +192,7 @@ pub async fn tree_handler(
 
             let relative = entry
                 .path()
-                .strip_prefix(&project_canonical)
+                .strip_prefix(&project_root)
                 .unwrap_or(entry.path().as_path())
                 .to_string_lossy()
                 .to_string();
@@ -211,7 +227,9 @@ pub async fn tree_handler(
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ContentSearchParams {
-    pub project_path: String,
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     pub query: String,
     #[serde(default)]
     pub case_sensitive: bool,
@@ -256,9 +274,14 @@ pub struct ContentSearchResponse {
     params(ContentSearchParams),
     responses((status = 200, body = ContentSearchResponse)))]
 pub async fn content_search_handler(
+    State(state): State<AppState>,
     Query(params): Query<ContentSearchParams>,
 ) -> Result<axum::Json<ContentSearchResponse>, AppError> {
-    let resp = tokio::task::spawn_blocking(move || service::content_search(&params))
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
+            .await?;
+
+    let resp = tokio::task::spawn_blocking(move || service::content_search(&project_root, &params))
         .await
         .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
 
@@ -271,7 +294,9 @@ pub async fn content_search_handler(
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct SearchParams {
-    pub project_path: String,
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     pub query: Option<String>,
 }
 
@@ -290,15 +315,18 @@ pub struct FileSearchResponse {
     params(SearchParams),
     responses((status = 200, body = FileSearchResponse)))]
 pub async fn search_handler(
+    State(state): State<AppState>,
     Query(params): Query<SearchParams>,
 ) -> Result<axum::Json<FileSearchResponse>, AppError> {
-    let project_path = params.project_path;
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
+            .await?;
     let query = params.query.unwrap_or_default();
 
     let files: Vec<FileMatchResult> =
         tokio::task::spawn_blocking(move || -> Result<Vec<FileMatchResult>, AppError> {
             if query.is_empty() {
-                let paths = service::recent_files(&project_path, 20)?;
+                let paths = service::recent_files(&project_root, 20)?;
                 Ok(paths
                     .into_iter()
                     .map(|path| FileMatchResult {
@@ -307,7 +335,7 @@ pub async fn search_handler(
                     })
                     .collect())
             } else {
-                let matches = service::fuzzy_search_files(&project_path, &query, 50)?;
+                let matches = service::fuzzy_search_files(&project_root, &query, 50)?;
                 Ok(matches
                     .into_iter()
                     .map(|m| FileMatchResult {

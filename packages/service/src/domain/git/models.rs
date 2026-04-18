@@ -265,7 +265,9 @@ pub struct CreateWorktreeResponse {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct GetBlameParams {
-    pub project_path: String,
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
     pub file_path: String,
 }
 

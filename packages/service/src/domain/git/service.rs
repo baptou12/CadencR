@@ -7,7 +7,6 @@ use crate::domain::git::commands;
 use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::error::AppError;
-use crate::shared::git_cli::run_git;
 
 // ---------------------------------------------------------------------------
 // Feature-setting key constants
@@ -640,9 +639,32 @@ pub async fn has_uncommitted_changes(
     Ok(HasUncommittedChangesResponse { has_changes })
 }
 
-pub async fn get_blame(params: GetBlameParams) -> Result<BlameResponse, AppError> {
-    let cwd = Path::new(&params.project_path);
-    let output = run_git(&["blame", "--porcelain", &params.file_path], cwd).await?;
+pub async fn get_blame(
+    state: &AppState,
+    params: GetBlameParams,
+) -> Result<BlameResponse, AppError> {
+    let project_root = crate::domain::projects::service::resolve_feature_editor_root(
+        &state.read_pool,
+        params.project_id,
+        params.feature_id,
+    )
+    .await?;
+    // Confirm the file is inside the resolved root — blame is read-only but
+    // still runs git from whatever cwd we pass, so contain it.
+    let file_canonical =
+        crate::domain::editor::service::validate_path(&project_root, &params.file_path)?;
+    let relative = file_canonical
+        .strip_prefix(&project_root)
+        .map_err(|_| AppError::BadRequest("file outside project root".into()))?
+        .to_string_lossy()
+        .into_owned();
+    let output = crate::shared::git_cli::run_git_safe(
+        &["blame"],
+        &["--porcelain"],
+        &[&relative],
+        &project_root,
+    )
+    .await?;
     let lines = parse_blame_porcelain(&output);
     Ok(BlameResponse { lines })
 }
