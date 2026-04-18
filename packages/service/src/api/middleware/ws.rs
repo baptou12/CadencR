@@ -35,15 +35,10 @@ fn is_allowed_ws_origin(origin: &str) -> bool {
 
 /// Returns the matched subprotocol string. The caller MUST echo it back via
 /// `WebSocketUpgrade::protocols`, or the browser rejects the handshake.
-/// `Ok(None)` when auth is disabled; `Err` when required but absent/wrong.
 pub fn validate_ws_token<'a>(
     headers: &'a HeaderMap,
-    expected_token: Option<&str>,
-) -> Result<Option<&'a str>, Response> {
-    let Some(expected) = expected_token else {
-        return Ok(None);
-    };
-
+    expected_token: &str,
+) -> Result<&'a str, Response> {
     // Sec-WebSocket-Protocol can be a single comma-list or repeated headers.
     for header_value in headers.get_all(header::SEC_WEBSOCKET_PROTOCOL).iter() {
         let Ok(raw) = header_value.to_str() else {
@@ -51,8 +46,8 @@ pub fn validate_ws_token<'a>(
         };
         for token in raw.split(',').map(str::trim) {
             if let Some(rest) = token.strip_prefix(WS_TOKEN_PREFIX) {
-                if rest == expected {
-                    return Ok(Some(token));
+                if rest == expected_token {
+                    return Ok(token);
                 }
             }
         }
@@ -103,15 +98,9 @@ mod tests {
     }
 
     #[test]
-    fn token_ok_when_disabled() {
-        let h = make_headers(&[]);
-        assert_eq!(validate_ws_token(&h, None).unwrap(), None);
-    }
-
-    #[test]
     fn token_accepts_matching_subprotocol() {
         let h = make_headers(&[("sec-websocket-protocol", "cadence-token.secret")]);
-        let picked = validate_ws_token(&h, Some("secret")).unwrap().unwrap();
+        let picked = validate_ws_token(&h, "secret").unwrap();
         assert_eq!(picked, "cadence-token.secret");
     }
 
@@ -122,7 +111,7 @@ mod tests {
             "other-proto, cadence-token.secret",
         )]);
         assert_eq!(
-            validate_ws_token(&h, Some("secret")).unwrap().unwrap(),
+            validate_ws_token(&h, "secret").unwrap(),
             "cadence-token.secret"
         );
     }
@@ -134,7 +123,7 @@ mod tests {
             ("sec-websocket-protocol", "cadence-token.secret"),
         ]);
         assert_eq!(
-            validate_ws_token(&h, Some("secret")).unwrap().unwrap(),
+            validate_ws_token(&h, "secret").unwrap(),
             "cadence-token.secret"
         );
     }
@@ -142,14 +131,14 @@ mod tests {
     #[test]
     fn token_rejects_wrong_value() {
         let h = make_headers(&[("sec-websocket-protocol", "cadence-token.wrong")]);
-        let err = validate_ws_token(&h, Some("secret")).unwrap_err();
+        let err = validate_ws_token(&h, "secret").unwrap_err();
         assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[test]
     fn token_rejects_missing_subprotocol() {
         let h = make_headers(&[]);
-        let err = validate_ws_token(&h, Some("secret")).unwrap_err();
+        let err = validate_ws_token(&h, "secret").unwrap_err();
         assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
     }
 }

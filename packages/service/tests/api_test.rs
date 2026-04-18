@@ -1,5 +1,6 @@
 use std::process::Command;
 
+use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::Client;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -7,7 +8,10 @@ use tempfile::TempDir;
 use tokio::net::TcpListener;
 
 use cadence_service::api;
+use cadence_service::api::middleware::AUTH_HEADER;
 use cadence_service::app_state::AppState;
+
+const TEST_AUTH_TOKEN: &str = "test-token";
 
 /// Create a temp git repo with an initial commit and a feature branch.
 fn create_test_repo(dir: &std::path::Path) {
@@ -196,7 +200,7 @@ async fn start_test_server() -> TestServer {
         pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
         file_change_tx,
         file_watcher: cadence_service::domain::editor::watcher::new_shared(),
-        auth_token: None,
+        auth_token: TEST_AUTH_TOKEN.to_string(),
         port,
     };
 
@@ -206,9 +210,16 @@ async fn start_test_server() -> TestServer {
         axum::serve(listener, app).await.unwrap();
     });
 
+    let mut default_headers = HeaderMap::new();
+    default_headers.insert(AUTH_HEADER, HeaderValue::from_static(TEST_AUTH_TOKEN));
+    let client = Client::builder()
+        .default_headers(default_headers)
+        .build()
+        .expect("reqwest client");
+
     TestServer {
         base_url: format!("http://127.0.0.1:{port}"),
-        client: Client::new(),
+        client,
         _tmp_dir: tmp_dir,
     }
 }

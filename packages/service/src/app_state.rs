@@ -32,8 +32,10 @@ pub struct AppState {
     pub file_change_tx: broadcast::Sender<FileChangeEvent>,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,
-    /// `None` disables auth — dev-only escape hatch.
-    pub auth_token: Option<String>,
+    /// Per-launch bearer token required on every HTTP request (via the
+    /// `X-Cadence-Token` header) and WebSocket upgrade (via the
+    /// `cadence-token.<tok>` `Sec-WebSocket-Protocol` entry).
+    pub auth_token: String,
     /// Listener port, pinned against the `Host` header for DNS-rebinding defense.
     pub port: u16,
 }
@@ -69,7 +71,7 @@ impl AppState {
             pty_manager: PtyManager::new(),
             file_change_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
-            auth_token: None,
+            auth_token: "test-token".to_string(),
             port: 0,
         }
     }

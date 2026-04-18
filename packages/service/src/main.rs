@@ -9,7 +9,7 @@ use axum::http::header::{HeaderName, CONTENT_TYPE};
 use axum::http::Method;
 use clap::Parser;
 use tower_http::cors::CorsLayer;
-use tracing::{info, warn};
+use tracing::info;
 
 use app_state::AppState;
 use config::{Command, Config};
@@ -64,21 +64,15 @@ async fn main() -> anyhow::Result<()> {
                 info!("Loaded env from {}", path.display());
             }
 
-            if config.auth_token.is_none() {
-                warn!(
-                    "\n\
-                     ================================================================\n\
-                     SECURITY: CADENCE_AUTH_TOKEN is missing in dev mode.\n\
-                     The service will accept UNAUTHENTICATED requests on 127.0.0.1 —\n\
-                     any process on this machine (including a browser visiting a\n\
-                     malicious page) can reach every route.\n\
-                     \n\
-                     To fix: quit, then run `pnpm dev` from the repo root. That\n\
-                     invokes `scripts/ensure-dev-token.mjs`, which writes a random\n\
-                     token to `.env` — loaded by both crates via `dotenvy` at startup.\n\
-                     ================================================================"
-                );
-            }
+            let auth_token = config.auth_token.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "CADENCE_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
+                     var. Dev runs: `pnpm dev` from the repo root invokes \
+                     `scripts/ensure-dev-token.mjs`, which mints one into `.env`. Production \
+                     runs: the Tauri shell generates one per launch and passes it as a CLI \
+                     flag."
+                )
+            })?;
 
             let state = AppState {
                 read_pool,
@@ -89,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
                 pty_manager: domain::terminal::service::PtyManager::new(),
                 file_change_tx,
                 file_watcher: domain::editor::watcher::new_shared(),
-                auth_token: config.auth_token.clone(),
+                auth_token,
                 port: config.port,
             };
 

@@ -86,10 +86,9 @@ fn get_runtime_config(state: tauri::State<'_, sidecar::SidecarState>) -> Runtime
 
 const SECURITY_NO_TOKEN_BANNER: &str = "\n\
     ================================================================\n\
-    SECURITY: CADENCE_AUTH_TOKEN is missing in dev mode.\n\
-    The service will accept UNAUTHENTICATED requests on 127.0.0.1 —\n\
-    any process on this machine (including a browser visiting a\n\
-    malicious page) can reach every route.\n\
+    CADENCE_AUTH_TOKEN is missing.\n\
+    The sidecar refuses to start without it; the UI will fail to\n\
+    connect until you fix this.\n\
     \n\
     To fix: quit, then run `pnpm dev` from the repo root. That\n\
     invokes `scripts/ensure-dev-token.mjs`, which writes a random\n\

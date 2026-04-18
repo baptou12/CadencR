@@ -21,10 +21,6 @@ pub async fn auth_middleware(
         return misdirected();
     }
 
-    let Some(expected) = state.auth_token.as_deref() else {
-        return next.run(request).await;
-    };
-
     // Browser WebSocket clients can't set custom headers; they authenticate
     // via Sec-WebSocket-Protocol, validated inside the upgrade handler.
     if is_websocket_upgrade(&request) {
@@ -36,7 +32,7 @@ pub async fn auth_middleware(
         .get(AUTH_HEADER)
         .and_then(|v| v.to_str().ok());
 
-    if presented != Some(expected) {
+    if presented != Some(state.auth_token.as_str()) {
         return unauthorized();
     }
 
@@ -98,12 +94,12 @@ mod tests {
 
     const TEST_PORT: u16 = 5005;
 
-    async fn app_with_token(token: Option<&str>) -> Router {
+    async fn app_with_token(token: &str) -> Router {
         let pool = sqlx::SqlitePool::connect("sqlite::memory:")
             .await
             .expect("pool");
         let mut state = AppState::with_pool(pool);
-        state.auth_token = token.map(str::to_string);
+        state.auth_token = token.to_string();
         state.port = TEST_PORT;
         Router::new()
             .route("/api/health", get(|| async { "ok" }))
@@ -126,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_missing_token_when_configured() {
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(get_req())
             .await
@@ -140,7 +136,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -154,22 +150,12 @@ mod tests {
             .header(AUTH_HEADER, "wrong")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn skips_auth_when_token_unset() {
-        let resp = app_with_token(None)
-            .await
-            .oneshot(get_req())
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]
@@ -179,7 +165,7 @@ mod tests {
             .header(header::CONNECTION, "Upgrade")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -195,7 +181,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -210,7 +196,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -226,7 +212,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -242,7 +228,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -258,7 +244,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await
@@ -274,7 +260,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token(Some("secret"))
+        let resp = app_with_token("secret")
             .await
             .oneshot(req)
             .await

@@ -162,14 +162,11 @@ pub async fn ws_handler(
     if let Err(resp) = validate_ws_origin(&headers) {
         return resp;
     }
-    let selected_proto = match validate_ws_token(&headers, state.auth_token.as_deref()) {
-        Ok(proto) => proto.map(str::to_string),
+    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
+        Ok(proto) => proto.to_string(),
         Err(resp) => return resp,
     };
-    let ws = match selected_proto {
-        Some(p) => ws.protocols([p]),
-        None => ws,
-    };
+    let ws = ws.protocols([selected_proto]);
     ws.on_upgrade(move |socket| handle_connection(socket, state))
         .into_response()
 }

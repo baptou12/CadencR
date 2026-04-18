@@ -345,7 +345,11 @@ pub async fn get_file_content(
         }
         Some(r) => {
             let show_arg = format!("{r}:{file_path}");
-            Ok(run_git_quiet(&["show", &show_arg], worktree_path).await)
+            Ok(
+                run_git_safe_refs(&["show"], &[], &[&show_arg], worktree_path)
+                    .await
+                    .unwrap_or_default(),
+            )
         }
     }
 }
@@ -707,10 +711,11 @@ pub async fn get_original_branch(
     repo_path: &Path,
     worktree_branch: &str,
 ) -> Result<String, AppError> {
-    crate::shared::git_cli::guard_positionals(&[worktree_branch])?;
     // 1. Try tracking config
     let config_key = format!("branch.{worktree_branch}.merge");
-    if let Ok(stdout) = run_git(&["config", "--get", &config_key], repo_path).await {
+    if let Ok(stdout) =
+        run_git_safe_refs(&["config"], &["--get"], &[&config_key], repo_path).await
+    {
         let merge = stdout.trim();
         if !merge.is_empty() {
             return Ok(merge.replace("refs/heads/", ""));
@@ -718,7 +723,14 @@ pub async fn get_original_branch(
     }
 
     // 2. Try remote HEAD
-    if let Ok(stdout) = run_git(&["symbolic-ref", "refs/remotes/origin/HEAD"], repo_path).await {
+    if let Ok(stdout) = run_git_safe_refs(
+        &["symbolic-ref"],
+        &[],
+        &["refs/remotes/origin/HEAD"],
+        repo_path,
+    )
+    .await
+    {
         let remote_head = stdout.trim();
         if !remote_head.is_empty() {
             return Ok(remote_head.replace("refs/remotes/origin/", ""));
@@ -727,7 +739,7 @@ pub async fn get_original_branch(
 
     // 3. Try common defaults
     for candidate in &["main", "master", "develop", "trunk"] {
-        if run_git(&["rev-parse", "--verify", candidate], repo_path)
+        if run_git_safe_refs(&["rev-parse"], &["--verify"], &[candidate], repo_path)
             .await
             .is_ok()
         {
