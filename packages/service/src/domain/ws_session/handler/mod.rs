@@ -46,6 +46,10 @@ pub(super) struct SessionConfig {
     pub(super) canonical_cwd: PathBuf,
     pub(super) permission_mode: Option<RuntimePermissionMode>,
     pub(super) system_prompt: Option<String>,
+    /// Extra env vars to inject when respawning the CLI (e.g. an active
+    /// Claude Code profile). Carried through resume transitions so the
+    /// process always sees the profile the user selected.
+    pub(super) env: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Handle for a running SDK session, stored per-connection.
@@ -1236,6 +1240,7 @@ mod tests {
                 canonical_cwd: PathBuf::from("/tmp/test"),
                 permission_mode: None,
                 system_prompt: None,
+                env: None,
             },
         }
     }

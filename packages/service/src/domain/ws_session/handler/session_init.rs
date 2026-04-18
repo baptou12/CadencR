@@ -198,6 +198,14 @@ pub(super) async fn handle_init(
         runtime_config.permission_mode = Some(parse_permission_mode(pm));
     }
     runtime_config.system_prompt = payload.system_prompt.clone();
+    if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
+        let (_, profile_env) =
+            crate::domain::agents::claude_code::profiles::resolve_active_profile_env(
+                &app_state.read_pool,
+            )
+            .await;
+        runtime_config.env = profile_env;
+    }
 
     info!(
         db_session_id,
@@ -212,6 +220,7 @@ pub(super) async fn handle_init(
         canonical_cwd,
         permission_mode: runtime_config.permission_mode.clone(),
         system_prompt: runtime_config.system_prompt.clone(),
+        env: runtime_config.env.clone(),
     };
     let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&runtime_config.cwd));
     let session_cache = Arc::new(Mutex::new(HashSet::new()));

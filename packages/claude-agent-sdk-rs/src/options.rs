@@ -39,6 +39,11 @@ pub struct Options {
     pub can_use_tool: Option<Box<dyn CanUseTool>>,
     /// Cancellation token for aborting a running query.
     pub abort_signal: Option<CancellationToken>,
+    /// Extra environment variables layered on top of the inherited parent env
+    /// before spawning the CLI. Use this to switch Claude Code between
+    /// Anthropic / Bedrock / Vertex / custom proxies without relaunching the
+    /// host process.
+    pub env: Option<HashMap<String, String>>,
 }
 
 impl Default for Options {
@@ -61,6 +66,7 @@ impl Default for Options {
             language: None,
             can_use_tool: None,
             abort_signal: None,
+            env: None,
         }
     }
 }
@@ -216,6 +222,11 @@ impl OptionsBuilder {
 
     pub fn abort_signal(mut self, token: CancellationToken) -> Self {
         self.inner.abort_signal = Some(token);
+        self
+    }
+
+    pub fn env(mut self, env: HashMap<String, String>) -> Self {
+        self.inner.env = Some(env);
         self
     }
 

@@ -4,6 +4,7 @@ use serde::Serialize;
 use utoipa::OpenApi;
 
 use crate::app_state::AppState;
+use crate::domain::agents::claude_code::routes as claude_code_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
 use crate::domain::features::models as features_models;
@@ -97,6 +98,13 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::save_draft_handler,
         usage_routes::get_usage_handler,
         super::get_agent_catalog,
+        claude_code_routes::list_profiles_handler,
+        claude_code_routes::upsert_profile_handler,
+        claude_code_routes::delete_profile_handler,
+        claude_code_routes::set_active_profile_handler,
+        claude_code_routes::list_custom_models_handler,
+        claude_code_routes::upsert_custom_model_handler,
+        claude_code_routes::delete_custom_model_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -196,6 +204,13 @@ use crate::domain::workspace::routes as workspace_routes;
         usage_models::UsageResponse,
         usage_models::UsageBucket,
         usage_models::UsageStatus,
+        claude_code_routes::ProfileView,
+        claude_code_routes::ProfilesResponse,
+        claude_code_routes::UpsertProfileRequest,
+        claude_code_routes::SetActiveProfileRequest,
+        claude_code_routes::CustomModelsResponse,
+        claude_code_routes::UpsertCustomModelRequest,
+        claude_code_routes::SuccessResponse,
     ))
 )]
 struct ApiDoc;

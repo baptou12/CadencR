@@ -68,6 +68,12 @@ pub async fn auto_name_feature(
         "Now name this session. User's first message: \"{escaped_input}\". Reply with ONLY: __FEATURE_NAME_START__<name>__FEATURE_NAME_END__"
     );
 
+    // Apply the active Claude Code profile so auto-naming hits the same
+    // backend (Bedrock / Vertex / proxy) as workflow agents — otherwise a
+    // user with a non-Anthropic profile would silently fail auto-naming.
+    let (_, profile_env) =
+        crate::domain::agents::claude_code::profiles::resolve_active_profile_env(&pool).await;
+
     let options = Options {
         cwd: PathBuf::from(&cwd),
         permission_mode: Some(PermissionMode::AcceptEdits),
@@ -75,6 +81,7 @@ pub async fn auto_name_feature(
         model: Some(AUTO_NAME_MODEL.to_string()),
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),
         allowed_tools: Some(vec![]),
+        env: profile_env,
         ..Options::default()
     };
 

@@ -78,6 +78,14 @@ impl CliProcess {
         // Prevent nested-session detection errors (matches TS SDK behavior).
         cmd.env_remove("CLAUDECODE");
 
+        // Layer profile env on top of the inherited parent env. Keys in
+        // `options.env` override any inherited values with the same name.
+        if let Some(env) = &options.env {
+            for (k, v) in env {
+                cmd.env(k, v);
+            }
+        }
+
         let mut child = cmd.spawn().map_err(SdkError::SpawnFailed)?;
 
         let stdin = child.stdin.take().map(BufWriter::new);
@@ -401,5 +409,43 @@ mod tests {
     #[cfg(unix)]
     fn is_process_alive(pid: u32) -> bool {
         unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    #[tokio::test]
+    async fn options_env_is_applied_to_child_process() {
+        // Spawn `/usr/bin/env` using the same cmd wiring as CliProcess::spawn
+        // and verify that entries from options.env show up in the child's
+        // environment. We inline the logic rather than calling CliProcess
+        // because /usr/bin/env doesn't speak the Claude CLI protocol.
+        use std::collections::HashMap;
+        use tokio::io::AsyncReadExt;
+
+        let mut options = Options::default();
+        let mut env = HashMap::new();
+        env.insert("CADENCE_TEST_PROFILE".to_string(), "bedrock-demo".to_string());
+        options.env = Some(env);
+
+        let mut cmd = tokio::process::Command::new("/usr/bin/env");
+        cmd.current_dir(&options.cwd);
+        cmd.stdin(std::process::Stdio::piped());
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+        cmd.env_remove("CLAUDECODE");
+        if let Some(e) = &options.env {
+            for (k, v) in e {
+                cmd.env(k, v);
+            }
+        }
+
+        let mut child = cmd.spawn().expect("spawn env");
+        let mut stdout = child.stdout.take().expect("stdout piped");
+        let _ = child.wait().await.expect("wait env");
+
+        let mut buf = String::new();
+        stdout.read_to_string(&mut buf).await.expect("read stdout");
+        assert!(
+            buf.contains("CADENCE_TEST_PROFILE=bedrock-demo"),
+            "expected profile env var in child process; got: {buf}"
+        );
     }
 }

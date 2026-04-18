@@ -271,6 +271,27 @@ impl AgentManager {
             );
         }
 
+        // Only Claude Code consumes profile env today; OpenCode speaks HTTP
+        // and would ignore it anyway. One DB hit resolves both the name (for
+        // logging) and the env map — never log the values, they can contain
+        // API keys.
+        let env = if provider == crate::domain::agents::claude_code::PROVIDER_ID {
+            let (profile_name, profile_env) =
+                crate::domain::agents::claude_code::profiles::resolve_active_profile_env(
+                    &self.read_pool,
+                )
+                .await;
+            info!(
+                feature_id = self.feature_id,
+                agent_type = agent_type_str,
+                profile = %profile_name,
+                "resolved claude_code profile"
+            );
+            profile_env
+        } else {
+            None
+        };
+
         // Build system prompt with CWD hint + MCP instructions. Every Cadence
         // MCP tool call requires `feature_id` in its args — this is the only
         // thing that keeps tool calls correctly scoped under runtimes like
@@ -306,6 +327,7 @@ impl AgentManager {
             resume_session_id: resume_session_id.map(|s| s.to_string()),
             mcp_servers: Some(mcp_servers.clone()),
             permission_handler: Some(Arc::new(bridge)),
+            env,
         };
 
         Ok(SpawnContext {
