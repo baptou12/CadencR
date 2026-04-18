@@ -10,6 +10,7 @@ use tokio::process::Command;
 use super::engine::WsSender;
 use crate::domain::ws_session::protocol::WsEnvelope;
 
+use crate::shared::git_cli::run_git_safe_refs;
 use crate::shared::slug::slugify;
 
 /// Build a branch name from a prefix and title.
@@ -190,29 +191,29 @@ pub async fn ensure_worktree(
     );
 
     // 8. Run git worktree add
-    let output = Command::new("git")
-        .args(["worktree", "add", &path_str, "-b", &branch])
-        .current_dir(&project_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git worktree add: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("already exists") {
-            // Retry without -b
-            let output2 = Command::new("git")
-                .args(["worktree", "add", &path_str, &branch])
-                .current_dir(&project_dir)
-                .output()
+    match run_git_safe_refs(
+        &["worktree", "add"],
+        &["-b", &branch],
+        &[&path_str],
+        Path::new(&project_dir),
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            let msg = format!("{e}");
+            if msg.contains("already exists") {
+                run_git_safe_refs(
+                    &["worktree", "add"],
+                    &[],
+                    &[&path_str, &branch],
+                    Path::new(&project_dir),
+                )
                 .await
-                .map_err(|e| format!("Failed to run git worktree add (retry): {e}"))?;
-            if !output2.status.success() {
-                let stderr2 = String::from_utf8_lossy(&output2.stderr);
-                return Err(format!("git worktree add failed: {stderr2}"));
+                .map_err(|e2| format!("git worktree add failed: {e2}"))?;
+            } else {
+                return Err(format!("git worktree add failed: {msg}"));
             }
-        } else {
-            return Err(format!("git worktree add failed: {stderr}"));
         }
     }
 
