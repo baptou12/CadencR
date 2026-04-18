@@ -14,7 +14,6 @@ import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import {
   $createParagraphNode,
-  $createTextNode,
   $getRoot,
   type EditorState,
   type LexicalEditor,
@@ -26,7 +25,7 @@ import { MentionPlugin } from "./plugins/MentionPlugin";
 import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
-import { setEditorText } from "./editor-utils";
+import { getEditorText, initializeEditorText, setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 
 export interface PromptEditorHandle {
@@ -45,9 +44,9 @@ interface PromptEditorProps {
   slashCommandsLoading?: boolean;
   /** Called when Enter pressed (no shift, no popover). Return true to consume. */
   onEnterSend?: () => boolean;
-  /** Called on ArrowUp in empty editor for prompt history. */
+  /** Called on ArrowUp at the document start for prompt history. */
   onArrowUp?: () => string | null;
-  /** Called on ArrowDown for prompt history navigation. */
+  /** Called on ArrowDown at the document end for prompt history. */
   onArrowDown?: () => string | null;
   disabled?: boolean;
   /** Initial text to populate the editor with (e.g. restored draft) */
@@ -105,7 +104,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       getText() {
         let text = "";
         editorRef.current?.getEditorState().read(() => {
-          text = $getRoot().getTextContent();
+          text = getEditorText();
         });
         return text;
       },
@@ -115,7 +114,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       (_editorState: EditorState, editor: LexicalEditor) => {
         if (!onChange) return;
         editor.getEditorState().read(() => {
-          onChange($getRoot().getTextContent());
+          onChange(getEditorText());
         });
       },
       [onChange],
@@ -145,7 +144,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           ErrorBoundary={LexicalErrorBoundary}
         />
         <HistoryPlugin />
-        <OnChangePlugin onChange={handleChange} />
+        <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
         <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
@@ -166,10 +165,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
       },
       editorState: props.initialText
         ? () => {
-            const root = $getRoot();
-            const p = $createParagraphNode();
-            p.append($createTextNode(props.initialText!));
-            root.append(p);
+            initializeEditorText(props.initialText!);
           }
         : undefined,
     };

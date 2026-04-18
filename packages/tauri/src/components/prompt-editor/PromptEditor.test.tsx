@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, act } from "@/test-utils";
-import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 import { createRef } from "react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, act, fireEvent } from "@/test-utils";
+import { PromptEditor, type PromptEditorHandle } from "./PromptEditor";
 
 describe("PromptEditor", () => {
   it("renders with placeholder text", () => {
@@ -52,5 +52,57 @@ describe("PromptEditor", () => {
     });
 
     expect(ref.current!.getText()).toBe("");
+  });
+
+  it("preserves multiline text as separate paragraphs", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} />);
+
+    await act(async () => {
+      ref.current!.setText("first line\n\nthird line");
+    });
+
+    expect(ref.current!.getText()).toBe("first line\n\nthird line");
+    expect(screen.getByRole("textbox").querySelectorAll("p")).toHaveLength(3);
+  });
+
+  it("uses history navigation when the DOM caret is at the true start", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const onArrowUp = vi.fn(() => null);
+    render(<PromptEditor ref={ref} onArrowUp={onArrowUp} />);
+
+    await act(async () => {
+      ref.current!.setText("first line\nsecond line");
+    });
+
+    const firstTextNode = screen
+      .getByRole("textbox")
+      .querySelector('[data-lexical-text="true"]')
+      ?.firstChild;
+    expect(firstTextNode).not.toBeNull();
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.setStart(firstTextNode!, 0);
+    range.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "ArrowUp" });
+
+    expect(onArrowUp).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports multiline changes without extra blank lines", async () => {
+    const onChange = vi.fn();
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} onChange={onChange} />);
+
+    await act(async () => {
+      ref.current!.setText("first line\nsecond line");
+    });
+
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
+    expect(lastCall).toBe("first line\nsecond line");
   });
 });

@@ -5,9 +5,6 @@ import {
   KEY_ENTER_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_ARROW_DOWN_COMMAND,
-  $getRoot,
-  $getSelection,
-  $isRangeSelection,
   type LexicalCommand,
 } from "lexical";
 import { setEditorText } from "../editor-utils";
@@ -18,19 +15,53 @@ interface KeyboardShortcutsPluginProps {
   onArrowDown?: () => string | null;
 }
 
-/** Check if the cursor is on the edge paragraph (first or last child of root). */
-function isCursorOnEdge(editor: ReturnType<typeof useLexicalComposerContext>[0], edge: "first" | "last"): boolean {
-  let result = false;
-  editor.getEditorState().read(() => {
-    const selection = $getSelection();
-    if (!$isRangeSelection(selection)) return;
-    const topElement = selection.anchor.getNode().getTopLevelElement();
-    if (!topElement) return;
-    const root = $getRoot();
-    const edgeChild = edge === "first" ? root.getFirstChild() : root.getLastChild();
-    result = edgeChild?.getKey() === topElement.getKey();
-  });
-  return result;
+function hasDomSiblingInDirection(
+  rootElement: HTMLElement,
+  node: Node,
+  direction: "previous" | "next",
+): boolean {
+  let current: Node | null = node;
+
+  while (current && current !== rootElement) {
+    const sibling =
+      direction === "previous"
+        ? current.previousSibling
+        : current.nextSibling;
+    if (sibling) return true;
+    current = current.parentNode;
+  }
+
+  return false;
+}
+
+function isCursorAtDocumentBoundary(
+  editor: ReturnType<typeof useLexicalComposerContext>[0],
+  boundary: "start" | "end",
+): boolean {
+  const rootElement = editor.getRootElement();
+  if (!rootElement) return false;
+
+  const selection = rootElement.ownerDocument.defaultView?.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false;
+
+  const anchorNode = selection.anchorNode;
+  if (!anchorNode || !rootElement.contains(anchorNode)) return false;
+
+  if (anchorNode.nodeType === Node.TEXT_NODE) {
+    const textLength = anchorNode.textContent?.length ?? 0;
+    if (boundary === "start" && selection.anchorOffset > 0) return false;
+    if (boundary === "end" && selection.anchorOffset < textLength) return false;
+  } else {
+    const childCount = anchorNode.childNodes.length;
+    if (boundary === "start" && selection.anchorOffset > 0) return false;
+    if (boundary === "end" && selection.anchorOffset < childCount) return false;
+  }
+
+  return !hasDomSiblingInDirection(
+    rootElement,
+    anchorNode,
+    boundary === "start" ? "previous" : "next",
+  );
 }
 
 /**
@@ -60,16 +91,16 @@ export function KeyboardShortcutsPlugin({
     function registerArrowHandler(
       command: LexicalCommand<KeyboardEvent | null>,
       callback: (() => string | null) | undefined,
-      edge: "first" | "last",
+      boundary: "start" | "end",
     ) {
       return editor.registerCommand(
         command,
         (event) => {
           if (!callback || event?.metaKey || event?.altKey) return false;
-          if (!isCursorOnEdge(editor, edge)) return false;
+          if (!isCursorAtDocumentBoundary(editor, boundary)) return false;
           const result = callback();
-          if (result === null) return false;
           event?.preventDefault();
+          if (result === null) return true;
           setEditorText(editor, result);
           return true;
         },
@@ -77,8 +108,8 @@ export function KeyboardShortcutsPlugin({
       );
     }
 
-    const unregisterUp = registerArrowHandler(KEY_ARROW_UP_COMMAND, onArrowUp, "first");
-    const unregisterDown = registerArrowHandler(KEY_ARROW_DOWN_COMMAND, onArrowDown, "last");
+    const unregisterUp = registerArrowHandler(KEY_ARROW_UP_COMMAND, onArrowUp, "start");
+    const unregisterDown = registerArrowHandler(KEY_ARROW_DOWN_COMMAND, onArrowDown, "end");
 
     return () => {
       unregisterEnter();
