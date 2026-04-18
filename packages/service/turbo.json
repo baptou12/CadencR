@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "src/**",
+        "migrations/**",
+        "prompts/**",
+        "Cargo.toml",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock"
+      ],
+      "outputs": [
+        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadence-service-*"
+      ]
+    },
+    "build:debug": {
+      "inputs": [
+        "src/**",
+        "migrations/**",
+        "prompts/**",
+        "Cargo.toml",
+        "$TURBO_ROOT$/Cargo.toml",
+        "$TURBO_ROOT$/Cargo.lock"
+      ],
+      "outputs": [
+        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadence-service-*"
+      ]
+    }
+  }
+}

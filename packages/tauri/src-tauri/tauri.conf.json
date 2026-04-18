@@ -6,8 +6,8 @@
   "build": {
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist",
-    "beforeDevCommand": "bash src-tauri/scripts/copy-sidecar.sh && pnpm vite dev",
-    "beforeBuildCommand": "bash src-tauri/scripts/copy-sidecar.sh && pnpm vite build"
+    "beforeDevCommand": "pnpm vite dev",
+    "beforeBuildCommand": "pnpm vite build"
   },
   "app": {
     "withGlobalTauri": false,
