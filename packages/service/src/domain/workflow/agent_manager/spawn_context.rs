@@ -200,7 +200,7 @@ impl AgentManager {
         permissions: &PermissionRouter,
         model_override: Option<&str>,
     ) -> Result<SpawnContext, String> {
-        let mcp_servers = build_mcp_server_config(agent_type);
+        let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
         let expected_mcp_server = mcp_server_name(agent_type);
 
         let cwd = self.get_feature_cwd().await.ok_or_else(|| {

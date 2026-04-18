@@ -10,7 +10,10 @@
     "beforeBuildCommand": "bash src-tauri/scripts/copy-sidecar.sh && pnpm vite build"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:5005 ws://127.0.0.1:5005 http://localhost:1420 ws://localhost:1420; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    },
     "windows": [
       {
         "title": "",

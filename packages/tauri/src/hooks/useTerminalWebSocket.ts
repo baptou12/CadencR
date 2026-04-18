@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { createWsConnection, type WsConnection } from "@/lib/ws-connection";
+import { getTerminalWsUrl, getWsProtocols } from "@/lib/ws-url";
 
 // -- Message types matching Rust backend protocol --
 
@@ -62,8 +63,6 @@ function buildWsUrl(
   cols?: number,
   rows?: number,
 ): string {
-  const httpUrl = import.meta.env.VITE_API_URL || "http://localhost:5005";
-  const wsUrl = httpUrl.replace(/^http/, "ws");
   const params = new URLSearchParams();
 
   if (options.ptyId) {
@@ -75,7 +74,7 @@ function buildWsUrl(
     if (rows != null) params.set("rows", String(rows));
   }
 
-  return `${wsUrl}/api/terminal/ws?${params.toString()}`;
+  return `${getTerminalWsUrl()}?${params.toString()}`;
 }
 
 export function useTerminalWebSocket(
@@ -99,6 +98,7 @@ export function useTerminalWebSocket(
 
     const conn = createWsConnection({
       url: buildWsUrl(optionsRef.current, cols, rows),
+      protocols: getWsProtocols(),
       onOpen: () => setIsConnected(true),
       onMessage: (data) => {
         try {

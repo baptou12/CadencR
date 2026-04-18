@@ -16,6 +16,7 @@ use crate::domain::mcp::tools::{
     finalize_plan::FinalizePlanTool,
     helpers::{
         dispatch_with_feature, error_result, get_or_resolve_plan_id, require_i64, require_str,
+        scoped_feature_id,
     },
     list_phases::ListPhasesTool,
     mark_agent_done::MarkAgentDoneTool,
@@ -112,7 +113,7 @@ impl ServerHandler for SessionServer {
                 .as_ref()
                 .map(|m| serde_json::Value::Object(m.clone()))
                 .unwrap_or(serde_json::Value::Null);
-            let feature_id = match require_i64(&args, "feature_id") {
+            let feature_id = match scoped_feature_id(&args) {
                 Ok(id) => id,
                 Err(e) => return Ok(error_result(&e)),
             };

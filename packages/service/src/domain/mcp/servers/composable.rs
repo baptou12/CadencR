@@ -12,7 +12,7 @@ use rmcp::{
 };
 use serde_json::Value;
 
-use crate::domain::mcp::tools::helpers::{dispatch_with_feature, error_result, require_i64};
+use crate::domain::mcp::tools::helpers::{dispatch_with_feature, error_result, scoped_feature_id};
 
 use super::server_info;
 
@@ -69,7 +69,7 @@ impl ServerHandler for ComposableServer {
                 .as_ref()
                 .map(|m| Value::Object(m.clone()))
                 .unwrap_or(Value::Null);
-            let feature_id = match require_i64(&args, "feature_id") {
+            let feature_id = match scoped_feature_id(&args) {
                 Ok(id) => id,
                 Err(e) => return Ok(error_result(&e)),
             };

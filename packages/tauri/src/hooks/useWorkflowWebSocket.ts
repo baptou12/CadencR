@@ -1,7 +1,7 @@
 /** Zustand store for workflow-specific WebSocket state. Agents in a single Map<string, AgentSessionState>. */
 
 import { create } from "zustand";
-import { getWsUrl } from "@/lib/ws-url";
+import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import { createCommandsGet } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
@@ -73,6 +73,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
       const conn = createWsConnection({
         url: getWsUrl(),
+        protocols: getWsProtocols(),
         onOpen: () => {
           conn.sendJson({
             id: crypto.randomUUID(),

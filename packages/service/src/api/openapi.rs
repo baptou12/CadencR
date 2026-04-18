@@ -218,6 +218,9 @@ struct ApiDoc;
 #[derive(Serialize, utoipa::ToSchema)]
 struct HealthResponse {
     status: String,
+    /// Fixed identifier; the Tauri shell checks this to reject an imposter
+    /// that grabbed our port before we could bind.
+    service: &'static str,
 }
 
 #[utoipa::path(
@@ -228,6 +231,7 @@ struct HealthResponse {
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
+        service: "cadence",
     })
 }
 

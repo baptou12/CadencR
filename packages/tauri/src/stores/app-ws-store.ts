@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
 import { queryClient } from "@/lib/queryClient";
-import { getWsUrl } from "@/lib/ws-url";
+import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import type { Feature } from "@/api/generated";
 
@@ -103,7 +103,8 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
         return;
       }
 
-      const ws = new WebSocket(getWsUrl());
+      const protocols = getWsProtocols();
+      const ws = new WebSocket(getWsUrl(), protocols.length ? protocols : undefined);
 
       ws.addEventListener("open", () => {
         reconnectDelay = RECONNECT_BASE_MS;

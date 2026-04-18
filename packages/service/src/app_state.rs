@@ -32,6 +32,10 @@ pub struct AppState {
     pub file_change_tx: broadcast::Sender<FileChangeEvent>,
     /// Shared file watcher (one project at a time).
     pub file_watcher: SharedFileWatcher,
+    /// `None` disables auth — dev-only escape hatch.
+    pub auth_token: Option<String>,
+    /// Listener port, pinned against the `Host` header for DNS-rebinding defense.
+    pub port: u16,
 }
 
 impl AppState {
@@ -65,6 +69,8 @@ impl AppState {
             pty_manager: PtyManager::new(),
             file_change_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
+            auth_token: None,
+            port: 0,
         }
     }
 }

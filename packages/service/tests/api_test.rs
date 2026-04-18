@@ -180,6 +180,11 @@ async fn start_test_server() -> TestServer {
 
     let pool = setup_test_db(&db_path_str, &repo_path_str).await;
 
+    // Bind first so we can thread the OS-assigned port into AppState for
+    // the host-header pin.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
     let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
     let state = AppState {
@@ -191,12 +196,11 @@ async fn start_test_server() -> TestServer {
         pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
         file_change_tx,
         file_watcher: cadence_service::domain::editor::watcher::new_shared(),
+        auth_token: None,
+        port,
     };
 
     let app = api::build_router(state).layer(tower_http::cors::CorsLayer::permissive());
-
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
 
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
@@ -523,4 +527,46 @@ async fn test_file_tree_includes_dotfiles() {
         ".git dir should be included in file tree, got: {:?}",
         names
     );
+}
+
+/// Full RFC 6455 header set; axum's extractor rejects the request before
+/// our handler runs if any are missing.
+fn apply_ws_upgrade_headers(
+    req: reqwest::RequestBuilder,
+    origin: &str,
+) -> reqwest::RequestBuilder {
+    req.header("Upgrade", "websocket")
+        .header("Connection", "Upgrade")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .header("Origin", origin)
+}
+
+#[tokio::test]
+async fn test_ws_rejects_cross_origin() {
+    let server = start_test_server().await;
+    let resp = apply_ws_upgrade_headers(
+        server.client.get(format!("{}/ws", server.base_url)),
+        "https://evil.example",
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_terminal_ws_rejects_cross_origin() {
+    let server = start_test_server().await;
+    let resp = apply_ws_upgrade_headers(
+        server.client.get(format!(
+            "{}/api/terminal/ws?feature_id=1&project_id=1",
+            server.base_url
+        )),
+        "https://evil.example",
+    )
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::FORBIDDEN);
 }

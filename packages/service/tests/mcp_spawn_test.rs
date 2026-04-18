@@ -185,13 +185,17 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         return;
     }
 
-    // Spawn the MCP server subprocess
+    // Spawn the MCP server subprocess. A7: `--feature-id` pins the
+    // subprocess to a single feature, overriding any id the agent tries to
+    // supply in tool-call arguments.
     let mut child = Command::new(&binary)
         .arg("--db-path")
         .arg(db_path.to_str().unwrap())
         .arg("mcp-serve")
         .arg("--agent-type")
         .arg("plan")
+        .arg("--feature-id")
+        .arg("1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

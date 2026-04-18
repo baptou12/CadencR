@@ -13,3 +13,5 @@ target/
 *.db
 *.db-shm
 *.db-wal
+# Dev-mode auth token (scripts/ensure-dev-token.mjs). Per-clone secret, never commit.
+.env

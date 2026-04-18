@@ -12,6 +12,26 @@ pub fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("Missing required parameter: {key}"))
 }
 
+/// Returns the subprocess-pinned feature id. If the tool's arguments also
+/// supply one it must match — blocks confused-deputy cross-feature attacks.
+pub fn scoped_feature_id(args: &serde_json::Value) -> Result<i64, String> {
+    let scoped = CURRENT_FEATURE_ID.try_with(|id| *id).map_err(|_| {
+        "MCP subprocess not running in a feature scope — start it with --feature-id"
+            .to_string()
+    })?;
+
+    if let Some(arg_fid) = args.get("feature_id").and_then(|v| v.as_i64()) {
+        if arg_fid != scoped {
+            return Err(format!(
+                "feature_id mismatch: subprocess is pinned to {scoped}, but tool call \
+                 supplied {arg_fid}"
+            ));
+        }
+    }
+
+    Ok(scoped)
+}
+
 /// Extract a required string parameter from JSON args, returning a clear error if missing.
 pub fn require_str<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
     args[key]
@@ -29,9 +49,6 @@ pub fn error_result(msg: &str) -> CallToolResult {
     CallToolResult::error(vec![Content::text(msg)])
 }
 
-/// Enter the `CURRENT_FEATURE_ID` task-local scope for `feature_id`, await
-/// `dispatch`, and convert the result into a `CallToolResult`. Keeps every MCP
-/// server's `call_tool` implementation free of subprocess-scope boilerplate.
 pub async fn dispatch_with_feature<Fut>(feature_id: i64, dispatch: Fut) -> CallToolResult
 where
     Fut: Future<Output = Result<String, String>>,
@@ -128,9 +145,47 @@ pub async fn verify_phase_ownership(
 
 #[cfg(test)]
 mod tests {
-    use super::get_or_resolve_plan_id;
+    use super::{get_or_resolve_plan_id, scoped_feature_id, CURRENT_FEATURE_ID};
     use serde_json::json;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    #[tokio::test]
+    async fn scoped_feature_id_reads_from_task_local() {
+        let id = CURRENT_FEATURE_ID
+            .scope(42, async { scoped_feature_id(&json!({})).unwrap() })
+            .await;
+        assert_eq!(id, 42);
+    }
+
+    #[tokio::test]
+    async fn scoped_feature_id_allows_matching_arg() {
+        let id = CURRENT_FEATURE_ID
+            .scope(7, async {
+                scoped_feature_id(&json!({ "feature_id": 7 })).unwrap()
+            })
+            .await;
+        assert_eq!(id, 7);
+    }
+
+    #[tokio::test]
+    async fn scoped_feature_id_rejects_mismatched_arg() {
+        // Defense in depth: a prompt-injected agent that tries to switch
+        // features via the tool-call argument gets an explicit error.
+        let err = CURRENT_FEATURE_ID
+            .scope(7, async {
+                scoped_feature_id(&json!({ "feature_id": 99 })).unwrap_err()
+            })
+            .await;
+        assert!(err.contains("mismatch"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn scoped_feature_id_errors_outside_scope() {
+        // A tool dispatched without an outer CURRENT_FEATURE_ID.scope()
+        // means the subprocess wasn't started with --feature-id. Refuse.
+        let err = scoped_feature_id(&json!({ "feature_id": 1 })).unwrap_err();
+        assert!(err.contains("not running in a feature scope"), "got: {err}");
+    }
 
     async fn pool_with_plans_schema() -> sqlx::SqlitePool {
         let pool = SqlitePoolOptions::new()
