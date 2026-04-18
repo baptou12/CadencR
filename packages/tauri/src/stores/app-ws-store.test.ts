@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockNotifyDone = vi.fn();
 const mockNotifyNeedsInput = vi.fn();
+const mockInvalidateQueries = vi.fn();
 
 vi.mock("@/lib/notify-agent-done", () => ({
   notifyAgentDone: (...args: unknown[]) => mockNotifyDone(...args),
@@ -14,7 +15,7 @@ const mockGetQueriesData = vi.fn();
 vi.mock("@/lib/queryClient", () => ({
   queryClient: {
     getQueriesData: (...args: unknown[]) => mockGetQueriesData(...args),
-    invalidateQueries: vi.fn(),
+    invalidateQueries: (...args: unknown[]) => mockInvalidateQueries(...args),
   },
 }));
 
@@ -210,5 +211,22 @@ describe("notifications from turn state", () => {
 
     expect(mockNotifyDone).not.toHaveBeenCalled();
     expect(mockNotifyNeedsInput).not.toHaveBeenCalled();
+  });
+});
+
+describe("editor.file_tree.changed", () => {
+  it("invalidates editor caches and git stats", () => {
+    useAppWsStore.getState().connect();
+    const ws = getWs();
+
+    ws.simulateMessage({
+      domain: "editor",
+      action: "file_tree.changed",
+      payload: { project_path: "/project" },
+    });
+
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["editor", "tree"] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["editor", "search"] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["git", "stats"] });
   });
 });

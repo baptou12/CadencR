@@ -50,6 +50,7 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
     if (domain === "editor" && action === "file_tree.changed") {
       void queryClient.invalidateQueries({ queryKey: ["editor", "tree"] });
       void queryClient.invalidateQueries({ queryKey: ["editor", "search"] });
+      void queryClient.invalidateQueries({ queryKey: ["git", "stats"] });
       return;
     }
 

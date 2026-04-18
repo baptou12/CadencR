@@ -26,6 +26,7 @@ import FileSearchDialog from "./FileSearchDialog";
 import ContentSearchDialog from "./ContentSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
+import { useFileWatcher } from "@/hooks/useFileWatcher";
 
 interface FeatureEditorTabProps {
   featureId: number;
@@ -57,6 +58,8 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     const settingKey = `editor_sidebar_visible_${featureId}`;
     const { value: persistedVisible, setValue: persistVisible } = useDebouncedSetting(settingKey);
     const hasInitializedRef = useRef(false);
+
+    useFileWatcher(projectPath);
 
     /** Collect all dirty tabs across all panes */
     const getDirtyTabs = useCallback(() => {

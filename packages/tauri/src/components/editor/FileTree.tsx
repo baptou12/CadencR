@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { useFileTree } from "@/api/generated";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useFileWatcher } from "@/hooks/useFileWatcher";
 import FileTreeItem from "./FileTreeItem";
 import type { FileTreeEntry } from "@/api/generated";
 
@@ -119,8 +118,6 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
   const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
   const maxTabs = parseInt(maxTabsSetting ?? "10", 10);
-
-  useFileWatcher(projectPath);
 
   const handleToggle = useCallback((path: string) => {
     setExpandedDirs((prev) => {
