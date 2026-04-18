@@ -1,57 +1,28 @@
 use sqlx::SqlitePool;
 use std::sync::Arc;
 
-tokio::task_local! {
-    /// Per-call feature scope. Set by each server's dispatcher from the tool's
-    /// `feature_id` arg and read via `McpContext::feature_id()`.
-    pub static CURRENT_FEATURE_ID: i64;
-}
-
-/// Shared context injected into all MCP tool handlers.
+/// Shared context injected into all MCP tool handlers. The `feature_id` is
+/// pinned at subprocess spawn time (1:1 subprocess ↔ feature, see
+/// `mcp_spawn.rs`) so tools can access it via plain field reads without
+/// depending on task-local propagation — `rmcp`'s internal request dispatch
+/// sometimes runs handlers on freshly-spawned tokio tasks that don't inherit
+/// a task-local scope, so the earlier scope-based approach was unreliable.
 pub struct McpContext {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
+    pub feature_id: i64,
 }
 
 impl McpContext {
-    pub fn new(read_pool: SqlitePool, write_pool: SqlitePool) -> Arc<Self> {
+    pub fn new(read_pool: SqlitePool, write_pool: SqlitePool, feature_id: i64) -> Arc<Self> {
         Arc::new(Self {
             read_pool,
             write_pool,
+            feature_id,
         })
     }
 
-    /// Panics if called outside a `CURRENT_FEATURE_ID.scope(...)`.
     pub fn feature_id(&self) -> i64 {
-        CURRENT_FEATURE_ID
-            .try_with(|id| *id)
-            .expect("tool invoked outside CURRENT_FEATURE_ID scope — dispatcher bug")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::CURRENT_FEATURE_ID;
-
-    #[tokio::test]
-    async fn concurrent_scopes_stay_isolated() {
-        // Spin up two tasks with different feature_id scopes and confirm neither
-        // leaks into the other. This is the property that makes it safe to
-        // share one MCP subprocess across features under OpenCode.
-        let a = tokio::spawn(CURRENT_FEATURE_ID.scope(1, async {
-            tokio::task::yield_now().await;
-            CURRENT_FEATURE_ID.with(|id| *id)
-        }));
-        let b = tokio::spawn(CURRENT_FEATURE_ID.scope(2, async {
-            tokio::task::yield_now().await;
-            CURRENT_FEATURE_ID.with(|id| *id)
-        }));
-        assert_eq!(a.await.unwrap(), 1);
-        assert_eq!(b.await.unwrap(), 2);
-    }
-
-    #[tokio::test]
-    async fn try_with_is_none_outside_scope() {
-        assert!(CURRENT_FEATURE_ID.try_with(|id| *id).is_err());
+        self.feature_id
     }
 }

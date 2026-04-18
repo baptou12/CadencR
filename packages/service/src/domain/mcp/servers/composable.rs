@@ -12,7 +12,7 @@ use rmcp::{
 };
 use serde_json::Value;
 
-use crate::domain::mcp::tools::helpers::{dispatch_with_feature, error_result, scoped_feature_id};
+use crate::domain::mcp::tools::helpers::{dispatch_tool, error_result, pinned_feature_id};
 
 use super::server_info;
 
@@ -33,11 +33,12 @@ pub struct ToolRegistration {
 pub struct ComposableServer {
     name: &'static str,
     tools: Vec<ToolRegistration>,
+    feature_id: i64,
 }
 
 impl ComposableServer {
-    pub fn new(name: &'static str, tools: Vec<ToolRegistration>) -> Self {
-        Self { name, tools }
+    pub fn new(name: &'static str, tools: Vec<ToolRegistration>, feature_id: i64) -> Self {
+        Self { name, tools, feature_id }
     }
 }
 
@@ -69,10 +70,9 @@ impl ServerHandler for ComposableServer {
                 .as_ref()
                 .map(|m| Value::Object(m.clone()))
                 .unwrap_or(Value::Null);
-            let feature_id = match scoped_feature_id(&args) {
-                Ok(id) => id,
-                Err(e) => return Ok(error_result(&e)),
-            };
+            if let Err(e) = pinned_feature_id(&args, self.feature_id) {
+                return Ok(error_result(&e));
+            }
             let name = request.name.clone();
             let handler = self
                 .tools
@@ -80,7 +80,7 @@ impl ServerHandler for ComposableServer {
                 .find(|t| t.tool.name.as_ref() == name.as_ref())
                 .map(|t| t.handler.clone());
 
-            Ok(dispatch_with_feature(feature_id, async move {
+            Ok(dispatch_tool(async move {
                 match handler {
                     Some(h) => (h)(args).await,
                     None => Err(format!("Unknown tool: {name}")),

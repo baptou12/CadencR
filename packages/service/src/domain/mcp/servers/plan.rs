@@ -15,8 +15,8 @@ use crate::domain::mcp::tools::{
     create_phase::CreatePhaseTool,
     finalize_plan::FinalizePlanTool,
     helpers::{
-        dispatch_with_feature, error_result, get_or_resolve_plan_id, require_i64, require_str,
-        scoped_feature_id,
+        dispatch_tool, error_result, get_or_resolve_plan_id, pinned_feature_id, require_i64,
+        require_str,
     },
     list_phases::ListPhasesTool,
     mark_agent_done::MarkAgentDoneTool,
@@ -105,13 +105,13 @@ impl ServerHandler for PlanServer {
                 .as_ref()
                 .map(|m| serde_json::Value::Object(m.clone()))
                 .unwrap_or(serde_json::Value::Null);
-            let feature_id = match scoped_feature_id(&args) {
+            let feature_id = match pinned_feature_id(&args, self.ctx.feature_id) {
                 Ok(id) => id,
                 Err(e) => return Ok(error_result(&e)),
             };
             let pool = &self.ctx.write_pool;
 
-            Ok(dispatch_with_feature(feature_id, async move {
+            Ok(dispatch_tool(async move {
                 match request.name.as_ref() {
                     "read_plan" => {
                         let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;

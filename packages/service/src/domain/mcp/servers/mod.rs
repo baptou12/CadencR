@@ -87,6 +87,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::show_prd(&ctx),
                 th::mark_agent_done(&ctx),
             ],
+            ctx.feature_id,
         )),
         AgentType::Execute => McpServer::Composable(ComposableServer::new(
             "cadence-execute",
@@ -97,6 +98,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::mark_agent_done(&ctx),
                 th::mark_phase_done(&ctx),
             ],
+            ctx.feature_id,
         )),
         AgentType::Review => McpServer::Composable(ComposableServer::new(
             "cadence-review",
@@ -110,6 +112,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::mark_agent_done(&ctx),
                 th::finalize_phases(&ctx),
             ],
+            ctx.feature_id,
         )),
         AgentType::Risk => McpServer::Composable(ComposableServer::new(
             "cadence-risk",
@@ -123,6 +126,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::mark_agent_done(&ctx),
                 th::finalize_phases(&ctx),
             ],
+            ctx.feature_id,
         )),
         AgentType::Qa => McpServer::Composable(ComposableServer::new(
             "cadence-qa",
@@ -137,6 +141,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::mark_agent_done(&ctx),
                 th::finalize_phases(&ctx),
             ],
+            ctx.feature_id,
         )),
         AgentType::Retro => McpServer::Composable(ComposableServer::new(
             "cadence-retro",
@@ -149,6 +154,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
                 th::read_conversation(&ctx),
                 th::mark_agent_done(&ctx),
             ],
+            ctx.feature_id,
         )),
     }
 }
