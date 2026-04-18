@@ -6,12 +6,12 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "node scripts/ensure-dev-token.mjs && turbo run dev",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
-    "start": "turbo run dev --filter=@cadence/desktop",
+    "start": "node scripts/ensure-dev-token.mjs && turbo run dev --filter=@cadence/desktop",
     "build": "turbo run build --filter=@cadence/desktop",
     "prepare": "husky",
     "loc": "cargo run --manifest-path packages/loc/Cargo.toml --release --"

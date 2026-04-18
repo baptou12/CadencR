@@ -6,7 +6,7 @@ use crate::domain::git::models::{
     ChangedFile, CommitLogEntry, GitStats, MergeConflictResult, MergeResult, WorktreeInfo,
 };
 use crate::error::AppError;
-use crate::shared::git_cli::run_git;
+use crate::shared::git_cli::{run_git, run_git_safe, run_git_safe_refs};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +69,9 @@ fn parse_git_log(output: &str) -> Vec<CommitLogEntry> {
 /// Determine which SHAs have NOT been pushed to the remote.
 /// Returns None if all commits are unpushed (no remote tracking).
 async fn get_unpushed_shas(repo_path: &Path, branch_name: &str) -> Option<HashSet<String>> {
+    if crate::shared::git_cli::guard_positionals(&[branch_name]).is_err() {
+        return None;
+    }
     let cmd = format!("origin/{branch_name}..HEAD");
     match run_git(&["rev-list", &cmd], repo_path).await {
         Ok(stdout) => Some(
@@ -210,8 +213,9 @@ pub async fn get_diff(
 
 /// Get the diff for a specific commit.
 pub async fn get_commit_diff(worktree_path: &Path, commit_sha: &str) -> Result<String, AppError> {
+    crate::shared::git_cli::guard_positionals(&[commit_sha])?;
     let diff_arg = format!("{commit_sha}^..{commit_sha}");
-    match run_git(&["diff", &diff_arg], worktree_path).await {
+    match run_git_safe_refs(&["diff"], &[], &[&diff_arg], worktree_path).await {
         Ok(stdout) => Ok(stdout),
         Err(_) => {
             // Fallback for root commits
@@ -227,6 +231,7 @@ pub async fn get_changed_files(
     target_branch: Option<&str>,
 ) -> Result<Vec<ChangedFile>, AppError> {
     let branch = target_branch.unwrap_or("main");
+    crate::shared::git_cli::guard_positionals(&[branch])?;
     let diff_arg = if mode == "worktree" {
         String::new()
     } else {
@@ -340,7 +345,11 @@ pub async fn get_file_content(
         }
         Some(r) => {
             let show_arg = format!("{r}:{file_path}");
-            Ok(run_git_quiet(&["show", &show_arg], worktree_path).await)
+            Ok(
+                run_git_safe_refs(&["show"], &[], &[&show_arg], worktree_path)
+                    .await
+                    .unwrap_or_default(),
+            )
         }
     }
 }
@@ -486,8 +495,12 @@ pub async fn get_file_blob_shas(worktree_path: &Path) -> Result<HashMap<String, 
 
     let mut result = HashMap::new();
     for file_path in all_files {
+        // A file name starting with `-` would be parsed as a flag; skip it.
+        if crate::shared::git_cli::guard_positionals(&[file_path.as_str()]).is_err() {
+            continue;
+        }
         // Try hash-object first, then rev-parse HEAD:path
-        let sha = match run_git(&["hash-object", &file_path], worktree_path).await {
+        let sha = match run_git_safe(&["hash-object"], &[], &[&file_path], worktree_path).await {
             Ok(stdout) => stdout.trim().to_string(),
             Err(_) => {
                 let rev_arg = format!("HEAD:{file_path}");
@@ -651,8 +664,10 @@ pub async fn create_worktree(
     }
 
     // Try with -b first; fall back without -b if branch already exists
-    match run_git(
-        &["worktree", "add", &worktree_str, "-b", branch_name],
+    match run_git_safe_refs(
+        &["worktree", "add"],
+        &["-b", branch_name],
+        &[&worktree_str],
         repo_path,
     )
     .await
@@ -661,7 +676,13 @@ pub async fn create_worktree(
         Err(e) => {
             let err_msg = e.to_string();
             if err_msg.contains("already exists") {
-                run_git(&["worktree", "add", &worktree_str, branch_name], repo_path).await?;
+                run_git_safe_refs(
+                    &["worktree", "add"],
+                    &[],
+                    &[&worktree_str, branch_name],
+                    repo_path,
+                )
+                .await?;
             } else {
                 return Err(e);
             }
@@ -674,7 +695,13 @@ pub async fn create_worktree(
 /// Remove a git worktree.
 pub async fn remove_worktree(repo_path: &Path, worktree_path: &Path) -> Result<(), AppError> {
     let wt_str = worktree_path.to_string_lossy().to_string();
-    run_git(&["worktree", "remove", &wt_str, "--force"], repo_path).await?;
+    run_git_safe_refs(
+        &["worktree", "remove"],
+        &["--force"],
+        &[&wt_str],
+        repo_path,
+    )
+    .await?;
     Ok(())
 }
 
@@ -686,7 +713,9 @@ pub async fn get_original_branch(
 ) -> Result<String, AppError> {
     // 1. Try tracking config
     let config_key = format!("branch.{worktree_branch}.merge");
-    if let Ok(stdout) = run_git(&["config", "--get", &config_key], repo_path).await {
+    if let Ok(stdout) =
+        run_git_safe_refs(&["config"], &["--get"], &[&config_key], repo_path).await
+    {
         let merge = stdout.trim();
         if !merge.is_empty() {
             return Ok(merge.replace("refs/heads/", ""));
@@ -694,7 +723,14 @@ pub async fn get_original_branch(
     }
 
     // 2. Try remote HEAD
-    if let Ok(stdout) = run_git(&["symbolic-ref", "refs/remotes/origin/HEAD"], repo_path).await {
+    if let Ok(stdout) = run_git_safe_refs(
+        &["symbolic-ref"],
+        &[],
+        &["refs/remotes/origin/HEAD"],
+        repo_path,
+    )
+    .await
+    {
         let remote_head = stdout.trim();
         if !remote_head.is_empty() {
             return Ok(remote_head.replace("refs/remotes/origin/", ""));
@@ -703,7 +739,7 @@ pub async fn get_original_branch(
 
     // 3. Try common defaults
     for candidate in &["main", "master", "develop", "trunk"] {
-        if run_git(&["rev-parse", "--verify", candidate], repo_path)
+        if run_git_safe_refs(&["rev-parse"], &["--verify"], &[candidate], repo_path)
             .await
             .is_ok()
         {
@@ -729,6 +765,7 @@ pub async fn check_merge_conflicts(
 ) -> Result<MergeConflictResult, AppError> {
     // `git merge-tree --write-tree` performs an in-memory merge.
     // Exit 0 → clean merge, exit 1 → conflicts (listed on stdout).
+    crate::shared::git_cli::guard_positionals(&[target_branch, source_branch])?;
     let output = Command::new("git")
         .args(["merge-tree", "--write-tree", target_branch, source_branch])
         .current_dir(repo_path)
@@ -790,31 +827,39 @@ pub async fn merge_branch(
     let original_branch = get_current_branch(repo_path).await.ok().flatten();
 
     // Checkout target and merge
-    let merge_result = match run_git(&["checkout", target_branch], repo_path).await {
-        Ok(_) => match run_git(&["merge", "--no-ff", source_branch], repo_path).await {
-            Ok(_) => MergeResult {
-                success: true,
-                error: None,
-            },
-            Err(e) => {
-                // Abort the merge
-                let _ = run_git(&["merge", "--abort"], repo_path).await;
-                MergeResult {
-                    success: false,
-                    error: Some(e.to_string()),
+    let merge_result =
+        match run_git_safe_refs(&["checkout"], &[], &[target_branch], repo_path).await {
+            Ok(_) => match run_git_safe_refs(
+                &["merge"],
+                &["--no-ff"],
+                &[source_branch],
+                repo_path,
+            )
+            .await
+            {
+                Ok(_) => MergeResult {
+                    success: true,
+                    error: None,
+                },
+                Err(e) => {
+                    // Abort the merge (no user positionals → plain run_git is fine)
+                    let _ = run_git(&["merge", "--abort"], repo_path).await;
+                    MergeResult {
+                        success: false,
+                        error: Some(e.to_string()),
+                    }
                 }
-            }
-        },
-        Err(e) => MergeResult {
-            success: false,
-            error: Some(e.to_string()),
-        },
-    };
+            },
+            Err(e) => MergeResult {
+                success: false,
+                error: Some(e.to_string()),
+            },
+        };
 
     // Restore original branch
     if let Some(ref orig) = original_branch {
         if orig != target_branch {
-            let _ = run_git(&["checkout", orig], repo_path).await;
+            let _ = run_git_safe_refs(&["checkout"], &[], &[orig], repo_path).await;
         }
     }
 
@@ -823,7 +868,7 @@ pub async fn merge_branch(
 
 /// Delete a local branch using -d (safe, only if fully merged).
 pub async fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError> {
-    match run_git(&["branch", "-d", branch_name], repo_path).await {
+    match run_git_safe_refs(&["branch"], &["-d"], &[branch_name], repo_path).await {
         Ok(_) => Ok(MergeResult {
             success: true,
             error: None,

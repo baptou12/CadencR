@@ -30,6 +30,7 @@ import { useFileWatcher } from "@/hooks/useFileWatcher";
 
 interface FeatureEditorTabProps {
   featureId: number;
+  projectId: number;
   projectPath: string;
 }
 
@@ -43,7 +44,7 @@ const SIDEBAR_DEFAULT_SIZE = "220px";
 const SIDEBAR_MAX_SIZE = "500px";
 
 const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(
-  function FeatureEditorTab({ featureId, projectPath }, ref) {
+  function FeatureEditorTab({ featureId, projectId, projectPath }, ref) {
     const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } = useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
@@ -150,13 +151,13 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     return (
       <div className="flex h-full">
         <FileSearchDialog
-          projectPath={projectPath}
+          projectId={projectId}
           featureId={featureId}
           open={fileSearchOpen}
           onOpenChange={setFileSearchOpen}
         />
         <ContentSearchDialog
-          projectPath={projectPath}
+          projectId={projectId}
           featureId={featureId}
           open={contentSearchOpen}
           onOpenChange={setContentSearchOpen}
@@ -194,12 +195,12 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             >
               <SidebarHeader onToggle={handleToggleSidebar} />
               <div className="flex-1 overflow-hidden">
-                <FileTree projectPath={projectPath} featureId={featureId} />
+                <FileTree projectId={projectId} featureId={featureId} projectPath={projectPath} />
               </div>
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel>
-              <EditorSplitTree node={splitTree} featureId={featureId} projectPath={projectPath} />
+              <EditorSplitTree node={splitTree} featureId={featureId} projectId={projectId} />
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
@@ -213,7 +214,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             >
               <PanelLeft className="w-4 h-4" />
             </button>
-            <EditorSplitTree node={splitTree} featureId={featureId} projectPath={projectPath} />
+            <EditorSplitTree node={splitTree} featureId={featureId} projectId={projectId} />
           </div>
         )}
       </div>

@@ -150,7 +150,12 @@ function WebSocketSessionPage() {
         <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
           {(effectiveCwd ?? projectPath) && (
             <Suspense fallback={null}>
-              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={(effectiveCwd ?? projectPath) as string} />
+              <FeatureEditorTab
+                ref={editorTabRef}
+                featureId={featureId}
+                projectId={projectId}
+                projectPath={(effectiveCwd ?? projectPath) as string}
+              />
             </Suspense>
           )}
         </div>

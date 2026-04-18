@@ -33,6 +33,7 @@ portable-pty = "0.8"
 ignore = "0.4"
 nucleo-matcher = "0.3"
 notify-debouncer-mini = "0.5"
+dotenvy = "0.15"
 
 [lints]
 workspace = true
@@ -40,3 +41,4 @@ workspace = true
 [dev-dependencies]
 tempfile = "3"
 assert-json-diff = "2"
+tower = { version = "0.5", features = ["util"] }

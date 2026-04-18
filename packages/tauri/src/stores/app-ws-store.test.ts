@@ -21,6 +21,8 @@ vi.mock("@/lib/queryClient", () => ({
 
 vi.mock("@/lib/ws-url", () => ({
   getWsUrl: () => "ws://localhost:5005/ws",
+  getTerminalWsUrl: () => "ws://localhost:5005/api/terminal/ws",
+  getWsProtocols: () => [],
 }));
 
 class MockWebSocket {

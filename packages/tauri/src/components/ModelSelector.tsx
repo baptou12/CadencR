@@ -150,6 +150,16 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     (level === "feature" && featureProviderSettings.isLoading) ||
     agentCatalog.isLoading;
 
+  // useMemo must run on every render — keep it above any conditional return
+  // so the hook order stays stable when `isLoading` flips.
+  const providers = useMemo(() => (agentCatalog.data?.providers ?? []).map((provider) => ({
+    id: provider.id,
+    label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
+    providerId: provider.id,
+    disabled: provider.status !== "available",
+    models: provider.models,
+  })), [agentCatalog.data]);
+
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading model settings...</div>;
   }
@@ -247,14 +257,6 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   function handleInheritSelection(agentType: AgentType): void {
     applySelection(agentType, INHERIT_VALUE, INHERIT_VALUE);
   }
-
-  const providers = useMemo(() => (agentCatalog.data?.providers ?? []).map((provider) => ({
-    id: provider.id,
-    label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
-    providerId: provider.id,
-    disabled: provider.status !== "available",
-    models: provider.models,
-  })), [agentCatalog.data]);
 
   function getSelectedProvider(agentType: AgentType): string {
     return getEffectiveSelection(agentType).providerId;

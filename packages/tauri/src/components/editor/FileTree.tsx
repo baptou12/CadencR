@@ -7,12 +7,15 @@ import FileTreeItem from "./FileTreeItem";
 import type { FileTreeEntry } from "@/api/generated";
 
 interface FileTreeProps {
-  projectPath: string;
+  projectId: number;
   featureId: number;
+  /** Used only by the WebSocket file watcher subscription. API calls go through projectId/featureId. */
+  projectPath: string;
 }
 
 interface TreeNodeProps {
-  projectPath: string;
+  projectId: number;
+  featureId: number;
   dirPath: string;
   depth: number;
   activeFilePath: string | null;
@@ -22,7 +25,8 @@ interface TreeNodeProps {
 }
 
 function TreeNode({
-  projectPath,
+  projectId,
+  featureId,
   dirPath,
   depth,
   activeFilePath,
@@ -31,7 +35,7 @@ function TreeNode({
   onOpenFile,
 }: TreeNodeProps) {
   const { data: entries, isLoading, isError } = useFileTree(
-    { projectPath, dirPath },
+    { projectId, featureId, dirPath },
     { enabled: true },
   );
 
@@ -62,7 +66,8 @@ function TreeNode({
           key={entry.path}
           entry={entry}
           depth={depth}
-          projectPath={projectPath}
+          projectId={projectId}
+          featureId={featureId}
           activeFilePath={activeFilePath}
           expandedDirs={expandedDirs}
           onToggle={onToggle}
@@ -76,14 +81,15 @@ function TreeNode({
 interface EntryRowProps {
   entry: FileTreeEntry;
   depth: number;
-  projectPath: string;
+  projectId: number;
+  featureId: number;
   activeFilePath: string | null;
   expandedDirs: Set<string>;
   onToggle: (path: string) => void;
   onOpenFile: (path: string) => void;
 }
 
-function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onToggle, onOpenFile }: EntryRowProps) {
+function EntryRow({ entry, depth, projectId, featureId, activeFilePath, expandedDirs, onToggle, onOpenFile }: EntryRowProps) {
   const isExpanded = expandedDirs.has(entry.path);
   const isActive = activeFilePath === entry.path;
 
@@ -99,7 +105,8 @@ function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onT
       />
       {entry.is_dir && isExpanded && (
         <TreeNode
-          projectPath={projectPath}
+          projectId={projectId}
+          featureId={featureId}
           dirPath={entry.path}
           depth={depth + 1}
           activeFilePath={activeFilePath}
@@ -112,7 +119,7 @@ function EntryRow({ entry, depth, projectPath, activeFilePath, expandedDirs, onT
   );
 }
 
-export default function FileTree({ projectPath, featureId }: FileTreeProps) {
+export default function FileTree({ projectId, featureId, projectPath }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const { activePaneId, panes, openFile } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
@@ -142,7 +149,8 @@ export default function FileTree({ projectPath, featureId }: FileTreeProps) {
     <div className="flex flex-col h-full">
       <div className="flex-1 overflow-y-auto py-1" role="tree" aria-label="File tree">
         <TreeNode
-          projectPath={projectPath}
+          projectId={projectId}
+          featureId={featureId}
           dirPath=""
           depth={0}
           activeFilePath={activeFilePath}

@@ -7,11 +7,11 @@ const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
 interface EditorPaneProps {
   featureId: number;
   paneId: string;
-  projectPath: string;
+  projectId: number;
   isActive?: boolean;
 }
 
-export default function EditorPane({ featureId, paneId, projectPath, isActive }: EditorPaneProps) {
+export default function EditorPane({ featureId, paneId, projectId, isActive }: EditorPaneProps) {
   const activeFilePath = useEditorStore((s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null);
   const setActivePane = useEditorStore((s) => s.setActivePane);
 
@@ -39,7 +39,7 @@ export default function EditorPane({ featureId, paneId, projectPath, isActive }:
             <CodeMirrorEditor
               key={activeFilePath}
               filePath={activeFilePath}
-              projectPath={projectPath}
+              projectId={projectId}
               paneId={paneId}
               featureId={featureId}
             />

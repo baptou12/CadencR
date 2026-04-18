@@ -1,0 +1,210 @@
+//! Allowlists for HTTP settings-write endpoints.
+//!
+//! Each `PUT /api/{features,projects,workspace}/.../settings` route consults
+//! the matching function here before delegating to the repository. An unknown
+//! key returns 400 so a compromised agent can't write keys the server manages
+//! on its own (e.g. `worktree_path`) or keys that are documented-intent RCE
+//! (e.g. `setup_worktree` on the feature scope).
+//!
+//! The write path is the only enforcement point. Legacy DB rows with unknown
+//! keys are harmless — reads still work, and if an old key is no longer
+//! writable that just means the UI that used to write it has moved on.
+
+/// Keys writable via `PUT /api/features/{id}/settings`. Covers the real
+/// columns on the `features` table plus a small set of EAV keys the frontend
+/// writes into `feature_settings`.
+pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
+    "model_plan",
+    "model_prd",
+    "model_execute",
+    "model_risk",
+    "model_review",
+    "model_review-fixer",
+    "model_session",
+    "model_qa",
+    "model_retro",
+    "model_workflow",
+    "agent_runtime_plan",
+    "agent_runtime_prd",
+    "agent_runtime_execute",
+    "agent_runtime_risk",
+    "agent_runtime_review",
+    "agent_runtime_review-fixer",
+    "agent_runtime_session",
+    "agent_runtime_qa",
+    "agent_runtime_retro",
+    "agent_autonomy",
+    "parallel_execution",
+    "skip_worktree",
+    "bypass_acknowledged",
+];
+
+/// Keys writable via `PUT /api/projects/{id}/settings`.
+pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
+    "model_plan",
+    "model_prd",
+    "model_execute",
+    "model_risk",
+    "model_review",
+    "model_review-fixer",
+    "model_session",
+    "model_qa",
+    "model_retro",
+    "model_workflow",
+    "agent_runtime_plan",
+    "agent_runtime_prd",
+    "agent_runtime_execute",
+    "agent_runtime_risk",
+    "agent_runtime_review",
+    "agent_runtime_review-fixer",
+    "agent_runtime_session",
+    "agent_runtime_qa",
+    "agent_runtime_retro",
+    "agent_autonomy",
+    "parallel_execution",
+    "branch_prefix",
+    "qa_prompt",
+    "color",
+    "setup_worktree",
+    "bypass_acknowledged",
+];
+
+/// Keys writable via `PUT /api/workspace/settings/{key}`.
+pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
+    // Active Claude Code env profile name
+    "claude_code_active_profile",
+    // Last-session restoration
+    "lastOpenedFeature",
+    // UI chrome
+    "sidebar_left_width",
+    "sidebar_collapsed",
+    "sidebar_right_collapsed",
+    "loader_style",
+    "zoom_global",
+    // Editor preferences
+    "editor_vim_mode",
+    "editor_auto_save",
+    "editor_git_blame",
+    "editor_max_tabs",
+    // Workspace-scope agent defaults (mirror the per-project / per-feature keys)
+    "agent_autonomy",
+    "parallel_execution",
+    "model_plan",
+    "model_prd",
+    "model_execute",
+    "model_risk",
+    "model_review",
+    "model_review-fixer",
+    "model_session",
+    "model_qa",
+    "model_retro",
+    "model_workflow",
+    "model_auto_name",
+    "model_brainstorm",
+    "agent_runtime_plan",
+    "agent_runtime_prd",
+    "agent_runtime_execute",
+    "agent_runtime_risk",
+    "agent_runtime_review",
+    "agent_runtime_review-fixer",
+    "agent_runtime_session",
+    "agent_runtime_qa",
+    "agent_runtime_retro",
+    "agent_runtime_auto_name",
+    "agent_runtime_brainstorm",
+];
+
+/// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
+/// match the patterns used by `useDebouncedSetting` in the frontend.
+const WORKSPACE_ALLOWED_PREFIXES: &[&str] =
+    &["editor_sidebar_visible_", "active_tab_"];
+
+
+pub fn is_feature_key_allowed(key: &str) -> bool {
+    FEATURE_ALLOWED_KEYS.contains(&key)
+}
+
+pub fn is_project_key_allowed(key: &str) -> bool {
+    PROJECT_ALLOWED_KEYS.contains(&key)
+}
+
+pub fn is_workspace_key_allowed(key: &str) -> bool {
+    if WORKSPACE_ALLOWED_KEYS.contains(&key) {
+        return true;
+    }
+    WORKSPACE_ALLOWED_PREFIXES.iter().any(|p| {
+        key.strip_prefix(p)
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_unknown_feature_key() {
+        assert!(!is_feature_key_allowed("setup_worktree"));
+        assert!(!is_feature_key_allowed("worktree_path"));
+        assert!(!is_feature_key_allowed("arbitrary_injected_key"));
+    }
+
+    #[test]
+    fn accepts_known_feature_keys() {
+        assert!(is_feature_key_allowed("agent_autonomy"));
+        assert!(is_feature_key_allowed("parallel_execution"));
+        assert!(is_feature_key_allowed("bypass_acknowledged"));
+        assert!(is_feature_key_allowed("skip_worktree"));
+        assert!(is_feature_key_allowed("model_plan"));
+    }
+
+    #[test]
+    fn project_allows_setup_worktree_but_feature_does_not() {
+        assert!(is_project_key_allowed("setup_worktree"));
+        assert!(!is_feature_key_allowed("setup_worktree"));
+    }
+
+    #[test]
+    fn rejects_worktree_path_everywhere() {
+        assert!(!is_feature_key_allowed("worktree_path"));
+        assert!(!is_project_key_allowed("worktree_path"));
+        assert!(!is_workspace_key_allowed("worktree_path"));
+        assert!(!is_feature_key_allowed("worktree_branch"));
+        assert!(!is_feature_key_allowed("worktree_setup_step"));
+        assert!(!is_feature_key_allowed("worktree_setup_log"));
+    }
+
+    #[test]
+    fn workspace_accepts_dynamic_feature_keys() {
+        assert!(is_workspace_key_allowed("editor_sidebar_visible_42"));
+        assert!(is_workspace_key_allowed("active_tab_7"));
+    }
+
+    #[test]
+    fn workspace_rejects_malformed_dynamic_keys() {
+        assert!(!is_workspace_key_allowed("editor_sidebar_visible_"));
+        assert!(!is_workspace_key_allowed("active_tab_abc"));
+        assert!(!is_workspace_key_allowed("active_tab_1;drop"));
+    }
+
+    #[test]
+    fn workspace_rejects_unknown_static_key() {
+        assert!(!is_workspace_key_allowed("arbitrary"));
+    }
+
+    #[test]
+    fn workspace_accepts_agent_defaults() {
+        // These flow through the global Settings page + useDebouncedSetting.
+        for k in [
+            "agent_autonomy",
+            "parallel_execution",
+            "model_plan",
+            "model_execute",
+            "agent_runtime_session",
+            "agent_runtime_auto_name",
+            "sidebar_right_collapsed",
+        ] {
+            assert!(is_workspace_key_allowed(k), "{k} should be allowed");
+        }
+    }
+}

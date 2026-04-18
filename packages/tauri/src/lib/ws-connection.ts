@@ -5,6 +5,8 @@
 
 export interface WsConnectionOptions {
   url: string;
+  /** Forwarded to `new WebSocket(url, protocols)`; see `getWsProtocols`. */
+  protocols?: string[];
   onOpen?: () => void;
   onClose?: (intentional: boolean) => void;
   onError?: (intentional: boolean) => void;
@@ -20,7 +22,8 @@ export interface WsConnection {
 }
 
 export function createWsConnection(options: WsConnectionOptions): WsConnection {
-  const ws = new WebSocket(options.url);
+  const protocols = options.protocols && options.protocols.length > 0 ? options.protocols : undefined;
+  const ws = new WebSocket(options.url, protocols);
   let intentionalClose = false;
 
   ws.addEventListener("open", () => options.onOpen?.());

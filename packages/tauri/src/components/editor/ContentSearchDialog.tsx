@@ -23,7 +23,7 @@ import { FileSymbolIcon } from "./file-icons";
 import SearchResultEditor from "./SearchResultEditor";
 
 interface ContentSearchDialogProps {
-  projectPath: string;
+  projectId: number;
   featureId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,7 +55,7 @@ const defaultFilters: SearchFilters = {
 const filterCache = new Map<number, SearchFilters>();
 
 export default function ContentSearchDialog({
-  projectPath,
+  projectId,
   featureId,
   open,
   onOpenChange,
@@ -93,7 +93,7 @@ export default function ContentSearchDialog({
     [debouncedQuery, caseSensitive, wholeWord, isRegex, respectGitignore, includePattern, excludePattern],
   );
 
-  const { data, isLoading } = useContentSearch(projectPath, searchParams, {
+  const { data, isLoading } = useContentSearch(projectId, featureId, searchParams, {
     enabled: open && debouncedQuery.length > 0,
     keepPreviousData: true,
   });

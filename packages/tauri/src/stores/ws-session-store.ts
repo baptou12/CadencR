@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
-import { getWsUrl } from "@/lib/ws-url";
+import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import { scheduleReconnect, resetReconnectDelay, clearReconnect } from "@/lib/ws-reconnect";
 import {
@@ -36,7 +36,7 @@ import {
   type WsSessionStore,
   createSessionEntry,
   type PermissionMode,
-  updateSession
+  updateSession,
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
@@ -106,6 +106,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const entry = existing ?? createSessionEntry();
       const conn = createWsConnection({
         url: getWsUrl(),
+        protocols: getWsProtocols(),
         onOpen: () => {
           resetReconnectDelay(sessionId);
           set(updateSession(get(), sessionId, { isConnected: true }));

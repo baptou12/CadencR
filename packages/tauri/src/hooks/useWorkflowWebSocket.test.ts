@@ -9,6 +9,12 @@ import { PLAN_KEY, PRD_KEY } from "@/types/workflow";
 import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "@/types/workflow";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
+vi.mock("@/lib/ws-url", () => ({
+  getWsUrl: () => "ws://localhost:5005/ws",
+  getTerminalWsUrl: () => "ws://localhost:5005/api/terminal/ws",
+  getWsProtocols: () => [],
+}));
+
 // Mock ws-session-store so we can test routing without the full SDK parser.
 vi.mock("@/stores/ws-session-store", () => {
   let counter = 0;

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
   filePath: string;
-  projectPath: string;
+  projectId: number;
   paneId: string;
   featureId: number;
 }
@@ -31,7 +31,7 @@ function getLanguageName(filePath: string): string {
   return MAP[ext] ?? "Plain Text";
 }
 
-export default function CodeMirrorEditor({ filePath, projectPath, paneId, featureId }: CodeMirrorEditorProps) {
+export default function CodeMirrorEditor({ filePath, projectId, paneId, featureId }: CodeMirrorEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
@@ -49,9 +49,9 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
 
   const blameCompartment = useRef(new Compartment());
   const { data: blameData } = useGetBlame(
-    { projectPath, filePath },
+    { projectId, featureId, filePath },
     {
-      enabled: isBlameEnabled && Boolean(projectPath && filePath),
+      enabled: isBlameEnabled && Boolean(projectId && filePath),
       refetchOnWindowFocus: false,
     },
   );
@@ -67,9 +67,9 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
   );
 
   const { data, isLoading, error } = useReadFile(
-    { projectPath, filePath },
+    { projectId, featureId, filePath },
     {
-      enabled: Boolean(filePath && projectPath),
+      enabled: Boolean(filePath && projectId),
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
     },
@@ -83,7 +83,7 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
     if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await mutateAsyncRef.current({ project_path: projectPath, file_path: filePath, content });
+      await mutateAsyncRef.current({ project_id: projectId, feature_id: featureId, file_path: filePath, content });
       setDirty(featureId, paneId, filePath, false);
       setAutoSavedVisible(true);
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
@@ -92,20 +92,20 @@ export default function CodeMirrorEditor({ filePath, projectPath, paneId, featur
       const msg = err instanceof Error ? err.message : "Failed to auto-save file";
       toast.error(msg);
     }
-  }, [projectPath, filePath, featureId, paneId, setDirty]);
+  }, [projectId, filePath, featureId, paneId, setDirty]);
 
   const save = useCallback(async () => {
     const view = viewRef.current;
     if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await mutateAsyncRef.current({ project_path: projectPath, file_path: filePath, content });
+      await mutateAsyncRef.current({ project_id: projectId, feature_id: featureId, file_path: filePath, content });
       setDirty(featureId, paneId, filePath, false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save file";
       toast.error(msg);
     }
-  }, [projectPath, filePath, featureId, paneId, setDirty]);
+  }, [projectId, filePath, featureId, paneId, setDirty]);
 
   const handleSave = useCallback(() => { void save(); }, [save]);
 

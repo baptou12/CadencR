@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::ws::Message;
@@ -10,37 +10,8 @@ use tokio::process::Command;
 use super::engine::WsSender;
 use crate::domain::ws_session::protocol::WsEnvelope;
 
-/// Slugify a title: lowercase, replace non-alphanumeric with `-`, collapse consecutive `-`,
-/// trim leading/trailing `-`, cap at 50 chars.
-fn slugify(title: &str) -> String {
-    let slug: String = title
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    // Collapse consecutive dashes
-    let mut result = String::new();
-    let mut prev_dash = false;
-    for c in slug.chars() {
-        if c == '-' {
-            if !prev_dash {
-                result.push('-');
-            }
-            prev_dash = true;
-        } else {
-            result.push(c);
-            prev_dash = false;
-        }
-    }
-    // Trim leading/trailing dashes
-    let trimmed = result.trim_matches('-');
-    // Cap at 50 chars (don't cut mid-character, but it's ASCII)
-    if trimmed.len() > 50 {
-        trimmed[..50].trim_end_matches('-').to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
+use crate::shared::git_cli::run_git_safe_refs;
+use crate::shared::slug::slugify;
 
 /// Build a branch name from a prefix and title.
 /// Format: `{prefix}{slug}-{xxxx}` where xxxx is 4-char random hex.
@@ -54,6 +25,51 @@ pub fn build_branch_name(prefix: &str, title: &str) -> String {
 fn send_envelope(ws_sender: &WsSender, domain: &str, action: &str, payload: serde_json::Value) {
     let envelope = WsEnvelope::new(domain, action, payload);
     let _ = ws_sender.send(Message::Text(String::from(envelope).into()));
+}
+
+/// Build `~/.cadence/{project_name}/{safe_branch}` and verify the canonical
+/// result stays under the canonical `~/.cadence`. Creates the parent dir if
+/// it does not exist; the leaf is the worktree dir that `git worktree add`
+/// will create itself.
+async fn build_contained_worktree_path(
+    cadence_root: &Path,
+    project_name: &str,
+    safe_branch: &str,
+) -> Result<PathBuf, String> {
+    if project_name.is_empty()
+        || project_name.contains('/')
+        || project_name.contains('\\')
+        || project_name.contains("..")
+    {
+        return Err(format!(
+            "refusing to build worktree path for unsafe project name: {project_name:?}"
+        ));
+    }
+    if safe_branch.is_empty() || safe_branch.contains('/') || safe_branch.contains("..") {
+        return Err(format!(
+            "refusing to build worktree path for unsafe branch: {safe_branch:?}"
+        ));
+    }
+
+    let parent = cadence_root.join(project_name);
+    tokio::fs::create_dir_all(&parent)
+        .await
+        .map_err(|e| format!("Failed to create parent dir: {e}"))?;
+
+    let canon_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize parent dir: {e}"))?;
+    let canon_root = cadence_root
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize ~/.cadence: {e}"))?;
+    if !canon_parent.starts_with(&canon_root) {
+        return Err(format!(
+            "Resolved worktree parent escapes ~/.cadence: {}",
+            canon_parent.display()
+        ));
+    }
+
+    Ok(canon_parent.join(safe_branch))
 }
 
 /// Idempotent worktree creation orchestrator.
@@ -153,10 +169,13 @@ pub async fn ensure_worktree(
         name
     };
 
-    // 5. Compute worktree path
-    let safe_branch = branch.replace('/', "-");
+    // 5. Compute worktree path — parent must be created first so we can
+    //    canonicalize it and confirm the final path stays under ~/.cadence.
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let worktree_path = home.join(".cadence").join(&project_name).join(&safe_branch);
+    let cadence_root = home.join(".cadence");
+    let safe_branch = branch.replace('/', "-");
+    let worktree_path =
+        build_contained_worktree_path(&cadence_root, &project_name, &safe_branch).await?;
     let path_str = worktree_path.to_string_lossy().to_string();
 
     // 6. Send worktree.creating
@@ -171,37 +190,30 @@ pub async fn ensure_worktree(
         }),
     );
 
-    // 7. Create parent directory
-    if let Some(parent) = worktree_path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| format!("Failed to create parent dir: {e}"))?;
-    }
-
     // 8. Run git worktree add
-    let output = Command::new("git")
-        .args(["worktree", "add", &path_str, "-b", &branch])
-        .current_dir(&project_dir)
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run git worktree add: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("already exists") {
-            // Retry without -b
-            let output2 = Command::new("git")
-                .args(["worktree", "add", &path_str, &branch])
-                .current_dir(&project_dir)
-                .output()
+    match run_git_safe_refs(
+        &["worktree", "add"],
+        &["-b", &branch],
+        &[&path_str],
+        Path::new(&project_dir),
+    )
+    .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            let msg = format!("{e}");
+            if msg.contains("already exists") {
+                run_git_safe_refs(
+                    &["worktree", "add"],
+                    &[],
+                    &[&path_str, &branch],
+                    Path::new(&project_dir),
+                )
                 .await
-                .map_err(|e| format!("Failed to run git worktree add (retry): {e}"))?;
-            if !output2.status.success() {
-                let stderr2 = String::from_utf8_lossy(&output2.stderr);
-                return Err(format!("git worktree add failed: {stderr2}"));
+                .map_err(|e2| format!("git worktree add failed: {e2}"))?;
+            } else {
+                return Err(format!("git worktree add failed: {msg}"));
             }
-        } else {
-            return Err(format!("git worktree add failed: {stderr}"));
         }
     }
 
@@ -513,38 +525,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_slugify_basic() {
-        assert_eq!(slugify("My Cool Feature"), "my-cool-feature");
-    }
-
-    #[test]
-    fn test_slugify_special_chars() {
-        assert_eq!(slugify("hello@world! #test"), "hello-world-test");
-    }
-
-    #[test]
-    fn test_slugify_consecutive_dashes() {
-        assert_eq!(slugify("a---b---c"), "a-b-c");
-    }
-
-    #[test]
-    fn test_slugify_leading_trailing() {
-        assert_eq!(slugify("--hello--"), "hello");
-    }
-
-    #[test]
-    fn test_slugify_length_cap() {
-        let long = "a".repeat(100);
-        let result = slugify(&long);
-        assert!(result.len() <= 50);
-    }
-
-    #[test]
-    fn test_slugify_empty() {
-        assert_eq!(slugify(""), "");
-    }
-
-    #[test]
     fn test_build_branch_name_format() {
         let name = build_branch_name("feature/", "My Cool Feature");
         assert!(name.starts_with("feature/my-cool-feature-"));
@@ -566,67 +546,6 @@ mod tests {
     fn test_build_branch_name_special_chars() {
         let name = build_branch_name("feature/", "Hello World! @#$ Test");
         assert!(name.starts_with("feature/hello-world-test-"));
-    }
-
-    // --- Additional slugify tests ---
-
-    #[test]
-    fn test_slugify_all_special_chars() {
-        // All non-alphanumeric should collapse to empty after trimming dashes
-        assert_eq!(slugify("!@#$%^&*()"), "");
-    }
-
-    #[test]
-    fn test_slugify_single_char() {
-        assert_eq!(slugify("a"), "a");
-    }
-
-    #[test]
-    fn test_slugify_numbers() {
-        assert_eq!(slugify("version 2.0 release"), "version-2-0-release");
-    }
-
-    #[test]
-    fn test_slugify_mixed_case() {
-        assert_eq!(slugify("CamelCase AND UPPER"), "camelcase-and-upper");
-    }
-
-    #[test]
-    fn test_slugify_unicode_replaced() {
-        // Non-ASCII chars become dashes, then collapsed/trimmed
-        assert_eq!(slugify("café"), "caf");
-    }
-
-    #[test]
-    fn test_slugify_length_cap_trims_trailing_dash() {
-        // 48 'a's + " b" = slug "aaa...a-b" at 50 chars exactly
-        // But let's make one that would end with a dash at position 50
-        let input = format!("{} {}", "a".repeat(49), "b");
-        let result = slugify(&input);
-        assert!(result.len() <= 50);
-        assert!(!result.ends_with('-'));
-    }
-
-    #[test]
-    fn test_slugify_exactly_50_chars() {
-        let input = "a".repeat(50);
-        assert_eq!(slugify(&input), "a".repeat(50));
-    }
-
-    #[test]
-    fn test_slugify_51_chars_truncated() {
-        let input = "a".repeat(51);
-        assert_eq!(slugify(&input), "a".repeat(50));
-    }
-
-    #[test]
-    fn test_slugify_spaces_only() {
-        assert_eq!(slugify("   "), "");
-    }
-
-    #[test]
-    fn test_slugify_tabs_and_newlines() {
-        assert_eq!(slugify("hello\tworld\nfoo"), "hello-world-foo");
     }
 
     // --- Additional build_branch_name tests ---
@@ -723,6 +642,44 @@ mod tests {
         // The final component should have no slashes
         let file_name = path.file_name().unwrap().to_string_lossy();
         assert!(!file_name.contains('/'));
+    }
+
+    #[tokio::test]
+    async fn build_contained_worktree_rejects_parent_in_project_name() {
+        let tmp = std::env::temp_dir().join("cadence-b4-1");
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+        tokio::fs::create_dir_all(&tmp).await.unwrap();
+        let err = build_contained_worktree_path(&tmp, "../escape", "branch")
+            .await
+            .unwrap_err();
+        assert!(err.contains("unsafe project name"), "{err}");
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+    }
+
+    #[tokio::test]
+    async fn build_contained_worktree_rejects_slash_in_project_name() {
+        let tmp = std::env::temp_dir().join("cadence-b4-2");
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+        tokio::fs::create_dir_all(&tmp).await.unwrap();
+        let err = build_contained_worktree_path(&tmp, "a/b", "branch")
+            .await
+            .unwrap_err();
+        assert!(err.contains("unsafe project name"), "{err}");
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+    }
+
+    #[tokio::test]
+    async fn build_contained_worktree_accepts_safe_inputs() {
+        let tmp = std::env::temp_dir().join("cadence-b4-3");
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+        tokio::fs::create_dir_all(&tmp).await.unwrap();
+        let result = build_contained_worktree_path(&tmp, "proj", "feat-branch")
+            .await
+            .unwrap();
+        let canon_tmp = tokio::fs::canonicalize(&tmp).await.unwrap();
+        assert!(result.starts_with(&canon_tmp), "{}", result.display());
+        assert!(result.ends_with("feat-branch"));
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
     }
 
     // --- Notes on integration tests ---

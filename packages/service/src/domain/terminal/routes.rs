@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Query, State, WebSocketUpgrade};
-use axum::response::IntoResponse;
+use axum::http::HeaderMap;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use futures::SinkExt;
@@ -14,6 +15,7 @@ use tracing::{error, info};
 use super::cwd::resolve_cwd;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::service::PtyHandle;
+use crate::api::middleware::{validate_ws_origin, validate_ws_token};
 use crate::app_state::AppState;
 
 type WsSink = futures::stream::SplitSink<WebSocket, Message>;
@@ -36,8 +38,18 @@ async fn terminal_ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<TerminalWsParams>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
+    headers: HeaderMap,
+) -> Response {
+    if let Err(resp) = validate_ws_origin(&headers) {
+        return resp;
+    }
+    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
+        Ok(proto) => proto.to_string(),
+        Err(resp) => return resp,
+    };
+    let ws = ws.protocols([selected_proto]);
     ws.on_upgrade(move |socket| handle_terminal_ws(socket, params, state))
+        .into_response()
 }
 
 async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: AppState) {

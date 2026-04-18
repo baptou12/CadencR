@@ -3,6 +3,12 @@ import { renderHook, act } from "@testing-library/react";
 
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
+vi.mock("@/lib/ws-url", () => ({
+  getWsUrl: () => "ws://localhost:5005/ws",
+  getTerminalWsUrl: () => "ws://localhost:5005/api/terminal/ws",
+  getWsProtocols: () => [],
+}));
+
 import { useTerminalWebSocket } from "./useTerminalWebSocket";
 import type { UseTerminalWebSocketOptions } from "./useTerminalWebSocket";
 import { toast } from "sonner";

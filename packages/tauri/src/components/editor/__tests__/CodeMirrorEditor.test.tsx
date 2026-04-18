@@ -86,7 +86,7 @@ vi.mock("@/hooks/useDebouncedSetting", () => ({
 
 const defaultProps = {
   filePath: "/test.ts",
-  projectPath: "/project",
+  projectId: 42,
   paneId: "pane-1",
   featureId: 1,
 };

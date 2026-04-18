@@ -1,6 +1,8 @@
-//! Build the `mcp_servers` config map for subprocess spawns. The subprocess is
-//! feature-agnostic — every tool call carries its own `feature_id` in args so
-//! one subprocess can serve multiple features.
+//! Build the `mcp_servers` config map for subprocess spawns.
+//!
+//! Invariant: one subprocess per (agent-type, feature). Do not revert to
+//! sharing across features — feature-id pinning is what blocks a prompt-
+//! injected agent from operating on another feature's data.
 
 use std::collections::HashMap;
 use std::env;
@@ -12,6 +14,7 @@ use crate::domain::mcp::servers::{mcp_server_name, AgentType};
 
 pub fn build_mcp_server_config(
     agent_type: AgentType,
+    feature_id: i64,
 ) -> HashMap<String, RuntimeMcpServerConfig> {
     let server_name = mcp_server_name(agent_type);
     let binary_path = env::current_exe()
@@ -34,8 +37,13 @@ pub fn build_mcp_server_config(
     mcp_args.push("mcp-serve".to_string());
     mcp_args.push("--agent-type".to_string());
     mcp_args.push(format!("{agent_type:?}").to_lowercase());
+    mcp_args.push("--feature-id".to_string());
+    mcp_args.push(feature_id.to_string());
 
-    info!(server_name, binary_path, ?mcp_args, "built MCP server config");
+    info!(
+        server_name,
+        binary_path, feature_id, ?mcp_args, "built MCP server config"
+    );
 
     let config = RuntimeMcpServerConfig::Stdio {
         command: binary_path,

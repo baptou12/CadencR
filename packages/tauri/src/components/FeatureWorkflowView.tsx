@@ -209,7 +209,12 @@ export function FeatureWorkflowView({
         <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
           {projectPath && (
             <Suspense fallback={null}>
-              <FeatureEditorTab ref={editorTabRef} featureId={featureId} projectPath={projectPath} />
+              <FeatureEditorTab
+                ref={editorTabRef}
+                featureId={featureId}
+                projectId={projectId}
+                projectPath={projectPath}
+              />
             </Suspense>
           )}
         </div>

@@ -15,13 +15,15 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{State, WebSocketUpgrade};
-use axum::response::IntoResponse;
+use axum::http::HeaderMap;
+use axum::response::{IntoResponse, Response};
 use futures::StreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, info};
 
 use super::persistence::WsSessionPersistence;
 use super::protocol::*;
+use crate::api::middleware::{validate_ws_origin, validate_ws_token};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
     RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
@@ -152,9 +154,21 @@ pub(super) fn send_runtime_session_id(sender: &WsSender, cli_sid: &str) {
     let _ = sender.send(Message::Text(String::from(envelope).into()));
 }
 
-/// Top-level Axum WebSocket handler.
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
+pub async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(resp) = validate_ws_origin(&headers) {
+        return resp;
+    }
+    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
+        Ok(proto) => proto.to_string(),
+        Err(resp) => return resp,
+    };
+    let ws = ws.protocols([selected_proto]);
     ws.on_upgrade(move |socket| handle_connection(socket, state))
+        .into_response()
 }
 
 /// Runs the WebSocket connection loop after upgrade.

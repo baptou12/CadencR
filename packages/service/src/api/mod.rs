@@ -1,3 +1,4 @@
+pub mod middleware;
 pub mod openapi;
 
 use crate::app_state::AppState;
@@ -38,5 +39,9 @@ pub fn build_router(state: AppState) -> Router {
         .merge(claude_code_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth_middleware,
+        ))
         .with_state(state)
 }

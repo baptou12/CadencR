@@ -182,7 +182,8 @@ interface HasUncommittedChangesParams {
 }
 
 interface GetBlameParams {
-  projectPath: string;
+  projectId: number;
+  featureId?: number;
   filePath: string;
 }
 
@@ -1279,7 +1280,8 @@ interface FileReadResponse {
 }
 
 interface FileWriteRequest {
-  project_path: string;
+  project_id: number;
+  feature_id?: number;
   file_path: string;
   content: string;
 }
@@ -1296,12 +1298,14 @@ export interface FileTreeEntry {
 }
 
 interface ReadFileParams {
-  projectPath: string;
+  projectId: number;
+  featureId?: number;
   filePath: string;
 }
 
 interface FileTreeParams {
-  projectPath: string;
+  projectId: number;
+  featureId?: number;
   dirPath: string;
 }
 
@@ -1346,20 +1350,22 @@ interface FileSearchResponse {
   files: FileMatchResult[];
 }
 
-function getFileSearchQueryKey(projectPath: string, query?: string) {
-  return ["editor", "search", projectPath, query ?? ""] as const;
+function getFileSearchQueryKey(projectId: number, featureId: number | undefined, query?: string) {
+  return ["editor", "search", projectId, featureId ?? null, query ?? ""] as const;
 }
 
 export function useFileSearch(
-  projectPath: string,
+  projectId: number,
+  featureId: number | undefined,
   query?: string,
   options?: Omit<UseQueryOptions<FileSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
 ) {
   const queryParam = query ? `&query=${encodeURIComponent(query)}` : "";
+  const featureParam = featureId !== undefined ? `&feature_id=${featureId}` : "";
   return useQuery<FileSearchResponse, ErrorType<unknown>>({
-    queryKey: getFileSearchQueryKey(projectPath, query),
+    queryKey: getFileSearchQueryKey(projectId, featureId, query),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/editor/search?project_path=${encodeURIComponent(projectPath)}${queryParam}` }),
+      customInstance({ method: "GET", url: `/api/editor/search?project_id=${projectId}${featureParam}${queryParam}` }),
     ...options,
   });
 }
@@ -1394,17 +1400,19 @@ export interface ContentSearchResponse {
   truncated: boolean;
 }
 
-function getContentSearchQueryKey(projectPath: string, params: ContentSearchParams) {
-  return ["editor", "content-search", projectPath, params] as const;
+function getContentSearchQueryKey(projectId: number, featureId: number | undefined, params: ContentSearchParams) {
+  return ["editor", "content-search", projectId, featureId ?? null, params] as const;
 }
 
 export function useContentSearch(
-  projectPath: string,
+  projectId: number,
+  featureId: number | undefined,
   params: ContentSearchParams,
   options?: Omit<UseQueryOptions<ContentSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
 ) {
   const searchParams = new URLSearchParams();
-  searchParams.set("project_path", projectPath);
+  searchParams.set("project_id", String(projectId));
+  if (featureId !== undefined) searchParams.set("feature_id", String(featureId));
   searchParams.set("query", params.query);
   if (params.case_sensitive) searchParams.set("case_sensitive", "true");
   if (params.whole_word) searchParams.set("whole_word", "true");
@@ -1415,7 +1423,7 @@ export function useContentSearch(
   if (params.limit) searchParams.set("limit", String(params.limit));
 
   return useQuery<ContentSearchResponse, ErrorType<unknown>>({
-    queryKey: getContentSearchQueryKey(projectPath, params),
+    queryKey: getContentSearchQueryKey(projectId, featureId, params),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/editor/content-search?${searchParams.toString()}` }),
     ...options,
