@@ -20,10 +20,13 @@ pub struct ProfileView {
 }
 
 impl From<profiles::ClaudeCodeProfile> for ProfileView {
+    /// Redacts secret-looking env values. The response path must never expose
+    /// token/key/secret/password/auth/credential values; the runtime path
+    /// calls `profiles::resolve_active_profile_env` directly for injection.
     fn from(value: profiles::ClaudeCodeProfile) -> Self {
         Self {
             name: value.name,
-            env: value.env,
+            env: profiles::redact_env_for_response(&value.env),
         }
     }
 }

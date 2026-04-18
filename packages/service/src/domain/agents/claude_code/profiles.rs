@@ -18,6 +18,57 @@ use crate::error::AppError;
 pub const DEFAULT_PROFILE_NAME: &str = "default";
 pub const ACTIVE_PROFILE_KEY: &str = "claude_code_active_profile";
 
+/// Env keys a profile is never allowed to set. These are process-level
+/// injection vectors (dynamic linker, git transports, resolver shim) or
+/// host-shadowing vars; accepting them would let a compromised HTTP client
+/// hijack the spawned CLI or any tool it invokes.
+const DENIED_ENV_KEYS: &[&str] = &[
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+    "GIT_SSH_COMMAND",
+    "GIT_EXEC_PATH",
+    "GIT_EXTERNAL_DIFF",
+    "PATH",
+    "SHELL",
+    "NODE_OPTIONS",
+    "PYTHONPATH",
+    "SSL_CERT_FILE",
+    "HOSTALIASES",
+];
+
+fn is_denied_env_key(key: &str) -> bool {
+    DENIED_ENV_KEYS
+        .iter()
+        .any(|d| d.eq_ignore_ascii_case(key))
+}
+
+/// Response-only redaction: replace values whose keys look like credentials
+/// with `"***"` so DevTools / screenshots / logs don't leak them. The runtime
+/// path (`resolve_active_profile_env`) returns the unredacted map directly.
+pub fn redact_env_for_response(
+    env: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    env.iter()
+        .map(|(k, v)| {
+            if looks_like_secret_key(k) {
+                (k.clone(), "***".to_string())
+            } else {
+                (k.clone(), v.clone())
+            }
+        })
+        .collect()
+}
+
+fn looks_like_secret_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    ["TOKEN", "KEY", "SECRET", "PASSWORD", "AUTH", "CREDENTIAL"]
+        .iter()
+        .any(|needle| upper.contains(needle))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeCodeProfile {
     pub name: String,
@@ -91,6 +142,13 @@ pub async fn upsert_profile(
     env: &HashMap<String, String>,
 ) -> Result<ClaudeCodeProfile, AppError> {
     validate_profile_name(name)?;
+    for key in env.keys() {
+        if is_denied_env_key(key) {
+            return Err(AppError::BadRequest(format!(
+                "env key '{key}' is not allowed in profiles"
+            )));
+        }
+    }
     let env_json = serialize_env(env)?;
     sqlx::query(
         "INSERT INTO claude_code_profiles (name, env_json) VALUES (?, ?) \
@@ -325,5 +383,80 @@ mod tests {
         set_active_profile(&pool, "default").await.unwrap();
         let (_, env) = resolve_active_profile_env(&pool).await;
         assert!(env.is_none());
+    }
+
+    #[tokio::test]
+    async fn upsert_rejects_ld_preload() {
+        let pool = setup().await;
+        let mut env = HashMap::new();
+        env.insert("LD_PRELOAD".into(), "/tmp/evil.so".into());
+        let err = upsert_profile(&pool, "evil", &env).await.unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_rejects_path_case_insensitive() {
+        let pool = setup().await;
+        let mut env = HashMap::new();
+        env.insert("path".into(), "/tmp:/usr/bin".into());
+        let err = upsert_profile(&pool, "evil", &env).await.unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_rejects_git_ssh_command() {
+        let pool = setup().await;
+        let mut env = HashMap::new();
+        env.insert("GIT_SSH_COMMAND".into(), "sh -c 'curl attacker'".into());
+        let err = upsert_profile(&pool, "evil", &env).await.unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn upsert_accepts_anthropic_api_key() {
+        let pool = setup().await;
+        let mut env = HashMap::new();
+        env.insert("ANTHROPIC_API_KEY".into(), "sk-ant-live-xxx".into());
+        let profile = upsert_profile(&pool, "real", &env).await.unwrap();
+        assert_eq!(profile.env.get("ANTHROPIC_API_KEY").unwrap(), "sk-ant-live-xxx");
+    }
+
+    #[test]
+    fn redact_hides_secret_like_values() {
+        let mut env = HashMap::new();
+        env.insert("ANTHROPIC_API_KEY".into(), "sk-live-secret".into());
+        env.insert("GITHUB_TOKEN".into(), "ghp_xxx".into());
+        env.insert("AUTH_BEARER".into(), "bearer xxx".into());
+        env.insert("API_PASSWORD".into(), "hunter2".into());
+        env.insert("OAUTH_SECRET".into(), "s3cr3t".into());
+        env.insert("AWS_CREDENTIAL_PROVIDER".into(), "iam".into());
+
+        let redacted = redact_env_for_response(&env);
+        for (k, v) in &redacted {
+            assert_eq!(v, "***", "{k} was not redacted: {v}");
+        }
+    }
+
+    #[test]
+    fn redact_keeps_non_secret_values() {
+        let mut env = HashMap::new();
+        env.insert("ANTHROPIC_BASE_URL".into(), "https://proxy".into());
+        env.insert("AWS_REGION".into(), "us-east-1".into());
+        env.insert("CLAUDE_CODE_USE_BEDROCK".into(), "1".into());
+
+        let redacted = redact_env_for_response(&env);
+        assert_eq!(redacted.get("ANTHROPIC_BASE_URL").unwrap(), "https://proxy");
+        assert_eq!(redacted.get("AWS_REGION").unwrap(), "us-east-1");
+        assert_eq!(redacted.get("CLAUDE_CODE_USE_BEDROCK").unwrap(), "1");
+    }
+
+    #[test]
+    fn redact_is_case_insensitive() {
+        let mut env = HashMap::new();
+        env.insert("lowercase_token".into(), "v".into());
+        env.insert("MixedCase_Key".into(), "v".into());
+        let redacted = redact_env_for_response(&env);
+        assert_eq!(redacted.get("lowercase_token").unwrap(), "***");
+        assert_eq!(redacted.get("MixedCase_Key").unwrap(), "***");
     }
 }
