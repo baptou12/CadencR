@@ -3,6 +3,7 @@ import { EditorView, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { MergeView, unifiedMergeView } from "@codemirror/merge";
 import { cadenceDiffExtensions } from "./editor-theme";
+import { getCadenceDiffConfig } from "./diff-config";
 import { getLanguageExtension } from "./language-extensions";
 
 interface ReadOnlyDiffViewProps {
@@ -60,6 +61,13 @@ export function ReadOnlyDiffView({
 
     const container = containerRef.current;
     const extensions = baseExtensions(filePath, extraExtensions);
+    const diffConfig = getCadenceDiffConfig(oldContent, newContent);
+    const mergeOptions = {
+      highlightChanges: true,
+      gutter: true,
+      collapseUnchanged: { margin: 3, minSize: 4 },
+      ...(diffConfig ? { diffConfig } : {}),
+    };
 
     if (mode === "split") {
       const mv = new MergeView({
@@ -72,9 +80,7 @@ export function ReadOnlyDiffView({
           extensions,
         },
         parent: container,
-        highlightChanges: true,
-        gutter: true,
-        collapseUnchanged: { margin: 3, minSize: 4 },
+        ...mergeOptions,
       });
       mergeViewRef.current = mv;
       if (editorViewRef) editorViewRef.current = mv.b;
@@ -86,11 +92,9 @@ export function ReadOnlyDiffView({
             ...extensions,
             unifiedMergeView({
               original: oldContent,
-              highlightChanges: true,
-              gutter: true,
+              ...mergeOptions,
               syntaxHighlightDeletions: true,
               mergeControls: false,
-              collapseUnchanged: { margin: 3, minSize: 4 },
             }),
           ],
         }),
