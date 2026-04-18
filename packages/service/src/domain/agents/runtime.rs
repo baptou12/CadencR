@@ -11,6 +11,7 @@ pub const AGENT_TYPES: &[&str] = &[
     "session",
     "qa",
     "retro",
+    "auto_name",
 ];
 
 pub const DEFAULT_PROVIDER: &str = "claude_code";
@@ -85,10 +86,34 @@ pub struct ProviderSettings {
     pub session: String,
     pub qa: String,
     pub retro: String,
+    pub auto_name: String,
 }
 
 pub fn validate_agent_type(agent_type: &str) -> bool {
     AGENT_TYPES.contains(&agent_type)
+}
+
+/// Agent types that are configurable only at the workspace (global) level.
+/// These have no per-project or per-feature override columns — their
+/// behavior is inherently application-wide.
+pub const WORKSPACE_ONLY_AGENT_TYPES: &[&str] = &["auto_name"];
+
+pub fn is_workspace_only_agent_type(agent_type: &str) -> bool {
+    WORKSPACE_ONLY_AGENT_TYPES.contains(&agent_type)
+}
+
+/// Reject agent types that aren't allowed to be overridden at the given scope.
+/// Used by project/feature setters to block workspace-only types.
+pub fn reject_workspace_only(
+    agent_type: &str,
+    scope: &str,
+) -> Result<(), crate::error::AppError> {
+    if is_workspace_only_agent_type(agent_type) {
+        return Err(crate::error::AppError::BadRequest(format!(
+            "Agent type '{agent_type}' is workspace-only and cannot be overridden per {scope}"
+        )));
+    }
+    Ok(())
 }
 
 pub fn runtime_setting_key(agent_type: &str) -> String {
@@ -106,19 +131,45 @@ pub fn default_provider_settings() -> ProviderSettings {
         review_fixer: default.clone(),
         session: default.clone(),
         qa: default.clone(),
-        retro: default,
+        retro: default.clone(),
+        auto_name: default,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{default_provider_settings, validate_agent_type, DEFAULT_PROVIDER};
+    use super::{
+        default_provider_settings, is_workspace_only_agent_type, reject_workspace_only,
+        validate_agent_type, DEFAULT_PROVIDER,
+    };
+    use crate::error::AppError;
 
     #[test]
     fn validates_supported_agent_types() {
         assert!(validate_agent_type("plan"));
         assert!(validate_agent_type("session"));
+        assert!(validate_agent_type("auto_name"));
         assert!(!validate_agent_type("unknown"));
+    }
+
+    #[test]
+    fn auto_name_is_workspace_only() {
+        assert!(is_workspace_only_agent_type("auto_name"));
+        assert!(!is_workspace_only_agent_type("plan"));
+        assert!(!is_workspace_only_agent_type("session"));
+    }
+
+    #[test]
+    fn reject_workspace_only_blocks_auto_name_with_scoped_message() {
+        let err = reject_workspace_only("auto_name", "feature").unwrap_err();
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(msg.contains("auto_name"));
+                assert!(msg.contains("feature"));
+            }
+            other => panic!("expected BadRequest, got {other:?}"),
+        }
+        assert!(reject_workspace_only("plan", "feature").is_ok());
     }
 
     #[test]
@@ -134,5 +185,6 @@ mod tests {
         assert_eq!(settings.session, DEFAULT_PROVIDER);
         assert_eq!(settings.qa, DEFAULT_PROVIDER);
         assert_eq!(settings.retro, DEFAULT_PROVIDER);
+        assert_eq!(settings.auto_name, DEFAULT_PROVIDER);
     }
 }

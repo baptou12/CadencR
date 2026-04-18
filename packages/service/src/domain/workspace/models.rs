@@ -21,6 +21,7 @@ pub struct ModelSettings {
     pub session: String,
     pub qa: String,
     pub retro: String,
+    pub auto_name: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -77,11 +78,13 @@ mod tests {
             session: "opus[1m]".to_string(),
             qa: "opus[1m]".to_string(),
             retro: "opus[1m]".to_string(),
+            auto_name: "haiku".to_string(),
         };
         let json = serde_json::to_string(&ms).unwrap();
         // review_fixer should be serialized as "review-fixer"
         assert!(json.contains("\"review-fixer\""));
         assert!(!json.contains("\"review_fixer\""));
+        assert!(json.contains("\"auto_name\""));
     }
 
     #[test]
@@ -97,6 +100,7 @@ mod tests {
             session: default_model.to_string(),
             qa: default_model.to_string(),
             retro: default_model.to_string(),
+            auto_name: default_model.to_string(),
         };
         assert_eq!(ms.plan, default_model);
         assert_eq!(ms.prd, default_model);
@@ -107,6 +111,7 @@ mod tests {
         assert_eq!(ms.session, default_model);
         assert_eq!(ms.qa, default_model);
         assert_eq!(ms.retro, default_model);
+        assert_eq!(ms.auto_name, default_model);
     }
 
     #[test]

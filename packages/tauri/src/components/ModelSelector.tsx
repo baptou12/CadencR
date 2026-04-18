@@ -46,6 +46,15 @@ import { CheckIcon, ChevronDownIcon } from "lucide-react";
 type AgentType = AgentTypeSetting;
 const INHERIT_VALUE = "__inherit__";
 
+/**
+ * Agent types that are configurable only at the workspace (global) level.
+ * Must stay in sync with `WORKSPACE_ONLY_AGENT_TYPES` in the backend
+ * (packages/service/src/domain/agents/runtime.rs) — that list is authoritative
+ * and drives backend 400 errors if the frontend ever sends a project/feature
+ * override for one of these.
+ */
+const WORKSPACE_ONLY_AGENT_TYPES: readonly AgentType[] = ["auto_name"] as const;
+
 const AGENT_LABELS: Record<AgentType, string> = {
   plan: "Plan",
   prd: "PRD",
@@ -56,6 +65,7 @@ const AGENT_LABELS: Record<AgentType, string> = {
   session: "Session",
   qa: "QA",
   retro: "Retro",
+  auto_name: "Auto-naming",
 };
 
 interface ModelSelectorProps {
@@ -272,9 +282,13 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
       ?.models.find((model) => model.id === modelId)?.description;
   }
 
+  const visibleAgentTypes = AGENT_TYPES.filter(
+    (agentType) => level === "global" || !WORKSPACE_ONLY_AGENT_TYPES.includes(agentType),
+  );
+
   return (
     <div className="rounded-xl border border-border/60 bg-card/30 p-2">
-      {AGENT_TYPES.map((agentType) => (
+      {visibleAgentTypes.map((agentType) => (
         <div
           key={agentType}
           className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center sm:gap-3"

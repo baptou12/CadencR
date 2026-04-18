@@ -9,12 +9,26 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 
-export function useFeatureTitle(featureId: number): string | null {
+export interface FeatureTitleState {
+  title: string | null;
+  isAutoNaming: boolean;
+}
+
+export function useFeatureTitle(featureId: number): FeatureTitleState {
   const workflowTitle = useWorkflowStore((s) =>
     s.featureId === featureId ? s.featureTitle : null,
+  );
+  const workflowAutoNaming = useWorkflowStore((s) =>
+    s.featureId === featureId ? s.isAutoNaming : false,
   );
   const sessionTitle = useWsSessionStore(
     (s) => s.sessions[wsSessionIdFromFeature(featureId)]?.featureTitle ?? null,
   );
-  return workflowTitle ?? sessionTitle;
+  const sessionAutoNaming = useWsSessionStore(
+    (s) => s.sessions[wsSessionIdFromFeature(featureId)]?.isAutoNaming ?? false,
+  );
+  return {
+    title: workflowTitle ?? sessionTitle,
+    isAutoNaming: workflowAutoNaming || sessionAutoNaming,
+  };
 }

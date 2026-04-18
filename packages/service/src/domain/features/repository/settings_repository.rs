@@ -237,6 +237,7 @@ pub async fn set_feature_model_setting(
             model_type
         )));
     }
+    crate::domain::agents::runtime::reject_workspace_only(model_type, "feature")?;
     let col = format!("model_{}", model_type);
     let sql = format!(r#"UPDATE features SET "{}" = ? WHERE id = ?"#, col);
     sqlx::query(&sql)
@@ -278,6 +279,8 @@ pub async fn get_feature_provider_settings(
     // frontend inheritance cascade can distinguish "inherit from parent" from
     // "explicit override to claude_code". The workspace-level endpoint still
     // falls back to defaults because it has no parent to inherit from.
+    // `auto_name` has no feature-level override column — it's intentionally
+    // a workspace-only agent type, so it always inherits (empty string).
     Ok(FeatureProviderSettings {
         plan: plan.unwrap_or_default(),
         prd: prd.unwrap_or_default(),
@@ -288,6 +291,7 @@ pub async fn get_feature_provider_settings(
         session: session.unwrap_or_default(),
         qa: qa.unwrap_or_default(),
         retro: retro.unwrap_or_default(),
+        auto_name: String::new(),
     })
 }
 
@@ -303,6 +307,7 @@ pub async fn set_feature_provider_setting(
             provider_type
         )));
     }
+    crate::domain::agents::runtime::reject_workspace_only(provider_type, "feature")?;
     let col = runtime_setting_key(provider_type);
     let sql = format!(r#"UPDATE features SET "{}" = ? WHERE id = ?"#, col);
     sqlx::query(&sql)

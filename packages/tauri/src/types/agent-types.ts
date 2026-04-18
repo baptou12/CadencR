@@ -12,6 +12,7 @@ export type AgentType =
   | "qa"
   | "review-fixer"
   | "retro"
+  | "auto_name"
   | (string & {});  // Custom workflow phase slugs (e.g. "specify", "analyze")
 
 /** Image payload sent with prompts to agents. */

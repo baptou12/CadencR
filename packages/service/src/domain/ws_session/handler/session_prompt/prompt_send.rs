@@ -171,7 +171,6 @@ pub(crate) async fn handle_prompt_send(
                         feature_id,
                         payload.text.clone(),
                         config.cwd.to_string_lossy().to_string(),
-                        None,
                         sender.clone(),
                     )
                     .await;
@@ -333,7 +332,6 @@ pub(crate) async fn handle_prompt_send(
                                     feature_id,
                                     prompt_text,
                                     cwd,
-                                    None,
                                     naming_sender,
                                 )
                                 .await;

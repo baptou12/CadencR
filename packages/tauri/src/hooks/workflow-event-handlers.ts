@@ -37,6 +37,15 @@ export function createWorkflowMessageHandler(
       return;
     }
 
+    if (domain === "session" && action === "feature.autonaming") {
+      const featureIdPayload = payload.feature_id as number | undefined;
+      const inProgress = payload.in_progress === true;
+      if (featureIdPayload != null && featureIdPayload === get().featureId) {
+        set({ isAutoNaming: inProgress });
+      }
+      return;
+    }
+
     if (domain === "feature" && action === "updated") {
       const changed = (payload.changed ?? []) as string[];
       const featureId = get().featureId;

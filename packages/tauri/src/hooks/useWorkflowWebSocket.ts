@@ -58,6 +58,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     worktreeSetupOutput: [],
     worktreeError: null,
     featureTitle: null,
+    isAutoNaming: false,
 
     requestSlashCommands(cwd: string) {
       const { conn, slashCommands, slashCommandsLoading } = get();
@@ -91,7 +92,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         queue: [], agents: new Map(),
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
-        featureTitle: null, slashCommands: [], slashCommandsLoading: false,
+        featureTitle: null, isAutoNaming: false, slashCommands: [], slashCommandsLoading: false,
       });
     },
 

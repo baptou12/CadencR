@@ -39,8 +39,8 @@ vi.mock("@/stores/ws-session-store", () => ({
 }));
 
 vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn((selector: (s: { featureId: null; featureTitle: null }) => unknown) =>
-    selector({ featureId: null, featureTitle: null }),
+  useWorkflowStore: vi.fn((selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
+    selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
   ),
 }));
 

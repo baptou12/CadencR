@@ -8,6 +8,7 @@ import {
   parseCommandsListPayload,
   parseEndedPayload,
   parseErrorPayload,
+  parseFeatureAutoNamingPayload,
   parseFeatureRenamePayload,
   parseFeatureUpdatedPayload,
   parseInitializedPayload,
@@ -188,6 +189,11 @@ function handleSessionAction(
     case "feature.renamed": {
       const p = parseFeatureRenamePayload(envelope.payload);
       if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
+      break;
+    }
+    case "feature.autonaming": {
+      const p = parseFeatureAutoNamingPayload(envelope.payload);
+      if (p) ctx.set(updateSession(ctx.get(), sessionId, { isAutoNaming: p.in_progress }));
       break;
     }
     case "ended":

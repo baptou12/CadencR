@@ -330,6 +330,7 @@ pub async fn set_project_model_setting(
             model_type
         )));
     }
+    crate::domain::agents::runtime::reject_workspace_only(model_type, "project")?;
     let col = format!("model_{}", model_type);
     let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", col);
     sqlx::query(&query)
@@ -363,6 +364,8 @@ pub async fn get_project_provider_settings(
     // frontend inheritance cascade can distinguish "inherit from workspace"
     // from "explicit override to claude_code". The workspace endpoint still
     // falls back to defaults because it is the root of the cascade.
+    // `auto_name` has no project-level override column — it's intentionally
+    // a workspace-only agent type, so it always inherits (empty string).
     Ok(ProjectProviderSettings {
         plan: plan.unwrap_or_default(),
         prd: prd.unwrap_or_default(),
@@ -373,6 +376,7 @@ pub async fn get_project_provider_settings(
         session: session.unwrap_or_default(),
         qa: qa.unwrap_or_default(),
         retro: retro.unwrap_or_default(),
+        auto_name: String::new(),
     })
 }
 
@@ -388,6 +392,7 @@ pub async fn set_project_provider_setting(
             provider_type
         )));
     }
+    crate::domain::agents::runtime::reject_workspace_only(provider_type, "project")?;
     let col = runtime_setting_key(provider_type);
     let query = format!("UPDATE projects SET \"{}\" = ? WHERE id = ?", col);
     sqlx::query(&query)
@@ -775,5 +780,22 @@ mod tests {
         assert_eq!(settings.execute, "claude-3-opus");
         assert_eq!(settings.qa, "claude-3-sonnet");
         assert_eq!(settings.prd, "");
+    }
+
+    #[tokio::test]
+    async fn test_set_project_model_setting_rejects_workspace_only_agent() {
+        let pool = setup_test_db().await;
+        let project = create_project(&pool, "WsOnly", "/tmp/wsonly")
+            .await
+            .unwrap();
+        let err = set_project_model_setting(&pool, project.id, "auto_name", "haiku")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+
+        let err = set_project_provider_setting(&pool, project.id, "auto_name", "opencode")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
     }
 }

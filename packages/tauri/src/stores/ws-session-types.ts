@@ -59,6 +59,7 @@ export interface SessionEntry {
   slashCommandsLoading: boolean;
   todos: TodoItem[];
   featureTitle: string | null;
+  isAutoNaming: boolean;
   pendingWsRequests: Map<string, (payload: unknown) => void>;
   worktreeStatus: WorktreeStatus;
   worktreePath: string | null;
@@ -97,6 +98,7 @@ export function createSessionEntry(): SessionEntry {
     slashCommandsLoading: false,
     todos: [],
     featureTitle: null,
+    isAutoNaming: false,
     pendingWsRequests: new Map(),
     worktreeStatus: "idle",
     worktreePath: null,

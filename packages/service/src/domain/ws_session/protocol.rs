@@ -232,6 +232,14 @@ pub struct FeatureRenamedPayload {
     pub title: String,
 }
 
+/// Server → Client: auto-naming is starting or finished for a feature.
+/// Frontend replaces the title with a skeleton while `in_progress: true`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureAutoNamingPayload {
+    pub feature_id: i64,
+    pub in_progress: bool,
+}
+
 /// Server → Client: one or more aspects of a feature changed.
 /// The frontend uses `changed` to selectively invalidate React Query caches.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -383,7 +383,6 @@ pub(super) async fn prepare_worktree(
                 feature_id,
                 description.to_string(),
                 project_dir.clone(),
-                None,
                 raw,
             )
             .await;

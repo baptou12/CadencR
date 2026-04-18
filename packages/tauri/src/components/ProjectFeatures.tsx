@@ -14,6 +14,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useListFeatures, getListFeaturesQueryKey,
   useUpdateFeatureStatus, useDeleteFeature, useGetFeatureEmpty,
@@ -53,11 +54,18 @@ export function ProjectFeatures({
   const wsSessions = useWsSessionStore((s) => s.sessions);
   const workflowFeatureId = useWorkflowStore((s) => s.featureId);
   const workflowTitle = useWorkflowStore((s) => s.featureTitle);
+  const workflowAutoNaming = useWorkflowStore((s) => s.isAutoNaming);
 
   /** Resolve the live WS title for a feature, or undefined to fall back to HTTP data. */
   const getLiveTitle = (id: number): string | undefined => {
     if (workflowFeatureId === id && workflowTitle) return workflowTitle;
     return wsSessions[wsSessionIdFromFeature(id)]?.featureTitle ?? undefined;
+  };
+
+  /** True while auto-naming is running for the given feature. */
+  const isAutoNaming = (id: number): boolean => {
+    if (workflowFeatureId === id && workflowAutoNaming) return true;
+    return wsSessions[wsSessionIdFromFeature(id)]?.isAutoNaming ?? false;
   };
 
   const activeFeatures = features.filter((f) => f.status !== "archived");
@@ -153,9 +161,13 @@ export function ProjectFeatures({
         </div>
 
         {/* Feature name */}
-        <span className={`min-w-0 truncate ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
-          {getLiveTitle(feature.id) ?? feature.title}
-        </span>
+        {isAutoNaming(feature.id) ? (
+          <Skeleton className="h-4 w-32 min-w-0" />
+        ) : (
+          <span className={`min-w-0 truncate ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
+            {getLiveTitle(feature.id) ?? feature.title}
+          </span>
+        )}
 
         <div className="ml-auto flex shrink-0 items-center gap-1">
           {feature.type !== "ws-session" && (
