@@ -135,6 +135,7 @@ export function WorktreeSetupSection({
   // Collapse by default when done; expand while running or on error
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
   const isOpen = userToggle ?? (isRunning || isError);
+  const [copied, setCopied] = useState(false);
 
   // Don't render if setup hasn't started
   if (!step) return null;
@@ -182,11 +183,24 @@ export function WorktreeSetupSection({
           )}
         />
         <GitBranchIcon className="size-3.5 text-foreground/50" />
-        <span className="text-xs font-medium text-foreground/70">Worktree Setup</span>
+        <span className="text-xs font-medium">Worktree Setup</span>
         {branch && (
-          <span className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigator.clipboard.writeText(branch);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            title={copied ? "Copied" : "Click to copy branch name"}
+            className={cn(
+              "text-xs font-mono transition-colors hover:text-foreground",
+              copied ? "text-green-400" : "text-muted-foreground",
+            )}
+          >
             {branch}
-          </span>
+          </button>
         )}
         <Badge
           variant="secondary"

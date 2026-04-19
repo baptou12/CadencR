@@ -171,4 +171,37 @@ describe("WorktreeSetupSection", () => {
     await user.click(screen.getByText("Worktree Setup"));
     expect(screen.getByText("Define name")).toBeInTheDocument();
   });
+
+  it("copies branch name to clipboard when header branch is clicked without toggling the section", async () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "done",
+        worktree_setup_log: "",
+        worktree_setup_error: "",
+        worktree_branch: "feature/add-one-dark-theme",
+      }),
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    if (!navigator.clipboard) {
+      Object.defineProperty(window.navigator, "clipboard", {
+        value: { writeText },
+        writable: true,
+        configurable: true,
+      });
+    } else {
+      vi.spyOn(navigator.clipboard, "writeText").mockImplementation(writeText);
+    }
+
+    const { user } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    // Section is collapsed by default when done — steps should not be visible
+    expect(screen.queryByText("Define name")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "feature/add-one-dark-theme" }));
+
+    expect(writeText).toHaveBeenCalledWith("feature/add-one-dark-theme");
+    // stopPropagation prevents expanding the collapsed section
+    expect(screen.queryByText("Define name")).not.toBeInTheDocument();
+
+    vi.restoreAllMocks();
+  });
 });
