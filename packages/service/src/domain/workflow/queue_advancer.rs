@@ -33,7 +33,7 @@ pub struct QueueAdvancer {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
-    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
 }
 
 impl QueueAdvancer {
@@ -44,7 +44,7 @@ impl QueueAdvancer {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
-        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+        turn_state_tx: crate::app_state::TurnStateBroadcaster,
     ) -> Result<Self, String> {
         let project_id =
             sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")

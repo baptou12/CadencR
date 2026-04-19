@@ -140,6 +140,12 @@ export function useWsWorkflowBackend(
   const store = useWorkflowStore();
   const queryClient = useQueryClient();
 
+  // `refetchOnMount: "always"` is critical here: navigating to another
+  // feature wipes `useWorkflowStore` (single-global store), so when the user
+  // returns we must re-hydrate with the CURRENT backend state — not the
+  // cached snapshot from the first visit, which would miss every event
+  // streamed in the meantime and leave the main view with an empty
+  // transcript while the agent is still running.
   const { data: snapshot } = useQuery<FeatureSnapshot>({
     queryKey: ["feature-snapshot", featureId],
     queryFn: () =>
@@ -149,19 +155,26 @@ export function useWsWorkflowBackend(
       }),
     enabled,
     staleTime: Infinity,
+    refetchOnMount: "always",
     retry: 1,
   });
 
-  // Eagerly load agent blocks from REST (like ws-feature does) — runs in parallel with snapshot
+  // Eagerly load agent blocks from REST — runs in parallel with the
+  // snapshot. `limit: 100` fetches the most recent 100 messages per session;
+  // scroll-to-top in `AgentSession` triggers `loadOlderMessages` for older
+  // pages via `/api/features/{id}/agent-state?before=…`.
   const agentStateQuery = useGetFeatureAgentState(featureId, undefined, {
     enabled: enabled && !store.hydrated,
     staleTime: Infinity,
+    refetchOnMount: "always",
   }, 100);
 
   useEffect(() => {
     if (!enabled) return;
     store.connect(featureId, projectId);
-    return () => store.disconnect();
+    // No cleanup: feature→feature navigation is handled inside connect()'s
+    // `prev.conn?.close()`. Leaving a feature for a non-feature route keeps
+    // the WS alive so the sidebar + agent state stay in sync.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [featureId, projectId, enabled]);
 

@@ -296,7 +296,7 @@ pub(crate) async fn handle_prompt_send(
                     WsSessionPersistence::broadcast_turn_state(
                         &app_state.turn_state_tx,
                         feature_id,
-                        "claude",
+                        "agent",
                     );
                     let message_rx = runtime_session.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(runtime_session));
@@ -377,6 +377,22 @@ pub(crate) async fn handle_prompt_send(
                 Some(db_session_id),
             );
             p.persist_user_message(&persist_content).await;
+
+            // Follow-up turns re-enter the "agent working" state. The stream
+            // reader is already running (same runtime as turn 1), so it's
+            // this path — not spawn_stream_reader — that must push the agent
+            // back to "running" both in DB (so snapshots reflect it) and on
+            // the turn-state broadcast (so the sidebar and every other
+            // `featureTurnStates` consumer light up). Without these two
+            // writes, turn 1's `mark_completed_static` + `"none"` tombstone
+            // from `stream_reader.rs:191-197` stay sticky across the second
+            // prompt and the UI never shows the agent is alive again.
+            WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id).await;
+            WsSessionPersistence::broadcast_turn_state(
+                &app_state.turn_state_tx,
+                handle.feature_id,
+                "agent",
+            );
 
             let q = query.lock().await;
             info!(db_session_id, "follow-up prompt");

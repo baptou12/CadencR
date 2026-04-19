@@ -43,7 +43,7 @@ pub fn spawn_workflow_stream_reader(
     queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: Arc<DashMap<AgentSlot, String>>,
     _model: Option<&str>,
-    turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    turn_state_tx: crate::app_state::TurnStateBroadcaster,
 ) {
     tokio::spawn(async move {
         // Seed from the persisted row when resuming a session — otherwise
@@ -84,32 +84,14 @@ pub fn spawn_workflow_stream_reader(
         let mut pending_queue_update = false;
 
         loop {
-            // Use a short timeout on recv so we can periodically check if
-            // the WS sender was detached (page refresh / disconnect).
-            let recv_result =
-                tokio::time::timeout(std::time::Duration::from_millis(500), message_rx.recv())
-                    .await;
-
-            // Check if WS was detached — interrupt agent for clean resume on reconnect.
-            if !sender.is_attached() {
-                info!(slot = %slot, "WS sender detached — interrupting agent for clean resume on reconnect");
-                interrupt_and_pause(
-                    &slot,
-                    db_session_id,
-                    &queries,
-                    &paused_sessions,
-                    &write_pool,
-                )
-                .await;
-                ws_detached = true;
-                break;
-            }
-
-            // Timeout — loop back and check sender again
-            let msg = match recv_result {
-                Ok(msg) => msg,
-                Err(_) => continue,
-            };
+            // Block until the next runtime event. We intentionally do NOT
+            // interrupt the agent when the WS sender detaches — the agent
+            // keeps streaming so navigating away (or a brief disconnect)
+            // doesn't pause the turn. `WsSender::send` drops messages
+            // silently while detached, and `persist_runtime_event` writes
+            // every event to `agent_messages` so REST + WS replay restores
+            // the transcript on reconnect.
+            let msg = message_rx.recv().await;
 
             match msg {
                 Some(Ok(runtime_event)) => {

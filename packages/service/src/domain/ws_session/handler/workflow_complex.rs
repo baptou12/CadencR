@@ -298,16 +298,23 @@ async fn handle_approval(
     update_approval_status(&engine, kind, approved).await;
     persist_approval_message(&engine, &payload, kind, approved, &slot).await;
 
-    // Clear pending_plan_approval in DB (it was set for app-restart persistence)
-    if let Err(e) = sqlx::query(
-        "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE feature_id = ? AND agent_type = ?"
-    )
-    .bind(feature_id)
-    .bind(kind)
-    .execute(&engine.write_pool)
-    .await
+    // Clear the approval-pending DB column (it was set for app-restart
+    // persistence). Batch by (feature_id, agent_type) rather than session_id
+    // because the active handle may already have rotated by the time the
+    // approval is routed. The column depends on `kind`: plan vs prd.
+    let pending_column = match kind {
+        "prd" => "pending_prd_approval",
+        _ => "pending_plan_approval",
+    };
+    let clear_sql =
+        format!("UPDATE agent_sessions SET {pending_column} = NULL WHERE feature_id = ? AND agent_type = ?");
+    if let Err(e) = sqlx::query(&clear_sql)
+        .bind(feature_id)
+        .bind(kind)
+        .execute(&engine.write_pool)
+        .await
     {
-        warn!(feature_id, error = %e, "failed to clear pending_plan_approval");
+        warn!(feature_id, error = %e, column = pending_column, "failed to clear approval column");
     }
 
     match engine.respond_permission(slot.clone(), response).await {
@@ -424,6 +431,21 @@ async fn persist_approval_message(
         .await {
             warn!(feature_id = payload.feature_id, error = %e, "failed to persist approval user message");
         }
+
+        // Broadcast the approval/feedback block to the frontend so the UI
+        // shows it without relying on an optimistic client-side write.
+        let user_msg = WsEnvelope::new(
+            "workflow",
+            "agent_user_message",
+            serde_json::json!({
+                "agent_slot": slot,
+                "session_id": db_session_id,
+                "content": content,
+            }),
+        );
+        let _ = engine
+            .ws_sender
+            .send(Message::Text(String::from(user_msg).into()));
     }
 }
 

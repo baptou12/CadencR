@@ -7,10 +7,10 @@ use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, permission_request_payload, persist_usage, RuntimeUsageState,
 };
-use crate::domain::ws_session::persistence::WsSessionPersistence;
+use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersistence};
 use crate::domain::ws_session::protocol::{
-    SessionEndedPayload, SessionErrorPayload, SessionMessagePayload, SessionUsageUpdatePayload,
-    WsEnvelope,
+    PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload, SessionMessagePayload,
+    SessionUsageUpdatePayload, WsEnvelope,
 };
 
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
@@ -24,7 +24,7 @@ pub(crate) fn spawn_stream_reader(
     mut message_rx: RuntimeMessageRx,
     sender: WsSender,
     write_pool: sqlx::SqlitePool,
-    turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    turn_state_tx: crate::app_state::TurnStateBroadcaster,
     sdk_sessions: SdkSessions,
     runtime_provider: String,
     _model: Option<&str>,
@@ -117,17 +117,27 @@ pub(crate) fn spawn_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
+                        let payload: PermissionRequestPayload =
+                            permission_request_payload(request);
+                        // Persist + broadcast "askUser" together. The OpenCode
+                        // stream path previously only broadcast, leaving the
+                        // DB blank — any snapshot recovery silently dropped
+                        // the gate. Now reconnect/lag resubscribe reads a
+                        // consistent row.
+                        WsSessionPersistence::mark_awaiting_user_static(
+                            &write_pool,
+                            &turn_state_tx,
+                            db_session_id,
+                            feature_id,
+                            &PendingUserInput::Permission(&payload),
+                        )
+                        .await;
                         let envelope = WsEnvelope::new(
                             "session",
                             "permission.request",
-                            serde_json::to_value(permission_request_payload(request)).unwrap(),
+                            serde_json::to_value(&payload).unwrap(),
                         );
                         let _ = sender.send(Message::Text(String::from(envelope).into()));
-                        WsSessionPersistence::broadcast_turn_state(
-                            &turn_state_tx,
-                            feature_id,
-                            "askUser",
-                        );
                         continue;
                     }
 

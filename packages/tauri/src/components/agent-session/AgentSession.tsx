@@ -61,6 +61,10 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   );
   const projectPath = cwdQuery.data?.path ?? undefined;
   const loaderStyle = parseLoaderStyle(loaderStyleSetting.data?.value);
+  // Per-agent components read per-agent state. The global `featureTurnStates`
+  // summary is a sidebar-level question ("any agent busy in this feature?");
+  // mixing scopes created dual-source bugs where the header showed
+  // "In Progress" next to a visible Resume button.
   const isStreaming = status === "running";
   const shouldShowStreamingIndicator = loaderStyle !== "usage-glow";
 

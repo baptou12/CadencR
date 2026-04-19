@@ -106,14 +106,23 @@ impl WsSessionPersistence {
     }
 
     pub fn broadcast_turn_state(
-        tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+        broadcaster: &crate::app_state::TurnStateBroadcaster,
         feature_id: i64,
         turn: &str,
     ) {
-        let _ = tx.send(crate::app_state::TurnStateEvent {
-            feature_id,
-            turn: turn.to_string(),
-        });
+        broadcaster.send(feature_id, turn);
+    }
+
+    /// Same as `broadcast_turn_state`, but also emits a pending-input kind
+    /// so live askUser listeners know which gate triggered without round-
+    /// tripping through a DB snapshot.
+    pub fn broadcast_turn_state_with_kind(
+        broadcaster: &crate::app_state::TurnStateBroadcaster,
+        feature_id: i64,
+        turn: &str,
+        kind: Option<&str>,
+    ) {
+        broadcaster.send_with_kind(feature_id, turn, kind);
     }
 
     #[cfg(test)]
@@ -314,20 +323,30 @@ mod session_state_tests {
         assert_eq!(row.0, "completed");
     }
 
+    fn test_broadcaster() -> (crate::app_state::TurnStateBroadcaster, tokio::sync::broadcast::Receiver<crate::app_state::TurnStateEvent>) {
+        let (tx, rx) = tokio::sync::broadcast::channel(16);
+        let bc = crate::app_state::TurnStateBroadcaster::new(
+            tx,
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        );
+        (bc, rx)
+    }
+
     #[tokio::test]
     async fn test_broadcast_turn_state_sends_event() {
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
-        WsSessionPersistence::broadcast_turn_state(&tx, 42, "askUser");
+        let (bc, mut rx) = test_broadcaster();
+        WsSessionPersistence::broadcast_turn_state(&bc, 42, "askUser");
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.feature_id, 42);
         assert_eq!(event.turn, "askUser");
+        assert_eq!(event.seq, 1);
     }
 
     #[tokio::test]
     async fn test_broadcast_turn_state_none() {
-        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
-        WsSessionPersistence::broadcast_turn_state(&tx, 7, "none");
+        let (bc, mut rx) = test_broadcaster();
+        WsSessionPersistence::broadcast_turn_state(&bc, 7, "none");
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.feature_id, 7);
@@ -336,8 +355,22 @@ mod session_state_tests {
 
     #[tokio::test]
     async fn test_broadcast_turn_state_no_receivers_does_not_panic() {
-        let (tx, _) = tokio::sync::broadcast::channel(16);
-        WsSessionPersistence::broadcast_turn_state(&tx, 1, "claude");
+        let (bc, _) = test_broadcaster();
+        WsSessionPersistence::broadcast_turn_state(&bc, 1, "agent");
+    }
+
+    #[tokio::test]
+    async fn test_broadcast_turn_state_seq_is_monotonic() {
+        let (bc, mut rx) = test_broadcaster();
+        WsSessionPersistence::broadcast_turn_state(&bc, 1, "agent");
+        WsSessionPersistence::broadcast_turn_state(&bc, 1, "askUser");
+        WsSessionPersistence::broadcast_turn_state(&bc, 2, "agent");
+
+        let a = rx.recv().await.unwrap();
+        let b = rx.recv().await.unwrap();
+        let c = rx.recv().await.unwrap();
+        assert!(a.seq < b.seq);
+        assert!(b.seq < c.seq);
     }
 
     #[tokio::test]

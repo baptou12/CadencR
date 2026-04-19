@@ -23,6 +23,9 @@ use crate::domain::permission_bridge::{self, ResolvedAction};
 use crate::domain::workflow::engine::{AgentSlot, WsSender};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
+use crate::domain::ws_session::persistence::{
+    PendingUserInput, PendingUserInputKind, WsSessionPersistence,
+};
 use crate::domain::ws_session::protocol::*;
 
 use super::engine::{send_feature_updated_envelope, to_value};
@@ -80,7 +83,7 @@ pub struct WorkflowPermissionBridge {
     pub allowed_patterns: Arc<HashSet<String>>,
     pub write_pool: SqlitePool,
     pub db_session_id: i64,
-    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
 }
 
 #[async_trait]
@@ -172,13 +175,25 @@ impl WorkflowPermissionBridge {
         )
         .await;
 
-        clear_pending_plan_approval(&self.write_pool, self.db_session_id).await;
+        // Clear the column that `emit_plan_approval_gate_events` wrote —
+        // Prd gates live in `pending_prd_approval`, not `pending_plan_approval`.
+        let clear_kind = match kind {
+            ApprovalKind::Plan => PendingUserInputKind::PlanApproval,
+            ApprovalKind::Prd => PendingUserInputKind::PrdApproval,
+        };
+        WsSessionPersistence::clear_pending_user_input_static(
+            &self.write_pool,
+            self.db_session_id,
+            clear_kind,
+        )
+        .await;
 
         result
     }
 
-    /// Handle a NeedsPrompt result: send workflow-specific envelope, persist
-    /// AskUserQuestion data, and wait for user decision.
+    /// Handle a NeedsPrompt result: persist the gate (write + broadcast
+    /// askUser), send the workflow envelope, and delegate to
+    /// `wait_and_apply_decision` which owns clear + terminal broadcast.
     async fn handle_needs_prompt(
         &self,
         request: &RuntimeToolPermissionRequest,
@@ -188,6 +203,52 @@ impl WorkflowPermissionBridge {
     ) -> RuntimeToolPermissionResult {
         debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
         let is_ask_user_question = request.tool_name == "AskUserQuestion";
+        let clear_kind = if is_ask_user_question {
+            PendingUserInputKind::Question
+        } else {
+            PendingUserInputKind::Permission
+        };
+
+        // Persist pending-input gate + broadcast "askUser". For
+        // AskUserQuestion the DB payload mirrors the legacy
+        // `{tool_name, tool_input, request_id, pattern}` shape so workflow
+        // restore code (engine/reconnect) can keep reading it.
+        if is_ask_user_question {
+            let pq_json = serde_json::json!({
+                "tool_name": &request.tool_name,
+                "tool_input": &request.input,
+                "request_id": &request.tool_use_id,
+                "pattern": &pattern,
+            });
+            WsSessionPersistence::mark_awaiting_user_static(
+                &self.write_pool,
+                &self.turn_state_tx,
+                self.db_session_id,
+                self.feature_id,
+                &PendingUserInput::Question(&pq_json),
+            )
+            .await;
+        } else {
+            // For regular permissions we persist the envelope-shaped payload
+            // directly (same as the ws-session Claude Code path).
+            let perm_payload = PermissionRequestPayload {
+                request_id: request.tool_use_id.clone(),
+                tool_name: request.tool_name.clone(),
+                tool_input: request.input.clone(),
+                description: Some(description.clone()),
+                pattern: Some(pattern.clone()),
+                preview: permission_bridge::extract_permission_preview(&request.input),
+                options: permission_bridge::build_default_permission_options(Some(&pattern)),
+            };
+            WsSessionPersistence::mark_awaiting_user_static(
+                &self.write_pool,
+                &self.turn_state_tx,
+                self.db_session_id,
+                self.feature_id,
+                &PendingUserInput::Permission(&perm_payload),
+            )
+            .await;
+        }
 
         // Send workflow-specific permission request envelope
         let payload = WorkflowPermissionRequestPayload {
@@ -210,29 +271,8 @@ impl WorkflowPermissionBridge {
             .sender
             .send(Message::Text(String::from(envelope).into()));
 
-        // Persist pending question data so it survives navigation/refresh
-        if is_ask_user_question {
-            let pq_json = serde_json::json!({
-                "tool_name": &request.tool_name,
-                "tool_input": &request.input,
-                "request_id": &request.tool_use_id,
-                "pattern": &pattern,
-            });
-            let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = ? WHERE id = ?")
-                .bind(pq_json.to_string())
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await;
-        } else {
-            let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
-                .bind(serde_json::to_string(&payload).unwrap_or_default())
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await;
-        }
-
-        // Wait for user decision (shared logic handles turn state + decision)
-        let result = permission_bridge::wait_and_apply_decision(
+        // Delegates clear + terminal-turn broadcast back to the helper.
+        permission_bridge::wait_and_apply_decision(
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
@@ -242,25 +282,12 @@ impl WorkflowPermissionBridge {
             &self.session_cache,
             &self.turn_state_tx,
             self.feature_id,
+            &self.write_pool,
+            self.db_session_id,
+            clear_kind,
         )
-        .await;
-
-        // Clear persisted pending questions after user responds
-        if is_ask_user_question {
-            let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ?")
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await;
-        } else {
-            let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?")
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await;
-        }
-
-        result
+        .await
     }
-
 }
 
 /// Emit the approval-gate WS events for `show_plan` / `show_prd` and persist
@@ -307,7 +334,7 @@ pub async fn emit_plan_approval_gate_events(
     };
 
     if let Some(ref plan_md) = content {
-        persist_pending_plan_approval(pool, db_session_id, tool_input, plan_md).await;
+        persist_pending_approval(pool, db_session_id, kind, tool_input, plan_md).await;
         attach_plan_to_tool_call(pool, db_session_id, tool_use_id, plan_md).await;
     }
 
@@ -320,36 +347,20 @@ pub async fn emit_plan_approval_gate_events(
     content
 }
 
-async fn persist_pending_plan_approval(
+async fn persist_pending_approval(
     pool: &SqlitePool,
     db_session_id: i64,
+    kind: ApprovalKind,
     tool_input: &serde_json::Value,
     plan_md: &str,
 ) {
     let mut enriched = tool_input.clone();
     enriched["plan"] = serde_json::Value::String(plan_md.to_string());
-    // `enriched` is already a Value — serialization can't fail.
-    let json = serde_json::to_string(&enriched).expect("serializing JSON Value never fails");
-    if let Err(e) =
-        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-            .bind(&json)
-            .bind(db_session_id)
-            .execute(pool)
-            .await
-    {
-        warn!(session_id = db_session_id, error = %e, "failed to persist pending_plan_approval");
-    }
-}
-
-async fn clear_pending_plan_approval(write_pool: &SqlitePool, db_session_id: i64) {
-    if let Err(e) =
-        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?")
-            .bind(db_session_id)
-            .execute(write_pool)
-            .await
-    {
-        warn!(session_id = db_session_id, error = %e, "failed to clear pending_plan_approval");
-    }
+    let input = match kind {
+        ApprovalKind::Plan => PendingUserInput::PlanApproval(&enriched),
+        ApprovalKind::Prd => PendingUserInput::PrdApproval(&enriched),
+    };
+    WsSessionPersistence::set_pending_user_input_static(pool, db_session_id, &input).await;
 }
 
 async fn emit_plan_approval_status(sender: &WsSender, write_pool: &SqlitePool, feature_id: i64) {

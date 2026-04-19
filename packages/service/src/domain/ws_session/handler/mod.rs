@@ -1576,6 +1576,9 @@ mod tests {
                 env.payload.get("turn").unwrap().as_str().unwrap(),
                 "askUser"
             );
+            // Every update carries a monotonic seq so the frontend can reject
+            // out-of-order state transitions.
+            assert!(env.payload.get("seq").unwrap().as_u64().unwrap() > 0);
         } else {
             panic!("expected text message");
         }

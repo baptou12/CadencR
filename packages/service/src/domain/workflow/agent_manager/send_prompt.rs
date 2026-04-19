@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use axum::extract::ws::Message;
 use tracing::{error, info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
@@ -9,13 +10,13 @@ use crate::domain::agents::runtime_adapter;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 
-use crate::domain::workflow::engine::AgentSlot;
+use crate::domain::workflow::engine::{to_value, AgentSlot};
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::stream_reader::spawn_workflow_stream_reader;
 use crate::domain::ws_session::handler::session_prompt::build_content_value;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
-use crate::domain::ws_session::protocol::ImagePayload;
+use crate::domain::ws_session::protocol::{ImagePayload, WorkflowAgentStartedPayload, WsEnvelope};
 
 use super::AgentManager;
 
@@ -47,19 +48,37 @@ impl AgentManager {
 
         let q = query.lock().await;
         let result = q.respond_permission(runtime_response).await;
+        drop(q);
 
-        // Claude Code's `wait_for_approval` flips turn state inside the bridge,
-        // but the OpenCode path resolves approvals here and otherwise leaves
-        // the sidebar stuck on "askUser". Only plan/PRD approvals (synthetic
-        // `approval_<kind>_<feature_id>` ids) need this reset — regular per-tool
-        // permissions never set askUser in a way that sticks.
-        if result.is_ok() && response.request_id.starts_with("approval_") {
+        if result.is_ok() {
+            // Every successful response clears the askUser gate — both the DB
+            // row (so a reconnect-lag snapshot doesn't resurrect a ghost
+            // askUser) and the broadcast turn state (so the sidebar icon
+            // disappears without waiting for the runtime's next stream event).
+            // Claude Code's `wait_for_approval` bridge does the same via
+            // `mark_agent_resumed_static`; this is the direct-to-runtime
+            // counterpart (OpenCode per-tool perms, AskUserQuestion answers,
+            // and plan/PRD approvals all land here).
+            let is_approval_gate = response.request_id.starts_with("approval_");
+            let next_turn = if is_approval_gate {
+                crate::domain::permission_bridge::turn_state_after_approval(
+                    response.decision,
+                    response.feedback.as_deref(),
+                )
+            } else {
+                crate::domain::permission_bridge::turn_state_after_decision(response.decision)
+            };
+            if let Some(db_session_id) = self.active_items.get(slot).map(|e| *e.value()) {
+                WsSessionPersistence::clear_all_pending_user_input_static(
+                    &self.write_pool,
+                    db_session_id,
+                )
+                .await;
+            }
             WsSessionPersistence::broadcast_turn_state(
                 &self.turn_state_tx,
                 self.feature_id,
-                crate::domain::permission_bridge::turn_state_after_decision(
-                    response.decision,
-                ),
+                next_turn,
             );
         }
 
@@ -83,6 +102,23 @@ impl AgentManager {
             q.stream_input(content)
                 .await
                 .map_err(|e| format!("stream_input failed: {e}"))?;
+            // The stream reader broadcasts "none" + marks the session
+            // completed at `is_result`, so a follow-up prompt into the same
+            // live runtime must re-assert "agent" / running for every
+            // consumer of the global turn state (sidebar, runtime hook,
+            // `agent_sessions.status`). The resume-from-paused branch below
+            // already does this via `broadcast_turn_state("agent")` — this
+            // mirrors it for the fast path.
+            if let Some(entry) = self.active_items.get(&slot) {
+                let db_session_id = *entry.value();
+                drop(entry);
+                WsSessionPersistence::mark_running_static(&self.write_pool, db_session_id).await;
+            }
+            WsSessionPersistence::broadcast_turn_state(
+                &self.turn_state_tx,
+                self.feature_id,
+                "agent",
+            );
             return Ok(());
         }
 
@@ -316,10 +352,28 @@ impl AgentManager {
                     self.turn_state_tx.clone(),
                 );
 
+                // Frontend needs an explicit running event so the per-agent
+                // status flips back from "paused" to "running" without relying
+                // on an optimistic client-side write. The runtime will produce
+                // stream events shortly, but those don't touch agent.status.
+                let running_env = WsEnvelope::new(
+                    "workflow",
+                    "agent_running",
+                    to_value(WorkflowAgentStartedPayload {
+                        feature_id: self.feature_id,
+                        agent_slot: slot.clone(),
+                        session_id: db_session_id,
+                        agent_type: agent_type_str.clone(),
+                    }),
+                );
+                let _ = self
+                    .ws_sender
+                    .send(Message::Text(String::from(running_env).into()));
+
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
-                    "claude",
+                    "agent",
                 );
                 info!(slot = %slot, "agent resumed successfully");
                 Ok(())

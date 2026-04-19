@@ -15,6 +15,10 @@ pub async fn test_engine() -> (WorkflowEngine, mpsc::UnboundedReceiver<Message>)
     let pool = test_pool().await;
     let (tx, rx) = mpsc::unbounded_channel();
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+    let broadcaster = crate::app_state::TurnStateBroadcaster::new(
+        turn_state_tx,
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    );
     let engine = WorkflowEngine::new(
         1,
         WorkflowType::FeatureBuild,
@@ -22,7 +26,7 @@ pub async fn test_engine() -> (WorkflowEngine, mpsc::UnboundedReceiver<Message>)
         pool,
         tx,
         2,
-        turn_state_tx,
+        broadcaster,
     )
     .await
     .expect("test engine creation failed");
@@ -113,6 +117,10 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
 
     let (tx, rx) = mpsc::unbounded_channel();
     let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+    let broadcaster = crate::app_state::TurnStateBroadcaster::new(
+        turn_state_tx,
+        std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+    );
     let engine = WorkflowEngine::new(
         1,
         WorkflowType::FeatureBuild,
@@ -120,7 +128,7 @@ pub async fn test_engine_with_schema() -> (WorkflowEngine, mpsc::UnboundedReceiv
         pool,
         tx,
         2,
-        turn_state_tx,
+        broadcaster,
     )
     .await
     .expect("test engine creation failed");

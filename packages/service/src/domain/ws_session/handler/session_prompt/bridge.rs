@@ -11,7 +11,9 @@ use crate::domain::agents::adapter::{
     RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 use crate::domain::permission_bridge::{self, ResolvedAction};
-use crate::domain::ws_session::persistence::WsSessionPersistence;
+use crate::domain::ws_session::persistence::{
+    PendingUserInput, PendingUserInputKind, WsSessionPersistence,
+};
 use crate::domain::ws_session::protocol::{
     ImagePayload, PermissionDecision, PermissionRequestPayload, WsEnvelope,
 };
@@ -67,7 +69,7 @@ pub(super) struct WsBridgeCanUseTool {
     pub(super) feature_id: i64,
     pub(super) db_session_id: i64,
     pub(super) write_pool: sqlx::SqlitePool,
-    pub(super) turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    pub(super) turn_state_tx: crate::app_state::TurnStateBroadcaster,
 }
 
 #[async_trait]
@@ -134,35 +136,27 @@ impl WsBridgeCanUseTool {
 
         info!("ExitPlanMode detected, sending plan_approval and blocking");
 
-        let approval_json =
-            serde_json::to_string(&request.input).unwrap_or_else(|_| "{}".to_string());
-        if let Err(e) =
-            sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-                .bind(&approval_json)
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
-        {
-            warn!(session_id = self.db_session_id, error = %e, "failed to persist pending_plan_approval");
-        }
+        WsSessionPersistence::mark_awaiting_user_static(
+            &self.write_pool,
+            &self.turn_state_tx,
+            self.db_session_id,
+            self.feature_id,
+            &PendingUserInput::PlanApproval(&request.input),
+        )
+        .await;
 
         self.send_plan_permission_request(request, request.input.clone());
 
-        WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "askUser");
-
         let enriched_input = self.attach_plan_to_exit_block(request).await;
         if enriched_input != request.input {
-            let enriched_json =
-                serde_json::to_string(&enriched_input).unwrap_or_else(|_| "{}".to_string());
-            if let Err(e) =
-                sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-                    .bind(&enriched_json)
-                    .bind(self.db_session_id)
-                    .execute(&self.write_pool)
-                    .await
-            {
-                warn!(session_id = self.db_session_id, error = %e, "failed to persist enriched pending_plan_approval");
-            }
+            // Enriched retry: refresh the DB payload without re-broadcasting
+            // askUser (still the same gate).
+            WsSessionPersistence::set_pending_user_input_static(
+                &self.write_pool,
+                self.db_session_id,
+                &PendingUserInput::PlanApproval(&enriched_input),
+            )
+            .await;
             self.send_plan_permission_request(request, enriched_input);
         }
 
@@ -177,28 +171,42 @@ impl WsBridgeCanUseTool {
                         "permission response request_id mismatch, applying latest response",
                     );
                 }
-                if let Err(e) = sqlx::query(
-                    "UPDATE agent_sessions SET pending_plan_approval = NULL WHERE id = ?",
-                )
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
-                {
-                    warn!(session_id = self.db_session_id, error = %e, "failed to clear pending_plan_approval");
-                }
-
-                WsSessionPersistence::broadcast_turn_state(
+                // Plan-approval gate: a Deny *with* feedback hands the turn
+                // back to the agent (user is asking for a revision). Bare
+                // Denies terminate the turn like any other rejection.
+                WsSessionPersistence::mark_agent_resumed_static(
+                    &self.write_pool,
                     &self.turn_state_tx,
+                    self.db_session_id,
                     self.feature_id,
-                    crate::domain::permission_bridge::turn_state_after_decision(decision),
-                );
+                    PendingUserInputKind::PlanApproval,
+                    crate::domain::permission_bridge::turn_state_after_approval(
+                        decision,
+                        response.feedback.as_deref(),
+                    ),
+                )
+                .await;
                 self.apply_exit_plan_decision(request, response).await
             }
-            None => RuntimeToolPermissionResult::Deny {
-                message: "Plan approval channel closed".to_string(),
-                interrupt: Some(false),
-                tool_use_id: Some(request.tool_use_id.clone()),
-            },
+            None => {
+                // Channel closed before a response. Clear the DB gate AND
+                // broadcast `"none"` so any subscribed client still showing
+                // `askUser` drops back to idle.
+                WsSessionPersistence::mark_agent_resumed_static(
+                    &self.write_pool,
+                    &self.turn_state_tx,
+                    self.db_session_id,
+                    self.feature_id,
+                    PendingUserInputKind::PlanApproval,
+                    "none",
+                )
+                .await;
+                RuntimeToolPermissionResult::Deny {
+                    message: "Plan approval channel closed".to_string(),
+                    interrupt: Some(false),
+                    tool_use_id: Some(request.tool_use_id.clone()),
+                }
+            }
         }
     }
 
@@ -221,15 +229,23 @@ impl WsBridgeCanUseTool {
         let result_str = row.plan_approval_result.as_ref()?;
         let result = serde_json::from_str::<serde_json::Value>(result_str).ok()?;
 
+        // plan_approval_result is a sibling column (not a pending_* gate) —
+        // clear it directly; the PlanApproval gate goes through the helper.
         if let Err(e) = sqlx::query(
-            "UPDATE agent_sessions SET plan_approval_result = NULL, pending_plan_approval = NULL WHERE id = ?",
+            "UPDATE agent_sessions SET plan_approval_result = NULL WHERE id = ?",
         )
         .bind(self.db_session_id)
         .execute(&self.write_pool)
         .await
         {
-            warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result and pending_plan_approval");
+            warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result");
         }
+        WsSessionPersistence::clear_pending_user_input_static(
+            &self.write_pool,
+            self.db_session_id,
+            PendingUserInputKind::PlanApproval,
+        )
+        .await;
 
         let approved = result
             .get("approved")
@@ -391,11 +407,14 @@ impl WsBridgeCanUseTool {
             preview: permission_bridge::extract_permission_preview(&request.input),
             options: permission_bridge::build_default_permission_options(Some(&pattern)),
         };
-        let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = ? WHERE id = ?")
-            .bind(serde_json::to_string(&payload).unwrap_or_default())
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await;
+        WsSessionPersistence::mark_awaiting_user_static(
+            &self.write_pool,
+            &self.turn_state_tx,
+            self.db_session_id,
+            self.feature_id,
+            &PendingUserInput::Permission(&payload),
+        )
+        .await;
         let envelope = WsEnvelope::new(
             "session",
             "permission.request",
@@ -405,7 +424,8 @@ impl WsBridgeCanUseTool {
             .sender
             .send(Message::Text(String::from(envelope).into()));
 
-        let result = permission_bridge::wait_and_apply_decision(
+        // `wait_and_apply_decision` owns the clear + terminal-turn broadcast.
+        permission_bridge::wait_and_apply_decision(
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
@@ -415,14 +435,10 @@ impl WsBridgeCanUseTool {
             &self.session_cache,
             &self.turn_state_tx,
             self.feature_id,
+            &self.write_pool,
+            self.db_session_id,
+            PendingUserInputKind::Permission,
         )
-        .await;
-
-        let _ = sqlx::query("UPDATE agent_sessions SET pending_permission = NULL WHERE id = ?")
-            .bind(self.db_session_id)
-            .execute(&self.write_pool)
-            .await;
-
-        result
+        .await
     }
 }

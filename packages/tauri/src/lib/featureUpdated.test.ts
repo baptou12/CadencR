@@ -20,20 +20,27 @@ describe("invalidateFeatureQueries", () => {
     mockInvalidateQueries.mockClear();
   });
 
-  it("invalidates the correct query key for each changed field", () => {
+  it("invalidates the feature detail and list query when title changes", () => {
     invalidateFeatureQueries(42, ["title"]);
-    expect(mockInvalidateQueries).toHaveBeenCalledOnce();
+    // title now also invalidates the list so the sidebar picks up the new title
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ["features", "detail", 42],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["features", "list"],
+      exact: false,
     });
   });
 
   it("invalidates multiple keys for multiple changed fields", () => {
     invalidateFeatureQueries(1, ["title", "prd", "settings"]);
-    expect(mockInvalidateQueries).toHaveBeenCalledTimes(3);
+    // title, prd, settings + the list invalidation triggered by title
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(4);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "detail", 1] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "prd", 1] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "settings", 1] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "list"], exact: false });
   });
 
   it("deduplicates when 'plan' and 'phases' both resolve to the same key", () => {

@@ -5,9 +5,7 @@
  * a partial state patch — no side effects.
  */
 
-import { buildUserMessageContent } from "@/types/agent-types";
 import { createStreamingState } from "@/stores/ws-session-store";
-import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { FeatureAgentStateResponse } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
@@ -21,9 +19,6 @@ import {
   PLAN_KEY,
   PRD_KEY,
 } from "@/types/workflow";
-import {
-  patchAgent,
-} from "@/hooks/agent-event-handlers";
 
 // ---------------------------------------------------------------------------
 // hydrateFromSnapshot
@@ -34,8 +29,6 @@ export function hydrateFromSnapshotPatch(
   snapshot: FeatureSnapshot,
   agentStateResp?: FeatureAgentStateResponse,
 ): Partial<WorkflowState> {
-  const hasWsQueue = state.queue.length > 0;
-
   // Build a lookup of REST-loaded blocks keyed by session DB id
   const restBlocks = new Map<number, { blocks: AgentBlockData[]; hasMore: boolean; oldestMessageId: number | null; pendingPlanApproval: { plan?: string } | null }>();
   if (agentStateResp) {
@@ -70,57 +63,45 @@ export function hydrateFromSnapshotPatch(
     const rest = restBlocks.get(session.id);
     const existing = agents.get(key);
 
+    // With WS event buffering during `hydrated === false`, no events can have
+    // been applied yet — `existing` should always be undefined here. Keep a
+    // defensive warn in case a regression reintroduces the race.
     if (existing) {
-      // WS events already created this agent — merge REST blocks if available,
-      // otherwise preserve existing agent as-is (it may have live streaming data)
-      if (rest) {
-        agents.set(key, {
-          ...existing,
-          blocks: rest.blocks,
-          historyLoaded: true,
-          hasMore: rest.hasMore,
-          oldestMessageId: rest.oldestMessageId,
-          runtimeSessionId: existing.runtimeSessionId ?? session.runtime_session_id ?? null,
-          inputTokens: session.input_tokens ?? existing.inputTokens,
-          outputTokens: session.output_tokens ?? existing.outputTokens,
-          contextWindow:
-            session.context_window != null && session.context_window > 0
-              ? session.context_window
-              : existing.contextWindow,
-          pendingPlanApproval: rest.pendingPlanApproval ?? existing.pendingPlanApproval,
-        });
+      if (typeof console !== "undefined") {
+        // eslint-disable-next-line no-console
+        console.warn("hydrateFromSnapshotPatch: unexpected existing agent at", key);
       }
-    } else {
-      agents.set(key, {
-        sessionId: session.id,
-        agentType,
-        blocks: rest?.blocks ?? [],
-        streamingState: createStreamingState(),
-        status: (session.status as AgentSessionState["status"]) ?? "idle",
-        pendingPermission: null,
-        pendingQuestions: [],
-        pendingQuestionToolInput: {},
-        pendingQuestionRequestId: "",
-        historyLoaded: rest != null,
-        hasMore: rest?.hasMore ?? false,
-        oldestMessageId: rest?.oldestMessageId ?? null,
-        runtimeSessionId: session.runtime_session_id ?? null,
-        inputTokens: session.input_tokens ?? 0,
-        outputTokens: session.output_tokens ?? 0,
-        contextWindow:
-          session.context_window != null && session.context_window > 0
-            ? session.context_window
-            : null,
-        hasFileChanges: false,
-        pendingPlanApproval: rest?.pendingPlanApproval ?? null,
-      });
+      continue;
     }
+
+    agents.set(key, {
+      sessionId: session.id,
+      agentType,
+      blocks: rest?.blocks ?? [],
+      streamingState: createStreamingState(),
+      status: (session.status as AgentSessionState["status"]) ?? "idle",
+      pendingPermission: null,
+      pendingQuestions: [],
+      pendingQuestionToolInput: {},
+      pendingQuestionRequestId: "",
+      historyLoaded: rest != null,
+      hasMore: rest?.hasMore ?? false,
+      oldestMessageId: rest?.oldestMessageId ?? null,
+      runtimeSessionId: session.runtime_session_id ?? null,
+      inputTokens: session.input_tokens ?? 0,
+      outputTokens: session.output_tokens ?? 0,
+      contextWindow:
+        session.context_window != null && session.context_window > 0
+          ? session.context_window
+          : null,
+      hasFileChanges: false,
+      pendingPlanApproval: rest?.pendingPlanApproval ?? null,
+    });
   }
 
   const patch: Partial<WorkflowState> = {
-    queue: hasWsQueue ? state.queue : snapshot.queue,
-    workflowStatus: hasWsQueue && state.workflowStatus !== "idle"
-      ? state.workflowStatus : snapshot.workflow_status,
+    queue: snapshot.queue,
+    workflowStatus: snapshot.workflow_status,
     autonomyLevel: (snapshot.autonomy_level as AutonomyLevel) ?? 1,
     agents,
     hydrated: true,
@@ -138,52 +119,3 @@ export function hydrateFromSnapshotPatch(
   return patch;
 }
 
-// ---------------------------------------------------------------------------
-// sendPromptToAgent state patch
-// ---------------------------------------------------------------------------
-
-export function computeSendPromptPatch(
-  state: WorkflowState,
-  slotKey: string,
-  text: string,
-  images: unknown,
-): Partial<WorkflowState> {
-  const content = buildUserMessageContent(text, images as Parameters<typeof buildUserMessageContent>[1]);
-  const userBlock = {
-    id: `ws-user-${Date.now()}`,
-    type: "user_message" as const,
-    content,
-    isError: false,
-    createdAt: new Date().toISOString(),
-  };
-
-  const currentAgent = state.agents.get(slotKey);
-  if (!currentAgent) return {};
-
-  const agentPatch = patchAgent(state, slotKey, {
-    status: "running",
-    blocks: [...currentAgent.blocks, userBlock],
-  });
-
-  // If this is a queue item, also update the queue status
-  if (slotKey.startsWith("qi:")) {
-    const queueItemId = parseInt(slotKey.slice(3), 10);
-    const queue = state.queue.map(q =>
-      q.id === queueItemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
-    );
-    return { ...agentPatch, queue };
-  }
-  return agentPatch;
-}
-
-// ---------------------------------------------------------------------------
-// respondToQuestion helpers
-// ---------------------------------------------------------------------------
-
-export function computeRespondToQuestionClearPatch(): Partial<AgentSessionState> {
-  return {
-    pendingQuestions: [] as AgentQuestion[],
-    pendingQuestionToolInput: {},
-    pendingQuestionRequestId: "",
-  };
-}

@@ -52,7 +52,7 @@ impl WorkflowEngine {
         write_pool: SqlitePool,
         raw_sender: mpsc::UnboundedSender<Message>,
         max_parallel: usize,
-        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+        turn_state_tx: crate::app_state::TurnStateBroadcaster,
     ) -> Result<Self, String> {
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

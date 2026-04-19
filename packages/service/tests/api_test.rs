@@ -196,7 +196,10 @@ async fn start_test_server() -> TestServer {
         write_pool: pool,
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
-        turn_state_tx,
+        turn_state_tx: cadence_service::app_state::TurnStateBroadcaster::new(
+            turn_state_tx,
+            std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        ),
         pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
         file_change_tx,
         file_watcher: cadence_service::domain::editor::watcher::new_shared(),

@@ -190,9 +190,21 @@ pub async fn resolve_permission_check(
     }
 }
 
-/// Wait for a user response on the permission channel, broadcast turn state
-/// transitions, and apply the decision. Used after the caller has already
-/// sent the appropriate WS envelope.
+/// Wait for a user response on the permission channel, clear the DB gate +
+/// broadcast the next turn, and apply the decision.
+///
+/// Preconditions: the caller has already
+/// - persisted the pending-input row via
+///   [`WsSessionPersistence::mark_awaiting_user_static`] (which both wrote the
+///   `pending_*` column and broadcast `"askUser"`), and
+/// - sent the matching `permission.request` WS envelope to the client.
+///
+/// On response this function calls
+/// [`WsSessionPersistence::mark_agent_resumed_static`] which NULLs the given
+/// column *before* broadcasting the terminal turn (`"agent"` / `"none"`),
+/// closing the lag-recovery race where a snapshot re-read resurrected
+/// `"askUser"` from a row that had already been answered.
+#[allow(clippy::too_many_arguments)]
 pub async fn wait_and_apply_decision(
     response_rx: &Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
     tool_use_id: &str,
@@ -201,20 +213,25 @@ pub async fn wait_and_apply_decision(
     force_prompt: bool,
     worktree_path: &Path,
     session_cache: &Arc<Mutex<HashSet<String>>>,
-    turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
     feature_id: i64,
+    write_pool: &sqlx::SqlitePool,
+    db_session_id: i64,
+    clear_kind: crate::domain::ws_session::persistence::PendingUserInputKind,
 ) -> RuntimeToolPermissionResult {
-    WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "askUser");
-
     let mut rx = response_rx.lock().await;
     match rx.recv().await {
         Some(response) => {
             let decision = response.decision.clone();
-            WsSessionPersistence::broadcast_turn_state(
+            WsSessionPersistence::mark_agent_resumed_static(
+                write_pool,
                 turn_state_tx,
+                db_session_id,
                 feature_id,
+                clear_kind,
                 turn_state_after_decision(decision.clone()),
-            );
+            )
+            .await;
             let input = response.updated_input.unwrap_or(original_input);
             apply_decision(
                 tool_use_id,
@@ -228,24 +245,55 @@ pub async fn wait_and_apply_decision(
             )
             .await
         }
-        None => RuntimeToolPermissionResult::Deny {
-            message: "Permission channel closed".to_string(),
-            interrupt: Some(false),
-            tool_use_id: Some(tool_use_id.to_string()),
-        },
+        None => {
+            // Channel closed before we got a response. Clear the DB gate AND
+            // broadcast `"none"` so any connected client still showing
+            // `askUser` drops back to idle — otherwise the sidebar stays stuck
+            // even after the gate is gone from the DB.
+            WsSessionPersistence::mark_agent_resumed_static(
+                write_pool,
+                turn_state_tx,
+                db_session_id,
+                feature_id,
+                clear_kind,
+                "none",
+            )
+            .await;
+            RuntimeToolPermissionResult::Deny {
+                message: "Permission channel closed".to_string(),
+                interrupt: Some(false),
+                tool_use_id: Some(tool_use_id.to_string()),
+            }
+        }
     }
 }
 
 pub fn turn_state_after_decision(decision: PermissionDecision) -> &'static str {
     match decision {
-        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "claude",
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "agent",
         PermissionDecision::Deny => "none",
+    }
+}
+
+/// Same as [`turn_state_after_decision`], but routes a plan/PRD *Deny* with
+/// non-empty feedback back to `"agent"` — the user is asking the agent to try
+/// again, not ending the turn. Regular tool-permission denies still end the
+/// turn (`"none"`); that path stays on [`turn_state_after_decision`].
+pub fn turn_state_after_approval(
+    decision: PermissionDecision,
+    feedback: Option<&str>,
+) -> &'static str {
+    let has_feedback = feedback.is_some_and(|f| !f.trim().is_empty());
+    if matches!(decision, PermissionDecision::Deny) && has_feedback {
+        "agent"
+    } else {
+        turn_state_after_decision(decision)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::turn_state_after_decision;
+    use super::{turn_state_after_approval, turn_state_after_decision};
     use crate::domain::ws_session::protocol::PermissionDecision;
 
     #[test]
@@ -257,11 +305,47 @@ mod tests {
     fn allow_decisions_resume_agent_turn_state() {
         assert_eq!(
             turn_state_after_decision(PermissionDecision::AllowOnce),
-            "claude"
+            "agent"
         );
         assert_eq!(
             turn_state_after_decision(PermissionDecision::AllowFuture),
-            "claude"
+            "agent"
+        );
+    }
+
+    #[test]
+    fn approval_deny_without_feedback_ends_turn() {
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::Deny, None),
+            "none",
+        );
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::Deny, Some("")),
+            "none",
+        );
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::Deny, Some("   ")),
+            "none",
+        );
+    }
+
+    #[test]
+    fn approval_deny_with_feedback_hands_turn_back_to_agent() {
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::Deny, Some("not quite, try X")),
+            "agent",
+        );
+    }
+
+    #[test]
+    fn approval_allow_always_resumes_agent() {
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::AllowOnce, None),
+            "agent",
+        );
+        assert_eq!(
+            turn_state_after_approval(PermissionDecision::AllowFuture, Some("extra note")),
+            "agent",
         );
     }
 }

@@ -12,6 +12,7 @@ import {
   patchAgent, processAgentStream, insertAgentSession,
   handleAgentStream, handleAgentPaused, handleAgentRunning, handleAgentSessionId,
   handleAgentUserMessage, handleUsageUpdate, handlePermissionRequest,
+  handlePendingCleared,
 } from "@/hooks/agent-event-handlers";
 
 export function createWorkflowMessageHandler(
@@ -72,6 +73,8 @@ export function createWorkflowMessageHandler(
         if (payload.workflow_status) {
           updates.workflowStatus = payload.workflow_status as string;
         }
+        // First post-reconnect queue_update clears the refresh indicator.
+        if (get().isReconnecting) updates.isReconnecting = false;
         set(updates);
         break;
       }
@@ -312,6 +315,7 @@ export function createWorkflowMessageHandler(
       case "agent_stream": handleAgentStream(payload, set); break;
       case "usage_update": handleUsageUpdate(payload, set); break;
       case "permission.request": handlePermissionRequest(payload, set); break;
+      case "pending_cleared": handlePendingCleared(payload, set); break;
       case "review_verdict": break;
       case "review_fixer.started": {
         const sessionId = payload.session_id as number;

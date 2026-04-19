@@ -86,6 +86,8 @@ function connectStore(): MockWebSocket {
   useWorkflowStore.getState().connect(1, 1);
   const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
   ws.emit("open");
+  // Simulate REST hydration completing so WS events flow through immediately.
+  useWorkflowStore.setState({ hydrated: true });
   return ws;
 }
 

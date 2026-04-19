@@ -45,6 +45,20 @@ pub(super) async fn handle_permission_respond(
         .await
     {
         Ok(()) => {
+            // Tell the frontend to clear any pending question/permission state
+            // for this slot. Without this event the UI would need an optimistic
+            // client-side clear to avoid showing a stale prompt while the
+            // runtime resumes and produces its next stream event.
+            let cleared = WsEnvelope::new(
+                "workflow",
+                "pending_cleared",
+                serde_json::json!({
+                    "feature_id": payload.feature_id,
+                    "agent_slot": payload.agent_slot,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(cleared).into()));
+
             let ack = WsEnvelope::reply(
                 &envelope.id,
                 "workflow",

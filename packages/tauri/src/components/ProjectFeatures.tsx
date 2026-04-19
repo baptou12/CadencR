@@ -41,7 +41,7 @@ export function ProjectFeatures({
   projectId: number;
   projectPath: string;
   activeFeatureId: number | null;
-  featureTurnStates: Record<number, 'claude' | 'askUser'>;
+  featureTurnStates: Record<number, { turn: 'agent' | 'askUser'; kind: string | null }>;
   onSelectFeature: (featureId: number) => void;
 }) {
   const navigate = useNavigate();
@@ -127,7 +127,7 @@ export function ProjectFeatures({
   };
 
   const renderFeature = (feature: (typeof features)[number]) => {
-    const turnState = featureTurnStates[feature.id];
+    const turn = featureTurnStates[feature.id]?.turn;
     return (
       <div
         key={feature.id}
@@ -152,10 +152,10 @@ export function ProjectFeatures({
       >
         {/* Turn state icon */}
         <div className="shrink-0 w-3.5">
-          {turnState === 'claude' && (
+          {turn === 'agent' && (
             <BotIcon className="size-3.5 text-blue-500 animate-pulse" />
           )}
-          {turnState === 'askUser' && (
+          {turn === 'askUser' && (
             <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
           )}
         </div>

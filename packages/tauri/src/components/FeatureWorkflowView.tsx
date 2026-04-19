@@ -31,6 +31,7 @@ import type { FeatureStatus } from "@/hooks/useFeatureState";
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
+import { ReconnectIndicator } from "@/components/ReconnectIndicator";
 
 export function FeatureWorkflowView({
   featureId,
@@ -199,6 +200,7 @@ export function FeatureWorkflowView({
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
     <div className="relative flex h-full flex-col">
+      <ReconnectIndicator />
       <FeatureTopBar featureId={featureId} projectId={projectId} wsWorktreeStatus={backend.worktreeStatus} wsWorktreeBranch={backend.worktreeBranch} wsWorktreeSetupOutput={backend.worktreeSetupOutput} />
       <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={backend.worktreeBranch} onTerminalActivate={handleTerminalActivate} />
       <div className="relative min-h-0 flex-1 overflow-hidden">

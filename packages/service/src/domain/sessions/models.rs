@@ -158,6 +158,21 @@ pub struct PhaseTitle {
 pub struct TurnStateRow {
     pub feature_id: i64,
     pub needs_input: i64,
+    /// Canonical kind of the pending gate, if any:
+    /// "question" | "permission" | "plan-approval" | "prd-approval" | NULL.
+    pub pending_kind: Option<String>,
+}
+
+/// Public-facing turn state per feature: the top-level turn plus (if paused
+/// on user input) the kind of gate. Serializes as
+/// `{ "turn": "askUser", "kind": "question" }` for snapshot payloads so the
+/// frontend can render the right icon/reason without waiting for a live
+/// update.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct FeatureTurnState {
+    pub turn: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 #[cfg(test)]

@@ -347,12 +347,16 @@ pub(super) async fn handle_init(
         }
     }
 
-    // Clear stale pending_questions so the frontend doesn't show a stale form.
-    // The user can say "retry" to have the agent re-ask.
-    let _ = sqlx::query("UPDATE agent_sessions SET pending_questions = NULL WHERE id = ? AND pending_questions IS NOT NULL")
-        .bind(db_session_id)
-        .execute(&app_state.write_pool)
-        .await;
+    // Clear every stale pending_* gate. The preceding branches returned
+    // early if there was a live gate, so by this point we've confirmed
+    // nothing should be pending. Without this, a ws-session Claude Code
+    // AskUserQuestion that stored in pending_permission would leak into
+    // a ghost askUser on every reconnect.
+    WsSessionPersistence::clear_all_pending_user_input_static(
+        &app_state.write_pool,
+        db_session_id,
+    )
+    .await;
 
     // Broadcast "none" to clear any stale turn state — session is idle until a prompt is sent
     WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");

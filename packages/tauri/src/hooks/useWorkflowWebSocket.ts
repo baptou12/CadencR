@@ -5,19 +5,13 @@ import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import { createCommandsGet } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
-import {
-  hydrateFromSnapshotPatch,
-  computeSendPromptPatch,
-  computeRespondToQuestionClearPatch,
-} from "@/hooks/workflow-store-helpers";
+import { hydrateFromSnapshotPatch } from "@/hooks/workflow-store-helpers";
 import {
   type WorkflowState,
   slotKeyToAgentSlot,
-  PLAN_KEY,
-  PRD_KEY,
 } from "@/types/workflow";
 
-import { patchAgent, blocksContainFileChange } from "@/hooks/agent-event-handlers";
+import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
@@ -59,6 +53,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     worktreeError: null,
     featureTitle: null,
     isAutoNaming: false,
+    bufferedEvents: [],
+    isReconnecting: false,
 
     requestSlashCommands(cwd: string) {
       const { conn, slashCommands, slashCommandsLoading } = get();
@@ -69,7 +65,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     connect(featureId, projectId) {
-      get().conn?.close();
+      const prev = get();
+      // No-op when already connected to the same feature. Makes `connect()`
+      // idempotent so React StrictMode's double-invoke (and any redundant
+      // calls from parent hooks) doesn't churn WS opens/closes.
+      const alreadyConnected =
+        prev.featureId === featureId &&
+        prev.projectId === projectId &&
+        prev.conn?.isOpen() === true;
+      if (alreadyConnected) return;
+
+      // Soft reconnect: same feature/project reopened after a WS drop.
+      // Re-hydrate from REST so we pick up any events that streamed (and were
+      // persisted to the DB) while we were disconnected — otherwise missed
+      // tokens stay missing. The only observable difference from a hard reset
+      // is the `isReconnecting` flag, which drives a thin refresh stripe.
+      const isSoftReconnect =
+        prev.featureId === featureId &&
+        prev.projectId === projectId &&
+        prev.hydrated;
+
+      prev.conn?.close();
 
       const conn = createWsConnection({
         url: getWsUrl(),
@@ -82,7 +98,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             payload: { feature_id: featureId, project_id: projectId },
           });
         },
-        onMessage: (data) => handleMessage({ data } as MessageEvent),
+        onMessage: (data) => {
+          const evt = { data } as MessageEvent;
+          // Until REST snapshot hydration completes, buffer all WS events.
+          // Otherwise they race with `hydrateFromSnapshot` and streamed blocks
+          // get overwritten by the snapshot merge.
+          if (!get().hydrated) {
+            set(state => ({ bufferedEvents: [...state.bufferedEvents, evt] }));
+            return;
+          }
+          handleMessage(evt);
+        },
         onClose: () => {
           if (get().conn === conn) set({ conn: null });
         },
@@ -94,6 +120,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
         featureTitle: null, isAutoNaming: false, slashCommands: [], slashCommandsLoading: false,
+        bufferedEvents: [], isReconnecting: isSoftReconnect,
       });
     },
 
@@ -106,6 +133,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const state = get();
       if (state.hydrated) return;
       set(hydrateFromSnapshotPatch(state, snapshot, agentState));
+      // Drain any WS events that arrived while REST was loading. Must happen
+      // after snapshot merge so live stream events land on top of the
+      // authoritative history rather than being clobbered by it.
+      const buffered = get().bufferedEvents;
+      if (buffered.length > 0) {
+        set({ bufferedEvents: [] });
+        for (const evt of buffered) handleMessage(evt);
+      }
     },
 
     selectItem(itemId) {
@@ -136,44 +171,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     approvePlan(requestId) {
       const isPrd = get().workflowStatus === "prd";
       send(isPrd ? "prd.approved" : "plan.approved", { approved: true, request_id: requestId });
-      set(state => {
-        const agentKey = isPrd ? PRD_KEY : PLAN_KEY;
-        const agent = state.agents.get(agentKey);
-        if (!agent) return {};
-        const label = isPrd ? "PRD" : "Plan";
-        const block = {
-          id: `ws-user-${Date.now()}`,
-          type: "user_message" as const,
-          content: `✅ ${label} approved`,
-          isError: false,
-          createdAt: new Date().toISOString(),
-        };
-        const agents = new Map(state.agents);
-        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block], pendingPlanApproval: null });
-        return { agents };
-      });
+      // Backend emits `agent_user_message` (persist_approval_message) and
+      // `status_changed`, which together append the block and clear
+      // `pendingPlanApproval`. No optimistic write here.
     },
 
     rejectPlan(feedback, requestId) {
       const isPrd = get().workflowStatus === "prd";
       send(isPrd ? "prd.rejected" : "plan.rejected", { approved: false, feedback, request_id: requestId });
-      set(state => {
-        const agentKey = isPrd ? PRD_KEY : PLAN_KEY;
-        const agent = state.agents.get(agentKey);
-        if (!agent) return {};
-        if (!feedback) return {};
-        const label = isPrd ? "PRD" : "Plan";
-        const block = {
-          id: `ws-user-${Date.now()}`,
-          type: "user_message" as const,
-          content: `**${label} feedback:**\n${feedback}`,
-          isError: false,
-          createdAt: new Date().toISOString(),
-        };
-        const agents = new Map(state.agents);
-        agents.set(agentKey, { ...agent, blocks: [...agent.blocks, block], pendingPlanApproval: null });
-        return { agents };
-      });
+      // Backend handles the feedback block + pending clear; see approvePlan.
     },
 
     startBuild() {
@@ -206,7 +212,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         decision,
         ...(feedback ? { feedback } : {}),
       });
-      set(state => patchAgent(state, slotKey, { pendingPermission: null }));
+      // Backend emits `pending_cleared` on success; no optimistic clear.
     },
 
     respondToQuestion(slotKey: string, response: AgentQuestionAnswers) {
@@ -221,50 +227,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         decision: "allow_once",
         updated_input: updatedInput,
       });
-
-      const clearPatch = computeRespondToQuestionClearPatch();
-      set(state => {
-        const a = state.agents.get(slotKey);
-        if (!a) return {};
-        const agents = new Map(state.agents);
-        agents.set(slotKey, { ...a, ...clearPatch });
-        return { agents };
-      });
+      // Backend emits `agent_user_message` (persist_qa_answer) + `pending_cleared`;
+      // those clear pending-* state for us.
     },
 
     sendPromptToAgent(slotKey, text, images) {
-      set(state => computeSendPromptPatch(state, slotKey, text, images));
       send("prompt.send", { agent_slot: slotKeyToAgentSlot(slotKey), text, images });
+      // Backend emits `agent_user_message` (persist_user_message), which
+      // appends the block and clears pending-*.
     },
 
     interruptItem(slotKey) {
-      set(state => {
-        const agentPatch = patchAgent(state, slotKey, { status: "paused" });
-        if (slotKey.startsWith("qi:")) {
-          const queueItemId = parseInt(slotKey.slice(3), 10);
-          const queue = state.queue.map(q =>
-            q.id === queueItemId && q.status === "running" ? { ...q, status: "paused" as const } : q,
-          );
-          return { ...agentPatch, queue };
-        }
-        return agentPatch;
-      });
       send("interrupt", { agent_slot: slotKeyToAgentSlot(slotKey) });
+      // Backend emits `interrupted` ack + eventual `agent_paused`; both flip
+      // status to "paused" on the frontend.
     },
 
     resumeItem(slotKey) {
-      set(state => {
-        const agentPatch = patchAgent(state, slotKey, { status: "running" });
-        if (slotKey.startsWith("qi:")) {
-          const queueItemId = parseInt(slotKey.slice(3), 10);
-          const queue = state.queue.map(q =>
-            q.id === queueItemId && q.status === "paused" ? { ...q, status: "running" as const } : q,
-          );
-          return { ...agentPatch, queue };
-        }
-        return agentPatch;
-      });
       send("prompt.send", { agent_slot: slotKeyToAgentSlot(slotKey), text: "", images: null });
+      // Backend emits `agent_running` + `item_update` on successful resume.
     },
 
     startSession(prompt, images) {

@@ -48,7 +48,7 @@ pub struct AgentManager {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
-    pub turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
     /// AgentSlot → runtime session handle (for interrupt/stream_input)
     pub queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     /// AgentSlot → db_session_id
@@ -65,7 +65,7 @@ impl AgentManager {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
-        turn_state_tx: tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+        turn_state_tx: crate::app_state::TurnStateBroadcaster,
     ) -> Self {
         Self {
             feature_id,
@@ -204,7 +204,7 @@ impl AgentManager {
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
-                    "claude",
+                    "agent",
                 );
 
                 let envelope = WsEnvelope::new(
@@ -372,7 +372,7 @@ impl AgentManager {
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
-                    "claude",
+                    "agent",
                 );
 
                 let envelope = WsEnvelope::new(

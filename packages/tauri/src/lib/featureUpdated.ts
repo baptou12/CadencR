@@ -39,9 +39,13 @@ export function invalidateFeatureQueries(featureId: number, changed: string[]): 
     seen.add(keyStr);
     queryClient.invalidateQueries({ queryKey });
   }
-  // When the feature status changes, also invalidate the feature list so the
-  // sidebar/project view picks up the new status badge.
-  if (changed.includes("status")) {
+  // When fields that are rendered in the sidebar/project list change, also
+  // invalidate the list cache so those views pick up the new value. Without
+  // this, the live workflow store can hold a fresh title only for the active
+  // feature — navigating away drops it and the sidebar falls back to the
+  // stale cached list entry.
+  const LIST_RELEVANT: FeatureChangedField[] = ["status", "title"];
+  if (changed.some((f) => LIST_RELEVANT.includes(f as FeatureChangedField))) {
     void queryClient.invalidateQueries({ queryKey: ["features", "list"], exact: false });
   }
 }

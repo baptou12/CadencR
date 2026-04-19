@@ -775,12 +775,33 @@ async fn hydrate_full_opencode_sessions(
 
 pub async fn get_feature_turn_states(
     pool: &SqlitePool,
-) -> Result<HashMap<String, String>, AppError> {
+) -> Result<HashMap<String, crate::domain::sessions::models::FeatureTurnState>, AppError> {
+    // MAX() over the CASE expressions surfaces the first non-NULL kind when
+    // multiple rows share a feature_id (shouldn't happen in practice, but the
+    // aggregation keeps the query symmetric with `needs_input`).
+    // Includes `status='paused'` rows that have a pending-input column set —
+    // a workflow agent awaiting user input (permission/question/plan/prd
+    // approval) is persisted as `paused` but must still surface on the
+    // sidebar as `askUser`. Plain-paused rows (no pending column) are excluded
+    // so they don't resurrect as a fake "agent" turn.
     let rows = sqlx::query_as::<_, TurnStateRow>(
         r#"SELECT feature_id,
-           MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL OR pending_prd_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input
+           MAX(CASE WHEN pending_questions IS NOT NULL OR pending_permission IS NOT NULL OR pending_plan_approval IS NOT NULL OR pending_prd_approval IS NOT NULL THEN 1 ELSE 0 END) AS needs_input,
+           MAX(CASE
+                 WHEN pending_questions IS NOT NULL THEN 'question'
+                 WHEN pending_permission IS NOT NULL THEN 'permission'
+                 WHEN pending_plan_approval IS NOT NULL THEN 'plan-approval'
+                 WHEN pending_prd_approval IS NOT NULL THEN 'prd-approval'
+                 ELSE NULL
+               END) AS pending_kind
            FROM agent_sessions
            WHERE status = 'running'
+              OR (status = 'paused' AND (
+                   pending_questions IS NOT NULL
+                   OR pending_permission IS NOT NULL
+                   OR pending_plan_approval IS NOT NULL
+                   OR pending_prd_approval IS NOT NULL
+                 ))
            GROUP BY feature_id"#,
     )
     .fetch_all(pool)
@@ -788,12 +809,18 @@ pub async fn get_feature_turn_states(
 
     let mut result = HashMap::new();
     for row in rows {
-        let turn = if row.needs_input == 1 {
-            "askUser"
+        let (turn, kind) = if row.needs_input == 1 {
+            ("askUser", row.pending_kind)
         } else {
-            "claude"
+            ("agent", None)
         };
-        result.insert(row.feature_id.to_string(), turn.to_string());
+        result.insert(
+            row.feature_id.to_string(),
+            crate::domain::sessions::models::FeatureTurnState {
+                turn: turn.to_string(),
+                kind,
+            },
+        );
     }
     Ok(result)
 }
@@ -1454,8 +1481,23 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
+        let fid3: (i64,) =
+            sqlx::query_as("INSERT INTO features (title) VALUES ('f3') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let fid4: (i64,) =
+            sqlx::query_as("INSERT INTO features (title) VALUES ('f4') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let fid5: (i64,) =
+            sqlx::query_as("INSERT INTO features (title) VALUES ('f5') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
 
-        // Feature 1: running session with pending_questions → needs_input
+        // Feature 1: running session with pending_questions → askUser/question
         sqlx::query(
             "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_questions) VALUES (?, 'main', 'running', '[\"q\"]')"
         )
@@ -1464,18 +1506,68 @@ mod tests {
         .await
         .unwrap();
 
-        // Feature 2: running session without pending_questions → claude turn
+        // Feature 2: running session without pending_* → agent turn
         insert_session(&pool, fid2.0, "running").await;
+
+        // Feature 3: PAUSED session with pending_permission → askUser/permission
+        // (workflow agents awaiting input are persisted as 'paused')
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_permission) VALUES (?, 'main', 'paused', '{\"request_id\":\"r\"}')"
+        )
+        .bind(fid3.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Feature 4: PAUSED session with pending_prd_approval → askUser/prd-approval
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_prd_approval) VALUES (?, 'prd', 'paused', '{\"prd\":\"...\"}')"
+        )
+        .bind(fid4.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Feature 5: PAUSED session with no pending_* columns → excluded
+        // (plain paused, not waiting for input — must not surface)
+        insert_session(&pool, fid5.0, "paused").await;
 
         let states = get_feature_turn_states(&pool).await.unwrap();
         assert_eq!(
-            states.get(&fid1.0.to_string()).map(|s| s.as_str()),
+            states.get(&fid1.0.to_string()).map(|s| s.turn.as_str()),
             Some("askUser")
         );
         assert_eq!(
-            states.get(&fid2.0.to_string()).map(|s| s.as_str()),
-            Some("claude")
+            states.get(&fid1.0.to_string()).and_then(|s| s.kind.as_deref()),
+            Some("question"),
         );
+        assert_eq!(
+            states.get(&fid2.0.to_string()).map(|s| s.turn.as_str()),
+            Some("agent")
+        );
+        assert_eq!(
+            states.get(&fid2.0.to_string()).and_then(|s| s.kind.as_deref()),
+            None,
+        );
+        // Paused + pending must surface as askUser (was the sidebar-blank bug).
+        assert_eq!(
+            states.get(&fid3.0.to_string()).map(|s| s.turn.as_str()),
+            Some("askUser"),
+        );
+        assert_eq!(
+            states.get(&fid3.0.to_string()).and_then(|s| s.kind.as_deref()),
+            Some("permission"),
+        );
+        assert_eq!(
+            states.get(&fid4.0.to_string()).map(|s| s.turn.as_str()),
+            Some("askUser"),
+        );
+        assert_eq!(
+            states.get(&fid4.0.to_string()).and_then(|s| s.kind.as_deref()),
+            Some("prd-approval"),
+        );
+        // Plain-paused must NOT appear (no pending → not waiting for input).
+        assert!(states.get(&fid5.0.to_string()).is_none());
     }
 
     #[tokio::test]

@@ -57,5 +57,6 @@ include!("persistence/session_tool_reconciliation.rs");
 include!("persistence/session_subagents.rs");
 include!("persistence/session_queries.rs");
 include!("persistence/session_state.rs");
+include!("persistence/pending_user_input.rs");
 include!("persistence/session_archiving.rs");
 include!("persistence/session_cleanup.rs");

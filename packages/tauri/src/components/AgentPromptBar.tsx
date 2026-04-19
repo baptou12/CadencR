@@ -147,6 +147,7 @@ export const AgentPromptBar = forwardRef<
     focusInput: () => editorRef.current?.focus(),
   }));
 
+  // Per-agent UI reads per-agent state — see AgentSession.tsx for the rationale.
   const isRunning = status === "running";
   const isPaused = status === "paused";
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled;

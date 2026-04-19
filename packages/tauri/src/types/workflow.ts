@@ -147,6 +147,16 @@ export interface WorkflowState {
   continuingBuild: boolean;
   startingSession: boolean;
 
+  /** WS events that arrived before REST hydration completed.  Drained in
+   *  order by `hydrateFromSnapshot` so streamed blocks aren't overwritten by
+   *  the snapshot. */
+  bufferedEvents: MessageEvent[];
+  /** True while a soft reconnect is in flight — i.e. the same feature/project
+   *  was re-mounted without a navigation, so we keep existing `agents` / `queue`
+   *  rather than wiping them, and show a subtle refresh indicator until the
+   *  first `queue_update` lands. */
+  isReconnecting: boolean;
+
   /** Live feature title pushed via WS after auto-naming. */
   featureTitle: string | null;
   /** True while the backend is generating a name for this feature. */

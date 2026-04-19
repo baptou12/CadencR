@@ -270,9 +270,44 @@ export function handleAgentUserMessage(
     const key = resolveSlotKey(state.agents, umSlot);
     const existing = state.agents.get(key);
     const agent = existing ?? createAgentSession(0, umSlot.type);
-    const updated = { ...agent, blocks: [...agent.blocks, userBlock] };
+    // A user_message always resolves a pending gate (answered question, plan
+    // approval/rejection, prompt send). Clearing all pending-* here replaces
+    // the old optimistic client-side writes in the store dispatchers.
+    const updated = {
+      ...agent,
+      blocks: [...agent.blocks, userBlock],
+      pendingQuestions: [],
+      pendingQuestionToolInput: {},
+      pendingQuestionRequestId: "",
+      pendingPermission: null,
+      pendingPlanApproval: null,
+    };
     const agents = new Map(state.agents);
     agents.set(key, updated);
+    return { agents };
+  });
+}
+
+/** Frontend receives `workflow.pending_cleared` when a permission respond
+ *  succeeds server-side — clears every pending-* state on the target slot. */
+export function handlePendingCleared(
+  payload: Record<string, unknown>,
+  set: SetFn,
+): void {
+  const slot = parseAgentSlot(payload);
+  set(state => {
+    const key = resolveSlotKey(state.agents, slot);
+    const agent = state.agents.get(key);
+    if (!agent) return {};
+    const agents = new Map(state.agents);
+    agents.set(key, {
+      ...agent,
+      pendingQuestions: [],
+      pendingQuestionToolInput: {},
+      pendingQuestionRequestId: "",
+      pendingPermission: null,
+      pendingPlanApproval: null,
+    });
     return { agents };
   });
 }

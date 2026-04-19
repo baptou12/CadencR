@@ -79,7 +79,10 @@ async fn main() -> anyhow::Result<()> {
                 write_pool,
                 max_parallel_agents: AppState::max_parallel_from_env(),
                 agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
-                turn_state_tx,
+                turn_state_tx: app_state::TurnStateBroadcaster::new(
+                    turn_state_tx,
+                    std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                ),
                 pty_manager: domain::terminal::service::PtyManager::new(),
                 file_change_tx,
                 file_watcher: domain::editor::watcher::new_shared(),

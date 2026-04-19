@@ -109,7 +109,7 @@ pub async fn post_stream_cleanup(
     active_items: &Arc<DashMap<AgentSlot, i64>>,
     queries: &Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: &Arc<DashMap<AgentSlot, String>>,
-    turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
 ) {
     info!(slot = %slot, db_session_id, ws_detached, "workflow stream reader ended — cleaning up");
     queries.remove(&slot);
@@ -185,7 +185,7 @@ async fn handle_error(
     err: &str,
     write_pool: &SqlitePool,
     active_items: &Arc<DashMap<AgentSlot, i64>>,
-    turn_state_tx: &tokio::sync::broadcast::Sender<crate::app_state::TurnStateEvent>,
+    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
 ) {
     if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
         engine.on_item_error(slot.clone(), err).await;

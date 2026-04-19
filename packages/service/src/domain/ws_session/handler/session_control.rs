@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use axum::extract::ws::Message;
 use tracing::{error, info};
 
-use super::super::persistence::WsSessionPersistence;
+use super::super::persistence::{PendingUserInputKind, WsSessionPersistence};
 use super::super::protocol::*;
 use super::session_prompt::PermissionResponse;
 use super::{
@@ -72,117 +72,187 @@ pub(super) async fn handle_permission_respond(
         }
     };
 
-    let sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get(&db_session_id) {
-        Some(h) => h,
-        None => {
-            send_error(
-                sender,
-                &envelope.id,
-                "SESSION_NOT_FOUND",
-                "Session not found",
-            );
-            return;
-        }
-    };
+    // Extract everything we need from the handle, then drop the sdk_sessions
+    // lock before ANY `.await` that touches the DB or runtime. The lock is
+    // global; holding it across `q.respond_permission()` or
+    // `permission_tx.send()` blocks every other handler from making progress.
+    struct ExtractedHandle {
+        feature_id: i64,
+        runtime_provider: String,
+        active: Option<ActiveParts>,
+    }
+    struct ActiveParts {
+        query: crate::domain::agents::adapter::RuntimeSessionHandle,
+        permission_tx: tokio::sync::mpsc::Sender<PermissionResponse>,
+    }
 
-    let permission_tx = match &handle.state {
-        QueryState::Active { permission_tx, .. } => permission_tx,
-        QueryState::Pending(_) => {
-            // Handle restored plan approval: CLI is not running, store result in DB
-            // so the next CLI spawn can pick it up.
-            if payload.request_id.starts_with("plan_restore_") {
-                let approved = matches!(
-                    payload.decision,
-                    PermissionDecision::AllowOnce | PermissionDecision::AllowFuture
-                );
-                let result_json = serde_json::json!({
-                    "approved": approved,
-                    "feedback": payload.feedback,
-                });
-                let _ = sqlx::query(
-                    "UPDATE agent_sessions SET plan_approval_result = ?, pending_plan_approval = NULL WHERE id = ?"
-                )
-                    .bind(result_json.to_string())
-                    .bind(db_session_id)
-                    .execute(&app_state.write_pool)
-                    .await;
-                info!(
-                    db_session_id,
-                    approved, "stored restored plan approval result in DB"
+    let extracted: ExtractedHandle = {
+        let sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
                 );
                 return;
             }
-            send_error(
-                sender,
-                &envelope.id,
-                "INVALID_STATE",
-                "Session not yet active",
+        };
+        let active = match &handle.state {
+            QueryState::Active {
+                query,
+                permission_tx,
+            } => Some(ActiveParts {
+                query: std::sync::Arc::clone(query),
+                permission_tx: permission_tx.clone(),
+            }),
+            QueryState::Pending(_) => None,
+        };
+        ExtractedHandle {
+            feature_id: handle.feature_id,
+            runtime_provider: handle.runtime_provider.clone(),
+            active,
+        }
+    };
+    // sdk_sessions lock dropped here.
+
+    if extracted.active.is_none() {
+        // Handle restored plan approval: CLI is not running, store result in DB
+        // so the next CLI spawn can pick it up.
+        if payload.request_id.starts_with("plan_restore_") {
+            let approved = matches!(
+                payload.decision,
+                PermissionDecision::AllowOnce | PermissionDecision::AllowFuture
+            );
+            let result_json = serde_json::json!({
+                "approved": approved,
+                "feedback": payload.feedback,
+            });
+            // plan_approval_result is a sibling column (not a pending_* gate),
+            // so it stays inline. The PlanApproval gate goes through the helper.
+            let _ = sqlx::query(
+                "UPDATE agent_sessions SET plan_approval_result = ? WHERE id = ?",
+            )
+            .bind(result_json.to_string())
+            .bind(db_session_id)
+            .execute(&app_state.write_pool)
+            .await;
+            // Pair clear + broadcast so the sidebar doesn't stay stuck on
+            // `askUser` after restore → Approve/Reject (normal paths use the
+            // same helper via `mark_agent_resumed_static`). Plan-approval
+            // gate: Deny-with-feedback hands the turn back to the agent;
+            // bare Deny ends the turn.
+            let next_turn = crate::domain::permission_bridge::turn_state_after_approval(
+                payload.decision,
+                payload.feedback.as_deref(),
+            );
+            WsSessionPersistence::mark_agent_resumed_static(
+                &app_state.write_pool,
+                &app_state.turn_state_tx,
+                db_session_id,
+                extracted.feature_id,
+                PendingUserInputKind::PlanApproval,
+                next_turn,
+            )
+            .await;
+            info!(
+                db_session_id,
+                approved, "stored restored plan approval result in DB"
             );
             return;
         }
-    };
+        send_error(
+            sender,
+            &envelope.id,
+            "INVALID_STATE",
+            "Session not yet active",
+        );
+        return;
+    }
+    let ActiveParts {
+        query,
+        permission_tx,
+    } = extracted.active.expect("active presence checked above");
 
     // Persist user answer for AskUserQuestion so it survives app restart.
     if let Some(ref updated_input) = payload.updated_input {
         if let Some(answer_text) = format_answers_plain_text(updated_input) {
-            let feature_id = handle.feature_id;
             let p = WsSessionPersistence::with_session_id(
                 app_state.write_pool.clone(),
-                feature_id,
+                extracted.feature_id,
                 Some(db_session_id),
             );
             p.persist_user_message(&answer_text).await;
         }
     }
 
-    if let QueryState::Active { query, .. } = &handle.state {
-        let runtime_response = RuntimePermissionResponse {
-            request_id: payload.request_id.clone(),
-            decision: match payload.decision {
-                PermissionDecision::AllowOnce => RuntimePermissionDecision::AllowOnce,
-                PermissionDecision::AllowFuture => RuntimePermissionDecision::AllowFuture,
-                PermissionDecision::Deny => RuntimePermissionDecision::Deny,
-            },
-            feedback: payload.feedback.clone(),
-            updated_input: payload.updated_input.clone(),
-        };
+    let runtime_response = RuntimePermissionResponse {
+        request_id: payload.request_id.clone(),
+        decision: match payload.decision {
+            PermissionDecision::AllowOnce => RuntimePermissionDecision::AllowOnce,
+            PermissionDecision::AllowFuture => RuntimePermissionDecision::AllowFuture,
+            PermissionDecision::Deny => RuntimePermissionDecision::Deny,
+        },
+        feedback: payload.feedback.clone(),
+        updated_input: payload.updated_input.clone(),
+    };
+    let respond_result = {
         let q = query.lock().await;
-        match q.respond_permission(runtime_response).await {
-            Ok(()) => {
-                if matches!(payload.decision, PermissionDecision::Deny) {
-                    WsSessionPersistence::mark_completed_static(
-                        &app_state.write_pool,
-                        db_session_id,
-                    )
-                    .await;
-                    let ended = WsEnvelope::new(
-                        "session",
-                        "ended",
-                        serde_json::to_value(SessionEndedPayload {
-                            reason: "permission_denied".into(),
-                        })
-                        .unwrap(),
-                    );
-                    let _ = sender.send(Message::Text(String::from(ended).into()));
-                }
-                WsSessionPersistence::broadcast_turn_state(
-                    &app_state.turn_state_tx,
-                    handle.feature_id,
-                    crate::domain::permission_bridge::turn_state_after_decision(payload.decision),
+        q.respond_permission(runtime_response).await
+    };
+    match respond_result {
+        Ok(()) => {
+            if matches!(payload.decision, PermissionDecision::Deny) {
+                WsSessionPersistence::mark_completed_static(
+                    &app_state.write_pool,
+                    db_session_id,
+                )
+                .await;
+                let ended = WsEnvelope::new(
+                    "session",
+                    "ended",
+                    serde_json::to_value(SessionEndedPayload {
+                        reason: "permission_denied".into(),
+                    })
+                    .unwrap(),
                 );
-                return;
+                let _ = sender.send(Message::Text(String::from(ended).into()));
             }
-            Err(error) if handle.runtime_provider != DEFAULT_PROVIDER => {
-                send_error(
-                    sender,
-                    &envelope.id,
-                    "RUNTIME_PERMISSION_ERROR",
-                    &error.to_string(),
-                );
-                return;
-            }
-            Err(_) => {}
+            // Providers that resolve the permission in-SDK (OpenCode) never
+            // persisted a pending_* row through the `handle_needs_prompt`
+            // path — their askUser lives purely in the broadcast channel.
+            // Clear all four columns defensively: if anything DID get
+            // written (e.g. stream_reader.rs persisting OpenCode permissions
+            // for reconnect-safety), this closes the gate atomically.
+            WsSessionPersistence::clear_all_pending_user_input_static(
+                &app_state.write_pool,
+                db_session_id,
+            )
+            .await;
+            WsSessionPersistence::broadcast_turn_state(
+                &app_state.turn_state_tx,
+                extracted.feature_id,
+                crate::domain::permission_bridge::turn_state_after_decision(payload.decision),
+            );
+            return;
+        }
+        Err(error) if extracted.runtime_provider != DEFAULT_PROVIDER => {
+            send_error(
+                sender,
+                &envelope.id,
+                "RUNTIME_PERMISSION_ERROR",
+                &error.to_string(),
+            );
+            return;
+        }
+        Err(_) => {
+            // Claude Code path: `respond_permission` is a no-op at the SDK
+            // level; the response is delivered to `bridge.rs`'s
+            // `wait_and_apply_decision` via the permission_tx channel below.
+            // That function OWNS the DB clear + terminal broadcast, so we
+            // don't touch either here.
         }
     }
 
