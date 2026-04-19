@@ -94,6 +94,11 @@ impl Options {
         args.push("--verbose".to_string());
         // Include partial streaming events (content_block_delta) for real-time UI.
         args.push("--include-partial-messages".to_string());
+        // Force summarized thinking output. Opus 4.7 disables thinking display by
+        // default, but Cadence surfaces thinking summaries in the UI, so we
+        // enforce `summarized` regardless of the model's default.
+        args.push("--thinking-display".to_string());
+        args.push("summarized".to_string());
 
         // When canUseTool is provided, tell the CLI to delegate permission
         // prompts (including AskUserQuestion) over the stdin/stdout control

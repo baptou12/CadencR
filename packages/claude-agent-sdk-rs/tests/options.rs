@@ -156,6 +156,22 @@ fn to_cli_args_always_includes_output_format() {
 }
 
 #[test]
+fn to_cli_args_always_forces_summarized_thinking_display() {
+    // Opus 4.7 disables thinking display by default; Cadence surfaces thinking
+    // summaries in the UI, so `--thinking-display summarized` must always be
+    // passed regardless of model or other options.
+    let opts = Options::default();
+    let args = opts.to_cli_args();
+    let pos = args
+        .windows(2)
+        .position(|w| w[0] == "--thinking-display" && w[1] == "summarized");
+    assert!(
+        pos.is_some(),
+        "Expected --thinking-display summarized in args"
+    );
+}
+
+#[test]
 fn to_cli_args_includes_model_when_set() {
     let opts = OptionsBuilder::new().model("claude-opus-4-5").build();
     let args = opts.to_cli_args();
