@@ -28,8 +28,7 @@ fn read_file_base64(
 
     if !path_within_allowed_roots(&canonical, &state)? {
         return Err(format!(
-            "Rejected: {} is outside the allowed directories (project roots, \
-             ~/Downloads, ~/Desktop, ~/Pictures, ~/Documents, /tmp).",
+            "Rejected: {} is outside the allowed directories (project roots or /tmp).",
             canonical.display()
         ));
     }

@@ -60,6 +60,9 @@ impl SidecarState {
     }
 }
 
+/// Only include paths that don't trigger macOS TCC prompts on canonicalize.
+/// Project roots are added lazily via `refresh_project_roots` after the user
+/// opens them, so we never touch `~/Downloads`, `~/Desktop`, etc. at startup.
 fn default_user_roots() -> HashSet<PathBuf> {
     let mut roots = HashSet::new();
     let add = |roots: &mut HashSet<PathBuf>, p: PathBuf| {
@@ -67,12 +70,6 @@ fn default_user_roots() -> HashSet<PathBuf> {
             roots.insert(canon);
         }
     };
-    if let Some(home) = dirs::home_dir() {
-        add(&mut roots, home.join("Downloads"));
-        add(&mut roots, home.join("Desktop"));
-        add(&mut roots, home.join("Pictures"));
-        add(&mut roots, home.join("Documents"));
-    }
     add(&mut roots, PathBuf::from("/tmp"));
     // macOS symlinks /tmp → /private/tmp; add both for direct-comparison hits.
     add(&mut roots, PathBuf::from("/private/tmp"));
