@@ -275,8 +275,6 @@ pub struct ModelRef {
     pub provider_id: String,
     #[serde(rename = "modelID")]
     pub model_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -299,6 +297,7 @@ pub struct PromptOptions {
     pub model: Option<ModelRef>,
     pub agent: Option<String>,
     pub system: Option<String>,
+    pub variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -270,6 +270,19 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         content: Value,
         config: RuntimeSpawnConfig,
     ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+        // Claude Code CLI v2.1.x parses `--effort` but drops it before building
+        // the API request (anthropics/claude-code#41028). The CLI does honor
+        // `CLAUDE_CODE_EFFORT_LEVEL`, so set both: the env var is what actually
+        // reaches the model today, while `--effort` will start working once
+        // the upstream bug is fixed.
+        let env = match config.thinking_effort.as_ref() {
+            Some(effort) => {
+                let mut env = config.env.unwrap_or_default();
+                env.insert("CLAUDE_CODE_EFFORT_LEVEL".to_string(), effort.clone());
+                Some(env)
+            }
+            None => config.env,
+        };
         let options = claude_agent_sdk_rs::Options {
             cwd: config.cwd,
             permission_mode: config.permission_mode.map(map_permission_mode),
@@ -287,7 +300,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
                 Box::new(ClaudeCanUseToolAdapter { inner: handler })
                     as Box<dyn claude_agent_sdk_rs::CanUseTool>
             }),
-            env: config.env,
+            env,
             ..claude_agent_sdk_rs::Options::default()
         };
 

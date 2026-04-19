@@ -95,9 +95,9 @@ fn prompt_options() -> PromptOptions {
         model: Some(ModelRef {
             provider_id: "anthropic".to_string(),
             model_id: "claude-sonnet".to_string(),
-            variant: None,
         }),
         system: Some("system prompt".to_string()),
+        variant: None,
     }
 }
 

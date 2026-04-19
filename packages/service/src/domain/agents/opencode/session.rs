@@ -89,14 +89,11 @@ impl OpenCodeSession {
         &self,
         parts: Vec<opencode_sdk_rs::PromptPart>,
     ) -> Result<(), RuntimeError> {
-        let effort = self.current_effort.read().await.clone();
         let options = opencode_sdk_rs::PromptOptions {
-            model: self.current_model.read().await.clone().map(|mut model| {
-                model.variant = effort;
-                model
-            }),
+            model: self.current_model.read().await.clone(),
             agent: Some(self.current_agent.read().await.clone()),
             system: self.system_prompt.clone(),
+            variant: self.current_effort.read().await.clone(),
         };
 
         if opencode_sdk_rs::parse_command_invocation(&parts).is_none() {

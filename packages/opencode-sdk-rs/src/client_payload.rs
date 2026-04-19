@@ -23,6 +23,9 @@ pub fn build_prompt_payload(parts: Vec<PromptPart>, options: PromptOptions) -> V
     if let Some(system) = options.system {
         payload.insert("system".to_string(), Value::String(system));
     }
+    if let Some(variant) = options.variant {
+        payload.insert("variant".to_string(), Value::String(variant));
+    }
 
     Value::Object(payload)
 }
@@ -100,17 +103,19 @@ mod tests {
                 model: Some(crate::types::ModelRef {
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.3-codex".to_string(),
-                    variant: None,
                 }),
                 agent: Some("build".to_string()),
                 system: Some("system prompt".to_string()),
+                variant: Some("high".to_string()),
             },
         );
 
         assert_eq!(payload["model"]["providerID"], "openai");
         assert_eq!(payload["model"]["modelID"], "gpt-5.3-codex");
+        assert!(payload["model"].get("variant").is_none());
         assert_eq!(payload["agent"], "build");
         assert_eq!(payload["system"], "system prompt");
+        assert_eq!(payload["variant"], "high");
     }
 
     #[test]

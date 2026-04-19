@@ -126,6 +126,9 @@ fn build_command_payload(command: &str, arguments: &str, options: PromptOptions)
             Value::String(format!("{}/{}", model.provider_id, model.model_id)),
         );
     }
+    if let Some(variant) = options.variant {
+        payload.insert("variant".to_string(), Value::String(variant));
+    }
 
     Value::Object(payload)
 }
@@ -348,9 +351,9 @@ mod tests {
                 model: Some(ModelRef {
                     provider_id: "anthropic".to_string(),
                     model_id: "claude-sonnet".to_string(),
-                    variant: None,
                 }),
                 system: Some("ignored".to_string()),
+                variant: Some("max".to_string()),
             },
         );
 
@@ -358,6 +361,7 @@ mod tests {
         assert_eq!(payload["arguments"], "src/lib.rs");
         assert_eq!(payload["agent"], "build");
         assert_eq!(payload["model"], "anthropic/claude-sonnet");
+        assert_eq!(payload["variant"], "max");
         assert!(payload.get("system").is_none());
     }
 
