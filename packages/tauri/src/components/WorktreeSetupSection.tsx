@@ -182,7 +182,7 @@ export function WorktreeSetupSection({
             isOpen && "rotate-90",
           )}
         />
-        <GitBranchIcon className="size-3.5 text-foreground/50" />
+        <GitBranchIcon className="size-3.5" />
         <span className="text-xs font-medium">Worktree Setup</span>
         {branch && (
           <button
