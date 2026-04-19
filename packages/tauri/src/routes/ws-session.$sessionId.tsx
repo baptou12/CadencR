@@ -97,6 +97,15 @@ function WebSocketSessionPage() {
   const agentSessionRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+
+  const sendPromptAndFocus = useCallback((message: string) => {
+    ws.sendPrompt(message);
+    requestAnimationFrame(() => agentSessionRef.current?.focusPromptBar());
+  }, [ws]);
+  const sendFromGitTab = useCallback((message: string) => {
+    sendPromptAndFocus(message);
+    setActiveTab("agent");
+  }, [sendPromptAndFocus, setActiveTab]);
   useHotkeys(
     "meta+g",
     (e) => {
@@ -182,7 +191,11 @@ function WebSocketSessionPage() {
         </div>
 
         {activeTab === "git" && (
-          <FeatureGitTab featureId={featureId} diffMode="worktree" />
+          <FeatureGitTab
+            featureId={featureId}
+            diffMode="worktree"
+            onSendComments={sendFromGitTab}
+          />
         )}
 
         <div className={cn("h-full", activeTab !== "agent" && "hidden")}>
@@ -257,7 +270,7 @@ function WebSocketSessionPage() {
         featureId={featureId}
         open={inlineDiffOpen}
         onOpenChange={setInlineDiffOpen}
-        hideFooter
+        onSendComments={sendPromptAndFocus}
       />
     </div>
   );

@@ -24,7 +24,7 @@ interface WorkflowAgentGridProps {
   resolveThinkingEffort: (agentType: AgentType) => ThinkingEffortLevel | undefined;
   handleThinkingEffortChange: (agentType: AgentType, effort?: ThinkingEffortLevel) => void;
   handleDeleteAgent: (entry: FeatureSession) => void;
-  onViewDiff: () => void;
+  onViewDiff: (entry: FeatureSession) => void;
   slashCommands: { name: string; description: string }[];
   slashCommandsLoading: boolean;
 }
@@ -95,7 +95,7 @@ export function WorkflowAgentGrid({
         resumable={entry.resumable}
         onResume={entry.resumable ? () => void backend.handleResume(entry.agentType, entry.sessionDbId) : undefined}
         hasFileChanges={entry.hasFileChanges}
-        onViewDiff={() => onViewDiff()}
+        onViewDiff={() => onViewDiff(entry)}
         todos={entry.todos}
         currentProviderId={resolveProvider(entry.agentType)}
         onProviderChange={(providerId) => handleProviderChange(entry.agentType, providerId)}

@@ -13,7 +13,7 @@ export function useWorkflowKeyboard(
   backend: WorkflowBackend,
   openAgent: string | null,
   setOpenAgent: React.Dispatch<React.SetStateAction<string | null>>,
-  onViewDiff: () => void,
+  onViewDiff: (entry: FeatureSession) => void,
 ) {
   const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
 
@@ -161,7 +161,8 @@ export function useWorkflowKeyboard(
 
   useHotkeys("meta+g", (e) => {
     e.preventDefault();
-    if (getFocusedEntry()) onViewDiff();
+    const entry = getFocusedEntry();
+    if (entry) onViewDiff(entry);
   }, { enableOnFormTags: true, enableOnContentEditable: true });
 
   useHotkeys("meta+m", (e) => {
