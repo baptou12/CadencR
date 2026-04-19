@@ -8,7 +8,6 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { invoke } from "@tauri-apps/api/core";
 import {
   useListProjects,
   useCreateProject,
@@ -62,20 +61,12 @@ export function ProjectTree({
       void queryClient.invalidateQueries({
         queryKey: getListProjectsQueryKey(),
       });
-      // A10: tell the Tauri shell about the new project path so
-      // `read_file_base64` accepts drops from the new project root.
-      void invoke("refresh_allowed_roots").catch((e: unknown) => {
-        console.warn("refresh_allowed_roots failed:", e);
-      });
     },
   });
   const deleteProjectMutation = useDeleteProject({
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: getListProjectsQueryKey(),
-      });
-      void invoke("refresh_allowed_roots").catch((e: unknown) => {
-        console.warn("refresh_allowed_roots failed:", e);
       });
     },
   });

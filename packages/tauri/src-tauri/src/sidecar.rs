@@ -2,8 +2,6 @@ use base64::Engine;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::Deserialize;
-use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri_plugin_shell::process::CommandChild;
@@ -20,17 +18,10 @@ struct HealthBody {
     service: String,
 }
 
-#[derive(Deserialize)]
-struct ProjectRow {
-    path: String,
-}
-
 pub struct SidecarState {
     child: Mutex<Option<CommandChild>>,
     pub port: u16,
     pub auth_token: Option<String>,
-    /// Canonical path prefixes `read_file_base64` is allowed to serve.
-    pub allowed_roots: Mutex<HashSet<PathBuf>>,
 }
 
 impl SidecarState {
@@ -39,7 +30,6 @@ impl SidecarState {
             child: Mutex::new(Some(child)),
             port,
             auth_token: Some(auth_token),
-            allowed_roots: Mutex::new(default_user_roots()),
         }
     }
 
@@ -55,25 +45,8 @@ impl SidecarState {
             child: Mutex::new(None),
             port,
             auth_token,
-            allowed_roots: Mutex::new(default_user_roots()),
         }
     }
-}
-
-/// Only include paths that don't trigger macOS TCC prompts on canonicalize.
-/// Project roots are added lazily via `refresh_project_roots` after the user
-/// opens them, so we never touch `~/Downloads`, `~/Desktop`, etc. at startup.
-fn default_user_roots() -> HashSet<PathBuf> {
-    let mut roots = HashSet::new();
-    let add = |roots: &mut HashSet<PathBuf>, p: PathBuf| {
-        if let Ok(canon) = p.canonicalize() {
-            roots.insert(canon);
-        }
-    };
-    add(&mut roots, PathBuf::from("/tmp"));
-    // macOS symlinks /tmp → /private/tmp; add both for direct-comparison hits.
-    add(&mut roots, PathBuf::from("/private/tmp"));
-    roots
 }
 
 fn generate_auth_token() -> String {
@@ -207,43 +180,6 @@ pub async fn wait_for_healthy(
         "Health check failed after {HEALTH_CHECK_RETRIES} retries ({} seconds)",
         HEALTH_CHECK_RETRIES as u64 * HEALTH_CHECK_INTERVAL_MS / 1000
     ))
-}
-
-pub async fn refresh_project_roots(
-    state: &SidecarState,
-) -> Result<(), String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .map_err(|e| format!("client build failed: {e}"))?;
-
-    let url = format!("http://127.0.0.1:{}/api/projects", state.port);
-    let mut req = client.get(&url);
-    if let Some(tok) = state.auth_token.as_deref() {
-        req = req.header("x-cadence-token", tok);
-    }
-
-    let rows: Vec<ProjectRow> = req
-        .send()
-        .await
-        .map_err(|e| format!("GET /api/projects failed: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("GET /api/projects bad status: {e}"))?
-        .json()
-        .await
-        .map_err(|e| format!("GET /api/projects body parse: {e}"))?;
-
-    let mut roots = state
-        .allowed_roots
-        .lock()
-        .map_err(|e| format!("allowed_roots lock poisoned: {e}"))?;
-    for row in rows {
-        let p = PathBuf::from(&row.path);
-        if let Ok(canon) = p.canonicalize() {
-            roots.insert(canon);
-        }
-    }
-    Ok(())
 }
 
 pub fn stop_sidecar(state: &SidecarState) {

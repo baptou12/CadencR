@@ -1,19 +1,17 @@
 mod sidecar;
 
 use base64::Engine;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, PathBuf};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Manager;
 
 const MAX_READ_FILE_BYTES: u64 = 16 * 1024 * 1024;
 
-/// Path-traversal and exfiltration defense for the image-attach flow:
-/// reject raw `..`, canonicalise, require containment in `allowed_roots`.
+/// Reads an image the user dropped into the window. The OS-level drag
+/// gesture is the authorisation; we only keep the lightweight defenses
+/// (reject raw `..`, canonicalise, size cap).
 #[tauri::command]
-fn read_file_base64(
-    state: tauri::State<'_, sidecar::SidecarState>,
-    path: String,
-) -> Result<String, String> {
+fn read_file_base64(path: String) -> Result<String, String> {
     let raw = PathBuf::from(&path);
     if raw
         .components()
@@ -25,13 +23,6 @@ fn read_file_base64(
     let canonical = raw
         .canonicalize()
         .map_err(|e| format!("Cannot resolve {path}: {e}"))?;
-
-    if !path_within_allowed_roots(&canonical, &state)? {
-        return Err(format!(
-            "Rejected: {} is outside the allowed directories (project roots or /tmp).",
-            canonical.display()
-        ));
-    }
 
     let metadata = std::fs::metadata(&canonical)
         .map_err(|e| format!("Cannot stat {}: {e}", canonical.display()))?;
@@ -46,26 +37,6 @@ fn read_file_base64(
     let bytes = std::fs::read(&canonical)
         .map_err(|e| format!("Failed to read {}: {e}", canonical.display()))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
-}
-
-fn path_within_allowed_roots(
-    canonical: &Path,
-    state: &tauri::State<'_, sidecar::SidecarState>,
-) -> Result<bool, String> {
-    let roots = state
-        .allowed_roots
-        .lock()
-        .map_err(|e| format!("allowed_roots lock poisoned: {e}"))?;
-    Ok(roots.iter().any(|root| canonical.starts_with(root)))
-}
-
-/// Called after the UI creates/deletes a project so the new root becomes
-/// readable by `read_file_base64` without restarting the app.
-#[tauri::command]
-async fn refresh_allowed_roots(
-    state: tauri::State<'_, sidecar::SidecarState>,
-) -> Result<(), String> {
-    sidecar::refresh_project_roots(&state).await
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -120,8 +91,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             read_file_base64,
-            get_runtime_config,
-            refresh_allowed_roots
+            get_runtime_config
         ])
         .menu(|handle| {
             // Custom menu that omits CMD+W (Close Window) so the frontend controls it
@@ -206,15 +176,6 @@ pub fn run() {
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
             log::info!("cadence-service is healthy on port {port}");
-
-            // Non-fatal: baseline user directories are already seeded, and
-            // the frontend can retry via `refresh_allowed_roots`.
-            let state = app.state::<sidecar::SidecarState>();
-            if let Err(e) = tauri::async_runtime::block_on(async {
-                sidecar::refresh_project_roots(state.inner()).await
-            }) {
-                log::warn!("Failed to populate project roots at startup: {e}");
-            }
 
             Ok(())
         })

@@ -31,7 +31,6 @@ import {
   useCreateFeature,
 } from "../api/generated";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -93,11 +92,6 @@ export function CommandPalette({
   const createProjectMutation = useCreateProject({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
-      // A10: update the Tauri shell's read_file_base64 allow-list with the
-      // new project root so drag-drop from inside the project still works.
-      void invoke("refresh_allowed_roots").catch((e: unknown) => {
-        console.warn("refresh_allowed_roots failed:", e);
-      });
     },
   });
 

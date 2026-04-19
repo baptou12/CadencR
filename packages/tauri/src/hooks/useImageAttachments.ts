@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 
 export interface ImageAttachment {
   id: string
@@ -74,13 +75,18 @@ export function useImageAttachments() {
       if (remaining <= 0) return
 
       for (const path of paths.slice(0, remaining)) {
+        const fileName = path.split('/').pop() ?? path
         const mimeType = getMimeFromExtension(path)
-        if (!mimeType) continue
+        if (!mimeType) {
+          toast.error(`Unsupported file: ${fileName}`, {
+            description: 'Only PNG, JPEG, GIF, and WebP images can be attached.',
+          })
+          continue
+        }
 
         try {
           const base64 = await invoke<string>('read_file_base64', { path })
           const previewUrl = `data:${mimeType};base64,${base64}`
-          const fileName = path.split('/').pop() ?? path
           addAttachment({
             id: crypto.randomUUID(),
             fileName,
@@ -89,7 +95,8 @@ export function useImageAttachments() {
             previewUrl,
           })
         } catch (e) {
-          console.error(`Failed to read dropped file ${path}:`, e)
+          const message = e instanceof Error ? e.message : String(e)
+          toast.error(`Couldn't attach ${fileName}`, { description: message })
         }
       }
     },
