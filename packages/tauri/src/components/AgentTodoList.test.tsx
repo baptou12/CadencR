@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { act } from "@testing-library/react";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentTodoList } from "./AgentTodoList";
@@ -23,6 +24,10 @@ const completedTodo: TodoItem = {
 };
 
 describe("AgentTodoList", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders compact counter pill", () => {
     render(<AgentTodoList todos={[pendingTodo, completedTodo]} />);
     expect(screen.getByText("1/2")).toBeInTheDocument();
@@ -54,5 +59,78 @@ describe("AgentTodoList", () => {
   it("accepts chipClass prop", () => {
     render(<AgentTodoList todos={[completedTodo]} chipClass="custom-chip" />);
     expect(screen.getByRole("button").className).toContain("custom-chip");
+  });
+
+  it("does not auto-open on initial render", () => {
+    render(<AgentTodoList todos={[pendingTodo, completedTodo]} />);
+    expect(screen.queryByText("Tasks")).not.toBeInTheDocument();
+  });
+
+  it("auto-opens when todos change and auto-closes after 3 seconds", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<AgentTodoList todos={[pendingTodo]} />);
+    expect(screen.queryByText("Tasks")).not.toBeInTheDocument();
+
+    // A new todos reference triggers the auto-open.
+    rerender(<AgentTodoList todos={[pendingTodo, completedTodo]} />);
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(screen.getByText("Pending task")).toBeInTheDocument();
+    expect(screen.getByText("Completed task")).toBeInTheDocument();
+
+    // Still open just before 3s elapses.
+    act(() => {
+      vi.advanceTimersByTime(2999);
+    });
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+
+    // Closes at 3s.
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(screen.queryByText("Tasks")).not.toBeInTheDocument();
+  });
+
+  it("resets the auto-close timer when todos change again within the window", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<AgentTodoList todos={[pendingTodo]} />);
+
+    rerender(<AgentTodoList todos={[pendingTodo, completedTodo]} />);
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    // Second change within the window should reset the 3s window.
+    rerender(<AgentTodoList todos={[pendingTodo, completedTodo, inProgressTodo]} />);
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+
+    // 2s after the second change — would have closed under original timer, should still be open.
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+
+    // 3s after the second change — now closed.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByText("Tasks")).not.toBeInTheDocument();
+  });
+
+  it("renders long todo content without truncation classes", async () => {
+    const user = userEvent.setup();
+    const longTodo: TodoItem = {
+      content:
+        "A really long task description that would previously have been ellipsized inside the narrow popover",
+      activeForm: "Doing a really long task",
+      status: "pending",
+    };
+    render(<AgentTodoList todos={[longTodo]} />);
+    await user.click(screen.getByRole("button"));
+    const span = screen.getByText(longTodo.content);
+    expect(span.className).not.toContain("truncate");
+    expect(span.className).not.toContain("whitespace-nowrap");
+    expect(span.className).toContain("break-words");
   });
 });

@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { CheckIcon, CircleIcon, Loader2Icon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { TodoItem } from "@/types/agent";
 import {
   Popover,
@@ -12,13 +13,50 @@ interface AgentTodoListProps {
   chipClass?: string;
 }
 
-export function AgentTodoList({ todos, chipClass }: AgentTodoListProps) {
+/** Milliseconds the popover stays open after an automatic, todo-change-triggered open. */
+const AUTO_OPEN_DURATION_MS = 3000;
+
+export function AgentTodoList({ todos, chipClass }: AgentTodoListProps): ReactElement {
   const completed = todos.filter((t) => t.status === "completed").length;
   const total = todos.length;
   const inProgress = todos.find((t) => t.status === "in_progress");
 
+  const [open, setOpen] = useState<boolean>(false);
+  const didMountRef = useRef<boolean>(false);
+  const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-open for AUTO_OPEN_DURATION_MS on every todos-reference change (skips initial mount).
+  // The session store only publishes a new todos array when a TodoWrite block mutates.
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    setOpen(true);
+    autoCloseTimerRef.current = setTimeout(() => {
+      setOpen(false);
+      autoCloseTimerRef.current = null;
+    }, AUTO_OPEN_DURATION_MS);
+    return (): void => {
+      if (autoCloseTimerRef.current !== null) {
+        clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = null;
+      }
+    };
+  }, [todos]);
+
+  // Respect manual interaction: any user-driven open/close clears the pending auto-close,
+  // so the popover doesn't fight the user.
+  const handleOpenChange = (next: boolean): void => {
+    if (autoCloseTimerRef.current !== null) {
+      clearTimeout(autoCloseTimerRef.current);
+      autoCloseTimerRef.current = null;
+    }
+    setOpen(next);
+  };
+
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -37,23 +75,28 @@ export function AgentTodoList({ todos, chipClass }: AgentTodoListProps) {
           </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" side="top" className="w-72 p-3">
+      <PopoverContent
+        align="start"
+        side="top"
+        collisionPadding={12}
+        className="w-auto max-w-[min(640px,90vw)] p-3"
+      >
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Tasks
         </p>
         <ul className="space-y-1">
           {todos.map((todo, i) => (
-            <li key={i} className="flex items-center gap-2 text-xs">
+            <li key={i} className="flex items-start gap-2 text-[12px] leading-5">
               {todo.status === "completed" ? (
-                <CheckIcon className="size-3 shrink-0 text-green-400" />
+                <CheckIcon className="mt-0.5 size-3 shrink-0 text-green-400" />
               ) : todo.status === "in_progress" ? (
-                <Loader2Icon className="size-3 shrink-0 animate-spin text-yellow-400" />
+                <Loader2Icon className="mt-0.5 size-3 shrink-0 animate-spin text-yellow-400" />
               ) : (
-                <CircleIcon className="size-3 shrink-0 text-muted-foreground/40" />
+                <CircleIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground/40" />
               )}
               <span
                 className={cn(
-                  "truncate",
+                  "break-words",
                   todo.status === "completed" &&
                     "text-muted-foreground line-through",
                   todo.status === "in_progress" && "text-foreground",
