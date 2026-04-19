@@ -280,7 +280,6 @@ export function MetaBar({
                 label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
                 keys={["ctrl", "T"]}
                 showOnFocus
-                above
               >
                 <button
                   type="button"

@@ -166,13 +166,12 @@ fn models_from_providers(providers: &[Value]) -> Vec<OpencodeModel> {
 
 fn default_model_id(config: &Value, providers: &[Value]) -> Option<String> {
     let defaults = config.get("default")?.as_object()?;
-    for provider in providers {
+    providers.iter().find_map(|provider| {
         let provider_id =
             first_string(provider, &["id", "providerID", "providerId", "provider_id"])?;
         let default_model = defaults.get(&provider_id)?.as_str()?;
-        return Some(format!("{provider_id}/{default_model}"));
-    }
-    None
+        Some(format!("{provider_id}/{default_model}"))
+    })
 }
 
 async fn fetch_configured_catalog() -> Option<(Vec<OpencodeModel>, Option<String>)> {

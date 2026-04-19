@@ -29,18 +29,14 @@ impl SseStream {
     }
 
     pub async fn next(&mut self) -> Option<Result<SseEvent, SdkError>> {
-        loop {
-            let event = self.inner.next().await?;
-            match event {
-                Ok(Event::Open) => return Some(Ok(SseEvent::ServerConnected)),
-                Ok(Event::Message(message)) => {
-                    let parsed = serde_json::from_str::<serde_json::Value>(&message.data)
-                        .map(parse_sse_event)
-                        .map_err(SdkError::from);
-                    return Some(parsed);
-                }
-                Err(error) => return Some(Err(SdkError::from(error))),
-            }
+        match self.inner.next().await? {
+            Ok(Event::Open) => Some(Ok(SseEvent::ServerConnected)),
+            Ok(Event::Message(message)) => Some(
+                serde_json::from_str::<serde_json::Value>(&message.data)
+                    .map(parse_sse_event)
+                    .map_err(SdkError::from),
+            ),
+            Err(error) => Some(Err(SdkError::from(error))),
         }
     }
 }
