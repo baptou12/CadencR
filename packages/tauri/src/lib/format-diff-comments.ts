@@ -3,7 +3,7 @@
  * suitable for sending to an agent.
  */
 export function formatCommentsForAgent(
-  comments: { file_path: string; line_number: number; content: string }[],
+  comments: ReadonlyArray<{ file_path: string; line_number: number; content: string }>,
 ): string {
   const grouped = new Map<string, { line_number: number; content: string }[]>();
   for (const c of comments) {

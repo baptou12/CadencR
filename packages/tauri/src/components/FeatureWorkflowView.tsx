@@ -140,9 +140,21 @@ export function FeatureWorkflowView({
 
   // --- Inline diff viewer modal state ---
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
-  const handleViewDiffForAgent = useCallback(() => {
+  const [diffOriginAgent, setDiffOriginAgent] = useState<FeatureSession | null>(null);
+  const handleViewDiffForAgent = useCallback((entry: FeatureSession) => {
+    setDiffOriginAgent(entry);
     setInlineDiffOpen(true);
   }, []);
+  const handleDiffOpenChange = useCallback((open: boolean) => {
+    setInlineDiffOpen(open);
+    if (!open) setDiffOriginAgent(null);
+  }, []);
+  const sendCommentsToOriginAgent = useMemo(
+    () => (diffOriginAgent
+      ? (message: string) => backend.sendToAgent(diffOriginAgent, message)
+      : undefined),
+    [diffOriginAgent, backend],
+  );
 
   const { agentRefs: _agentRefs, setAgentRef, sessionPromptTrigger } = useWorkflowKeyboard(
     backend, openAgent, setOpenAgent, handleViewDiffForAgent,
@@ -179,6 +191,12 @@ export function FeatureWorkflowView({
       setActiveTab(tab);
     }
   }, [activeTab, setActiveTab]);
+
+  const startReviewFixerFromGit = useCallback((comments: string) => {
+    // Auto-focus of newly-started agents is handled by `useWorkflowKeyboard`.
+    backend.startReviewFixer(comments);
+    setActiveTab("agent");
+  }, [backend, setActiveTab]);
 
   // Git stats for tab bar badge
   const { data: gitStats } = useGetStats(
@@ -226,7 +244,7 @@ export function FeatureWorkflowView({
           <FeatureGitTab
             featureId={featureId}
             diffMode="branch"
-            onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
+            onStartReviewFixer={startReviewFixerFromGit}
           />
         )}
 
@@ -410,8 +428,8 @@ export function FeatureWorkflowView({
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}
-        onOpenChange={setInlineDiffOpen}
-        onStartReviewFixer={(comments) => backend.startReviewFixer(comments)}
+        onOpenChange={handleDiffOpenChange}
+        onSendComments={sendCommentsToOriginAgent}
       />
 
       <ConfirmDialog
