@@ -131,6 +131,14 @@ pub async fn list_project_worktrees_handler(
     Ok(Json(service::list_project_worktrees(&state, params).await?))
 }
 
+#[utoipa::path(get, path = "/api/git/feature-worktrees", params(("project_id" = i64, Query,)), responses((status = 200, body = Vec<FeatureWorktreeInfo>)))]
+pub async fn list_feature_worktrees_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ListFeatureWorktreesParams>,
+) -> Result<Json<Vec<FeatureWorktreeInfo>>, AppError> {
+    Ok(Json(service::list_feature_worktrees(&state, params).await?))
+}
+
 #[utoipa::path(delete, path = "/api/git/worktree/orphan", request_body = RemoveOrphanWorktreeBody, responses((status = 200, body = SuccessResponse)))]
 pub async fn remove_orphan_worktree_handler(
     State(state): State<AppState>,
@@ -221,6 +229,10 @@ pub fn git_router() -> Router<AppState> {
             post(retry_worktree_setup_handler),
         )
         .route("/api/git/worktrees", get(list_project_worktrees_handler))
+        .route(
+            "/api/git/feature-worktrees",
+            get(list_feature_worktrees_handler),
+        )
         .route(
             "/api/git/worktree/orphan",
             delete(remove_orphan_worktree_handler),

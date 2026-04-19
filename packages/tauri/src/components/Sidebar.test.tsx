@@ -51,6 +51,9 @@ vi.mock("../api/generated", () => ({
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useListProjectWorktrees: vi.fn(() => ({ data: [] })),
+  useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
+  useGetStats: vi.fn(() => ({ data: undefined })),
 }));
 
 vi.mock("@/hooks/useProjectColor", () => ({

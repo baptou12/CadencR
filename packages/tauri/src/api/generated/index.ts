@@ -67,6 +67,14 @@ interface ProjectWorktreeInfo {
   feature_status: string | null;
 }
 
+export interface FeatureWorktreeInfo {
+  feature_id: number;
+  worktree_path: string;
+  worktree_branch: string | null;
+  /** Whether the worktree directory currently exists on disk. */
+  live: boolean;
+}
+
 interface MergeConflictResult {
   has_conflicts: boolean;
   conflict_files: string[];
@@ -153,6 +161,10 @@ interface DeleteWorktreeParams {
 }
 
 interface ListProjectWorktreesParams {
+  projectId: number;
+}
+
+interface ListFeatureWorktreesParams {
   projectId: number;
 }
 
@@ -244,6 +256,10 @@ function getListFilesQueryKey(params: ListFilesParams) {
 
 export function getListProjectWorktreesQueryKey(params: ListProjectWorktreesParams) {
   return ["git", "worktrees", params] as const;
+}
+
+export function getListFeatureWorktreesQueryKey(params: ListFeatureWorktreesParams) {
+  return ["git", "feature-worktrees", params] as const;
 }
 
 function getCheckMergeConflictsQueryKey(params: CheckMergeConflictsParams) {
@@ -376,6 +392,18 @@ export function useListProjectWorktrees(
     queryKey: getListProjectWorktreesQueryKey(params),
     queryFn: () =>
       customInstance({ method: "GET", url: `/api/git/worktrees${qs(toSnakeParams(params))}` }),
+    ...options,
+  });
+}
+
+export function useListFeatureWorktrees(
+  params: ListFeatureWorktreesParams,
+  options?: Omit<UseQueryOptions<FeatureWorktreeInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<FeatureWorktreeInfo[], ErrorType<unknown>>({
+    queryKey: getListFeatureWorktreesQueryKey(params),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/git/feature-worktrees${qs(toSnakeParams(params))}` }),
     ...options,
   });
 }

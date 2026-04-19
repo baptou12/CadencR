@@ -152,6 +152,39 @@ pub struct WorktreeFeatureLookup {
     pub feature_status: String,
 }
 
+/// Per-feature worktree setting row for a project.
+#[derive(Debug, sqlx::FromRow)]
+pub struct FeatureWorktreeSettingRow {
+    pub feature_id: i64,
+    pub worktree_path: String,
+    pub worktree_branch: Option<String>,
+}
+
+/// Return one row per feature in `project_id` that has a `worktree_path`
+/// setting, regardless of feature status or whether the directory still
+/// exists on disk. `worktree_branch` is joined in when present.
+pub async fn list_feature_worktree_settings(
+    pool: &SqlitePool,
+    project_id: i64,
+) -> Result<Vec<FeatureWorktreeSettingRow>, AppError> {
+    let rows: Vec<FeatureWorktreeSettingRow> = sqlx::query_as(
+        "SELECT f.id AS feature_id, \
+                fs_path.value AS worktree_path, \
+                fs_branch.value AS worktree_branch \
+         FROM features f \
+         JOIN feature_settings fs_path \
+           ON fs_path.feature_id = f.id AND fs_path.key = 'worktree_path' \
+         LEFT JOIN feature_settings fs_branch \
+           ON fs_branch.feature_id = f.id AND fs_branch.key = 'worktree_branch' \
+         WHERE f.project_id = ?",
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
 pub async fn get_worktree_feature_lookup(
     pool: &SqlitePool,
     project_id: i64,
@@ -300,5 +333,50 @@ mod tests {
             .await
             .unwrap();
         assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_list_feature_worktree_settings() {
+        let pool = setup_test_db().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Feature 1 has both path and branch. Feature 2 (same project) has
+        // only a path. Feature 3 is in a different project and must be
+        // filtered out. Feature 4 has no worktree settings and must not
+        // appear even though it's in the target project.
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status) VALUES \
+             (1, 1, 'a', 'in-progress'), \
+             (2, 1, 'b', 'archived'), \
+             (3, 2, 'c', 'draft'), \
+             (4, 1, 'd', 'draft')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        set_feature_setting(&pool, 1, "worktree_path", "/tmp/wt1")
+            .await
+            .unwrap();
+        set_feature_setting(&pool, 1, "worktree_branch", "feature/a")
+            .await
+            .unwrap();
+        set_feature_setting(&pool, 2, "worktree_path", "/tmp/wt2")
+            .await
+            .unwrap();
+        set_feature_setting(&pool, 3, "worktree_path", "/tmp/wt3")
+            .await
+            .unwrap();
+
+        let rows = list_feature_worktree_settings(&pool, 1).await.unwrap();
+        let by_id: std::collections::HashMap<_, _> =
+            rows.iter().map(|r| (r.feature_id, r)).collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(by_id[&1].worktree_path, "/tmp/wt1");
+        assert_eq!(by_id[&1].worktree_branch.as_deref(), Some("feature/a"));
+        // Archived feature still appears, and a missing branch is None.
+        assert_eq!(by_id[&2].worktree_path, "/tmp/wt2");
+        assert!(by_id[&2].worktree_branch.is_none());
     }
 }

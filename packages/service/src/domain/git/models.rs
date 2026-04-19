@@ -105,6 +105,11 @@ pub struct ListProjectWorktreesParams {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct ListFeatureWorktreesParams {
+    pub project_id: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RemoveOrphanWorktreeBody {
     pub project_id: i64,
     pub worktree_path: String,
@@ -224,6 +229,17 @@ pub struct ProjectWorktreeInfo {
     pub feature_id: Option<i64>,
     pub feature_title: Option<String>,
     pub feature_status: Option<String>,
+}
+
+/// Per-feature worktree metadata sourced from `feature_settings`.
+/// Includes features whose worktree directory has been deleted; callers can
+/// check `live` to know whether the directory still exists on disk.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct FeatureWorktreeInfo {
+    pub feature_id: i64,
+    pub worktree_path: String,
+    pub worktree_branch: Option<String>,
+    pub live: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

@@ -1,35 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useNavigate } from "@tanstack/react-router";
-import { TrashIcon, ArchiveIcon, BotIcon, MessageCircleQuestionIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   useListFeatures, getListFeaturesQueryKey,
   useUpdateFeatureStatus, useDeleteFeature, useGetFeatureEmpty,
+  useListFeatureWorktrees,
+  type Feature,
 } from "@/api/generated";
-
-const STATUSES = ["draft", "planned", "in-progress", "done", "archived"] as const;
-type FeatureStatus = (typeof STATUSES)[number];
-
-const STATUS_COLORS: Record<FeatureStatus, string> = {
-  draft: "bg-gray-500/15 text-gray-300",
-  planned: "bg-blue-500/15 text-blue-300",
-  "in-progress": "bg-yellow-500/15 text-yellow-300",
-  done: "bg-green-500/15 text-green-300",
-  archived: "bg-gray-500/15 text-gray-400",
-};
+import { ProjectFeatureRow, type FeatureStatus } from "@/components/ProjectFeatureRow";
 
 export function ProjectFeatures({
   projectId,
@@ -49,6 +32,20 @@ export function ProjectFeatures({
   const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
   const { data: features = [] } = useListFeatures(projectId);
+  const { data: featureWorktrees = [] } = useListFeatureWorktrees(
+    { projectId },
+    { staleTime: 5 * 60 * 1000 },
+  );
+
+  const { worktreeFeatureIds, liveWorktreeFeatureIds } = useMemo(() => {
+    const all = new Set<number>();
+    const live = new Set<number>();
+    for (const w of featureWorktrees) {
+      all.add(w.feature_id);
+      if (w.live) live.add(w.feature_id);
+    }
+    return { worktreeFeatureIds: all, liveWorktreeFeatureIds: live };
+  }, [featureWorktrees]);
 
   // Live WS-pushed titles from auto-naming. Read raw store slices; derive per-feature inline.
   const wsSessions = useWsSessionStore((s) => s.sessions);
@@ -103,7 +100,7 @@ export function ProjectFeatures({
     },
   });
 
-  const handleNavigate = (feature: (typeof features)[number]) => {
+  const handleNavigate = (feature: Feature) => {
     onSelectFeature(feature.id);
     if (feature.type === "ws-session") {
       const wsSessionId = wsSessionIdFromFeature(feature.id);
@@ -126,102 +123,26 @@ export function ProjectFeatures({
     });
   };
 
-  const renderFeature = (feature: (typeof features)[number]) => {
-    const turn = featureTurnStates[feature.id]?.turn;
-    return (
-      <div
-        key={feature.id}
-        role="button"
-        tabIndex={0}
-        data-nav-item
-        data-nav-type="feature"
-        data-nav-id={String(feature.id)}
-        data-nav-project-id={String(projectId)}
-        className={`group/feature flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none hover:bg-accent ${
-          activeFeatureId === feature.id ? "bg-accent" : ""
-        } ${feature.status === "archived" ? "opacity-50" : ""}`}
-        onClick={() => {
-          handleNavigate(feature);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleNavigate(feature);
-          }
-        }}
-      >
-        {/* Turn state icon */}
-        <div className="shrink-0 w-3.5">
-          {turn === 'agent' && (
-            <BotIcon className="size-3.5 text-blue-500 animate-pulse" />
-          )}
-          {turn === 'askUser' && (
-            <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
-          )}
-        </div>
-
-        {/* Feature name */}
-        {isAutoNaming(feature.id) ? (
-          <Skeleton className="h-4 w-32 min-w-0" />
-        ) : (
-          <span className={`min-w-0 truncate ${feature.status === "archived" ? "text-muted-foreground" : ""}`}>
-            {getLiveTitle(feature.id) ?? feature.title}
-          </span>
-        )}
-
-        <div className="ml-auto flex shrink-0 items-center gap-1">
-          {feature.type !== "ws-session" && (
-            <Select
-              value={feature.status}
-              onValueChange={(v) =>
-                updateStatusMutation.mutate({
-                  id: feature.id,
-                  status: v as FeatureStatus,
-                })
-              }
-            >
-              <SelectTrigger
-                size="sm"
-                className="h-auto border-none bg-transparent p-0 shadow-none [&_svg[class*='opacity']]:hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Badge
-                  variant="secondary"
-                  className={`whitespace-nowrap ${STATUS_COLORS[feature.status as FeatureStatus] ?? ""}`}
-                >
-                  {feature.status}
-                </Badge>
-              </SelectTrigger>
-              <SelectContent>
-                {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          <Button
-            size="sm"
-            variant="ghost"
-            className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100 transition-none"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirmFeatureId(feature.id);
-            }}
-          >
-            {feature.status === "archived" ? (
-              <TrashIcon className="size-3.5" />
-            ) : (
-              <ArchiveIcon className="size-3.5" />
-            )}
-            <span className="sr-only">{feature.status === "archived" ? "Delete" : "Archive"}</span>
-          </Button>
-        </div>
-      </div>
-    );
+  const handleStatusChange = (featureId: number, status: FeatureStatus) => {
+    updateStatusMutation.mutate({ id: featureId, status });
   };
+
+  const renderFeature = (feature: Feature) => (
+    <ProjectFeatureRow
+      key={feature.id}
+      feature={feature}
+      projectId={projectId}
+      activeFeatureId={activeFeatureId}
+      turn={featureTurnStates[feature.id]?.turn}
+      liveTitle={getLiveTitle(feature.id)}
+      isAutoNaming={isAutoNaming(feature.id)}
+      hasWorktree={worktreeFeatureIds.has(feature.id)}
+      hasLiveWorktree={liveWorktreeFeatureIds.has(feature.id)}
+      onNavigate={handleNavigate}
+      onStatusChange={handleStatusChange}
+      onArchiveOrDelete={setConfirmFeatureId}
+    />
+  );
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === "archived";

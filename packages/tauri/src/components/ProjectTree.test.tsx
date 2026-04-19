@@ -49,6 +49,9 @@ vi.mock("../api/generated", () => ({
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useListProjectWorktrees: vi.fn(() => ({ data: [] })),
+  useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
+  useGetStats: vi.fn(() => ({ data: undefined })),
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({

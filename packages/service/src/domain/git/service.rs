@@ -561,6 +561,33 @@ pub async fn list_project_worktrees(
         .collect())
 }
 
+pub async fn list_feature_worktrees(
+    state: &AppState,
+    params: ListFeatureWorktreesParams,
+) -> Result<Vec<FeatureWorktreeInfo>, AppError> {
+    let rows =
+        repository::list_feature_worktree_settings(&state.read_pool, params.project_id).await?;
+
+    // Probe disk presence concurrently — otherwise we'd serialize one syscall
+    // per feature inside a hot async handler.
+    let liveness = futures::future::join_all(
+        rows.iter()
+            .map(|r| async { tokio::fs::metadata(&r.worktree_path).await.is_ok() }),
+    )
+    .await;
+
+    Ok(rows
+        .into_iter()
+        .zip(liveness)
+        .map(|(r, live)| FeatureWorktreeInfo {
+            feature_id: r.feature_id,
+            worktree_path: r.worktree_path,
+            worktree_branch: r.worktree_branch,
+            live,
+        })
+        .collect())
+}
+
 pub async fn remove_orphan_worktree(
     state: &AppState,
     body: RemoveOrphanWorktreeBody,

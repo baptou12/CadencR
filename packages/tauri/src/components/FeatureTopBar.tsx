@@ -26,14 +26,7 @@ import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import logoSvg from "@/logo.svg";
 import zedLogo from "../../assets/zed-logo.png";
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-gray-500/15 text-gray-300",
-  planned: "bg-blue-500/15 text-blue-300",
-  "in-progress": "bg-yellow-500/15 text-yellow-300",
-  done: "bg-green-500/15 text-green-300",
-  archived: "bg-gray-500/15 text-gray-400",
-};
+import { STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 
 interface FeatureTopBarProps {
   featureId: number;
@@ -133,7 +126,7 @@ export function FeatureTopBar({ featureId, projectId, mode = "feature", classNam
       {!isSession && (
         <Badge
           variant="secondary"
-          className={STATUS_COLORS[feature.status] ?? ""}
+          className={STATUS_COLORS[feature.status as FeatureStatus] ?? ""}
         >
           {feature.status}
         </Badge>
