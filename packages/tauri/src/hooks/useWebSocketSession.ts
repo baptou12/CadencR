@@ -50,10 +50,12 @@ interface UseWebSocketSessionReturn {
   contextUsage: ContextUsageState | null;
   currentProviderId: string;
   currentModelId: string;
+  currentThinkingEffort?: string;
   runtimeProvider: string;
   runtimeSessionId: string;
   hasFileChanges: boolean;
   setModel: (modelId: string) => void;
+  setThinkingEffort: (thinkingEffort?: string) => void;
   setProvider: (providerId: string) => void;
   sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
   respondToPermission: (requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
@@ -144,6 +146,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     contextUsage: session?.contextUsage ?? null,
     currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
     currentModelId: session?.currentModelId ?? FALLBACK_MODEL_ID,
+    currentThinkingEffort: session?.currentThinkingEffort,
     runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
     runtimeSessionId: session?.runtimeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
@@ -159,6 +162,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     initSession: (config: SessionConfig) => store.initSession(sessionId, config),
     setProvider: (providerId: string) => store.setProvider(sessionId, providerId),
     setModel: (modelId: string) => store.setModel(sessionId, modelId),
+    setThinkingEffort: (thinkingEffort?: string) => store.setThinkingEffort(sessionId, thinkingEffort),
     setPermissionMode: (mode: PermissionMode) => store.setPermissionMode(sessionId, mode),
     approvePlan: () => store.approvePlan(sessionId),
     requestPlanChanges: (feedback: string) => store.requestPlanChanges(sessionId, feedback),

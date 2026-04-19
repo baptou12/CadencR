@@ -348,6 +348,7 @@ mod tests {
                 model: Some(ModelRef {
                     provider_id: "anthropic".to_string(),
                     model_id: "claude-sonnet".to_string(),
+                    variant: None,
                 }),
                 system: Some("ignored".to_string()),
             },

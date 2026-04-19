@@ -136,6 +136,17 @@ pub(super) async fn handle_init(
     .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     let stored_model = row.as_ref().and_then(|r| r.model.clone());
     let effective_model = stored_model.clone().or(payload.model.clone());
+    let effective_thinking_effort = match payload.thinking_effort.clone() {
+        Some(effort) => Some(effort),
+        None => settings::resolve_setting(
+            &app_state.read_pool,
+            "thinking_effort_session",
+            Some(feature_id),
+            project_id,
+            None,
+        )
+        .await,
+    };
     let effective_provider = resolve_effective_provider(
         runtime_provider
             .or(payload.provider.clone())
@@ -194,6 +205,7 @@ pub(super) async fn handle_init(
     if let Some(ref model) = effective_model {
         runtime_config.model = Some(model.clone());
     }
+    runtime_config.thinking_effort = effective_thinking_effort.clone();
     if let Some(ref pm) = payload.permission_mode {
         // `bypassPermissions` is the agent-equivalent of running as root. We
         // require an explicit project-level acknowledgement stored in
@@ -239,11 +251,13 @@ pub(super) async fn handle_init(
 
     let desired_model = runtime_config.model.clone();
     let desired_permission_mode = runtime_config.permission_mode.clone();
+    let desired_thinking_effort = runtime_config.thinking_effort.clone();
     let canonical_cwd = permissions::canonicalize_worktree(&runtime_config.cwd);
     let config = SessionConfig {
         cwd: runtime_config.cwd.clone(),
         canonical_cwd,
         permission_mode: runtime_config.permission_mode.clone(),
+        thinking_effort: runtime_config.thinking_effort.clone(),
         system_prompt: runtime_config.system_prompt.clone(),
         env: runtime_config.env.clone(),
     };
@@ -258,6 +272,8 @@ pub(super) async fn handle_init(
         spawned_model: None,
         desired_permission_mode,
         spawned_permission_mode: None,
+        desired_thinking_effort,
+        spawned_thinking_effort: None,
         resume_session_id: resume_session_id.clone(),
         config,
         session_cache,
@@ -275,6 +291,7 @@ pub(super) async fn handle_init(
             session_id: db_session_id.to_string(),
             provider: Some(effective_provider.clone()),
             model: effective_model,
+            thinking_effort: effective_thinking_effort,
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
             context_window: init_context_window.map(|v| v as u64),

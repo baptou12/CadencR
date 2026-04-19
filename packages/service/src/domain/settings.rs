@@ -28,6 +28,32 @@ const SHARED_COLUMNS: &[&str] = &[
 /// Columns that only exist on the `projects` table.
 const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix", "qa_prompt"];
 
+async fn resolve_table_kv_setting(
+    pool: &SqlitePool,
+    table: &str,
+    row_id: i64,
+    key: &str,
+) -> Option<String> {
+    let (scope_id, kv_table) = match table {
+        "features" => ("feature_id", "feature_settings"),
+        "projects" => ("project_id", "project_settings"),
+        _ => return None,
+    };
+
+    let sql = format!(
+        "SELECT value FROM {kv_table} WHERE {scope_id} = ? AND key = ? LIMIT 1"
+    );
+    sqlx::query_scalar::<_, Option<String>>(&sql)
+        .bind(row_id)
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten()
+        .filter(|value| !value.is_empty())
+}
+
 async fn table_has_column(pool: &SqlitePool, table: &str, key: &str) -> bool {
     let sql = format!("SELECT 1 FROM pragma_table_info('{table}') WHERE name = ? LIMIT 1");
     sqlx::query_scalar::<_, i64>(&sql)
@@ -84,6 +110,9 @@ pub async fn resolve_setting(
                 return Some(v);
             }
         }
+        if let Some(v) = resolve_table_kv_setting(pool, "features", fid, key).await {
+            return Some(v);
+        }
     }
 
     // 2. Project-level (real column)
@@ -92,6 +121,9 @@ pub async fn resolve_setting(
             if let Some(v) = resolve_table_column_setting(pool, "projects", pid, key).await {
                 return Some(v);
             }
+        }
+        if let Some(v) = resolve_table_kv_setting(pool, "projects", pid, key).await {
+            return Some(v);
         }
     }
 
@@ -149,6 +181,18 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::query(
+            "CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(project_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         pool
     }
 
@@ -227,6 +271,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_feature_kv_fallback_supports_non_column_keys() {
+        let pool = test_pool().await;
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'f')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'thinking_effort_session', 'medium')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'thinking_effort_session', 'high')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let result =
+            resolve_setting(&pool, "thinking_effort_session", Some(1), Some(1), None).await;
+        assert_eq!(result, Some("high".to_string()));
+    }
+
+    #[tokio::test]
     async fn test_default_value_is_not_special() {
         let pool = test_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', 'default')")
@@ -280,6 +353,18 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::query(
+            "CREATE TABLE feature_settings (feature_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(feature_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY(project_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
 
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp')")
             .execute(&pool)

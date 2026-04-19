@@ -11,6 +11,7 @@ import {
   parseFeatureAutoNamingPayload,
   parseFeatureRenamePayload,
   parseFeatureUpdatedPayload,
+  parseEffortPayload,
   parseInitializedPayload,
   parseMessageBlocksPayload,
   parseModePayload,
@@ -170,6 +171,11 @@ function handleSessionAction(
       }
       break;
     }
+    case "effort.set.ok": {
+      const p = parseEffortPayload(envelope.payload);
+      ctx.set(updateSession(ctx.get(), sessionId, { currentThinkingEffort: p?.thinking_effort }));
+      break;
+    }
     case "error":
       handleError(ctx, sessionId, envelope.payload);
       break;
@@ -222,6 +228,7 @@ function handleInitialized(
     updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
   }
   if (p.model) updates.currentModelId = p.model;
+  updates.currentThinkingEffort = p.thinking_effort;
   if (p.input_tokens != null || p.output_tokens != null) {
     const contextWindow = normalizeContextWindow(p.context_window) ?? session.contextUsage?.contextWindow ?? null;
     updates.contextUsage = {

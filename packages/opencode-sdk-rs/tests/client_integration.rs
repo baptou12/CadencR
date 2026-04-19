@@ -186,6 +186,7 @@ async fn client_create_session_and_prompt_async_use_expected_payload() {
         model: Some(opencode_sdk_rs::ModelRef {
             provider_id: "anthropic".to_string(),
             model_id: "claude-sonnet".to_string(),
+            variant: None,
         }),
         agent: Some("build".to_string()),
         system: Some("System prompt".to_string()),

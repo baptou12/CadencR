@@ -6,9 +6,11 @@ import { useResolvedModel } from "./useResolvedModel";
 
 const mockSetModelMutate = vi.fn();
 const mockSetProviderMutate = vi.fn();
+const mockSetThinkingEffortMutate = vi.fn();
 
 type ModelData = Record<string, string>;
 type ProviderData = Record<string, string>;
+type KvEntry = { key: string; value: string | null };
 
 const mockFeatureSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
 const mockProjectSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
@@ -16,6 +18,9 @@ const mockGlobalSettings = vi.fn((): { data: ModelData } => ({ data: {} }));
 const mockFeatureProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
 const mockProjectProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
 const mockGlobalProviderSettings = vi.fn((): { data: ProviderData } => ({ data: {} }));
+const mockFeatureKvSettings = vi.fn((): { data: KvEntry[] } => ({ data: [] }));
+const mockProjectKvSettings = vi.fn((): { data: KvEntry[] } => ({ data: [] }));
+const mockWorkspaceKvSettings = vi.fn((): { data: KvEntry[] } => ({ data: [] }));
 const mockAgentCatalog = vi.fn(() => ({
   data: {
     default_provider: "claude_code",
@@ -30,13 +35,27 @@ vi.mock("../api/generated", () => ({
   useGetFeatureModelSettings: () => mockFeatureSettings(),
   useGetProjectModelSettings: () => mockProjectSettings(),
   useGetWorkspaceModelSettings: () => mockGlobalSettings(),
+  useGetFeatureSettings: () => mockFeatureKvSettings(),
+  useGetProjectSettings: () => mockProjectKvSettings(),
   useSetFeatureModelSetting: vi.fn((opts?: { onSuccess?: () => void }) => ({
     mutate: (data: unknown) => {
       mockSetModelMutate(data);
       opts?.onSuccess?.();
     },
   })),
+  useSetFeatureSetting: vi.fn((opts?: { onSuccess?: () => void }) => ({
+    mutate: (data: unknown) => {
+      mockSetThinkingEffortMutate(data);
+      opts?.onSuccess?.();
+    },
+  })),
   getGetFeatureModelSettingsQueryKey: (id: number) => ["features", "modelSettings", id],
+  getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
+}));
+
+vi.mock("@/api/settings", () => ({
+  useGetWorkspaceSettings: () => mockWorkspaceKvSettings(),
+  settingsArrayToMap: (entries: KvEntry[] | undefined) => Object.fromEntries((entries ?? []).map((entry) => [entry.key, entry.value ?? ""])),
 }));
 
 vi.mock("../api/agentRuntime", () => ({
@@ -60,6 +79,7 @@ describe("useResolvedModel", () => {
   beforeEach(() => {
     mockSetModelMutate.mockClear();
     mockSetProviderMutate.mockClear();
+    mockSetThinkingEffortMutate.mockClear();
     // Default: all empty
     mockFeatureSettings.mockReturnValue({ data: {} });
     mockProjectSettings.mockReturnValue({ data: {} });
@@ -67,6 +87,9 @@ describe("useResolvedModel", () => {
     mockFeatureProviderSettings.mockReturnValue({ data: {} });
     mockProjectProviderSettings.mockReturnValue({ data: {} });
     mockGlobalProviderSettings.mockReturnValue({ data: {} });
+    mockFeatureKvSettings.mockReturnValue({ data: [] });
+    mockProjectKvSettings.mockReturnValue({ data: [] });
+    mockWorkspaceKvSettings.mockReturnValue({ data: [] });
     mockAgentCatalog.mockReturnValue({
       data: {
         default_provider: "claude_code",

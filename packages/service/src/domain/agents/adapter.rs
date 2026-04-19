@@ -47,6 +47,7 @@ pub struct RuntimeSpawnConfig {
     pub cwd: PathBuf,
     pub permission_mode: Option<RuntimePermissionMode>,
     pub model: Option<String>,
+    pub thinking_effort: Option<String>,
     pub system_prompt: Option<String>,
     pub resume_session_id: Option<String>,
     pub mcp_servers: Option<HashMap<String, RuntimeMcpServerConfig>>,
@@ -63,6 +64,7 @@ impl Default for RuntimeSpawnConfig {
             cwd: PathBuf::new(),
             permission_mode: None,
             model: None,
+            thinking_effort: None,
             system_prompt: None,
             resume_session_id: None,
             mcp_servers: None,
@@ -381,6 +383,12 @@ pub trait AgentRuntimeSession: Send + Sync {
     async fn close(&mut self);
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError>;
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError>;
+    fn applies_thinking_effort_in_place(&self) -> bool {
+        false
+    }
+    async fn set_thinking_effort(&self, _effort: Option<String>) -> Result<(), RuntimeError> {
+        Ok(())
+    }
     async fn respond_permission(
         &self,
         _response: RuntimePermissionResponse,
@@ -524,6 +532,10 @@ mod tests {
             &self,
             _mode: super::RuntimePermissionMode,
         ) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn set_thinking_effort(&self, _effort: Option<String>) -> Result<(), RuntimeError> {
             Ok(())
         }
 

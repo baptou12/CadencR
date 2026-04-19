@@ -16,6 +16,8 @@ pub struct Options {
     pub path_to_cli: Option<PathBuf>,
     /// Model name (e.g. "claude-opus-4-5").
     pub model: Option<String>,
+    /// Model effort level for effort-capable models.
+    pub effort: Option<String>,
     /// System prompt prepended to every turn.
     pub system_prompt: Option<String>,
     /// Session ID to resume an existing conversation.
@@ -53,6 +55,7 @@ impl Default for Options {
             permission_mode: None,
             path_to_cli: None,
             model: None,
+            effort: None,
             system_prompt: None,
             resume: None,
             allowed_tools: None,
@@ -108,6 +111,11 @@ impl Options {
         if let Some(model) = &self.model {
             args.push("--model".to_string());
             args.push(model.clone());
+        }
+
+        if let Some(effort) = &self.effort {
+            args.push("--effort".to_string());
+            args.push(effort.clone());
         }
 
         if let Some(session_id) = &self.resume {
@@ -182,6 +190,11 @@ impl OptionsBuilder {
 
     pub fn model(mut self, model: impl Into<String>) -> Self {
         self.inner.model = Some(model.into());
+        self
+    }
+
+    pub fn effort(mut self, effort: impl Into<String>) -> Self {
+        self.inner.effort = Some(effort.into());
         self
     }
 

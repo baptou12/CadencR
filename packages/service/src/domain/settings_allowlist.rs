@@ -37,6 +37,16 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "parallel_execution",
     "skip_worktree",
     "bypass_acknowledged",
+    "thinking_effort_plan",
+    "thinking_effort_prd",
+    "thinking_effort_execute",
+    "thinking_effort_risk",
+    "thinking_effort_review",
+    "thinking_effort_review-fixer",
+    "thinking_effort_session",
+    "thinking_effort_qa",
+    "thinking_effort_retro",
+    "thinking_effort_auto_name",
 ];
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
@@ -67,6 +77,16 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "color",
     "setup_worktree",
     "bypass_acknowledged",
+    "thinking_effort_plan",
+    "thinking_effort_prd",
+    "thinking_effort_execute",
+    "thinking_effort_risk",
+    "thinking_effort_review",
+    "thinking_effort_review-fixer",
+    "thinking_effort_session",
+    "thinking_effort_qa",
+    "thinking_effort_retro",
+    "thinking_effort_auto_name",
 ];
 
 /// Keys writable via `PUT /api/workspace/settings/{key}`.
@@ -112,13 +132,21 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "agent_runtime_retro",
     "agent_runtime_auto_name",
     "agent_runtime_brainstorm",
+    "thinking_effort_plan",
+    "thinking_effort_prd",
+    "thinking_effort_execute",
+    "thinking_effort_risk",
+    "thinking_effort_review",
+    "thinking_effort_review-fixer",
+    "thinking_effort_session",
+    "thinking_effort_qa",
+    "thinking_effort_retro",
+    "thinking_effort_auto_name",
 ];
 
 /// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
 /// match the patterns used by `useDebouncedSetting` in the frontend.
-const WORKSPACE_ALLOWED_PREFIXES: &[&str] =
-    &["editor_sidebar_visible_", "active_tab_"];
-
+const WORKSPACE_ALLOWED_PREFIXES: &[&str] = &["editor_sidebar_visible_", "active_tab_"];
 
 pub fn is_feature_key_allowed(key: &str) -> bool {
     FEATURE_ALLOWED_KEYS.contains(&key)
@@ -156,6 +184,7 @@ mod tests {
         assert!(is_feature_key_allowed("bypass_acknowledged"));
         assert!(is_feature_key_allowed("skip_worktree"));
         assert!(is_feature_key_allowed("model_plan"));
+        assert!(is_feature_key_allowed("thinking_effort_session"));
     }
 
     #[test]
@@ -202,6 +231,7 @@ mod tests {
             "model_execute",
             "agent_runtime_session",
             "agent_runtime_auto_name",
+            "thinking_effort_session",
             "sidebar_right_collapsed",
         ] {
             assert!(is_workspace_key_allowed(k), "{k} should be allowed");

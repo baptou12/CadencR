@@ -67,6 +67,7 @@ export function parseInitializedPayload(payload: unknown): {
   session_id?: string;
   provider?: string;
   model?: string;
+  thinking_effort?: string;
   input_tokens?: number;
   output_tokens?: number;
   context_window?: number;
@@ -77,6 +78,7 @@ export function parseInitializedPayload(payload: unknown): {
     session_id: optionalString(record, "session_id"),
     provider: optionalString(record, "provider"),
     model: optionalString(record, "model"),
+    thinking_effort: optionalString(record, "thinking_effort"),
     input_tokens: optionalNumber(record, "input_tokens"),
     output_tokens: optionalNumber(record, "output_tokens"),
     context_window: optionalNumber(record, "context_window"),
@@ -108,6 +110,12 @@ export function parseModePayload(payload: unknown): { mode?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return { mode: optionalString(record, "mode") };
+}
+
+export function parseEffortPayload(payload: unknown): { thinking_effort?: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return { thinking_effort: optionalString(record, "thinking_effort") };
 }
 
 export function parseFeatureUpdatedPayload(

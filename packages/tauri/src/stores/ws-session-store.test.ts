@@ -535,6 +535,31 @@ describe("ws-session-store", () => {
     expect(usage?.contextWindow).toBe(1_000_000);
   });
 
+  it("clears optimistic thinking effort when initialized payload omits it", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+
+    store.initSession("s1", {
+      cwd: "/tmp/worktree",
+      featureId: 1,
+      provider: "opencode",
+      model: "openai/gpt-5.4",
+      thinkingEffort: "high",
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].currentThinkingEffort).toBe("high");
+
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "opencode", model: "openai/gpt-5.4" },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].currentThinkingEffort).toBeUndefined();
+  });
+
   it("sets hasFileChanges when Write tool_call block is received", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

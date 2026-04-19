@@ -306,6 +306,7 @@ export const AgentPromptBar = forwardRef<
   return (
     <div
       ref={wrapperRef}
+      data-agent-prompt-bar="true"
       className={cn(
         "flex flex-col px-3 pb-4",
         noTopPadding ? "pt-0" : "pt-3",

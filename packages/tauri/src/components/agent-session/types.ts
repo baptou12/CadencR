@@ -81,6 +81,10 @@ export interface AgentSessionProps {
   onProviderChange?: (providerId: string) => void;
   /** Called when the user changes the model via the inline switcher */
   onModelChange?: (modelId: string) => void;
+  /** Current thinking effort override for this live session */
+  currentThinkingEffort?: string;
+  /** Called when the user changes live thinking effort */
+  onThinkingEffortChange?: (thinkingEffort?: string) => void;
   /** Feature ID for file mention and slash command support in the prompt bar */
   featureId?: number;
   /** Project ID for slash command support and prompt history in the prompt bar */

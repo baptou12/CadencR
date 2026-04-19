@@ -23,6 +23,7 @@ import { AGENT_LABELS, STATUS_BADGE } from "./constants";
 import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
+import { useAgentSessionModelState } from "./useAgentSessionModelState";
 import { MetaBar } from "./MetaBar";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 
@@ -41,7 +42,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     todos, permissionMode, onPermissionModeToggle,
     pendingPlanApproval, planApproveLabel, planApprovalError,
     onPlanApprove, onPlanRequestChanges, onPlanReject,
-    contextUsage, currentProviderId, onProviderChange, currentModelId, onModelChange,
+    contextUsage, currentProviderId, onProviderChange, currentModelId, onModelChange, currentThinkingEffort, onThinkingEffortChange,
     featureId, projectId, sessionId, wsSessionId, initialDraft,
     pendingPermission, onPermissionDecision,
     onMarkDone, maximized, onToggleMaximize,
@@ -121,55 +122,24 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
   })();
 
   const showDiffBar = !!(hasFileChanges && onViewDiff);
-  const providerOptions = useMemo(
-    () => (agentCatalog.data?.providers ?? [])
-      .map((provider) => ({
-        id: provider.id,
-        label: provider.label,
-        disabled: provider.status !== "available",
-        models: provider.models.map((model) => ({ id: model.id, label: model.label, description: model.description })),
-      })),
-    [agentCatalog.data],
-  );
-  const allModels = useMemo(
-    () => providerOptions.flatMap((provider) => provider.models.map((model) => ({ ...model, providerId: provider.id }))),
-    [providerOptions],
-  );
-  const modelProviderId = useMemo(
-    () => allModels.find((model) => model.id === currentModelId)?.providerId,
-    [allModels, currentModelId],
-  );
-  const providerSupportsModel = useCallback((providerId?: string) => {
-    if (!providerId || !currentModelId) return false;
-    const provider = providerOptions.find((entry) => entry.id === providerId);
-    if (!provider) return false;
-    return provider.models.some((model) => model.id === currentModelId);
-  }, [currentModelId, providerOptions]);
-  const activeProviderId = useMemo(() => {
-    const preferredCurrentProvider = currentProviderId && (!currentModelId || providerSupportsModel(currentProviderId))
-      ? currentProviderId
-      : undefined;
-    if (preferredCurrentProvider) return preferredCurrentProvider;
-
-    const preferredRuntimeProvider = runtimeProvider && (!currentModelId || providerSupportsModel(runtimeProvider))
-      ? runtimeProvider
-      : undefined;
-    if (preferredRuntimeProvider) return preferredRuntimeProvider;
-
-    return modelProviderId ?? runtimeProvider ?? currentProviderId ?? DEFAULT_PROVIDER;
-  }, [currentProviderId, currentModelId, modelProviderId, providerSupportsModel, runtimeProvider]);
-  const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
-  const visibleModels = activeProvider?.models ?? [];
-  const currentModelLabel =
-    allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)?.label ??
-    visibleModels.find((m) => m.id === currentModelId)?.label ??
-    currentModelId ?? "Model";
-  const canChangeProvider = !!onProviderChange && status === "idle" && blocks.length === 0;
+  const {
+    providerOptions,
+    activeProviderId,
+    visibleModels,
+    currentModelLabel,
+    canChangeProvider,
+    selectableProviders,
+    supportedThinkingEfforts,
+  } = useAgentSessionModelState({
+    agentCatalog: agentCatalog.data,
+    currentProviderId,
+    currentModelId,
+    runtimeProvider,
+    onProviderChange,
+    blocksLength: blocks.length,
+    status,
+  });
   const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
-  const selectableProviders = useMemo(
-    () => providerOptions.filter((provider) => !provider.disabled && provider.models.length > 0),
-    [providerOptions],
-  );
 
   const handleCycleModel = useCallback(() => {
     if (!onModelChange) return;
@@ -223,6 +193,9 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       onProviderChange={onProviderChange}
       currentProviderId={activeProviderId}
       onModelChange={onModelChange}
+      currentThinkingEffort={currentThinkingEffort}
+      supportedThinkingEfforts={supportedThinkingEfforts}
+      onThinkingEffortChange={onThinkingEffortChange}
       currentModelId={currentModelId}
       currentModelLabel={currentModelLabel}
       models={visibleModels}

@@ -47,6 +47,7 @@ export interface SessionEntry {
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
+  currentThinkingEffort?: string;
   pendingPlanApproval: PendingPlanApproval | null;
   currentProviderId: string;
   currentModelId: string;
@@ -86,6 +87,7 @@ export function createSessionEntry(): SessionEntry {
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: "acceptEdits",
+    currentThinkingEffort: undefined,
     pendingPlanApproval: null,
     currentProviderId: DEFAULT_PROVIDER,
     currentModelId: FALLBACK_MODEL_ID,
@@ -134,6 +136,7 @@ export interface WsSessionStore {
   deleteSession: (sessionId: string) => void;
   setProvider: (sessionId: string, providerId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
+  setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
@@ -158,6 +161,7 @@ export interface WsSessionStore {
     pendingPlanApproval?: PendingPlanApproval | null;
     contextUsage?: ContextUsageState | null;
     hasFileChanges?: boolean;
+    currentThinkingEffort?: string;
   }) => void;
   loadOlderMessages: (sessionId: string) => Promise<void>;
 }

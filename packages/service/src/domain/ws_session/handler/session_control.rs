@@ -12,7 +12,7 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSpawnConfig,
+    RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSessionHandle, RuntimeSpawnConfig,
 };
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
@@ -596,6 +596,95 @@ pub(super) async fn handle_mode_set(
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
+/// Handle session.effort.set: change the thinking effort for subsequent turns.
+pub(super) async fn handle_effort_set(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    _app_state: &AppState,
+) {
+    let payload: EffortSetPayload = match serde_json::from_value(envelope.payload.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+            return;
+        }
+    };
+
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(
+                sender,
+                &envelope.id,
+                "INVALID_SESSION_ID",
+                "Invalid session_id",
+            );
+            return;
+        }
+    };
+
+    let active_query: Option<RuntimeSessionHandle> = {
+        let mut sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get_mut(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
+                );
+                return;
+            }
+        };
+
+        info!(
+            db_session_id,
+            thinking_effort = ?payload.thinking_effort,
+            "updating desired thinking effort"
+        );
+        handle.desired_thinking_effort = payload.thinking_effort.clone();
+        handle.config.thinking_effort = payload.thinking_effort.clone();
+
+        match &mut handle.state {
+            QueryState::Pending(options) => {
+                options.thinking_effort = payload.thinking_effort.clone();
+                None
+            }
+            QueryState::Active { query, .. } => Some(query.clone()),
+        }
+    };
+
+    if let Some(query) = active_query {
+        let q = query.lock().await;
+        let applies_in_place = q.applies_thinking_effort_in_place();
+        if let Err(error) = q.set_thinking_effort(payload.thinking_effort.clone()).await {
+            error!(db_session_id, %error, "failed to set thinking effort on active query");
+            send_error(sender, &envelope.id, "SDK_ERROR", &error.to_string());
+            return;
+        }
+
+        if applies_in_place {
+            let mut sessions = sdk_sessions.lock().await;
+            if let Some(handle) = sessions.get_mut(&db_session_id) {
+                handle.spawned_thinking_effort = payload.thinking_effort.clone();
+            }
+        }
+    }
+
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "effort.set.ok",
+        serde_json::to_value(serde_json::json!({
+            "thinking_effort": payload.thinking_effort,
+        }))
+        .unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
 /// Handle session.interrupt
 pub(super) async fn handle_interrupt(
     envelope: WsEnvelope,
@@ -879,6 +968,7 @@ pub(super) async fn handle_clear(
         cwd: handle.config.cwd.clone(),
         permission_mode: handle.desired_permission_mode.clone(),
         model: handle.desired_model.clone(),
+        thinking_effort: handle.desired_thinking_effort.clone(),
         system_prompt: handle.config.system_prompt.clone(),
         env: handle.config.env.clone(),
         ..RuntimeSpawnConfig::default()

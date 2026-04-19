@@ -251,11 +251,19 @@ async fn build_spawn_config(
     } else {
         None
     };
+    let thinking_effort = crate::domain::workspace::repository::get_setting(
+        pool,
+        "thinking_effort_auto_name",
+    )
+    .await
+    .ok()
+    .flatten();
 
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
         permission_mode: Some(RuntimePermissionMode::AcceptEdits),
         model: Some(model_id.to_string()),
+        thinking_effort,
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),
         resume_session_id: None,
         mcp_servers: None,

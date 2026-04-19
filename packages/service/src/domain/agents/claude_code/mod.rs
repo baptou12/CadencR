@@ -274,6 +274,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             cwd: config.cwd,
             permission_mode: config.permission_mode.map(map_permission_mode),
             model: config.model,
+            effort: config.thinking_effort,
             system_prompt: config.system_prompt,
             resume: config.resume_session_id,
             mcp_servers: config.mcp_servers.map(|servers| {
