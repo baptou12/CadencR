@@ -104,6 +104,8 @@ export function FeatureWorkflowView({
     handleModelChange: handleModelChangeForAgent,
     resolveProvider: resolveProviderForAgent,
     handleProviderChange: handleProviderChangeForAgent,
+    resolveThinkingEffort: resolveThinkingEffortForAgent,
+    handleThinkingEffortChange: handleThinkingEffortChangeForAgent,
   } = useResolvedModel(featureId, projectId);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
@@ -243,6 +245,8 @@ export function FeatureWorkflowView({
             {view === "plan-input" && (
               <div className="flex-1 flex items-center justify-center overflow-auto p-6">
                 <PlanInputView
+                  featureId={featureId}
+                  projectId={projectId}
                   onStartPlanning={(text, images) => {
                     descriptionRef.current = text;
                     setDescription(text);
@@ -288,6 +292,8 @@ export function FeatureWorkflowView({
                   resolveProvider={resolveProviderForAgent}
                   handleModelChange={handleModelChangeForAgent}
                   handleProviderChange={handleProviderChangeForAgent}
+                  resolveThinkingEffort={resolveThinkingEffortForAgent}
+                  handleThinkingEffortChange={handleThinkingEffortChangeForAgent}
                   handleDeleteAgent={handleDeleteAgent}
                   onViewDiff={handleViewDiffForAgent}
                   slashCommands={slashCommands}

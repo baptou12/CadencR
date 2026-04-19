@@ -73,4 +73,35 @@ describe("NextStepsBar", () => {
     render(<NextStepsBar {...defaultProps} executeStatus="error" />);
     expect(screen.getByRole("button", { name: /retry build/i })).toBeInTheDocument();
   });
+
+  it("renders model picker above the session prompt when opened", async () => {
+    const { user } = render(
+      <NextStepsBar
+        {...defaultProps}
+        canStartBuild={false}
+        canStartWorkflowSession={true}
+        onStartWorkflowSession={vi.fn()}
+        featureId={1}
+        projectId={1}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /start session/i }));
+    expect(screen.getAllByRole("button", { name: /opus/i }).length).toBeGreaterThan(0);
+  });
+
+  it("renders model picker above the refine prompt when opened", async () => {
+    const { user } = render(
+      <NextStepsBar
+        {...defaultProps}
+        show={false}
+        canStartBuild={false}
+        canStartRefine={true}
+        onStartRefinePlan={vi.fn()}
+        featureId={1}
+        projectId={1}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /^refine$/i }));
+    expect(screen.getAllByRole("button", { name: /opus/i }).length).toBeGreaterThan(0);
+  });
 });

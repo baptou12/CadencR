@@ -6,8 +6,8 @@ import type { AgentStatus } from "@/types/agent";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
-import { AgentPromptBar } from "@/components/AgentPromptBar";
 import type { SplitSendAction, AgentPromptBarHandle } from "@/components/AgentPromptBar";
+import { PromptWithModelPicker } from "@/components/PromptWithModelPicker";
 
 interface NextStepsBarProps {
   show: boolean;
@@ -308,29 +308,25 @@ export function NextStepsBar({
         </div>
       )}
 
-      {showRefinePrompt && canStartRefine && (
-        <div className="w-full rounded-lg border border-border/50">
-          <AgentPromptBar
-            onSend={() => {}}
-            onStop={() => {}}
-            status="idle"
-            disabled={isRefineDisabled}
-            splitSendActions={refineSplitActions}
-          />
-        </div>
+      {showRefinePrompt && canStartRefine && featureId != null && projectId != null && (
+        <PromptWithModelPicker
+          featureId={featureId}
+          projectId={projectId}
+          agentType="plan"
+          disabled={isRefineDisabled}
+          splitSendActions={refineSplitActions}
+        />
       )}
 
-      {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && (
-        <div className="w-full rounded-lg border border-border/50">
-          <AgentPromptBar
-            ref={sessionPromptRef}
-            onSend={() => {}}
-            onStop={() => {}}
-            status="idle"
-            disabled={isStartingWorkflowSession}
-            splitSendActions={sessionSplitActions}
-          />
-        </div>
+      {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && featureId != null && projectId != null && (
+        <PromptWithModelPicker
+          featureId={featureId}
+          projectId={projectId}
+          agentType="session"
+          disabled={isStartingWorkflowSession}
+          splitSendActions={sessionSplitActions}
+          promptBarRef={sessionPromptRef}
+        />
       )}
 
       {canMerge && (

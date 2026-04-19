@@ -50,9 +50,9 @@ export interface MetaBarProps {
   onProviderChange?: (providerId: string) => void;
   currentProviderId?: string;
   onModelChange?: (modelId: string) => void;
-  currentThinkingEffort?: string;
+  currentThinkingEffort?: ThinkingEffortLevel;
   supportedThinkingEfforts?: ThinkingEffortLevel[];
-  onThinkingEffortChange?: (thinkingEffort?: string) => void;
+  onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
   currentModelId?: string;
   currentModelLabel: string;
   models: Model[];
@@ -63,6 +63,13 @@ export interface MetaBarProps {
   todos?: TodoItem[] | null;
   runtimeProvider?: string;
   runtimeSessionId?: string;
+  /**
+   * Layout variant. `"session"` (default) fades into the agent stream above
+   * via a negative margin + background gradient. `"standalone"` drops that
+   * styling so the bar can sit on its own inside a bordered container (used
+   * for pre-agent kickoff prompts in PlanInputView / NextStepsBar).
+   */
+  variant?: "session" | "standalone";
 }
 
 const CHIP =
@@ -97,11 +104,13 @@ export function MetaBar({
   todos,
   runtimeProvider,
   runtimeSessionId,
+  variant = "session",
 }: MetaBarProps) {
   const displayProviderId = currentProviderId ?? runtimeProvider;
-  const selectedThinkingEffort = supportedThinkingEfforts.includes(currentThinkingEffort as ThinkingEffortLevel)
-    ? (currentThinkingEffort as ThinkingEffortLevel)
-    : undefined;
+  const selectedThinkingEffort =
+    currentThinkingEffort && supportedThinkingEfforts.includes(currentThinkingEffort)
+      ? currentThinkingEffort
+      : undefined;
   const displayedThinkingEffort = selectedThinkingEffort ?? supportedThinkingEfforts[0];
 
   const handleThinkingEffortCycle = (): void => {
@@ -109,13 +118,24 @@ export function MetaBar({
     onThinkingEffortChange(nextThinkingEffort(supportedThinkingEfforts, currentThinkingEffort));
   };
 
+  const isStandalone = variant === "standalone";
+
   return (
     <div
-      className="relative -mt-6 flex items-center gap-1.5 px-3 py-3 backdrop-blur-sm"
-      style={{
-        background:
-          "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)",
-      }}
+      className={cn(
+        "flex items-center gap-1.5",
+        isStandalone
+          ? "px-3 py-2"
+          : "relative -mt-6 px-3 py-3 backdrop-blur-sm",
+      )}
+      style={
+        isStandalone
+          ? undefined
+          : {
+              background:
+                "linear-gradient(to bottom, transparent 0%, hsl(var(--background) / 0.05) 10%, hsl(var(--background) / 0.12) 20%, hsl(var(--background) / 0.25) 35%, hsl(var(--background) / 0.45) 50%, hsl(var(--background) / 0.65) 65%, hsl(var(--background) / 0.82) 80%, hsl(var(--background) / 0.93) 90%, hsl(var(--background)) 100%)",
+            }
+      }
     >
       {showAutoScrollChip && (
         <button

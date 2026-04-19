@@ -9,7 +9,6 @@
 - [ ] [sidebar] show the diff numstats in the sidebar
 - [ ] [desktop] all running agents view
 - [ ] [agent] handle background agents
-- [~] [thinking] Implement the thinking effort selector
 - [ ] [feature] Merging strategies
 - [ ] [agent] improve sub-agents to use the existing agent UI in ws-workflow + capture agent description + get more informations from the CLI (whole output) + agent done
 - [ ] [global] Rework command palette

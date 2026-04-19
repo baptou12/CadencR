@@ -9,6 +9,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef, memo } from "react";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { DEFAULT_PROVIDER } from "@/shared/models";
+import { parseThinkingEffort } from "@/shared/thinking-effort";
 import { LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
 import { cn, capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
@@ -193,7 +194,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       onProviderChange={onProviderChange}
       currentProviderId={activeProviderId}
       onModelChange={onModelChange}
-      currentThinkingEffort={currentThinkingEffort}
+      currentThinkingEffort={parseThinkingEffort(currentThinkingEffort)}
       supportedThinkingEfforts={supportedThinkingEfforts}
       onThinkingEffortChange={onThinkingEffortChange}
       currentModelId={currentModelId}

@@ -4,6 +4,7 @@ import type { ContextUsageState } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 import { capitalize, cn } from "@/lib/utils";
+import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 
 interface WorkflowAgentGridProps {
   backend: WorkflowBackend;
@@ -20,6 +21,8 @@ interface WorkflowAgentGridProps {
   resolveProvider: (agentType: AgentType) => string;
   handleModelChange: (agentType: AgentType, modelId: string) => void;
   handleProviderChange: (agentType: AgentType, providerId: string) => void;
+  resolveThinkingEffort: (agentType: AgentType) => ThinkingEffortLevel | undefined;
+  handleThinkingEffortChange: (agentType: AgentType, effort?: ThinkingEffortLevel) => void;
   handleDeleteAgent: (entry: FeatureSession) => void;
   onViewDiff: () => void;
   slashCommands: { name: string; description: string }[];
@@ -41,6 +44,8 @@ export function WorkflowAgentGrid({
   resolveProvider,
   handleModelChange,
   handleProviderChange,
+  resolveThinkingEffort,
+  handleThinkingEffortChange,
   handleDeleteAgent,
   onViewDiff,
   slashCommands,
@@ -96,6 +101,8 @@ export function WorkflowAgentGrid({
         onProviderChange={(providerId) => handleProviderChange(entry.agentType, providerId)}
         currentModelId={resolveModel(entry.agentType)}
         onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
+        currentThinkingEffort={resolveThinkingEffort(entry.agentType)}
+        onThinkingEffortChange={(effort) => handleThinkingEffortChange(entry.agentType, effort)}
         canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
         onDelete={() => handleDeleteAgent(entry)}
         contextUsage={contextUsageMap.get(entry.sessionDbId)}

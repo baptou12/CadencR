@@ -1,7 +1,7 @@
 import { Loader2Icon } from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
-import { AgentPromptBar } from "@/components/AgentPromptBar";
 import type { SplitSendAction } from "@/components/AgentPromptBar";
+import { PromptWithModelPicker } from "@/components/PromptWithModelPicker";
 import { useMemo } from "react";
 
 interface PlanInputImage {
@@ -10,6 +10,8 @@ interface PlanInputImage {
 }
 
 interface PlanInputViewProps {
+  featureId: number;
+  projectId: number;
   onStartPlanning: (description: string, images: PlanInputImage[]) => void;
   onStartPrd: (description: string, images: PlanInputImage[]) => void;
   isStartingPlan: boolean;
@@ -17,13 +19,13 @@ interface PlanInputViewProps {
 }
 
 export function PlanInputView({
+  featureId,
+  projectId,
   onStartPlanning,
   onStartPrd,
   isStartingPlan,
   isStartingPrd,
 }: PlanInputViewProps) {
-  const isDisabled = isStartingPlan || isStartingPrd;
-
   const splitSendActions: SplitSendAction[] = useMemo(
     () => [
       {
@@ -65,15 +67,14 @@ export function PlanInputView({
           implementation plan.
         </p>
       </div>
-      <div className="w-full rounded-lg border border-border/50">
-        <AgentPromptBar
-          onSend={() => {}}
-          onStop={() => {}}
-          status="idle"
-          disabled={isDisabled}
-          splitSendActions={splitSendActions}
-        />
-      </div>
+      <PromptWithModelPicker
+        featureId={featureId}
+        projectId={projectId}
+        agentType="plan"
+        secondaryAgentType="prd"
+        disabled={isStartingPlan || isStartingPrd}
+        splitSendActions={splitSendActions}
+      />
     </div>
   );
 }

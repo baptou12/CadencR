@@ -3,6 +3,8 @@ import { render, screen } from "@/test-utils";
 import { PlanInputView } from "./PlanInputView";
 
 const defaultProps = {
+  featureId: 1,
+  projectId: 1,
   onStartPlanning: vi.fn(),
   onStartPrd: vi.fn(),
   isStartingPlan: false,
@@ -30,5 +32,10 @@ describe("PlanInputView", () => {
   it("renders PRD button", () => {
     render(<PlanInputView {...defaultProps} />);
     expect(screen.getByRole("button", { name: /prd/i })).toBeInTheDocument();
+  });
+
+  it("renders a model picker chip above the prompt", () => {
+    render(<PlanInputView {...defaultProps} />);
+    expect(screen.getByRole("button", { name: /opus/i })).toBeInTheDocument();
   });
 });

@@ -7,6 +7,7 @@ import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "../ToolPermissionPrompt";
 import type { AgentStatus } from "@/types/agent";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
+import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 
 export interface AgentSessionProps {
   /** The type of agent being displayed */
@@ -81,10 +82,10 @@ export interface AgentSessionProps {
   onProviderChange?: (providerId: string) => void;
   /** Called when the user changes the model via the inline switcher */
   onModelChange?: (modelId: string) => void;
-  /** Current thinking effort override for this live session */
+  /** Current thinking effort override for this live session (unvalidated from the store). */
   currentThinkingEffort?: string;
   /** Called when the user changes live thinking effort */
-  onThinkingEffortChange?: (thinkingEffort?: string) => void;
+  onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
   /** Feature ID for file mention and slash command support in the prompt bar */
   featureId?: number;
   /** Project ID for slash command support and prompt history in the prompt bar */
