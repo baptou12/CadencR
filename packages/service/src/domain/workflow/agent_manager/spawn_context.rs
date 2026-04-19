@@ -232,6 +232,15 @@ impl AgentManager {
         let selection = self
             .resolve_runtime_selection(agent_type_str, project_id)
             .await;
+        let thinking_effort_key = format!("thinking_effort_{agent_type_str}");
+        let thinking_effort = crate::domain::settings::resolve_setting(
+            &self.read_pool,
+            &thinking_effort_key,
+            Some(self.feature_id),
+            project_id,
+            None,
+        )
+        .await;
 
         // Model — prefer explicit override (e.g. from workflow phase definition)
         let model = match model_override.filter(|s| !s.is_empty()) {
@@ -323,6 +332,7 @@ impl AgentManager {
             cwd: cwd.clone(),
             permission_mode: Some(RuntimePermissionMode::AcceptEdits),
             model: Some(model.clone()),
+            thinking_effort,
             system_prompt: full_system_prompt,
             resume_session_id: resume_session_id.map(|s| s.to_string()),
             mcp_servers: Some(mcp_servers.clone()),

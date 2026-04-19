@@ -47,6 +47,7 @@ pub(super) struct SessionConfig {
     /// Pre-canonicalized worktree path for permission checks (avoids repeated syscalls).
     pub(super) canonical_cwd: PathBuf,
     pub(super) permission_mode: Option<RuntimePermissionMode>,
+    pub(super) thinking_effort: Option<String>,
     pub(super) system_prompt: Option<String>,
     /// Extra env vars to inject when respawning the CLI (e.g. an active
     /// Claude Code profile). Carried through resume transitions so the
@@ -71,6 +72,10 @@ pub struct SdkHandle {
     pub(super) desired_permission_mode: Option<RuntimePermissionMode>,
     /// The permission mode the CLI was actually spawned with.
     pub(super) spawned_permission_mode: Option<RuntimePermissionMode>,
+    /// Thinking effort to apply on the next turn when supported by the model.
+    pub(super) desired_thinking_effort: Option<String>,
+    /// Thinking effort the runtime was last spawned with.
+    pub(super) spawned_thinking_effort: Option<String>,
     /// Session-level cache of approved permission patterns.
     pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
@@ -304,6 +309,9 @@ async fn handle_session_action(
         "mode.set" => {
             session_control::handle_mode_set(envelope, sender, sdk_sessions, app_state).await
         }
+        "effort.set" => {
+            session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
+        }
         "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
         "destroy" => {
             session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await
@@ -336,9 +344,70 @@ async fn handle_session_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
+    use crate::domain::agents::adapter::{
+        AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMessageRx,
+        RuntimePermissionMode,
+    };
     use crate::domain::agents::claude_code::ClaudeCodeSession;
     use claude_agent_sdk_rs::{Query, SdkError};
+    use serde_json::Value;
+
+    struct InPlaceEffortSession {
+        message_rx: Option<RuntimeMessageRx>,
+    }
+
+    impl InPlaceEffortSession {
+        fn new() -> Self {
+            let (_tx, rx) = mpsc::channel(1);
+            Self {
+                message_rx: Some(rx),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AgentRuntimeSession for InPlaceEffortSession {
+        fn take_message_rx(&mut self) -> RuntimeMessageRx {
+            self.message_rx.take().unwrap()
+        }
+
+        async fn session_id(&self) -> Option<String> {
+            Some("runtime-session".to_string())
+        }
+
+        async fn stream_input(&self, _content: Value) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn interrupt(&self) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) {}
+
+        async fn set_model(&self, _model: &str) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn set_permission_mode(
+            &self,
+            _mode: RuntimePermissionMode,
+        ) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        fn applies_thinking_effort_in_place(&self) -> bool {
+            true
+        }
+
+        async fn set_thinking_effort(&self, _effort: Option<String>) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+    }
 
     fn make_envelope(domain: &str, action: &str, payload: serde_json::Value) -> WsEnvelope {
         WsEnvelope::new(domain, action, payload)
@@ -442,6 +511,7 @@ mod tests {
             SessionInitPayload {
                 provider: None,
                 model: None,
+                thinking_effort: None,
                 permission_mode: None,
                 system_prompt: None,
                 cwd: Some("/tmp/test".to_string()),
@@ -1038,6 +1108,7 @@ mod tests {
             SessionInitPayload {
                 provider: Some("opencode".to_string()),
                 model: None,
+                thinking_effort: None,
                 permission_mode: None,
                 system_prompt: Some("Base prompt".to_string()),
                 cwd: Some("/tmp/test".to_string()),
@@ -1230,6 +1301,49 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn test_effort_set_updates_spawned_effort_for_in_place_runtime() {
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let feature_id = 1i64;
+
+        let db_id = sqlx::query("INSERT INTO agent_sessions (feature_id, agent_type, status, model, runtime_provider) VALUES (?, 'session', 'idle', 'openai/gpt-5.4', 'opencode')")
+            .bind(feature_id)
+            .execute(&app_state.write_pool)
+            .await
+            .unwrap()
+            .last_insert_rowid();
+
+        {
+            let mut sessions = sdk_sessions.lock().await;
+            sessions.insert(db_id, make_in_place_effort_handle(feature_id));
+        }
+
+        let envelope = make_envelope(
+            "session",
+            "effort.set",
+            serde_json::json!({
+                "session_id": db_id.to_string(),
+                "thinking_effort": "high",
+            }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "effort.set.ok");
+        } else {
+            panic!("expected text message");
+        }
+
+        let sessions = sdk_sessions.lock().await;
+        let handle = sessions.get(&db_id).unwrap();
+        assert_eq!(handle.desired_thinking_effort.as_deref(), Some("high"));
+        assert_eq!(handle.spawned_thinking_effort.as_deref(), Some("high"));
+    }
+
     /// Helper: insert an SdkHandle with QueryState::Active using a test stub Query.
     fn make_active_handle(feature_id: i64, session_id: Option<String>) -> SdkHandle {
         let query = Query::new_test_stub(session_id);
@@ -1246,6 +1360,8 @@ mod tests {
             spawned_model: Some("sonnet".to_string()),
             desired_permission_mode: None,
             spawned_permission_mode: None,
+            desired_thinking_effort: None,
+            spawned_thinking_effort: None,
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1253,6 +1369,37 @@ mod tests {
                 cwd: PathBuf::from("/tmp/test"),
                 canonical_cwd: PathBuf::from("/tmp/test"),
                 permission_mode: None,
+                thinking_effort: None,
+                system_prompt: None,
+                env: None,
+            },
+        }
+    }
+
+    fn make_in_place_effort_handle(feature_id: i64) -> SdkHandle {
+        let (permission_tx, _permission_rx) =
+            mpsc::channel::<session_prompt::PermissionResponse>(1);
+        SdkHandle {
+            state: QueryState::Active {
+                query: Arc::new(Mutex::new(Box::new(InPlaceEffortSession::new()))),
+                permission_tx,
+            },
+            feature_id,
+            runtime_provider: "opencode".to_string(),
+            desired_model: Some("openai/gpt-5.4".to_string()),
+            spawned_model: Some("openai/gpt-5.4".to_string()),
+            desired_permission_mode: None,
+            spawned_permission_mode: None,
+            desired_thinking_effort: None,
+            spawned_thinking_effort: None,
+            session_cache: Arc::new(Mutex::new(HashSet::new())),
+            allowed_patterns: Arc::new(HashSet::new()),
+            resume_session_id: None,
+            config: SessionConfig {
+                cwd: PathBuf::from("/tmp/test"),
+                canonical_cwd: PathBuf::from("/tmp/test"),
+                permission_mode: None,
+                thinking_effort: None,
                 system_prompt: None,
                 env: None,
             },

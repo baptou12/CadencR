@@ -28,6 +28,7 @@ pub(super) struct OpenCodeSession {
     pub(super) session_id: String,
     pub(super) current_agent: Arc<RwLock<String>>,
     pub(super) current_model: Arc<RwLock<Option<opencode_sdk_rs::ModelRef>>>,
+    pub(super) current_effort: Arc<RwLock<Option<String>>>,
     pub(super) directory: String,
     pub(super) system_prompt: Option<String>,
     pub(super) event_rx: Option<mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>>,
@@ -48,6 +49,7 @@ impl OpenCodeSession {
         session_id: String,
         current_agent: String,
         current_model: Option<opencode_sdk_rs::ModelRef>,
+        current_effort: Option<String>,
         directory: String,
         system_prompt: Option<String>,
         event_rx: mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>,
@@ -61,6 +63,7 @@ impl OpenCodeSession {
             session_id,
             current_agent: Arc::new(RwLock::new(current_agent)),
             current_model: Arc::new(RwLock::new(current_model)),
+            current_effort: Arc::new(RwLock::new(current_effort)),
             directory,
             system_prompt,
             event_rx: Some(event_rx),
@@ -86,8 +89,12 @@ impl OpenCodeSession {
         &self,
         parts: Vec<opencode_sdk_rs::PromptPart>,
     ) -> Result<(), RuntimeError> {
+        let effort = self.current_effort.read().await.clone();
         let options = opencode_sdk_rs::PromptOptions {
-            model: self.current_model.read().await.clone(),
+            model: self.current_model.read().await.clone().map(|mut model| {
+                model.variant = effort;
+                model
+            }),
             agent: Some(self.current_agent.read().await.clone()),
             system: self.system_prompt.clone(),
         };
@@ -222,6 +229,15 @@ impl AgentRuntimeSession for OpenCodeSession {
 
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError> {
         *self.current_agent.write().await = permission_mode_agent(Some(mode)).to_string();
+        Ok(())
+    }
+
+    fn applies_thinking_effort_in_place(&self) -> bool {
+        true
+    }
+
+    async fn set_thinking_effort(&self, effort: Option<String>) -> Result<(), RuntimeError> {
+        *self.current_effort.write().await = effort;
         Ok(())
     }
 
@@ -376,6 +392,7 @@ mod tests {
             "ses_1".to_string(),
             "build".to_string(),
             None,
+            None,
             "/tmp/worktree".to_string(),
             None,
             event_rx,
@@ -435,6 +452,7 @@ mod tests {
             dispatcher,
             "ses_1".to_string(),
             "build".to_string(),
+            None,
             None,
             "/tmp/worktree".to_string(),
             None,

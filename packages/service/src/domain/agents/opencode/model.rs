@@ -9,11 +9,13 @@ pub fn parse_model_ref(raw: &str) -> Option<opencode_sdk_rs::ModelRef> {
         return Some(opencode_sdk_rs::ModelRef {
             provider_id: provider_id.to_string(),
             model_id: model_id.to_string(),
+            variant: None,
         });
     }
     Some(opencode_sdk_rs::ModelRef {
         provider_id: "default".to_string(),
         model_id: trimmed.to_string(),
+        variant: None,
     })
 }
 

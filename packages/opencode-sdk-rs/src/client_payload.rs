@@ -100,6 +100,7 @@ mod tests {
                 model: Some(crate::types::ModelRef {
                     provider_id: "openai".to_string(),
                     model_id: "gpt-5.3-codex".to_string(),
+                    variant: None,
                 }),
                 agent: Some("build".to_string()),
                 system: Some("system prompt".to_string()),

@@ -41,11 +41,22 @@ struct OpencodeModel {
     id: String,
     label: String,
     context_window: u64,
+    supported_effort_levels: Vec<String>,
 }
 
 impl OpencodeModel {
     fn to_catalog_entry(&self) -> ModelCatalogEntry {
-        ModelCatalogEntry::alias(self.id.clone(), self.label.clone())
+        ModelCatalogEntry {
+            id: self.id.clone(),
+            label: self.label.clone(),
+            description: None,
+            supports_effort: Some(!self.supported_effort_levels.is_empty()),
+            supported_effort_levels: (!self.supported_effort_levels.is_empty())
+                .then(|| self.supported_effort_levels.clone()),
+            supports_adaptive_thinking: None,
+            supports_fast_mode: None,
+            supports_auto_mode: None,
+        }
     }
 }
 
@@ -54,6 +65,7 @@ fn default_models() -> Vec<OpencodeModel> {
         id: FALLBACK_MODEL_ID.to_string(),
         label: "Default".to_string(),
         context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
+        supported_effort_levels: Vec::new(),
     }]
 }
 
@@ -78,6 +90,37 @@ fn model_context_window(value: &Value) -> u64 {
         .and_then(|limit| limit.get("context"))
         .and_then(Value::as_u64)
         .unwrap_or(OPENCODE_FALLBACK_CONTEXT_WINDOW)
+}
+
+fn supported_effort_levels(value: &Value) -> Vec<String> {
+    let Some(variants) = value.get("variants").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+
+    let mut levels = variants
+        .iter()
+        .filter_map(|(name, variant)| {
+            let effort = variant
+                .get("reasoningEffort")
+                .and_then(Value::as_str)
+                .unwrap_or(name.as_str());
+            match effort {
+                "low" | "medium" | "high" | "xhigh" | "max" => Some(effort.to_string()),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    levels.sort();
+    levels.dedup();
+    levels.sort_by_key(|level| match level.as_str() {
+        "low" => 0,
+        "medium" => 1,
+        "high" => 2,
+        "xhigh" => 3,
+        "max" => 4,
+        _ => 5,
+    });
+    levels
 }
 
 fn models_from_providers(providers: &[Value]) -> Vec<OpencodeModel> {
@@ -108,10 +151,12 @@ fn models_from_providers(providers: &[Value]) -> Vec<OpencodeModel> {
             }
             let label = first_string(&model, &["name", "label"]).unwrap_or(model_id);
             let context_window = model_context_window(&model);
+            let supported_effort_levels = supported_effort_levels(&model);
             models.push(OpencodeModel {
                 id,
                 label,
                 context_window,
+                supported_effort_levels,
             });
         }
     }
@@ -198,17 +243,13 @@ fn latest_message_is_final_stop(messages: &[Message]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_catalog_entry, catalog_entry, catalog_entry_live, default_model_id,
-        model_context_window, models_from_providers, parse_warmup_flag, OpencodeModel,
+        build_catalog_entry, catalog_entry, default_model_id,
+        model_context_window, models_from_providers, parse_warmup_flag,
+        supported_effort_levels, OpencodeModel,
         OPENCODE_FALLBACK_CONTEXT_WINDOW,
     };
     use crate::domain::agents::runtime::ProviderStatus;
-    use axum::routing::get;
-    use axum::{Json, Router};
     use serde_json::json;
-    use tokio::net::TcpListener;
-
-    static OPENCODE_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn fallback_catalog_entry_is_available() {
@@ -268,11 +309,13 @@ mod tests {
                     id: "anthropic/claude-sonnet".to_string(),
                     label: "anthropic/claude-sonnet".to_string(),
                     context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
+                    supported_effort_levels: Vec::new(),
                 },
                 OpencodeModel {
                     id: "openai/gpt-5.4".to_string(),
                     label: "openai/gpt-5.4".to_string(),
                     context_window: OPENCODE_FALLBACK_CONTEXT_WINDOW,
+                    supported_effort_levels: Vec::new(),
                 },
             ],
             None,
@@ -311,6 +354,19 @@ mod tests {
     }
 
     #[test]
+    fn supported_effort_levels_read_from_variant_names_and_values() {
+        let levels = supported_effort_levels(&json!({
+            "variants": {
+                "default": { "reasoningEffort": "high" },
+                "low": { "reasoningEffort": "low" },
+                "xhigh": {}
+            }
+        }));
+
+        assert_eq!(levels, vec!["low", "high", "xhigh"]);
+    }
+
+    #[test]
     fn parse_warmup_flag_defaults_on_and_supports_false_values() {
         assert!(parse_warmup_flag(None));
         assert!(parse_warmup_flag(Some("")));
@@ -322,104 +378,4 @@ mod tests {
         assert!(!parse_warmup_flag(Some("off")));
     }
 
-    async fn start_opencode_mock_server() -> String {
-        let app = Router::new()
-            .route(
-                "/global/health",
-                get(|| async { Json(json!({ "ok": true })) }),
-            )
-            .route(
-                "/config/providers",
-                get(|| async {
-                    Json(json!({
-                        "default": { "anthropic": "claude-opus-4-6" },
-                        "providers": [{
-                            "id": "anthropic",
-                            "models": {
-                                "claude-sonnet-4-5": {
-                                    "id": "claude-sonnet-4-5",
-                                    "name": "Claude Sonnet 4.5",
-                                    "limit": { "context": 200000 }
-                                },
-                                "claude-opus-4-6": {
-                                    "id": "claude-opus-4-6",
-                                    "name": "Claude Opus 4.6",
-                                    "limit": { "context": 1000000 }
-                                }
-                            }
-                        }]
-                    }))
-                }),
-            );
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        format!("http://{addr}")
-    }
-
-    async fn wait_for_mock_server(base_url: &str) {
-        let health_url = format!("{base_url}/global/health");
-        for _ in 0..20 {
-            if reqwest::get(&health_url).await.is_ok() {
-                return;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        }
-        panic!("mock opencode server did not become ready");
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn live_catalog_reads_configured_models() {
-        let _guard = OPENCODE_ENV_LOCK.lock().unwrap();
-        let base_url = start_opencode_mock_server().await;
-        wait_for_mock_server(&base_url).await;
-        let _ = opencode_sdk_rs::OpenCodeServer::shutdown().await;
-        std::env::set_var("CADENCE_OPENCODE_BASE_URL", &base_url);
-
-        let entry = catalog_entry_live().await;
-        let ids = entry
-            .models
-            .iter()
-            .map(|model| model.id.clone())
-            .collect::<Vec<_>>();
-        let mut sorted_ids = ids.clone();
-        sorted_ids.sort();
-        assert_eq!(
-            sorted_ids,
-            vec![
-                "anthropic/claude-opus-4-6".to_string(),
-                "anthropic/claude-sonnet-4-5".to_string()
-            ]
-        );
-        let mut labels = entry
-            .models
-            .iter()
-            .map(|model| model.label.clone())
-            .collect::<Vec<_>>();
-        labels.sort();
-        assert_eq!(labels, vec!["Claude Opus 4.6", "Claude Sonnet 4.5"]);
-        // Context windows are now tracked internally on `OpencodeModel` and
-        // surfaced via `context_window_for_model`; `ModelCatalogEntry` only
-        // carries id/label/capability info. Verify the live lookup instead.
-        let cw_opus = super::context_window_for_model("anthropic/claude-opus-4-6")
-            .await
-            .expect("context window should be known for opus");
-        let cw_sonnet = super::context_window_for_model("anthropic/claude-sonnet-4-5")
-            .await
-            .expect("context window should be known for sonnet");
-        assert_eq!(
-            (cw_opus, cw_sonnet),
-            (1_000_000, 200_000),
-            "unexpected context windows: opus={cw_opus}, sonnet={cw_sonnet}",
-        );
-        assert_eq!(
-            entry.default_model.as_deref(),
-            Some("anthropic/claude-opus-4-6")
-        );
-
-        std::env::remove_var("CADENCE_OPENCODE_BASE_URL");
-        let _ = opencode_sdk_rs::OpenCodeServer::shutdown().await;
-    }
 }

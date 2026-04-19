@@ -92,6 +92,7 @@ impl From<WsEnvelope> for String {
 pub struct SessionInitPayload {
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub thinking_effort: Option<String>,
     pub permission_mode: Option<String>,
     pub system_prompt: Option<String>,
     pub cwd: Option<String>,
@@ -146,6 +147,12 @@ pub struct ModeSetPayload {
     pub mode: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffortSetPayload {
+    pub session_id: String,
+    pub thinking_effort: Option<String>,
+}
+
 // --- Server → Client payloads ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +172,8 @@ pub struct SessionInitializedPayload {
     pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_effort: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -707,6 +716,7 @@ mod tests {
         let p = SessionInitPayload {
             provider: None,
             model: Some("opus".into()),
+            thinking_effort: None,
             permission_mode: None,
             system_prompt: None,
             cwd: Some("/tmp".into()),
@@ -741,6 +751,7 @@ mod tests {
             session_id: "s1".into(),
             provider: None,
             model: None,
+            thinking_effort: None,
             input_tokens: None,
             output_tokens: None,
             context_window: None,
