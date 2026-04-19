@@ -22,6 +22,8 @@ import {
 } from "../ui/dropdown-menu";
 import type { TodoItem } from "@/types/agent";
 import { ProviderIcon } from "@/lib/provider-icons";
+import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
+import { THINKING_EFFORT_LABELS, nextThinkingEffort, type ThinkingEffortLevel } from "@/shared/thinking-effort";
 
 interface Model {
   id: string;
@@ -48,6 +50,9 @@ export interface MetaBarProps {
   onProviderChange?: (providerId: string) => void;
   currentProviderId?: string;
   onModelChange?: (modelId: string) => void;
+  currentThinkingEffort?: string;
+  supportedThinkingEfforts?: ThinkingEffortLevel[];
+  onThinkingEffortChange?: (thinkingEffort?: string) => void;
   currentModelId?: string;
   currentModelLabel: string;
   models: Model[];
@@ -61,7 +66,11 @@ export interface MetaBarProps {
 }
 
 const CHIP =
-  "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors";
+  "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
+const MODEL_GROUP =
+  "inline-flex h-8 items-stretch rounded-md border border-violet-400/15 bg-violet-500/12 text-[11px] font-medium text-violet-300 shadow-sm";
+const MODEL_SEGMENT =
+  "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
 export function MetaBar({
   showAutoScrollChip,
@@ -75,6 +84,9 @@ export function MetaBar({
   onProviderChange,
   currentProviderId,
   onModelChange,
+  currentThinkingEffort,
+  supportedThinkingEfforts = [],
+  onThinkingEffortChange,
   currentModelId,
   currentModelLabel,
   models,
@@ -87,6 +99,15 @@ export function MetaBar({
   runtimeSessionId,
 }: MetaBarProps) {
   const displayProviderId = currentProviderId ?? runtimeProvider;
+  const selectedThinkingEffort = supportedThinkingEfforts.includes(currentThinkingEffort as ThinkingEffortLevel)
+    ? (currentThinkingEffort as ThinkingEffortLevel)
+    : undefined;
+  const displayedThinkingEffort = selectedThinkingEffort ?? supportedThinkingEfforts[0];
+
+  const handleThinkingEffortCycle = (): void => {
+    if (!supportedThinkingEfforts.length || !onThinkingEffortChange) return;
+    onThinkingEffortChange(nextThinkingEffort(supportedThinkingEfforts, currentThinkingEffort));
+  };
 
   return (
     <div
@@ -154,82 +175,109 @@ export function MetaBar({
 
       {/* Model chip */}
       {onModelChange && (
-        <DropdownMenu>
-          <ShortcutTooltip label="Switch provider or model" keys={["cmd", "P"]}>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className={cn(CHIP, "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25")}
-              >
-                <ProviderIcon providerId={displayProviderId} alt={currentModelLabel} className="size-3.5 rounded-sm" />
-                {currentModelLabel}
-                <ChevronDownIcon className="size-3" />
-              </button>
-            </DropdownMenuTrigger>
-          </ShortcutTooltip>
-          <DropdownMenuContent align="start" className="min-w-[220px]">
-            <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
-            {providers.map((provider) => (
-              <DropdownMenuSub key={provider.id}>
-                <DropdownMenuSubTrigger
-                  className="text-xs data-[disabled]:text-muted-foreground"
-                  disabled={provider.disabled}
+        <div className={MODEL_GROUP}>
+          <DropdownMenu>
+            <ShortcutTooltip label="Switch provider or model" keys={["cmd", "P"]}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-violet-500/16")}
                 >
-                  <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                  <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
-                  {provider.id === currentProviderId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="min-w-[220px]">
-                  {provider.disabled ? (
-                    <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                      Coming soon
-                    </DropdownMenuItem>
-                  ) : null}
-                  {!provider.disabled && provider.models.map((m) => (
-                    <DropdownMenuItem
-                      key={m.id}
-                      onClick={() => {
-                        if (canChangeProvider && onProviderChange && provider.id !== currentProviderId) {
-                          onProviderChange(provider.id);
-                        }
-                        onModelChange(m.id);
-                      }}
-                      className="flex items-start justify-between gap-2 text-xs"
-                      title={m.description}
-                    >
-                      <span className="flex items-start gap-2 min-w-0">
-                        <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                        <span className="flex min-w-0 flex-col gap-0.5">
-                          <span className="truncate">{m.label}</span>
-                          {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                  <ProviderIcon providerId={displayProviderId} alt={currentModelLabel} className="size-3.5 rounded-sm shrink-0" />
+                  <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
+                  <ChevronDownIcon className="size-3 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+            </ShortcutTooltip>
+            <DropdownMenuContent align="start" className="min-w-[220px]">
+              <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
+              {providers.map((provider) => (
+                <DropdownMenuSub key={provider.id}>
+                  <DropdownMenuSubTrigger
+                    className="text-xs data-[disabled]:text-muted-foreground"
+                    disabled={provider.disabled}
+                  >
+                    <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
+                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
+                    {provider.id === currentProviderId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="min-w-[220px]">
+                    {provider.disabled ? (
+                      <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                        Coming soon
+                      </DropdownMenuItem>
+                    ) : null}
+                    {!provider.disabled && provider.models.map((m) => (
+                      <DropdownMenuItem
+                        key={m.id}
+                        onClick={() => {
+                          if (canChangeProvider && onProviderChange && provider.id !== currentProviderId) {
+                            onProviderChange(provider.id);
+                          }
+                          onModelChange(m.id);
+                        }}
+                        className="flex items-start justify-between gap-2 text-xs"
+                        title={m.description}
+                      >
+                        <span className="flex items-start gap-2 min-w-0">
+                          <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
+                          <span className="flex min-w-0 flex-col gap-0.5">
+                            <span className="truncate">{m.label}</span>
+                            {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                          </span>
                         </span>
-                      </span>
-                      {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            ))}
+                        {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              ))}
 
-            {!providers.length && models.map((m) => (
-              <DropdownMenuItem
-                key={m.id}
-                onClick={() => onModelChange(m.id)}
-                className="flex items-start justify-between gap-2 text-xs"
-                title={m.description}
-              >
-                <span className="flex items-start gap-2 min-w-0">
-                  <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="truncate">{m.label}</span>
-                    {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+              {!providers.length && models.map((m) => (
+                <DropdownMenuItem
+                  key={m.id}
+                  onClick={() => onModelChange(m.id)}
+                  className="flex items-start justify-between gap-2 text-xs"
+                  title={m.description}
+                >
+                  <span className="flex items-start gap-2 min-w-0">
+                    <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate">{m.label}</span>
+                      {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                    </span>
                   </span>
-                </span>
-                {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {supportedThinkingEfforts.length > 0 && onThinkingEffortChange && displayedThinkingEffort && (
+            <>
+              <div className="w-px bg-violet-300/15" aria-hidden="true" />
+              <ShortcutTooltip
+                label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
+                keys={["ctrl", "T"]}
+                showOnFocus
+                above
+              >
+                <button
+                  type="button"
+                  onClick={handleThinkingEffortCycle}
+                  className={cn(MODEL_SEGMENT, "rounded-r-md px-2 text-violet-300 hover:bg-violet-500/10")}
+                  aria-label="Cycle thinking effort"
+                >
+                  <ThinkingEffortBars
+                    levels={supportedThinkingEfforts}
+                    value={selectedThinkingEffort}
+                    compact
+                  />
+                </button>
+              </ShortcutTooltip>
+            </>
+          )}
+        </div>
       )}
 
       {/* Review Changes chip */}

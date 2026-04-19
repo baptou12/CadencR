@@ -8,11 +8,13 @@ import { FeatureTabBar } from "@/components/FeatureTabBar";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
+import { useAgentCatalog } from "@/api/agentRuntime";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { useGetStats, useGetBranch, useGetFeatureSettings, useListProjects } from "@/api/generated";
+import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import { cn } from "@/lib/utils";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 
@@ -71,9 +73,15 @@ function WebSocketSessionPage() {
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel, resolveProvider } = useResolvedModel(featureId, projectId);
+  const { resolveModel, resolveProvider, resolveThinkingEffort } = useResolvedModel(featureId, projectId);
+  const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
+  const resolvedThinkingEffort = resolveThinkingEffort("session");
+  const activeSessionModel = agentCatalog.data?.providers
+    .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
+    ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
+  const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
 
   // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
@@ -97,6 +105,19 @@ function WebSocketSessionPage() {
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
+  useHotkeys(
+    "ctrl+t",
+    (e) => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !active.closest("[data-agent-prompt-bar='true']")) return;
+      if (supportedThinkingEfforts.length === 0) return;
+      e.preventDefault();
+      const next = nextThinkingEffort(supportedThinkingEfforts, ws.currentThinkingEffort);
+      if (!next) return;
+      ws.setThinkingEffort(next);
+    },
+    { enableOnFormTags: true, enableOnContentEditable: true },
+  );
 
   const slashCommands = session?.slashCommands ?? [];
   const slashCommandsLoading = session?.slashCommandsLoading ?? false;
@@ -108,9 +129,9 @@ function WebSocketSessionPage() {
   useEffect(() => {
     if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
       initializedRef.current = sessionId;
-      initSession({ cwd, featureId, provider: resolvedProviderId, model: resolvedModelId });
+      initSession({ cwd, featureId, provider: resolvedProviderId, model: resolvedModelId, thinkingEffort: resolvedThinkingEffort });
     }
-  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedProviderId, resolvedModelId]);
+  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedProviderId, resolvedModelId, resolvedThinkingEffort]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -205,7 +226,18 @@ function WebSocketSessionPage() {
             currentProviderId={ws.currentProviderId}
             onProviderChange={ws.setProvider}
             currentModelId={ws.currentModelId}
-            onModelChange={ws.setModel}
+            onModelChange={(modelId) => {
+              ws.setModel(modelId);
+              const nextModel = agentCatalog.data?.providers
+                .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
+                ?.models.find((model) => model.id === modelId);
+              const nextLevels = supportedThinkingEffortLevels(nextModel);
+              if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
+                ws.setThinkingEffort(undefined);
+              }
+            }}
+            currentThinkingEffort={ws.currentThinkingEffort}
+            onThinkingEffortChange={ws.setThinkingEffort}
             hasFileChanges={ws.hasFileChanges}
             onViewDiff={handleViewDiff}
             runtimeProvider={ws.runtimeProvider}

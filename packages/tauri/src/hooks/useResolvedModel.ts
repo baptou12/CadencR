@@ -10,9 +10,14 @@ import {
   useGetWorkspaceModelSettings,
   useGetProjectModelSettings,
   useGetFeatureModelSettings,
+  useGetProjectSettings,
+  useGetFeatureSettings,
   getGetFeatureModelSettingsQueryKey,
   useSetFeatureModelSetting,
+  getGetFeatureSettingsQueryKey,
+  useSetFeatureSetting,
 } from "../api/generated";
+import { settingsArrayToMap, useGetWorkspaceSettings } from "@/api/settings";
 import {
   useAgentCatalog,
   useGetWorkspaceProviderSettings,
@@ -20,6 +25,13 @@ import {
   useGetFeatureProviderSettings,
   useSetFeatureProviderSetting,
 } from "../api/agentRuntime";
+import {
+  isThinkingEffortSupported,
+  parseThinkingEffort,
+  supportedThinkingEffortLevels,
+  thinkingEffortSettingKey,
+  type ThinkingEffortLevel,
+} from "@/shared/thinking-effort";
 
 /**
  * Hook that resolves the effective model for an agent type through the
@@ -38,6 +50,9 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const featureSettings = useGetFeatureModelSettings(featureId);
   const projectSettings = useGetProjectModelSettings(projectId);
   const globalSettings = useGetWorkspaceModelSettings();
+  const featureKvSettings = useGetFeatureSettings(featureId);
+  const projectKvSettings = useGetProjectSettings(projectId);
+  const workspaceKvSettings = useGetWorkspaceSettings();
   const featureProviderSettings = useGetFeatureProviderSettings(featureId);
   const projectProviderSettings = useGetProjectProviderSettings(projectId);
   const globalProviderSettings = useGetWorkspaceProviderSettings();
@@ -46,6 +61,13 @@ export function useResolvedModel(featureId: number, projectId: number) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
   });
   const setProviderMutation = useSetFeatureProviderSetting();
+  const setThinkingEffortMutation = useSetFeatureSetting({
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+  });
+
+  const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
+  const projectSettingMap = settingsArrayToMap(projectKvSettings.data);
+  const workspaceSettingMap = settingsArrayToMap(workspaceKvSettings.data);
 
   const resolveSelection = useCallback(
     (agentType: AgentType) => resolveRuntimeSelection({
@@ -88,6 +110,23 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [resolveSelection],
   );
 
+  const resolveThinkingEffort = useCallback(
+    (agentType: AgentType): ThinkingEffortLevel | undefined => {
+      const selection = resolveSelection(agentType);
+      const model = agentCatalog.data?.providers
+        .find((provider) => provider.id === selection.providerId)
+        ?.models.find((entry) => entry.id === selection.modelId);
+      const levels = supportedThinkingEffortLevels(model);
+      const key = thinkingEffortSettingKey(agentType as AgentTypeSetting);
+      for (const value of [featureSettingMap[key], projectSettingMap[key], workspaceSettingMap[key]]) {
+        const effort = parseThinkingEffort(value);
+        if (effort && isThinkingEffortSupported(levels, effort)) return effort;
+      }
+      return undefined;
+    },
+    [agentCatalog.data?.providers, featureSettingMap, projectSettingMap, resolveSelection, workspaceSettingMap],
+  );
+
   const handleProviderChange = useCallback(
     (agentType: AgentType, providerId: string) => {
       setProviderMutation.mutate({ featureId, providerType: agentType as AgentTypeSetting, provider: providerId });
@@ -95,5 +134,23 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [featureId, setProviderMutation],
   );
 
-  return { resolveModel, handleModelChange, resolveProvider, handleProviderChange };
+  const handleThinkingEffortChange = useCallback(
+    (agentType: AgentType, effort?: ThinkingEffortLevel) => {
+      setThinkingEffortMutation.mutate({
+        featureId,
+        key: thinkingEffortSettingKey(agentType as AgentTypeSetting),
+        value: effort ?? "",
+      });
+    },
+    [featureId, setThinkingEffortMutation],
+  );
+
+  return {
+    resolveModel,
+    handleModelChange,
+    resolveProvider,
+    handleProviderChange,
+    resolveThinkingEffort,
+    handleThinkingEffortChange,
+  };
 }

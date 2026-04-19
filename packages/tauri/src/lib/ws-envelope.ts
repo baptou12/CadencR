@@ -15,6 +15,7 @@ export interface WsEnvelope {
 export interface SessionConfig {
   provider?: string;
   model?: string;
+  thinkingEffort?: string;
   permissionMode?: string;
   systemPrompt?: string;
   cwd?: string;
@@ -42,6 +43,7 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
   return createEnvelope("session", "init", {
     provider: config.provider ?? null,
     model: config.model ?? null,
+    thinking_effort: config.thinkingEffort ?? null,
     permission_mode: config.permissionMode ?? null,
     system_prompt: config.systemPrompt ?? null,
     cwd: config.cwd ?? null,
@@ -93,6 +95,13 @@ export function createProviderSet(sessionId: string, provider: string): WsEnvelo
 
 export function createModeSet(sessionId: string, mode: string): WsEnvelope {
   return createEnvelope("session", "mode.set", { session_id: sessionId, mode });
+}
+
+export function createEffortSet(sessionId: string, thinkingEffort?: string): WsEnvelope {
+  return createEnvelope("session", "effort.set", {
+    session_id: sessionId,
+    thinking_effort: thinkingEffort ?? null,
+  });
 }
 
 export function createDestroy(sessionId: string): WsEnvelope {

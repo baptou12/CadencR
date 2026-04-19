@@ -1,17 +1,6 @@
 import { createElement, useMemo } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "./ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
 import {
   AGENT_TYPES,
   DEFAULT_PROVIDER,
@@ -33,15 +22,29 @@ import {
   useGetWorkspaceModelSettings,
   useSetWorkspaceModelSetting,
   getGetWorkspaceModelSettingsQueryKey,
+  useSetWorkspaceSetting,
   useGetProjectModelSettings,
   useSetProjectModelSetting,
   getGetProjectModelSettingsQueryKey,
+  getGetProjectSettingsQueryKey,
+  useGetProjectSettings,
+  useSetProjectSetting,
   useGetFeatureModelSettings,
   getGetFeatureModelSettingsQueryKey,
+  getGetFeatureSettingsQueryKey,
+  useGetFeatureSettings,
+  useSetFeatureSetting,
   useSetFeatureModelSetting,
 } from "../api/generated";
-import { ProviderIcon } from "@/lib/provider-icons";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { ModelSelectorRow } from "./ModelSelectorRow";
+import { getWorkspaceSettingsQueryKey, useGetWorkspaceSettings, settingsArrayToMap } from "@/api/settings";
+import {
+  isThinkingEffortSupported,
+  parseThinkingEffort,
+  supportedThinkingEffortLevels,
+  thinkingEffortSettingKey,
+  type ThinkingEffortLevel,
+} from "@/shared/thinking-effort";
 
 type AgentType = AgentTypeSetting;
 const INHERIT_VALUE = "__inherit__";
@@ -90,6 +93,9 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const parentProjectSettings = useGetProjectModelSettings(projectId ?? 0, {
     enabled: level === "feature" && projectId != null,
   });
+  const workspaceKvSettings = useGetWorkspaceSettings();
+  const projectKvSettings = useGetProjectSettings(projectId ?? 0, { enabled: level !== "global" && projectId != null });
+  const featureKvSettings = useGetFeatureSettings(featureId ?? 0, { enabled: level === "feature" && featureId != null });
 
   const globalProviderSettings = useGetWorkspaceProviderSettings(level === "global");
   const projectProviderSettings = useGetProjectProviderSettings(projectId ?? 0, level === "project" && projectId != null);
@@ -112,6 +118,24 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   const featureMutation = useSetFeatureModelSetting({
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0) });
+      toast.success("Settings saved");
+    },
+  });
+  const workspaceSettingMutation = useSetWorkspaceSetting({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+      toast.success("Settings saved");
+    },
+  });
+  const projectSettingMutation = useSetProjectSetting({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId ?? 0) });
+      toast.success("Settings saved");
+    },
+  });
+  const featureSettingMutation = useSetFeatureSetting({
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0) });
       toast.success("Settings saved");
     },
   });
@@ -148,7 +172,14 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     (level === "global" && globalProviderSettings.isLoading) ||
     (level === "project" && projectProviderSettings.isLoading) ||
     (level === "feature" && featureProviderSettings.isLoading) ||
+    workspaceKvSettings.isLoading ||
+    (level !== "global" && projectKvSettings.isLoading) ||
+    (level === "feature" && featureKvSettings.isLoading) ||
     agentCatalog.isLoading;
+
+  const workspaceSettingMap = settingsArrayToMap(workspaceKvSettings.data);
+  const projectSettingMap = settingsArrayToMap(projectKvSettings.data);
+  const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
 
   // useMemo must run on every render — keep it above any conditional return
   // so the hook order stays stable when `isLoading` flips.
@@ -284,6 +315,49 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
       ?.models.find((model) => model.id === modelId)?.description;
   }
 
+  function getModelOption(agentType: AgentType) {
+    const selection = getEffectiveSelection(agentType);
+    return agentCatalog.data?.providers
+      .find((provider) => provider.id === selection.providerId)
+      ?.models.find((model) => model.id === selection.modelId);
+  }
+
+  function currentScopeThinkingEffort(agentType: AgentType): ThinkingEffortLevel | undefined {
+    const key = thinkingEffortSettingKey(agentType);
+    const source = level === "global" ? workspaceSettingMap : level === "project" ? projectSettingMap : featureSettingMap;
+    return parseThinkingEffort(source[key]);
+  }
+
+  function getEffectiveThinkingEffort(agentType: AgentType): ThinkingEffortLevel | undefined {
+    const levels = supportedThinkingEffortLevels(getModelOption(agentType));
+    const key = thinkingEffortSettingKey(agentType);
+    for (const value of [featureSettingMap[key], projectSettingMap[key], workspaceSettingMap[key]]) {
+      const effort = parseThinkingEffort(value);
+      if (effort && isThinkingEffortSupported(levels, effort)) return effort;
+    }
+    return undefined;
+  }
+
+  function setThinkingEffort(agentType: AgentType, effort?: ThinkingEffortLevel): void {
+    const key = thinkingEffortSettingKey(agentType);
+    if (level === "global") {
+      workspaceSettingMutation.mutate({ key, value: effort ?? "" });
+    } else if (level === "project" && projectId != null) {
+      projectSettingMutation.mutate({ projectId, key, value: effort ?? "" });
+    } else if (level === "feature" && featureId != null) {
+      featureSettingMutation.mutate({ featureId, key, value: effort ?? "" });
+    }
+  }
+
+  function resetScopeThinkingEffortIfInvalid(agentType: AgentType, providerId: string, modelId: string): void {
+    const model = agentCatalog.data?.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((entry) => entry.id === modelId);
+    const levels = supportedThinkingEffortLevels(model);
+    const current = currentScopeThinkingEffort(agentType);
+    if (current && !levels.includes(current)) setThinkingEffort(agentType);
+  }
+
   const visibleAgentTypes = AGENT_TYPES.filter(
     (agentType) => level === "global" || !WORKSPACE_ONLY_AGENT_TYPES.includes(agentType),
   );
@@ -291,114 +365,29 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   return (
     <div className="rounded-xl border border-border/60 bg-card/30 p-2">
       {visibleAgentTypes.map((agentType) => (
-        <div
+        <ModelSelectorRow
           key={agentType}
-          className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center sm:gap-3"
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/60 text-muted-foreground">
-              {createElement(AGENT_ICONS[agentType], { className: "size-4" })}
-            </div>
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium text-foreground">
-                {AGENT_LABELS[agentType] ?? agentType}
-              </div>
-              <div className="text-[11px] text-muted-foreground sm:max-w-[180px]">
-                {level === "global"
-                  ? "Default"
-                  : getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE
-                    ? "Inherited"
-                    : "Override"}
-              </div>
-            </div>
-          </div>
-          <div className="min-w-0 w-full sm:w-auto sm:shrink-0">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  className="h-10 w-full justify-between gap-3 rounded-lg border-border/70 bg-background/80 px-3 text-left text-xs font-normal shadow-sm sm:min-w-[260px] sm:max-w-[360px]"
-                  title={getModelDescription(getSelectedProvider(agentType), getSelectedModel(agentType))}
-                >
-                  <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
-                    <ProviderIcon
-                      providerId={getSelectedProvider(agentType)}
-                      alt={AGENT_LABELS[agentType]}
-                      className="size-4 shrink-0 rounded-sm"
-                    />
-                    <span className="min-w-0 truncate">
-                      <span className="truncate text-sm text-foreground">
-                        {getProviderLabel(getSelectedProvider(agentType))} /{" "}
-                        {getModelLabel(getSelectedProvider(agentType), getSelectedModel(agentType))}
-                      </span>
-                      {level !== "global" && (
-                        <span className="ml-1 hidden truncate text-[11px] text-muted-foreground sm:inline">
-                          {(getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE)
-                            ? "Inherited"
-                            : "Override"}
-                        </span>
-                      )}
-                    </span>
-                  </span>
-                  <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="min-w-[260px]">
-                <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
-                {level !== "global" && (
-                  <DropdownMenuItem onClick={() => handleInheritSelection(agentType)} className="text-xs">
-                    {(getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE) && <CheckIcon className="size-3 text-violet-400" />}
-                    Inherit selection
-                  </DropdownMenuItem>
-                )}
-                {providers.map((provider) => (
-                  <DropdownMenuSub key={provider.id}>
-                    <DropdownMenuSubTrigger
-                      className="text-xs data-[disabled]:text-muted-foreground"
-                      disabled={provider.disabled}
-                    >
-                      <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                      <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
-                      {provider.id === getEffectiveSelection(agentType).providerId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="min-w-[240px]">
-                      <DropdownMenuLabel className="text-xs">Model</DropdownMenuLabel>
-                      {provider.disabled && (
-                        <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                          Coming soon
-                        </DropdownMenuItem>
-                      )}
-                      {!provider.disabled && provider.models.map((model) => (
-                        <DropdownMenuItem
-                          key={model.id}
-                          onClick={() => {
-                            applySelection(agentType, provider.id, model.id);
-                          }}
-                          className="flex items-start justify-between gap-2 text-xs"
-                          title={model.description}
-                        >
-                          <span className="flex items-start gap-2 min-w-0">
-                            <ProviderIcon providerId={provider.id} alt={model.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                            <span className="flex min-w-0 flex-col gap-0.5">
-                              <span className="truncate text-foreground">{model.label}</span>
-                              {model.description && (
-                                <span className="truncate text-[11px] text-muted-foreground">{model.description}</span>
-                              )}
-                            </span>
-                          </span>
-                          {isModelSelected(agentType, provider.id, model.id) && (
-                            <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
-                          )}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+          agentLabel={AGENT_LABELS[agentType] ?? agentType}
+          stateLabel={level === "global" ? "Default" : getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE ? "Inherited" : "Override"}
+          level={level}
+          selectedProviderId={getSelectedProvider(agentType)}
+          selectedProviderLabel={getProviderLabel(getSelectedProvider(agentType))}
+          selectedModelId={getSelectedModel(agentType)}
+          selectedModelLabel={getModelLabel(getSelectedProvider(agentType), getSelectedModel(agentType))}
+          selectedModelDescription={getModelDescription(getSelectedProvider(agentType), getSelectedModel(agentType))}
+          providers={providers}
+          isInherited={getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE}
+          isModelSelected={(providerId, modelId) => isModelSelected(agentType, providerId, modelId)}
+          onInherit={level !== "global" ? () => handleInheritSelection(agentType) : undefined}
+          onSelect={(providerId, modelId) => {
+            applySelection(agentType, providerId, modelId);
+            resetScopeThinkingEffortIfInvalid(agentType, providerId, modelId);
+          }}
+          thinkingEffortLevels={supportedThinkingEffortLevels(getModelOption(agentType))}
+          thinkingEffort={getEffectiveThinkingEffort(agentType)}
+          onThinkingEffortChange={(effort) => setThinkingEffort(agentType, effort)}
+          icon={createElement(AGENT_ICONS[agentType], { className: "size-4" })}
+        />
       ))}
     </div>
   );

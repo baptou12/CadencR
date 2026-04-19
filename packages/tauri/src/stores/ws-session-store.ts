@@ -15,6 +15,7 @@ import {
   createDestroy,
   createProviderSet,
   createModelSet,
+  createEffortSet,
   createModeSet,
   createSessionClear,
   createSessionDelete,
@@ -234,6 +235,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       if (config.model) {
         set(updateSession(get(), sessionId, { currentModelId: config.model }));
       }
+      if (config.thinkingEffort) {
+        set(updateSession(get(), sessionId, { currentThinkingEffort: config.thinkingEffort }));
+      }
       sendRaw(sessionId, createSessionInit(config));
     },
 
@@ -351,6 +355,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     setModel(sessionId: string, modelId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createModelSet(session.serverSessionId, modelId));
+    },
+
+    setThinkingEffort(sessionId: string, thinkingEffort?: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createEffortSet(session.serverSessionId, thinkingEffort));
+      set(updateSession(get(), sessionId, { currentThinkingEffort: thinkingEffort }));
     },
 
     setPermissionMode(sessionId: string, mode: PermissionMode) {

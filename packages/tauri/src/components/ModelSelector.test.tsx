@@ -76,11 +76,24 @@ vi.mock("../api/generated", () => ({
   useSetWorkspaceModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetWorkspaceModelSettingsQueryKey: vi.fn(() => ["workspace", "model-settings"]),
   useGetProjectModelSettings: () => mockGetProjectSettings(),
+  useGetProjectSettings: () => ({ data: [], isLoading: false }),
   useSetProjectModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetProjectModelSettingsQueryKey: vi.fn((id: number) => ["project", "model-settings", id]),
+  getGetProjectSettingsQueryKey: vi.fn((id: number) => ["project", "settings", id]),
   useGetFeatureModelSettings: () => mockGetFeatureSettings(),
+  useGetFeatureSettings: () => ({ data: [], isLoading: false }),
   useSetFeatureModelSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetWorkspaceSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
+  useSetFeatureSetting: vi.fn(() => ({ mutate: vi.fn() })),
   getGetFeatureModelSettingsQueryKey: vi.fn((id: number) => ["features", "model-settings", id]),
+  getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
+}));
+
+vi.mock("@/api/settings", () => ({
+  useGetWorkspaceSettings: () => ({ data: [], isLoading: false }),
+  getWorkspaceSettingsQueryKey: () => ["workspace", "settings"],
+  settingsArrayToMap: () => ({}),
 }));
 
 vi.mock("../api/agentRuntime", () => ({
