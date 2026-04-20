@@ -8,6 +8,7 @@ import { KbdShortcut } from "@/components/KbdShortcut";
 interface PlanApprovalBarProps {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
   approveLabel?: string;
+  initialFeedback?: string;
   onApprove: () => void;
   onRequestChanges: (feedback: string) => void;
   onReject?: () => void;
@@ -17,13 +18,19 @@ interface PlanApprovalBarProps {
 export function PlanApprovalBar({
   allowedPrompts,
   approveLabel,
+  initialFeedback,
   onApprove,
   onRequestChanges,
   onReject,
   error,
 }: PlanApprovalBarProps) {
   const [showFeedback, setShowFeedback] = useState(false);
-  const [feedback, setFeedback] = useState("");
+  const [feedback, setFeedback] = useState(initialFeedback ?? "");
+
+  const openFeedback = (): void => {
+    setFeedback((current) => current || initialFeedback || "");
+    setShowFeedback(true);
+  };
 
   useGlobalShortcut("meta+1", (e) => {
     e.preventDefault();
@@ -32,7 +39,7 @@ export function PlanApprovalBar({
 
   useGlobalShortcut("meta+2", (e) => {
     e.preventDefault();
-    setShowFeedback(true);
+    openFeedback();
   }, { enabled: !showFeedback });
 
   useGlobalShortcut("escape", (e) => {
@@ -86,7 +93,7 @@ export function PlanApprovalBar({
               } else if (e.key === "Escape") {
                 e.preventDefault();
                 setShowFeedback(false);
-                setFeedback("");
+                setFeedback(initialFeedback ?? "");
               }
             }}
             placeholder="Describe the changes you'd like..."
@@ -119,7 +126,7 @@ export function PlanApprovalBar({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setShowFeedback(true)}
+            onClick={openFeedback}
             className="gap-1.5 text-muted-foreground"
           >
             <MessageSquare className="size-3.5" />

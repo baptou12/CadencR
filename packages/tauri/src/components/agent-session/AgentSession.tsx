@@ -27,6 +27,7 @@ import { useAgentSessionScroll } from "./useAgentSessionScroll";
 import { useAgentSessionModelState } from "./useAgentSessionModelState";
 import { MetaBar } from "./MetaBar";
 import { CollapsibleHeader } from "./CollapsibleHeader";
+import { getLatestUserPromptText } from "./getLatestUserPromptText";
 
 // ---------------------------------------------------------------------------
 // Component
@@ -141,6 +142,10 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
     status,
   });
   const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
+  const planFeedbackDefault = useMemo(
+    () => (pendingPlanApproval ? getLatestUserPromptText(blocks) : ""),
+    [blocks, pendingPlanApproval],
+  );
 
   const handleCycleModel = useCallback(() => {
     if (!onModelChange) return;
@@ -244,6 +249,7 @@ export const AgentSession = memo(forwardRef<AgentSessionHandle, AgentSessionProp
       permissionMode={permissionMode}
       onPermissionModeToggle={onPermissionModeToggle}
       pendingPlanApproval={pendingPlanApproval}
+      planFeedbackDefault={planFeedbackDefault}
       planApproveLabel={planApproveLabel}
       planApprovalError={planApprovalError}
       onPlanApprove={onPlanApprove}

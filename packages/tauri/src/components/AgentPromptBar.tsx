@@ -54,6 +54,7 @@ interface AgentPromptBarProps {
   pendingPlanApproval?: {
     allowedPrompts?: Array<{ tool: string; prompt: string }>;
   } | null;
+  planFeedbackDefault?: string;
   planApproveLabel?: string;
   planApprovalError?: string | null;
   onPlanApprove?: () => void;
@@ -94,6 +95,7 @@ export const AgentPromptBar = forwardRef<
     onCollapse,
     onPermissionModeToggle,
     pendingPlanApproval,
+    planFeedbackDefault,
     planApproveLabel,
     planApprovalError,
     onPlanApprove,
@@ -115,6 +117,7 @@ export const AgentPromptBar = forwardRef<
   ref,
 ) {
   const editorRef = useRef<PromptEditorHandle>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState(initialDraft ?? "");
   const textRef = useRef(text);
   textRef.current = text;
@@ -122,6 +125,8 @@ export const AgentPromptBar = forwardRef<
   disabledRef.current = disabled;
   // Suppress resetNavigation when editor text changes from history navigation
   const navigatingHistoryRef = useRef(false);
+  const hadSpecialStateRef = useRef(false);
+  const shouldRestoreFocusRef = useRef(false);
 
   const { initialDraft: restoredDraft, saveDraft } = usePromptDraft({ sessionId, wsSessionId, initialDraft: initialDraft ?? null });
 
@@ -132,6 +137,22 @@ export const AgentPromptBar = forwardRef<
       editorRef.current?.setText(restoredDraft);
     }
   }, [restoredDraft]);
+
+  const hasSpecialState = !!pendingPermission || !!pendingPlanApproval || (!!pendingQuestions && pendingQuestions.length > 0);
+
+  useEffect(() => {
+    if (hasSpecialState) {
+      hadSpecialStateRef.current = true;
+      shouldRestoreFocusRef.current = !!wrapperRef.current?.contains(document.activeElement);
+      return;
+    }
+    if (!hadSpecialStateRef.current) return;
+    hadSpecialStateRef.current = false;
+    if (!shouldRestoreFocusRef.current) return;
+    shouldRestoreFocusRef.current = false;
+    requestAnimationFrame(() => editorRef.current?.focus());
+  }, [hasSpecialState]);
+
   const history = usePromptHistory(projectId ?? 0, wsSessionId);
   const {
     attachments, addFiles, removeAttachment, clearAttachments,
@@ -227,9 +248,6 @@ export const AgentPromptBar = forwardRef<
     return result;
   }, [projectId, wsSessionId, history]);
 
-  // Keyboard shortcuts via react-hotkeys-hook on wrapper
-  const wrapperRef = useRef<HTMLDivElement>(null);
-
   useHotkeys("meta+p", (e) => {
     if (!onCycleModel) return;
     e.preventDefault();
@@ -261,59 +279,53 @@ export const AgentPromptBar = forwardRef<
     onStop();
   }, { enableOnFormTags: true, enableOnContentEditable: true });
 
-  // Early returns for special states
-  if (pendingPermission && onPermissionDecision) {
-    return (
-      <div data-question-area>
-        <ToolPermissionPrompt
-          permission={pendingPermission}
-          onDecision={onPermissionDecision}
-          disableShortcuts={disableShortcuts}
-        />
-      </div>
-    );
-  }
-
-  if (pendingPlanApproval && onPlanApprove && onPlanRequestChanges) {
-    return (
-      <div data-question-area>
+  const specialPrompt = pendingPermission && onPermissionDecision
+    ? (
+      <ToolPermissionPrompt
+        permission={pendingPermission}
+        onDecision={onPermissionDecision}
+        disableShortcuts={disableShortcuts}
+      />
+    )
+    : pendingPlanApproval && onPlanApprove && onPlanRequestChanges
+      ? (
         <PlanApprovalBar
           allowedPrompts={pendingPlanApproval.allowedPrompts}
+          initialFeedback={planFeedbackDefault}
           approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
           onRequestChanges={onPlanRequestChanges}
           onReject={onPlanReject}
           error={planApprovalError}
         />
-      </div>
-    );
-  }
-
-  if (!!pendingQuestions && pendingQuestions.length > 0 && onQuestionResponse) {
-    return (
-      <div data-question-area>
-        <AgentQuestionDrawer
-          questions={pendingQuestions}
-          open={true}
-          onSubmit={onQuestionResponse}
-          inline
-          disableShortcuts={disableShortcuts}
-        />
-      </div>
-    );
-  }
+      )
+      : !!pendingQuestions && pendingQuestions.length > 0 && onQuestionResponse
+        ? (
+          <AgentQuestionDrawer
+            questions={pendingQuestions}
+            open={true}
+            onSubmit={onQuestionResponse}
+            inline
+            disableShortcuts={disableShortcuts}
+          />
+        )
+        : null;
 
   return (
-    <div
-      ref={wrapperRef}
-      data-agent-prompt-bar="true"
-      className={cn(
-        "flex flex-col px-3 pb-4",
-        noTopPadding ? "pt-0" : "pt-3",
-        isDragging && "ring-2 ring-primary/50 ring-inset",
-      )}
-      {...dragHandlers}
-    >
+    <>
+      {specialPrompt && <div data-question-area>{specialPrompt}</div>}
+      <div
+        ref={wrapperRef}
+        data-agent-prompt-bar="true"
+        hidden={hasSpecialState}
+        aria-hidden={hasSpecialState}
+        className={cn(
+          "flex flex-col px-3 pb-4",
+          noTopPadding ? "pt-0" : "pt-3",
+          isDragging && "ring-2 ring-primary/50 ring-inset",
+        )}
+        {...dragHandlers}
+      >
       {attachments.length > 0 && (
         <ImageAttachmentPreview
           attachments={attachments}
@@ -339,7 +351,7 @@ export const AgentPromptBar = forwardRef<
           mentionFiles={filesQuery.data}
           slashCommands={slashCommandsOverride}
           slashCommandsLoading={slashCommandsLoading}
-          initialText={initialDraft ?? undefined}
+          initialText={text || initialDraft || undefined}
         />
 
         <div className="flex shrink-0 items-center gap-1.5 self-end">
@@ -375,6 +387,7 @@ export const AgentPromptBar = forwardRef<
           onAction={handleSplitAction}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 });
