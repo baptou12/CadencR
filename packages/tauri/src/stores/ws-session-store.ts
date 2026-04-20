@@ -391,7 +391,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const session = getSession(sessionId);
       if (session.slashCommands.length > 0 || session.slashCommandsLoading) return;
       set(updateSession(get(), sessionId, { slashCommandsLoading: true }));
-      sendRaw(sessionId, createCommandsGet(cwd));
+      sendRaw(sessionId, createCommandsGet(cwd, session.runtimeProvider || session.currentProviderId));
     },
 
     markPersistedLoaded(sessionId: string) {

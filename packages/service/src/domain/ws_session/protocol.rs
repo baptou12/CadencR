@@ -262,6 +262,11 @@ pub struct FeatureUpdatedPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandsGetPayload {
     pub cwd: String,
+    /// Runtime provider for the active session (e.g. `"claude_code"`,
+    /// `"opencode"`). Lets the resolver inject provider-specific built-in
+    /// slash commands that aren't discovered through filesystem scanning.
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

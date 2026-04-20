@@ -41,7 +41,11 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let resolved = super::super::slash_commands::resolve_commands(&payload.cwd).await;
+    let resolved = super::super::slash_commands::resolve_commands(
+        &payload.cwd,
+        payload.provider.as_deref(),
+    )
+    .await;
 
     let commands: Vec<SlashCommandPayload> = resolved
         .into_iter()

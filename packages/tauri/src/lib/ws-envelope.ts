@@ -116,8 +116,8 @@ export function createSessionDelete(sessionId: string): WsEnvelope {
   return createEnvelope("session", "delete", { session_id: sessionId });
 }
 
-export function createCommandsGet(cwd: string): WsEnvelope {
-  return createEnvelope("commands", "get", { cwd });
+export function createCommandsGet(cwd: string, provider?: string): WsEnvelope {
+  return createEnvelope("commands", "get", provider ? { cwd, provider } : { cwd });
 }
 
 export interface CommandsListPayload {

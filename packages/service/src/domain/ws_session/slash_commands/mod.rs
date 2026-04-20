@@ -4,15 +4,19 @@ use std::collections::HashSet;
 
 use tracing::{debug, warn};
 
+use crate::domain::agents::claude_code;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
 }
 
-pub async fn resolve_commands(cwd: &str) -> Vec<SlashCommand> {
+pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCommand> {
     let mut commands = Vec::new();
     let mut seen = HashSet::new();
+
+    merge_commands(&mut commands, &mut seen, builtin_commands(provider));
 
     match opencode_commands(cwd).await {
         Ok(native_commands) => {
@@ -29,6 +33,21 @@ pub async fn resolve_commands(cwd: &str) -> Vec<SlashCommand> {
         }
     }
     commands
+}
+
+/// Provider-specific built-in slash commands that aren't discovered through
+/// filesystem scanning. Kept isolated per provider to avoid spreading
+/// provider-specific branching through the generic resolver.
+fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
+    match provider {
+        Some(p) if p == claude_code::PROVIDER_ID => vec![SlashCommand {
+            name: "compact".to_string(),
+            description: Some(
+                "Compact the conversation, freeing context while keeping a summary".to_string(),
+            ),
+        }],
+        _ => Vec::new(),
+    }
 }
 
 async fn opencode_commands(cwd: &str) -> Result<Vec<SlashCommand>, opencode_sdk_rs::SdkError> {
@@ -61,7 +80,19 @@ fn merge_commands(
 mod tests {
     use std::collections::HashSet;
 
-    use super::{merge_commands, SlashCommand};
+    use super::{builtin_commands, merge_commands, SlashCommand};
+
+    #[test]
+    fn builtin_commands_injects_compact_for_claude_code() {
+        let commands = builtin_commands(Some(super::claude_code::PROVIDER_ID));
+        assert!(commands.iter().any(|command| command.name == "compact"));
+    }
+
+    #[test]
+    fn builtin_commands_is_empty_for_other_providers() {
+        assert!(builtin_commands(Some("opencode")).is_empty());
+        assert!(builtin_commands(None).is_empty());
+    }
 
     #[test]
     fn merge_commands_keeps_first_description() {
