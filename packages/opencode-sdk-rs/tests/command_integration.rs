@@ -16,9 +16,11 @@ use opencode_sdk_rs::{ModelRef, OpenCodeClient, PromptOptions, PromptPart};
 struct ServerState {
     command_directory: Option<String>,
     prompt_directory: Option<String>,
+    summarize_directory: Option<String>,
     listed_commands: Vec<Value>,
     command_payload: Option<Value>,
     prompt_payload: Option<Value>,
+    summarize_payload: Option<Value>,
     missing_command: Option<String>,
 }
 
@@ -74,11 +76,27 @@ async fn command_handler(
     (StatusCode::NO_CONTENT, Json(Value::Null))
 }
 
+async fn summarize_handler(
+    State(state): State<Arc<Mutex<ServerState>>>,
+    headers: HeaderMap,
+    Path(_session_id): Path<String>,
+    Json(payload): Json<Value>,
+) -> StatusCode {
+    let mut locked = state.lock().await;
+    locked.summarize_directory = headers
+        .get("x-opencode-directory")
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    locked.summarize_payload = Some(payload);
+    StatusCode::NO_CONTENT
+}
+
 async fn start_server(state: Arc<Mutex<ServerState>>) -> SocketAddr {
     let app = Router::new()
         .route("/command", get(command_list_handler))
         .route("/session/{id}/prompt_async", post(prompt_async_handler))
         .route("/session/{id}/command", post(command_handler))
+        .route("/session/{id}/summarize", post(summarize_handler))
         .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -229,4 +247,30 @@ async fn plain_prompt_uses_prompt_async_endpoint() {
         locked.prompt_payload.as_ref().unwrap()["parts"][0]["text"],
         "Explain this failure"
     );
+}
+
+#[tokio::test]
+async fn summarize_session_uses_summarize_endpoint() {
+    let state = Arc::new(Mutex::new(ServerState::default()));
+    let addr = start_server(Arc::clone(&state)).await;
+    let client = OpenCodeClient::with_base_url(format!("http://{addr}"));
+
+    client
+        .summarize_session_in_directory(
+            "ses_compact",
+            Some("/tmp/worktree"),
+            &ModelRef {
+                provider_id: "openai".to_string(),
+                model_id: "gpt-5.4".to_string(),
+            },
+            false,
+        )
+        .await
+        .unwrap();
+
+    let locked = state.lock().await;
+    assert_eq!(locked.summarize_directory.as_deref(), Some("/tmp/worktree"));
+    assert_eq!(locked.summarize_payload.as_ref().unwrap()["providerID"], "openai");
+    assert_eq!(locked.summarize_payload.as_ref().unwrap()["modelID"], "gpt-5.4");
+    assert_eq!(locked.summarize_payload.as_ref().unwrap()["auto"], false);
 }

@@ -14,7 +14,8 @@ mod tool_names;
 use async_trait::async_trait;
 use serde_json::Value;
 
-use self::model::{parse_model_ref, permission_mode_agent};
+pub(crate) use self::model::parse_model_ref;
+use self::model::permission_mode_agent;
 use self::permissions::{
     parse_permission_request as parse_opencode_permission_request, permission_options,
 };

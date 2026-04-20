@@ -16,7 +16,8 @@ use crate::parsing::{
 };
 use crate::sse::SseStream;
 use crate::types::{
-    Message, PermissionReply, PermissionRequest, PromptOptions, PromptPart, Question, Session,
+    Message, ModelRef, PermissionReply, PermissionRequest, PromptOptions, PromptPart, Question,
+    Session,
 };
 
 #[derive(Clone)]
@@ -309,6 +310,29 @@ impl OpenCodeClient {
             .filter_map(|value| parse_message_from(&value))
             .collect();
         Ok(messages)
+    }
+
+    pub async fn summarize_session_in_directory(
+        &self,
+        session_id: &str,
+        directory: Option<&str>,
+        model_ref: &ModelRef,
+        auto: bool,
+    ) -> Result<(), SdkError> {
+        let response = self
+            .maybe_scoped_request(
+                self.http
+                    .post(format!("{}/session/{session_id}/summarize", self.base_url)),
+                directory,
+            )
+            .json(&serde_json::json!({
+                "providerID": model_ref.provider_id,
+                "modelID": model_ref.model_id,
+                "auto": auto,
+            }))
+            .send()
+            .await?;
+        ensure_success(response).await.map(|_| ())
     }
 
     pub async fn list_children_in_directory(

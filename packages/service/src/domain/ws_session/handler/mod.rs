@@ -1,6 +1,7 @@
 mod app;
 mod commands;
 pub(crate) mod mcp_spawn;
+mod session_compact;
 mod session_control;
 mod session_data;
 mod session_init;
@@ -315,6 +316,9 @@ async fn handle_session_action(
         "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
         "destroy" => {
             session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await
+        }
+        "compact" => {
+            session_compact::handle_compact(envelope, sender, sdk_sessions, app_state).await
         }
         "delete" => session_control::handle_delete(envelope, sender, sdk_sessions, app_state).await,
         "clear" => session_control::handle_clear(envelope, sender, sdk_sessions, app_state).await,

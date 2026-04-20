@@ -6,6 +6,8 @@ use tracing::{debug, warn};
 
 use crate::domain::agents::claude_code;
 
+const OPENCODE_PROVIDER_ID: &str = "opencode";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommand {
     pub name: String,
@@ -40,12 +42,15 @@ pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCom
 /// provider-specific branching through the generic resolver.
 fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
     match provider {
-        Some(p) if p == claude_code::PROVIDER_ID => vec![SlashCommand {
-            name: "compact".to_string(),
-            description: Some(
-                "Compact the conversation, freeing context while keeping a summary".to_string(),
-            ),
-        }],
+        Some(p) if p == claude_code::PROVIDER_ID || p == OPENCODE_PROVIDER_ID => {
+            vec![SlashCommand {
+                name: "compact".to_string(),
+                description: Some(
+                    "Compact the conversation, freeing context while keeping a summary"
+                        .to_string(),
+                ),
+            }]
+        }
         _ => Vec::new(),
     }
 }
@@ -83,14 +88,16 @@ mod tests {
     use super::{builtin_commands, merge_commands, SlashCommand};
 
     #[test]
-    fn builtin_commands_injects_compact_for_claude_code() {
-        let commands = builtin_commands(Some(super::claude_code::PROVIDER_ID));
-        assert!(commands.iter().any(|command| command.name == "compact"));
+    fn builtin_commands_injects_compact_for_supported_providers() {
+        for provider in [super::claude_code::PROVIDER_ID, super::OPENCODE_PROVIDER_ID] {
+            let commands = builtin_commands(Some(provider));
+            assert!(commands.iter().any(|command| command.name == "compact"));
+        }
     }
 
     #[test]
     fn builtin_commands_is_empty_for_other_providers() {
-        assert!(builtin_commands(Some("opencode")).is_empty());
+        assert!(builtin_commands(Some("openai")).is_empty());
         assert!(builtin_commands(None).is_empty());
     }
 
