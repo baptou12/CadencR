@@ -41,7 +41,7 @@ class MockWebSocket {
     }
   }
 
-  simulateMessage(envelope: { domain: string; action: string; payload: unknown }) {
+  simulateMessage(envelope: { domain: string; action: string; ref?: string; payload: unknown }) {
     const raw = JSON.stringify({ id: "srv-1", ...envelope });
     this.fireEvent("message", { data: raw });
   }
@@ -1279,6 +1279,37 @@ describe("ws-session-store", () => {
   });
 
   describe("compaction handling", () => {
+    it("compactSession appends a local /compact user message", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      store.compactSession("s1");
+
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      expect(sent.some((message) => message.action === "compact")).toBe(true);
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.blocks.at(-1)?.type).toBe("user_message");
+      expect(session.blocks.at(-1)?.content).toBe("/compact");
+      expect(session.lifecycle).toEqual({ phase: "active" });
+    });
+
+    it("compact.ok completes the compact lifecycle", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      store.compactSession("s1");
+      ws.simulateMessage({ domain: "session", action: "compact.ok", payload: null });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+    });
+
     it("appends a compact_divider block for system.compact_boundary", async () => {
       const store = useWsSessionStore.getState();
       store.connect("s1");
@@ -1402,6 +1433,92 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.blocks.some((b) => b.type === "compact_divider")).toBe(false);
       expect(session.contextUsage?.wasCompacted ?? false).toBe(false);
+    });
+
+    it("appends a compact_divider block for OpenCode compaction user messages", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "user",
+              session_id: "srv-1",
+              message: {
+                content: [
+                  {
+                    type: "compaction",
+                    auto: false,
+                    overflow: false,
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.blocks.some((b) => b.type === "compact_divider")).toBe(true);
+      expect(session.contextUsage?.wasCompacted).toBe(true);
+    });
+  });
+
+  describe("slash command requests", () => {
+    it("re-requests slash commands when the provider changes", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+
+      store.requestSlashCommands("s1", "/repo", "claude_code");
+      const firstRequest = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(firstRequest.payload.provider).toBe("claude_code");
+
+      useWsSessionStore.setState((state) => updateSession(state, "s1", {
+        slashCommands: [{ name: "compact", description: "Compact" }],
+        slashCommandsLoading: false,
+        slashCommandsKey: "claude_code::/repo",
+        slashCommandsRequestRef: firstRequest.id,
+      }));
+
+      store.requestSlashCommands("s1", "/repo", "opencode");
+
+      const secondRequest = JSON.parse(ws.sent[ws.sent.length - 1]);
+      expect(secondRequest.payload.provider).toBe("opencode");
+      expect(useWsSessionStore.getState().sessions["s1"].slashCommandsRequestRef).toBe(secondRequest.id);
+      expect(useWsSessionStore.getState().sessions["s1"].slashCommandsLoading).toBe(true);
+      expect(useWsSessionStore.getState().sessions["s1"].slashCommands).toEqual([]);
+    });
+
+    it("ignores stale slash command responses for an older provider", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+
+      store.requestSlashCommands("s1", "/repo", "opencode");
+      const request = JSON.parse(ws.sent[ws.sent.length - 1]);
+
+      ws.simulateMessage({
+        ref: "older-request",
+        domain: "commands",
+        action: "list",
+        payload: {
+          commands: [{ name: "compact", description: "Claude compact" }],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.slashCommands).toEqual([]);
+      expect(session.slashCommandsLoading).toBe(true);
+      expect(session.slashCommandsRequestRef).toBe(request.id);
     });
   });
 

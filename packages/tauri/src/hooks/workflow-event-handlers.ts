@@ -29,6 +29,7 @@ export function createWorkflowMessageHandler(
 
     const domain = data.domain as string;
     const action = data.action as string;
+    const ref = typeof data.ref === "string" ? data.ref : undefined;
     const payload = (data.payload ?? {}) as Record<string, unknown>;
 
     // Handle cross-domain events before the workflow-only guard
@@ -56,11 +57,17 @@ export function createWorkflowMessageHandler(
 
     if (domain === "commands" && action === "list") {
       const p = payload as unknown as CommandsListPayload;
+      if (!ref || ref !== get().slashCommandsRequestRef) {
+        return;
+      }
       const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
         name: c.name,
         description: c.description ?? "",
       }));
-      set({ slashCommands: cmds, slashCommandsLoading: false });
+      set({
+        slashCommands: cmds,
+        slashCommandsLoading: false,
+      });
       return;
     }
 

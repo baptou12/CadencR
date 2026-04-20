@@ -14,6 +14,10 @@ import {
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 
+function buildSlashCommandsKey(cwd: string, provider?: string): string {
+  return `${provider ?? ""}::${cwd}`;
+}
+
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
     const { conn, featureId } = get();
@@ -46,6 +50,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     startingSession: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    slashCommandsKey: null,
+    slashCommandsRequestRef: null,
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,
@@ -56,12 +62,20 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     bufferedEvents: [],
     isReconnecting: false,
 
-    requestSlashCommands(cwd: string) {
-      const { conn, slashCommands, slashCommandsLoading } = get();
-      if (slashCommands.length > 0 || slashCommandsLoading) return;
+    requestSlashCommands(cwd: string, provider?: string) {
+      const { conn, slashCommands, slashCommandsLoading, slashCommandsKey } = get();
+      const nextKey = buildSlashCommandsKey(cwd, provider);
+      const sameTarget = slashCommandsKey === nextKey;
+      if ((sameTarget && slashCommands.length > 0) || (sameTarget && slashCommandsLoading)) return;
       if (!conn?.isOpen()) return;
-      set({ slashCommandsLoading: true });
-      conn.sendJson(createCommandsGet(cwd));
+      const envelope = createCommandsGet(cwd, provider);
+      set({
+        slashCommands: sameTarget ? slashCommands : [],
+        slashCommandsLoading: true,
+        slashCommandsKey: nextKey,
+        slashCommandsRequestRef: envelope.id,
+      });
+      conn.sendJson(envelope);
     },
 
     connect(featureId, projectId) {
@@ -119,7 +133,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         queue: [], agents: new Map(),
         workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
         worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
-        featureTitle: null, isAutoNaming: false, slashCommands: [], slashCommandsLoading: false,
+        featureTitle: null, isAutoNaming: false, slashCommands: [], slashCommandsLoading: false, slashCommandsKey: null, slashCommandsRequestRef: null,
         bufferedEvents: [], isReconnecting: isSoftReconnect,
       });
     },

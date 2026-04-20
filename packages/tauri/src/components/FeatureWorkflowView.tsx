@@ -92,12 +92,6 @@ export function FeatureWorkflowView({
   const requestSlashCommands = useWorkflowStore((s) => s.requestSlashCommands);
   const wsReady = useWorkflowStore((s) => s.conn?.isOpen() ?? false);
 
-  useEffect(() => {
-    if (wsReady && projectPath) {
-      requestSlashCommands(projectPath);
-    }
-  }, [wsReady, projectPath, requestSlashCommands]);
-
   // --- Runtime settings for inline provider/model switcher ---
   const {
     resolveModel: resolveModelForAgent,
@@ -107,6 +101,13 @@ export function FeatureWorkflowView({
     resolveThinkingEffort: resolveThinkingEffortForAgent,
     handleThinkingEffortChange: handleThinkingEffortChangeForAgent,
   } = useResolvedModel(featureId, projectId);
+  const slashCommandProviderId = resolveProviderForAgent("session");
+
+  useEffect(() => {
+    if (wsReady && projectPath) {
+      requestSlashCommands(projectPath, slashCommandProviderId);
+    }
+  }, [wsReady, projectPath, requestSlashCommands, slashCommandProviderId]);
 
   const [deleteTarget, setDeleteTarget] = useState<FeatureSession | null>(null);
 

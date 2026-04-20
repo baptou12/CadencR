@@ -18,6 +18,7 @@ import {
   createEffortSet,
   createModeSet,
   createSessionClear,
+  createSessionCompact,
   createSessionDelete,
   createCommandsGet,
 } from "@/lib/ws-envelope";
@@ -32,7 +33,12 @@ import {
   type PersistedStatePayload,
 } from "./ws-session-actions";
 import {
-  type QueuedPrompt,
+  appendLocalUserMessage,
+  buildQueuedInitEnvelopes,
+  buildQueuedPromptPatch,
+  buildSlashCommandsKey,
+} from "./ws-session-store-helpers";
+import {
   type SessionEntry,
   type WsSessionStore,
   createSessionEntry,
@@ -59,38 +65,23 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function getSession(sessionId: string): SessionEntry {
     return get().sessions[sessionId] ?? createSessionEntry();
   }
+
   function sendRaw(sessionId: string, data: unknown): void {
     getSession(sessionId).conn?.sendJson(data);
   }
-  function queuePrompt(
-    sessionId: string,
-    text: string,
-    images?: Array<{ base64: string; mimeType: string }>,
-    useWorktree?: boolean,
-  ): void {
+
+  function queuePrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean): void {
     const session = getSession(sessionId);
-    const queuedPrompt: QueuedPrompt = { text };
-    if (images && images.length > 0) queuedPrompt.images = images;
-    if (useWorktree) queuedPrompt.useWorktree = true;
-    set(updateSession(get(), sessionId, {
-      queuedPrompts: [...session.queuedPrompts, queuedPrompt],
-    }));
+    set(updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, images, useWorktree)));
   }
+
   function flushQueuedInitActions(sessionId: string): void {
     const session = get().sessions[sessionId];
     if (!session || !session.serverSessionId) return;
-    if (session.permissionMode === "plan") {
-      sendRaw(sessionId, createModeSet(session.serverSessionId, "plan"));
+    for (const envelope of buildQueuedInitEnvelopes(session)) {
+      sendRaw(sessionId, envelope);
     }
     if (session.queuedPrompts.length === 0) return;
-    for (const prompt of session.queuedPrompts) {
-      sendRaw(sessionId, createPromptSend(
-        session.serverSessionId,
-        prompt.text,
-        prompt.images,
-        prompt.useWorktree,
-      ));
-    }
     set(updateSession(get(), sessionId, { queuedPrompts: [] }));
   }
   const ctx: StoreAccessors = { get, set, getSession };
@@ -241,12 +232,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(
-      sessionId: string,
-      text: string,
-      images?: Array<{ base64: string; mimeType: string }>,
-      useWorktree?: boolean,
-    ) {
+    sendPrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) {
       const session = getSession(sessionId);
       if (session.serverSessionId) {
         sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
@@ -255,20 +241,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }
 
       const content = buildUserMessageContent(text, images);
-      session.streamingState.counter += 1;
-      set(updateSession(get(), sessionId, {
-        blocks: [
-          ...session.blocks,
-          {
-            id: `ws-user-${session.streamingState.counter}`,
-            type: "user_message" as const,
-            content,
-            isError: false,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        lifecycle: transitionTurn(session.lifecycle, { type: "prompt_sent" }),
-      }));
+      set(updateSession(get(), sessionId, appendLocalUserMessage(session, content)));
     },
 
     respondToPermission(sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) {
@@ -342,6 +315,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionClear(session.serverSessionId));
     },
 
+    compactSession(sessionId: string) {
+      const session = getSession(sessionId);
+      sendRaw(sessionId, createSessionCompact(session.serverSessionId));
+      set(updateSession(get(), sessionId, appendLocalUserMessage(session, "/compact")));
+    },
+
     deleteSession(sessionId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createSessionDelete(session.serverSessionId));
@@ -387,11 +366,22 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }));
     },
 
-    requestSlashCommands(sessionId: string, cwd: string) {
+    requestSlashCommands(sessionId: string, cwd: string, provider?: string) {
       const session = getSession(sessionId);
-      if (session.slashCommands.length > 0 || session.slashCommandsLoading) return;
-      set(updateSession(get(), sessionId, { slashCommandsLoading: true }));
-      sendRaw(sessionId, createCommandsGet(cwd, session.runtimeProvider || session.currentProviderId));
+      const resolvedProvider = provider ?? session.runtimeProvider ?? session.currentProviderId;
+      const nextKey = buildSlashCommandsKey(cwd, resolvedProvider);
+      const sameTarget = session.slashCommandsKey === nextKey;
+      if ((sameTarget && session.slashCommands.length > 0) || (sameTarget && session.slashCommandsLoading)) {
+        return;
+      }
+      const envelope = createCommandsGet(cwd, resolvedProvider);
+      set(updateSession(get(), sessionId, {
+        slashCommands: sameTarget ? session.slashCommands : [],
+        slashCommandsLoading: true,
+        slashCommandsKey: nextKey,
+        slashCommandsRequestRef: envelope.id,
+      }));
+      sendRaw(sessionId, envelope);
     },
 
     markPersistedLoaded(sessionId: string) {

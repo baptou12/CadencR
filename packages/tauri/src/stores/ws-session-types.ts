@@ -58,6 +58,8 @@ export interface SessionEntry {
   hasFileChanges: boolean;
   slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
+  slashCommandsKey: string | null;
+  slashCommandsRequestRef: string | null;
   todos: TodoItem[];
   featureTitle: string | null;
   isAutoNaming: boolean;
@@ -98,6 +100,8 @@ export function createSessionEntry(): SessionEntry {
     hasFileChanges: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    slashCommandsKey: null,
+    slashCommandsRequestRef: null,
     todos: [],
     featureTitle: null,
     isAutoNaming: false,
@@ -133,6 +137,7 @@ export interface WsSessionStore {
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;
   clearSession: (sessionId: string) => void;
+  compactSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   setProvider: (sessionId: string, providerId: string) => void;
   setModel: (sessionId: string, modelId: string) => void;
@@ -144,7 +149,7 @@ export interface WsSessionStore {
   sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
 
   retryWorktreeSetup: (sessionId: string) => void;
-  requestSlashCommands: (sessionId: string, cwd: string) => void;
+  requestSlashCommands: (sessionId: string, cwd: string, provider?: string) => void;
 
   markPersistedLoaded: (sessionId: string) => void;
   setPersistedState: (sessionId: string, options: {

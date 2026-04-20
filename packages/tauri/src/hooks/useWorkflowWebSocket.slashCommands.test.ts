@@ -75,6 +75,8 @@ beforeEach(() => {
     hydrated: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    slashCommandsKey: null,
+    slashCommandsRequestRef: null,
   });
 });
 
@@ -99,22 +101,24 @@ describe("slash commands", () => {
   it("requestSlashCommands sends commands.get envelope", () => {
     const ws = connectStore();
 
-    useWorkflowStore.getState().requestSlashCommands("/some/path");
+    useWorkflowStore.getState().requestSlashCommands("/some/path", "opencode");
 
     expect(useWorkflowStore.getState().slashCommandsLoading).toBe(true);
     const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
     expect(msg.domain).toBe("commands");
     expect(msg.action).toBe("get");
     expect(msg.payload.cwd).toBe("/some/path");
+    expect(msg.payload.provider).toBe("opencode");
+    expect(useWorkflowStore.getState().slashCommandsRequestRef).toBe(msg.id);
   });
 
   it("does not re-request when already loading", () => {
     const ws = connectStore();
 
-    useWorkflowStore.getState().requestSlashCommands("/path");
+    useWorkflowStore.getState().requestSlashCommands("/path", "opencode");
     const sentCount = ws.sent.length;
 
-    useWorkflowStore.getState().requestSlashCommands("/path");
+    useWorkflowStore.getState().requestSlashCommands("/path", "opencode");
     expect(ws.sent.length).toBe(sentCount);
   });
 
@@ -122,9 +126,11 @@ describe("slash commands", () => {
     const ws = connectStore();
     useWorkflowStore.setState({
       slashCommands: [{ name: "clear", description: "Clear" }],
+      slashCommandsKey: "opencode::/path",
+      slashCommandsRequestRef: "req-1",
     });
 
-    useWorkflowStore.getState().requestSlashCommands("/path");
+    useWorkflowStore.getState().requestSlashCommands("/path", "opencode");
     // Only the feature.start message from connect, no commands.get
     const msgs = ws.sent.map((s) => JSON.parse(s));
     expect(msgs.every((m: { domain: string }) => m.domain !== "commands")).toBe(true);
@@ -132,10 +138,13 @@ describe("slash commands", () => {
 
   it("handles commands.list response and populates slashCommands", () => {
     const ws = connectStore();
+    useWorkflowStore.getState().requestSlashCommands("/repo", "opencode");
+    const request = JSON.parse(ws.sent[ws.sent.length - 1]);
 
     // Simulate server response
     ws.emit("message", {
       data: JSON.stringify({
+        ref: request.id,
         domain: "commands",
         action: "list",
         payload: {
@@ -159,6 +168,8 @@ describe("slash commands", () => {
     useWorkflowStore.setState({
       slashCommands: [{ name: "old", description: "stale" }],
       slashCommandsLoading: true,
+      slashCommandsKey: "claude_code::/old",
+      slashCommandsRequestRef: "req-old",
     });
 
     connectStore();
@@ -166,5 +177,20 @@ describe("slash commands", () => {
     const state = useWorkflowStore.getState();
     expect(state.slashCommands).toEqual([]);
     expect(state.slashCommandsLoading).toBe(false);
+    expect(state.slashCommandsKey).toBeNull();
+    expect(state.slashCommandsRequestRef).toBeNull();
+  });
+
+  it("re-requests when the provider changes", () => {
+    const ws = connectStore();
+
+    useWorkflowStore.getState().requestSlashCommands("/path", "claude_code");
+    const sentCount = ws.sent.length;
+
+    useWorkflowStore.getState().requestSlashCommands("/path", "opencode");
+
+    expect(ws.sent.length).toBe(sentCount + 1);
+    const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(msg.payload.provider).toBe("opencode");
   });
 });

@@ -36,6 +36,8 @@ function makeState(overrides: Partial<WorkflowState> = {}): WorkflowState {
     isAutoNaming: false,
     slashCommands: [],
     slashCommandsLoading: false,
+    slashCommandsKey: null,
+    slashCommandsRequestRef: null,
     worktreeStatus: "idle",
     worktreePath: null,
     worktreeBranch: null,
