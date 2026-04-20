@@ -82,6 +82,7 @@ function WebSocketSessionPage() {
     .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
     ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
   const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
+  const activeProviderId = ws.runtimeProvider || ws.currentProviderId || resolvedProviderId;
 
   // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
@@ -156,9 +157,9 @@ function WebSocketSessionPage() {
 
   useEffect(() => {
     if (session?.serverSessionId && effectiveCwd) {
-      requestSlashCommands(sessionId, effectiveCwd);
+      requestSlashCommands(sessionId, effectiveCwd, activeProviderId);
     }
-  }, [session?.serverSessionId, effectiveCwd, sessionId, requestSlashCommands]);
+  }, [session?.serverSessionId, effectiveCwd, sessionId, requestSlashCommands, activeProviderId]);
 
   return (
     <div className="flex h-full flex-col">
@@ -210,6 +211,10 @@ function WebSocketSessionPage() {
             onSend={(text, images) => {
               if (text.trim() === "/clear") {
                 ws.clearSession();
+                return;
+              }
+              if (text.trim() === "/compact" && activeProviderId === "opencode") {
+                ws.compactSession();
                 return;
               }
               // Pass useWorktree only on first prompt (blocks empty)

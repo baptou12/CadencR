@@ -62,6 +62,7 @@ interface UseWebSocketSessionReturn {
   interrupt: () => void;
   destroy: () => void;
   clearSession: () => void;
+  compactSession: () => void;
   initSession: (config: SessionConfig) => void;
 }
 
@@ -159,6 +160,7 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     interrupt: () => store.interrupt(sessionId),
     destroy: () => store.destroy(sessionId),
     clearSession: () => store.clearSession(sessionId),
+    compactSession: () => store.compactSession(sessionId),
     initSession: (config: SessionConfig) => store.initSession(sessionId, config),
     setProvider: (providerId: string) => store.setProvider(sessionId, providerId),
     setModel: (modelId: string) => store.setModel(sessionId, modelId),

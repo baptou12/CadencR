@@ -86,11 +86,15 @@ export function handleEnvelope(
 function handleCommandsDomain(
   ctx: StoreAccessors,
   sessionId: string,
-  envelope: { action: string; payload: unknown },
+  envelope: { action: string; ref?: string; payload: unknown },
 ): void {
   if (envelope.action === "list") {
     const p = parseCommandsListPayload(envelope.payload);
     if (!p) return;
+    const session = ctx.getSession(sessionId);
+    if (!envelope.ref || envelope.ref !== session.slashCommandsRequestRef) {
+      return;
+    }
     const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
       name: c.name,
       description: c.description ?? "",
@@ -175,6 +179,14 @@ function handleSessionAction(
     }
     case "error":
       handleError(ctx, sessionId, envelope.payload);
+      break;
+    case "compact.ok":
+      ctx.set(updateSession(ctx.get(), sessionId, {
+        lifecycle: transitionTurn(ctx.getSession(sessionId).lifecycle, {
+          type: "turn_ended",
+          reason: "completed",
+        }),
+      }));
       break;
     case "cleared":
       handleCleared(ctx, sessionId, envelope.payload);

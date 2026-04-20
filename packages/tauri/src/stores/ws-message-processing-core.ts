@@ -67,7 +67,7 @@ export function processSdkMessage(
     case "assistant":
       return { mutations: processAssistantMessage(msg, state, signals), signals };
     case "user":
-      return { mutations: processUserMessage(msg, state), signals };
+      return { mutations: processUserMessage(msg, state, signals), signals };
     case "system":
       return { mutations: processSystemMessage(msg, state, signals), signals };
     case "result":
@@ -378,6 +378,7 @@ function createAssistantMutation(
 function processUserMessage(
   msg: Record<string, unknown>,
   state: StreamingState,
+  signals: ParserSignals,
 ): BlockMutation[] {
   const message = msg.message as Record<string, unknown> | undefined;
   const contentArr = message?.content as Array<Record<string, unknown>> | undefined;
@@ -387,6 +388,21 @@ function processUserMessage(
   const results: BlockMutation[] = [];
 
   for (const item of contentArr) {
+    if (item.type === "compaction") {
+      signals.compactBoundaryObserved = true;
+      state.counter += 1;
+      results.push({
+        action: "append",
+        block: {
+          id: `ws-compact-${state.counter}`,
+          type: "compact_divider",
+          content: "",
+          createdAt: new Date().toISOString(),
+        },
+      });
+      continue;
+    }
+
     if (item.type !== "tool_result") continue;
 
     const toolUseId = item.tool_use_id as string;
