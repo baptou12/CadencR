@@ -41,7 +41,7 @@ curl -sf --max-time 2 http://localhost:1420 && echo "Frontend: ok" || echo "Fron
 
 ```bash
 # Start the full stack from the project root and capture logs for later inspection
-sh -c 'cd /workspace/cadence && exec pnpm dev' \
+sh -c 'repo_root=$(git rev-parse --show-toplevel) && cd "$repo_root" && exec pnpm dev' \
   >"$CADENCE_QA_RUN_DIR/dev.log" 2>&1 &
 DEV_PID=$!
 DEV_PGID=$(ps -o pgid= -p "$DEV_PID" | tr -d ' ')
