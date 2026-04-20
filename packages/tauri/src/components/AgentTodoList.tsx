@@ -79,6 +79,8 @@ export function AgentTodoList({ todos, chipClass }: AgentTodoListProps): ReactEl
         align="start"
         side="top"
         collisionPadding={12}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => event.preventDefault()}
         className="w-auto max-w-[min(640px,90vw)] p-3"
       >
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
