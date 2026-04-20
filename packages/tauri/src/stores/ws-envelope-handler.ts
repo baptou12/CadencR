@@ -24,6 +24,7 @@ import { handleWorktreeEvent } from "./ws-worktree-handler";
 import {
   type BlockMutation,
   createStreamingState,
+  isRecord,
   processSdkMessage,
   applyMutations,
   buildMessagePatch,
@@ -32,10 +33,6 @@ import { normalizeContextWindow } from "@/types/agent";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object";
-}
 
 // Types for the store accessors we need
 
@@ -252,19 +249,40 @@ function handleMessage(
 
   const allMutations: BlockMutation[] = [];
   let enterPlanModeRequested = false;
+  let compactBoundaryObserved = false;
   for (const rawBlock of p.blocks) {
     if (!isRecord(rawBlock)) continue;
     const result = processSdkMessage(rawBlock, state);
     allMutations.push(...result.mutations);
     enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
+    compactBoundaryObserved ||= result.signals.compactBoundaryObserved;
   }
 
-  if (allMutations.length > 0) {
-    const currentSession = ctx.getSession(sessionId);
-    const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
-    const patch = buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested });
-    ctx.set(updateSession(ctx.get(), sessionId, patch));
+  if (allMutations.length === 0 && !compactBoundaryObserved) return;
+
+  const currentSession = ctx.getSession(sessionId);
+  const patch: Partial<SessionEntry> =
+    allMutations.length > 0
+      ? buildMessagePatch(
+          applyMutations(currentSession.blocks, allMutations, state),
+          allMutations,
+          { enterPlanModeRequested },
+        )
+      : {};
+
+  if (compactBoundaryObserved) {
+    const existing = currentSession.contextUsage;
+    patch.contextUsage = existing
+      ? { ...existing, wasCompacted: true }
+      : {
+          inputTokens: 0,
+          outputTokens: 0,
+          contextWindow: null,
+          wasCompacted: true,
+        };
   }
+
+  ctx.set(updateSession(ctx.get(), sessionId, patch));
 }
 
 function handlePermissionRequest(

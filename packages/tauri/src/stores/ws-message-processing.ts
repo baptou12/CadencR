@@ -9,6 +9,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 
 export {
   createStreamingState,
+  isRecord,
   processSdkMessage,
 } from "./ws-message-processing-core";
 export type {

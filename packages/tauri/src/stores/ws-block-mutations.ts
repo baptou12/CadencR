@@ -44,7 +44,7 @@ export interface MessagePatch {
 export function buildMessagePatch(
   newBlocks: AgentBlockData[],
   allMutations: BlockMutation[],
-  signals: ParserSignals,
+  signals: Pick<ParserSignals, "enterPlanModeRequested">,
 ): MessagePatch {
   const hasNewFileChange = allMutations.some(
     (m) => m.action === "append" && m.block.type === "tool_call" && isFileChangeTool(m.block.toolName),

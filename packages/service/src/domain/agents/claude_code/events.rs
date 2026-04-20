@@ -1,9 +1,10 @@
 use serde_json::Value;
 
 use crate::domain::agents::adapter::{
-    RuntimeAssistantMessage, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
-    RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeMcpServerStatus,
-    RuntimeStreamEvent, RuntimeUsage, RuntimeUserContentBlock, RuntimeUserMessage,
+    RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock, RuntimeContentDelta,
+    RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent,
+    RuntimeMcpServerStatus, RuntimeStreamEvent, RuntimeUsage, RuntimeUserContentBlock,
+    RuntimeUserMessage,
 };
 
 pub(super) fn context_window_for_model_from_raw(raw: &Value, model: &str) -> Option<u64> {
@@ -152,9 +153,15 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
                     .collect(),
                 context_window: None,
             }),
-            claude_agent_sdk_rs::messages::SystemMessage::CompactBoundary { .. } => {
-                RuntimeEventKind::CompactBoundary
-            }
+            claude_agent_sdk_rs::messages::SystemMessage::CompactBoundary {
+                compact_metadata,
+                ..
+            } => RuntimeEventKind::CompactBoundary {
+                metadata: Some(RuntimeCompactMetadata {
+                    trigger: Some(compact_metadata.trigger),
+                    pre_tokens: Some(compact_metadata.pre_tokens),
+                }),
+            },
         },
         claude_agent_sdk_rs::SdkMessage::Assistant {
             message,

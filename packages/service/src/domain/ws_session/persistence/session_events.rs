@@ -33,11 +33,12 @@ impl WsSessionPersistence {
         }
 
         if runtime_event.is_compact_boundary() {
+            let content = serialize_compact_metadata(runtime_event.compact_metadata());
             let _ = Self::insert_message(
                 &self.write_pool,
                 session_id,
                 "system",
-                "compact_boundary",
+                &content,
                 "compact_divider",
                 None,
                 None,
@@ -45,6 +46,10 @@ impl WsSessionPersistence {
                 None,
             )
             .await;
+            let _ = sqlx::query("UPDATE agent_sessions SET was_compacted = 1 WHERE id = ?")
+                .bind(session_id)
+                .execute(&self.write_pool)
+                .await;
         }
     }
 
@@ -296,12 +301,26 @@ fn runtime_stream_key(runtime_session_id: Option<&str>) -> String {
     runtime_session_id.unwrap_or_default().to_string()
 }
 
+/// Serialize a compaction metadata payload into the `content` column of the
+/// persisted `compact_divider` row so history reload can surface `trigger` /
+/// `pre_tokens`. Returns an empty string when nothing is worth persisting.
+fn serialize_compact_metadata(
+    metadata: Option<&crate::domain::agents::adapter::RuntimeCompactMetadata>,
+) -> String {
+    match metadata {
+        Some(meta) if meta.trigger.is_some() || meta.pre_tokens.is_some() => {
+            serde_json::to_string(meta).unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod session_events_tests {
     use super::*;
     use crate::domain::agents::adapter::{
-        RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind,
-        RuntimeEventMetadata, RuntimeStreamEvent,
+        RuntimeCompactMetadata, RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent,
+        RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent,
     };
     use sqlx::sqlite::SqlitePoolOptions;
     use sqlx::{Row, SqlitePool};
@@ -549,5 +568,65 @@ mod session_events_tests {
                 .expect("valid json"),
             serde_json::json!({ "nested": { "key": "value" } })
         );
+    }
+
+    fn compact_boundary_event(metadata: Option<RuntimeCompactMetadata>) -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some("sess".to_string()),
+                usage: None,
+                context_window: None,
+                raw: serde_json::json!({}),
+            },
+            RuntimeEventKind::CompactBoundary { metadata },
+        )
+    }
+
+    #[tokio::test]
+    async fn compact_boundary_sets_was_compacted_and_stores_metadata() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&compact_boundary_event(Some(RuntimeCompactMetadata {
+                trigger: Some("auto".to_string()),
+                pre_tokens: Some(90_000),
+            })))
+            .await;
+
+        let session_row = sqlx::query("SELECT was_compacted FROM agent_sessions WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("fetch session row");
+        assert_eq!(session_row.get::<i64, _>("was_compacted"), 1);
+
+        let message_row = sqlx::query(
+            "SELECT content, message_type FROM agent_messages WHERE session_id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch message row");
+        assert_eq!(message_row.get::<String, _>("message_type"), "compact_divider");
+        let content = message_row.get::<String, _>("content");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&content).expect("valid json"),
+            serde_json::json!({ "trigger": "auto", "pre_tokens": 90_000 })
+        );
+    }
+
+    #[tokio::test]
+    async fn compact_boundary_without_metadata_stores_empty_content() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&compact_boundary_event(None))
+            .await;
+
+        let message_row = sqlx::query("SELECT content FROM agent_messages WHERE session_id = 1")
+            .fetch_one(&pool)
+            .await
+            .expect("fetch message row");
+        assert_eq!(message_row.get::<String, _>("content"), "");
     }
 }

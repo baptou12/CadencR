@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 
@@ -205,8 +206,22 @@ pub enum RuntimeEventKind {
         data: Value,
     },
     Result,
-    CompactBoundary,
+    CompactBoundary {
+        metadata: Option<RuntimeCompactMetadata>,
+    },
     Other,
+}
+
+/// Provider-neutral metadata captured from a compaction boundary event.
+///
+/// Cadence persists this alongside the `compact_divider` block so the UI can
+/// surface why the compaction happened and how many tokens were freed.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct RuntimeCompactMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pre_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -356,7 +371,14 @@ impl RuntimeEvent {
     }
 
     pub fn is_compact_boundary(&self) -> bool {
-        matches!(self.kind, RuntimeEventKind::CompactBoundary)
+        matches!(self.kind, RuntimeEventKind::CompactBoundary { .. })
+    }
+
+    pub fn compact_metadata(&self) -> Option<&RuntimeCompactMetadata> {
+        match &self.kind {
+            RuntimeEventKind::CompactBoundary { metadata } => metadata.as_ref(),
+            _ => None,
+        }
     }
 }
 

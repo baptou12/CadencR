@@ -281,7 +281,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                 all.push(MutableBlock {
                     id,
                     type_: "compact_divider".to_string(),
-                    content: String::new(),
+                    content: msg.content.clone(),
                     tool_name: None,
                     tool_use_id: None,
                     parent_tool_use_id: msg.parent_tool_use_id.clone(),

@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
-import { injectPlanIntoBlocks } from "./ws-message-processing";
+import { describe, it, expect, vi } from "vitest";
+import {
+  createStreamingState,
+  injectPlanIntoBlocks,
+  processSdkMessage,
+} from "./ws-message-processing";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 describe("injectPlanIntoBlocks", () => {
@@ -73,5 +77,63 @@ describe("injectPlanIntoBlocks", () => {
     const blocks = [makePlanBlock("ExitPlanMode", "not valid json")];
     const result = injectPlanIntoBlocks(blocks, { plan: "# Plan" });
     expect(result).toBe(blocks);
+  });
+});
+
+describe("processSdkMessage – system messages", () => {
+  it("logs every system message with [AGENT-SYSTEM] prefix", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const state = createStreamingState();
+    try {
+      processSdkMessage(
+        { type: "system", subtype: "init", session_id: "s1" },
+        state,
+      );
+      expect(info).toHaveBeenCalled();
+      const [prefix, payload] = info.mock.calls[0];
+      expect(prefix).toBe("[AGENT-SYSTEM] init");
+      expect(payload).toMatchObject({ type: "system", subtype: "init" });
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("emits a compact_divider append + compactBoundaryObserved signal", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const state = createStreamingState();
+    try {
+      const result = processSdkMessage(
+        {
+          type: "system",
+          subtype: "compact_boundary",
+          session_id: "s1",
+          compact_metadata: { trigger: "auto", pre_tokens: 90000 },
+        },
+        state,
+      );
+      expect(result.signals.compactBoundaryObserved).toBe(true);
+      expect(result.mutations).toHaveLength(1);
+      const mutation = result.mutations[0];
+      expect(mutation.action).toBe("append");
+      expect(mutation.block.type).toBe("compact_divider");
+      expect(mutation.block.content).toContain("\"trigger\":\"auto\"");
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it("emits no mutation for non-compact system subtypes", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const state = createStreamingState();
+    try {
+      const result = processSdkMessage(
+        { type: "system", subtype: "init", session_id: "s1" },
+        state,
+      );
+      expect(result.mutations).toHaveLength(0);
+      expect(result.signals.compactBoundaryObserved).toBe(false);
+    } finally {
+      info.mockRestore();
+    }
   });
 });

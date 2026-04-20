@@ -22,6 +22,8 @@ export interface StreamingState {
 
 export interface ParserSignals {
   enterPlanModeRequested: boolean;
+  /** Set when a `system.compact_boundary` message arrives mid-stream. */
+  compactBoundaryObserved: boolean;
 }
 
 export interface MessageProcessingResult {
@@ -45,6 +47,7 @@ export function createStreamingState(): StreamingState {
 function createParserSignals(): ParserSignals {
   return {
     enterPlanModeRequested: false,
+    compactBoundaryObserved: false,
   };
 }
 
@@ -66,10 +69,48 @@ export function processSdkMessage(
     case "user":
       return { mutations: processUserMessage(msg, state), signals };
     case "system":
+      return { mutations: processSystemMessage(msg, state, signals), signals };
     case "result":
     default:
       return { mutations: [], signals };
   }
+}
+
+/**
+ * Log every system message for runtime tracing; only `compact_boundary`
+ * currently produces a block and a `wasCompacted` signal.
+ */
+function processSystemMessage(
+  msg: Record<string, unknown>,
+  state: StreamingState,
+  signals: ParserSignals,
+): BlockMutation[] {
+  const subtype = typeof msg.subtype === "string" ? msg.subtype : "(unknown)";
+  console.info(`[AGENT-SYSTEM] ${subtype}`, msg);
+
+  if (subtype !== "compact_boundary") return [];
+
+  signals.compactBoundaryObserved = true;
+
+  const metadata = isRecord(msg.compact_metadata) ? msg.compact_metadata : undefined;
+  const content = metadata ? JSON.stringify(metadata) : "";
+
+  state.counter += 1;
+  return [
+    {
+      action: "append",
+      block: {
+        id: `ws-compact-${state.counter}`,
+        type: "compact_divider",
+        content,
+        createdAt: new Date().toISOString(),
+      },
+    },
+  ];
+}
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === "object";
 }
 
 function processStreamEvent(

@@ -1278,6 +1278,133 @@ describe("ws-session-store", () => {
     });
   });
 
+  describe("compaction handling", () => {
+    it("appends a compact_divider block for system.compact_boundary", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+              compact_metadata: { trigger: "auto", pre_tokens: 90000 },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      const divider = session.blocks.find((b) => b.type === "compact_divider");
+      expect(divider).toBeDefined();
+      expect(divider?.content).toContain("\"trigger\":\"auto\"");
+      expect(divider?.content).toContain("\"pre_tokens\":90000");
+    });
+
+    it("sets contextUsage.wasCompacted when compact_boundary arrives", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: {
+          session_id: "srv-1",
+          input_tokens: 1000,
+          output_tokens: 500,
+          context_window: 200000,
+        },
+      });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+              compact_metadata: { trigger: "manual", pre_tokens: 180000 },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.contextUsage?.wasCompacted).toBe(true);
+      // Other usage fields must be preserved.
+      expect(session.contextUsage?.inputTokens).toBe(1000);
+      expect(session.contextUsage?.outputTokens).toBe(500);
+      expect(session.contextUsage?.contextWindow).toBe(200000);
+    });
+
+    it("seeds contextUsage when compact_boundary arrives before any usage update", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+              compact_metadata: { trigger: "auto", pre_tokens: 0 },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.contextUsage?.wasCompacted).toBe(true);
+    });
+
+    it("ignores non-compact system subtypes", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "init",
+              uuid: "si1",
+              session_id: "srv-1",
+              model: "claude-sonnet-4-5",
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.blocks.some((b) => b.type === "compact_divider")).toBe(false);
+      expect(session.contextUsage?.wasCompacted ?? false).toBe(false);
+    });
+  });
+
   describe("applyMutations – toolArgs during streaming", () => {
     it("preserves toolArgs when content is partial JSON", () => {
       const validArgs = JSON.stringify({ description: "Find files", prompt: "search" });
