@@ -118,6 +118,28 @@ describe("AgentTodoList", () => {
     expect(screen.queryByText("Tasks")).not.toBeInTheDocument();
   });
 
+  it("keeps focus on the current textbox when todos auto-open", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(
+      <div>
+        <input aria-label="Prompt" />
+        <AgentTodoList todos={[pendingTodo]} />
+      </div>
+    );
+    const input = screen.getByRole("textbox", { name: "Prompt" });
+    input.focus();
+
+    rerender(
+      <div>
+        <input aria-label="Prompt" />
+        <AgentTodoList todos={[pendingTodo, completedTodo]} />
+      </div>
+    );
+
+    expect(screen.getByText("Tasks")).toBeInTheDocument();
+    expect(document.activeElement).toBe(input);
+  });
+
   it("renders long todo content without truncation classes", async () => {
     const user = userEvent.setup();
     const longTodo: TodoItem = {

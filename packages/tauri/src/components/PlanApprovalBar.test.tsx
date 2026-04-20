@@ -56,6 +56,38 @@ describe("PlanApprovalBar", () => {
     expect(onRequestChanges).toHaveBeenCalledWith("Need more tests");
   });
 
+  it("prefills request changes with the latest prompt text", async () => {
+    const { user } = render(
+      <PlanApprovalBar
+        initialFeedback="Use the original prompt as context"
+        onApprove={vi.fn()}
+        onRequestChanges={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /request changes/i }));
+
+    expect(screen.getByPlaceholderText(/describe the changes/i)).toHaveValue(
+      "Use the original prompt as context"
+    );
+  });
+
+  it("submits the prefilled feedback without retyping", async () => {
+    const onRequestChanges = vi.fn();
+    const { user } = render(
+      <PlanApprovalBar
+        initialFeedback="Tighten the scope"
+        onApprove={vi.fn()}
+        onRequestChanges={onRequestChanges}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /request changes/i }));
+    await user.click(screen.getByRole("button", { name: "" }));
+
+    expect(onRequestChanges).toHaveBeenCalledWith("Tighten the scope");
+  });
+
   it("renders reject & stop button when onReject is provided", () => {
     render(
       <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={vi.fn()} />

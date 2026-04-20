@@ -1,5 +1,6 @@
+import { forwardRef, useImperativeHandle, useState, type ForwardedRef } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { act, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 
@@ -63,6 +64,57 @@ vi.mock("@/hooks/useImageAttachments", () => ({
     isDragging: false,
   })),
 }));
+
+vi.mock("./prompt-editor/PromptEditor", () => {
+  const MockPromptEditor = forwardRef(function MockPromptEditor(
+    {
+      initialText,
+      onChange,
+      placeholder,
+      disabled,
+    }: {
+      initialText?: string;
+      onChange?: (text: string) => void;
+      placeholder?: string;
+      disabled?: boolean;
+    },
+    ref: ForwardedRef<{
+      focus: () => void;
+      clear: () => void;
+      setText: (text: string) => void;
+      getText: () => string;
+    }>,
+  ) {
+    const [value, setValue] = useState(initialText ?? "");
+
+    useImperativeHandle(ref, () => ({
+      focus: () => undefined,
+      clear: () => {
+        setValue("");
+        onChange?.("");
+      },
+      setText: (text: string) => {
+        setValue(text);
+        onChange?.(text);
+      },
+      getText: () => value,
+    }), [onChange, value]);
+
+    return (
+      <textarea
+        value={value}
+        onChange={(event) => {
+          setValue(event.target.value);
+          onChange?.(event.target.value);
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    );
+  });
+
+  return { PromptEditor: MockPromptEditor };
+});
 
 describe("AgentPromptBar", () => {
   const onSend = vi.fn();
@@ -159,6 +211,98 @@ describe("AgentPromptBar", () => {
       />,
     );
     expect(screen.getByRole("textbox")).toHaveTextContent("Draft text");
+  });
+
+  it("restores unsent text after a permission prompt closes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "Keep this draft");
+
+    rerender(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="running"
+        pendingPermission={{
+          toolName: "Bash",
+          input: { command: "ls /tmp" },
+          description: "Run a bash command",
+          pattern: "Bash(/tmp:*)",
+          requestId: "req-1",
+        }}
+        onPermissionDecision={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+
+    rerender(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveTextContent("Keep this draft");
+  });
+
+  it("restores unsent text after plan approval closes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "Need a smaller plan");
+
+    rerender(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="paused"
+        pendingPlanApproval={{ allowedPrompts: [] }}
+        onPlanApprove={vi.fn()}
+        onPlanRequestChanges={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+
+    rerender(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveTextContent("Need a smaller plan");
+  });
+
+  it("restores unsent text after question drawer closes", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+    );
+
+    await user.type(screen.getByRole("textbox"), "Answer later");
+
+    await act(async () => {
+      rerender(
+        <AgentPromptBar
+          onSend={onSend}
+          onStop={onStop}
+          status="paused"
+          pendingQuestions={[{ question: "What do you need?", options: [{ label: "Option A" }] }]}
+          onQuestionResponse={vi.fn()}
+        />,
+      );
+    });
+
+    expect(await screen.findByText(/What do you need/i)).toBeInTheDocument();
+
+    await act(async () => {
+      rerender(
+        <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
+      );
+    });
+
+    expect(screen.getByRole("textbox")).toHaveTextContent("Answer later");
   });
 
   it("escape calls onStop when focus is inside the prompt bar", () => {
