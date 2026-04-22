@@ -8,7 +8,7 @@
   "scripts": {
     "build": "cargo build --release && cp ../../target/release/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
     "build:debug": "cargo build && cp ../../target/debug/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
-    "dev": "cargo watch -w src -x 'run -- --db-path ~/Library/Application\\ Support/cadence/cadence.db --port 5005'",
+    "dev": "cargo watch -w src -w .env -x run",
     "test": "cargo test",
     "lint": "cargo check"
   }

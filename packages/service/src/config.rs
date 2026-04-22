@@ -8,12 +8,16 @@ pub struct Config {
     pub db_path: Option<String>,
 
     /// Port to listen on (overridable via CADENCE_RUST_PORT env var)
-    #[arg(long, default_value = "45678", env = "CADENCE_RUST_PORT")]
+    #[arg(long, default_value = "5005", env = "CADENCE_RUST_PORT")]
     pub port: u16,
 
+    /// Frontend dev server port used for local-origin allowlists.
+    #[arg(long, default_value = "1420", env = "CADENCE_FRONTEND_PORT")]
+    pub frontend_port: u16,
+
     /// Per-launch bearer token. Required when running the HTTP server; unused
-    /// in `mcp-serve` mode. The Tauri shell mints one at launch; dev runs pick
-    /// it up from `.env` via `scripts/ensure-dev-token.mjs`.
+    /// in `mcp-serve` mode. The Tauri shell mints one at launch; dev runs read
+    /// it from `packages/service/.env`.
     #[arg(long, env = "CADENCE_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 

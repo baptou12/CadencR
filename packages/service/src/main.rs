@@ -8,6 +8,7 @@ mod shared;
 use axum::http::header::{HeaderName, CONTENT_TYPE};
 use axum::http::Method;
 use clap::Parser;
+use std::path::{Path, PathBuf};
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
@@ -15,11 +16,18 @@ use app_state::AppState;
 use config::{Command, Config};
 use shared::db;
 
+const SERVICE_DOTENV_DISPLAY_PATH: &str = "packages/service/.env";
+const SERVICE_DOTENV_EXAMPLE_PATH: &str = "packages/service/.env.example";
+const REQUIRED_DEV_ENV_KEYS: [&str; 4] = [
+    "CADENCE_DB_PATH",
+    "CADENCE_RUST_PORT",
+    "CADENCE_FRONTEND_PORT",
+    "CADENCE_AUTH_TOKEN",
+];
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // `dotenv()` walks from the cwd, which cargo-watch and Tauri dev may set
-    // anywhere; anchoring on CARGO_MANIFEST_DIR always finds the repo root.
-    let dotenv_path = load_dotenv_from_manifest();
+    let dotenv_path = load_optional_package_dotenv(env!("CARGO_MANIFEST_DIR"))?;
 
     let config = Config::parse();
 
@@ -39,6 +47,14 @@ async fn main() -> anyhow::Result<()> {
             domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id).await?;
         }
         None => {
+            if cfg!(debug_assertions) {
+                let dotenv_path = require_dev_env_file(dotenv_path)?;
+                validate_required_env_keys(SERVICE_DOTENV_DISPLAY_PATH, &REQUIRED_DEV_ENV_KEYS)?;
+                info!("Loaded env from {}", dotenv_path.display());
+            } else if let Some(dotenv_path) = dotenv_path.as_deref() {
+                info!("Loaded env from {}", dotenv_path.display());
+            }
+
             let db_path = config
                 .db_path
                 .clone()
@@ -60,17 +76,12 @@ async fn main() -> anyhow::Result<()> {
             let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
             let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
 
-            if let Some(path) = dotenv_path.as_deref() {
-                info!("Loaded env from {}", path.display());
-            }
-
             let auth_token = config.auth_token.ok_or_else(|| {
                 anyhow::anyhow!(
                     "CADENCE_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
-                     var. Dev runs: `pnpm dev` from the repo root invokes \
-                     `scripts/ensure-dev-token.mjs`, which mints one into `.env`. Production \
-                     runs: the Tauri shell generates one per launch and passes it as a CLI \
-                     flag."
+                     var. Dev runs: set it in `packages/service/.env`. \
+                     Production runs: the Tauri shell generates one per launch and passes it \
+                     as a CLI flag."
                 )
             })?;
 
@@ -87,12 +98,13 @@ async fn main() -> anyhow::Result<()> {
                 file_change_tx,
                 file_watcher: domain::editor::watcher::new_shared(),
                 auth_token,
+                frontend_port: config.frontend_port,
                 port: config.port,
             };
 
             domain::agents::spawn_runtime_startup_warmups();
 
-            let app = api::build_router(state).layer(build_cors_layer());
+            let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
             info!("Cadence service listening on {addr}");
@@ -107,31 +119,143 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_dotenv_from_manifest() -> Option<std::path::PathBuf> {
-    let mut dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    loop {
-        let candidate = dir.join(".env");
-        if dotenvy::from_path(&candidate).is_ok() {
-            return Some(candidate);
+fn service_dotenv_path(manifest_dir: impl AsRef<Path>) -> PathBuf {
+    manifest_dir.as_ref().join(".env")
+}
+
+fn load_optional_package_dotenv(manifest_dir: impl AsRef<Path>) -> anyhow::Result<Option<PathBuf>> {
+    let dotenv_path = service_dotenv_path(manifest_dir);
+    if !dotenv_path.is_file() {
+        return Ok(None);
+    }
+
+    dotenvy::from_path(&dotenv_path).map_err(|error| {
+        anyhow::anyhow!("Failed to load `{SERVICE_DOTENV_DISPLAY_PATH}`: {error}")
+    })?;
+
+    Ok(Some(dotenv_path))
+}
+
+fn require_dev_env_file(dotenv_path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    dotenv_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Missing required dev env file `{SERVICE_DOTENV_DISPLAY_PATH}`. Copy \
+             `{SERVICE_DOTENV_EXAMPLE_PATH}` to `{SERVICE_DOTENV_DISPLAY_PATH}`."
+        )
+    })
+}
+
+fn validate_required_env_keys(display_path: &str, required_keys: &[&str]) -> anyhow::Result<()> {
+    let missing = required_keys
+        .iter()
+        .copied()
+        .filter(|key| {
+            std::env::var(key)
+                .ok()
+                .is_none_or(|value| value.trim().is_empty())
+        })
+        .collect::<Vec<_>>();
+
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "Missing required keys in `{display_path}`: {}.",
+        missing.join(", ")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        load_optional_package_dotenv, require_dev_env_file, service_dotenv_path,
+        validate_required_env_keys, REQUIRED_DEV_ENV_KEYS, SERVICE_DOTENV_DISPLAY_PATH,
+    };
+    use std::fs;
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::tempdir;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn clear_env(keys: &[&str]) {
+        for key in keys {
+            std::env::remove_var(key);
         }
-        if !dir.pop() {
-            return None;
-        }
+    }
+
+    #[test]
+    fn package_dotenv_loads_only_manifest_dir() {
+        let _guard = env_lock().lock().unwrap();
+        let workspace = tempdir().unwrap();
+        let manifest_dir = workspace.path().join("service");
+        let env_path = service_dotenv_path(&manifest_dir);
+
+        std::env::remove_var("SERVICE_TEST_ONLY");
+        fs::create_dir(&manifest_dir).unwrap();
+
+        assert_eq!(load_optional_package_dotenv(&manifest_dir).unwrap(), None);
+
+        fs::write(&env_path, "SERVICE_TEST_ONLY=loaded-from-manifest\n").unwrap();
+
+        let loaded = load_optional_package_dotenv(&manifest_dir).unwrap();
+
+        assert_eq!(loaded, Some(env_path));
+        assert_eq!(
+            std::env::var("SERVICE_TEST_ONLY").unwrap(),
+            "loaded-from-manifest"
+        );
+
+        std::env::remove_var("SERVICE_TEST_ONLY");
+    }
+
+    #[test]
+    fn missing_dev_env_file_is_fatal() {
+        let error = require_dev_env_file(None).unwrap_err();
+
+        assert!(error.to_string().contains("packages/service/.env"));
+    }
+
+    #[test]
+    fn missing_required_local_keys_are_fatal() {
+        let _guard = env_lock().lock().unwrap();
+        let workspace = tempdir().unwrap();
+        let manifest_dir = workspace.path().join("service");
+        let env_path = service_dotenv_path(&manifest_dir);
+        fs::create_dir(&manifest_dir).unwrap();
+        clear_env(&REQUIRED_DEV_ENV_KEYS);
+        fs::write(
+            &env_path,
+            "CADENCE_DB_PATH=./cadence.local.db\nCADENCE_RUST_PORT=5005\nCADENCE_AUTH_TOKEN=\n",
+        )
+        .unwrap();
+        load_optional_package_dotenv(&manifest_dir).unwrap();
+
+        let error = validate_required_env_keys(SERVICE_DOTENV_DISPLAY_PATH, &REQUIRED_DEV_ENV_KEYS)
+            .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("CADENCE_FRONTEND_PORT"));
+        assert!(message.contains("CADENCE_AUTH_TOKEN"));
+        clear_env(&REQUIRED_DEV_ENV_KEYS);
     }
 }
 
-fn build_cors_layer() -> CorsLayer {
+fn build_cors_layer(frontend_port: u16) -> CorsLayer {
     let mut origins = vec!["tauri://localhost".parse().expect("static origin")];
     if cfg!(debug_assertions) {
         origins.push(
-            "http://localhost:1420"
+            format!("http://localhost:{frontend_port}")
                 .parse()
-                .expect("static origin"),
+                .expect("frontend origin"),
         );
         origins.push(
-            "http://127.0.0.1:1420"
+            format!("http://127.0.0.1:{frontend_port}")
                 .parse()
-                .expect("static origin"),
+                .expect("frontend origin"),
         );
     }
 

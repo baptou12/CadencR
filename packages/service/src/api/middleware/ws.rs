@@ -10,7 +10,7 @@ const WS_TOKEN_PREFIX: &str = "cadence-token.";
 /// CORS doesn't apply to WebSockets; this is the only gate against drive-by
 /// upgrades. Non-browser clients may omit `Origin` — they still must present
 /// the bearer token via subprotocol.
-pub fn validate_ws_origin(headers: &HeaderMap) -> Result<(), Response> {
+pub fn validate_ws_origin(headers: &HeaderMap, frontend_port: u16) -> Result<(), Response> {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return Ok(());
     };
@@ -18,19 +18,23 @@ pub fn validate_ws_origin(headers: &HeaderMap) -> Result<(), Response> {
         Ok(s) => s,
         Err(_) => return Err(forbidden("invalid origin")),
     };
-    if is_allowed_ws_origin(origin) {
+    if is_allowed_ws_origin(origin, frontend_port) {
         Ok(())
     } else {
         Err(forbidden("origin not allowed"))
     }
 }
 
-fn is_allowed_ws_origin(origin: &str) -> bool {
+fn is_allowed_ws_origin(origin: &str, frontend_port: u16) -> bool {
     if origin == "tauri://localhost" {
         return true;
     }
-    cfg!(debug_assertions)
-        && (origin == "http://localhost:1420" || origin == "http://127.0.0.1:1420")
+    if !cfg!(debug_assertions) {
+        return false;
+    }
+
+    origin == format!("http://localhost:{frontend_port}")
+        || origin == format!("http://127.0.0.1:{frontend_port}")
 }
 
 /// Returns the matched subprotocol string. The caller MUST echo it back via
@@ -75,26 +79,32 @@ mod tests {
     #[test]
     fn origin_accepts_tauri_webview() {
         let h = make_headers(&[("origin", "tauri://localhost")]);
-        assert!(validate_ws_origin(&h).is_ok());
+        assert!(validate_ws_origin(&h, 1420).is_ok());
     }
 
     #[test]
     fn origin_accepts_dev_server_in_debug() {
         let h = make_headers(&[("origin", "http://localhost:1420")]);
-        assert!(validate_ws_origin(&h).is_ok());
+        assert!(validate_ws_origin(&h, 1420).is_ok());
     }
 
     #[test]
     fn origin_rejects_unknown() {
         let h = make_headers(&[("origin", "https://evil.example")]);
-        let err = validate_ws_origin(&h).unwrap_err();
+        let err = validate_ws_origin(&h, 1420).unwrap_err();
         assert_eq!(err.status(), StatusCode::FORBIDDEN);
     }
 
     #[test]
     fn origin_allows_missing() {
         let h = make_headers(&[]);
-        assert!(validate_ws_origin(&h).is_ok());
+        assert!(validate_ws_origin(&h, 1420).is_ok());
+    }
+
+    #[test]
+    fn origin_accepts_custom_debug_port() {
+        let h = make_headers(&[("origin", "http://127.0.0.1:4242")]);
+        assert!(validate_ws_origin(&h, 4242).is_ok());
     }
 
     #[test]
