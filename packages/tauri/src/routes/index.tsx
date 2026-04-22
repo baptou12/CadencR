@@ -20,6 +20,11 @@ function parseSavedFeature(value: string | undefined | null): { projectId: numbe
   return null;
 }
 
+function getQueryErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.length > 0) return error.message;
+  return "Failed to load workspace data.";
+}
+
 function HomePage() {
   const navigate = useNavigate();
   const { projectId: searchProjectId } = Route.useSearch();
@@ -35,6 +40,10 @@ function HomePage() {
   const featuresQuery = useListFeatures(targetProjectId ?? 0, {
     enabled: targetProjectId != null,
   });
+
+  const startupError = lastFeatureQuery.error
+    ?? projectsQuery.error
+    ?? (targetProjectId != null ? featuresQuery.error : null);
 
   useEffect(() => {
     if (lastFeatureQuery.isLoading) return;
@@ -91,6 +100,17 @@ function HomePage() {
         <div className="text-center">
           <p className="text-muted-foreground">No projects yet</p>
           <p className="mt-2 text-sm text-muted-foreground">Use the + button in the sidebar to add a project</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (startupError) {
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="text-center">
+          <p className="text-destructive">Failed to load workspace</p>
+          <p className="mt-2 text-sm text-muted-foreground">{getQueryErrorMessage(startupError)}</p>
         </div>
       </div>
     );

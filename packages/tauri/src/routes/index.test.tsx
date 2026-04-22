@@ -3,14 +3,23 @@ import { render, screen } from "@/test-utils";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
+  interface MockQueryResult<TData> {
+    data: TData;
+    isSuccess: boolean;
+    error: Error | null;
+  }
+
+  interface MockSettingQueryResult {
+    data: { value: string } | undefined;
+    isLoading: boolean;
+    error: Error | null;
+  }
+
   const mockNavigate = vi.fn();
   const mockUseSearch = vi.fn(() => ({}));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockProjectsListQuery = vi.fn(() => ({ data: [] as any[], isSuccess: false })) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockFeaturesListQuery = vi.fn(() => ({ data: [] as any[], isSuccess: false })) as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const mockLastFeatureQuery = vi.fn(() => ({ data: undefined, isLoading: false })) as any;
+  const mockProjectsListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({ data: [], isSuccess: false, error: null }));
+  const mockFeaturesListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({ data: [], isSuccess: false, error: null }));
+  const mockLastFeatureQuery = vi.fn<() => MockSettingQueryResult>(() => ({ data: undefined, isLoading: false, error: null }));
   return { mockNavigate, mockUseSearch, mockProjectsListQuery, mockFeaturesListQuery, mockLastFeatureQuery };
 });
 
@@ -51,8 +60,9 @@ describe("HomePage route", () => {
   beforeEach(() => {
     mocks.mockNavigate.mockClear();
     mocks.mockUseSearch.mockReturnValue({});
-    mocks.mockProjectsListQuery.mockReturnValue({ data: [], isSuccess: true });
-    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: true });
+    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
+    mocks.mockProjectsListQuery.mockReturnValue({ data: [], isSuccess: true, error: null });
+    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: true, error: null });
   });
 
   it("shows 'No projects yet' message when there are no projects", () => {
@@ -64,27 +74,41 @@ describe("HomePage route", () => {
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "Test", path: "/test" }],
       isSuccess: true,
+      error: null,
     });
-    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: true });
+    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: true, error: null });
     render(<HomePage />);
     expect(screen.getByText("No features in this project yet")).toBeInTheDocument();
   });
 
   it("shows loading state initially", () => {
-    mocks.mockProjectsListQuery.mockReturnValue({ data: [], isSuccess: false });
-    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: false });
+    mocks.mockProjectsListQuery.mockReturnValue({ data: [], isSuccess: false, error: null });
+    mocks.mockFeaturesListQuery.mockReturnValue({ data: [], isSuccess: false, error: null });
     render(<HomePage />);
     expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("shows a startup error when initial queries fail", () => {
+    mocks.mockProjectsListQuery.mockReturnValue({
+      data: [],
+      isSuccess: false,
+      error: new Error("Request failed with status code 401"),
+    });
+    render(<HomePage />);
+    expect(screen.getByText("Failed to load workspace")).toBeInTheDocument();
+    expect(screen.getByText("Request failed with status code 401")).toBeInTheDocument();
   });
 
   it("navigates when project and feature exist", () => {
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "Test", path: "/test" }],
       isSuccess: true,
+      error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
       data: [{ id: 5, title: "Feature 1" }],
       isSuccess: true,
+      error: null,
     });
     render(<HomePage />);
     expect(mocks.mockNavigate).toHaveBeenCalledWith(
@@ -99,14 +123,17 @@ describe("HomePage route", () => {
     mocks.mockLastFeatureQuery.mockReturnValue({
       data: { value: JSON.stringify({ projectId: 2, featureId: 10 }) },
       isLoading: false,
+      error: null,
     });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }, { id: 2, name: "P2", path: "/p2" }],
       isSuccess: true,
+      error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
       data: [{ id: 10, title: "Saved Feature" }, { id: 11, title: "Other" }],
       isSuccess: true,
+      error: null,
     });
     render(<HomePage />);
     expect(mocks.mockNavigate).toHaveBeenCalledWith(
@@ -121,14 +148,17 @@ describe("HomePage route", () => {
     mocks.mockLastFeatureQuery.mockReturnValue({
       data: { value: JSON.stringify({ projectId: 1, featureId: 999 }) },
       isLoading: false,
+      error: null,
     });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }],
       isSuccess: true,
+      error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
       data: [{ id: 5, title: "Feature 1" }],
       isSuccess: true,
+      error: null,
     });
     render(<HomePage />);
     expect(mocks.mockNavigate).toHaveBeenCalledWith(
@@ -140,14 +170,16 @@ describe("HomePage route", () => {
   });
 
   it("falls back to first feature when no saved setting exists", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false });
+    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: false, error: null });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }],
       isSuccess: true,
+      error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
       data: [{ id: 5, title: "Feature 1" }],
       isSuccess: true,
+      error: null,
     });
     render(<HomePage />);
     expect(mocks.mockNavigate).toHaveBeenCalledWith(
@@ -159,14 +191,16 @@ describe("HomePage route", () => {
   });
 
   it("does not navigate while last-feature setting is still loading", () => {
-    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: true });
+    mocks.mockLastFeatureQuery.mockReturnValue({ data: undefined, isLoading: true, error: null });
     mocks.mockProjectsListQuery.mockReturnValue({
       data: [{ id: 1, name: "P1", path: "/p1" }],
       isSuccess: true,
+      error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
       data: [{ id: 5, title: "Feature 1" }],
       isSuccess: true,
+      error: null,
     });
     render(<HomePage />);
     expect(mocks.mockNavigate).not.toHaveBeenCalled();
