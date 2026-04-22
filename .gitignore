@@ -13,8 +13,10 @@ target/
 *.db
 *.db-shm
 *.db-wal
-# Dev-mode auth token (scripts/ensure-dev-token.mjs). Per-clone secret, never commit.
-.env
+# Per-clone local environment and repo-local dev state. Never commit.
+**/.env
+**/.env.local
+.cadence/
 
 # Local agent permissions and personal machine paths
 .claude/settings.local.json

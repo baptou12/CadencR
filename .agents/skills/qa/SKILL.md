@@ -19,20 +19,31 @@ The argument (`$ARGUMENTS`) describes the feature to test. If empty, infer the f
 ## Step 1: Ensure Dev Servers Are Running
 
 The Cadence stack has two servers:
-- **Frontend** (Vite): `http://localhost:1420`
-- **Backend** (Rust service): `http://localhost:5005/api/health`
+- **Frontend** (Vite): `http://127.0.0.1:$VITE_FRONTEND_PORT`
+- **Backend** (Rust service): `http://127.0.0.1:$CADENCE_RUST_PORT/api/health`
 
 Check if they're already up and healthy:
 
 ```bash
+# Load local overrides from the package env files when present
+set -a
+[ -f packages/service/.env ] && . ./packages/service/.env
+[ -f packages/tauri/.env ] && . ./packages/tauri/.env
+set +a
+
+FRONTEND_PORT="${VITE_FRONTEND_PORT:-1420}"
+API_PORT="${CADENCE_RUST_PORT:-5005}"
+FRONTEND_URL="http://127.0.0.1:$FRONTEND_PORT"
+API_HEALTH_URL="http://127.0.0.1:$API_PORT/api/health"
+
 # Clear stale QA-run markers before checking server health
 export CADENCE_QA_RUN_DIR="/tmp/cadence-qa"
 mkdir -p "$CADENCE_QA_RUN_DIR"
 rm -f "$CADENCE_QA_RUN_DIR/dev.pid" "$CADENCE_QA_RUN_DIR/dev.pgid"
 
 # Health-check both servers (2-second timeout each)
-curl -sf --max-time 2 http://localhost:5005/api/health && echo "API: ok" || echo "API: down"
-curl -sf --max-time 2 http://localhost:1420 && echo "Frontend: ok" || echo "Frontend: down"
+curl -sf --max-time 2 "$API_HEALTH_URL" && echo "API: ok" || echo "API: down"
+curl -sf --max-time 2 "$FRONTEND_URL" && echo "Frontend: ok" || echo "Frontend: down"
 ```
 
 **If both are healthy**, skip to Step 2.
@@ -55,8 +66,8 @@ Then poll until both servers respond (timeout after 60 seconds):
 
 ```bash
 for i in $(seq 1 60); do
-  api=$(curl -sf --max-time 1 http://localhost:5005/api/health && echo "ok" || echo "")
-  fe=$(curl -sf --max-time 1 http://localhost:1420 > /dev/null 2>&1 && echo "ok" || echo "")
+  api=$(curl -sf --max-time 1 "$API_HEALTH_URL" && echo "ok" || echo "")
+  fe=$(curl -sf --max-time 1 "$FRONTEND_URL" > /dev/null 2>&1 && echo "ok" || echo "")
   [ "$api" = "ok" ] && [ "$fe" = "ok" ] && echo "Both servers ready" && break
   sleep 1
 done
@@ -83,7 +94,7 @@ Keep test cases focused and practical — test what the user built, not the enti
 ## Step 3: Open the App in cmux Browser
 
 ```bash
-cmux browser open http://localhost:1420
+cmux browser open "$FRONTEND_URL"
 ```
 
 Store the surface ID from the output (e.g., `surface:22`) and use it for all subsequent commands.
@@ -114,7 +125,7 @@ For each test case, follow this loop:
 | Wait for element | `cmux browser wait --selector "<css-selector>" --timeout 5` |
 | Read text | `cmux browser get text --selector "<css-selector>"` |
 | Check visibility | `cmux browser is visible "<css-selector>"` |
-| Navigate | `cmux browser goto "http://localhost:1420/#/path"` |
+| Navigate | `cmux browser goto "$FRONTEND_URL/#/path"` |
 | Check console errors | `cmux browser console list` |
 | Check JS errors | `cmux browser errors list` |
 
@@ -155,7 +166,7 @@ cmux browser surface:ID eval --script "document.querySelector('YOUR_SELECTOR').b
 
 ### Tips
 
-- Cadence uses **hash routing** (`/#/...`), so URLs look like `http://localhost:1420/#/projects/1/features`
+- Cadence uses **hash routing** (`/#/...`), so URLs look like `$FRONTEND_URL/#/projects/1/features`
 - All `cmux browser` commands need the surface ID: `cmux browser surface:ID <command>`
 - Use `snapshot --compact` for a quick overview, full `snapshot` when you need element details
 - Use `--snapshot-after` on interaction commands (click, goto, fill) to see the result immediately

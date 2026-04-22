@@ -8,7 +8,7 @@ This is a pnpm workspaces + Turborepo monorepo. The desktop app lives in `packag
 
 - Run tasks via turbo from root: `pnpm turbo run <task>` (for example `pnpm turbo run lint`, `pnpm turbo run test`)
 - Or target the desktop package directly: `pnpm --filter @cadence/desktop <task>`
-- Dev server: `pnpm dev` or `pnpm start` from root (frontend on port `1420`, service on port `5005`)
+- Dev server: `pnpm dev` or `pnpm start` from root. Frontend/service ports are configured via `packages/tauri/.env` and `packages/service/.env` and default to `1420` / `5005`.
 
 ## Architecture
 

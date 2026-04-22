@@ -142,7 +142,9 @@ export function ProjectSettingsDialog({
             <div className="space-y-1">
               <span className="text-xs font-medium">Worktree Setup Commands</span>
               <Textarea
-                placeholder={"e.g. pnpm install\ncp .env.example .env"}
+                placeholder={
+                  "e.g. pnpm install\ncp packages/service/.env.example packages/service/.env"
+                }
                 rows={3}
                 value={setupWorktree}
                 onChange={(e) => setSetupWorktree(e.target.value)}
