@@ -38,7 +38,11 @@ pub struct ComposableServer {
 
 impl ComposableServer {
     pub fn new(name: &'static str, tools: Vec<ToolRegistration>, feature_id: i64) -> Self {
-        Self { name, tools, feature_id }
+        Self {
+            name,
+            tools,
+            feature_id,
+        }
     }
 }
 

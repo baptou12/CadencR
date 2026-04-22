@@ -256,9 +256,7 @@ impl AgentRuntimeSession for OpenCodeSession {
                     .iter()
                     .filter(|(_, k)| matches!(k, PendingRequestKind::Permission));
                 match (perms.next(), perms.next()) {
-                    (Some((id, _)), None) => {
-                        (id.clone(), Some(PendingRequestKind::Permission))
-                    }
+                    (Some((id, _)), None) => (id.clone(), Some(PendingRequestKind::Permission)),
                     _ => {
                         let fallback = response
                             .updated_input

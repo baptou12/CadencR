@@ -695,13 +695,7 @@ pub async fn create_worktree(
 /// Remove a git worktree.
 pub async fn remove_worktree(repo_path: &Path, worktree_path: &Path) -> Result<(), AppError> {
     let wt_str = worktree_path.to_string_lossy().to_string();
-    run_git_safe_refs(
-        &["worktree", "remove"],
-        &["--force"],
-        &[&wt_str],
-        repo_path,
-    )
-    .await?;
+    run_git_safe_refs(&["worktree", "remove"], &["--force"], &[&wt_str], repo_path).await?;
     Ok(())
 }
 
@@ -713,8 +707,7 @@ pub async fn get_original_branch(
 ) -> Result<String, AppError> {
     // 1. Try tracking config
     let config_key = format!("branch.{worktree_branch}.merge");
-    if let Ok(stdout) =
-        run_git_safe_refs(&["config"], &["--get"], &[&config_key], repo_path).await
+    if let Ok(stdout) = run_git_safe_refs(&["config"], &["--get"], &[&config_key], repo_path).await
     {
         let merge = stdout.trim();
         if !merge.is_empty() {
@@ -829,13 +822,8 @@ pub async fn merge_branch(
     // Checkout target and merge
     let merge_result =
         match run_git_safe_refs(&["checkout"], &[], &[target_branch], repo_path).await {
-            Ok(_) => match run_git_safe_refs(
-                &["merge"],
-                &["--no-ff"],
-                &[source_branch],
-                repo_path,
-            )
-            .await
+            Ok(_) => match run_git_safe_refs(&["merge"], &["--no-ff"], &[source_branch], repo_path)
+                .await
             {
                 Ok(_) => MergeResult {
                     success: true,

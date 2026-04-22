@@ -13,18 +13,15 @@ pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> 
 /// Resolve a project id to its on-disk canonical root. Returns
 /// `AppError::NotFound` if the id is unknown and `AppError::BadRequest` if the
 /// stored path can no longer be canonicalized (project was moved or removed).
-pub async fn resolve_project_root(
-    pool: &SqlitePool,
-    project_id: i64,
-) -> Result<PathBuf, AppError> {
+pub async fn resolve_project_root(pool: &SqlitePool, project_id: i64) -> Result<PathBuf, AppError> {
     let row: Option<(String,)> = sqlx::query_as("SELECT path FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_optional(pool)
         .await?;
-    let (path,) = row.ok_or_else(|| AppError::NotFound(format!("project {project_id} not found")))?;
-    std::fs::canonicalize(&path).map_err(|e| {
-        AppError::BadRequest(format!("cannot resolve project {project_id} root: {e}"))
-    })
+    let (path,) =
+        row.ok_or_else(|| AppError::NotFound(format!("project {project_id} not found")))?;
+    std::fs::canonicalize(&path)
+        .map_err(|e| AppError::BadRequest(format!("cannot resolve project {project_id} root: {e}")))
 }
 
 /// Resolve the on-disk root a feature's editor should operate against. If the
@@ -44,9 +41,7 @@ pub async fn resolve_feature_editor_root(
         {
             if std::path::Path::new(&path).is_dir() {
                 return std::fs::canonicalize(&path).map_err(|e| {
-                    AppError::BadRequest(format!(
-                        "cannot resolve feature {fid} worktree root: {e}"
-                    ))
+                    AppError::BadRequest(format!("cannot resolve feature {fid} worktree root: {e}"))
                 });
             }
         }
@@ -69,7 +64,9 @@ pub async fn create_project(
 fn validate_new_project(name: &str, path: &str) -> Result<(String, String), AppError> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
-        return Err(AppError::BadRequest("project name must not be empty".into()));
+        return Err(AppError::BadRequest(
+            "project name must not be empty".into(),
+        ));
     }
     if trimmed.starts_with('.') {
         return Err(AppError::BadRequest(
@@ -103,7 +100,10 @@ fn validate_new_project(name: &str, path: &str) -> Result<(String, String), AppE
         ));
     }
 
-    Ok((trimmed.to_string(), canonical.to_string_lossy().into_owned()))
+    Ok((
+        trimmed.to_string(),
+        canonical.to_string_lossy().into_owned(),
+    ))
 }
 
 pub async fn delete_project(pool: &SqlitePool, id: i64) -> Result<(), AppError> {

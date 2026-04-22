@@ -2,9 +2,8 @@ use serde_json::Value;
 
 use crate::domain::agents::adapter::{
     RuntimeAssistantMessage, RuntimeCompactMetadata, RuntimeContentBlock, RuntimeContentDelta,
-    RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent,
-    RuntimeMcpServerStatus, RuntimeStreamEvent, RuntimeUsage, RuntimeUserContentBlock,
-    RuntimeUserMessage,
+    RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeInitEvent, RuntimeMcpServerStatus,
+    RuntimeStreamEvent, RuntimeUsage, RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
 pub(super) fn context_window_for_model_from_raw(raw: &Value, model: &str) -> Option<u64> {

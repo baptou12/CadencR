@@ -40,9 +40,7 @@ async fn resolve_table_kv_setting(
         _ => return None,
     };
 
-    let sql = format!(
-        "SELECT value FROM {kv_table} WHERE {scope_id} = ? AND key = ? LIMIT 1"
-    );
+    let sql = format!("SELECT value FROM {kv_table} WHERE {scope_id} = ? AND key = ? LIMIT 1");
     sqlx::query_scalar::<_, Option<String>>(&sql)
         .bind(row_id)
         .bind(key)

@@ -1,7 +1,3 @@
-use std::collections::HashSet;
-use std::time::{Duration, Instant};
-use axum::extract::ws::Message;
-use serde_json::json;
 use super::super::persistence::{SessionRow, WsSessionPersistence};
 use super::super::protocol::*;
 use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
@@ -11,6 +7,10 @@ use crate::domain::agents::adapter::{
     RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent, RuntimeUsage,
 };
 use crate::domain::agents::opencode::parse_model_ref;
+use axum::extract::ws::Message;
+use serde_json::json;
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 const OPENCODE_PROVIDER_ID: &str = "opencode";
 const COMPACT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const COMPACT_POLL_TIMEOUT: Duration = Duration::from_secs(15);
@@ -32,10 +32,13 @@ fn message_has_compaction_part(message: &opencode_sdk_rs::Message) -> bool {
 
 fn summary_message_candidate(message: &opencode_sdk_rs::Message) -> bool {
     matches!(message.role, opencode_sdk_rs::MessageRole::Assistant)
-        && message
-            .parts
-            .iter()
-            .any(|part| matches!(part, opencode_sdk_rs::MessagePart::Text { .. } | opencode_sdk_rs::MessagePart::Thinking { .. }))
+        && message.parts.iter().any(|part| {
+            matches!(
+                part,
+                opencode_sdk_rs::MessagePart::Text { .. }
+                    | opencode_sdk_rs::MessagePart::Thinking { .. }
+            )
+        })
 }
 fn usage_from_message(message: &opencode_sdk_rs::Message) -> Option<RuntimeUsage> {
     message.tokens.as_ref().map(|tokens| RuntimeUsage {
@@ -222,7 +225,9 @@ fn resolve_compact_target(
         return Err("Session model is unavailable for compaction".to_string());
     };
     if model_ref.provider_id == "default" || model_ref.model_id.is_empty() {
-        return Err(format!("OpenCode compaction requires a provider/model ref, got '{model}'"));
+        return Err(format!(
+            "OpenCode compaction requires a provider/model ref, got '{model}'"
+        ));
     }
 
     Ok(CompactTarget {
@@ -325,7 +330,12 @@ pub(super) async fn handle_compact(
     let target = {
         let sessions = sdk_sessions.lock().await;
         let Some(handle) = sessions.get(&db_session_id) else {
-            send_error(sender, &envelope.id, "SESSION_NOT_FOUND", "Session not found");
+            send_error(
+                sender,
+                &envelope.id,
+                "SESSION_NOT_FOUND",
+                "Session not found",
+            );
             return;
         };
         match resolve_compact_target(handle, session_row.as_ref()) {
@@ -352,8 +362,10 @@ pub(super) async fn handle_compact(
             return;
         }
     };
-    let existing_ids: HashSet<String> =
-        existing_messages.into_iter().map(|message| message.id).collect();
+    let existing_ids: HashSet<String> = existing_messages
+        .into_iter()
+        .map(|message| message.id)
+        .collect();
 
     if let Err(error) = client
         .summarize_session_in_directory(
@@ -368,13 +380,14 @@ pub(super) async fn handle_compact(
         return;
     }
 
-    let messages = match await_compaction_messages(&client, &target.runtime_session_id, &existing_ids).await {
-        Ok(messages) => messages,
-        Err(message) => {
-            send_error(sender, &envelope.id, "SDK_ERROR", &message);
-            return;
-        }
-    };
+    let messages =
+        match await_compaction_messages(&client, &target.runtime_session_id, &existing_ids).await {
+            Ok(messages) => messages,
+            Err(message) => {
+                send_error(sender, &envelope.id, "SDK_ERROR", &message);
+                return;
+            }
+        };
 
     if let Err(message) = persist_and_forward_compaction(
         app_state,

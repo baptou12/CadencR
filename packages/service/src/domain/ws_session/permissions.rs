@@ -324,8 +324,8 @@ fn find_relative_dotdot_outside(command: &str, worktree_path: &Path) -> Option<S
 
 fn find_dot_slash_outside(command: &str, worktree_path: &Path) -> Option<String> {
     static DOT_SLASH_RE: OnceLock<Regex> = OnceLock::new();
-    let re = DOT_SLASH_RE
-        .get_or_init(|| Regex::new(r#"(?:^|\s|=|")(\./[^\s"'`;|&><()]+)"#).unwrap());
+    let re =
+        DOT_SLASH_RE.get_or_init(|| Regex::new(r#"(?:^|\s|=|")(\./[^\s"'`;|&><()]+)"#).unwrap());
 
     for cap in re.captures_iter(command) {
         let candidate = &cap[1];
@@ -339,9 +339,7 @@ fn find_dot_slash_outside(command: &str, worktree_path: &Path) -> Option<String>
 }
 
 fn is_skippable_abs_path(candidate: &str) -> bool {
-    candidate == "/dev/null"
-        || candidate.starts_with("/dev/")
-        || candidate.starts_with("/proc/")
+    candidate == "/dev/null" || candidate.starts_with("/dev/") || candidate.starts_with("/proc/")
 }
 
 /// True when the token contains `..` as a path component (not just as a

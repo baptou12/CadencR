@@ -159,8 +159,7 @@ mod tests {
 
     #[test]
     fn resolve_effective_provider_reroutes_default_when_model_belongs_to_other_adapter() {
-        let routed =
-            resolve_effective_provider("claude_code".to_string(), Some("openai/gpt-5.4"));
+        let routed = resolve_effective_provider("claude_code".to_string(), Some("openai/gpt-5.4"));
         assert_eq!(routed, "opencode");
     }
 

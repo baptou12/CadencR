@@ -306,8 +306,9 @@ async fn handle_approval(
         "prd" => "pending_prd_approval",
         _ => "pending_plan_approval",
     };
-    let clear_sql =
-        format!("UPDATE agent_sessions SET {pending_column} = NULL WHERE feature_id = ? AND agent_type = ?");
+    let clear_sql = format!(
+        "UPDATE agent_sessions SET {pending_column} = NULL WHERE feature_id = ? AND agent_type = ?"
+    );
     if let Err(e) = sqlx::query(&clear_sql)
         .bind(feature_id)
         .bind(kind)

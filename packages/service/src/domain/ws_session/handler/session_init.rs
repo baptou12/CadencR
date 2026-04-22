@@ -138,14 +138,16 @@ pub(super) async fn handle_init(
     let effective_model = stored_model.clone().or(payload.model.clone());
     let effective_thinking_effort = match payload.thinking_effort.clone() {
         Some(effort) => Some(effort),
-        None => settings::resolve_setting(
-            &app_state.read_pool,
-            "thinking_effort_session",
-            Some(feature_id),
-            project_id,
-            None,
-        )
-        .await,
+        None => {
+            settings::resolve_setting(
+                &app_state.read_pool,
+                "thinking_effort_session",
+                Some(feature_id),
+                project_id,
+                None,
+            )
+            .await
+        }
     };
     let effective_provider = resolve_effective_provider(
         runtime_provider
@@ -369,11 +371,8 @@ pub(super) async fn handle_init(
     // nothing should be pending. Without this, a ws-session Claude Code
     // AskUserQuestion that stored in pending_permission would leak into
     // a ghost askUser on every reconnect.
-    WsSessionPersistence::clear_all_pending_user_input_static(
-        &app_state.write_pool,
-        db_session_id,
-    )
-    .await;
+    WsSessionPersistence::clear_all_pending_user_input_static(&app_state.write_pool, db_session_id)
+        .await;
 
     // Broadcast "none" to clear any stale turn state — session is idle until a prompt is sent
     WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");

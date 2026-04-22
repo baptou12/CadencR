@@ -40,17 +40,13 @@ const DENIED_ENV_KEYS: &[&str] = &[
 ];
 
 fn is_denied_env_key(key: &str) -> bool {
-    DENIED_ENV_KEYS
-        .iter()
-        .any(|d| d.eq_ignore_ascii_case(key))
+    DENIED_ENV_KEYS.iter().any(|d| d.eq_ignore_ascii_case(key))
 }
 
 /// Response-only redaction: replace values whose keys look like credentials
 /// with `"***"` so DevTools / screenshots / logs don't leak them. The runtime
 /// path (`resolve_active_profile_env`) returns the unredacted map directly.
-pub fn redact_env_for_response(
-    env: &HashMap<String, String>,
-) -> HashMap<String, String> {
+pub fn redact_env_for_response(env: &HashMap<String, String>) -> HashMap<String, String> {
     env.iter()
         .map(|(k, v)| {
             if looks_like_secret_key(k) {
@@ -281,7 +277,10 @@ mod tests {
 
     fn sample_env() -> HashMap<String, String> {
         let mut env = HashMap::new();
-        env.insert("ANTHROPIC_BASE_URL".to_string(), "https://proxy".to_string());
+        env.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            "https://proxy".to_string(),
+        );
         env.insert("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string());
         env
     }
@@ -289,7 +288,9 @@ mod tests {
     #[tokio::test]
     async fn upsert_and_list_roundtrip() {
         let pool = setup().await;
-        upsert_profile(&pool, "bedrock", &sample_env()).await.unwrap();
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
         let profiles = list_profiles(&pool).await.unwrap();
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].name, "bedrock");
@@ -308,10 +309,14 @@ mod tests {
     #[tokio::test]
     async fn upsert_overwrites_existing_env() {
         let pool = setup().await;
-        upsert_profile(&pool, "bedrock", &sample_env()).await.unwrap();
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
         let mut replacement = HashMap::new();
         replacement.insert("AWS_REGION".to_string(), "us-east-1".to_string());
-        upsert_profile(&pool, "bedrock", &replacement).await.unwrap();
+        upsert_profile(&pool, "bedrock", &replacement)
+            .await
+            .unwrap();
         let profile = get_profile(&pool, "bedrock").await.unwrap().unwrap();
         assert_eq!(profile.env, replacement);
     }
@@ -327,7 +332,9 @@ mod tests {
     #[tokio::test]
     async fn active_env_returns_name_and_env() {
         let pool = setup().await;
-        upsert_profile(&pool, "bedrock", &sample_env()).await.unwrap();
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
         set_active_profile(&pool, "bedrock").await.unwrap();
         let (name, env) = resolve_active_profile_env(&pool).await;
         assert_eq!(name, "bedrock");
@@ -357,7 +364,9 @@ mod tests {
     #[tokio::test]
     async fn deleting_active_profile_resets_to_default() {
         let pool = setup().await;
-        upsert_profile(&pool, "bedrock", &sample_env()).await.unwrap();
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
         set_active_profile(&pool, "bedrock").await.unwrap();
         delete_profile(&pool, "bedrock").await.unwrap();
         assert_eq!(
@@ -378,7 +387,9 @@ mod tests {
     #[tokio::test]
     async fn set_active_default_clears_override() {
         let pool = setup().await;
-        upsert_profile(&pool, "bedrock", &sample_env()).await.unwrap();
+        upsert_profile(&pool, "bedrock", &sample_env())
+            .await
+            .unwrap();
         set_active_profile(&pool, "bedrock").await.unwrap();
         set_active_profile(&pool, "default").await.unwrap();
         let (_, env) = resolve_active_profile_env(&pool).await;
@@ -418,7 +429,10 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("ANTHROPIC_API_KEY".into(), "sk-ant-live-xxx".into());
         let profile = upsert_profile(&pool, "real", &env).await.unwrap();
-        assert_eq!(profile.env.get("ANTHROPIC_API_KEY").unwrap(), "sk-ant-live-xxx");
+        assert_eq!(
+            profile.env.get("ANTHROPIC_API_KEY").unwrap(),
+            "sk-ant-live-xxx"
+        );
     }
 
     #[test]

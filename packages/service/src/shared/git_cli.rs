@@ -27,7 +27,8 @@ pub async fn run_git_safe(
     cwd: &Path,
 ) -> Result<String, AppError> {
     validate_positionals(positionals)?;
-    let mut args: Vec<&str> = Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len() + 1);
+    let mut args: Vec<&str> =
+        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len() + 1);
     args.extend_from_slice(subcommand_args);
     args.extend_from_slice(flags);
     args.push("--");
@@ -48,7 +49,8 @@ pub async fn run_git_safe_refs(
     cwd: &Path,
 ) -> Result<String, AppError> {
     validate_positionals(positionals)?;
-    let mut args: Vec<&str> = Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
+    let mut args: Vec<&str> =
+        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
     args.extend_from_slice(subcommand_args);
     args.extend_from_slice(flags);
     args.extend_from_slice(positionals);

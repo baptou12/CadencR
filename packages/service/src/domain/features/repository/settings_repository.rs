@@ -1,9 +1,7 @@
 use sqlx::SqlitePool;
 
 use super::super::models::{FeatureModelSettings, FeatureProviderSettings, FeatureSetting};
-use crate::domain::agents::runtime::{
-    runtime_setting_key, validate_agent_type,
-};
+use crate::domain::agents::runtime::{runtime_setting_key, validate_agent_type};
 use crate::error::AppError;
 
 pub async fn get_feature_settings(

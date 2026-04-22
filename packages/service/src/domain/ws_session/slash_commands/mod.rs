@@ -46,8 +46,7 @@ fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
             vec![SlashCommand {
                 name: "compact".to_string(),
                 description: Some(
-                    "Compact the conversation, freeing context while keeping a summary"
-                        .to_string(),
+                    "Compact the conversation, freeing context while keeping a summary".to_string(),
                 ),
             }]
         }

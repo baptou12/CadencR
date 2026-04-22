@@ -64,9 +64,8 @@ pub(crate) async fn handle_prompt_send(
     let model_changed = handle.desired_model != handle.spawned_model;
     let mode_changed = handle.desired_permission_mode != handle.spawned_permission_mode;
     let effort_changed = handle.desired_thinking_effort != handle.spawned_thinking_effort;
-    let needs_respawn =
-        matches!(&handle.state, QueryState::Active { .. })
-            && (model_changed || mode_changed || effort_changed);
+    let needs_respawn = matches!(&handle.state, QueryState::Active { .. })
+        && (model_changed || mode_changed || effort_changed);
 
     if needs_respawn {
         info!(

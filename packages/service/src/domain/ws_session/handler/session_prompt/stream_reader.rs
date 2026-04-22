@@ -117,8 +117,7 @@ pub(crate) fn spawn_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
-                        let payload: PermissionRequestPayload =
-                            permission_request_payload(request);
+                        let payload: PermissionRequestPayload = permission_request_payload(request);
                         // Persist + broadcast "askUser" together. The OpenCode
                         // stream path previously only broadcast, leaving the
                         // DB blank — any snapshot recovery silently dropped

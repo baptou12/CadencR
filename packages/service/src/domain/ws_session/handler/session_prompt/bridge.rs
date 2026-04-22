@@ -231,12 +231,11 @@ impl WsBridgeCanUseTool {
 
         // plan_approval_result is a sibling column (not a pending_* gate) —
         // clear it directly; the PlanApproval gate goes through the helper.
-        if let Err(e) = sqlx::query(
-            "UPDATE agent_sessions SET plan_approval_result = NULL WHERE id = ?",
-        )
-        .bind(self.db_session_id)
-        .execute(&self.write_pool)
-        .await
+        if let Err(e) =
+            sqlx::query("UPDATE agent_sessions SET plan_approval_result = NULL WHERE id = ?")
+                .bind(self.db_session_id)
+                .execute(&self.write_pool)
+                .await
         {
             warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result");
         }

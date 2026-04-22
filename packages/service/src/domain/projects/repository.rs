@@ -1,7 +1,5 @@
 use super::models::{Project, ProjectModelSettings, ProjectProviderSettings, ProjectSetting};
-use crate::domain::agents::runtime::{
-    runtime_setting_key, validate_agent_type,
-};
+use crate::domain::agents::runtime::{runtime_setting_key, validate_agent_type};
 use crate::error::AppError;
 use sqlx::SqlitePool;
 

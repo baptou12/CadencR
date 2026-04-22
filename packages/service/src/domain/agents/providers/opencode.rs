@@ -242,9 +242,8 @@ fn latest_message_is_final_stop(messages: &[Message]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_catalog_entry, catalog_entry, default_model_id,
-        model_context_window, models_from_providers, parse_warmup_flag,
-        supported_effort_levels, OpencodeModel,
+        build_catalog_entry, catalog_entry, default_model_id, model_context_window,
+        models_from_providers, parse_warmup_flag, supported_effort_levels, OpencodeModel,
         OPENCODE_FALLBACK_CONTEXT_WINDOW,
     };
     use crate::domain::agents::runtime::ProviderStatus;
@@ -376,5 +375,4 @@ mod tests {
         assert!(!parse_warmup_flag(Some("no")));
         assert!(!parse_warmup_flag(Some("off")));
     }
-
 }

@@ -205,13 +205,21 @@ mod tests {
         let mut servers = HashMap::new();
         servers.insert(
             "cadence-plan".to_string(),
-            stdio("/bin/cadence", &["mcp-serve", "--feature-id", "7"], &[("X", "1")]),
+            stdio(
+                "/bin/cadence",
+                &["mcp-serve", "--feature-id", "7"],
+                &[("X", "1")],
+            ),
         );
 
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
 
         let written: Value = serde_json::from_slice(
-            &tokio::fs::read(dir.path().join("opencode.json")).await.unwrap(),
+            &tokio::fs::read(dir.path().join("opencode.json"))
+                .await
+                .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -249,12 +257,18 @@ mod tests {
 
         let mut servers = HashMap::new();
         servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
 
-        let written: Value = serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
+        let written: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         assert_eq!(written["permission"]["bash"], json!("ask"));
         assert_eq!(written["permission"]["edit"], json!("allow"));
-        assert_eq!(written["permission"]["cadence-plan_show_plan"], json!("ask"));
+        assert_eq!(
+            written["permission"]["cadence-plan_show_plan"],
+            json!("ask")
+        );
         assert_eq!(written["permission"]["cadence-plan_show_prd"], json!("ask"));
     }
 
@@ -274,7 +288,9 @@ mod tests {
 
         let mut servers = HashMap::new();
         servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
 
         let serialized = String::from_utf8(tokio::fs::read(&path).await.unwrap()).unwrap();
         let catchall_pos = serialized.find("\"*\"").expect("catch-all key present");
@@ -309,11 +325,17 @@ mod tests {
             "cadence-session".to_string(),
             stdio("/bin/cadence", &["mcp-serve"], &[]),
         );
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
 
-        let written: Value = serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
+        let written: Value =
+            serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         assert_eq!(written["instructions"], json!(["AGENTS.md"]));
-        assert_eq!(written["mcp"]["other-user-mcp"], json!({ "type": "local", "command": ["true"] }));
+        assert_eq!(
+            written["mcp"]["other-user-mcp"],
+            json!({ "type": "local", "command": ["true"] })
+        );
         assert_eq!(
             written["mcp"]["cadence-session"],
             json!({ "type": "local", "command": ["/bin/cadence", "mcp-serve"], "enabled": true })
@@ -326,7 +348,9 @@ mod tests {
         let mut servers = HashMap::new();
         servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
 
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
         let first_mtime = tokio::fs::metadata(dir.path().join("opencode.json"))
             .await
             .unwrap()
@@ -334,25 +358,34 @@ mod tests {
             .unwrap();
 
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap();
+        ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap();
         let second_mtime = tokio::fs::metadata(dir.path().join("opencode.json"))
             .await
             .unwrap()
             .modified()
             .unwrap();
 
-        assert_eq!(first_mtime, second_mtime, "re-running with identical config should not rewrite the file");
+        assert_eq!(
+            first_mtime, second_mtime,
+            "re-running with identical config should not rewrite the file"
+        );
     }
 
     #[tokio::test]
     async fn rejects_non_object_mcp_field() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("opencode.json");
-        tokio::fs::write(&path, b"{\"mcp\": \"not-an-object\"}").await.unwrap();
+        tokio::fs::write(&path, b"{\"mcp\": \"not-an-object\"}")
+            .await
+            .unwrap();
 
         let mut servers = HashMap::new();
         servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
-        let err = ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap_err();
+        let err = ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
@@ -360,11 +393,15 @@ mod tests {
     async fn rejects_non_object_permission_field() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("opencode.json");
-        tokio::fs::write(&path, b"{\"permission\": \"not-an-object\"}").await.unwrap();
+        tokio::fs::write(&path, b"{\"permission\": \"not-an-object\"}")
+            .await
+            .unwrap();
 
         let mut servers = HashMap::new();
         servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
-        let err = ensure_worktree_opencode_config(dir.path(), &servers).await.unwrap_err();
+        let err = ensure_worktree_opencode_config(dir.path(), &servers)
+            .await
+            .unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }

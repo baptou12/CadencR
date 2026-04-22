@@ -3,9 +3,7 @@
 use axum::extract::ws::Message;
 use sqlx::SqlitePool;
 
-use crate::domain::agents::adapter::{
-    RuntimeContentBlock, RuntimeEvent, RuntimeStreamEvent,
-};
+use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEvent, RuntimeStreamEvent};
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::engine::{send_feature_updated_envelope, to_value, WsSender};
 use crate::domain::ws_session::protocol::*;
@@ -62,7 +60,12 @@ pub async fn handle_live_refresh(
         // OpenCode surfaces tool_use as ContentBlockStart stream events rather
         // than assistant messages with content — without this branch we'd miss
         // `mark_agent_done` / phase-modifying tool calls and never advance.
-        handle_tool_use_name(name, agent_done_called, pending_feature_update, pending_queue_update);
+        handle_tool_use_name(
+            name,
+            agent_done_called,
+            pending_feature_update,
+            pending_queue_update,
+        );
     }
 }
 

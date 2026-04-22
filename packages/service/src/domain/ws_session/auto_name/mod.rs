@@ -38,11 +38,7 @@ fn send_feature_updated(
 
 /// Send a `feature.autonaming` envelope so the frontend can toggle the
 /// title-skeleton while naming is in flight.
-fn send_autonaming(
-    sender: &mpsc::UnboundedSender<Message>,
-    feature_id: i64,
-    in_progress: bool,
-) {
+fn send_autonaming(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, in_progress: bool) {
     let payload = FeatureAutoNamingPayload {
         feature_id,
         in_progress,
@@ -251,13 +247,11 @@ async fn build_spawn_config(
     } else {
         None
     };
-    let thinking_effort = crate::domain::workspace::repository::get_setting(
-        pool,
-        "thinking_effort_auto_name",
-    )
-    .await
-    .ok()
-    .flatten();
+    let thinking_effort =
+        crate::domain::workspace::repository::get_setting(pool, "thinking_effort_auto_name")
+            .await
+            .ok()
+            .flatten();
 
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),

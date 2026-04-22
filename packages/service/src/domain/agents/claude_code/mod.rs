@@ -231,10 +231,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         ClaudeCodeAdapter::default_model_id(self).await
     }
 
-    async fn extra_models(
-        &self,
-        read_pool: &sqlx::SqlitePool,
-    ) -> Vec<ModelCatalogEntry> {
+    async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
         match custom_models::list_custom_models(read_pool).await {
             Ok(models) => models,
             Err(error) => {

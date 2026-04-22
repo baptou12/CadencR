@@ -252,10 +252,8 @@ impl AgentManager {
         // default. This covers the common case where a user overrides the model at
         // project/feature level (e.g. to `openai/gpt-5.4`) without touching the
         // provider setting — we still need to spawn on OpenCode, not Claude Code.
-        let provider = crate::domain::agents::resolve_effective_provider(
-            selection.provider,
-            Some(&model),
-        );
+        let provider =
+            crate::domain::agents::resolve_effective_provider(selection.provider, Some(&model));
         if runtime_adapter(&provider).is_none() {
             return Err(format!(
                 "Runtime provider '{provider}' is not implemented yet for workflow agents"

@@ -422,7 +422,10 @@ mod tests {
 
         let mut options = Options::default();
         let mut env = HashMap::new();
-        env.insert("CADENCE_TEST_PROFILE".to_string(), "bedrock-demo".to_string());
+        env.insert(
+            "CADENCE_TEST_PROFILE".to_string(),
+            "bedrock-demo".to_string(),
+        );
         options.env = Some(env);
 
         let mut cmd = tokio::process::Command::new("/usr/bin/env");

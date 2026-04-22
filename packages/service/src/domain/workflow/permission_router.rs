@@ -311,7 +311,11 @@ pub async fn emit_plan_approval_gate_events(
         ApprovalKind::Plan => "plan_ready",
         ApprovalKind::Prd => "prd_ready",
     };
-    info!(feature_id, ?kind, "approval gate detected, emitting {event_name}");
+    info!(
+        feature_id,
+        ?kind,
+        "approval gate detected, emitting {event_name}"
+    );
 
     let gate_env = WsEnvelope::new(
         "workflow",
@@ -328,9 +332,7 @@ pub async fn emit_plan_approval_gate_events(
             emit_plan_approval_status(sender, pool, feature_id).await;
             emit_plan_content(sender, pool, feature_id, slot, db_session_id).await
         }
-        ApprovalKind::Prd => {
-            emit_prd_content(sender, pool, feature_id, slot, db_session_id).await
-        }
+        ApprovalKind::Prd => emit_prd_content(sender, pool, feature_id, slot, db_session_id).await,
     };
 
     if let Some(ref plan_md) = content {
@@ -385,7 +387,11 @@ async fn emit_plan_content(
     db_session_id: i64,
 ) -> Option<String> {
     let content = fetch_plan_content(read_pool, feature_id).await?;
-    info!(feature_id, content_len = content.len(), "emitting plan_content");
+    info!(
+        feature_id,
+        content_len = content.len(),
+        "emitting plan_content"
+    );
     let env = WsEnvelope::new(
         "workflow",
         "plan_content",
@@ -530,9 +536,7 @@ async fn attach_plan_to_tool_call(
         db_session_id,
         tool_use_id,
         &enriched_str,
-        &crate::domain::features::repository::ToolCallFilter::MessageType(
-            "tool_call".to_string(),
-        ),
+        &crate::domain::features::repository::ToolCallFilter::MessageType("tool_call".to_string()),
     )
     .await;
 }

@@ -132,13 +132,11 @@ pub(super) async fn handle_permission_respond(
             });
             // plan_approval_result is a sibling column (not a pending_* gate),
             // so it stays inline. The PlanApproval gate goes through the helper.
-            let _ = sqlx::query(
-                "UPDATE agent_sessions SET plan_approval_result = ? WHERE id = ?",
-            )
-            .bind(result_json.to_string())
-            .bind(db_session_id)
-            .execute(&app_state.write_pool)
-            .await;
+            let _ = sqlx::query("UPDATE agent_sessions SET plan_approval_result = ? WHERE id = ?")
+                .bind(result_json.to_string())
+                .bind(db_session_id)
+                .execute(&app_state.write_pool)
+                .await;
             // Pair clear + broadcast so the sidebar doesn't stay stuck on
             // `askUser` after restore → Approve/Reject (normal paths use the
             // same helper via `mark_agent_resumed_static`). Plan-approval
@@ -205,11 +203,8 @@ pub(super) async fn handle_permission_respond(
     match respond_result {
         Ok(()) => {
             if matches!(payload.decision, PermissionDecision::Deny) {
-                WsSessionPersistence::mark_completed_static(
-                    &app_state.write_pool,
-                    db_session_id,
-                )
-                .await;
+                WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id)
+                    .await;
                 let ended = WsEnvelope::new(
                     "session",
                     "ended",

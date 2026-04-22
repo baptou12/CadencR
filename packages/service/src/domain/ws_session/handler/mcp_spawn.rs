@@ -42,7 +42,10 @@ pub fn build_mcp_server_config(
 
     info!(
         server_name,
-        binary_path, feature_id, ?mcp_args, "built MCP server config"
+        binary_path,
+        feature_id,
+        ?mcp_args,
+        "built MCP server config"
     );
 
     let config = RuntimeMcpServerConfig::Stdio {

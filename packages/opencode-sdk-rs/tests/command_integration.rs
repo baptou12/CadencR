@@ -270,7 +270,13 @@ async fn summarize_session_uses_summarize_endpoint() {
 
     let locked = state.lock().await;
     assert_eq!(locked.summarize_directory.as_deref(), Some("/tmp/worktree"));
-    assert_eq!(locked.summarize_payload.as_ref().unwrap()["providerID"], "openai");
-    assert_eq!(locked.summarize_payload.as_ref().unwrap()["modelID"], "gpt-5.4");
+    assert_eq!(
+        locked.summarize_payload.as_ref().unwrap()["providerID"],
+        "openai"
+    );
+    assert_eq!(
+        locked.summarize_payload.as_ref().unwrap()["modelID"],
+        "gpt-5.4"
+    );
     assert_eq!(locked.summarize_payload.as_ref().unwrap()["auto"], false);
 }

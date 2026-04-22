@@ -104,10 +104,7 @@ pub fn is_workspace_only_agent_type(agent_type: &str) -> bool {
 
 /// Reject agent types that aren't allowed to be overridden at the given scope.
 /// Used by project/feature setters to block workspace-only types.
-pub fn reject_workspace_only(
-    agent_type: &str,
-    scope: &str,
-) -> Result<(), crate::error::AppError> {
+pub fn reject_workspace_only(agent_type: &str, scope: &str) -> Result<(), crate::error::AppError> {
     if is_workspace_only_agent_type(agent_type) {
         return Err(crate::error::AppError::BadRequest(format!(
             "Agent type '{agent_type}' is workspace-only and cannot be overridden per {scope}"

@@ -127,7 +127,10 @@ mod tests {
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "claude-sonnet-3-5");
         assert_eq!(models[0].label, "Sonnet 3.5 (legacy)");
-        assert_eq!(models[0].description.as_deref(), Some("older model via proxy"));
+        assert_eq!(
+            models[0].description.as_deref(),
+            Some("older model via proxy")
+        );
         // Capability flags default to None.
         assert!(models[0].supports_effort.is_none());
     }

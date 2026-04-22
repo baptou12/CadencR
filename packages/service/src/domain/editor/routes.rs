@@ -76,8 +76,7 @@ pub async fn read_file_handler(
     Query(params): Query<ReadFileParams>,
 ) -> Result<axum::Json<ReadFileResponse>, AppError> {
     let project_root =
-        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
-            .await?;
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
     let path = service::validate_path(&project_root, &params.file_path)?;
 
     let resp = tokio::task::spawn_blocking(move || -> Result<ReadFileResponse, AppError> {
@@ -162,8 +161,7 @@ pub async fn tree_handler(
     Query(params): Query<TreeParams>,
 ) -> Result<axum::Json<Vec<FileTreeEntry>>, AppError> {
     let project_root =
-        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
-            .await?;
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
     let dir_path_param = params.dir_path;
 
     let entries = tokio::task::spawn_blocking(move || -> Result<Vec<FileTreeEntry>, AppError> {
@@ -278,8 +276,7 @@ pub async fn content_search_handler(
     Query(params): Query<ContentSearchParams>,
 ) -> Result<axum::Json<ContentSearchResponse>, AppError> {
     let project_root =
-        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
-            .await?;
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
 
     let resp = tokio::task::spawn_blocking(move || service::content_search(&project_root, &params))
         .await
@@ -319,8 +316,7 @@ pub async fn search_handler(
     Query(params): Query<SearchParams>,
 ) -> Result<axum::Json<FileSearchResponse>, AppError> {
     let project_root =
-        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id)
-            .await?;
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
     let query = params.query.unwrap_or_default();
 
     let files: Vec<FileMatchResult> =

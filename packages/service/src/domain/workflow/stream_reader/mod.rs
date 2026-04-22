@@ -98,8 +98,10 @@ pub fn spawn_workflow_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
-                        if let Some(kind) = crate::domain::workflow::permission_router::
-                            ApprovalKind::from_tool_name(&request.tool_name)
+                        if let Some(kind) =
+                            crate::domain::workflow::permission_router::ApprovalKind::from_tool_name(
+                                &request.tool_name,
+                            )
                         {
                             // OpenCode's MCP tool calls don't flow through
                             // `can_use_tool`; the `"ask"` rules we write in
@@ -284,14 +286,8 @@ pub fn spawn_workflow_stream_reader(
                     // Result so cleanup advances the workflow instead of stalling.
                     if agent_done_called && !completed_ok {
                         info!(slot = %slot, "agent signaled completion — interrupting session and finalizing turn");
-                        finalize_agent_done(
-                            &slot,
-                            db_session_id,
-                            &queries,
-                            &sender,
-                            &write_pool,
-                        )
-                        .await;
+                        finalize_agent_done(&slot, db_session_id, &queries, &sender, &write_pool)
+                            .await;
                         completed_ok = true;
                         break;
                     }

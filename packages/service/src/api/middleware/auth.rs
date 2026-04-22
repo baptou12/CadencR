@@ -136,11 +136,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -150,11 +146,7 @@ mod tests {
             .header(AUTH_HEADER, "wrong")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
@@ -165,11 +157,7 @@ mod tests {
             .header(header::CONNECTION, "Upgrade")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -181,11 +169,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
     }
 
@@ -196,11 +180,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
     }
 
@@ -212,11 +192,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -228,11 +204,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -244,11 +216,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
     }
 
@@ -260,11 +228,7 @@ mod tests {
             .header(AUTH_HEADER, "secret")
             .body(Body::empty())
             .unwrap();
-        let resp = app_with_token("secret")
-            .await
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app_with_token("secret").await.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
     }
 }

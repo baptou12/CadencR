@@ -1433,7 +1433,8 @@ mod tests {
             Some("task-1"),
         )
         .await;
-        let before_id = insert_message(&pool, session_id, "text", "outside page", None, None, None).await;
+        let before_id =
+            insert_message(&pool, session_id, "text", "outside page", None, None, None).await;
 
         let mut before_map = HashMap::new();
         before_map.insert(session_id, before_id);
@@ -1538,7 +1539,9 @@ mod tests {
             Some("askUser")
         );
         assert_eq!(
-            states.get(&fid1.0.to_string()).and_then(|s| s.kind.as_deref()),
+            states
+                .get(&fid1.0.to_string())
+                .and_then(|s| s.kind.as_deref()),
             Some("question"),
         );
         assert_eq!(
@@ -1546,7 +1549,9 @@ mod tests {
             Some("agent")
         );
         assert_eq!(
-            states.get(&fid2.0.to_string()).and_then(|s| s.kind.as_deref()),
+            states
+                .get(&fid2.0.to_string())
+                .and_then(|s| s.kind.as_deref()),
             None,
         );
         // Paused + pending must surface as askUser (was the sidebar-blank bug).
@@ -1555,7 +1560,9 @@ mod tests {
             Some("askUser"),
         );
         assert_eq!(
-            states.get(&fid3.0.to_string()).and_then(|s| s.kind.as_deref()),
+            states
+                .get(&fid3.0.to_string())
+                .and_then(|s| s.kind.as_deref()),
             Some("permission"),
         );
         assert_eq!(
@@ -1563,7 +1570,9 @@ mod tests {
             Some("askUser"),
         );
         assert_eq!(
-            states.get(&fid4.0.to_string()).and_then(|s| s.kind.as_deref()),
+            states
+                .get(&fid4.0.to_string())
+                .and_then(|s| s.kind.as_deref()),
             Some("prd-approval"),
         );
         // Plain-paused must NOT appear (no pending → not waiting for input).

@@ -178,9 +178,7 @@ const FEATURE_ID_DESCRIPTION: &str =
 /// Every Cadence MCP tool needs it because the subprocess is feature-agnostic
 /// (see `context.rs::CURRENT_FEATURE_ID`).
 fn inject_feature_id(mut schema: serde_json::Value) -> serde_json::Value {
-    let obj = schema
-        .as_object_mut()
-        .expect("schema must be an object");
+    let obj = schema.as_object_mut().expect("schema must be an object");
     obj.entry("properties")
         .or_insert_with(|| json!({}))
         .as_object_mut()
@@ -202,8 +200,7 @@ fn inject_feature_id(mut schema: serde_json::Value) -> serde_json::Value {
 
 fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
     let obj: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_value(inject_feature_id(schema))
-            .expect("schema must be an object");
+        serde_json::from_value(inject_feature_id(schema)).expect("schema must be an object");
     Tool::new(name, description, obj)
 }
 
