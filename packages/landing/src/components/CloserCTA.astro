@@ -1,0 +1,29 @@
+---
+import DownloadIcon from "@/components/icons/DownloadIcon.astro";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import Button from "@/components/ui/Button.astro";
+const base = import.meta.env.BASE_URL;
+---
+<section class="relative border-t border-border/55 py-24">
+  <Wrap maxWidth="narrow" class="grid grid-cols-1 items-center gap-8 sm:grid-cols-[1fr_auto]">
+    <div>
+      <Eyebrow>Ready</Eyebrow>
+      <h2
+        class="mt-2.5 mb-2 text-[26px] font-semibold leading-[1.2] tracking-[-0.015em] [text-wrap:balance]"
+      >
+        Ship at the cadence of your agents.
+      </h2>
+      <p class="max-w-[460px] text-[13.5px] text-muted-foreground">
+        Free, open source, runs on your machine. Bring your own Claude or OpenCode keys — and go.
+      </p>
+    </div>
+    <div class="inline-flex flex-wrap gap-2">
+      <Button href="#install" size="lg">
+        <DownloadIcon />
+        Download
+      </Button>
+      <Button href={`${base}docs/`} variant="outline" size="lg">Read the docs</Button>
+    </div>
+  </Wrap>
+</section>

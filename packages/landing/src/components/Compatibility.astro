@@ -1,0 +1,50 @@
+---
+import Wrap from "@/components/ui/Wrap.astro";
+
+interface Provider {
+  name: string;
+  mark: string;
+  status: "stable" | "soon";
+  label?: string;
+}
+const providers: Provider[] = [
+  { name: "Claude Code", mark: "C", status: "stable" },
+  { name: "OpenCode", mark: "O", status: "stable" },
+  { name: "Codex", mark: "X", status: "soon" },
+  { name: "Bring your own", mark: "+", status: "soon", label: "adapter" },
+];
+---
+<section id="compat" class="relative mt-9 border-y border-border/55 py-5">
+  <Wrap class="flex flex-wrap items-center gap-7">
+    <div class="max-w-[220px] font-mono text-[10.5px] uppercase leading-[1.4] tracking-[0.06em] text-muted-foreground">
+      Bring your own harness.<br />
+      Cadence is the surface — you keep the agent.
+    </div>
+    <div class="ml-auto flex flex-wrap items-center gap-2.5">
+      {providers.map((p) => (
+        <div
+          class:list={[
+            "inline-flex items-center gap-2 rounded-lg border border-border bg-muted/25 px-[11px] py-[7px] font-mono text-xs",
+            p.status === "soon" && "opacity-[0.78]",
+          ]}
+        >
+          <span
+            aria-hidden="true"
+            class="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-muted/55 text-[9.5px] font-semibold text-muted-foreground"
+          >
+            {p.mark}
+          </span>
+          <span>{p.name}</span>
+          <span
+            class:list={[
+              "text-[10px]",
+              p.status === "soon" ? "text-drac-orange" : "text-drac-green",
+            ]}
+          >
+            {p.label ?? p.status}
+          </span>
+        </div>
+      ))}
+    </div>
+  </Wrap>
+</section>

@@ -1,0 +1,67 @@
+---
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import SectionHeading from "@/components/ui/SectionHeading.astro";
+import Lede from "@/components/ui/Lede.astro";
+
+interface Level {
+  label: string;
+  title: string;
+  description: string;
+  footer: string;
+  accent: string;
+}
+const levels: Level[] = [
+  {
+    label: "Low",
+    title: "Ask before commit.",
+    description:
+      "Every tool call surfaces in the stream. Every commit waits for your approval. For code you deeply care about.",
+    footer: "confirm · bash, edit, write",
+    accent: "text-drac-cyan",
+  },
+  {
+    label: "Medium",
+    title: "Manual continue.",
+    description:
+      "Agent runs tools freely. Stops at each plan boundary and waits for \"Continue.\" The default, and a good one.",
+    footer: "auto · bash, grep, read  ·  confirm · edit, write",
+    accent: "text-drac-yellow",
+  },
+  {
+    label: "High",
+    title: "Full auto.",
+    description:
+      "Let it cook. Commits land on the session branch. Review the diff when you come back. For sandboxes and side projects.",
+    footer: "auto · everything · still reviewable",
+    accent: "text-drac-pink",
+  },
+];
+---
+<section id="autonomy" class="relative py-16 border-t border-border/55">
+  <Wrap>
+    <div class="mb-9 max-w-[680px]">
+      <Eyebrow>05 · Autonomy</Eyebrow>
+      <SectionHeading>Three dials — pick your comfort.</SectionHeading>
+      <Lede>
+        Agents are powerful. You're the one who has to maintain the code afterwards. Every project picks how much leash to give.
+      </Lede>
+    </div>
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {levels.map((l) => (
+        <div class="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 p-4">
+          <span
+            class={`lvl-dot inline-flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.06em] ${l.accent}`}
+          >
+            {l.label}
+          </span>
+          <div class="text-[15px] font-semibold tracking-[-0.005em]">{l.title}</div>
+          <div class="text-[13px] leading-[1.5] text-muted-foreground">{l.description}</div>
+          <div class="mt-0.5 border-t border-border pt-2 font-mono text-[10.5px] text-muted-foreground">
+            {l.footer}
+          </div>
+        </div>
+      ))}
+    </div>
+  </Wrap>
+</section>

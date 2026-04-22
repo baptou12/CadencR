@@ -1,0 +1,32 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import Lede from "@/components/ui/Lede.astro";
+---
+<FeatureSection
+  id="readability"
+  eyebrow="01 · Stream"
+  heading="Your harness — finally readable."
+  placeholder={{
+    label: "Stream — before / after",
+    hint: "screenshot pending",
+    ratio: "16/10",
+    caption: "raw harness output · cadence render",
+  }}
+>
+  <Fragment slot="lede">
+    <Lede>
+      Raw terminal output buries every signal under
+      <span class="em">bash, grep, cat, head</span>.
+      Cadence reinterprets the stream as it arrives. Tool calls become pills. File writes become inline diffs. Long outputs collapse until you ask for them.
+    </Lede>
+    <Lede class="mt-2.5">
+      Same agent. Same commands. Orders of magnitude more legible.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li><strong>Inline diffs</strong> — Dracula syntax, +/- gutters, not walls of unified patch.</li>
+    <li><strong>Tool-call pills</strong> — Bash, Grep, Read, Edit, Thinking. Click to expand.</li>
+    <li><strong>Per-message model tag</strong> — never guess which agent said what.</li>
+    <li><strong>Context meter</strong> in the status bar so you see the window filling.</li>
+  </Fragment>
+</FeatureSection>

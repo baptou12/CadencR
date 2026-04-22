@@ -1,0 +1,41 @@
+---
+import Placeholder from "@/components/Placeholder.astro";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import SectionHeading from "@/components/ui/SectionHeading.astro";
+import BulletList from "@/components/ui/BulletList.astro";
+import TwoUp from "@/components/ui/TwoUp.astro";
+
+interface PlaceholderProps {
+  label: string;
+  hint?: string;
+  ratio?: string;
+  variant?: "window" | "flat";
+  caption?: string;
+}
+
+interface Props {
+  id: string;
+  eyebrow: string;
+  heading: string;
+  reverse?: boolean;
+  placeholder: PlaceholderProps;
+}
+const { id, eyebrow, heading, reverse = false, placeholder } = Astro.props;
+---
+<section id={id} class="relative border-t border-border/55 py-20">
+  <Wrap>
+    <TwoUp reverse={reverse}>
+      {reverse && <Placeholder {...placeholder} />}
+      <div>
+        <Eyebrow>{eyebrow}</Eyebrow>
+        <SectionHeading>{heading}</SectionHeading>
+        <slot name="lede" />
+        <BulletList>
+          <slot name="bullets" />
+        </BulletList>
+      </div>
+      {!reverse && <Placeholder {...placeholder} />}
+    </TwoUp>
+  </Wrap>
+</section>

@@ -1,0 +1,12 @@
+---
+interface Props {
+  reverse?: boolean;
+}
+const { reverse = false } = Astro.props;
+const cols = reverse
+  ? "md:[grid-template-columns:minmax(0,1.15fr)_minmax(0,0.85fr)]"
+  : "md:[grid-template-columns:minmax(0,0.85fr)_minmax(0,1.15fr)]";
+---
+<div class:list={["grid grid-cols-1 gap-10 items-center md:gap-14", cols]}>
+  <slot />
+</div>

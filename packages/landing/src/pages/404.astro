@@ -1,0 +1,22 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import Lede from "@/components/ui/Lede.astro";
+import Button from "@/components/ui/Button.astro";
+const base = import.meta.env.BASE_URL;
+---
+<BaseLayout title="Not found — Cadence">
+  <section class="py-16 pb-24">
+    <Wrap>
+      <div class="mb-8 max-w-[680px]">
+        <Eyebrow>404</Eyebrow>
+        <h1 class="mt-3 mb-3 text-[clamp(26px,3vw,34px)] font-semibold leading-[1.18] tracking-[-0.018em] [text-wrap:balance]">
+          This page didn't make it through the worktree.
+        </h1>
+        <Lede>The URL you followed doesn't exist. Maybe it was renamed, maybe it never did.</Lede>
+      </div>
+      <Button href={base} size="lg">Back to home</Button>
+    </Wrap>
+  </section>
+</BaseLayout>

@@ -5,6 +5,9 @@
     ".claude/",
     "packages/tauri/src-tauri/target/",
     "target/",
+    "packages/landing/dist/",
+    "packages/landing/.astro/",
+    "packages/landing/design/",
     "**/*.min.{js,css}"
   ]
 }

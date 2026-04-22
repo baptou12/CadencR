@@ -1,0 +1,33 @@
+---
+type Variant = "primary" | "outline" | "ghost";
+type Size = "sm" | "md" | "lg";
+
+interface Props {
+  href?: string;
+  variant?: Variant;
+  size?: Size;
+  ariaLabel?: string;
+}
+const { href, variant = "primary", size = "md", ariaLabel } = Astro.props;
+
+const base =
+  "inline-flex items-center gap-2 rounded-lg border font-medium whitespace-nowrap transition-colors duration-150 [&>svg]:w-[14px] [&>svg]:h-[14px] [&>svg]:stroke-[2]";
+
+const variants: Record<Variant, string> = {
+  primary: "bg-primary text-primary-foreground border-transparent hover:bg-primary/90",
+  outline: "bg-background text-foreground border-border shadow-xs hover:bg-accent",
+  ghost:
+    "bg-transparent text-muted-foreground border-transparent hover:bg-accent hover:text-foreground",
+};
+
+const sizes: Record<Size, string> = {
+  sm: "h-7 px-2.5 text-xs rounded-md",
+  md: "h-8 px-3 text-[13px]",
+  lg: "h-9 px-3.5 text-[13px]",
+};
+
+const Tag = href ? "a" : "button";
+---
+<Tag href={href} aria-label={ariaLabel} class:list={[base, variants[variant], sizes[size]]}>
+  <slot />
+</Tag>

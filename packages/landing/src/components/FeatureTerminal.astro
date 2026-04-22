@@ -1,0 +1,35 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import Lede from "@/components/ui/Lede.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+---
+<FeatureSection
+  id="terminal"
+  eyebrow="04 · Terminal"
+  heading="A real terminal, next to the agent."
+  reverse
+  placeholder={{
+    label: "Terminal",
+    hint: "screenshot pending",
+    ratio: "16/10",
+    variant: "window",
+    caption: "one PTY per session · branch-aware prompt",
+  }}
+>
+  <Fragment slot="lede">
+    <Lede>
+      Every session gets a PTY rooted at its own worktree. Use it for
+      <span class="em">the things the agent shouldn't</span>
+      — ssh, dev servers, ad-hoc scripts.
+    </Lede>
+    <Lede class="mt-2.5">
+      Split the pane with <Kbd>⌘</Kbd><Kbd>\</Kbd>. The terminal and the agent see the same filesystem, in real time.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li><strong>One PTY per session</strong>, rooted at the worktree.</li>
+    <li><strong>Split view</strong> — agent left, terminal right, or stacked.</li>
+    <li><strong>xterm.js</strong>, true color, correct scrollback, correct cursor.</li>
+    <li><strong>Branch-aware prompt</strong> — always know which checkout you're in.</li>
+  </Fragment>
+</FeatureSection>

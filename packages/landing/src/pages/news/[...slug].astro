@@ -1,0 +1,40 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { getCollection, type CollectionEntry } from "astro:content";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import Lede from "@/components/ui/Lede.astro";
+import { formatDate } from "@/lib/formatDate";
+
+type NewsEntry = CollectionEntry<"news">;
+
+export async function getStaticPaths() {
+  const entries: NewsEntry[] = await getCollection("news");
+  return entries.map((entry: NewsEntry) => ({
+    params: { slug: entry.slug },
+    props: { entry },
+  }));
+}
+
+interface Props {
+  entry: NewsEntry;
+}
+const { entry } = Astro.props;
+const { Content } = await entry.render();
+---
+<BaseLayout title={`${entry.data.title} — Cadence`} description={entry.data.summary}>
+  <section class="py-16 pb-24">
+    <Wrap>
+      <div class="mb-8 max-w-[680px]">
+        <Eyebrow>{formatDate(entry.data.date)} · {entry.data.author}</Eyebrow>
+        <h1 class="mt-3 mb-3 text-[clamp(26px,3vw,34px)] font-semibold leading-[1.18] tracking-[-0.018em] [text-wrap:balance]">
+          {entry.data.title}
+        </h1>
+        <Lede>{entry.data.summary}</Lede>
+      </div>
+      <article class="prose">
+        <Content />
+      </article>
+    </Wrap>
+  </section>
+</BaseLayout>

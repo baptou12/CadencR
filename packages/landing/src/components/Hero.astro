@@ -1,0 +1,69 @@
+---
+import Placeholder from "@/components/Placeholder.astro";
+import DownloadIcon from "@/components/icons/DownloadIcon.astro";
+import CodeIcon from "@/components/icons/CodeIcon.astro";
+import Wrap from "@/components/ui/Wrap.astro";
+import Eyebrow from "@/components/ui/Eyebrow.astro";
+import Button from "@/components/ui/Button.astro";
+---
+<section class="relative py-16 pb-14">
+  <div class="hero-orbits pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true"></div>
+  <Wrap>
+    <div
+      class="relative z-10 grid grid-cols-1 items-center gap-12 md:gap-14 lg:[grid-template-columns:minmax(0,0.82fr)_minmax(0,1.18fr)]"
+    >
+      <div class="relative z-10 max-w-[520px]">
+        <Eyebrow>Desktop IDE · macOS · Linux · Apache-2.0</Eyebrow>
+        <h1
+          class="mt-3.5 mb-3.5 text-[clamp(28px,3vw,38px)] font-semibold leading-[1.12] tracking-[-0.018em] [text-wrap:balance]"
+        >
+          The IDE for the era of agents.<br />
+          <span class="text-muted-foreground">
+            One workspace — Claude Code, OpenCode, and soon Codex.
+          </span>
+        </h1>
+        <p class="text-sm leading-[1.6] text-muted-foreground [text-wrap:pretty] [&_.em]:text-foreground">
+          Cadence is the surface you read, steer and ship from.
+          <span class="em">Your harness stays the same</span>
+          — the stream becomes readable, every session gets its own worktree, and git stays where you can see it.
+        </p>
+        <div class="mt-5 flex flex-wrap items-center gap-2">
+          <Button href="#install" size="lg">
+            <DownloadIcon />
+            Download for Mac
+          </Button>
+          <Button href="https://github.com/cadence-ide/cadence" variant="outline" size="lg">
+            <CodeIcon />
+            Source on GitHub
+          </Button>
+        </div>
+        <span class="mt-3 block font-mono text-[11.5px] text-muted-foreground">
+          or <code class="rounded border border-border bg-muted/35 px-1.5 py-0.5 text-foreground">
+            brew install --cask cadence-ide
+          </code>
+        </span>
+        <div
+          class="mt-5 flex flex-wrap items-center gap-3 border-t border-border/55 pt-4.5 font-mono text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground"
+        >
+          <span><span class="text-drac-green">●</span> runs local</span>
+          <span class="text-muted-foreground/40">·</span>
+          <span>no telemetry</span>
+          <span class="text-muted-foreground/40">·</span>
+          <span>bring your own keys</span>
+          <span class="text-muted-foreground/40">·</span>
+          <span>built on Tauri</span>
+        </div>
+      </div>
+
+      <div class="relative z-10 min-w-0 lg:-mr-6">
+        <Placeholder
+          label="Cadence — demo"
+          hint="screenshot pending"
+          ratio="16/10"
+          variant="window"
+          caption="cadence · Unify code rendering with CodeMirror"
+        />
+      </div>
+    </div>
+  </Wrap>
+</section>

@@ -1,0 +1,34 @@
+---
+interface Props {
+  label: string;
+  caption?: string;
+  ratio?: string;
+  variant?: "window" | "flat";
+  hint?: string;
+}
+const { label, caption, ratio = "16/9", variant = "flat", hint } = Astro.props;
+---
+<figure
+  class="placeholder-pattern relative flex flex-col overflow-hidden rounded-xl border border-dashed border-border shadow-md"
+  style={`aspect-ratio: ${ratio}`}
+>
+  {variant === "window" && (
+    <div class="flex h-8 flex-none items-center gap-[6px] border-b border-border bg-sidebar/95 px-3">
+      <span class="h-[11px] w-[11px] rounded-full bg-[#ff5f57]"></span>
+      <span class="h-[11px] w-[11px] rounded-full bg-[#febc2e]"></span>
+      <span class="h-[11px] w-[11px] rounded-full bg-[#28c840]"></span>
+    </div>
+  )}
+  <div class="flex flex-1 flex-col items-center justify-center gap-1.5 px-5 py-8 text-muted-foreground min-h-[180px]">
+    <span class="font-mono text-xs uppercase tracking-[0.08em] text-foreground/70">
+      {label}
+    </span>
+    {hint && <span class="text-[11.5px] text-muted-foreground">{hint}</span>}
+    <slot />
+  </div>
+  {caption && (
+    <figcaption class="border-t border-border bg-background/70 px-3 py-2 text-center font-mono text-[10.5px] text-muted-foreground">
+      {caption}
+    </figcaption>
+  )}
+</figure>

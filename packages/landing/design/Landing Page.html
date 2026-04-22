@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Cadence — IDE for the era of agents</title>
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+<link rel="stylesheet" href="assets/tokens.css" />
+<style>
+  /* ============ RESET ============ */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { cursor: pointer; font: inherit; border: 0; background: none; color: inherit; padding: 0; }
+  img, svg { display: block; max-width: 100%; }
+  ::selection { background: color-mix(in oklch, var(--drac-purple) 40%, transparent); color: var(--foreground); }
+
+  :root {
+    --max: 1160px;
+    --gutter: 24px;
+    --hair: 1px solid var(--border);
+    --hair-faint: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  }
+
+  /* ============ PRIMITIVES ============ */
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+  .mono { font-family: var(--font-mono); }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted-foreground);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .eyebrow::before {
+    content: ""; display: inline-block;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--muted-foreground);
+  }
+
+  h1, h2, h3, p { margin: 0; }
+  h2.section { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; margin: 10px 0 8px; text-wrap: balance; }
+  p.lede { font-size: 13.5px; color: var(--muted-foreground); max-width: 560px; line-height: 1.6; text-wrap: pretty; }
+  p.lede .em { color: var(--foreground); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 0 12px; height: 32px;
+    border-radius: 8px; border: 1px solid transparent;
+    font-size: 13px; font-weight: 500;
+    transition: background-color 120ms, color 120ms, border-color 120ms;
+    white-space: nowrap;
+  }
+  .btn svg { width: 14px; height: 14px; stroke-width: 2; }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, black); }
+  .btn-outline { background: var(--background); color: var(--foreground); border-color: var(--border); box-shadow: var(--shadow-xs); }
+  .btn-outline:hover { background: var(--accent); }
+  .btn-ghost { color: var(--muted-foreground); padding: 0 10px; }
+  .btn-ghost:hover { color: var(--foreground); background: var(--accent); }
+  .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 6px; }
+  .btn-lg { height: 36px; padding: 0 14px; font-size: 13px; }
+
+  kbd, .kbd {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    display: inline-flex; align-items: center;
+    padding: 1px 5px; border-radius: 4px;
+    border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
+    background: color-mix(in oklch, var(--muted) 40%, transparent);
+    color: var(--muted-foreground);
+    min-width: 16px; justify-content: center;
+  }
+
+  /* ============ NAV ============ */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: var(--background);
+    border-bottom: var(--hair-faint);
+  }
+  .nav-inner { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); height: 52px; display: flex; align-items: center; gap: 22px; }
+  .brand { display: inline-flex; align-items: center; gap: 9px; }
+  .brand-logo { width: 20px; height: 20px; }
+  .brand-mark {
+    font-family: var(--font-brand);
+    font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.14em;
+  }
+  .brand-ver { font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; }
+  .nav-links { display: flex; gap: 18px; margin-left: 14px; font-size: 12.5px; color: var(--muted-foreground); }
+  .nav-links a:hover { color: var(--foreground); }
+  .nav-spacer { flex: 1; }
+  .nav-actions { display: flex; align-items: center; gap: 8px; }
+
+  .gh-pill {
+    display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: 6px;
+    font-size: 12px; overflow: hidden; font-family: var(--font-mono); height: 28px;
+  }
+  .gh-pill > span { display: inline-flex; align-items: center; gap: 6px; padding: 0 9px; }
+  .gh-pill .left { color: var(--muted-foreground); }
+  .gh-pill .left:hover { background: var(--accent); color: var(--foreground); }
+  .gh-pill .right { border-left: 1px solid var(--border); background: color-mix(in oklch, var(--muted) 35%, transparent); color: var(--foreground); font-weight: 500; }
+  .gh-pill svg { width: 12px; height: 12px; stroke-width: 2; }
+
+  /* ============ HERO ============ */
+  .hero { padding: 64px 0 56px; position: relative; }
+  .hero-orbits {
+    position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+  }
+  .hero-orbits::before {
+    content: ""; position: absolute;
+    width: 840px; height: 840px; left: -320px; top: -280px;
+    border: 1px dashed color-mix(in oklch, var(--drac-selection) 60%, transparent);
+    border-radius: 50%;
+  }
+  .hero-orbits::after {
+    content: ""; position: absolute;
+    width: 1260px; height: 1260px; left: -520px; top: -520px;
+    border: 1px dashed color-mix(in oklch, var(--drac-selection) 35%, transparent);
+    border-radius: 50%;
+  }
+
+  .hero-grid {
+    position: relative; z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  @media (min-width: 980px) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+      gap: 56px;
+    }
+  }
+
+  .hero-head { position: relative; z-index: 1; max-width: 520px; }
+  .hero h1 {
+    font-size: clamp(28px, 3vw, 38px);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.018em;
+    margin: 14px 0 14px;
+    text-wrap: balance;
+  }
+  .hero h1 .dim { color: var(--muted-foreground); }
+  .hero-lede {
+    font-size: 14px; line-height: 1.6;
+    color: var(--muted-foreground); text-wrap: pretty;
+  }
+  .hero-lede .em { color: var(--foreground); }
+  .hero-cta { margin-top: 22px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .hero-brew { display: block; margin-top: 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted-foreground); }
+  .hero-brew code { color: var(--foreground); background: color-mix(in oklch, var(--muted) 35%, transparent); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border); }
+  .hero-meta { margin-top: 22px; padding-top: 18px; border-top: var(--hair-faint); font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); display: flex; gap: 12px; flex-wrap: wrap; align-items: center; text-transform: uppercase; letter-spacing: 0.05em; }
+  .hero-meta .sep { color: color-mix(in oklch, var(--muted-foreground) 40%, transparent); }
+  .hero-meta .ok { color: var(--drac-green); }
+
+  /* Demo column */
+  .hero-demo { position: relative; z-index: 1; min-width: 0; }
+  .hero-demo .window { max-width: 100%; }
+  .hero-demo .win-body { min-height: 440px; }
+  @media (min-width: 1200px) {
+    .hero-demo { margin-right: calc(-1 * var(--gutter)); }
+  }
+
+  /* App window mock — same vocabulary as ui_kits/desktop */
+  .window {
+    position: relative; z-index: 1;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--background);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    font-size: 12.5px;
+  }
+  .win-titlebar {
+    height: 32px; display: flex; align-items: center; gap: 10px;
+    padding: 0 12px;
+    background: color-mix(in oklch, var(--sidebar) 92%, black);
+    border-bottom: 1px solid var(--border);
+    flex: none;
+  }
+  .traffic { display: inline-flex; gap: 6px; }
+  .traffic span { width: 11px; height: 11px; border-radius: 50%; }
+  .traffic .c { background: #ff5f57; } .traffic .y { background: #febc2e; } .traffic .g { background: #28c840; }
+  .win-title { flex: 1; text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
+  .win-title b { color: var(--foreground); font-weight: 500; }
+  .win-body { display: grid; grid-template-columns: 188px 1fr; min-height: 460px; }
+  @media (min-width: 1400px) {
+    .hero-demo .win-body { grid-template-columns: 210px 1fr; }
+  }
+
+  /* Sidebar inside window (matches cds-sidebar) */
+  .ws { background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; min-width: 0; }
+  .ws-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px 14px; }
+  .ws-mark { font-family: var(--font-brand); font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; }
+  .ws-dev { font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #fb923c; background: rgba(249,115,22,0.2); padding: 1px 4px; border-radius: 3px; align-self: flex-start; margin-top: 2px; }
+  .ws-scroll { padding: 4px; display: flex; flex-direction: column; gap: 1px; flex: 1; min-height: 0; overflow: hidden; }
+  .ws-label { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px 4px; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); }
+  .ws-label .plus { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; color: var(--muted-foreground); }
+  .ws-proj { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; font-size: 12.5px; text-align: left; }
+  .ws-proj:hover { background: color-mix(in oklch, var(--accent) 45%, transparent); }
+  .ws-proj .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .ws-sess { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 26px; border-radius: 6px; font-size: 12px; color: color-mix(in oklch, var(--foreground) 88%, transparent); }
+  .ws-sess:hover { background: color-mix(in oklch, var(--accent) 40%, transparent); }
+  .ws-sess.active { background: color-mix(in oklch, var(--primary) 20%, transparent); color: var(--foreground); }
+  .ws-sess.archived { color: color-mix(in oklch, var(--muted-foreground) 85%, transparent); padding-left: 42px; font-size: 11.5px; }
+  .ws-sess-meta { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; display: inline-flex; gap: 6px; }
+  .ws-sess-meta .add { color: var(--drac-green); }
+  .ws-sess-meta .del { color: var(--drac-red); }
+  .ws-sess-meta .st { color: var(--drac-yellow); }
+  .ws-arch-head { padding: 4px 8px 4px 28px; font-size: 10.5px; color: var(--muted-foreground); }
+  .ws-foot { border-top: 1px solid var(--border); padding: 8px 14px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); display: flex; gap: 14px; }
+  .ws-foot .v { color: var(--foreground); }
+  .ws-usage { display: flex; align-items: center; gap: 5px; }
+  .ws-usage .v { color: var(--foreground); font-weight: 500; }
+  .ws-usage .t { color: var(--muted-foreground); }
+
+  /* Main pane */
+  .wm { display: flex; flex-direction: column; min-width: 0; position: relative; }
+  .wm-top { display: flex; align-items: center; gap: 10px; padding: 10px 16px 4px; }
+  .wm-title { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+  .wm-title .s { width: 8px; height: 8px; border-radius: 50%; background: var(--drac-green); }
+  .wm-actions { margin-left: auto; display: flex; gap: 2px; color: var(--muted-foreground); }
+  .wm-actions .ib { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; }
+  .wm-actions .ib:hover { background: var(--accent); color: var(--foreground); }
+  .wm-tabs { display: flex; gap: 2px; padding: 4px 12px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+  .wm-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .wm-tab.active { color: var(--foreground); border-bottom-color: var(--primary); }
+  .wm-tab .add { color: var(--drac-green); font-family: var(--font-mono); font-size: 10.5px; }
+  .wm-tab .del { color: var(--drac-red); font-family: var(--font-mono); font-size: 10.5px; }
+  .wm-stream { flex: 1; min-height: 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+
+  .msg-meta { font-family: var(--font-mono); font-size: 10.5px; color: color-mix(in oklch, var(--muted-foreground) 80%, transparent); }
+  .msg-meta b { color: color-mix(in oklch, var(--drac-purple) 85%, var(--muted-foreground)); font-weight: 500; }
+  .msg-text { font-size: 12.5px; line-height: 1.55; color: var(--foreground); }
+
+  /* Tool pills */
+  .tool {
+    border: 1px solid var(--border); border-radius: 8px;
+    background: color-mix(in oklch, var(--muted) 28%, transparent);
+    overflow: hidden; font-family: var(--font-mono); font-size: 11.5px;
+  }
+  .tool-head { display: flex; align-items: stretch; }
+  .tool-tag { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; flex: none; font-weight: 500; }
+  .tool-tag svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .tool-tag.bash { color: var(--drac-cyan); }
+  .tool-tag.edit { color: var(--drac-green); }
+  .tool-tag.grep { color: var(--drac-pink); }
+  .tool-tag.read { color: var(--drac-cyan); }
+  .tool-tag.think { color: var(--drac-purple); }
+  .tool-body { flex: 1; padding: 7px 4px; min-width: 0; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool-trail { padding: 7px 10px; color: var(--muted-foreground); flex: none; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
+  .tool-trail .add { color: var(--drac-green); }
+  .tool-trail .del { color: var(--drac-red); }
+
+  /* Inline code marker (matches .ic in kit) */
+  .ic { font-family: var(--font-mono); font-size: 11px; background: color-mix(in oklch, var(--drac-pink) 14%, transparent); color: var(--drac-pink); padding: 1px 5px; border-radius: 4px; }
+
+  /* Diff */
+  .diff { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--drac-bg); font-family: var(--font-mono); font-size: 11.5px; }
+  .diff-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: color-mix(in oklch, var(--muted) 40%, var(--drac-bg)); border-bottom: 1px solid var(--border); }
+  .diff-head .path { color: var(--drac-green); font-weight: 500; }
+  .diff-head svg { width: 12px; height: 12px; fill: none; stroke: var(--drac-green); stroke-width: 2; }
+  .diff-head .stats { margin-left: auto; font-size: 10.5px; }
+  .diff-head .stats .add { color: var(--drac-green); } .diff-head .stats .del { color: var(--drac-red); }
+  .diff-body { padding: 4px 0; line-height: 1.7; color: var(--drac-fg); }
+  .diff-line { display: flex; padding: 0 12px; white-space: pre; }
+  .diff-line.add { background: color-mix(in oklch, var(--drac-green) 10%, transparent); border-left: 2px solid var(--drac-green); padding-left: 10px; }
+  .diff-line.del { background: color-mix(in oklch, var(--drac-red) 10%, transparent); border-left: 2px solid var(--drac-red); padding-left: 10px; }
+  .diff-gutter { color: color-mix(in oklch, var(--drac-fg) 35%, transparent); width: 22px; flex: none; text-align: right; padding-right: 10px; user-select: none; }
+  .tok-str { color: var(--drac-yellow); }
+  .tok-kw  { color: var(--drac-pink); }
+  .tok-fn  { color: var(--drac-green); }
+  .tok-var { color: var(--drac-orange); }
+  .tok-cmt { color: var(--drac-comment); font-style: italic; }
+  .tok-num { color: var(--drac-purple); }
+  .tok-prop { color: var(--drac-green); }
+
+  /* Action bar + prompt */
+  .wm-action { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-top: 1px solid var(--border); font-size: 11.5px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 11.5px; color: var(--foreground); background: transparent; }
+  .chip.primary { border-color: color-mix(in oklch, var(--primary) 50%, var(--border)); color: var(--drac-purple); }
+  .chip.ghost { border-color: transparent; color: var(--muted-foreground); }
+  .chip.success { color: var(--drac-green); }
+  .chip svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .wm-action .count { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+  .wm-action .count .add { color: var(--drac-green); } .wm-action .count .del { color: var(--drac-red); }
+
+  .prompt {
+    margin: 6px 12px 10px;
+    display: flex; gap: 8px; align-items: flex-end;
+    padding: 12px 10px 12px 14px;
+    background: color-mix(in oklch, var(--muted) 30%, transparent);
+    border-radius: 10px; border: 1px solid var(--border);
+    font-size: 12.5px;
+  }
+  .prompt input { flex: 1; background: transparent; border: 0; outline: 0; color: var(--foreground); font: inherit; }
+  .prompt input::placeholder { color: var(--muted-foreground); }
+  .send { width: 26px; height: 26px; border-radius: 6px; background: var(--primary); color: var(--primary-foreground); display: inline-flex; align-items: center; justify-content: center; }
+  .send svg { width: 13px; height: 13px; }
+
+  .statusbar { border-top: 1px solid var(--border); display: flex; align-items: center; gap: 16px; padding: 4px 14px; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); height: 22px; }
+  .statusbar .v { color: var(--foreground); }
+  .statusbar .p { color: var(--drac-purple); }
+  .statusbar .g { color: var(--drac-green); }
+  .statusbar .sp { flex: 1; }
+
+  /* ============ COMPAT STRIP ============ */
+  .compat {
+    margin-top: 36px;
+    border-top: var(--hair-faint); border-bottom: var(--hair-faint);
+    padding: 22px 0;
+    position: relative;
+  }
+  .compat .wrap { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+  .compat-label { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.06em; max-width: 220px; line-height: 1.4; }
+  .compat-list { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+  .prov { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in oklch, var(--muted) 25%, transparent); font-size: 12px; font-family: var(--font-mono); }
+  .prov img { width: 16px; height: 16px; border-radius: 3px; }
+  .prov .s { font-size: 10px; color: var(--drac-green); }
+  .prov .s.soon { color: var(--drac-orange); }
+  .prov.soon { opacity: 0.78; }
+
+  /* ============ SECTIONS ============ */
+  section.block { padding: 80px 0; position: relative; }
+  section.block + section.block { border-top: var(--hair-faint); }
+
+  .block-head { max-width: 680px; margin-bottom: 36px; }
+
+  .two-up { display: grid; grid-template-columns: 1fr; gap: 40px; align-items: center; }
+  @media (min-width: 900px) { .two-up { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 56px; } }
+  .two-up.reverse > :first-child { order: 2; }
+  @media (min-width: 900px) { .two-up.reverse { grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); } }
+
+  .bullets { margin-top: 18px; list-style: none; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .bullets li { display: flex; gap: 9px; font-size: 13px; color: color-mix(in oklch, var(--foreground) 88%, transparent); line-height: 1.5; }
+  .bullets li::before {
+    content: ""; width: 14px; height: 14px; flex: none; border-radius: 4px;
+    background: color-mix(in oklch, var(--primary) 20%, transparent);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bd93f9' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
+    background-size: 10px 10px; background-repeat: no-repeat; background-position: center;
+    margin-top: 2px;
+  }
+  .bullets strong { font-weight: 600; color: var(--foreground); }
+
+  /* Artifacts */
+  .artifact {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--background);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    font-size: 12px;
+    position: relative;
+  }
+  .art-bar { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: color-mix(in oklch, var(--sidebar) 92%, black); border-bottom: 1px solid var(--border); }
+  .art-bar .t { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+  .art-bar .spacer { flex: 1; }
+  .art-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--drac-green); }
+
+  /* Side-by-side raw/cadence */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; }
+  .compare-col { min-height: 320px; padding: 12px 12px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.6; overflow: hidden; }
+  .compare-col.raw { background: var(--drac-bg); color: color-mix(in oklch, var(--drac-fg) 60%, transparent); border-right: 1px solid var(--border); white-space: pre; }
+  .compare-col.raw .hd { color: var(--drac-comment); }
+  .compare-col.cad { background: var(--background); padding: 12px 10px; display: flex; flex-direction: column; gap: 7px; }
+  .compare-col .meta-foot { margin-top: auto; font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground); display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 8px; }
+
+  /* Worktree graph */
+  .wt-wrap { display: grid; grid-template-columns: 180px 1fr; gap: 14px; padding: 14px; min-height: 320px; }
+  .wt-col { display: flex; flex-direction: column; gap: 8px; }
+  .wt-branch { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11.5px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: color-mix(in oklch, var(--muted) 26%, transparent); }
+  .wt-branch .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .wt-branch .name { color: var(--foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .wt-branch .agent { font-size: 10px; color: var(--muted-foreground); }
+  .wt-branch.active { outline: 1px solid color-mix(in oklch, var(--primary) 55%, transparent); outline-offset: -2px; background: color-mix(in oklch, var(--primary) 12%, transparent); }
+  .wt-session { display: flex; flex-direction: column; gap: 10px; border-left: 1px dashed var(--border); padding-left: 14px; }
+  .wt-card { border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; background: color-mix(in oklch, var(--muted) 22%, transparent); font-size: 11.5px; display: flex; flex-direction: column; gap: 5px; }
+  .wt-card .title { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .wt-card .status { font-family: var(--font-mono); font-size: 10px; color: var(--drac-green); text-transform: uppercase; letter-spacing: 0.04em; }
+  .wt-card .status.wait { color: var(--drac-yellow); }
+  .wt-card .status.plan { color: var(--drac-cyan); }
+  .wt-card .sub { font-family: var(--font-mono); font-size: 11px; color: var(--muted-foreground); }
+  .wt-card .trail { display: flex; gap: 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+  .wt-card .trail .add { color: var(--drac-green); } .wt-card .trail .del { color: var(--drac-red); }
+  .wt-cursor { display: inline-block; width: 6px; height: 11px; background: var(--drac-purple); vertical-align: -1px; animation: blink 1.1s step-end infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Git log */
+  .git-log { font-family: var(--font-mono); font-size: 11.5px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .gl-row { display: flex; align-items: center; gap: 10px; }
+  .gl-graph { width: 22px; flex: none; display: flex; align-items: center; justify-content: center; position: relative; height: 20px; }
+  .gl-graph .node { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--background); z-index: 1; }
+  .gl-graph::before { content: ""; position: absolute; top: -4px; bottom: -4px; width: 2px; background: color-mix(in oklch, var(--drac-selection) 90%, transparent); }
+  .gl-row:first-child .gl-graph::before { top: 50%; }
+  .gl-row:last-child .gl-graph::before { bottom: 50%; }
+  .gl-sha { color: var(--drac-yellow); }
+  .gl-msg { color: var(--drac-fg); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gl-meta { color: var(--muted-foreground); font-size: 10.5px; }
+  .gl-tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-size: 10px; background: color-mix(in oklch, var(--drac-cyan) 22%, transparent); color: var(--drac-cyan); }
+  .gl-tag.main { background: color-mix(in oklch, var(--drac-purple) 22%, transparent); color: var(--drac-purple); }
+  .gl-tag.pending { background: color-mix(in oklch, var(--drac-yellow) 22%, transparent); color: var(--drac-yellow); }
+
+  .git-actions { padding: 10px 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; font-size: 11.5px; background: color-mix(in oklch, var(--muted) 25%, transparent); }
+
+  /* Terminal */
+  .term-body { background: var(--drac-bg); padding: 12px 14px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.6; min-height: 320px; color: var(--drac-fg); white-space: pre-wrap; }
+  .tl-prompt { color: var(--drac-green); }
+  .tl-path { color: var(--drac-cyan); }
+  .tl-branch { color: var(--drac-pink); }
+  .tl-cmd { color: var(--drac-fg); }
+  .tl-out { color: color-mix(in oklch, var(--drac-fg) 70%, transparent); }
+  .tl-ok { color: var(--drac-green); }
+  .tl-warn { color: var(--drac-yellow); }
+  .tl-dim { color: var(--drac-comment); }
+
+  /* Autonomy */
+  .autonomy-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 20px; }
+  @media (min-width: 760px) { .autonomy-grid { grid-template-columns: repeat(3, 1fr); } }
+  .auto-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: color-mix(in oklch, var(--muted) 20%, transparent); display: flex; flex-direction: column; gap: 8px; }
+  .auto-card .lvl {
+    font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .auto-card .lvl::before { content: ""; width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .auto-card.low .lvl::before { background: var(--drac-cyan); } .auto-card.low .lvl { color: var(--drac-cyan); }
+  .auto-card.med .lvl::before { background: var(--drac-yellow); } .auto-card.med .lvl { color: var(--drac-yellow); }
+  .auto-card.high .lvl::before { background: var(--drac-pink); } .auto-card.high .lvl { color: var(--drac-pink); }
+  .auto-card .t { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+  .auto-card .d { font-size: 13px; color: var(--muted-foreground); line-height: 1.5; }
+  .auto-card .f { margin-top: 2px; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); border-top: 1px solid var(--border); padding-top: 8px; }
+
+  /* Install */
+  .install-grid { display: grid; grid-template-columns: 1fr; gap: 32px; }
+  @media (min-width: 900px) { .install-grid { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); gap: 48px; align-items: start; } }
+  .install-cmds { display: flex; flex-direction: column; gap: 10px; }
+  .cmd-card { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: color-mix(in oklch, var(--muted) 25%, transparent); }
+  .cmd-tabs { display: flex; padding: 4px 8px 0; border-bottom: 1px solid var(--border); gap: 2px; }
+  .cmd-tab { padding: 6px 10px; color: var(--muted-foreground); border-bottom: 2px solid transparent; margin-bottom: -1px; font-family: var(--font-mono); font-size: 11px; }
+  .cmd-tab.active { color: var(--foreground); border-bottom-color: var(--primary); }
+  .cmd-body { padding: 12px 14px; font-family: var(--font-mono); font-size: 12px; display: flex; align-items: center; gap: 10px; }
+  .cmd-body .p { color: var(--drac-green); }
+  .cmd-body .c { color: var(--drac-fg); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmd-body .copy { color: var(--muted-foreground); font-size: 10.5px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
+  .cmd-body .copy:hover { color: var(--foreground); background: var(--accent); }
+  .cmd-body .copy svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  /* Closer */
+  .closer { padding: 96px 0; text-align: left; border-top: var(--hair-faint); position: relative; }
+  .closer .wrap { max-width: 860px; display: grid; grid-template-columns: 1fr auto; gap: 32px; align-items: center; }
+  @media (max-width: 760px) { .closer .wrap { grid-template-columns: 1fr; } }
+  .closer h2 { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; text-wrap: balance; margin: 10px 0 8px; }
+  .closer p { color: var(--muted-foreground); font-size: 13.5px; max-width: 460px; }
+  .closer-cta { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+
+  /* Footer */
+  footer { padding: 36px 0 44px; border-top: var(--hair-faint); }
+  .foot-inner { display: grid; grid-template-columns: 1fr; gap: 28px; }
+  @media (min-width: 720px) { .foot-inner { grid-template-columns: 1.2fr 3fr; gap: 56px; } }
+  .foot-brand { display: flex; flex-direction: column; gap: 10px; }
+  .foot-brand .b { display: inline-flex; align-items: center; gap: 9px; }
+  .foot-brand .b .mark { font-family: var(--font-brand); font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.14em; }
+  .foot-brand .d { font-size: 11.5px; color: var(--muted-foreground); font-family: var(--font-mono); line-height: 1.55; }
+  .foot-cols { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 24px; }
+  .foot-col { display: flex; flex-direction: column; gap: 8px; }
+  .foot-col h4 { margin: 0 0 4px; font-size: 10px; font-family: var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 500; }
+  .foot-col a { font-size: 12.5px; color: color-mix(in oklch, var(--foreground) 80%, transparent); }
+  .foot-col a:hover { color: var(--foreground); }
+  .foot-row { margin-top: 28px; padding-top: 18px; border-top: var(--hair-faint); display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 10.5px; color: var(--muted-foreground); }
+  .foot-row b { color: var(--foreground); font-weight: 500; }
+  .foot-row .sp { flex: 1; }
+
+  .cur { display: inline-block; width: 6px; height: 11px; background: var(--foreground); animation: blink 1.1s step-end infinite; vertical-align: -1px; margin-left: 2px; }
+
+</style>
+</head>
+<body>
+
+  <!-- =================== NAV =================== -->
+  <header class="nav">
+    <div class="nav-inner">
+      <a href="#" class="brand" aria-label="Cadence home">
+        <img src="assets/logo.svg" alt="" class="brand-logo" />
+        <span class="brand-mark">Cadence</span>
+        <span class="brand-ver">v0.9.2</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#readability">Features</a>
+        <a href="#compat">Compatibility</a>
+        <a href="#install">Install</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#blog">Blog</a>
+      </nav>
+      <span class="nav-spacer"></span>
+      <div class="nav-actions">
+        <a class="gh-pill" href="#" aria-label="Star on GitHub">
+          <span class="left">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+            cadence-ide/cadence
+          </span>
+          <span class="right">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.563.563 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .32-.988l5.519-.442a.563.563 0 0 0 .475-.345z"/></svg>
+            4.2k
+          </span>
+        </a>
+        <button class="btn btn-ghost btn-sm">Docs</button>
+        <button class="btn btn-primary btn-sm">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Download
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- =================== HERO =================== -->
+  <section class="hero">
+    <div class="hero-orbits" aria-hidden="true"></div>
+    <div class="wrap">
+      <div class="hero-grid">
+      <div class="hero-head">
+        <span class="eyebrow">Desktop IDE · macOS · Linux · Apache-2.0</span>
+        <h1>
+          The IDE for the era of agents.<br/>
+          <span class="dim">One workspace &mdash; Claude Code, OpenCode, and soon Codex.</span>
+        </h1>
+        <p class="hero-lede">
+          Cadence is the surface you read, steer and ship from. <span class="em">Your harness stays the same</span> &mdash; the stream becomes readable, every session gets its own worktree, and git stays where you can see it.
+        </p>
+        <div class="hero-cta">
+          <button class="btn btn-primary btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Download for Mac
+          </button>
+          <button class="btn btn-outline btn-lg">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Source on GitHub
+          </button>
+        </div>
+        <span class="hero-brew">or <code>brew install --cask cadence-ide</code></span>
+        <div class="hero-meta">
+          <span><span class="ok">●</span> runs local</span>
+          <span class="sep">·</span>
+          <span>no telemetry</span>
+          <span class="sep">·</span>
+          <span>bring your own keys</span>
+          <span class="sep">·</span>
+          <span>built on Tauri</span>
+        </div>
+      </div>
+
+      <!-- App window -->
+      <div class="hero-demo">
+      <div class="window" role="img" aria-label="Cadence application">
+        <div class="win-titlebar">
+          <div class="traffic"><span class="c"></span><span class="y"></span><span class="g"></span></div>
+          <div class="win-title"><b>cadence</b> · cadence / Unify code rendering with CodeMirror</div>
+        </div>
+        <div class="win-body">
+          <!-- Sidebar -->
+          <aside class="ws">
+            <div class="ws-head">
+              <img src="assets/logo.svg" style="width:18px;height:18px" alt="" />
+              <span class="ws-mark">Cadence</span>
+              <span class="ws-dev">dev</span>
+            </div>
+            <div class="ws-scroll">
+              <div class="ws-label"><span>Projects</span><span class="plus">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </span></div>
+              <button class="ws-proj">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                <span class="dot" style="background:var(--drac-green)"></span>
+                <span>cadence</span>
+              </button>
+              <div class="ws-sess">
+                <span>Investigate unauthorized folder access</span>
+              </div>
+              <div class="ws-sess active">
+                <span>Unify code rendering with CodeMirror</span>
+                <span class="ws-sess-meta"><span class="add">+1,649</span><span class="del">-9</span></span>
+              </div>
+              <div class="ws-arch-head">Archived (66)</div>
+              <div class="ws-sess archived">Add mode selector to prompts</div>
+              <div class="ws-sess archived">Improve worktree setup UI</div>
+
+              <button class="ws-proj" style="margin-top:4px">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                <span class="dot" style="background:var(--drac-pink)"></span>
+                <span>plant-main</span>
+              </button>
+              <button class="ws-proj">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+                <span class="dot" style="background:var(--drac-orange)"></span>
+                <span>epay-main</span>
+              </button>
+              <div class="ws-sess">
+                <span>Fix preview PDF data discrepancy</span>
+                <span class="ws-sess-meta"><span class="add">+270</span></span>
+              </div>
+              <div class="ws-sess">
+                <span>French payroll accounting module</span>
+                <span class="ws-sess-meta"><span class="st">IP</span></span>
+              </div>
+              <div class="ws-sess">
+                <span>Fix SSN change user creation</span>
+              </div>
+
+              <button class="ws-proj" style="margin-top:4px">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--muted-foreground)" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                <span class="dot" style="background:var(--drac-yellow)"></span>
+                <span>k7notes</span>
+              </button>
+            </div>
+            <div class="ws-foot">
+              <div class="ws-usage"><span class="v">0%</span> <span class="t">1h4m</span></div>
+              <div class="ws-usage"><span class="v">82%</span> <span class="t">5d8h</span></div>
+              <div class="ws-usage"><span class="v">1%</span> <span class="t">5d4h</span></div>
+            </div>
+          </aside>
+
+          <!-- Main -->
+          <div class="wm">
+            <div class="wm-top">
+              <div class="wm-title"><span class="s"></span>Unify Code Rendering with CodeMirror</div>
+              <div class="wm-actions">
+                <button class="ib" aria-label="Open in Zed"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7 17l10-10M7 7h10v10"/></svg></button>
+                <button class="ib" aria-label="Terminal"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg></button>
+                <button class="ib" aria-label="Settings"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+              </div>
+            </div>
+            <div class="wm-tabs">
+              <div class="wm-tab active">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 2v4M9 13h.01M15 13h.01"/></svg>
+                Agent
+              </div>
+              <div class="wm-tab">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+                Terminal
+              </div>
+              <div class="wm-tab">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><path d="M6 21V9"/><path d="M18 3v12"/><circle cx="18" cy="18" r="3"/></svg>
+                Git <span class="add">+1,649</span> <span class="del">-9</span>
+              </div>
+              <div class="wm-tab">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Editor
+              </div>
+            </div>
+
+            <div class="wm-stream">
+              <div class="msg-meta"><b>claude-opus-4-6</b> · 2026/04/20 14:06</div>
+              <div class="msg-text">The CSS specificity isn't enough to override CodeMirror's default underline. Let me check which class applies it in <span class="ic">@codemirror/merge</span>.</div>
+
+              <div class="tool">
+                <div class="tool-head">
+                  <div class="tool-tag bash">
+                    <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+                    Bash
+                  </div>
+                  <div class="tool-body">grep -r "insertedText|text-decoration" node_modules/@codemirror/merge/dist/ | head -20</div>
+                </div>
+              </div>
+
+              <div class="tool">
+                <div class="tool-head">
+                  <div class="tool-tag grep">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Grep
+                  </div>
+                  <div class="tool-body">".cm-changedText" · @codemirror/merge/dist/index.js</div>
+                  <div class="tool-trail">3 matches <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+                </div>
+              </div>
+
+              <div class="msg-text">The underline is a 2px bottom gradient on <span class="ic">.cm-changedText</span>, not text-decoration. Overriding via the theme cascade:</div>
+
+              <div class="diff">
+                <div class="diff-head">
+                  <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h16"/></svg>
+                  <span class="path">packages/tauri/src/components/editor/editor-theme.ts</span>
+                  <span class="stats"><span class="add">+4</span> <span class="del">-0</span></span>
+                </div>
+                <div class="diff-body">
+                  <div class="diff-line add"><span class="diff-gutter">42</span><span>  <span class="tok-str">".cm-mergeView &amp; .cm-changedLine .cm-insertedLine"</span>: &#123;</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">43</span><span>    <span class="tok-prop">backgroundColor</span>: <span class="tok-str">"#50fa7b30"</span>,</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">44</span><span>    <span class="tok-prop">textDecoration</span>: <span class="tok-str">"none"</span>,</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">45</span><span>  &#125;,</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="wm-action">
+              <button class="chip ghost">
+                <svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="7" cy="12" r="4" fill="currentColor"/></svg>
+                Auto-scroll off
+              </button>
+              <button class="chip">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                Auto
+              </button>
+              <button class="chip primary">
+                <img src="assets/claude.png" width="11" height="11" style="border-radius:2px" alt="" />
+                OPUS 4
+                <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <button class="chip success">
+                <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                0/0
+              </button>
+              <span class="count">+1,649 / -9</span>
+            </div>
+
+            <div class="prompt">
+              <input placeholder="Send a message… (@ to mention files, / for commands)" />
+              <kbd>⌘</kbd>
+              <kbd>↵</kbd>
+              <button class="send" aria-label="Send">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
+              </button>
+            </div>
+
+            <div class="statusbar">
+              <span>0h.main</span>
+              <span>+1,649 · -9</span>
+              <span>claude-opus-<span class="p">4-6</span></span>
+              <span>ctx <span class="v">78%</span></span>
+              <span class="sp"></span>
+              <span>UTF-8</span>
+              <span>Ln 42, Col 18</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div><!-- /hero-demo -->
+      </div><!-- /hero-grid -->
+    </div>
+  </section>
+
+  <!-- =================== COMPAT =================== -->
+  <section class="compat" id="compat">
+    <div class="wrap">
+      <div class="compat-label">Bring your own harness.<br/>Cadence is the surface &mdash; you keep the agent.</div>
+      <div class="compat-list">
+        <div class="prov">
+          <img src="assets/claude.png" alt="Claude Code" />
+          <span>Claude Code</span>
+          <span class="s">stable</span>
+        </div>
+        <div class="prov">
+          <img src="assets/opencode.png" alt="OpenCode" />
+          <span>OpenCode</span>
+          <span class="s">stable</span>
+        </div>
+        <div class="prov soon">
+          <img src="assets/codex.png" alt="Codex" />
+          <span>Codex</span>
+          <span class="s soon">soon</span>
+        </div>
+        <div class="prov soon">
+          <span>Bring your own</span>
+          <span class="s soon">adapter</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FEATURE 1 — READABILITY =================== -->
+  <section class="block" id="readability">
+    <div class="wrap">
+      <div class="two-up">
+        <div>
+          <span class="eyebrow">01 · Stream</span>
+          <h2 class="section">Your harness &mdash; finally readable.</h2>
+          <p class="lede">Raw terminal output buries every signal under <span class="em">bash, grep, cat, head</span>. Cadence reinterprets the stream as it arrives. Tool calls become pills. File writes become inline diffs. Long outputs collapse until you ask for them.</p>
+          <p class="lede" style="margin-top:10px">Same agent. Same commands. Orders of magnitude more legible.</p>
+          <ul class="bullets">
+            <li><strong>Inline diffs</strong> &mdash; Dracula syntax, +/- gutters, not walls of unified patch.</li>
+            <li><strong>Tool-call pills</strong> &mdash; Bash, Grep, Read, Edit, Thinking. Click to expand.</li>
+            <li><strong>Per-message model tag</strong> &mdash; never guess which agent said what.</li>
+            <li><strong>Context meter</strong> in the status bar so you see the window filling.</li>
+          </ul>
+        </div>
+
+        <div class="artifact">
+          <div class="art-bar">
+            <span class="t">raw harness output</span>
+            <span class="spacer"></span>
+            <span class="t" style="color:var(--drac-purple)">cadence</span>
+            <span class="dot"></span>
+          </div>
+          <div class="compare">
+            <!-- Raw -->
+            <div class="compare-col raw">
+<span class="hd">● Bash(grep -r "changedText" node_modules/@codemirror/merge/dist/)</span>
+  ⎿  node_modules/@codemirror/merge/dist/index.js:
+       "&light.cm-merge-a .cm-changedText,
+        &light.cm-deletedChunk .cm-deletedText": {
+          color: null
+        },
+     node_modules/@codemirror/merge/dist/index.js:
+       "&dark.cm-merge-a .cm-changedText,
+        &dark.cm-deletedChunk .cm-deletedText": { color: null },
+     node_modules/@codemirror/merge/dist/index.js:
+       "&.cm-merge-b .cm-changedText": {
+         backgroundColor: "#00990033"
+       },
+<span class="hd">● Read(packages/tauri/src/editor-theme.ts)</span>
+  ⎿  Read 142 lines (ctrl+r to expand)
+<span class="hd">● Edit(packages/tauri/src/editor-theme.ts)</span>
+  ⎿  Updated with 4 additions
+      42   }
+      43 + ".cm-mergeView & .cm-changedLine": {
+      44 +   backgroundColor: "#50fa7b30",
+      45 +   textDecoration: "none",
+      46 + },
+            </div>
+            <!-- Cadence -->
+            <div class="compare-col cad">
+              <div class="tool" style="font-size:10.5px">
+                <div class="tool-head">
+                  <div class="tool-tag grep" style="padding:5px 8px">
+                    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    Grep
+                  </div>
+                  <div class="tool-body" style="padding:5px 4px">"changedText" · @codemirror/merge</div>
+                  <div class="tool-trail" style="padding:5px 8px">3 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+                </div>
+              </div>
+              <div class="tool" style="font-size:10.5px">
+                <div class="tool-head">
+                  <div class="tool-tag read" style="padding:5px 8px">
+                    <svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+                    Read
+                  </div>
+                  <div class="tool-body" style="padding:5px 4px">editor-theme.ts</div>
+                  <div class="tool-trail" style="padding:5px 8px">142 ln</div>
+                </div>
+              </div>
+              <div class="diff" style="font-size:10.5px">
+                <div class="diff-head" style="padding:5px 8px">
+                  <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h16"/></svg>
+                  <span class="path" style="font-size:10.5px">editor-theme.ts</span>
+                  <span class="stats"><span class="add">+4</span></span>
+                </div>
+                <div class="diff-body" style="padding:3px 0">
+                  <div class="diff-line add"><span class="diff-gutter">43</span><span><span class="tok-str">".cm-insertedLine"</span>: &#123;</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">44</span><span>  <span class="tok-prop">backgroundColor</span>: <span class="tok-str">"#50fa7b30"</span>,</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">45</span><span>  <span class="tok-prop">textDecoration</span>: <span class="tok-str">"none"</span>,</span></div>
+                  <div class="diff-line add"><span class="diff-gutter">46</span><span>&#125;,</span></div>
+                </div>
+              </div>
+              <div class="meta-foot">
+                <span>12 tool calls</span><span>~4× shorter</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FEATURE 2 — WORKTREES =================== -->
+  <section class="block" id="worktrees">
+    <div class="wrap">
+      <div class="two-up reverse">
+        <div class="artifact">
+          <div class="art-bar">
+            <span class="t">Unify code rendering</span>
+            <span class="spacer"></span>
+            <span class="t">4 worktrees</span>
+          </div>
+          <div class="wt-wrap">
+            <div class="wt-col">
+              <div class="wt-branch active">
+                <span class="dot" style="background:var(--drac-purple)"></span>
+                <span class="name">main</span>
+                <span class="agent">idle</span>
+              </div>
+              <div class="wt-branch">
+                <span class="dot" style="background:var(--drac-green)"></span>
+                <span class="name">codemirror-theme</span>
+                <span class="agent">claude</span>
+              </div>
+              <div class="wt-branch">
+                <span class="dot" style="background:var(--drac-cyan)"></span>
+                <span class="name">diff-renderer</span>
+                <span class="agent">opencode</span>
+              </div>
+              <div class="wt-branch">
+                <span class="dot" style="background:var(--drac-pink)"></span>
+                <span class="name">split-view-shell</span>
+                <span class="agent">claude</span>
+              </div>
+            </div>
+            <div class="wt-session">
+              <div class="wt-card">
+                <div class="title">codemirror-theme <span class="status">running</span></div>
+                <div class="sub">claude-opus-4-6 · bash grep on @codemirror/merge<span class="wt-cursor"></span></div>
+                <div class="trail"><span class="add">+148</span><span class="del">-12</span><span>6 tool calls</span></div>
+              </div>
+              <div class="wt-card">
+                <div class="title">diff-renderer <span class="status plan">planning</span></div>
+                <div class="sub">opencode · outlining a 3-step approach</div>
+                <div class="trail"><span>0 tool calls</span><span>ctx 12%</span></div>
+              </div>
+              <div class="wt-card">
+                <div class="title">split-view-shell <span class="status wait">awaiting</span></div>
+                <div class="sub">claude-opus-4-6 · wants approval to rm legacy CSS</div>
+                <div class="trail"><span class="add">+2</span><span class="del">-48</span><span>waiting 2m</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <span class="eyebrow">02 · Worktrees</span>
+          <h2 class="section">One feature &mdash; four agents in parallel.</h2>
+          <p class="lede">Every session gets its own git worktree, so each agent works on <span class="em">its own branch in its own checkout</span>. Run Claude Code and OpenCode on the same ticket at once, compare their diffs, keep the one you like.</p>
+          <p class="lede" style="margin-top:10px">When you're ready, merge locally. Cadence never pushes on your behalf.</p>
+          <ul class="bullets">
+            <li><strong>Auto worktree</strong> &mdash; new session, new branch, new working copy.</li>
+            <li><strong>Parallel agents</strong> &mdash; let them race on the same ticket.</li>
+            <li><strong>Session switcher</strong> &mdash; <kbd>⌘</kbd><kbd>1</kbd> through <kbd>⌘</kbd><kbd>9</kbd>.</li>
+            <li><strong>Clean teardown</strong> &mdash; archive a session, the worktree folds away.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FEATURE 3 — GIT =================== -->
+  <section class="block" id="git">
+    <div class="wrap">
+      <div class="two-up">
+        <div>
+          <span class="eyebrow">03 · Git</span>
+          <h2 class="section">Git stays where you can see it.</h2>
+          <p class="lede">Agents don't edit in place &mdash; they land commits. Cadence shows the graph, the staged diff, and the pending message <span class="em">before</span> anything ships. You review, edit the message, commit.</p>
+          <p class="lede" style="margin-top:10px">Or raise autonomy to <span class="em">High</span> and let it run. Either way, the history stays yours.</p>
+          <ul class="bullets">
+            <li><strong>Per-session branch</strong> with auto-generated names you can rename.</li>
+            <li><strong>Commit previews</strong> before every tool-group lands.</li>
+            <li><strong>Stash &amp; checkout</strong> from the keyboard, no terminal detour.</li>
+            <li><strong>Graph view</strong> of sessions &times; branches.</li>
+          </ul>
+        </div>
+
+        <div class="artifact">
+          <div class="art-bar">
+            <span class="t">Git · 0h.main</span>
+            <span class="spacer"></span>
+            <span class="t" style="color:var(--drac-green)">+1,649</span>
+            <span class="t" style="color:var(--drac-red)">-9</span>
+          </div>
+          <div class="git-log">
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-yellow)"></div></div>
+              <span class="gl-sha">a31fc2</span>
+              <span class="gl-msg">feat(editor): unify code rendering with CodeMirror</span>
+              <span class="gl-tag pending">pending</span>
+              <span class="gl-meta">now</span>
+            </div>
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-purple)"></div></div>
+              <span class="gl-sha">b7d901</span>
+              <span class="gl-msg">chore(editor): remove legacy highlight.js theme bundle</span>
+              <span class="gl-tag main">main</span>
+              <span class="gl-meta">2h</span>
+            </div>
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-cyan)"></div></div>
+              <span class="gl-sha">4e02af</span>
+              <span class="gl-msg">fix(stream): collapse empty bash-out blocks</span>
+              <span class="gl-tag">diff-renderer</span>
+              <span class="gl-meta">yesterday</span>
+            </div>
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-green)"></div></div>
+              <span class="gl-sha">99cc1d</span>
+              <span class="gl-msg">feat(worktrees): auto-name sessions from plan title</span>
+              <span class="gl-tag">codemirror-theme</span>
+              <span class="gl-meta">yesterday</span>
+            </div>
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-pink)"></div></div>
+              <span class="gl-sha">12ba7e</span>
+              <span class="gl-msg">wip: split-view shell skeleton</span>
+              <span class="gl-tag">split-view-shell</span>
+              <span class="gl-meta">2d</span>
+            </div>
+            <div class="gl-row">
+              <div class="gl-graph"><div class="node" style="background:var(--drac-purple)"></div></div>
+              <span class="gl-sha">0af43b</span>
+              <span class="gl-msg">docs: add AGENTS.md to tauri/src</span>
+              <span class="gl-tag main">main</span>
+              <span class="gl-meta">3d</span>
+            </div>
+          </div>
+          <div class="git-actions">
+            <button class="chip primary">
+              <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              Commit pending
+            </button>
+            <button class="chip">Edit message</button>
+            <button class="chip">Stash</button>
+            <button class="chip ghost" style="margin-left:auto"><kbd>⌘</kbd><kbd>K</kbd> for actions</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FEATURE 4 — TERMINAL =================== -->
+  <section class="block" id="terminal">
+    <div class="wrap">
+      <div class="two-up reverse">
+        <div class="artifact">
+          <div class="art-bar">
+            <span class="t">Terminal · zsh · codemirror-theme</span>
+            <span class="spacer"></span>
+            <span class="dot"></span>
+            <span class="t" style="color:var(--drac-green)">connected</span>
+          </div>
+          <div class="term-body"><span class="tl-prompt">~/cadence</span> <span class="tl-path">(<span class="tl-branch">codemirror-theme</span>)</span> <span class="tl-prompt">❯</span> <span class="tl-cmd">pnpm dev</span>
+<span class="tl-dim">&gt; <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="9af9fbfefff4f9ffdaaab4a3b4a8">[email&#160;protected]</a> dev /Users/you/code/cadence</span>
+<span class="tl-dim">&gt; tauri dev</span>
+
+<span class="tl-ok">  VITE v6.2.1</span>  ready in <span class="tl-ok">412 ms</span>
+
+  <span class="tl-ok">➜</span>  Local:   <span class="tl-path">http://localhost:1420/</span>
+  <span class="tl-ok">➜</span>  Network: use <span class="tl-cmd">--host</span> to expose
+  <span class="tl-ok">➜</span>  press <span class="tl-cmd">h + enter</span> to show help
+
+<span class="tl-warn">    Compiling</span> cadence v0.9.2 (/Users/you/code/cadence/src-tauri)
+<span class="tl-ok">     Finished</span> dev [unoptimized + debuginfo] in 18.4s
+
+<span class="tl-prompt">~/cadence</span> <span class="tl-path">(<span class="tl-branch">codemirror-theme</span>)</span> <span class="tl-prompt">❯</span> <span class="tl-cmd">git status</span>
+<span class="tl-out">On branch codemirror-theme</span>
+<span class="tl-out">Your branch is ahead of 'origin/main' by 3 commits.</span>
+
+<span class="tl-out">Changes not staged for commit:</span>
+  <span class="tl-ok">modified:   src/components/editor/editor-theme.ts</span>
+  <span class="tl-ok">modified:   src/components/AgentStream.tsx</span>
+
+<span class="tl-prompt">~/cadence</span> <span class="tl-path">(<span class="tl-branch">codemirror-theme</span>)</span> <span class="tl-prompt">❯</span> <span class="cur"></span></div>
+        </div>
+
+        <div>
+          <span class="eyebrow">04 · Terminal</span>
+          <h2 class="section">A real terminal, next to the agent.</h2>
+          <p class="lede">Every session gets a PTY rooted at its own worktree. Use it for <span class="em">the things the agent shouldn't</span> &mdash; ssh, dev servers, ad-hoc scripts.</p>
+          <p class="lede" style="margin-top:10px">Split the pane with <kbd>⌘</kbd><kbd>\</kbd>. The terminal and the agent see the same filesystem, in real time.</p>
+          <ul class="bullets">
+            <li><strong>One PTY per session</strong>, rooted at the worktree.</li>
+            <li><strong>Split view</strong> &mdash; agent left, terminal right, or stacked.</li>
+            <li><strong>xterm.js</strong>, true color, correct scrollback, correct cursor.</li>
+            <li><strong>Branch-aware prompt</strong> &mdash; always know which checkout you're in.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== AUTONOMY =================== -->
+  <section class="block" id="autonomy" style="padding:64px 0">
+    <div class="wrap">
+      <div class="block-head">
+        <span class="eyebrow">05 · Autonomy</span>
+        <h2 class="section">Three dials &mdash; pick your comfort.</h2>
+        <p class="lede">Agents are powerful. You're the one who has to maintain the code afterwards. Every project picks how much leash to give.</p>
+      </div>
+      <div class="autonomy-grid">
+        <div class="auto-card low">
+          <span class="lvl">Low</span>
+          <div class="t">Ask before commit.</div>
+          <div class="d">Every tool call surfaces in the stream. Every commit waits for your approval. For code you deeply care about.</div>
+          <div class="f">confirm · bash, edit, write</div>
+        </div>
+        <div class="auto-card med">
+          <span class="lvl">Medium</span>
+          <div class="t">Manual continue.</div>
+          <div class="d">Agent runs tools freely. Stops at each plan boundary and waits for "Continue." The default, and a good one.</div>
+          <div class="f">auto · bash, grep, read &nbsp;·&nbsp; confirm · edit, write</div>
+        </div>
+        <div class="auto-card high">
+          <span class="lvl">High</span>
+          <div class="t">Full auto.</div>
+          <div class="d">Let it cook. Commits land on the session branch. Review the diff when you come back. For sandboxes and side projects.</div>
+          <div class="f">auto · everything · still reviewable</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== INSTALL =================== -->
+  <section class="block" id="install">
+    <div class="wrap">
+      <div class="install-grid">
+        <div>
+          <span class="eyebrow">06 · Install</span>
+          <h2 class="section">Local, fast, open.</h2>
+          <p class="lede">Cadence is a Tauri binary &mdash; ~24 MB, runs offline, no background services. Source under MIT on GitHub.</p>
+          <div style="margin-top:18px; display:flex; gap:8px; flex-wrap:wrap">
+            <button class="btn btn-primary btn-lg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+              Download v0.9.2
+            </button>
+            <button class="btn btn-outline btn-lg">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+              Source
+            </button>
+          </div>
+          <div style="margin-top:18px; font-family:var(--font-mono); font-size:11px; color:var(--muted-foreground); display:flex; flex-direction:column; gap:3px;">
+            <div>macOS 13+ · Apple Silicon and Intel</div>
+            <div>Linux x86_64 · AppImage · deb · rpm</div>
+            <div><span style="color:var(--drac-orange)">Windows</span> · tracked in <a href="#" style="color:var(--drac-purple)">#47</a></div>
+          </div>
+        </div>
+
+        <div class="install-cmds">
+          <div class="cmd-card">
+            <div class="cmd-tabs">
+              <div class="cmd-tab active">macOS</div>
+              <div class="cmd-tab">Linux</div>
+              <div class="cmd-tab">Build from source</div>
+            </div>
+            <div class="cmd-body">
+              <span class="p">$</span>
+              <span class="c">brew install --cask cadence-ide</span>
+              <button class="copy">
+                <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </button>
+            </div>
+          </div>
+          <div class="cmd-card">
+            <div class="cmd-tabs">
+              <div class="cmd-tab">macOS</div>
+              <div class="cmd-tab active">Linux</div>
+              <div class="cmd-tab">Build from source</div>
+            </div>
+            <div class="cmd-body">
+              <span class="p">$</span>
+              <span class="c">curl -fsSL cadence.dev/install.sh | sh</span>
+              <button class="copy">
+                <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </button>
+            </div>
+          </div>
+          <div class="cmd-card">
+            <div class="cmd-tabs">
+              <div class="cmd-tab">macOS</div>
+              <div class="cmd-tab">Linux</div>
+              <div class="cmd-tab active">Build from source</div>
+            </div>
+            <div class="cmd-body" style="display:flex; flex-direction:column; align-items:stretch; gap:6px">
+              <div style="display:flex; gap:10px; align-items:center"><span class="p">$</span><span class="c">git clone https://github.com/cadence-ide/cadence</span></div>
+              <div style="display:flex; gap:10px; align-items:center"><span class="p">$</span><span class="c">cd cadence &amp;&amp; pnpm i &amp;&amp; pnpm tauri build</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== CLOSER =================== -->
+  <section class="closer">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">Ready</span>
+        <h2>Ship at the cadence of your agents.</h2>
+        <p>Free, open source, runs on your machine. Bring your own Claude or OpenCode keys &mdash; and go.</p>
+      </div>
+      <div class="closer-cta">
+        <button class="btn btn-primary btn-lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Download
+        </button>
+        <button class="btn btn-outline btn-lg">Read the docs</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================== FOOTER =================== -->
+  <footer>
+    <div class="wrap">
+      <div class="foot-inner">
+        <div class="foot-brand">
+          <span class="b">
+            <img src="assets/logo.svg" style="width:20px;height:20px" alt="" />
+            <span class="mark">Cadence</span>
+          </span>
+          <span class="d">The IDE for the era of agents.<br/>MIT · v0.9.2 · built in Paris.</span>
+        </div>
+        <div class="foot-cols">
+          <div class="foot-col">
+            <h4>Product</h4>
+            <a href="#readability">Features</a>
+            <a href="#install">Download</a>
+            <a href="#roadmap">Roadmap</a>
+            <a href="#">Changelog</a>
+          </div>
+          <div class="foot-col">
+            <h4>Open source</h4>
+            <a href="#">GitHub</a>
+            <a href="#">Discussions</a>
+            <a href="#">Issues</a>
+            <a href="#">License</a>
+          </div>
+          <div class="foot-col">
+            <h4>Community</h4>
+            <a href="#blog">Blog</a>
+            <a href="#">Discord</a>
+            <a href="#">Mastodon</a>
+            <a href="#">RSS</a>
+          </div>
+        </div>
+      </div>
+      <div class="foot-row">
+        <span>Independent project, not affiliated with Anthropic, OpenAI, or SST.</span>
+        <span class="sp"></span>
+        <span>commit <b>a31fc2</b></span>
+        <span>build <b>2026/04/20</b></span>
+      </div>
+    </div>
+  </footer>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script></body>
+</html>

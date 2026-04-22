@@ -1,0 +1,53 @@
+---
+import LogoMark from "@/components/icons/LogoMark.astro";
+import Wrap from "@/components/ui/Wrap.astro";
+const base = import.meta.env.BASE_URL;
+---
+<footer class="border-t border-border/55 pb-11 pt-9">
+  <Wrap>
+    <div class="grid grid-cols-1 gap-7 sm:[grid-template-columns:1.2fr_3fr] sm:gap-14">
+      <div class="flex flex-col gap-2.5">
+        <span class="inline-flex items-center gap-2.5">
+          <LogoMark size={36} />
+          <span class="text-sm font-bold uppercase tracking-[0.14em]">Cadence</span>
+        </span>
+        <span class="font-mono text-[11.5px] leading-[1.55] text-muted-foreground">
+          The IDE for the era of agents.<br />
+          MIT · v0.9.2 · built in Paris.
+        </span>
+      </div>
+      <div
+        class="grid gap-6 [grid-template-columns:repeat(3,minmax(120px,1fr))] [&_h4]:m-0 [&_h4]:mb-1 [&_h4]:font-mono [&_h4]:text-[10px] [&_h4]:font-medium [&_h4]:uppercase [&_h4]:tracking-[0.08em] [&_h4]:text-muted-foreground [&_a]:text-[12.5px] [&_a]:text-foreground/80 hover:[&_a]:text-foreground"
+      >
+        <div class="flex flex-col gap-2">
+          <h4>Product</h4>
+          <a href={`${base}#readability`}>Features</a>
+          <a href={`${base}#install`}>Download</a>
+          <a href={`${base}roadmap/`}>Roadmap</a>
+          <a href={`${base}news/`}>Changelog</a>
+        </div>
+        <div class="flex flex-col gap-2">
+          <h4>Open source</h4>
+          <a href="https://github.com/cadence-ide/cadence">GitHub</a>
+          <a href="https://github.com/cadence-ide/cadence/discussions">Discussions</a>
+          <a href="https://github.com/cadence-ide/cadence/issues">Issues</a>
+          <a href="https://github.com/cadence-ide/cadence/blob/main/LICENSE">License</a>
+        </div>
+        <div class="flex flex-col gap-2">
+          <h4>Community</h4>
+          <a href={`${base}news/`}>Blog</a>
+          <a href="#">Discord</a>
+          <a href="#">Mastodon</a>
+          <a href={`${base}rss.xml`}>RSS</a>
+        </div>
+      </div>
+    </div>
+    <div
+      class="mt-7 flex flex-wrap gap-4 border-t border-border/55 pt-4.5 font-mono text-[10.5px] text-muted-foreground"
+    >
+      <span>Independent project, not affiliated with Anthropic, OpenAI, or SST.</span>
+      <span class="flex-1"></span>
+      <span>Apache-2.0</span>
+    </div>
+  </Wrap>
+</footer>

@@ -1,0 +1,31 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import Lede from "@/components/ui/Lede.astro";
+---
+<FeatureSection
+  id="git"
+  eyebrow="03 · Git"
+  heading="Git stays where you can see it."
+  placeholder={{
+    label: "Git log",
+    hint: "screenshot pending",
+    ratio: "4/3",
+    caption: "commit graph · pending commits · staged diff",
+  }}
+>
+  <Fragment slot="lede">
+    <Lede>
+      Agents don't edit in place — they land commits. Cadence shows the graph, the staged diff, and the pending message
+      <span class="em">before</span> anything ships. You review, edit the message, commit.
+    </Lede>
+    <Lede class="mt-2.5">
+      Or raise autonomy to <span class="em">High</span> and let it run. Either way, the history stays yours.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li><strong>Per-session branch</strong> with auto-generated names you can rename.</li>
+    <li><strong>Commit previews</strong> before every tool-group lands.</li>
+    <li><strong>Stash &amp; checkout</strong> from the keyboard, no terminal detour.</li>
+    <li><strong>Graph view</strong> of sessions × branches.</li>
+  </Fragment>
+</FeatureSection>

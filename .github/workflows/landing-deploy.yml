@@ -1,0 +1,44 @@
+name: Deploy landing to GitHub Pages
+
+on:
+  # TODO: add a `push: branches: [main]` trigger (paths: packages/landing/**,
+  # this workflow, pnpm-lock.yaml) when the landing goes public and Pages is
+  # enabled in repo Settings. Manual dispatch only for now.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "@cadence/landing..."
+      - run: pnpm --filter @cadence/landing build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/landing/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
