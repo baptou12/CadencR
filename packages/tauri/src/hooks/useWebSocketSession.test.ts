@@ -193,7 +193,7 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].content).toBe("hi");
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("running");
   });
 
   it("incoming permission.request sets pendingPermission", async () => {
@@ -274,7 +274,7 @@ describe("useWebSocketSession", () => {
     expect(sent.payload.decision).toBe("allow_once");
   });
 
-  it("deny permission response returns session to idle", async () => {
+  it("deny permission response clears pending state and waits for backend", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
@@ -298,7 +298,7 @@ describe("useWebSocketSession", () => {
       result.current.respondToPermission("r2", "deny");
     });
     expect(result.current.pendingPermission).toBeNull();
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("paused");
     const sent = JSON.parse(getWs().sent[0]);
     expect(sent.payload.decision).toBe("deny");
   });
@@ -378,7 +378,7 @@ describe("useWebSocketSession", () => {
     expect(result.current.status).toBe("completed");
   });
 
-  it("late tool updates after end do not re-enter running", async () => {
+  it("late stream events after end re-enter running (frontend trusts backend activity)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
@@ -459,7 +459,7 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("running");
   });
 
   it("multi-turn conversation accumulates blocks across turns", async () => {
@@ -661,7 +661,7 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    expect(result.current.status).toBe("idle");
+    expect(result.current.status).toBe("running");
     expect(result.current.pendingPlanApproval).toBeNull();
 
     // turn_complete is terminal; plan approval only comes from permission.request

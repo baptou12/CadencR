@@ -222,14 +222,17 @@ pub async fn wait_and_apply_decision(
     let mut rx = response_rx.lock().await;
     match rx.recv().await {
         Some(response) => {
-            let decision = response.decision.clone();
+            // Claude Code keeps streaming after `can_use_tool` returns Deny
+            // with `interrupt: false`, so the turn stays on the agent until a
+            // real Result arrives. Broadcasting "none" here would flip the
+            // sidebar to idle while the CLI is still working.
             WsSessionPersistence::mark_agent_resumed_static(
                 write_pool,
                 turn_state_tx,
                 db_session_id,
                 feature_id,
                 clear_kind,
-                turn_state_after_decision(decision.clone()),
+                "agent",
             )
             .await;
             let input = response.updated_input.unwrap_or(original_input);
@@ -239,7 +242,7 @@ pub async fn wait_and_apply_decision(
                 force_prompt,
                 worktree_path,
                 session_cache,
-                decision,
+                response.decision,
                 response.feedback,
                 input,
             )
@@ -268,6 +271,9 @@ pub async fn wait_and_apply_decision(
     }
 }
 
+/// Turn state broadcast on the direct-SDK response path (OpenCode per-tool
+/// perms, AskUserQuestion). Deny ends the turn here because the caller
+/// explicitly emits `session.ended` alongside this broadcast.
 pub fn turn_state_after_decision(decision: PermissionDecision) -> &'static str {
     match decision {
         PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "agent",
@@ -275,19 +281,20 @@ pub fn turn_state_after_decision(decision: PermissionDecision) -> &'static str {
     }
 }
 
-/// Same as [`turn_state_after_decision`], but routes a plan/PRD *Deny* with
-/// non-empty feedback back to `"agent"` — the user is asking the agent to try
-/// again, not ending the turn. Regular tool-permission denies still end the
-/// turn (`"none"`); that path stays on [`turn_state_after_decision`].
 pub fn turn_state_after_approval(
     decision: PermissionDecision,
     feedback: Option<&str>,
 ) -> &'static str {
-    let has_feedback = feedback.is_some_and(|f| !f.trim().is_empty());
-    if matches!(decision, PermissionDecision::Deny) && has_feedback {
-        "agent"
-    } else {
-        turn_state_after_decision(decision)
+    match decision {
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "agent",
+        PermissionDecision::Deny => {
+            let has_feedback = feedback.is_some_and(|f| !f.trim().is_empty());
+            if has_feedback {
+                "agent"
+            } else {
+                "none"
+            }
+        }
     }
 }
 
@@ -297,7 +304,7 @@ mod tests {
     use crate::domain::ws_session::protocol::PermissionDecision;
 
     #[test]
-    fn deny_decision_clears_turn_state() {
+    fn deny_decision_ends_turn_on_direct_sdk_path() {
         assert_eq!(turn_state_after_decision(PermissionDecision::Deny), "none");
     }
 

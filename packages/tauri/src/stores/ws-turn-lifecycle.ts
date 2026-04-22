@@ -16,15 +16,14 @@ export type TurnEvent =
   | { type: "permission_requested" }
   | { type: "question_requested" }
   | { type: "plan_approval_requested" }
-  | { type: "permission_allowed" }
-  | { type: "permission_denied" }
   | { type: "question_answered" }
   | { type: "plan_approved" }
   | { type: "plan_changes_requested" }
   | { type: "turn_ended"; reason: TurnTerminalReason }
   | { type: "turn_cleared" }
   | { type: "turn_errored"; message?: string }
-  | { type: "connection_lost" };
+  | { type: "connection_lost" }
+  | { type: "stream_activity" };
 
 export function createIdleTurnLifecycle(): TurnLifecycle {
   return { phase: "idle" };
@@ -42,10 +41,6 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
       return { phase: "paused", reason: "question" };
     case "plan_approval_requested":
       return { phase: "paused", reason: "planApproval" };
-    case "permission_allowed":
-      return current.phase === "terminal" ? current : { phase: "active" };
-    case "permission_denied":
-      return current.phase === "terminal" ? current : { phase: "terminal", reason: "denied" };
     case "question_answered":
       return current.phase === "terminal" ? current : { phase: "active" };
     case "plan_approved":
@@ -62,6 +57,8 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
         return { phase: "terminal", reason: "streamClosed" };
       }
       return current;
+    case "stream_activity":
+      return current.phase === "active" ? current : { phase: "active" };
   }
 }
 

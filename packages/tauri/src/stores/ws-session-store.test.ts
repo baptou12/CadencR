@@ -1293,7 +1293,129 @@ describe("ws-session-store", () => {
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.permissionMode).toBe("plan");
-      expect(lifecycleToStatus(session.lifecycle)).toBe("idle");
+      expect(lifecycleToStatus(session.lifecycle)).toBe("running");
+    });
+  });
+
+  describe("permission denial does not mark turn terminal", () => {
+    async function setupPermissionPending(): Promise<MockWebSocket> {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: {
+          request_id: "req-1",
+          tool_name: "Bash",
+          tool_input: { command: "ls" },
+          description: "run ls",
+        },
+      });
+      return ws;
+    }
+
+    it("respondToPermission deny clears pending fields without touching lifecycle", async () => {
+      await setupPermissionPending();
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
+
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "deny");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission).toBeNull();
+      expect(session.pendingRequestId).toBe("");
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+    });
+
+    it("respondToPermission allow clears pending fields without touching lifecycle", async () => {
+      await setupPermissionPending();
+
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission).toBeNull();
+      expect(session.pendingRequestId).toBe("");
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+    });
+
+    it("paused lifecycle returns to active when the agent keeps streaming after a deny", async () => {
+      const ws = await setupPermissionPending();
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "deny");
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            { type: "assistant", message: { content: [{ type: "text", text: "ok, skipping" }] } },
+          ],
+        },
+      });
+
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
+    });
+  });
+
+  describe("lifecycle recovery on backend activity", () => {
+    async function setupActiveSession(): Promise<MockWebSocket> {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+      return ws;
+    }
+
+    function streamTextMessage(ws: MockWebSocket, text: string): void {
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [{ type: "assistant", message: { content: [{ type: "text", text }] } }],
+        },
+      });
+    }
+
+    it("terminal lifecycle returns to active when a new turn streams", async () => {
+      const ws = await setupActiveSession();
+
+      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "terminal",
+        reason: "completed",
+      });
+
+      streamTextMessage(ws, "turn 2 starting");
+
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
+    });
+
+    it("error lifecycle returns to active when the stream resumes", async () => {
+      const ws = await setupActiveSession();
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        payload: { code: "SDK_ERROR", message: "transient" },
+      });
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle.phase).toBe("error");
+
+      streamTextMessage(ws, "recovered");
+
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
     });
   });
 

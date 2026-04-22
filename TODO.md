@@ -1,6 +1,6 @@
 ## FIX
 - [ ] [opencode] plan mode seems to lack of features from the server's output
-- [~] [feature] turns are wrong after question tool usage
+- [ ] [session] audit other session envelope handlers (usage_update, runtime_session_id) for consistent `stream_activity` dispatch so the loader never gets stuck when only those events arrive
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
@@ -15,4 +15,3 @@
 - [ ] [global] Theming
 - [ ] [global] custom commands + custom schedules
 - [ ] [global] remote workspaces
-

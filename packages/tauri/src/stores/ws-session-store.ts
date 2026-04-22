@@ -281,9 +281,6 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         updateSession(get(), sessionId, {
           pendingPermission: null,
           pendingRequestId: "",
-          lifecycle: transitionTurn(session.lifecycle, {
-            type: decision === "deny" ? "permission_denied" : "permission_allowed",
-          }),
         }),
       );
     },

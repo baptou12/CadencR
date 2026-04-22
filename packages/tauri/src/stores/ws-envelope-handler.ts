@@ -297,6 +297,8 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
         };
   }
 
+  patch.lifecycle = transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
+
   ctx.set(updateSession(ctx.get(), sessionId, patch));
 }
 
