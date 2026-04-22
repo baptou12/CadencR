@@ -7,9 +7,12 @@ use std::sync::{Arc, Mutex};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
+// Production always binds the bundled sidecar to a fixed local port; the env
+// knobs are intentionally dev-only and do not affect packaged builds.
 const SIDECAR_PORT: u16 = 5005;
 const HEALTH_CHECK_RETRIES: u32 = 30;
 const HEALTH_CHECK_INTERVAL_MS: u64 = 200;
+const DEFAULT_DEV_API_BASE_URL: &str = "http://127.0.0.1:5005";
 
 /// Paired with the bearer-token check, the `service` field here rejects an
 /// imposter process that bound our port before we could.
@@ -20,33 +23,68 @@ struct HealthBody {
 
 pub struct SidecarState {
     child: Mutex<Option<CommandChild>>,
-    pub port: u16,
+    pub base_url: String,
     pub auth_token: Option<String>,
 }
 
 impl SidecarState {
-    fn new(child: CommandChild, port: u16, auth_token: String) -> Self {
+    fn new(child: CommandChild, base_url: String, auth_token: String) -> Self {
         Self {
             child: Mutex::new(Some(child)),
-            port,
+            base_url,
             auth_token: Some(auth_token),
         }
     }
 
     /// Used in dev mode where the sidecar is run manually; picks up the
-    /// token from the process env (loaded from `.env` by `lib.rs`).
-    pub fn dev_mode() -> Self {
-        let port = std::env::var("CADENCE_RUST_PORT")
+    /// token from the process env (loaded from `packages/tauri/.env` by
+    /// `lib.rs`).
+    pub fn dev_mode() -> Result<Self, String> {
+        let base_url = dev_api_base_url()?;
+        let auth_token = std::env::var("VITE_API_TOKEN")
             .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(SIDECAR_PORT);
-        let auth_token = std::env::var("CADENCE_AUTH_TOKEN").ok().filter(|t| !t.is_empty());
-        Self {
+            .filter(|token| !token.is_empty());
+        Ok(Self {
             child: Mutex::new(None),
-            port,
+            base_url,
             auth_token,
-        }
+        })
     }
+}
+
+fn dev_api_base_url() -> Result<String, String> {
+    let raw =
+        std::env::var("VITE_API_URL").unwrap_or_else(|_| DEFAULT_DEV_API_BASE_URL.to_string());
+    normalize_base_url("VITE_API_URL", &raw)
+}
+
+fn normalize_base_url(key: &str, value: &str) -> Result<String, String> {
+    let parsed = reqwest::Url::parse(value)
+        .map_err(|error| format!("{key} must be a valid URL: {error}"))?;
+
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!("{key} must use http:// or https://"));
+    }
+    if parsed.host_str().is_none() {
+        return Err(format!("{key} must include a host"));
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(format!("{key} must not include a query or fragment"));
+    }
+    if parsed.path() != "/" && !parsed.path().is_empty() {
+        return Err(format!("{key} must not include a path"));
+    }
+
+    let mut normalized = format!(
+        "{}://{}",
+        parsed.scheme(),
+        parsed.host_str().expect("checked host")
+    );
+    if let Some(port) = parsed.port() {
+        normalized.push_str(&format!(":{port}"));
+    }
+
+    Ok(normalized)
 }
 
 fn generate_auth_token() -> String {
@@ -71,6 +109,7 @@ pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
 
     let db_path = db_dir.join("cadence.db");
     let port = SIDECAR_PORT;
+    let base_url = format!("http://127.0.0.1:{port}");
     let auth_token = generate_auth_token();
 
     let (mut rx, child) = app
@@ -113,9 +152,9 @@ pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
         }
     });
 
-    log::info!("Sidecar spawned on port {port}, waiting for health check...");
+    log::info!("Sidecar spawned at {base_url}, waiting for health check...");
     Ok(SpawnResult {
-        state: SidecarState::new(child, port, auth_token),
+        state: SidecarState::new(child, base_url, auth_token),
         exited,
     })
 }
@@ -123,11 +162,11 @@ pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
 /// Handshake: token + body-shape check together reject an imposter that
 /// grabbed our port. Aborts early if the child exits during probing.
 pub async fn wait_for_healthy(
-    port: u16,
+    base_url: &str,
     auth_token: Option<&str>,
     exited: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let url = format!("http://127.0.0.1:{port}/api/health");
+    let url = format!("{}/api/health", base_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(2))
         .build()
@@ -135,11 +174,9 @@ pub async fn wait_for_healthy(
 
     for i in 0..HEALTH_CHECK_RETRIES {
         if exited.load(Ordering::SeqCst) {
-            return Err(
-                "cadence-service exited before passing health check \
-                 (is port 5005 already in use?)"
-                    .to_string(),
-            );
+            return Err(format!(
+                "cadence-service exited before passing health check (is {base_url} already in use?)"
+            ));
         }
 
         let mut req = client.get(&url);
@@ -147,27 +184,25 @@ pub async fn wait_for_healthy(
             req = req.header("x-cadence-token", tok);
         }
         match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<HealthBody>().await {
-                    Ok(body) if body.service == "cadence" => {
-                        log::info!("Health check passed after {i} retries");
-                        return Ok(());
-                    }
-                    Ok(body) => {
-                        return Err(format!(
-                            "Health check responder identified itself as '{}', \
-                             not 'cadence'. Refusing to connect.",
-                            body.service
-                        ));
-                    }
-                    Err(e) => {
-                        return Err(format!(
-                            "Health check returned 200 but body was not JSON we \
-                             recognise: {e}"
-                        ));
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<HealthBody>().await {
+                Ok(body) if body.service == "cadence" => {
+                    log::info!("Health check passed after {i} retries");
+                    return Ok(());
                 }
-            }
+                Ok(body) => {
+                    return Err(format!(
+                        "Health check responder identified itself as '{}', \
+                             not 'cadence'. Refusing to connect.",
+                        body.service
+                    ));
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Health check returned 200 but body was not JSON we \
+                             recognise: {e}"
+                    ));
+                }
+            },
             Ok(resp) => {
                 log::debug!("Health check got status {} (retry {i})", resp.status());
             }

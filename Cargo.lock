@@ -427,6 +427,7 @@ dependencies = [
  "tauri-plugin-mcp-bridge",
  "tauri-plugin-notification-router",
  "tauri-plugin-shell",
+ "tempfile",
  "tokio",
 ]
 

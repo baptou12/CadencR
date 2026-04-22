@@ -6,24 +6,26 @@ import Axios, {
 import { invoke } from "@tauri-apps/api/core";
 
 export interface RuntimeConfig {
-  port: number;
+  baseUrl: string;
   authToken: string | null;
 }
 
-const DEFAULT_DEV_PORT = 5005;
+const DEFAULT_DEV_BASE_URL = "http://127.0.0.1:5005";
 
 let runtimeConfig: RuntimeConfig | null = null;
 let runtimeConfigPromise: Promise<RuntimeConfig> | null = null;
 
 function envFallback(): RuntimeConfig {
-  const portOverride = import.meta.env.VITE_API_PORT;
-  const port = typeof portOverride === "string" ? Number(portOverride) : NaN;
-  const tokenOverride = import.meta.env.VITE_API_TOKEN;
+  const baseUrl = import.meta.env.VITE_API_URL;
+  const authToken = import.meta.env.VITE_API_TOKEN;
   return {
-    port: Number.isFinite(port) ? port : DEFAULT_DEV_PORT,
+    baseUrl:
+      typeof baseUrl === "string" && baseUrl.length > 0
+        ? baseUrl.replace(/\/$/, "")
+        : DEFAULT_DEV_BASE_URL,
     authToken:
-      typeof tokenOverride === "string" && tokenOverride.length > 0
-        ? tokenOverride
+      typeof authToken === "string" && authToken.length > 0
+        ? authToken
         : null,
   };
 }
@@ -32,11 +34,9 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
   const fallback = envFallback();
   try {
     const result = await invoke<RuntimeConfig>("get_runtime_config");
-    if (result && typeof result.port === "number") {
-      // VITE_API_TOKEN mirrors CADENCE_AUTH_TOKEN; coalesce so dev keeps
-      // working even if the Rust dotenvy load missed `.env`.
+    if (result && typeof result.baseUrl === "string") {
       return {
-        port: result.port,
+        baseUrl: result.baseUrl,
         authToken: result.authToken ?? fallback.authToken,
       };
     }
@@ -63,11 +63,7 @@ export function getRuntimeConfigSync(): RuntimeConfig {
 }
 
 export function resolveApiBaseUrlSync(): string {
-  const override = import.meta.env.VITE_API_URL;
-  if (typeof override === "string" && override.length > 0) {
-    return override;
-  }
-  return `http://127.0.0.1:${getRuntimeConfigSync().port}`;
+  return getRuntimeConfigSync().baseUrl;
 }
 
 export function getAuthTokenSync(): string | null {
