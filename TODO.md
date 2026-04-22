@@ -1,11 +1,10 @@
 ## FIX
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [~] [feature] turns are wrong after question tool usage
-- [ ] [worktree] Should show the whole worktree name + branch name and special icon in the sidebar
-- [ ] [agent] compact don't show the compact divider
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
+- [ ] [worktree] branch name and special icon in the sidebar
 - [ ] [sidebar] show the diff numstats in the sidebar
 - [ ] [desktop] all running agents view
 - [ ] [agent] handle background agents
