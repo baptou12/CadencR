@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Cadence desktop app (Tauri)",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "node ./tauri-dev.mjs",
     "build": "tauri build",
     "tauri": "tauri",
     "lint": "oxlint src/",
