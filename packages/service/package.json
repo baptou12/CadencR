@@ -10,6 +10,8 @@
     "build:debug": "cargo build && cp ../../target/debug/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
     "dev": "cargo watch -w src -w .env -x run",
     "test": "cargo test",
-    "lint": "cargo check"
+    "lint": "cargo check",
+    "format": "cargo fmt",
+    "format:check": "cargo fmt -- --check"
   }
 }

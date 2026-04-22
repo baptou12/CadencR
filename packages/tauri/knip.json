@@ -5,7 +5,7 @@
     "src/routes/**/*.tsx"
   ],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignoreBinaries": ["tauri", "oxlint", "vitest", "tsc", "knip"],
+  "ignoreBinaries": ["tauri", "oxlint", "oxfmt", "vitest", "tsc", "knip"],
   "ignoreDependencies": [
     "@tauri-apps/cli",
     "autoprefixer",

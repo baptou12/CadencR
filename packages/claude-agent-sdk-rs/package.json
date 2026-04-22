@@ -7,6 +7,8 @@
     "build:release": "cargo build --release",
     "dev": "cargo build",
     "test": "cargo test",
-    "lint": "cargo check"
+    "lint": "cargo check",
+    "format": "cargo fmt",
+    "format:check": "cargo fmt -- --check"
   }
 }

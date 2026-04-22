@@ -9,6 +9,8 @@
     "tauri": "tauri",
     "lint": "oxlint src/",
     "lint:fix": "oxlint --fix src/",
+    "format": "oxfmt src/ && cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "format:check": "oxfmt --check src/ && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "test": "vitest run",
     "ts-check": "tsc --noEmit",
     "knip": "knip"

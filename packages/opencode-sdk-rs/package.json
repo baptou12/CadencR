@@ -1,0 +1,9 @@
+{
+  "name": "@cadence/opencode-sdk-rs",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "format": "cargo fmt",
+    "format:check": "cargo fmt -- --check"
+  }
+}

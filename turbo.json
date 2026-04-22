@@ -38,6 +38,10 @@
     "knip": {
       "outputs": []
     },
+    "format": {
+      "outputs": [],
+      "cache": false
+    },
     "format:check": {
       "outputs": []
     },
