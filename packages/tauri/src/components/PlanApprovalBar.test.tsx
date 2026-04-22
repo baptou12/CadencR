@@ -4,43 +4,31 @@ import { PlanApprovalBar } from "./PlanApprovalBar";
 
 describe("PlanApprovalBar", () => {
   it("renders plan ready heading", () => {
-    render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />
-    );
+    render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />);
     expect(screen.getByText("Plan ready for review")).toBeInTheDocument();
   });
 
   it("renders approve button", () => {
-    render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />
-    );
+    render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />);
     expect(screen.getByRole("button", { name: /approve & execute/i })).toBeInTheDocument();
   });
 
   it("renders custom approveLabel", () => {
     render(
-      <PlanApprovalBar
-        approveLabel="Execute Now"
-        onApprove={vi.fn()}
-        onRequestChanges={vi.fn()}
-      />
+      <PlanApprovalBar approveLabel="Execute Now" onApprove={vi.fn()} onRequestChanges={vi.fn()} />,
     );
     expect(screen.getByRole("button", { name: /execute now/i })).toBeInTheDocument();
   });
 
   it("calls onApprove when approve clicked", async () => {
     const onApprove = vi.fn();
-    const { user } = render(
-      <PlanApprovalBar onApprove={onApprove} onRequestChanges={vi.fn()} />
-    );
+    const { user } = render(<PlanApprovalBar onApprove={onApprove} onRequestChanges={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: /approve/i }));
     expect(onApprove).toHaveBeenCalledOnce();
   });
 
   it("shows feedback textarea after request changes click", async () => {
-    const { user } = render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />
-    );
+    const { user } = render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: /request changes/i }));
     expect(screen.getByPlaceholderText(/describe the changes/i)).toBeInTheDocument();
   });
@@ -48,7 +36,7 @@ describe("PlanApprovalBar", () => {
   it("calls onRequestChanges with feedback text", async () => {
     const onRequestChanges = vi.fn();
     const { user } = render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={onRequestChanges} />
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={onRequestChanges} />,
     );
     await user.click(screen.getByRole("button", { name: /request changes/i }));
     await user.type(screen.getByPlaceholderText(/describe the changes/i), "Need more tests");
@@ -62,13 +50,13 @@ describe("PlanApprovalBar", () => {
         initialFeedback="Use the original prompt as context"
         onApprove={vi.fn()}
         onRequestChanges={vi.fn()}
-      />
+      />,
     );
 
     await user.click(screen.getByRole("button", { name: /request changes/i }));
 
     expect(screen.getByPlaceholderText(/describe the changes/i)).toHaveValue(
-      "Use the original prompt as context"
+      "Use the original prompt as context",
     );
   });
 
@@ -79,7 +67,7 @@ describe("PlanApprovalBar", () => {
         initialFeedback="Tighten the scope"
         onApprove={vi.fn()}
         onRequestChanges={onRequestChanges}
-      />
+      />,
     );
 
     await user.click(screen.getByRole("button", { name: /request changes/i }));
@@ -89,23 +77,19 @@ describe("PlanApprovalBar", () => {
   });
 
   it("renders reject & stop button when onReject is provided", () => {
-    render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={vi.fn()} />
-    );
+    render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={vi.fn()} />);
     expect(screen.getByRole("button", { name: /reject & stop/i })).toBeInTheDocument();
   });
 
   it("does not render reject & stop button when onReject is not provided", () => {
-    render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />
-    );
+    render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /reject & stop/i })).not.toBeInTheDocument();
   });
 
   it("calls onReject when reject & stop clicked", async () => {
     const onReject = vi.fn();
     const { user } = render(
-      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={onReject} />
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={onReject} />,
     );
     await user.click(screen.getByRole("button", { name: /reject & stop/i }));
     expect(onReject).toHaveBeenCalledOnce();
@@ -117,7 +101,7 @@ describe("PlanApprovalBar", () => {
         allowedPrompts={[{ tool: "Bash", prompt: "run tests" }]}
         onApprove={vi.fn()}
         onRequestChanges={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("run tests")).toBeInTheDocument();
   });

@@ -34,9 +34,7 @@ describe("NextStepsBar", () => {
 
   it("calls onStartBuilding when button clicked", async () => {
     const onStartBuilding = vi.fn();
-    const { user } = render(
-      <NextStepsBar {...defaultProps} onStartBuilding={onStartBuilding} />
-    );
+    const { user } = render(<NextStepsBar {...defaultProps} onStartBuilding={onStartBuilding} />);
     await user.click(screen.getByRole("button", { name: /start building/i }));
     expect(onStartBuilding).toHaveBeenCalledOnce();
   });
@@ -59,7 +57,7 @@ describe("NextStepsBar", () => {
         canContinueBuild={true}
         onContinueBuild={vi.fn()}
         nextStepNumber={3}
-      />
+      />,
     );
     expect(screen.getByRole("button", { name: /continue to step 3/i })).toBeInTheDocument();
   });
@@ -83,7 +81,7 @@ describe("NextStepsBar", () => {
         onStartWorkflowSession={vi.fn()}
         featureId={1}
         projectId={1}
-      />
+      />,
     );
     await user.click(screen.getByRole("button", { name: /start session/i }));
     expect(screen.getAllByRole("button", { name: /opus/i }).length).toBeGreaterThan(0);
@@ -99,7 +97,7 @@ describe("NextStepsBar", () => {
         onStartRefinePlan={vi.fn()}
         featureId={1}
         projectId={1}
-      />
+      />,
     );
     await user.click(screen.getByRole("button", { name: /^refine$/i }));
     expect(screen.getAllByRole("button", { name: /opus/i }).length).toBeGreaterThan(0);

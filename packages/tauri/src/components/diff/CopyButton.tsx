@@ -9,7 +9,11 @@ interface CopyButtonProps {
   sizeClass?: string;
 }
 
-export function CopyButton({ text, hoverClass = "opacity-0 group-hover:opacity-100", sizeClass = "h-3 w-3" }: CopyButtonProps) {
+export function CopyButton({
+  text,
+  hoverClass = "opacity-0 group-hover:opacity-100",
+  sizeClass = "h-3 w-3",
+}: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
   return (
     <button

@@ -7,11 +7,7 @@
 
 import type { AgentBlockData } from "@/components/AgentBlock";
 
-export {
-  createStreamingState,
-  isRecord,
-  processSdkMessage,
-} from "./ws-message-processing-core";
+export { createStreamingState, isRecord, processSdkMessage } from "./ws-message-processing-core";
 export type {
   BlockMutation,
   MessageProcessingResult,
@@ -20,11 +16,7 @@ export type {
 } from "./ws-message-processing-core";
 
 // Re-export block mutation helpers for existing consumers
-export {
-  applyMutations,
-  buildMessagePatch,
-  parseTodosFromBlocks,
-} from "./ws-block-mutations";
+export { applyMutations, buildMessagePatch, parseTodosFromBlocks } from "./ws-block-mutations";
 export type { MessagePatch, ParsedTodo } from "./ws-block-mutations";
 
 // ---------------------------------------------------------------------------
@@ -58,10 +50,7 @@ export function injectPlanIntoBlocks(
 
   const block = blocks[targetIdx];
   try {
-    const existing = JSON.parse(block.toolArgs ?? "{}") as Record<
-      string,
-      unknown
-    >;
+    const existing = JSON.parse(block.toolArgs ?? "{}") as Record<string, unknown>;
     if (typeof existing.plan === "string") return blocks;
     existing.plan = pendingPlanApproval.plan;
     const updated = [...blocks];

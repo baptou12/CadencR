@@ -4,7 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
-import { SendIcon, MessageCircleQuestionIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import {
+  SendIcon,
+  MessageCircleQuestionIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+} from "lucide-react";
 
 /** A single question from an AskUserQuestion tool call */
 export interface AgentQuestion {
@@ -35,9 +40,17 @@ interface AgentQuestionDrawerProps {
  * Bottom drawer that pushes content up, displaying dynamic forms
  * for AskUserQuestion tool calls from the Claude CLI.
  */
-export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disableShortcuts }: AgentQuestionDrawerProps) {
+export function AgentQuestionDrawer({
+  questions,
+  onSubmit,
+  open,
+  inline,
+  disableShortcuts,
+}: AgentQuestionDrawerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<{ text: string; selectedOptions: Set<string>; freeText: string; showOther: boolean }[]>([]);
+  const [answers, setAnswers] = useState<
+    { text: string; selectedOptions: Set<string>; freeText: string; showOther: boolean }[]
+  >([]);
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [showOther, setShowOther] = useState(false);
@@ -76,7 +89,10 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
   }, [selectedOptions, showOther, freeText, currentQuestion]);
 
   const getAnswerValues = useCallback(
-    (question: AgentQuestion | undefined, answerState: { selectedOptions: Set<string>; freeText: string; showOther: boolean }): string[] => {
+    (
+      question: AgentQuestion | undefined,
+      answerState: { selectedOptions: Set<string>; freeText: string; showOther: boolean },
+    ): string[] => {
       if (!question) return [];
       const values: string[] = [];
       if (question.options?.length) {
@@ -95,21 +111,27 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
   );
 
   /** Save current UI state into answers array at a given index */
-  const saveCurrentState = useCallback((index: number) => {
-    const text = getCurrentAnswerText();
-    setAnswers((prev) => {
-      const next = [...prev];
-      next[index] = { text, selectedOptions: new Set(selectedOptions), freeText, showOther };
-      return next;
-    });
-  }, [getCurrentAnswerText, selectedOptions, freeText, showOther]);
+  const saveCurrentState = useCallback(
+    (index: number) => {
+      const text = getCurrentAnswerText();
+      setAnswers((prev) => {
+        const next = [...prev];
+        next[index] = { text, selectedOptions: new Set(selectedOptions), freeText, showOther };
+        return next;
+      });
+    },
+    [getCurrentAnswerText, selectedOptions, freeText, showOther],
+  );
 
   /** Restore UI state from a saved answer */
-  const restoreState = useCallback((saved: { selectedOptions: Set<string>; freeText: string; showOther: boolean }) => {
-    setSelectedOptions(new Set(saved.selectedOptions));
-    setFreeText(saved.freeText);
-    setShowOther(saved.showOther);
-  }, []);
+  const restoreState = useCallback(
+    (saved: { selectedOptions: Set<string>; freeText: string; showOther: boolean }) => {
+      setSelectedOptions(new Set(saved.selectedOptions));
+      setFreeText(saved.freeText);
+      setShowOther(saved.showOther);
+    },
+    [],
+  );
 
   const canGoBack = currentIndex > 0;
   const canGoForward = currentIndex < answers.length - 1 && answers[currentIndex + 1] != null;
@@ -181,7 +203,12 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
 
     // Save structured state at current index
     const newAnswers = [...answers];
-    newAnswers[currentIndex] = { text: answer, selectedOptions: new Set(selectedOptions), freeText, showOther };
+    newAnswers[currentIndex] = {
+      text: answer,
+      selectedOptions: new Set(selectedOptions),
+      freeText,
+      showOther,
+    };
 
     if (currentIndex < questions.length - 1) {
       setAnswers(newAnswers);
@@ -197,12 +224,15 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       }
     } else {
       const response = questions.map((question, index) =>
-        getAnswerValues(question, newAnswers[index] ?? {
-          text: "",
-          selectedOptions: new Set<string>(),
-          freeText: "",
-          showOther: false,
-        }),
+        getAnswerValues(
+          question,
+          newAnswers[index] ?? {
+            text: "",
+            selectedOptions: new Set<string>(),
+            freeText: "",
+            showOther: false,
+          },
+        ),
       );
       onSubmit(response);
 
@@ -211,7 +241,18 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       setAnswers([]);
       resetState();
     }
-  }, [getCurrentAnswerText, answers, currentIndex, questions, onSubmit, resetState, selectedOptions, freeText, showOther, getAnswerValues]);
+  }, [
+    getCurrentAnswerText,
+    answers,
+    currentIndex,
+    questions,
+    onSubmit,
+    resetState,
+    selectedOptions,
+    freeText,
+    showOther,
+    getAnswerValues,
+  ]);
 
   const handleFreeTextSubmit = useCallback(() => {
     if (freeText.trim()) {
@@ -245,7 +286,15 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       flashHighlight(digit - 1);
     },
     { enabled: open && !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
-    [open, disableShortcuts, currentQuestion, handleOptionToggle, handleOtherToggle, flashHighlight, otherShortcutIndex],
+    [
+      open,
+      disableShortcuts,
+      currentQuestion,
+      handleOptionToggle,
+      handleOtherToggle,
+      flashHighlight,
+      otherShortcutIndex,
+    ],
   );
 
   // Enter to validate/submit current question
@@ -297,14 +346,12 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
   const isLastQuestion = currentIndex >= questions.length - 1;
   const hasOptions = currentQuestion.options && currentQuestion.options.length > 0;
   const selectedPreview = hasOptions
-    ? currentQuestion.options!.filter((o) => selectedOptions.has(o.label) && o.preview).at(-1)?.preview
+    ? currentQuestion.options!.filter((o) => selectedOptions.has(o.label) && o.preview).at(-1)
+        ?.preview
     : undefined;
 
   return (
-    <div className={cn(
-      "bg-[#181A25]",
-      inline ? "px-3 py-2" : "border-t border-border px-4 py-3"
-    )}>
+    <div className={cn("bg-[#181A25]", inline ? "px-3 py-2" : "border-t border-border px-4 py-3")}>
       {/* Progress indicator with navigation arrows */}
       {questions.length > 1 && (
         <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
@@ -314,7 +361,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
             onClick={handleBack}
             className={cn(
               "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-              canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default"
+              canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
             )}
             aria-label="Previous question"
           >
@@ -330,7 +377,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
             onClick={handleForward}
             className={cn(
               "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-              canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default"
+              canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
             )}
             aria-label="Next question"
           >
@@ -340,7 +387,9 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
       )}
 
       {/* Question text */}
-      <p className={cn("text-sm font-medium text-foreground", inline ? "mb-2" : "mb-3")}>{currentQuestion.question}</p>
+      <p className={cn("text-sm font-medium text-foreground", inline ? "mb-2" : "mb-3")}>
+        {currentQuestion.question}
+      </p>
 
       {/* Preview for selected option */}
       {selectedPreview && (
@@ -361,7 +410,7 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
                 selectedOptions.has(option.label)
                   ? "border-primary bg-primary/5 ring-2 ring-primary/30"
                   : "border-border bg-muted/40 hover:bg-muted/50",
-                highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
+                highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
               )}
               onClick={() => handleOptionToggle(option.label)}
             >
@@ -370,7 +419,9 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
                 {option.label}
               </span>
               {option.description && (
-                <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {option.description}
+                </span>
               )}
             </button>
           ))}
@@ -382,7 +433,8 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
               showOther
                 ? "border-primary bg-primary/5 ring-2 ring-primary/30"
                 : "border-border bg-muted/40 hover:bg-muted/50",
-              highlightedIndex === currentQuestion.options!.length && "ring-2 ring-blue-400 bg-blue-50/10 transition-none"
+              highlightedIndex === currentQuestion.options!.length &&
+                "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
             )}
             onClick={handleOtherToggle}
           >
@@ -400,15 +452,20 @@ export function AgentQuestionDrawer({ questions, onSubmit, open, inline, disable
           <Input
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
-            onFocus={() => { freeTextFocusedRef.current = true; }}
-            onBlur={() => { freeTextFocusedRef.current = false; }}
+            onFocus={() => {
+              freeTextFocusedRef.current = true;
+            }}
+            onBlur={() => {
+              freeTextFocusedRef.current = false;
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleFreeTextSubmit();
             }}
             placeholder="Type your answer..."
             className={cn(
               "text-sm",
-              inline && "h-8 border-border/50 bg-muted/40 shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+              inline &&
+                "h-8 border-border/50 bg-muted/40 shadow-none focus-visible:ring-1 focus-visible:ring-ring/40",
             )}
             autoFocus
           />
@@ -442,19 +499,15 @@ function normalizeOptions(
       const obj = item as Record<string, unknown>;
       return {
         label: (obj.label as string) ?? "",
-        description:
-          typeof obj.description === "string" ? obj.description : undefined,
-        preview:
-          typeof obj.preview === "string" ? obj.preview : undefined,
+        description: typeof obj.description === "string" ? obj.description : undefined,
+        preview: typeof obj.preview === "string" ? obj.preview : undefined,
       };
     }
     return { label: String(item) };
   });
 }
 
-export function parseAskUserQuestions(
-  toolInput: Record<string, unknown>,
-): AgentQuestion[] {
+export function parseAskUserQuestions(toolInput: Record<string, unknown>): AgentQuestion[] {
   // Handle multiple questions format
   if (Array.isArray(toolInput.questions)) {
     return (toolInput.questions as Record<string, unknown>[]).map((q) => ({

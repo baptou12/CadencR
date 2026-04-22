@@ -1,10 +1,7 @@
 import { memo } from "react";
 import { useGetUsageHandler } from "@/api/generated";
 
-function formatTimeUntilReset(
-  resetsAt: string | null | undefined,
-  isSevenDay: boolean,
-): string {
+function formatTimeUntilReset(resetsAt: string | null | undefined, isSevenDay: boolean): string {
   if (!resetsAt) return "";
   const reset = new Date(resetsAt).getTime();
   if (Number.isNaN(reset)) return "";
@@ -47,24 +44,21 @@ export const UsageIndicator = memo(function UsageIndicator() {
           <div className="flex flex-1 items-center justify-center gap-1.5 rounded-l-full bg-(--drac-comment)/20 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{fiveHour?.utilization ?? 0}%</span>
             <span className="opacity-60">
-              {fiveHour?.resets_at &&
-                formatTimeUntilReset(fiveHour?.resets_at, false)}
+              {fiveHour?.resets_at && formatTimeUntilReset(fiveHour?.resets_at, false)}
             </span>
           </div>
           {/* 7-day bucket — medium */}
           <div className="flex flex-1 items-center justify-center gap-1.5 bg-(--drac-comment)/30 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{sevenDay?.utilization ?? 0}%</span>
             <span className="opacity-60">
-              {sevenDay?.resets_at &&
-                formatTimeUntilReset(sevenDay?.resets_at, true)}
+              {sevenDay?.resets_at && formatTimeUntilReset(sevenDay?.resets_at, true)}
             </span>
           </div>
           {/* 7-day Sonnet bucket — darkest */}
           <div className="flex flex-1 items-center justify-center gap-1.5 rounded-r-full bg-(--drac-comment)/15 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
             <span>{sevenDaySonnet?.utilization ?? 0}%</span>
             <span className="opacity-60">
-              {sevenDaySonnet?.resets_at &&
-                formatTimeUntilReset(sevenDaySonnet?.resets_at, true)}
+              {sevenDaySonnet?.resets_at && formatTimeUntilReset(sevenDaySonnet?.resets_at, true)}
             </span>
           </div>
         </div>

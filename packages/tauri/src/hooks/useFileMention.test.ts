@@ -2,12 +2,7 @@ import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { useFileMention } from "./useFileMention";
 
-const files = [
-  "src/index.ts",
-  "src/utils/helper.ts",
-  "src/components/Button.tsx",
-  "README.md",
-];
+const files = ["src/index.ts", "src/utils/helper.ts", "src/components/Button.tsx", "README.md"];
 
 describe("useFileMention", () => {
   it("starts closed", () => {
@@ -33,7 +28,9 @@ describe("useFileMention", () => {
     expect(result.current.isOpen).toBe(true);
     expect(result.current.query).toBe("src");
     expect(result.current.filteredItems.length).toBeGreaterThan(0);
-    expect(result.current.filteredItems.every((i) => i.path.toLowerCase().includes("src"))).toBe(true);
+    expect(result.current.filteredItems.every((i) => i.path.toLowerCase().includes("src"))).toBe(
+      true,
+    );
   });
 
   it("includes directories in items", () => {
@@ -129,7 +126,9 @@ describe("useFileMention", () => {
         "@",
       );
     });
-    expect(result.current.selectedIndex).toBe((afterDown - 1 + result.current.filteredItems.length) % result.current.filteredItems.length);
+    expect(result.current.selectedIndex).toBe(
+      (afterDown - 1 + result.current.filteredItems.length) % result.current.filteredItems.length,
+    );
   });
 
   it("handles Escape to close", () => {

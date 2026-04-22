@@ -102,7 +102,8 @@ export function FocusRing() {
         border: "2px solid oklch(0.707 0.165 254.624)",
         borderRadius: 6,
         opacity: visible ? 1 : 0,
-        transition: "top 150ms ease-out, left 150ms ease-out, width 150ms ease-out, height 150ms ease-out, opacity 150ms ease-out",
+        transition:
+          "top 150ms ease-out, left 150ms ease-out, width 150ms ease-out, height 150ms ease-out, opacity 150ms ease-out",
       }}
     />
   );

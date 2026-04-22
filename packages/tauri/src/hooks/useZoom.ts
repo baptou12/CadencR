@@ -64,7 +64,28 @@ export function useZoomHotkeys() {
   const { zoomIn, zoomOut, resetZoom } = useZoom();
 
   const hotkeyOpts = { enableOnFormTags: true, enableOnContentEditable: true } as const;
-  useHotkeys("meta+equal", (e) => { e.preventDefault(); zoomIn(); }, hotkeyOpts);
-  useHotkeys("meta+minus", (e) => { e.preventDefault(); zoomOut(); }, hotkeyOpts);
-  useHotkeys("meta+0", (e) => { e.preventDefault(); resetZoom(); }, hotkeyOpts);
+  useHotkeys(
+    "meta+equal",
+    (e) => {
+      e.preventDefault();
+      zoomIn();
+    },
+    hotkeyOpts,
+  );
+  useHotkeys(
+    "meta+minus",
+    (e) => {
+      e.preventDefault();
+      zoomOut();
+    },
+    hotkeyOpts,
+  );
+  useHotkeys(
+    "meta+0",
+    (e) => {
+      e.preventDefault();
+      resetZoom();
+    },
+    hotkeyOpts,
+  );
 }

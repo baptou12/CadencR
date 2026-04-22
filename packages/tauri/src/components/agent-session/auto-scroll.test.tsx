@@ -78,7 +78,11 @@ function getScrollContainer(container: HTMLElement): HTMLDivElement {
 
 function setScrollMetrics(
   el: HTMLDivElement,
-  { scrollHeight, clientHeight, scrollTop }: { scrollHeight: number; clientHeight: number; scrollTop: number },
+  {
+    scrollHeight,
+    clientHeight,
+    scrollTop,
+  }: { scrollHeight: number; clientHeight: number; scrollTop: number },
 ): void {
   Object.defineProperty(el, "scrollHeight", {
     configurable: true,
@@ -100,7 +104,11 @@ function setScrolledPosition(
   fireEvent.scroll(el);
 }
 
-function renderSession(): { container: HTMLElement; scrollContainer: HTMLDivElement; autoScrollButton: HTMLElement } {
+function renderSession(): {
+  container: HTMLElement;
+  scrollContainer: HTMLDivElement;
+  autoScrollButton: HTMLElement;
+} {
   const view = render(
     <AgentSession
       agentType="session"
@@ -119,8 +127,12 @@ function renderSession(): { container: HTMLElement; scrollContainer: HTMLDivElem
 }
 
 function mockContainerMetrics(scrollHeight: number, clientHeight: number): { restore: () => void } {
-  const scrollHeightMock = vi.spyOn(HTMLDivElement.prototype, "scrollHeight", "get").mockReturnValue(scrollHeight);
-  const clientHeightMock = vi.spyOn(HTMLDivElement.prototype, "clientHeight", "get").mockReturnValue(clientHeight);
+  const scrollHeightMock = vi
+    .spyOn(HTMLDivElement.prototype, "scrollHeight", "get")
+    .mockReturnValue(scrollHeight);
+  const clientHeightMock = vi
+    .spyOn(HTMLDivElement.prototype, "clientHeight", "get")
+    .mockReturnValue(clientHeight);
   return {
     restore(): void {
       scrollHeightMock.mockRestore();

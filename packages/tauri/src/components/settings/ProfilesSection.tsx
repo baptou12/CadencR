@@ -40,7 +40,10 @@ export function ProfilesSection() {
   const active = profilesQuery.data?.active ?? DEFAULT_CLAUDE_PROFILE_NAME;
 
   const handleActivate = (name: string) =>
-    setActive.mutate({ name }, toastCallbacks(`Active profile: ${name}`, "Failed to activate profile"));
+    setActive.mutate(
+      { name },
+      toastCallbacks(`Active profile: ${name}`, "Failed to activate profile"),
+    );
 
   const handleConfirmDelete = () => {
     if (!pendingDelete) return;
@@ -109,7 +112,9 @@ export function ProfilesSection() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
         title={`Delete profile "${pendingDelete}"?`}
         description="This cannot be undone. The active profile will reset to default if you delete it."
         confirmText="Delete"
@@ -204,7 +209,9 @@ function ProfileEditor({
   const [rows, setRows] = useState<EnvRow[]>(() => {
     if (!initial) return [{ key: "", value: "" }];
     const entries = Object.entries(initial.env);
-    return entries.length > 0 ? entries.map(([key, value]) => ({ key, value })) : [{ key: "", value: "" }];
+    return entries.length > 0
+      ? entries.map(([key, value]) => ({ key, value }))
+      : [{ key: "", value: "" }];
   });
 
   const isEdit = !!initial;
@@ -212,7 +219,8 @@ function ProfileEditor({
   const nameError = useMemo(() => {
     if (!trimmedName) return "Name is required";
     if (trimmedName.toLowerCase() === DEFAULT_CLAUDE_PROFILE_NAME) return "'default' is reserved";
-    if (!isEdit && existingNames.includes(trimmedName)) return "A profile with this name already exists";
+    if (!isEdit && existingNames.includes(trimmedName))
+      return "A profile with this name already exists";
     return null;
   }, [trimmedName, existingNames, isEdit]);
 
@@ -242,7 +250,12 @@ function ProfileEditor({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit profile "${initial!.name}"` : "New profile"}</DialogTitle>

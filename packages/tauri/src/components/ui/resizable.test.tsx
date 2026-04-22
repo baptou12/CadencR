@@ -9,7 +9,7 @@ describe("Resizable", () => {
         <ResizablePanel defaultSize={50}>Left panel</ResizablePanel>
         <ResizableHandle />
         <ResizablePanel defaultSize={50}>Right panel</ResizablePanel>
-      </ResizablePanelGroup>
+      </ResizablePanelGroup>,
     );
     expect(screen.getByText("Left panel")).toBeInTheDocument();
     expect(screen.getByText("Right panel")).toBeInTheDocument();
@@ -21,7 +21,7 @@ describe("Resizable", () => {
         <ResizablePanel defaultSize={50}>Left</ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize={50}>Right</ResizablePanel>
-      </ResizablePanelGroup>
+      </ResizablePanelGroup>,
     );
     expect(container.querySelector("[data-slot='resizable-handle']")).toBeInTheDocument();
   });
@@ -30,7 +30,7 @@ describe("Resizable", () => {
     const { container } = render(
       <ResizablePanelGroup {...({ direction: "vertical" } as Record<string, string>)}>
         <ResizablePanel defaultSize={100}>Content</ResizablePanel>
-      </ResizablePanelGroup>
+      </ResizablePanelGroup>,
     );
     expect(container.querySelector("[data-slot='resizable-panel-group']")).toBeInTheDocument();
   });

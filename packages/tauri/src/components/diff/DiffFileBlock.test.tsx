@@ -3,7 +3,9 @@ import { render } from "@/test-utils";
 import { DiffFileBlock } from "./DiffFileBlock";
 
 const mocks = vi.hoisted(() => ({
-  useGetFileContentMock: vi.fn((): { data: { old_content: string; new_content: string } | undefined } => ({ data: undefined })),
+  useGetFileContentMock: vi.fn(
+    (): { data: { old_content: string; new_content: string } | undefined } => ({ data: undefined }),
+  ),
 }));
 
 vi.mock("@/api/generated", () => ({

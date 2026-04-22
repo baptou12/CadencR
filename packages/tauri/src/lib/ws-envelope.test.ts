@@ -84,6 +84,5 @@ describe("ws-envelope", () => {
       expect(env.action).toBe("destroy");
       expect(env.payload).toEqual({ session_id: "s1" });
     });
-
   });
 });

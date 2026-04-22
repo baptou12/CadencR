@@ -61,11 +61,15 @@ describe("slugify", () => {
 
 describe("toRelativePath", () => {
   it("strips base path prefix", () => {
-    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project")).toBe("src/foo.ts");
+    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project")).toBe(
+      "src/foo.ts",
+    );
   });
 
   it("strips base path with trailing slash", () => {
-    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project/")).toBe("src/foo.ts");
+    expect(toRelativePath("/home/user/project/src/foo.ts", "/home/user/project/")).toBe(
+      "src/foo.ts",
+    );
   });
 
   it("returns full path when basePath is undefined", () => {

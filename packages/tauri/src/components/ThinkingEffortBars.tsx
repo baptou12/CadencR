@@ -9,13 +9,23 @@ interface ThinkingEffortBarsProps {
   compact?: boolean;
 }
 
-export function ThinkingEffortBars({ levels, value, onChange, className, compact = false }: ThinkingEffortBarsProps) {
+export function ThinkingEffortBars({
+  levels,
+  value,
+  onChange,
+  className,
+  compact = false,
+}: ThinkingEffortBarsProps) {
   if (levels.length === 0) return null;
 
   const selectedIndex = value ? levels.indexOf(value) : -1;
 
   return (
-    <div className={cn(compact ? "flex items-center gap-0.5" : "flex items-center gap-1", className)} role="radiogroup" aria-label="Thinking effort">
+    <div
+      className={cn(compact ? "flex items-center gap-0.5" : "flex items-center gap-1", className)}
+      role="radiogroup"
+      aria-label="Thinking effort"
+    >
       {levels.map((level, index) => {
         const selected = selectedIndex >= 0 && index <= selectedIndex;
         const interactive = typeof onChange === "function";
@@ -31,7 +41,15 @@ export function ThinkingEffortBars({ levels, value, onChange, className, compact
         );
 
         if (!interactive) {
-          return <span key={level} title={THINKING_EFFORT_LABELS[level]} aria-label={THINKING_EFFORT_LABELS[level]}>{bar}</span>;
+          return (
+            <span
+              key={level}
+              title={THINKING_EFFORT_LABELS[level]}
+              aria-label={THINKING_EFFORT_LABELS[level]}
+            >
+              {bar}
+            </span>
+          );
         }
 
         return (

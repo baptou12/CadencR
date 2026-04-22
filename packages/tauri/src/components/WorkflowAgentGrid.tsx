@@ -54,9 +54,9 @@ export function WorkflowAgentGrid({
   const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean) => {
     const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
     const label = knownLabel
-      ? ((entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
-          ? `${knownLabel} - ${entry.phaseTitle}`
-          : knownLabel)
+      ? (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
+        ? `${knownLabel} - ${entry.phaseTitle}`
+        : knownLabel
       : capitalize(entry.agentType);
     const sessionKey = `${entry.agentType}-${entry.sessionDbId}`;
     const questions = entry.pendingQuestions ?? [];
@@ -80,7 +80,9 @@ export function WorkflowAgentGrid({
           }
         }}
         maximized={isThisMaximized}
-        onToggleMaximize={() => setMaximizedAgent((prev) => (prev === sessionKey ? null : sessionKey))}
+        onToggleMaximize={() =>
+          setMaximizedAgent((prev) => (prev === sessionKey ? null : sessionKey))
+        }
         pendingQuestions={questions.length > 0 ? questions : undefined}
         disableShortcuts={agentsWithQuestions > 1}
         onMarkDone={
@@ -93,7 +95,11 @@ export function WorkflowAgentGrid({
         onSend={(message, images) => backend.sendToAgent(entry, message, images)}
         onStop={() => backend.stopAgent(entry)}
         resumable={entry.resumable}
-        onResume={entry.resumable ? () => void backend.handleResume(entry.agentType, entry.sessionDbId) : undefined}
+        onResume={
+          entry.resumable
+            ? () => void backend.handleResume(entry.agentType, entry.sessionDbId)
+            : undefined
+        }
         hasFileChanges={entry.hasFileChanges}
         onViewDiff={() => onViewDiff(entry)}
         todos={entry.todos}
@@ -103,7 +109,9 @@ export function WorkflowAgentGrid({
         onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
         currentThinkingEffort={resolveThinkingEffort(entry.agentType)}
         onThinkingEffortChange={(effort) => handleThinkingEffortChange(entry.agentType, effort)}
-        canDelete={entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId}
+        canDelete={
+          entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId
+        }
         onDelete={() => handleDeleteAgent(entry)}
         contextUsage={contextUsageMap.get(entry.sessionDbId)}
         featureId={featureId}
@@ -115,18 +123,26 @@ export function WorkflowAgentGrid({
         slashCommandsLoading={slashCommandsLoading}
         initialDraft={entry.draftPrompt}
         pendingPermission={entry.pendingPermission}
-        onPermissionDecision={(decision, feedback) => backend.submitPermission(entry, decision, feedback)}
+        onPermissionDecision={(decision, feedback) =>
+          backend.submitPermission(entry, decision, feedback)
+        }
         pendingPlanApproval={entry.pendingPlanApproval}
         planApprovalError={backend.planApprovalError}
         planApproveLabel="Approve"
         onPlanApprove={() => backend.approvePlan(entry.subprocessId, entry.sessionDbId)}
-        onPlanRequestChanges={(feedback: string) => backend.rejectPlan(feedback, entry.subprocessId, entry.sessionDbId)}
+        onPlanRequestChanges={(feedback: string) =>
+          backend.rejectPlan(feedback, entry.subprocessId, entry.sessionDbId)
+        }
         onPlanReject={() => {
           backend.rejectPlan("", entry.subprocessId, entry.sessionDbId);
           backend.stopAgent(entry);
         }}
         hasMore={entry.hasMore}
-        onLoadOlder={backend.loadOlderMessages ? () => backend.loadOlderMessages!(entry.sessionDbId) : undefined}
+        onLoadOlder={
+          backend.loadOlderMessages
+            ? () => backend.loadOlderMessages!(entry.sessionDbId)
+            : undefined
+        }
         className={
           isGridItem
             ? "min-h-0 h-full shrink overflow-hidden"
@@ -138,8 +154,12 @@ export function WorkflowAgentGrid({
     );
   };
 
-  const activeEntries = backend.sessionEntries.filter((e) => e.status === "running" || e.status === "paused");
-  const inactiveEntries = backend.sessionEntries.filter((e) => e.status !== "running" && e.status !== "paused");
+  const activeEntries = backend.sessionEntries.filter(
+    (e) => e.status === "running" || e.status === "paused",
+  );
+  const inactiveEntries = backend.sessionEntries.filter(
+    (e) => e.status !== "running" && e.status !== "paused",
+  );
   const useGrid = activeEntries.length >= 2 && !maximizedAgent;
 
   return (

@@ -10,7 +10,12 @@ interface DiffHeaderProps {
 /**
  * Header bar for the diff viewer showing file count and aggregate change counters.
  */
-export function DiffHeader({ fileCount, totalAdditions, totalDeletions, children }: DiffHeaderProps) {
+export function DiffHeader({
+  fileCount,
+  totalAdditions,
+  totalDeletions,
+  children,
+}: DiffHeaderProps) {
   return (
     <div className="flex items-center gap-4 border-b border-border px-4 py-2 text-sm text-foreground">
       <FileText className="h-4 w-4 text-muted-foreground" />
@@ -35,7 +40,13 @@ interface FileHeaderProps {
 /**
  * Per-file header showing file path with individual +N -N counters.
  */
-export function FileHeader({ fileName, additions, deletions, isCollapsed, onToggle }: FileHeaderProps) {
+export function FileHeader({
+  fileName,
+  additions,
+  deletions,
+  isCollapsed,
+  onToggle,
+}: FileHeaderProps) {
   return (
     <button
       className="flex w-full items-center gap-2 bg-secondary px-4 py-1.5 text-left text-sm text-foreground hover:bg-accent"

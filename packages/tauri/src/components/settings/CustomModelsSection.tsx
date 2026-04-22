@@ -109,7 +109,9 @@ export function CustomModelsSection() {
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
         title={`Delete custom model "${pendingDelete}"?`}
         description="The model will no longer appear in the model picker."
         confirmText="Delete"
@@ -159,7 +161,12 @@ function CustomModelEditor({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit "${initial!.id}"` : "New custom model"}</DialogTitle>

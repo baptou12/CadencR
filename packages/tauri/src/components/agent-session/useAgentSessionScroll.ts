@@ -45,38 +45,44 @@ export function useAgentSessionScroll({
     setIsLoadingOlder(loading);
   }, []);
 
-  const loadOlderIfNeeded = useCallback((reason: "scroll" | "bootstrap"): void => {
-    const el = scrollContainerRef.current;
-    if (!el || !hasMore || !onLoadOlder || loadingOlderRef.current) {
-      return;
-    }
-    if (reason === "scroll" && el.scrollTop >= LOAD_OLDER_THRESHOLD) return;
-    if (reason === "bootstrap" && el.scrollHeight > el.clientHeight) return;
+  const loadOlderIfNeeded = useCallback(
+    (reason: "scroll" | "bootstrap"): void => {
+      const el = scrollContainerRef.current;
+      if (!el || !hasMore || !onLoadOlder || loadingOlderRef.current) {
+        return;
+      }
+      if (reason === "scroll" && el.scrollTop >= LOAD_OLDER_THRESHOLD) return;
+      if (reason === "bootstrap" && el.scrollHeight > el.clientHeight) return;
 
-    loadingOlderRef.current = true;
-    setOlderLoading(true);
-    const prevHeight = el.scrollHeight;
+      loadingOlderRef.current = true;
+      setOlderLoading(true);
+      const prevHeight = el.scrollHeight;
 
-    void onLoadOlder()
-      .then(() => {
-        requestAnimationFrame(() => {
-          if (!isMountedRef.current) return;
-          el.scrollTop += el.scrollHeight - prevHeight;
-          previousScrollTopRef.current = el.scrollTop;
+      void onLoadOlder()
+        .then(() => {
+          requestAnimationFrame(() => {
+            if (!isMountedRef.current) return;
+            el.scrollTop += el.scrollHeight - prevHeight;
+            previousScrollTopRef.current = el.scrollTop;
+            loadingOlderRef.current = false;
+            setOlderLoading(false);
+          });
+        })
+        .catch(() => {
           loadingOlderRef.current = false;
           setOlderLoading(false);
+          toast.error("Failed to load older messages");
         });
-      })
-      .catch(() => {
-        loadingOlderRef.current = false;
-        setOlderLoading(false);
-        toast.error("Failed to load older messages");
-      });
-  }, [hasMore, onLoadOlder, setOlderLoading]);
+    },
+    [hasMore, onLoadOlder, setOlderLoading],
+  );
 
-  useEffect(() => () => {
-    isMountedRef.current = false;
-  }, []);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    [],
+  );
 
   const scrollToBottom = useCallback((): void => {
     const el = scrollContainerRef.current;
@@ -87,13 +93,16 @@ export function useAgentSessionScroll({
     previousScrollTopRef.current = el.scrollTop;
   }, []);
 
-  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
-    autoScrollEnabledRef.current = enabled;
-    setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
-    if (enabled) {
-      scrollToBottom();
-    }
-  }, [scrollToBottom]);
+  const setAutoScrollEnabled = useCallback(
+    (enabled: boolean): void => {
+      autoScrollEnabledRef.current = enabled;
+      setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
+      if (enabled) {
+        scrollToBottom();
+      }
+    },
+    [scrollToBottom],
+  );
 
   // Single scroll handler: autoscroll detection + load-older trigger.
   useEffect(() => {
@@ -158,8 +167,17 @@ export function useAgentSessionScroll({
       });
     });
     ro.observe(content);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
   }, [loadOlderIfNeeded]);
 
-  return { scrollContainerRef, contentRef, autoScrollEnabled, isLoadingOlder, setAutoScrollEnabled };
+  return {
+    scrollContainerRef,
+    contentRef,
+    autoScrollEnabled,
+    isLoadingOlder,
+    setAutoScrollEnabled,
+  };
 }

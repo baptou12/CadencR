@@ -18,7 +18,10 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
   return {
     ...actual,
-    useQueryClient: vi.fn(() => ({ invalidateQueries: mockInvalidateQueries, setQueryData: mockSetQueryData })),
+    useQueryClient: vi.fn(() => ({
+      invalidateQueries: mockInvalidateQueries,
+      setQueryData: mockSetQueryData,
+    })),
   };
 });
 
@@ -73,10 +76,7 @@ describe("useDebouncedSetting", () => {
       vi.advanceTimersByTime(300);
     });
     expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(mockMutate).toHaveBeenCalledWith(
-      { key: "my-key", value: "val3" },
-      expect.any(Object),
-    );
+    expect(mockMutate).toHaveBeenCalledWith({ key: "my-key", value: "val3" }, expect.any(Object));
   });
 
   it("uses custom debounce interval", () => {
@@ -106,10 +106,9 @@ describe("useDebouncedSetting", () => {
     act(() => {
       result.current.setValue("new-value");
     });
-    expect(mockSetQueryData).toHaveBeenCalledWith(
-      ["workspace", "settings", "my-key"],
-      { value: "new-value" },
-    );
+    expect(mockSetQueryData).toHaveBeenCalledWith(["workspace", "settings", "my-key"], {
+      value: "new-value",
+    });
   });
 
   it("skips immediate cache update when immediateCache is false", () => {

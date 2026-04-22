@@ -1,5 +1,9 @@
 import type { ReactElement } from "react";
-import { normalizeContextWindow, type ContextUsageState, usageRatio as computeUsageRatio } from "@/types/agent";
+import {
+  normalizeContextWindow,
+  type ContextUsageState,
+  usageRatio as computeUsageRatio,
+} from "@/types/agent";
 import { cn } from "@/lib/utils";
 import { getContextUsageAppearance, type LoaderStyle } from "@/lib/loader-style";
 

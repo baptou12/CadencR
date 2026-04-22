@@ -9,8 +9,18 @@ const permission: PendingPermission = {
   description: "Run a shell command in your project",
   pattern: "Bash(ls*)",
   options: [
-    { decision: "allow_once", label: "Allow once", description: "Approve this tool call only", collectFeedback: false },
-    { decision: "allow_future", label: "Always allow", description: "Let OpenCode allow similar requests automatically", collectFeedback: false },
+    {
+      decision: "allow_once",
+      label: "Allow once",
+      description: "Approve this tool call only",
+      collectFeedback: false,
+    },
+    {
+      decision: "allow_future",
+      label: "Always allow",
+      description: "Let OpenCode allow similar requests automatically",
+      collectFeedback: false,
+    },
     { decision: "deny", label: "Deny", description: "Reject this request", collectFeedback: false },
   ],
 };
@@ -36,7 +46,7 @@ describe("ToolPermissionPrompt", () => {
   it("calls onDecision with allow_once when Allow once clicked", async () => {
     const onDecision = vi.fn();
     const { user } = render(
-      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />
+      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />,
     );
     await user.click(screen.getByText("Allow once").closest("button")!);
     expect(onDecision).toHaveBeenCalledWith("allow_once");
@@ -45,7 +55,7 @@ describe("ToolPermissionPrompt", () => {
   it("calls onDecision with allow_future when Allow for future clicked", async () => {
     const onDecision = vi.fn();
     const { user } = render(
-      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />
+      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />,
     );
     await user.click(screen.getByText("Always allow").closest("button")!);
     expect(onDecision).toHaveBeenCalledWith("allow_future");
@@ -54,7 +64,7 @@ describe("ToolPermissionPrompt", () => {
   it("submits deny immediately when feedback is not requested", async () => {
     const onDecision = vi.fn();
     const { user } = render(
-      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />
+      <ToolPermissionPrompt permission={permission} onDecision={onDecision} />,
     );
     await user.click(screen.getByText("Deny").closest("button")!);
     expect(onDecision).toHaveBeenCalledWith("deny", undefined);
@@ -69,7 +79,7 @@ describe("ToolPermissionPrompt", () => {
       ),
     };
     const { user } = render(
-      <ToolPermissionPrompt permission={permissionWithFeedback} onDecision={vi.fn()} />
+      <ToolPermissionPrompt permission={permissionWithFeedback} onDecision={vi.fn()} />,
     );
     await user.click(screen.getByText("Deny").closest("button")!);
     expect(screen.getByPlaceholderText(/reason for denying/i)).toBeInTheDocument();
@@ -84,7 +94,7 @@ describe("ToolPermissionPrompt", () => {
       ),
     };
     const { user } = render(
-      <ToolPermissionPrompt permission={permissionWithFeedback} onDecision={onDecision} />
+      <ToolPermissionPrompt permission={permissionWithFeedback} onDecision={onDecision} />,
     );
     await user.click(screen.getByText("Deny").closest("button")!);
     const input = screen.getByPlaceholderText(/reason for denying/i);
@@ -95,7 +105,9 @@ describe("ToolPermissionPrompt", () => {
 
   it("shows runtime-specific option description", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
-    expect(screen.getByText("Let OpenCode allow similar requests automatically")).toBeInTheDocument();
+    expect(
+      screen.getByText("Let OpenCode allow similar requests automatically"),
+    ).toBeInTheDocument();
   });
 
   it("shows nested metadata command preview", () => {
@@ -106,7 +118,7 @@ describe("ToolPermissionPrompt", () => {
           preview: "git status",
         }}
         onDecision={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("git status")).toBeInTheDocument();
   });
@@ -120,7 +132,7 @@ describe("ToolPermissionPrompt", () => {
           preview: "/etc/hosts",
         }}
         onDecision={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("/etc/hosts")).toBeInTheDocument();
   });

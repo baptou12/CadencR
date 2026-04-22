@@ -14,9 +14,7 @@ describe("extractTaskOutput", () => {
   });
 
   it("falls back to the raw output when tags are missing", () => {
-    expect(extractTaskOutput(JSON.stringify({ output: "plain output" }))).toBe(
-      "plain output",
-    );
+    expect(extractTaskOutput(JSON.stringify({ output: "plain output" }))).toBe("plain output");
   });
 
   it("returns an empty string for malformed json", () => {
@@ -25,8 +23,6 @@ describe("extractTaskOutput", () => {
 
   it("returns an empty string for empty or non-string output", () => {
     expect(extractTaskOutput(JSON.stringify({ output: "" }))).toBeUndefined();
-    expect(
-      extractTaskOutput(JSON.stringify({ output: { value: "nope" } })),
-    ).toBeUndefined();
+    expect(extractTaskOutput(JSON.stringify({ output: { value: "nope" } }))).toBeUndefined();
   });
 });

@@ -25,9 +25,7 @@ vi.mock("@/stores/ws-session-store", () => {
       toolCalls: new Map(),
     }),
     processSdkMessage: (_msg: unknown, _state: unknown) => ({
-      mutations: [
-        { type: "append-text", text: `chunk-${++counter}` },
-      ],
+      mutations: [{ type: "append-text", text: `chunk-${++counter}` }],
       signals: {
         enterPlanModeRequested: false,
       },
@@ -36,10 +34,7 @@ vi.mock("@/stores/ws-session-store", () => {
       blocks: unknown[],
       mutations: Array<{ type: string; text: string }>,
       _state: unknown,
-    ) => [
-      ...blocks,
-      ...mutations.map((m) => ({ type: "text" as const, content: m.text })),
-    ],
+    ) => [...blocks, ...mutations.map((m) => ({ type: "text" as const, content: m.text }))],
   };
 });
 
@@ -344,7 +339,7 @@ describe("useWorkflowStore", () => {
 
       // No optimistic write — status stays "running" until backend broadcasts.
       expect(getAgent(PLAN_KEY)!.status).toBe("running");
-      const sent = ws.sent.find(s => JSON.parse(s).action === "interrupt");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "interrupt");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.agent_slot).toEqual({ type: "plan" });
     });
@@ -362,7 +357,19 @@ describe("useWorkflowStore", () => {
       connectStore();
       setAgent("qi:10", makeAgentSession({ sessionId: 100, status: "running" }));
       useWorkflowStore.setState({
-        queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
+        queue: [
+          {
+            id: 10,
+            status: "running",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 100,
+            result: null,
+          },
+        ],
       });
 
       useWorkflowStore.getState().interruptItem("qi:10");
@@ -390,7 +397,19 @@ describe("useWorkflowStore", () => {
       const ws = connectStore();
       setAgent("qi:5", makeAgentSession({ sessionId: 50, status: "running" }));
       useWorkflowStore.setState({
-        queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+        queue: [
+          {
+            id: 5,
+            status: "running",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 50,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
@@ -413,7 +432,7 @@ describe("useWorkflowStore", () => {
 
       // Status stays "paused" until backend emits agent_running.
       expect(getAgent(PLAN_KEY)!.status).toBe("paused");
-      const sent = ws.sent.find(s => JSON.parse(s).action === "prompt.send");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "prompt.send");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
       expect(envelope.payload.agent_slot).toEqual({ type: "plan" });
@@ -424,7 +443,19 @@ describe("useWorkflowStore", () => {
       connectStore();
       setAgent("qi:7", makeAgentSession({ sessionId: 70, status: "paused" }));
       useWorkflowStore.setState({
-        queue: [{ id: 7, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 70, result: null }],
+        queue: [
+          {
+            id: 7,
+            status: "paused",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 70,
+            result: null,
+          },
+        ],
       });
 
       useWorkflowStore.getState().resumeItem("qi:7");
@@ -447,7 +478,7 @@ describe("useWorkflowStore", () => {
       expect(plan.status).toBe("paused");
       expect(plan.blocks.length).toBe(0);
 
-      const sent = ws.sent.find(s => JSON.parse(s).action === "prompt.send");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "prompt.send");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
       expect(envelope.payload.text).toBe("continue please");
@@ -457,7 +488,19 @@ describe("useWorkflowStore", () => {
       connectStore();
       setAgent("qi:3", makeAgentSession({ sessionId: 30, status: "paused" }));
       useWorkflowStore.setState({
-        queue: [{ id: 3, status: "paused", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 30, result: null }],
+        queue: [
+          {
+            id: 3,
+            status: "paused",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 30,
+            result: null,
+          },
+        ],
       });
 
       useWorkflowStore.getState().sendPromptToAgent("qi:3", "go on");
@@ -485,12 +528,24 @@ describe("useWorkflowStore", () => {
     }
 
     function makeSessionSummary(overrides?: Partial<AgentSessionSummary>): AgentSessionSummary {
-      return { id: 1, queue_item_id: null, status: "completed", agent_type: null, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0, ...overrides };
+      return {
+        id: 1,
+        queue_item_id: null,
+        status: "completed",
+        agent_type: null,
+        runtime_session_id: null,
+        input_tokens: 0,
+        output_tokens: 0,
+        context_window: 0,
+        ...overrides,
+      };
     }
 
     it("routes plan agent_type to plan slot", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })],
+        }),
       );
 
       const plan = getAgent(PLAN_KEY);
@@ -500,9 +555,11 @@ describe("useWorkflowStore", () => {
     });
 
     it("routes prd agent_type to prd slot", () => {
-      useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 20, agent_type: "prd" })] }),
-      );
+      useWorkflowStore
+        .getState()
+        .hydrateFromSnapshot(
+          makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 20, agent_type: "prd" })] }),
+        );
 
       const prd = getAgent(PRD_KEY);
       expect(prd).toBeDefined();
@@ -510,9 +567,11 @@ describe("useWorkflowStore", () => {
     });
 
     it("routes session agent_type to agents with session:id key", () => {
-      useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 30, agent_type: "session" })] }),
-      );
+      useWorkflowStore
+        .getState()
+        .hydrateFromSnapshot(
+          makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 30, agent_type: "session" })] }),
+        );
 
       expect(getAgent("session:30")).toBeDefined();
       expect(getAgent("session:30")!.sessionId).toBe(30);
@@ -520,7 +579,9 @@ describe("useWorkflowStore", () => {
 
     it("routes review-fixer agent_type to agents with review-fixer:id key", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 40, agent_type: "review-fixer" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 40, agent_type: "review-fixer" })],
+        }),
       );
 
       expect(getAgent("review-fixer:40")).toBeDefined();
@@ -530,8 +591,22 @@ describe("useWorkflowStore", () => {
     it("routes sessions with queue_item_id to agents by qi:id", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
-          agent_sessions: [makeSessionSummary({ id: 50, queue_item_id: 99, agent_type: "execute" })],
-          queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+          agent_sessions: [
+            makeSessionSummary({ id: 50, queue_item_id: 99, agent_type: "execute" }),
+          ],
+          queue: [
+            {
+              id: 99,
+              item_type: "execute",
+              phase_id: null,
+              phase_title: null,
+              status: "running",
+              order_index: 0,
+              group_index: null,
+              agent_session_id: 50,
+              result: null,
+            },
+          ],
         }),
       );
 
@@ -541,7 +616,9 @@ describe("useWorkflowStore", () => {
 
     it("uses type:id key for unknown agent_type without queue_item_id", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 7, agent_type: "unknown_type" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 7, agent_type: "unknown_type" })],
+        }),
       );
 
       expect(getAgent("unknown_type:7")).toBeDefined();
@@ -569,9 +646,9 @@ describe("useWorkflowStore", () => {
     });
 
     it("sets workflowStatus and hydrated flag", () => {
-      useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ workflow_status: "plan_approval" }),
-      );
+      useWorkflowStore
+        .getState()
+        .hydrateFromSnapshot(makeSnapshot({ workflow_status: "plan_approval" }));
 
       const state = useWorkflowStore.getState();
       expect(state.workflowStatus).toBe("plan_approval");
@@ -581,9 +658,7 @@ describe("useWorkflowStore", () => {
     it("does not overwrite if already hydrated", () => {
       useWorkflowStore.setState({ hydrated: true, workflowStatus: "building" });
 
-      useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ workflow_status: "idle" }),
-      );
+      useWorkflowStore.getState().hydrateFromSnapshot(makeSnapshot({ workflow_status: "idle" }));
 
       expect(useWorkflowStore.getState().workflowStatus).toBe("building");
     });
@@ -593,9 +668,26 @@ describe("useWorkflowStore", () => {
         makeSnapshot({
           agent_sessions: [
             makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" }),
-            makeSessionSummary({ id: 20, queue_item_id: 5, agent_type: "execute", status: "paused" }),
+            makeSessionSummary({
+              id: 20,
+              queue_item_id: 5,
+              agent_type: "execute",
+              status: "paused",
+            }),
           ],
-          queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 20, result: null }],
+          queue: [
+            {
+              id: 5,
+              item_type: "execute",
+              phase_id: null,
+              phase_title: null,
+              status: "paused",
+              order_index: 0,
+              group_index: null,
+              agent_session_id: 20,
+              result: null,
+            },
+          ],
         }),
       );
 
@@ -613,7 +705,12 @@ describe("useWorkflowStore", () => {
             makeSessionSummary({ id: 1, agent_type: "plan", status: "completed" }),
             makeSessionSummary({ id: 2, agent_type: "prd", status: "completed" }),
             makeSessionSummary({ id: 3, agent_type: "session", status: "paused" }),
-            makeSessionSummary({ id: 4, queue_item_id: 10, agent_type: "execute", status: "running" }),
+            makeSessionSummary({
+              id: 4,
+              queue_item_id: 10,
+              agent_type: "execute",
+              status: "running",
+            }),
           ],
         }),
       );
@@ -648,9 +745,26 @@ describe("useWorkflowStore", () => {
         makeSnapshot({
           workflow_status: "building",
           agent_sessions: [
-            makeSessionSummary({ id: 20, queue_item_id: 5, agent_type: "execute", status: "running" }),
+            makeSessionSummary({
+              id: 20,
+              queue_item_id: 5,
+              agent_type: "execute",
+              status: "running",
+            }),
           ],
-          queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: 20, result: null }],
+          queue: [
+            {
+              id: 5,
+              item_type: "execute",
+              phase_id: null,
+              phase_title: null,
+              status: "running" as const,
+              order_index: 0,
+              group_index: null,
+              agent_session_id: 20,
+              result: null,
+            },
+          ],
         }),
       );
 
@@ -664,13 +778,37 @@ describe("useWorkflowStore", () => {
 
     it("uses snapshot queue unconditionally — no merge branch needed once buffering guards against races", () => {
       useWorkflowStore.setState({
-        queue: [{ id: 999, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: null, result: null }],
+        queue: [
+          {
+            id: 999,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "running" as const,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: null,
+            result: null,
+          },
+        ],
         hydrated: false,
       });
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
           workflow_status: "building",
-          queue: [{ id: 1, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: 20, result: null }],
+          queue: [
+            {
+              id: 1,
+              item_type: "execute",
+              phase_id: null,
+              phase_title: null,
+              status: "running" as const,
+              order_index: 0,
+              group_index: null,
+              agent_session_id: 20,
+              result: null,
+            },
+          ],
         }),
       );
       const queue = useWorkflowStore.getState().queue;
@@ -693,11 +831,20 @@ describe("useWorkflowStore", () => {
     });
 
     it("hydrates worktree setup_log from snapshot", () => {
-      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreeSetupOutput: [] });
+      useWorkflowStore.setState({
+        hydrated: false,
+        worktreeStatus: "idle",
+        worktreeSetupOutput: [],
+      });
 
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
-          worktree: { path: "/tmp/wt", branch: "feat-123", status: "ready", setup_log: "line1\nline2\nline3" },
+          worktree: {
+            path: "/tmp/wt",
+            branch: "feat-123",
+            status: "ready",
+            setup_log: "line1\nline2\nline3",
+          },
         }),
       );
 
@@ -705,7 +852,11 @@ describe("useWorkflowStore", () => {
     });
 
     it("leaves worktreeSetupOutput empty when snapshot has no setup_log", () => {
-      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreeSetupOutput: [] });
+      useWorkflowStore.setState({
+        hydrated: false,
+        worktreeStatus: "idle",
+        worktreeSetupOutput: [],
+      });
 
       useWorkflowStore.getState().hydrateFromSnapshot(
         makeSnapshot({
@@ -717,11 +868,14 @@ describe("useWorkflowStore", () => {
     });
 
     it("leaves worktree as idle when snapshot has no worktree", () => {
-      useWorkflowStore.setState({ hydrated: false, worktreeStatus: "idle", worktreePath: null, worktreeBranch: null });
+      useWorkflowStore.setState({
+        hydrated: false,
+        worktreeStatus: "idle",
+        worktreePath: null,
+        worktreeBranch: null,
+      });
 
-      useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ worktree: null }),
-      );
+      useWorkflowStore.getState().hydrateFromSnapshot(makeSnapshot({ worktree: null }));
 
       const state = useWorkflowStore.getState();
       expect(state.worktreeStatus).toBe("idle");
@@ -730,34 +884,38 @@ describe("useWorkflowStore", () => {
     });
     it("merges REST blocks from agentState into hydrated agents", () => {
       const agentState = {
-        sessions: [{
-          sessionDbId: 10,
-          agentType: "plan",
-          status: "paused",
-          subprocessId: null,
-          model: null,
-          blocks: [{ id: "b1", type: "text", content: "hello from REST", childBlocks: [] }],
-          maxMessageId: 1,
-          isIncremental: false,
-          pendingQuestions: null,
-          hasFileChanges: false,
-          resumable: true,
-          runtimeSessionId: null,
-          runId: null,
-          phaseId: null,
-          pendingPermission: null,
-          inputTokens: 10,
-          outputTokens: 20,
-          contextWindow: 200000,
-          wasCompacted: false,
-          draftPrompt: null,
-          hasMore: false,
-          oldestMessageId: 1,
-        }],
+        sessions: [
+          {
+            sessionDbId: 10,
+            agentType: "plan",
+            status: "paused",
+            subprocessId: null,
+            model: null,
+            blocks: [{ id: "b1", type: "text", content: "hello from REST", childBlocks: [] }],
+            maxMessageId: 1,
+            isIncremental: false,
+            pendingQuestions: null,
+            hasFileChanges: false,
+            resumable: true,
+            runtimeSessionId: null,
+            runId: null,
+            phaseId: null,
+            pendingPermission: null,
+            inputTokens: 10,
+            outputTokens: 20,
+            contextWindow: 200000,
+            wasCompacted: false,
+            draftPrompt: null,
+            hasMore: false,
+            oldestMessageId: 1,
+          },
+        ],
       };
 
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })],
+        }),
         agentState as never,
       );
 
@@ -773,34 +931,38 @@ describe("useWorkflowStore", () => {
       // loaded message. The store must carry both fields to the agent so the
       // `AgentSession` scroll handler can call `loadOlderMessages`.
       const agentState = {
-        sessions: [{
-          sessionDbId: 10,
-          agentType: "plan",
-          status: "completed",
-          subprocessId: null,
-          model: null,
-          blocks: [{ id: "b1", type: "text", content: "tail of conversation", childBlocks: [] }],
-          maxMessageId: 999726,
-          isIncremental: false,
-          pendingQuestions: null,
-          hasFileChanges: false,
-          resumable: true,
-          runtimeSessionId: null,
-          runId: null,
-          phaseId: null,
-          pendingPermission: null,
-          inputTokens: 0,
-          outputTokens: 0,
-          contextWindow: 200000,
-          wasCompacted: false,
-          draftPrompt: null,
-          hasMore: true,
-          oldestMessageId: 999627,
-        }],
+        sessions: [
+          {
+            sessionDbId: 10,
+            agentType: "plan",
+            status: "completed",
+            subprocessId: null,
+            model: null,
+            blocks: [{ id: "b1", type: "text", content: "tail of conversation", childBlocks: [] }],
+            maxMessageId: 999726,
+            isIncremental: false,
+            pendingQuestions: null,
+            hasFileChanges: false,
+            resumable: true,
+            runtimeSessionId: null,
+            runId: null,
+            phaseId: null,
+            pendingPermission: null,
+            inputTokens: 0,
+            outputTokens: 0,
+            contextWindow: 200000,
+            wasCompacted: false,
+            draftPrompt: null,
+            hasMore: true,
+            oldestMessageId: 999627,
+          },
+        ],
       };
 
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "completed" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "completed" })],
+        }),
         agentState as never,
       );
 
@@ -811,36 +973,40 @@ describe("useWorkflowStore", () => {
 
     it("populateOlderBlocks prepends older blocks without clobbering the current window", () => {
       const agentState = {
-        sessions: [{
-          sessionDbId: 10,
-          agentType: "plan",
-          status: "completed",
-          subprocessId: null,
-          model: null,
-          blocks: [
-            { id: "b2", type: "text", content: "recent", childBlocks: [] },
-            { id: "b3", type: "text", content: "very recent", childBlocks: [] },
-          ],
-          maxMessageId: 2,
-          isIncremental: false,
-          pendingQuestions: null,
-          hasFileChanges: false,
-          resumable: true,
-          runtimeSessionId: null,
-          runId: null,
-          phaseId: null,
-          pendingPermission: null,
-          inputTokens: 0,
-          outputTokens: 0,
-          contextWindow: 200000,
-          wasCompacted: false,
-          draftPrompt: null,
-          hasMore: true,
-          oldestMessageId: 2,
-        }],
+        sessions: [
+          {
+            sessionDbId: 10,
+            agentType: "plan",
+            status: "completed",
+            subprocessId: null,
+            model: null,
+            blocks: [
+              { id: "b2", type: "text", content: "recent", childBlocks: [] },
+              { id: "b3", type: "text", content: "very recent", childBlocks: [] },
+            ],
+            maxMessageId: 2,
+            isIncremental: false,
+            pendingQuestions: null,
+            hasFileChanges: false,
+            resumable: true,
+            runtimeSessionId: null,
+            runId: null,
+            phaseId: null,
+            pendingPermission: null,
+            inputTokens: 0,
+            outputTokens: 0,
+            contextWindow: 200000,
+            wasCompacted: false,
+            draftPrompt: null,
+            hasMore: true,
+            oldestMessageId: 2,
+          },
+        ],
       };
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "completed" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "completed" })],
+        }),
         agentState as never,
       );
 
@@ -860,7 +1026,9 @@ describe("useWorkflowStore", () => {
 
     it("sets historyLoaded false when no agentState provided", () => {
       useWorkflowStore.getState().hydrateFromSnapshot(
-        makeSnapshot({ agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })] }),
+        makeSnapshot({
+          agent_sessions: [makeSessionSummary({ id: 10, agent_type: "plan", status: "paused" })],
+        }),
       );
 
       expect(getAgent(PLAN_KEY)!.historyLoaded).toBe(false);
@@ -879,7 +1047,18 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        agent_sessions: [
+          {
+            id: 10,
+            agent_type: "plan",
+            status: "paused",
+            queue_item_id: null,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -897,7 +1076,18 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 20, agent_type: "prd", status: "paused", queue_item_id: null, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        agent_sessions: [
+          {
+            id: 20,
+            agent_type: "prd",
+            status: "paused",
+            queue_item_id: null,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -912,8 +1102,31 @@ describe("useWorkflowStore", () => {
     it("populates blocks for a queue-based agent", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 99, item_type: "execute", phase_id: null, phase_title: null, status: "paused", order_index: 0, group_index: null, agent_session_id: 50, result: null }],
-        agent_sessions: [{ id: 50, agent_type: "execute", status: "paused", queue_item_id: 99, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 99,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "paused",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 50,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 50,
+            agent_type: "execute",
+            status: "paused",
+            queue_item_id: 99,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -929,14 +1142,27 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
         queue: [],
-        agent_sessions: [{ id: 10, agent_type: "plan", status: "paused", queue_item_id: null, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        agent_sessions: [
+          {
+            id: 10,
+            agent_type: "plan",
+            status: "paused",
+            queue_item_id: null,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
       });
 
       useWorkflowStore.getState().populateAgentBlocks(PLAN_KEY, fakeBlocks as never[]);
-      useWorkflowStore.getState().populateAgentBlocks(PLAN_KEY, [{ type: "text", content: "overwrite" }] as never[]);
+      useWorkflowStore
+        .getState()
+        .populateAgentBlocks(PLAN_KEY, [{ type: "text", content: "overwrite" }] as never[]);
 
       expect(getAgent(PLAN_KEY)!.blocks).toEqual(fakeBlocks);
     });
@@ -944,8 +1170,31 @@ describe("useWorkflowStore", () => {
     it("does not overwrite if blocks are already non-empty", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 5,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "running",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 30,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 30,
+            agent_type: "execute",
+            status: "running",
+            queue_item_id: 5,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -967,8 +1216,31 @@ describe("useWorkflowStore", () => {
     it("sets pagination metadata even when blocks already exist", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 5,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "running",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 30,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 30,
+            agent_type: "execute",
+            status: "running",
+            queue_item_id: 5,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -993,8 +1265,31 @@ describe("useWorkflowStore", () => {
     it("skips state update when pagination metadata unchanged", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "running", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "running", queue_item_id: 5, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 5,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "running",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 30,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 30,
+            agent_type: "execute",
+            status: "running",
+            queue_item_id: 5,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -1019,8 +1314,31 @@ describe("useWorkflowStore", () => {
     it("sets hasFileChanges when history blocks contain a Write tool_call", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 5, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 30, result: null }],
-        agent_sessions: [{ id: 30, agent_type: "execute", status: "completed", queue_item_id: 5, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 5,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "completed",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 30,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 30,
+            agent_type: "execute",
+            status: "completed",
+            queue_item_id: 5,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -1038,8 +1356,31 @@ describe("useWorkflowStore", () => {
     it("sets hasFileChanges when history blocks contain an Edit tool_call", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 6, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 31, result: null }],
-        agent_sessions: [{ id: 31, agent_type: "execute", status: "completed", queue_item_id: 6, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 6,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "completed",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 31,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 31,
+            agent_type: "execute",
+            status: "completed",
+            queue_item_id: 6,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -1056,8 +1397,31 @@ describe("useWorkflowStore", () => {
     it("sets hasFileChanges when a file-change tool is in childBlocks", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 7, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 32, result: null }],
-        agent_sessions: [{ id: 32, agent_type: "execute", status: "completed", queue_item_id: 7, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 7,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "completed",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 32,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 32,
+            agent_type: "execute",
+            status: "completed",
+            queue_item_id: 7,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -1065,7 +1429,10 @@ describe("useWorkflowStore", () => {
 
       const blocksWithNestedEdit = [
         {
-          type: "tool_call" as const, content: "", toolName: "Agent", toolArgs: "{}",
+          type: "tool_call" as const,
+          content: "",
+          toolName: "Agent",
+          toolArgs: "{}",
           childBlocks: [
             { type: "tool_call" as const, content: "", toolName: "NotebookEdit", toolArgs: "{}" },
           ],
@@ -1079,8 +1446,31 @@ describe("useWorkflowStore", () => {
     it("does not set hasFileChanges when no file-change tools in blocks", () => {
       useWorkflowStore.getState().hydrateFromSnapshot({
         workflow_status: "building",
-        queue: [{ id: 8, item_type: "execute", phase_id: null, phase_title: null, status: "completed", order_index: 0, group_index: null, agent_session_id: 33, result: null }],
-        agent_sessions: [{ id: 33, agent_type: "execute", status: "completed", queue_item_id: 8, runtime_session_id: null, input_tokens: 0, output_tokens: 0, context_window: 0 }],
+        queue: [
+          {
+            id: 8,
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            status: "completed",
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 33,
+            result: null,
+          },
+        ],
+        agent_sessions: [
+          {
+            id: 33,
+            agent_type: "execute",
+            status: "completed",
+            queue_item_id: 8,
+            runtime_session_id: null,
+            input_tokens: 0,
+            output_tokens: 0,
+            context_window: 0,
+          },
+        ],
         plan: null,
         worktree: null,
         autonomy_level: 3,
@@ -1124,7 +1514,10 @@ describe("useWorkflowStore", () => {
 
     it("preserves existing plan agent blocks when paused", () => {
       const ws = connectStore();
-      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "hello" }] }) as never);
+      setAgent(
+        PLAN_KEY,
+        makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "hello" }] }) as never,
+      );
 
       dispatch(ws, {
         domain: "workflow",
@@ -1266,7 +1659,13 @@ describe("useWorkflowStore", () => {
         workflow_status: "planning",
         queue: [],
         agent_sessions: [
-          { id: 100, agent_type: "plan", status: "paused", queue_item_id: null, runtime_session_id: "snap-uuid" } as AgentSessionSummary,
+          {
+            id: 100,
+            agent_type: "plan",
+            status: "paused",
+            queue_item_id: null,
+            runtime_session_id: "snap-uuid",
+          } as AgentSessionSummary,
         ],
         plan: null,
         worktree: null,
@@ -1286,7 +1685,13 @@ describe("useWorkflowStore", () => {
         workflow_status: "planning",
         queue: [],
         agent_sessions: [
-          { id: 101, agent_type: "plan", status: "completed", queue_item_id: null, runtime_session_id: null } as AgentSessionSummary,
+          {
+            id: 101,
+            agent_type: "plan",
+            status: "completed",
+            queue_item_id: null,
+            runtime_session_id: null,
+          } as AgentSessionSummary,
         ],
         plan: null,
         worktree: null,
@@ -1354,7 +1759,10 @@ describe("useWorkflowStore", () => {
 
       const plan = getAgent(PLAN_KEY)!;
       expect(plan.blocks).toHaveLength(1);
-      expect(plan.blocks[0]).toMatchObject({ type: "user_message", content: "Create a plan for auth" });
+      expect(plan.blocks[0]).toMatchObject({
+        type: "user_message",
+        content: "Create a plan for auth",
+      });
     });
 
     it("adds user_message block to prd agent", () => {
@@ -1384,7 +1792,10 @@ describe("useWorkflowStore", () => {
 
       const agent = getAgent("qi:42")!;
       expect(agent.blocks).toHaveLength(1);
-      expect(agent.blocks[0]).toMatchObject({ type: "user_message", content: "Implement the phase" });
+      expect(agent.blocks[0]).toMatchObject({
+        type: "user_message",
+        content: "Implement the phase",
+      });
     });
 
     it("creates plan agent on the fly if not yet initialized", () => {
@@ -1473,7 +1884,7 @@ describe("useWorkflowStore", () => {
 
       expect(getAgent(PLAN_KEY)!.status).toBe("paused");
       expect(useWorkflowStore.getState().workflowStatus).toBe("plan_approval");
-      const sent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "plan.approved");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.request_id).toBe("req-1");
     });
@@ -1486,7 +1897,7 @@ describe("useWorkflowStore", () => {
       useWorkflowStore.getState().rejectPlan("needs more detail", "req-2");
 
       expect(getAgent(PLAN_KEY)!.status).toBe("paused");
-      const sent = ws.sent.find(s => JSON.parse(s).action === "plan.rejected");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "plan.rejected");
       expect(sent).toBeDefined();
       const envelope = JSON.parse(sent!);
       expect(envelope.payload.feedback).toBe("needs more detail");
@@ -1509,10 +1920,10 @@ describe("useWorkflowStore", () => {
 
       useWorkflowStore.getState().approvePlan("req-prd-1");
 
-      const sent = ws.sent.find(s => JSON.parse(s).action === "prd.approved");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "prd.approved");
       expect(sent).toBeDefined();
       expect(JSON.parse(sent!).payload.request_id).toBe("req-prd-1");
-      const planSent = ws.sent.find(s => JSON.parse(s).action === "plan.approved");
+      const planSent = ws.sent.find((s) => JSON.parse(s).action === "plan.approved");
       expect(planSent).toBeUndefined();
     });
 
@@ -1544,7 +1955,7 @@ describe("useWorkflowStore", () => {
 
       useWorkflowStore.getState().rejectPlan("needs work", "req-prd-2");
 
-      const sent = ws.sent.find(s => JSON.parse(s).action === "prd.rejected");
+      const sent = ws.sent.find((s) => JSON.parse(s).action === "prd.rejected");
       expect(sent).toBeDefined();
     });
 
@@ -1682,7 +2093,19 @@ describe("useWorkflowStore", () => {
       const ws = connectStore();
       setAgent("qi:10", makeAgentSession({ status: "running" }));
       useWorkflowStore.setState({
-        queue: [{ id: 10, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 100, result: null }],
+        queue: [
+          {
+            id: 10,
+            status: "running",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 100,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
@@ -1712,7 +2135,19 @@ describe("useWorkflowStore", () => {
       const ws = connectStore();
       setAgent("qi:5", makeAgentSession({ status: "running" }));
       useWorkflowStore.setState({
-        queue: [{ id: 5, status: "running", item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 50, result: null }],
+        queue: [
+          {
+            id: 5,
+            status: "running",
+            item_type: "execute",
+            phase_id: null,
+            phase_title: null,
+            order_index: 0,
+            group_index: null,
+            agent_session_id: 50,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
@@ -1845,9 +2280,12 @@ describe("useWorkflowStore", () => {
     it("session.started migrates placeholder blocks to unique key", () => {
       const ws = connectStore();
       // Simulate user message arriving before session.started (at placeholder key)
-      setAgent("session", makeAgentSession({
-        blocks: [{ type: "user_message", content: "Hello" }],
-      }));
+      setAgent(
+        "session",
+        makeAgentSession({
+          blocks: [{ type: "user_message", content: "Hello" }],
+        }),
+      );
 
       dispatch(ws, {
         domain: "workflow",
@@ -1867,14 +2305,20 @@ describe("useWorkflowStore", () => {
     it("session.started merges placeholder and existing agent blocks", () => {
       const ws = connectStore();
       // Placeholder with user message
-      setAgent("session", makeAgentSession({
-        blocks: [{ type: "user_message", content: "Hello" }],
-      }));
+      setAgent(
+        "session",
+        makeAgentSession({
+          blocks: [{ type: "user_message", content: "Hello" }],
+        }),
+      );
       // Existing agent at session:77 from agent_user_message arriving first
-      setAgent("session:77", makeAgentSession({
-        sessionId: 77,
-        blocks: [{ type: "text", content: "stream output" }],
-      }));
+      setAgent(
+        "session:77",
+        makeAgentSession({
+          sessionId: 77,
+          blocks: [{ type: "text", content: "stream output" }],
+        }),
+      );
       useWorkflowStore.setState({ startingSession: true });
 
       dispatch(ws, {
@@ -1924,7 +2368,17 @@ describe("useWorkflowStore", () => {
         payload: {
           feature_id: 1,
           items: [
-            { id: 10, status: "ready", item_type: "execute", phase_id: 1, phase_title: "Setup", order_index: 0, group_index: 0, agent_session_id: null, result: null },
+            {
+              id: 10,
+              status: "ready",
+              item_type: "execute",
+              phase_id: 1,
+              phase_title: "Setup",
+              order_index: 0,
+              group_index: 0,
+              agent_session_id: null,
+              result: null,
+            },
           ],
         },
       });
@@ -1947,11 +2401,26 @@ describe("useWorkflowStore", () => {
 
     it("item_started preserves existing blocks", () => {
       const ws = connectStore();
-      setAgent("qi:10", makeAgentSession({
-        blocks: [{ type: "user_message", content: "Execute this" }],
-      }));
+      setAgent(
+        "qi:10",
+        makeAgentSession({
+          blocks: [{ type: "user_message", content: "Execute this" }],
+        }),
+      );
       useWorkflowStore.setState({
-        queue: [{ id: 10, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+        queue: [
+          {
+            id: 10,
+            status: "ready",
+            item_type: "execute",
+            phase_id: 1,
+            phase_title: "P1",
+            order_index: 0,
+            group_index: 0,
+            agent_session_id: null,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
@@ -2031,7 +2500,12 @@ describe("useWorkflowStore", () => {
       dispatch(ws, {
         domain: "workflow",
         action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 100, agent_type: "plan" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "plan" },
+          session_id: 100,
+          agent_type: "plan",
+        },
       });
 
       const plan = getAgent(PLAN_KEY);
@@ -2058,13 +2532,30 @@ describe("useWorkflowStore", () => {
     it("routes to agents for queue items", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
-        queue: [{ id: 42, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+        queue: [
+          {
+            id: 42,
+            status: "ready",
+            item_type: "execute",
+            phase_id: 1,
+            phase_title: "P1",
+            order_index: 0,
+            group_index: 0,
+            agent_session_id: null,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 42 },
+          session_id: 300,
+          agent_type: "execute",
+        },
       });
 
       const agent = getAgent("qi:42");
@@ -2076,16 +2567,33 @@ describe("useWorkflowStore", () => {
     it("updates queue item status to running", () => {
       const ws = connectStore();
       useWorkflowStore.setState({
-        queue: [{ id: 42, status: "ready", item_type: "execute", phase_id: 1, phase_title: "P1", order_index: 0, group_index: 0, agent_session_id: null, result: null }],
+        queue: [
+          {
+            id: 42,
+            status: "ready",
+            item_type: "execute",
+            phase_id: 1,
+            phase_title: "P1",
+            order_index: 0,
+            group_index: 0,
+            agent_session_id: null,
+            result: null,
+          },
+        ],
       });
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_running",
-        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 42 }, session_id: 300, agent_type: "execute" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 42 },
+          session_id: 300,
+          agent_type: "execute",
+        },
       });
 
-      const queueItem = useWorkflowStore.getState().queue.find(q => q.id === 42);
+      const queueItem = useWorkflowStore.getState().queue.find((q) => q.id === 42);
       expect(queueItem!.status).toBe("running");
       expect(queueItem!.agent_session_id).toBe(300);
     });
@@ -2098,7 +2606,13 @@ describe("useWorkflowStore", () => {
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
-        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", runtime_session_id: "cc-123" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "plan" },
+          session_id: 42,
+          agent_type: "plan",
+          runtime_session_id: "cc-123",
+        },
       });
 
       const plan = getAgent(PLAN_KEY);
@@ -2114,7 +2628,13 @@ describe("useWorkflowStore", () => {
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
-        payload: { feature_id: 1, agent_slot: { type: "prd" }, session_id: 99, agent_type: "prd", runtime_session_id: "cc-prd" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "prd" },
+          session_id: 99,
+          agent_type: "prd",
+          runtime_session_id: "cc-prd",
+        },
       });
 
       const prd = getAgent(PRD_KEY);
@@ -2129,7 +2649,13 @@ describe("useWorkflowStore", () => {
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
-        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 55 }, session_id: 400, agent_type: "execute", runtime_session_id: "cc-qi" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 55 },
+          session_id: 400,
+          agent_type: "execute",
+          runtime_session_id: "cc-qi",
+        },
       });
 
       const agent = getAgent("qi:55");
@@ -2141,12 +2667,21 @@ describe("useWorkflowStore", () => {
 
     it("preserves existing agent blocks when paused", () => {
       const ws = connectStore();
-      setAgent(PLAN_KEY, makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "work" }] }) as never);
+      setAgent(
+        PLAN_KEY,
+        makeAgentSession({ sessionId: 42, blocks: [{ type: "text", content: "work" }] }) as never,
+      );
 
       dispatch(ws, {
         domain: "workflow",
         action: "agent_paused",
-        payload: { feature_id: 1, agent_slot: { type: "plan" }, session_id: 42, agent_type: "plan", runtime_session_id: "cc-456" },
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "plan" },
+          session_id: 42,
+          agent_type: "plan",
+          runtime_session_id: "cc-456",
+        },
       });
 
       const plan = getAgent(PLAN_KEY)!;
@@ -2193,16 +2728,19 @@ describe("useWorkflowStore", () => {
 
     it("respondToPermission sends envelope without optimistic clear; pending_cleared event clears it", () => {
       const ws = connectStore();
-      setAgent("qi:7", makeAgentSession({
-        sessionId: 100,
-        pendingPermission: {
-          toolName: "Bash",
-          input: { command: "ls" },
-          description: "Run ls",
-          pattern: "Bash(/tmp:*)",
-          requestId: "req-1",
-        },
-      }));
+      setAgent(
+        "qi:7",
+        makeAgentSession({
+          sessionId: 100,
+          pendingPermission: {
+            toolName: "Bash",
+            input: { command: "ls" },
+            description: "Run ls",
+            pattern: "Bash(/tmp:*)",
+            requestId: "req-1",
+          },
+        }),
+      );
 
       useWorkflowStore.getState().respondToPermission("qi:7", "req-1", "allow_once");
 
@@ -2225,13 +2763,27 @@ describe("useWorkflowStore", () => {
 
     it("agent_user_message clears pending questions/permission/plan on the target slot", () => {
       const ws = connectStore();
-      setAgent("qi:9", makeAgentSession({
-        sessionId: 900,
-        pendingPermission: { toolName: "Bash", input: {}, description: "", pattern: "", requestId: "r" },
-        pendingQuestions: [{ question: "?", options: ["a"] } as unknown as import("@/components/AgentQuestionDrawer").AgentQuestion],
-        pendingQuestionRequestId: "r2",
-        pendingPlanApproval: { plan: "stale" },
-      }));
+      setAgent(
+        "qi:9",
+        makeAgentSession({
+          sessionId: 900,
+          pendingPermission: {
+            toolName: "Bash",
+            input: {},
+            description: "",
+            pattern: "",
+            requestId: "r",
+          },
+          pendingQuestions: [
+            {
+              question: "?",
+              options: ["a"],
+            } as unknown as import("@/components/AgentQuestionDrawer").AgentQuestion,
+          ],
+          pendingQuestionRequestId: "r2",
+          pendingPlanApproval: { plan: "stale" },
+        }),
+      );
 
       dispatch(ws, {
         domain: "workflow",

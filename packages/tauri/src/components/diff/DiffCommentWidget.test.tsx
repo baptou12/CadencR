@@ -63,48 +63,24 @@ describe("CommentForm", () => {
 
 describe("CommentDisplay", () => {
   it("renders comment content", () => {
-    render(
-      <CommentDisplay
-        comment={mockComment}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<CommentDisplay comment={mockComment} onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText("This looks wrong")).toBeInTheDocument();
   });
 
   it("shows status badge", () => {
-    render(
-      <CommentDisplay
-        comment={mockComment}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<CommentDisplay comment={mockComment} onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText("pending")).toBeInTheDocument();
   });
 
   it("switches to edit mode when edit button clicked", () => {
-    render(
-      <CommentDisplay
-        comment={mockComment}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<CommentDisplay comment={mockComment} onEdit={vi.fn()} onDelete={vi.fn()} />);
     fireEvent.click(screen.getByTitle("Edit comment"));
     expect(screen.getByPlaceholderText("Add a comment...")).toBeInTheDocument();
   });
 
   it("calls onDelete with comment id", () => {
     const onDelete = vi.fn();
-    render(
-      <CommentDisplay
-        comment={mockComment}
-        onEdit={vi.fn()}
-        onDelete={onDelete}
-      />,
-    );
+    render(<CommentDisplay comment={mockComment} onEdit={vi.fn()} onDelete={onDelete} />);
     fireEvent.click(screen.getByTitle("Delete comment"));
     expect(onDelete).toHaveBeenCalledWith(1);
   });
@@ -148,13 +124,7 @@ describe("CommentExtendLine", () => {
   });
 
   it("renders comments", () => {
-    render(
-      <CommentExtendLine
-        comments={[mockComment]}
-        onEdit={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<CommentExtendLine comments={[mockComment]} onEdit={vi.fn()} onDelete={vi.fn()} />);
     expect(screen.getByText("This looks wrong")).toBeInTheDocument();
   });
 });

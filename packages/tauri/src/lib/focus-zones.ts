@@ -17,7 +17,9 @@ const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"]
 
 export function focusZoneByDirection(direction: "left" | "right"): void {
   const currentZone = getActiveFocusZone();
-  const currentIndex = currentZone ? ZONE_ORDER.indexOf(currentZone as (typeof ZONE_ORDER)[number]) : -1;
+  const currentIndex = currentZone
+    ? ZONE_ORDER.indexOf(currentZone as (typeof ZONE_ORDER)[number])
+    : -1;
   const step = direction === "right" ? 1 : -1;
   for (let next = currentIndex + step; next >= 0 && next < ZONE_ORDER.length; next += step) {
     const nextEl = document.querySelector(

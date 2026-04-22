@@ -117,13 +117,7 @@ describe("AgentSession", () => {
 
   it("renders full-screen mode (collapsible=false)", () => {
     render(
-      <AgentSession
-        agentType="plan"
-        blocks={[]}
-        status="idle"
-        onSend={onSend}
-        onStop={onStop}
-      />,
+      <AgentSession agentType="plan" blocks={[]} status="idle" onSend={onSend} onStop={onStop} />,
     );
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });

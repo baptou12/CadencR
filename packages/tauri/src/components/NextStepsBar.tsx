@@ -26,14 +26,20 @@ interface NextStepsBarProps {
   isContinuingBuild?: boolean;
   nextStepNumber?: number | null;
   canStartWorkflowSession?: boolean;
-  onStartWorkflowSession?: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  onStartWorkflowSession?: (
+    prompt: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void;
   isStartingWorkflowSession?: boolean;
   noExecuteAgentRunning?: boolean;
   projectId?: number;
   featureId?: number;
   featureType?: string;
   canStartRefine?: boolean;
-  onStartRefinePlan?: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  onStartRefinePlan?: (
+    description: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void;
   isStartingRefinePlan?: boolean;
   openSessionPrompt?: number;
   canStartRetro?: boolean;
@@ -77,7 +83,11 @@ export function NextStepsBar({
   const [showSessionPrompt, setShowSessionPrompt] = useState(false);
   const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
 
-  const canMerge = noExecuteAgentRunning && (featureType === "feature" || featureType === "ws-feature") && projectId != null && featureId != null;
+  const canMerge =
+    noExecuteAgentRunning &&
+    (featureType === "feature" || featureType === "ws-feature") &&
+    projectId != null &&
+    featureId != null;
 
   const isRefineDisabled = !!isStartingRefinePlan;
 
@@ -110,10 +120,14 @@ export function NextStepsBar({
   }, [showSessionPrompt]);
 
   // CMD+SHIFT+M: open merge & archive dialog
-  useGlobalShortcut("meta+shift+m", (e) => {
-    e.preventDefault();
-    setMergeDialogOpen(true);
-  }, { enabled: canMerge });
+  useGlobalShortcut(
+    "meta+shift+m",
+    (e) => {
+      e.preventDefault();
+      setMergeDialogOpen(true);
+    },
+    { enabled: canMerge },
+  );
 
   const refineSplitActions: SplitSendAction[] = useMemo(
     () => [
@@ -173,11 +187,16 @@ export function NextStepsBar({
           </div>
           <div className="flex flex-wrap gap-2">
             {canContinueBuild && onContinueBuild && (
-              <ShortcutTooltip label={nextStepNumber != null ? `Continue to Step ${nextStepNumber}` : "Continue Building"} keys={["cmd", "shift", "B"]} above>
-                <Button
-                  onClick={onContinueBuild}
-                  disabled={isContinuingBuild}
-                >
+              <ShortcutTooltip
+                label={
+                  nextStepNumber != null
+                    ? `Continue to Step ${nextStepNumber}`
+                    : "Continue Building"
+                }
+                keys={["cmd", "shift", "B"]}
+                above
+              >
+                <Button onClick={onContinueBuild} disabled={isContinuingBuild}>
                   {isContinuingBuild ? (
                     <Loader2Icon className="mr-2 size-4 animate-spin" />
                   ) : (
@@ -190,11 +209,12 @@ export function NextStepsBar({
               </ShortcutTooltip>
             )}
             {canStartBuild && !canContinueBuild && (
-              <ShortcutTooltip label={executeStatus === "error" ? "Retry Build" : "Start Building"} keys={["cmd", "shift", "B"]} above>
-                <Button
-                  onClick={onStartBuilding}
-                  disabled={isStartingExecute}
-                >
+              <ShortcutTooltip
+                label={executeStatus === "error" ? "Retry Build" : "Start Building"}
+                keys={["cmd", "shift", "B"]}
+                above
+              >
+                <Button onClick={onStartBuilding} disabled={isStartingExecute}>
                   {isStartingExecute ? (
                     <Loader2Icon className="mr-2 size-4 animate-spin" />
                   ) : (
@@ -221,11 +241,7 @@ export function NextStepsBar({
               </ShortcutTooltip>
             )}
             {canStartRisk && (
-              <Button
-                variant="outline"
-                onClick={onStartRisk}
-                disabled={isStartingRisk}
-              >
+              <Button variant="outline" onClick={onStartRisk} disabled={isStartingRisk}>
                 {isStartingRisk ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (
@@ -235,11 +251,7 @@ export function NextStepsBar({
               </Button>
             )}
             {canStartReview && (
-              <Button
-                variant="outline"
-                onClick={onStartReview}
-                disabled={isStartingReview}
-              >
+              <Button variant="outline" onClick={onStartReview} disabled={isStartingReview}>
                 {isStartingReview ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (
@@ -264,21 +276,14 @@ export function NextStepsBar({
             )}
             {canMerge && (
               <ShortcutTooltip label="Merge & Archive" keys={["cmd", "shift", "M"]} above>
-                <Button
-                  variant="outline"
-                  onClick={() => setMergeDialogOpen(true)}
-                >
+                <Button variant="outline" onClick={() => setMergeDialogOpen(true)}>
                   <GitMergeIcon className="mr-2 size-4" />
                   Merge &amp; Archive
                 </Button>
               </ShortcutTooltip>
             )}
             {canStartRetro && (
-              <Button
-                variant="outline"
-                onClick={onStartRetro}
-                disabled={isStartingRetro}
-              >
+              <Button variant="outline" onClick={onStartRetro} disabled={isStartingRetro}>
                 {isStartingRetro ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (
@@ -318,16 +323,20 @@ export function NextStepsBar({
         />
       )}
 
-      {showSessionPrompt && canStartWorkflowSession && onStartWorkflowSession && featureId != null && projectId != null && (
-        <PromptWithModelPicker
-          featureId={featureId}
-          projectId={projectId}
-          agentType="session"
-          disabled={isStartingWorkflowSession}
-          splitSendActions={sessionSplitActions}
-          promptBarRef={sessionPromptRef}
-        />
-      )}
+      {showSessionPrompt &&
+        canStartWorkflowSession &&
+        onStartWorkflowSession &&
+        featureId != null &&
+        projectId != null && (
+          <PromptWithModelPicker
+            featureId={featureId}
+            projectId={projectId}
+            agentType="session"
+            disabled={isStartingWorkflowSession}
+            splitSendActions={sessionSplitActions}
+            promptBarRef={sessionPromptRef}
+          />
+        )}
 
       {canMerge && (
         <MergeArchiveDialog

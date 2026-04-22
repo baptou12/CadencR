@@ -4,26 +4,17 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
 }
 
-function optionalString(
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined {
+function optionalString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
 }
 
-function optionalNumber(
-  record: Record<string, unknown>,
-  key: string,
-): number | undefined {
+function optionalNumber(record: Record<string, unknown>, key: string): number | undefined {
   const value = record[key];
   return typeof value === "number" ? value : undefined;
 }
 
-function optionalArray(
-  record: Record<string, unknown>,
-  key: string,
-): unknown[] | undefined {
+function optionalArray(record: Record<string, unknown>, key: string): unknown[] | undefined {
   const value = record[key];
   return Array.isArray(value) ? value : undefined;
 }
@@ -98,9 +89,7 @@ export function parseModelPayload(payload: unknown): {
   };
 }
 
-export function parseProviderPayload(
-  payload: unknown,
-): { provider?: string } | null {
+export function parseProviderPayload(payload: unknown): { provider?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return { provider: optionalString(record, "provider") };
@@ -132,9 +121,7 @@ export function parseFeatureUpdatedPayload(
   };
 }
 
-export function parseMessageBlocksPayload(
-  payload: unknown,
-): { blocks: unknown[] } | null {
+export function parseMessageBlocksPayload(payload: unknown): { blocks: unknown[] } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return { blocks: optionalArray(record, "blocks") ?? [] };
@@ -232,9 +219,7 @@ export function parseFeatureAutoNamingPayload(
   };
 }
 
-export function parseClearedPayload(
-  payload: unknown,
-): { previous_session_id?: string } | null {
+export function parseClearedPayload(payload: unknown): { previous_session_id?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return { previous_session_id: optionalString(record, "previous_session_id") };

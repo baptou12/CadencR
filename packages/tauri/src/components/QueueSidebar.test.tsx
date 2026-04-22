@@ -71,9 +71,42 @@ describe("QueueSidebar", () => {
         title: "My Plan",
         summary: "A summary",
         phases: [
-          { id: 10, step_number: 1, title: "Setup DB", phase_type: "execute", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: null, status: "pending" },
-          { id: 11, step_number: 2, title: "Add API", phase_type: "execute", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: 3, status: "pending" },
-          { id: 12, step_number: 3, title: "Write tests", phase_type: "review", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: null, status: "pending" },
+          {
+            id: 10,
+            step_number: 1,
+            title: "Setup DB",
+            phase_type: "execute",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: null,
+            status: "pending",
+          },
+          {
+            id: 11,
+            step_number: 2,
+            title: "Add API",
+            phase_type: "execute",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: 3,
+            status: "pending",
+          },
+          {
+            id: 12,
+            step_number: 3,
+            title: "Write tests",
+            phase_type: "review",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: null,
+            status: "pending",
+          },
         ],
       },
     });
@@ -96,7 +129,18 @@ describe("QueueSidebar", () => {
         id: 1,
         title: "Plan",
         phases: [
-          { id: 10, step_number: 1, title: "Phase 1", phase_type: "execute", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: null, status: null },
+          {
+            id: 10,
+            step_number: 1,
+            title: "Phase 1",
+            phase_type: "execute",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: null,
+            status: null,
+          },
         ],
       },
     });
@@ -116,7 +160,18 @@ describe("QueueSidebar", () => {
         id: 1,
         title: "Plan",
         phases: [
-          { id: 10, step_number: 1, title: "Draft Phase", phase_type: "execute", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: null, status: null },
+          {
+            id: 10,
+            step_number: 1,
+            title: "Draft Phase",
+            phase_type: "execute",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: null,
+            status: null,
+          },
         ],
       },
     });
@@ -224,7 +279,13 @@ describe("QueueSidebar", () => {
     const onRetryItem = vi.fn();
     const onSkipItem = vi.fn();
     const queue: QueueItem[] = [
-      makeItem({ id: 1, item_type: "execute", phase_title: "Failed phase", status: "error", order_index: 0 }),
+      makeItem({
+        id: 1,
+        item_type: "execute",
+        phase_title: "Failed phase",
+        status: "error",
+        order_index: 0,
+      }),
     ];
     render(
       <QueueSidebar
@@ -244,9 +305,7 @@ describe("QueueSidebar", () => {
     const queue: QueueItem[] = [
       makeItem({ id: 5, item_type: "execute", status: "error", order_index: 0 }),
     ];
-    render(
-      <QueueSidebar {...defaultProps} queue={queue} onRetryItem={onRetryItem} />,
-    );
+    render(<QueueSidebar {...defaultProps} queue={queue} onRetryItem={onRetryItem} />);
     await user.click(screen.getByText("Retry"));
     expect(onRetryItem).toHaveBeenCalledWith(5);
   });
@@ -257,9 +316,7 @@ describe("QueueSidebar", () => {
     const queue: QueueItem[] = [
       makeItem({ id: 7, item_type: "execute", status: "error", order_index: 0 }),
     ];
-    render(
-      <QueueSidebar {...defaultProps} queue={queue} onSkipItem={onSkipItem} />,
-    );
+    render(<QueueSidebar {...defaultProps} queue={queue} onSkipItem={onSkipItem} />);
     await user.click(screen.getByText("Skip"));
     expect(onSkipItem).toHaveBeenCalledWith(7);
   });
@@ -270,7 +327,13 @@ describe("QueueSidebar", () => {
 
   it("renders without crashing when item has an unknown status", () => {
     const queue: QueueItem[] = [
-      makeItem({ id: 1, item_type: "execute", phase_title: "Mystery", status: "unknown_status" as QueueItem["status"], order_index: 0 }),
+      makeItem({
+        id: 1,
+        item_type: "execute",
+        phase_title: "Mystery",
+        status: "unknown_status" as QueueItem["status"],
+        order_index: 0,
+      }),
     ];
     render(<QueueSidebar {...defaultProps} queue={queue} />);
     expect(screen.getByText("Mystery")).toBeInTheDocument();
@@ -284,7 +347,24 @@ describe("QueueSidebar", () => {
     mockGetPrd.mockReturnValue({ data: { prd: "# Requirements\nSome PRD content" } });
     // Need plan or queue to avoid returning null
     mockGetPlan.mockReturnValue({
-      data: { id: 1, title: "Plan", phases: [{ id: 10, step_number: 1, title: "P1", phase_type: "execute", prompt: null, commit_message: null, implementation_notes: null, deviations: null, complexity: null, status: null }] },
+      data: {
+        id: 1,
+        title: "Plan",
+        phases: [
+          {
+            id: 10,
+            step_number: 1,
+            title: "P1",
+            phase_type: "execute",
+            prompt: null,
+            commit_message: null,
+            implementation_notes: null,
+            deviations: null,
+            complexity: null,
+            status: null,
+          },
+        ],
+      },
     });
 
     render(<QueueSidebar {...defaultProps} />);

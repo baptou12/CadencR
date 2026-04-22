@@ -70,9 +70,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     getSession(sessionId).conn?.sendJson(data);
   }
 
-  function queuePrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean): void {
+  function queuePrompt(
+    sessionId: string,
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    useWorktree?: boolean,
+  ): void {
     const session = getSession(sessionId);
-    set(updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, images, useWorktree)));
+    set(
+      updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, images, useWorktree)),
+    );
   }
 
   function flushQueuedInitActions(sessionId: string): void {
@@ -110,23 +117,26 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             session.pendingWsRequests.clear();
           }
           const wasRunning = session != null && isTurnActive(session.lifecycle);
-          const errorBlock = wasRunning ? {
-            id: `ws-err-close-${Date.now()}`,
-            type: "text" as const,
-            content: "Connection lost while streaming. Reconnecting…",
-            isError: true,
-          } : undefined;
-          set(updateSession(get(), sessionId, {
-            conn: null,
-            isConnected: false,
-            serverSessionId: "",
-            runtimeSessionId: "",
-            lifecycle: transitionTurn(
-              session?.lifecycle ?? createSessionEntry().lifecycle,
-              { type: "connection_lost" },
-            ),
-            blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
-          }));
+          const errorBlock = wasRunning
+            ? {
+                id: `ws-err-close-${Date.now()}`,
+                type: "text" as const,
+                content: "Connection lost while streaming. Reconnecting…",
+                isError: true,
+              }
+            : undefined;
+          set(
+            updateSession(get(), sessionId, {
+              conn: null,
+              isConnected: false,
+              serverSessionId: "",
+              runtimeSessionId: "",
+              lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
+                type: "connection_lost",
+              }),
+              blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
+            }),
+          );
           scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
         onError: () => {
@@ -135,16 +145,17 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             for (const cb of session.pendingWsRequests.values()) cb(null);
             session.pendingWsRequests.clear();
           }
-          set(updateSession(get(), sessionId, {
-            conn: null,
-            isConnected: false,
-            serverSessionId: "",
-            runtimeSessionId: "",
-            lifecycle: transitionTurn(
-              session?.lifecycle ?? createSessionEntry().lifecycle,
-              { type: "turn_errored" },
-            ),
-          }));
+          set(
+            updateSession(get(), sessionId, {
+              conn: null,
+              isConnected: false,
+              serverSessionId: "",
+              runtimeSessionId: "",
+              lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
+                type: "turn_errored",
+              }),
+            }),
+          );
           scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
         onMessage: (data) => {
@@ -163,17 +174,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             console.error("[ws-session] handleEnvelope error:", err);
             const session = getSession(sessionId);
             session.streamingState.counter += 1;
-            set(updateSession(get(), sessionId, {
-              blocks: [
-                ...session.blocks,
-                {
-                  id: `ws-err-${session.streamingState.counter}`,
-                  type: "text" as const,
-                  content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
-                  isError: true,
-                },
-              ],
-            }));
+            set(
+              updateSession(get(), sessionId, {
+                blocks: [
+                  ...session.blocks,
+                  {
+                    id: `ws-err-${session.streamingState.counter}`,
+                    type: "text" as const,
+                    content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
+                    isError: true,
+                  },
+                ],
+              }),
+            );
           }
         },
       });
@@ -181,7 +194,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set({
         sessions: {
           ...get().sessions,
-          [sessionId]: { ...entry, conn, streamingState: existing?.streamingState ?? entry.streamingState },
+          [sessionId]: {
+            ...entry,
+            conn,
+            streamingState: existing?.streamingState ?? entry.streamingState,
+          },
         },
       });
     },
@@ -232,7 +249,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       sendRaw(sessionId, createSessionInit(config));
     },
 
-    sendPrompt(sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) {
+    sendPrompt(
+      sessionId: string,
+      text: string,
+      images?: Array<{ base64: string; mimeType: string }>,
+      useWorktree?: boolean,
+    ) {
       const session = getSession(sessionId);
       if (session.serverSessionId) {
         sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
@@ -244,45 +266,58 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       set(updateSession(get(), sessionId, appendLocalUserMessage(session, content)));
     },
 
-    respondToPermission(sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) {
+    respondToPermission(
+      sessionId: string,
+      requestId: string,
+      decision: PermissionDecisionValue,
+      feedback?: string,
+    ) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createPermissionRespond(session.serverSessionId, requestId, decision, undefined, feedback));
-      set(updateSession(get(), sessionId, {
-        pendingPermission: null,
-        pendingRequestId: "",
-        lifecycle: transitionTurn(session.lifecycle, {
-          type: decision === "deny" ? "permission_denied" : "permission_allowed",
+      sendRaw(
+        sessionId,
+        createPermissionRespond(session.serverSessionId, requestId, decision, undefined, feedback),
+      );
+      set(
+        updateSession(get(), sessionId, {
+          pendingPermission: null,
+          pendingRequestId: "",
+          lifecycle: transitionTurn(session.lifecycle, {
+            type: decision === "deny" ? "permission_denied" : "permission_allowed",
+          }),
         }),
-      }));
+      );
     },
 
     respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createPermissionRespond(
-        session.serverSessionId,
-        session.pendingRequestId,
-        "allow_once",
-        { ...session.pendingQuestionToolInput, answers: response },
-      ));
+      sendRaw(
+        sessionId,
+        createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
+          ...session.pendingQuestionToolInput,
+          answers: response,
+        }),
+      );
 
       const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);
       session.streamingState.counter += 1;
-      set(updateSession(get(), sessionId, {
-        blocks: [
-          ...session.blocks,
-          {
-            id: `ws-user-${session.streamingState.counter}`,
-            type: "user_message" as const,
-            content: formatted,
-            isError: false,
-            createdAt: new Date().toISOString(),
-          },
-        ],
-        pendingQuestions: [],
-        pendingQuestionToolInput: {},
-        pendingRequestId: "",
-        lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
-      }));
+      set(
+        updateSession(get(), sessionId, {
+          blocks: [
+            ...session.blocks,
+            {
+              id: `ws-user-${session.streamingState.counter}`,
+              type: "user_message" as const,
+              content: formatted,
+              isError: false,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+          pendingQuestions: [],
+          pendingQuestionToolInput: {},
+          pendingRequestId: "",
+          lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
+        }),
+      );
     },
 
     interrupt(sessionId: string) {
@@ -300,14 +335,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }
       session.conn.close();
 
-      set(updateSession(get(), sessionId, {
-        conn: null,
-        isConnected: false,
-        lifecycle: transitionTurn(session.lifecycle, {
-          type: "turn_ended",
-          reason: "completed",
+      set(
+        updateSession(get(), sessionId, {
+          conn: null,
+          isConnected: false,
+          lifecycle: transitionTurn(session.lifecycle, {
+            type: "turn_ended",
+            reason: "completed",
+          }),
         }),
-      }));
+      );
     },
 
     clearSession(sessionId: string) {
@@ -360,10 +397,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     retryWorktreeSetup(sessionId: string) {
       const session = getSession(sessionId);
-      sendRaw(sessionId, createEnvelope("session", "retry_worktree_setup", {
-        session_id: session.serverSessionId,
-        feature_id: session.featureId,
-      }));
+      sendRaw(
+        sessionId,
+        createEnvelope("session", "retry_worktree_setup", {
+          session_id: session.serverSessionId,
+          feature_id: session.featureId,
+        }),
+      );
     },
 
     requestSlashCommands(sessionId: string, cwd: string, provider?: string) {
@@ -371,16 +411,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const resolvedProvider = provider ?? session.runtimeProvider ?? session.currentProviderId;
       const nextKey = buildSlashCommandsKey(cwd, resolvedProvider);
       const sameTarget = session.slashCommandsKey === nextKey;
-      if ((sameTarget && session.slashCommands.length > 0) || (sameTarget && session.slashCommandsLoading)) {
+      if (
+        (sameTarget && session.slashCommands.length > 0) ||
+        (sameTarget && session.slashCommandsLoading)
+      ) {
         return;
       }
       const envelope = createCommandsGet(cwd, resolvedProvider);
-      set(updateSession(get(), sessionId, {
-        slashCommands: sameTarget ? session.slashCommands : [],
-        slashCommandsLoading: true,
-        slashCommandsKey: nextKey,
-        slashCommandsRequestRef: envelope.id,
-      }));
+      set(
+        updateSession(get(), sessionId, {
+          slashCommands: sameTarget ? session.slashCommands : [],
+          slashCommandsLoading: true,
+          slashCommandsKey: nextKey,
+          slashCommandsRequestRef: envelope.id,
+        }),
+      );
       sendRaw(sessionId, envelope);
     },
 

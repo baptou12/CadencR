@@ -30,9 +30,7 @@ describe("WorkflowActionsBar", () => {
   });
 
   it("returns null when workflow is idle", () => {
-    const { container } = render(
-      <WorkflowActionsBar {...defaultProps} workflowStatus="idle" />,
-    );
+    const { container } = render(<WorkflowActionsBar {...defaultProps} workflowStatus="idle" />);
     expect(container.innerHTML).toBe("");
   });
 
@@ -99,7 +97,11 @@ describe("WorkflowActionsBar", () => {
 
   it("does not show Merge & Archive when not completed", () => {
     render(
-      <WorkflowActionsBar {...defaultProps} workflowStatus="building" noExecuteAgentRunning={true} />,
+      <WorkflowActionsBar
+        {...defaultProps}
+        workflowStatus="building"
+        noExecuteAgentRunning={true}
+      />,
     );
     expect(screen.queryByText("Merge & Archive")).not.toBeInTheDocument();
   });
@@ -117,17 +119,13 @@ describe("WorkflowActionsBar", () => {
   });
 
   it("shows disabled Run Retrospective button when completed", () => {
-    render(
-      <WorkflowActionsBar {...defaultProps} workflowStatus="completed" />,
-    );
+    render(<WorkflowActionsBar {...defaultProps} workflowStatus="completed" />);
     const retroButton = screen.getByText("Run Retrospective").closest("button");
     expect(retroButton).toBeDisabled();
   });
 
   it("does not show Run Retrospective when building", () => {
-    render(
-      <WorkflowActionsBar {...defaultProps} workflowStatus="building" />,
-    );
+    render(<WorkflowActionsBar {...defaultProps} workflowStatus="building" />);
     expect(screen.queryByText("Run Retrospective")).not.toBeInTheDocument();
   });
 

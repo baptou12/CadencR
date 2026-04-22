@@ -10,7 +10,11 @@ interface ProviderIconProps {
   className?: string;
 }
 
-export function ProviderIcon({ providerId, alt, className = "size-4 rounded-sm" }: ProviderIconProps) {
+export function ProviderIcon({
+  providerId,
+  alt,
+  className = "size-4 rounded-sm",
+}: ProviderIconProps) {
   const src = getProviderIconSrc(providerId);
   if (!src) return null;
   return <img src={src} alt={alt} className={className} />;

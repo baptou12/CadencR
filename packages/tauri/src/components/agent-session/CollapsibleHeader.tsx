@@ -83,7 +83,10 @@ export function CollapsibleHeader({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-green-400"
-            onClick={(e) => { e.stopPropagation(); onMarkDone(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onMarkDone();
+            }}
           >
             <CheckCircleIcon className="size-3" />
             Mark Done
@@ -94,7 +97,10 @@ export function CollapsibleHeader({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-2 text-xs"
-            onClick={(e) => { e.stopPropagation(); onResume(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onResume();
+            }}
           >
             <RotateCcwIcon className="size-3" />
             Resume
@@ -105,7 +111,10 @@ export function CollapsibleHeader({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-red-400"
-            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
           >
             <Trash2Icon className="size-3" />
             Remove
@@ -123,7 +132,11 @@ export function CollapsibleHeader({
             }}
             title={maximized ? "Minimize" : "Maximize"}
           >
-            {maximized ? <Minimize2Icon className="size-3" /> : <Maximize2Icon className="size-3" />}
+            {maximized ? (
+              <Minimize2Icon className="size-3" />
+            ) : (
+              <Maximize2Icon className="size-3" />
+            )}
           </Button>
         )}
       </div>

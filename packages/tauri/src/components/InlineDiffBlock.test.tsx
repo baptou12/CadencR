@@ -11,11 +11,7 @@ vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
 describe("InlineDiffBlock", () => {
   it("shows 'No changes' when content is identical", () => {
     render(
-      <InlineDiffBlock
-        filePath="src/foo.ts"
-        oldContent="const x = 1;"
-        newContent="const x = 1;"
-      />
+      <InlineDiffBlock filePath="src/foo.ts" oldContent="const x = 1;" newContent="const x = 1;" />,
     );
     expect(screen.getByText("No changes")).toBeInTheDocument();
   });
@@ -26,7 +22,7 @@ describe("InlineDiffBlock", () => {
         filePath="src/example.ts"
         oldContent="const x = 1;"
         newContent="const x = 2;"
-      />
+      />,
     );
     expect(screen.getByText("src/example.ts")).toBeInTheDocument();
   });
@@ -37,18 +33,14 @@ describe("InlineDiffBlock", () => {
         filePath="test.ts"
         oldContent={"line1\nline2\n"}
         newContent={"line1\nline3\n"}
-      />
+      />,
     );
     expect(screen.getByTestId("diff-view")).toBeInTheDocument();
   });
 
   it("displays addition and deletion counts", () => {
     render(
-      <InlineDiffBlock
-        filePath="test.ts"
-        oldContent={"a\nb\nc\n"}
-        newContent={"a\nx\ny\nc\n"}
-      />
+      <InlineDiffBlock filePath="test.ts" oldContent={"a\nb\nc\n"} newContent={"a\nx\ny\nc\n"} />,
     );
     expect(screen.getByText("+2")).toBeInTheDocument();
     expect(screen.getByText("-1")).toBeInTheDocument();
@@ -61,7 +53,7 @@ describe("InlineDiffBlock", () => {
         oldContent="old"
         newContent="new"
         basePath="/home/user/project"
-      />
+      />,
     );
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
   });

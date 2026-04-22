@@ -16,9 +16,7 @@ function makeAttachment(overrides: Partial<ImageAttachment> = {}): ImageAttachme
 
 describe("ImageAttachmentPreview", () => {
   it("renders nothing when attachments is empty", () => {
-    const { container } = render(
-      <ImageAttachmentPreview attachments={[]} onRemove={vi.fn()} />
-    );
+    const { container } = render(<ImageAttachmentPreview attachments={[]} onRemove={vi.fn()} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -48,7 +46,7 @@ describe("ImageAttachmentPreview", () => {
   it("applies custom className", () => {
     const att = makeAttachment();
     const { container } = render(
-      <ImageAttachmentPreview attachments={[att]} onRemove={vi.fn()} className="extra-class" />
+      <ImageAttachmentPreview attachments={[att]} onRemove={vi.fn()} className="extra-class" />,
     );
     expect(container.firstChild).toHaveClass("extra-class");
   });

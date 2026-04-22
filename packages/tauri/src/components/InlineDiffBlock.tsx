@@ -14,7 +14,10 @@ interface InlineDiffBlockProps {
 }
 
 /** Count added/removed lines by simple line-by-line comparison. */
-function countLineChanges(oldContent: string, newContent: string): { additions: number; deletions: number } {
+function countLineChanges(
+  oldContent: string,
+  newContent: string,
+): { additions: number; deletions: number } {
   const oldLines = oldContent.split("\n");
   const newLines = newContent.split("\n");
   const oldSet = new Map<string, number>();
@@ -41,7 +44,13 @@ function countLineChanges(oldContent: string, newContent: string): { additions: 
  * Compact inline diff block for displaying file changes during agent execution.
  * Uses CodeMirror in read-only unified mode with the Cadence theme.
  */
-export function InlineDiffBlock({ filePath, oldContent, newContent, basePath, toolName }: InlineDiffBlockProps) {
+export function InlineDiffBlock({
+  filePath,
+  oldContent,
+  newContent,
+  basePath,
+  toolName,
+}: InlineDiffBlockProps) {
   const ToolIcon = toolName === "Write" ? FilePlusIcon : PencilIcon;
   const displayPath = useMemo(() => toRelativePath(filePath, basePath), [filePath, basePath]);
 
@@ -67,7 +76,9 @@ export function InlineDiffBlock({ filePath, oldContent, newContent, basePath, to
             <span className="font-medium text-[#8be9fd]">{toolName}</span>
           </>
         )}
-        <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>{displayPath}</span>
+        <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>
+          {displayPath}
+        </span>
         <span className="text-[#50fa7b]">+{additions}</span>
         <span className="text-[#ff5555]">-{deletions}</span>
       </div>

@@ -26,7 +26,8 @@ export const LOADER_STYLE_DETAILS: readonly LoaderStyleOption[] = [
   {
     value: "usage-glow",
     label: "Usage Glow",
-    description: "Hide the square and let the context usage bar carry a subtle neon pulse while the agent is running.",
+    description:
+      "Hide the square and let the context usage bar carry a subtle neon pulse while the agent is running.",
   },
 ] as const;
 

@@ -22,7 +22,11 @@ interface AgentStreamProps {
 function isHiddenByRenderer(block: AgentBlockData): boolean {
   if (block.type === "thinking") return !block.content.trim();
   if (block.type !== "tool_result") return false;
-  if (block.sourceToolName === "Bash" || block.sourceToolName === "Agent" || block.sourceToolName === "Task") {
+  if (
+    block.sourceToolName === "Bash" ||
+    block.sourceToolName === "Agent" ||
+    block.sourceToolName === "Task"
+  ) {
     return false;
   }
   return !isFileChangeTool(block.sourceToolName);
@@ -73,7 +77,9 @@ export const AgentStream = memo(function AgentStream({
       {displayBlocks.map((block) => (
         <div key={block.id}>
           {(block.type === "text" || block.type === "user_message") && block.createdAt && (
-            <div className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}>
+            <div
+              className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}
+            >
               <span className="font-medium">
                 {block.type === "user_message" ? "User" : (block.model ?? "unknown")}
               </span>

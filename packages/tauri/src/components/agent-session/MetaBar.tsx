@@ -23,7 +23,11 @@ import {
 import type { TodoItem } from "@/types/agent";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
-import { THINKING_EFFORT_LABELS, nextThinkingEffort, type ThinkingEffortLevel } from "@/shared/thinking-effort";
+import {
+  THINKING_EFFORT_LABELS,
+  nextThinkingEffort,
+  type ThinkingEffortLevel,
+} from "@/shared/thinking-effort";
 
 interface Model {
   id: string;
@@ -76,8 +80,7 @@ const CHIP =
   "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
 const MODEL_GROUP =
   "inline-flex h-8 items-stretch rounded-md border border-violet-400/15 bg-violet-500/12 text-[11px] font-medium text-violet-300 shadow-sm";
-const MODEL_SEGMENT =
-  "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
+const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
 export function MetaBar({
   showAutoScrollChip,
@@ -124,9 +127,7 @@ export function MetaBar({
     <div
       className={cn(
         "flex items-center gap-1.5",
-        isStandalone
-          ? "px-3 py-2"
-          : "relative -mt-6 px-3 py-3 backdrop-blur-sm",
+        isStandalone ? "px-3 py-2" : "relative -mt-6 px-3 py-3 backdrop-blur-sm",
       )}
       style={
         isStandalone
@@ -157,7 +158,10 @@ export function MetaBar({
 
       {/* Mode chip */}
       {onPermissionModeToggle && (
-        <ShortcutTooltip label={permissionMode === "plan" ? "Plan mode" : "Auto mode"} keys={["shift", "Tab"]}>
+        <ShortcutTooltip
+          label={permissionMode === "plan" ? "Plan mode" : "Auto mode"}
+          keys={["shift", "Tab"]}
+        >
           <button
             type="button"
             onClick={onPermissionModeToggle}
@@ -169,7 +173,11 @@ export function MetaBar({
                 : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
             )}
           >
-            {permissionMode === "plan" ? <ClipboardList className="size-3" /> : <Zap className="size-3" />}
+            {permissionMode === "plan" ? (
+              <ClipboardList className="size-3" />
+            ) : (
+              <Zap className="size-3" />
+            )}
             {permissionMode === "plan" ? "Plan" : "Auto"}
           </button>
         </ShortcutTooltip>
@@ -203,7 +211,11 @@ export function MetaBar({
                   type="button"
                   className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-violet-500/16")}
                 >
-                  <ProviderIcon providerId={displayProviderId} alt={currentModelLabel} className="size-3.5 rounded-sm shrink-0" />
+                  <ProviderIcon
+                    providerId={displayProviderId}
+                    alt={currentModelLabel}
+                    className="size-3.5 rounded-sm shrink-0"
+                  />
                   <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
                   <ChevronDownIcon className="size-3 shrink-0" />
                 </button>
@@ -217,9 +229,17 @@ export function MetaBar({
                     className="text-xs data-[disabled]:text-muted-foreground"
                     disabled={provider.disabled}
                   >
-                    <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
-                    {provider.id === currentProviderId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
+                    <ProviderIcon
+                      providerId={provider.id}
+                      alt={provider.label}
+                      className="size-3.5 rounded-sm"
+                    />
+                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>
+                      {provider.label}
+                    </span>
+                    {provider.id === currentProviderId && (
+                      <CheckIcon className="ml-1 size-3 text-violet-400" />
+                    )}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="min-w-[220px]">
                     {provider.disabled ? (
@@ -227,75 +247,106 @@ export function MetaBar({
                         Coming soon
                       </DropdownMenuItem>
                     ) : null}
-                    {!provider.disabled && provider.models.map((m) => (
-                      <DropdownMenuItem
-                        key={m.id}
-                        onClick={() => {
-                          if (canChangeProvider && onProviderChange && provider.id !== currentProviderId) {
-                            onProviderChange(provider.id);
-                          }
-                          onModelChange(m.id);
-                        }}
-                        className="flex items-start justify-between gap-2 text-xs"
-                        title={m.description}
-                      >
-                        <span className="flex items-start gap-2 min-w-0">
-                          <ProviderIcon providerId={provider.id} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="truncate">{m.label}</span>
-                            {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+                    {!provider.disabled &&
+                      provider.models.map((m) => (
+                        <DropdownMenuItem
+                          key={m.id}
+                          onClick={() => {
+                            if (
+                              canChangeProvider &&
+                              onProviderChange &&
+                              provider.id !== currentProviderId
+                            ) {
+                              onProviderChange(provider.id);
+                            }
+                            onModelChange(m.id);
+                          }}
+                          className="flex items-start justify-between gap-2 text-xs"
+                          title={m.description}
+                        >
+                          <span className="flex items-start gap-2 min-w-0">
+                            <ProviderIcon
+                              providerId={provider.id}
+                              alt={m.label}
+                              className="size-3.5 rounded-sm mt-0.5 shrink-0"
+                            />
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="truncate">{m.label}</span>
+                              {m.description && (
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {m.description}
+                                </span>
+                              )}
+                            </span>
                           </span>
-                        </span>
-                        {provider.id === currentProviderId && m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
-                      </DropdownMenuItem>
-                    ))}
+                          {provider.id === currentProviderId && m.id === currentModelId && (
+                            <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               ))}
 
-              {!providers.length && models.map((m) => (
-                <DropdownMenuItem
-                  key={m.id}
-                  onClick={() => onModelChange(m.id)}
-                  className="flex items-start justify-between gap-2 text-xs"
-                  title={m.description}
-                >
-                  <span className="flex items-start gap-2 min-w-0">
-                    <ProviderIcon providerId={displayProviderId} alt={m.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate">{m.label}</span>
-                      {m.description && <span className="truncate text-[11px] text-muted-foreground">{m.description}</span>}
+              {!providers.length &&
+                models.map((m) => (
+                  <DropdownMenuItem
+                    key={m.id}
+                    onClick={() => onModelChange(m.id)}
+                    className="flex items-start justify-between gap-2 text-xs"
+                    title={m.description}
+                  >
+                    <span className="flex items-start gap-2 min-w-0">
+                      <ProviderIcon
+                        providerId={displayProviderId}
+                        alt={m.label}
+                        className="size-3.5 rounded-sm mt-0.5 shrink-0"
+                      />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="truncate">{m.label}</span>
+                        {m.description && (
+                          <span className="truncate text-[11px] text-muted-foreground">
+                            {m.description}
+                          </span>
+                        )}
+                      </span>
                     </span>
-                  </span>
-                  {m.id === currentModelId && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
-                </DropdownMenuItem>
-              ))}
+                    {m.id === currentModelId && (
+                      <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
+                    )}
+                  </DropdownMenuItem>
+                ))}
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {supportedThinkingEfforts.length > 0 && onThinkingEffortChange && displayedThinkingEffort && (
-            <>
-              <div className="w-px bg-violet-300/15" aria-hidden="true" />
-              <ShortcutTooltip
-                label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
-                keys={["ctrl", "T"]}
-                showOnFocus
-              >
-                <button
-                  type="button"
-                  onClick={handleThinkingEffortCycle}
-                  className={cn(MODEL_SEGMENT, "rounded-r-md px-2 text-violet-300 hover:bg-violet-500/10")}
-                  aria-label="Cycle thinking effort"
+          {supportedThinkingEfforts.length > 0 &&
+            onThinkingEffortChange &&
+            displayedThinkingEffort && (
+              <>
+                <div className="w-px bg-violet-300/15" aria-hidden="true" />
+                <ShortcutTooltip
+                  label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
+                  keys={["ctrl", "T"]}
+                  showOnFocus
                 >
-                  <ThinkingEffortBars
-                    levels={supportedThinkingEfforts}
-                    value={selectedThinkingEffort}
-                    compact
-                  />
-                </button>
-              </ShortcutTooltip>
-            </>
-          )}
+                  <button
+                    type="button"
+                    onClick={handleThinkingEffortCycle}
+                    className={cn(
+                      MODEL_SEGMENT,
+                      "rounded-r-md px-2 text-violet-300 hover:bg-violet-500/10",
+                    )}
+                    aria-label="Cycle thinking effort"
+                  >
+                    <ThinkingEffortBars
+                      levels={supportedThinkingEfforts}
+                      value={selectedThinkingEffort}
+                      compact
+                    />
+                  </button>
+                </ShortcutTooltip>
+              </>
+            )}
         </div>
       )}
 

@@ -14,9 +14,7 @@ export function Sidebar() {
   const { setCollapsed } = useSidebarCollapsed();
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
-  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(
-    null,
-  );
+  const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
 
   // Detect active project/feature from current route
   const routerState = useRouterState();
@@ -38,9 +36,7 @@ export function Sidebar() {
 
   const getNavItems = () => {
     if (!sidebarRef.current) return [];
-    return Array.from(
-      sidebarRef.current.querySelectorAll("[data-nav-item]"),
-    ) as HTMLElement[];
+    return Array.from(sidebarRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
   };
 
   const moveFocus = (direction: "up" | "down") => {
@@ -118,16 +114,11 @@ export function Sidebar() {
         onDoubleClick={toggleMaximize}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <img
-            src={logoSvg}
-            alt="Cadence"
-            className="size-11 mr-2 shrink-0 -translate-y-px"
-          />
+          <img src={logoSvg} alt="Cadence" className="size-11 mr-2 shrink-0 -translate-y-px" />
           <span
             className="text-2xl font-bold uppercase tracking-widest leading-none"
             style={{
-              fontFamily:
-                "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
+              fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
             }}
           >
             Cadence
@@ -138,9 +129,7 @@ export function Sidebar() {
             </span>
           )}
         </div>
-        <div
-          className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-        >
+        <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <Link to="/settings">
             <Button variant="ghost" size="icon" className="size-7">
               <Settings className="size-4" />

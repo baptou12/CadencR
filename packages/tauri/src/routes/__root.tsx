@@ -1,22 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
-import {
-  createRootRoute,
-  Outlet,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
+import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import type { PanelSize } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -58,12 +49,16 @@ function RootLayout() {
     [sidebarCollapsed],
   );
 
-  useEffect(() => { leftSidebarRef.current?.focus(); }, []);
+  useEffect(() => {
+    leftSidebarRef.current?.focus();
+  }, []);
   useEffect(() => {
     useAppWsStore.getState().connect();
     return () => useAppWsStore.getState().disconnect();
   }, []);
-  useEffect(() => { void initNotificationPermission(); }, []);
+  useEffect(() => {
+    void initNotificationPermission();
+  }, []);
   useEffect(() => listenForNotificationClicks(navigate, queryClient), [navigate, queryClient]);
   const routerState = useRouterState();
   const routeParams = (routerState.location.pathname.match(
@@ -199,14 +194,14 @@ function RootLayout() {
   useHotkeys(
     "meta+escape",
     (e) => {
-        const store = useWsSessionStore.getState();
-        const sessions = store.sessions;
-        let stopped = false;
-        for (const sessionId of Object.keys(sessions)) {
-          if (isTurnActive(sessions[sessionId].lifecycle)) {
-            store.interrupt(sessionId);
-            stopped = true;
-          }
+      const store = useWsSessionStore.getState();
+      const sessions = store.sessions;
+      let stopped = false;
+      for (const sessionId of Object.keys(sessions)) {
+        if (isTurnActive(sessions[sessionId].lifecycle)) {
+          store.interrupt(sessionId);
+          stopped = true;
+        }
       }
       if (stopped) e.preventDefault();
     },
@@ -275,19 +270,25 @@ function RootLayout() {
       e.preventDefault();
       if (activeProjectId == null || activeFeatureId == null) return;
       try {
-        const features = await customInstance<Feature[]>({ method: "GET", url: `/api/features?project_id=${activeProjectId}` });
+        const features = await customInstance<Feature[]>({
+          method: "GET",
+          url: `/api/features?project_id=${activeProjectId}`,
+        });
         const feature = features.find((f) => f.id === activeFeatureId);
         if (!feature) return;
         // Pre-compute navigation target
         const idx = features.findIndex((f) => f.id === activeFeatureId);
         const remaining = features.filter((f) => f.id !== activeFeatureId);
-        const target = idx > 0 ? features[idx - 1] : remaining[0] ?? null;
+        const target = idx > 0 ? features[idx - 1] : (remaining[0] ?? null);
         if (feature.status === "archived") {
           deleteNavTargetRef.current = target?.id ?? null;
           setConfirmAction("delete");
         } else {
           // Check if feature is empty — if so, skip archive and go straight to delete
-          const { empty } = await customInstance<{ empty: boolean }>({ method: "GET", url: `/api/features/${activeFeatureId}/empty` });
+          const { empty } = await customInstance<{ empty: boolean }>({
+            method: "GET",
+            url: `/api/features/${activeFeatureId}/empty`,
+          });
           if (empty) {
             deleteNavTargetRef.current = target?.id ?? null;
             setConfirmAction("delete");
@@ -313,100 +314,110 @@ function RootLayout() {
   const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
   return (
-    <SidebarContext.Provider value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}>
-    <div className="flex h-screen">
-      <ResizablePanelGroup orientation="horizontal">
-        {!isSidebarCollapsed && (
-          <>
-            <ResizablePanel
-              defaultSize={defaultLeftSize}
-              minSize="200px"
-              maxSize="400px"
-              onResize={handleLeftResize}
-            >
-              <div
-                ref={leftSidebarRef}
-                data-focus-zone="left-sidebar"
-                tabIndex={0}
-                className="h-full outline-none"
-                onFocus={(e) => {
-                  // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
-                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                    const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
-                    if (firstItem) firstItem.focus();
-                  }
-                }}
+    <SidebarContext.Provider
+      value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}
+    >
+      <div className="flex h-screen">
+        <ResizablePanelGroup orientation="horizontal">
+          {!isSidebarCollapsed && (
+            <>
+              <ResizablePanel
+                defaultSize={defaultLeftSize}
+                minSize="200px"
+                maxSize="400px"
+                onResize={handleLeftResize}
               >
-                <Sidebar />
-              </div>
-            </ResizablePanel>
-            <ResizableHandle className="cursor-col-resize" />
-          </>
-        )}
-        <ResizablePanel>
-          <main
-            data-focus-zone="main-content"
-            tabIndex={0}
-            className="h-full overflow-hidden outline-none"
-            onFocus={(e) => {
-              // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
-              if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                const firstItem = e.currentTarget.querySelector("[data-nav-item]") as HTMLElement | null;
-                if (firstItem) {
-                  firstItem.focus();
-                } else {
-                  // Fallback for session view: focus the prompt bar textarea
-                  const textarea = e.currentTarget.querySelector("textarea") as HTMLElement | null;
-                  if (textarea) textarea.focus();
+                <div
+                  ref={leftSidebarRef}
+                  data-focus-zone="left-sidebar"
+                  tabIndex={0}
+                  className="h-full outline-none"
+                  onFocus={(e) => {
+                    // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+                    if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                      const firstItem = e.currentTarget.querySelector(
+                        "[data-nav-item]",
+                      ) as HTMLElement | null;
+                      if (firstItem) firstItem.focus();
+                    }
+                  }}
+                >
+                  <Sidebar />
+                </div>
+              </ResizablePanel>
+              <ResizableHandle className="cursor-col-resize" />
+            </>
+          )}
+          <ResizablePanel>
+            <main
+              data-focus-zone="main-content"
+              tabIndex={0}
+              className="h-full overflow-hidden outline-none"
+              onFocus={(e) => {
+                // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
+                if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                  const firstItem = e.currentTarget.querySelector(
+                    "[data-nav-item]",
+                  ) as HTMLElement | null;
+                  if (firstItem) {
+                    firstItem.focus();
+                  } else {
+                    // Fallback for session view: focus the prompt bar textarea
+                    const textarea = e.currentTarget.querySelector(
+                      "textarea",
+                    ) as HTMLElement | null;
+                    if (textarea) textarea.focus();
+                  }
                 }
-              }
-            }}
-          >
-            <Outlet />
-          </main>
-        </ResizablePanel>
-      </ResizablePanelGroup>
-      <CommandPalette
-        open={commandPaletteOpen}
-        onOpenChange={setCommandPaletteOpen}
-        activeProjectId={activeProjectId}
-        activeFeatureId={activeFeatureId}
-      />
-      <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-      <Toaster position="top-center" richColors />
-      <FocusRing />
-      <ConfirmDialog
-        open={confirmAction != null}
-        onOpenChange={(open) => { if (!open) setConfirmAction(null); }}
-        title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
-        description={confirmAction === "delete" ? "This cannot be undone." : undefined}
-        confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
-        variant={confirmAction === "delete" ? "destructive" : "default"}
-        onConfirm={() => {
-          if (activeFeatureId == null) return;
-          if (confirmAction === "delete") {
-            deleteFeatureMutation.mutate({ id: activeFeatureId });
-          } else {
-            archiveFeatureMutation.mutate({ id: activeFeatureId, status: "archived" });
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={appClose.showConfirm}
-        onOpenChange={appClose.setShowConfirm}
-        title="Quit Cadence?"
-        description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
-        confirmText="Quit"
-        variant="destructive"
-        onConfirm={appClose.confirmAndClose}
-      >
-        <ul className="text-sm text-muted-foreground space-y-1 py-2">
-          {appClose.runningAgents.map((agent) => (
-            <li key={agent.sessionId}>{agent.label}</li>
-          ))}
-        </ul>
-      </ConfirmDialog>
-    </div>
+              }}
+            >
+              <Outlet />
+            </main>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+        <CommandPalette
+          open={commandPaletteOpen}
+          onOpenChange={setCommandPaletteOpen}
+          activeProjectId={activeProjectId}
+          activeFeatureId={activeFeatureId}
+        />
+        <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
+        <Toaster position="top-center" richColors />
+        <FocusRing />
+        <ConfirmDialog
+          open={confirmAction != null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmAction(null);
+          }}
+          title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
+          description={confirmAction === "delete" ? "This cannot be undone." : undefined}
+          confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
+          variant={confirmAction === "delete" ? "destructive" : "default"}
+          onConfirm={() => {
+            if (activeFeatureId == null) return;
+            if (confirmAction === "delete") {
+              deleteFeatureMutation.mutate({ id: activeFeatureId });
+            } else {
+              archiveFeatureMutation.mutate({ id: activeFeatureId, status: "archived" });
+            }
+          }}
+        />
+        <ConfirmDialog
+          open={appClose.showConfirm}
+          onOpenChange={appClose.setShowConfirm}
+          title="Quit Cadence?"
+          description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
+          confirmText="Quit"
+          variant="destructive"
+          onConfirm={appClose.confirmAndClose}
+        >
+          <ul className="text-sm text-muted-foreground space-y-1 py-2">
+            {appClose.runningAgents.map((agent) => (
+              <li key={agent.sessionId}>{agent.label}</li>
+            ))}
+          </ul>
+        </ConfirmDialog>
+      </div>
     </SidebarContext.Provider>
   );
 }

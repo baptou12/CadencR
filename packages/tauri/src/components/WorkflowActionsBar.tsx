@@ -1,6 +1,12 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
-import { GitMergeIcon, Loader2Icon, MessageSquareIcon, PencilIcon, HistoryIcon } from "lucide-react";
+import {
+  GitMergeIcon,
+  Loader2Icon,
+  MessageSquareIcon,
+  PencilIcon,
+  HistoryIcon,
+} from "lucide-react";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 import { AgentPromptBar } from "@/components/AgentPromptBar";
 import type { SplitSendAction, AgentPromptBarHandle } from "@/components/AgentPromptBar";
@@ -13,7 +19,10 @@ interface WorkflowActionsBarProps {
   featureType?: string;
   noExecuteAgentRunning: boolean;
   onStartSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
-  onStartRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  onStartRefine: (
+    description: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void;
   className?: string;
 }
 
@@ -35,7 +44,8 @@ export function WorkflowActionsBar({
   const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
   const refinePromptRef = useRef<AgentPromptBarHandle>(null);
 
-  const canMerge = noExecuteAgentRunning && (featureType === "feature" || featureType === "ws-feature");
+  const canMerge =
+    noExecuteAgentRunning && (featureType === "feature" || featureType === "ws-feature");
 
   // Auto-focus prompt bars when opened
   useEffect(() => {
@@ -51,10 +61,14 @@ export function WorkflowActionsBar({
   }, [showRefinePrompt]);
 
   // CMD+SHIFT+M: open merge dialog
-  useGlobalShortcut("meta+shift+m", (e) => {
-    e.preventDefault();
-    setMergeDialogOpen(true);
-  }, { enabled: canMerge });
+  useGlobalShortcut(
+    "meta+shift+m",
+    (e) => {
+      e.preventDefault();
+      setMergeDialogOpen(true);
+    },
+    { enabled: canMerge },
+  );
 
   const sessionSplitActions: SplitSendAction[] = useMemo(
     () => [
@@ -113,7 +127,7 @@ export function WorkflowActionsBar({
         {/* Session button — always available during building/completed */}
         <button
           type="button"
-          onClick={() => setShowSessionPrompt(v => !v)}
+          onClick={() => setShowSessionPrompt((v) => !v)}
           className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700"
         >
           <MessageSquareIcon className="size-3.5" />
@@ -123,7 +137,7 @@ export function WorkflowActionsBar({
         {/* Refine plan — available during building/completed */}
         <button
           type="button"
-          onClick={() => setShowRefinePrompt(v => !v)}
+          onClick={() => setShowRefinePrompt((v) => !v)}
           className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700"
         >
           <PencilIcon className="size-3.5" />

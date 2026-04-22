@@ -18,7 +18,6 @@ import {
 import { parseUnifiedDiff, countHunkStats } from "@/lib/parse-unified-diff";
 import type { CommitEntry } from "./DiffFileTree";
 
-
 export interface FileMeta {
   section: import("@/lib/parse-unified-diff").FileDiffSection;
   displayName: string;
@@ -49,7 +48,8 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
   const fileMeta: FileMeta[] = useMemo(
     () =>
       fileSections.map((section) => {
-        const displayName = section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
+        const displayName =
+          section.newFileName !== "/dev/null" ? section.newFileName : section.oldFileName;
         const { additions, deletions } = countHunkStats(section.hunks);
         return { section, displayName, additions, deletions };
       }),

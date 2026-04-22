@@ -24,44 +24,26 @@ function makePhase(overrides: Partial<PhaseData> = {}): PhaseData {
 describe("PhaseCard", () => {
   it("renders phase title", () => {
     render(
-      <PhaseCard
-        phase={makePhase({ title: "My Phase" })}
-        displayNumber={1}
-        onExpand={vi.fn()}
-      />
+      <PhaseCard phase={makePhase({ title: "My Phase" })} displayNumber={1} onExpand={vi.fn()} />,
     );
     expect(screen.getByText("My Phase")).toBeInTheDocument();
   });
 
   it("renders display number", () => {
-    render(
-      <PhaseCard
-        phase={makePhase()}
-        displayNumber={3}
-        onExpand={vi.fn()}
-      />
-    );
+    render(<PhaseCard phase={makePhase()} displayNumber={3} onExpand={vi.fn()} />);
     expect(screen.getByText("Phase 3")).toBeInTheDocument();
   });
 
   it("shows QA badge for qa phase_type", () => {
     render(
-      <PhaseCard
-        phase={makePhase({ phase_type: "qa" })}
-        displayNumber={1}
-        onExpand={vi.fn()}
-      />
+      <PhaseCard phase={makePhase({ phase_type: "qa" })} displayNumber={1} onExpand={vi.fn()} />,
     );
     expect(screen.getByText("QA")).toBeInTheDocument();
   });
 
   it("shows Setup badge for setup phase_type", () => {
     render(
-      <PhaseCard
-        phase={makePhase({ phase_type: "setup" })}
-        displayNumber={1}
-        onExpand={vi.fn()}
-      />
+      <PhaseCard phase={makePhase({ phase_type: "setup" })} displayNumber={1} onExpand={vi.fn()} />,
     );
     expect(screen.getByText("Setup")).toBeInTheDocument();
   });
@@ -69,9 +51,7 @@ describe("PhaseCard", () => {
   it("calls onExpand when expand button clicked", async () => {
     const onExpand = vi.fn();
     const phase = makePhase();
-    const { user } = render(
-      <PhaseCard phase={phase} displayNumber={1} onExpand={onExpand} />
-    );
+    const { user } = render(<PhaseCard phase={phase} displayNumber={1} onExpand={onExpand} />);
     await user.click(screen.getByText("Test Phase"));
     expect(onExpand).toHaveBeenCalledWith(phase);
   });
@@ -84,7 +64,7 @@ describe("PhaseCard", () => {
         onExpand={vi.fn()}
         canReset={true}
         onReset={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByTitle("Reset phase to pending")).toBeInTheDocument();
   });
@@ -99,7 +79,7 @@ describe("PhaseCard", () => {
         onExpand={vi.fn()}
         canReset={true}
         onReset={onReset}
-      />
+      />,
     );
     await user.click(screen.getByTitle("Reset phase to pending"));
     expect(onReset).toHaveBeenCalledWith(phase);

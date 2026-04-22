@@ -8,10 +8,7 @@ import {
 import type { Extension } from "@codemirror/state";
 import type { BlameLine } from "@/api/generated";
 
-function buildDecorations(
-  view: EditorView,
-  blameByLine: Map<number, BlameLine>,
-): DecorationSet {
+function buildDecorations(view: EditorView, blameByLine: Map<number, BlameLine>): DecorationSet {
   const cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
   const blame = blameByLine.get(cursorLine);
   if (!blame) return Decoration.none;

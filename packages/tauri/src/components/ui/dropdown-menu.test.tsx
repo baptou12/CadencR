@@ -15,7 +15,7 @@ describe("DropdownMenu", () => {
         <DropdownMenuContent>
           <DropdownMenuItem>Item 1</DropdownMenuItem>
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>,
     );
     expect(screen.getByText("Open Menu")).toBeInTheDocument();
   });
@@ -28,7 +28,7 @@ describe("DropdownMenu", () => {
           <DropdownMenuItem>Action A</DropdownMenuItem>
           <DropdownMenuItem>Action B</DropdownMenuItem>
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>,
     );
     expect(screen.queryByText("Action A")).not.toBeInTheDocument();
     await user.click(screen.getByText("Open"));
@@ -44,7 +44,7 @@ describe("DropdownMenu", () => {
         <DropdownMenuContent>
           <DropdownMenuItem onClick={onClick}>Clickable</DropdownMenuItem>
         </DropdownMenuContent>
-      </DropdownMenu>
+      </DropdownMenu>,
     );
     await user.click(screen.getByText("Open"));
     await user.click(screen.getByText("Clickable"));

@@ -62,9 +62,8 @@ export function PlanInputView({
       <div>
         <h2 className="text-lg font-semibold">Start Planning</h2>
         <p className="text-sm text-muted-foreground">
-          Describe the feature you want to build. The Plan agent will explore
-          the codebase, ask clarifying questions, and generate a phased
-          implementation plan.
+          Describe the feature you want to build. The Plan agent will explore the codebase, ask
+          clarifying questions, and generate a phased implementation plan.
         </p>
       </div>
       <PromptWithModelPicker

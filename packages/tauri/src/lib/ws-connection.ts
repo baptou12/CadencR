@@ -22,7 +22,8 @@ export interface WsConnection {
 }
 
 export function createWsConnection(options: WsConnectionOptions): WsConnection {
-  const protocols = options.protocols && options.protocols.length > 0 ? options.protocols : undefined;
+  const protocols =
+    options.protocols && options.protocols.length > 0 ? options.protocols : undefined;
   const ws = new WebSocket(options.url, protocols);
   let intentionalClose = false;
 

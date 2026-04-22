@@ -63,9 +63,7 @@ describe("Markdown", () => {
   });
 
   it("applies custom className", () => {
-    const { container } = render(
-      <Markdown content="text" className="custom-class" />,
-    );
+    const { container } = render(<Markdown content="text" className="custom-class" />);
     expect(container.firstChild).toHaveClass("custom-class");
   });
 

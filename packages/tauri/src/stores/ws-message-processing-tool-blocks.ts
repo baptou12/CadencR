@@ -26,9 +26,7 @@ export function createToolUseBlock(
     toolUseId,
     parentToolUseId,
     createdAt,
-    ...((toolName === "Task" || toolName === "Agent")
-      ? { childBlocks: [] }
-      : {}),
+    ...(toolName === "Task" || toolName === "Agent" ? { childBlocks: [] } : {}),
   };
   state.toolUseIdToBlock.set(toolUseId, block);
   return block;

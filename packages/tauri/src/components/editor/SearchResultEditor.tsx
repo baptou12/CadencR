@@ -12,21 +12,19 @@ interface SearchResultEditorProps {
 }
 
 /** Readonly CodeMirror showing all search matches for a file, merged with separators. */
-export default function SearchResultEditor({ filePath, matches, onClick }: SearchResultEditorProps) {
+export default function SearchResultEditor({
+  filePath,
+  matches,
+  onClick,
+}: SearchResultEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lineMapRef = useRef<Map<number, number>>(new Map());
 
-  const { doc, highlights, lineMap } = useMemo(
-    () => buildMergedDoc(matches),
-    [matches],
-  );
+  const { doc, highlights, lineMap } = useMemo(() => buildMergedDoc(matches), [matches]);
   lineMapRef.current = lineMap;
 
-  const langExt = useMemo(
-    () => getLanguageExtension(filePath),
-    [filePath],
-  );
+  const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -63,10 +61,16 @@ export default function SearchResultEditor({ filePath, matches, onClick }: Searc
 
   function handleClick(e: React.MouseEvent) {
     const view = viewRef.current;
-    if (!view) { onClick(matches[0]?.line_number ?? 1); return; }
+    if (!view) {
+      onClick(matches[0]?.line_number ?? 1);
+      return;
+    }
 
     const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-    if (pos == null) { onClick(matches[0]?.line_number ?? 1); return; }
+    if (pos == null) {
+      onClick(matches[0]?.line_number ?? 1);
+      return;
+    }
 
     const editorLine = view.state.doc.lineAt(pos).number;
     const originalLine = lineMapRef.current.get(editorLine);
@@ -78,7 +82,9 @@ export default function SearchResultEditor({ filePath, matches, onClick }: Searc
       role="button"
       tabIndex={0}
       onClick={handleClick}
-      onKeyDown={(e) => { if (e.key === "Enter") onClick(matches[0]?.line_number ?? 1); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") onClick(matches[0]?.line_number ?? 1);
+      }}
       className="cursor-pointer rounded overflow-hidden hover:ring-1 hover:ring-primary/40 transition-shadow"
     >
       <div ref={containerRef} />
@@ -108,7 +114,8 @@ function buildMergedDoc(matches: ContentMatch[]): {
   if (matches.length === 0) return { doc: "", highlights: [], lineMap: new Map() };
 
   // Build line ranges for each match (original line numbers, 1-based)
-  const blocks: { startLine: number; lines: string[]; matchIdx: number; matchOffset: number }[] = [];
+  const blocks: { startLine: number; lines: string[]; matchIdx: number; matchOffset: number }[] =
+    [];
 
   for (let mi = 0; mi < matches.length; mi++) {
     const m = matches[mi];
@@ -118,7 +125,11 @@ function buildMergedDoc(matches: ContentMatch[]): {
   }
 
   // Merge overlapping/adjacent blocks
-  const merged: { startLine: number; lines: string[]; matchHighlights: { localLine: number; start: number; end: number }[] }[] = [];
+  const merged: {
+    startLine: number;
+    lines: string[];
+    matchHighlights: { localLine: number; start: number; end: number }[];
+  }[] = [];
 
   for (const block of blocks) {
     const m = matches[block.matchIdx];
@@ -139,7 +150,11 @@ function buildMergedDoc(matches: ContentMatch[]): {
         }
         // Add highlight for the match line
         const matchLocalLine = Number(m.line_number) - last.startLine;
-        last.matchHighlights.push({ localLine: matchLocalLine, start: m.match_start, end: m.match_end });
+        last.matchHighlights.push({
+          localLine: matchLocalLine,
+          start: m.match_start,
+          end: m.match_end,
+        });
         continue;
       }
     }
@@ -214,30 +229,33 @@ function buildHighlightField(ranges: HighlightRange[]): Extension {
   });
 }
 
-const compactTheme = EditorView.theme({
-  "&": {
-    fontSize: "12px",
+const compactTheme = EditorView.theme(
+  {
+    "&": {
+      fontSize: "12px",
+    },
+    ".cm-scroller": {
+      overflow: "auto",
+    },
+    ".cm-content": {
+      padding: "2px 0",
+    },
+    ".cm-line": {
+      padding: "0 4px",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "transparent",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "transparent",
+    },
+    ".cm-gutters": {
+      paddingRight: "2px",
+    },
+    ".cm-search-match": {
+      backgroundColor: "rgba(189, 147, 249, 0.25)",
+      borderRadius: "2px",
+    },
   },
-  ".cm-scroller": {
-    overflow: "auto",
-  },
-  ".cm-content": {
-    padding: "2px 0",
-  },
-  ".cm-line": {
-    padding: "0 4px",
-  },
-  ".cm-activeLine": {
-    backgroundColor: "transparent",
-  },
-  ".cm-activeLineGutter": {
-    backgroundColor: "transparent",
-  },
-  ".cm-gutters": {
-    paddingRight: "2px",
-  },
-  ".cm-search-match": {
-    backgroundColor: "rgba(189, 147, 249, 0.25)",
-    borderRadius: "2px",
-  },
-}, { dark: true });
+  { dark: true },
+);

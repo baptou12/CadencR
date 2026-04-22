@@ -208,7 +208,13 @@ interface EditorStore {
   features: Record<number, EditorFeatureState>;
 
   initFeature: (featureId: number) => void;
-  openFile: (featureId: number, paneId: string, filePath: string, maxTabs?: number, goToLine?: number) => void;
+  openFile: (
+    featureId: number,
+    paneId: string,
+    filePath: string,
+    maxTabs?: number,
+    goToLine?: number,
+  ) => void;
   closeTab: (featureId: number, paneId: string, filePath: string) => void;
   setActiveFile: (featureId: number, paneId: string, filePath: string) => void;
   setDirty: (featureId: number, paneId: string, filePath: string, isDirty: boolean) => void;
@@ -223,8 +229,20 @@ interface EditorStore {
   removeEditorPane: (featureId: number, paneId: string) => void;
   navigatePane: (featureId: number, direction: Direction) => void;
   setActivePane: (featureId: number, paneId: string) => void;
-  openArtifact: (featureId: number, paneId: string, phaseSlug: string, maxTabs?: number, artifactType?: string) => void;
-  openPhaseArtifacts: (featureId: number, paneId: string, phaseSlug: string, artifactTypes: string[], maxTabs?: number) => void;
+  openArtifact: (
+    featureId: number,
+    paneId: string,
+    phaseSlug: string,
+    maxTabs?: number,
+    artifactType?: string,
+  ) => void;
+  openPhaseArtifacts: (
+    featureId: number,
+    paneId: string,
+    phaseSlug: string,
+    artifactTypes: string[],
+    maxTabs?: number,
+  ) => void;
   clearPendingGoToLine: (featureId: number, paneId: string, filePath: string) => void;
 }
 
@@ -249,7 +267,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         if (pane.tabs.some((t) => t.filePath === filePath)) {
           // File already open — update pendingGoToLine if specified
           const tabs = goToLine
-            ? pane.tabs.map((t) => t.filePath === filePath ? { ...t, pendingGoToLine: goToLine } : t)
+            ? pane.tabs.map((t) =>
+                t.filePath === filePath ? { ...t, pendingGoToLine: goToLine } : t,
+              )
             : pane.tabs;
           return { ...pane, tabs, activeFilePath: filePath };
         }
@@ -329,7 +349,10 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     set((state) => {
       const feature = state.features[featureId];
       if (!feature) return state;
-      return updateFeature(state, featureId, { ...feature, sidebarVisible: !feature.sidebarVisible });
+      return updateFeature(state, featureId, {
+        ...feature,
+        sidebarVisible: !feature.sidebarVisible,
+      });
     }),
 
   splitEditorPane: (featureId, paneId, orientation) =>
@@ -395,11 +418,13 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   openArtifact: (featureId, paneId, phaseSlug, maxTabs = DEFAULT_MAX_TABS, artifactType) =>
     set((state) => {
-      const typeSuffix = artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE ? `/${artifactType}` : "";
+      const typeSuffix =
+        artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE ? `/${artifactType}` : "";
       const filePath = `artifact://${featureId}/${phaseSlug}${typeSuffix}`;
-      const displayName = artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE
-        ? `${phaseSlug}/${artifactType} (Artifact)`
-        : `${phaseSlug} (Artifact)`;
+      const displayName =
+        artifactType && artifactType !== DEFAULT_ARTIFACT_TYPE
+          ? `${phaseSlug}/${artifactType} (Artifact)`
+          : `${phaseSlug} (Artifact)`;
       const feature = state.features[featureId] ?? { ...defaultFeatureState };
       const next = updatePane(feature, paneId, (pane) => {
         if (pane.tabs.some((t) => t.filePath === filePath)) {
@@ -451,4 +476,3 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       return updateFeature(state, featureId, next);
     }),
 }));
-

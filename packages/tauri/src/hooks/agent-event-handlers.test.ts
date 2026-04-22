@@ -40,9 +40,17 @@ describe("insertAgentSession", () => {
 
   it("preserves existing blocks when agent entry already exists", () => {
     const existingBlocks = [
-      { id: "ws-user-1", type: "user_message" as const, content: "hello", isError: false, createdAt: "2024-01-01" },
+      {
+        id: "ws-user-1",
+        type: "user_message" as const,
+        content: "hello",
+        isError: false,
+        createdAt: "2024-01-01",
+      },
     ] as AgentBlockData[];
-    const state = makeState([["risk:42", { sessionId: 0, agentType: "risk", blocks: existingBlocks }]]);
+    const state = makeState([
+      ["risk:42", { sessionId: 0, agentType: "risk", blocks: existingBlocks }],
+    ]);
 
     const result = insertAgentSession(state, "risk:42", 42, "risk");
     const agent = result.agents.get("risk:42");

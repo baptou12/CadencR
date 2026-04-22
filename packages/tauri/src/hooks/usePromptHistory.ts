@@ -13,8 +13,8 @@ interface HistoryResultPayload {
 
 export function usePromptHistory(projectId: number, wsSessionId?: string) {
   const sendRequest = useWsSessionStore((s) => s.sendRequest);
-  const isConnected = useWsSessionStore(
-    (s) => wsSessionId ? s.sessions[wsSessionId]?.isConnected ?? false : false,
+  const isConnected = useWsSessionStore((s) =>
+    wsSessionId ? (s.sessions[wsSessionId]?.isConnected ?? false) : false,
   );
 
   const [history, setHistory] = useState<string[]>([]);
@@ -43,25 +43,22 @@ export function usePromptHistory(projectId: number, wsSessionId?: string) {
    * Called when Up arrow pressed on first line.
    * Returns new text to display, or null if already at oldest entry.
    */
-  const navigateUp = useCallback(
-    (currentText: string): string | null => {
-      const h = historyRef.current;
-      const idx = historyIndexRef.current;
-      if (h.length === 0) return null;
-      if (idx === -1) {
-        setTempDraft(currentText);
-        setHistoryIndex(0);
-        return h[0] ?? null;
-      }
-      if (idx < h.length - 1) {
-        const next = idx + 1;
-        setHistoryIndex(next);
-        return h[next] ?? null;
-      }
-      return null;
-    },
-    [],
-  );
+  const navigateUp = useCallback((currentText: string): string | null => {
+    const h = historyRef.current;
+    const idx = historyIndexRef.current;
+    if (h.length === 0) return null;
+    if (idx === -1) {
+      setTempDraft(currentText);
+      setHistoryIndex(0);
+      return h[0] ?? null;
+    }
+    if (idx < h.length - 1) {
+      const next = idx + 1;
+      setHistoryIndex(next);
+      return h[next] ?? null;
+    }
+    return null;
+  }, []);
 
   /**
    * Called when Down arrow pressed while browsing.

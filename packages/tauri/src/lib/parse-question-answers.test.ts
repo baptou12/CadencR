@@ -11,10 +11,7 @@ describe("parseQuestionAnswers", () => {
   });
 
   it("parses multiple answers separated by double newlines", () => {
-    const questions = [
-      { question: "Q1?" },
-      { question: "Q2?" },
-    ];
+    const questions = [{ question: "Q1?" }, { question: "Q2?" }];
     const response = "Q1?\nAnswer: First\n\nQ2?\nAnswer: Second";
     expect(parseQuestionAnswers(questions, response)).toEqual({
       "Q1?": "First",
@@ -46,10 +43,16 @@ describe("parseQuestionAnswers", () => {
   });
 
   it("handles question text containing double newlines", () => {
-    const questions = [{ question: "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**" }];
-    const response = "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**\nAnswer: Accept this risk";
+    const questions = [
+      {
+        question: "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**",
+      },
+    ];
+    const response =
+      "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**\nAnswer: Accept this risk";
     expect(parseQuestionAnswers(questions, response)).toEqual({
-      "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**": "Accept this risk",
+      "This is a long question.\n\nIt has multiple paragraphs.\n\nSeverity: **Medium**":
+        "Accept this risk",
     });
   });
 

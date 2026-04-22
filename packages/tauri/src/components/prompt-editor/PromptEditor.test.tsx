@@ -77,8 +77,7 @@ describe("PromptEditor", () => {
 
     const firstTextNode = screen
       .getByRole("textbox")
-      .querySelector('[data-lexical-text="true"]')
-      ?.firstChild;
+      .querySelector('[data-lexical-text="true"]')?.firstChild;
     expect(firstTextNode).not.toBeNull();
 
     const selection = window.getSelection();

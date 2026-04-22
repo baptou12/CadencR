@@ -97,8 +97,12 @@ describe("FeatureTopBar", () => {
     mockSetCollapsed.mockClear();
     mockSidebarCollapsed = false;
     mockFeatureData = {
-      id: 1, title: "My Test Feature", status: "in-progress",
-      type: "ws-feature", project_id: 1, created_at: "2024-01-01",
+      id: 1,
+      title: "My Test Feature",
+      status: "in-progress",
+      type: "ws-feature",
+      project_id: 1,
+      created_at: "2024-01-01",
     };
   });
 
@@ -168,5 +172,4 @@ describe("FeatureTopBar", () => {
     await user.click(screen.getByTitle("Expand sidebar (⌘B)"));
     expect(mockSetCollapsed).toHaveBeenCalledWith(false);
   });
-
 });

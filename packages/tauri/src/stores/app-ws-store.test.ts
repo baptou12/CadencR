@@ -44,7 +44,9 @@ class MockWebSocket {
   }
 
   removeEventListener() {}
-  send(data: string) { this.sent.push(data); }
+  send(data: string) {
+    this.sent.push(data);
+  }
   close() {}
 
   fireEvent(event: string, data?: unknown) {
@@ -67,7 +69,9 @@ function getWs(): MockWebSocket {
   return MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
 }
 
-function setupFeatureLookup(features: Array<{ id: number; title: string; project_id: number; type: string }>) {
+function setupFeatureLookup(
+  features: Array<{ id: number; title: string; project_id: number; type: string }>,
+) {
   mockGetQueriesData.mockReturnValue([[["features", "list"], features]]);
 }
 

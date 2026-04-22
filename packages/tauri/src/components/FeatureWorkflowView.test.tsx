@@ -6,7 +6,6 @@ vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
 
-
 const mockInvalidate = vi.fn();
 
 const { mockUseWorkflowBackend } = vi.hoisted(() => ({
@@ -18,65 +17,65 @@ vi.mock("@/hooks/useWsWorkflowBackend", () => ({
 }));
 
 const defaultBackend = {
-    workflowStatus: "idle",
-    sessionEntries: [],
-    planSession: null,
-    prdSession: null,
-    reviewVerdict: null,
-    queue: null,
-    autonomyLevel: 3,
-    error: null,
-    clearError: vi.fn(),
-    actions: {
-      canStartPlan: true,
-      canStartPrd: true,
-      canStartBuild: false,
-      canStartRisk: false,
-      canStartReview: false,
-      canStartWorkflowSession: false,
-      canStartRefine: false,
-      canStartRetro: false,
-    },
-    hasAnyAgentOutput: false,
-    noAgentsRunning: true,
-    view: "plan-input",
-    isLoading: false,
-    isStartingPlan: false,
-    isStartingPrd: false,
-    isStartingExecute: false,
-    isStartingRisk: false,
-    isStartingReview: false,
-    isStartingRetro: false,
-    isStartingFix: false,
-    isContinuingBuild: false,
-    isStartingWorkflowSession: false,
-    isStartingRefinePlan: false,
-    isAddingFixPhase: false,
-    canContinueBuild: false,
-    executeWaitingNextStep: null,
-    executeStatus: "idle",
-    planApprovalError: null,
-    startPlan: vi.fn(),
-    startPrd: vi.fn(),
-    approvePlan: vi.fn(),
-    rejectPlan: vi.fn(),
-    startBuilding: vi.fn(),
-    continueWorkflow: vi.fn(),
-    sendToAgent: vi.fn(),
-    stopAgent: vi.fn(),
-    interruptAgent: vi.fn(),
-    submitPermission: vi.fn(),
-    submitAnswers: vi.fn(),
-    startSession: vi.fn(),
-    startRefine: vi.fn(),
-    startRisk: vi.fn(),
-    startReview: vi.fn(),
-    startRetro: vi.fn(),
-    startReviewFixer: vi.fn(),
-    markDone: vi.fn(),
-    deleteSession: vi.fn(),
-    handleResume: vi.fn(),
-  };
+  workflowStatus: "idle",
+  sessionEntries: [],
+  planSession: null,
+  prdSession: null,
+  reviewVerdict: null,
+  queue: null,
+  autonomyLevel: 3,
+  error: null,
+  clearError: vi.fn(),
+  actions: {
+    canStartPlan: true,
+    canStartPrd: true,
+    canStartBuild: false,
+    canStartRisk: false,
+    canStartReview: false,
+    canStartWorkflowSession: false,
+    canStartRefine: false,
+    canStartRetro: false,
+  },
+  hasAnyAgentOutput: false,
+  noAgentsRunning: true,
+  view: "plan-input",
+  isLoading: false,
+  isStartingPlan: false,
+  isStartingPrd: false,
+  isStartingExecute: false,
+  isStartingRisk: false,
+  isStartingReview: false,
+  isStartingRetro: false,
+  isStartingFix: false,
+  isContinuingBuild: false,
+  isStartingWorkflowSession: false,
+  isStartingRefinePlan: false,
+  isAddingFixPhase: false,
+  canContinueBuild: false,
+  executeWaitingNextStep: null,
+  executeStatus: "idle",
+  planApprovalError: null,
+  startPlan: vi.fn(),
+  startPrd: vi.fn(),
+  approvePlan: vi.fn(),
+  rejectPlan: vi.fn(),
+  startBuilding: vi.fn(),
+  continueWorkflow: vi.fn(),
+  sendToAgent: vi.fn(),
+  stopAgent: vi.fn(),
+  interruptAgent: vi.fn(),
+  submitPermission: vi.fn(),
+  submitAnswers: vi.fn(),
+  startSession: vi.fn(),
+  startRefine: vi.fn(),
+  startRisk: vi.fn(),
+  startReview: vi.fn(),
+  startRetro: vi.fn(),
+  startReviewFixer: vi.fn(),
+  markDone: vi.fn(),
+  deleteSession: vi.fn(),
+  handleResume: vi.fn(),
+};
 
 vi.mock("@/hooks/useResolvedModel", () => ({
   useResolvedModel: vi.fn(() => ({
@@ -227,9 +226,7 @@ describe("FeatureWorkflowView", () => {
         featureQuery={{ refetch: vi.fn() }}
       />,
     );
-    expect(
-      screen.getByText("Failed to look up directory for project 2"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Failed to look up directory for project 2")).toBeInTheDocument();
   });
 
   it("does not display error banner when backend.error is null", () => {
@@ -237,7 +234,7 @@ describe("FeatureWorkflowView", () => {
       ...defaultBackend,
       view: "agents",
       error: null,
-    clearError: vi.fn(),
+      clearError: vi.fn(),
     });
     render(
       <FeatureWorkflowView
@@ -247,9 +244,7 @@ describe("FeatureWorkflowView", () => {
         featureQuery={{ refetch: vi.fn() }}
       />,
     );
-    expect(
-      screen.queryByText("Failed to look up directory for project 2"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed to look up directory for project 2")).not.toBeInTheDocument();
   });
 
   it("shows spinner when agents-active with no agent output", () => {
@@ -347,7 +342,9 @@ describe("FeatureWorkflowView", () => {
       // Get the onDelete prop passed to AgentSession and invoke it
       const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
-      act(() => { (props.onDelete as () => void)(); });
+      act(() => {
+        (props.onDelete as () => void)();
+      });
       expect(screen.getByText(/Remove "Execute" agent/)).toBeInTheDocument();
     });
 
@@ -355,7 +352,9 @@ describe("FeatureWorkflowView", () => {
       const { deleteSession } = renderWithAgent();
       const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
-      act(() => { (props.onDelete as () => void)(); });
+      act(() => {
+        (props.onDelete as () => void)();
+      });
       // Dialog is open but deleteSession not called yet
       expect(deleteSession).not.toHaveBeenCalled();
     });
@@ -364,7 +363,9 @@ describe("FeatureWorkflowView", () => {
       const { deleteSession } = renderWithAgent();
       const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
-      act(() => { (props.onDelete as () => void)(); });
+      act(() => {
+        (props.onDelete as () => void)();
+      });
       // Click the "Remove" confirm button
       fireEvent.click(screen.getByRole("button", { name: "Remove" }));
       expect(deleteSession).toHaveBeenCalledWith(42);
@@ -374,7 +375,9 @@ describe("FeatureWorkflowView", () => {
       const { deleteSession } = renderWithAgent();
       const lastCall = (MockAgentSession.mock.calls as unknown[][]).at(-1);
       const props = lastCall?.[0] as Record<string, unknown>;
-      act(() => { (props.onDelete as () => void)(); });
+      act(() => {
+        (props.onDelete as () => void)();
+      });
       // Click Cancel
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(deleteSession).not.toHaveBeenCalled();
@@ -397,7 +400,12 @@ describe("FeatureWorkflowView", () => {
         planSession: null,
       });
       render(
-        <FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />,
+        <FeatureWorkflowView
+          featureId={1}
+          projectId={1}
+          feature={mockFeature}
+          featureQuery={{ refetch: vi.fn() }}
+        />,
       );
       expect(screen.getByRole("button", { name: /Generate Plan/ })).toBeInTheDocument();
     });
@@ -410,7 +418,12 @@ describe("FeatureWorkflowView", () => {
         planSession: { resumable: true, status: "paused", sessionDbId: 10 },
       });
       render(
-        <FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />,
+        <FeatureWorkflowView
+          featureId={1}
+          projectId={1}
+          feature={mockFeature}
+          featureQuery={{ refetch: vi.fn() }}
+        />,
       );
       expect(screen.queryByRole("button", { name: /Generate Plan/ })).not.toBeInTheDocument();
     });
@@ -425,7 +438,14 @@ describe("FeatureWorkflowView", () => {
         clearError,
       });
 
-      render(<FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />);
+      render(
+        <FeatureWorkflowView
+          featureId={1}
+          projectId={1}
+          feature={mockFeature}
+          featureQuery={{ refetch: vi.fn() }}
+        />,
+      );
 
       expect(screen.getByText("Something went wrong")).toBeInTheDocument();
       const dismissBtn = screen.getByRole("button", { name: "Dismiss error" });
@@ -439,7 +459,14 @@ describe("FeatureWorkflowView", () => {
         error: null,
       });
 
-      render(<FeatureWorkflowView featureId={1} projectId={1} feature={mockFeature} featureQuery={{ refetch: vi.fn() }} />);
+      render(
+        <FeatureWorkflowView
+          featureId={1}
+          projectId={1}
+          feature={mockFeature}
+          featureQuery={{ refetch: vi.fn() }}
+        />,
+      );
 
       expect(screen.queryByRole("button", { name: "Dismiss error" })).not.toBeInTheDocument();
     });

@@ -112,7 +112,9 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
               type="button"
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-border whitespace-nowrap shrink-0 hover:bg-accent transition-colors",
-                isActive ? "bg-background text-foreground border-t-2 border-t-primary" : "text-muted-foreground",
+                isActive
+                  ? "bg-background text-foreground border-t-2 border-t-primary"
+                  : "text-muted-foreground",
               )}
               onClick={() => setActiveFile(featureId, paneId, tab.filePath)}
             >
@@ -147,12 +149,18 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
         })}
       </div>
 
-      <Dialog open={pendingClose !== null} onOpenChange={(open) => { if (!open) setPendingClose(null); }}>
+      <Dialog
+        open={pendingClose !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingClose(null);
+        }}
+      >
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Unsaved Changes</DialogTitle>
             <DialogDescription>
-              You have unsaved changes in <strong>{pendingClose?.fileName}</strong>. Discard changes?
+              You have unsaved changes in <strong>{pendingClose?.fileName}</strong>. Discard
+              changes?
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -23,10 +23,16 @@ const mockFeatures = [
 vi.mock("@/api/generated", () => ({
   useListFeatures: vi.fn(() => ({ data: mockFeatures })),
   useUpdateFeatureStatus: vi.fn((opts?: { onSuccess?: () => void }) => ({
-    mutate: (data: unknown) => { mockUpdateStatus(data); opts?.onSuccess?.(); },
+    mutate: (data: unknown) => {
+      mockUpdateStatus(data);
+      opts?.onSuccess?.();
+    },
   })),
   useDeleteFeature: vi.fn((opts?: { onSuccess?: () => void }) => ({
-    mutate: (data: unknown) => { mockDelete(data); opts?.onSuccess?.(); },
+    mutate: (data: unknown) => {
+      mockDelete(data);
+      opts?.onSuccess?.();
+    },
   })),
   useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
@@ -42,8 +48,9 @@ vi.mock("@/stores/ws-session-store", () => ({
 }));
 
 vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn((selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
-    selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
+  useWorkflowStore: vi.fn(
+    (selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
+      selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
   ),
 }));
 

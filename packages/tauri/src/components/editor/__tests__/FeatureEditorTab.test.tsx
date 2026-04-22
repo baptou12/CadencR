@@ -46,8 +46,14 @@ vi.mock("@/hooks/useEditorState", () => ({
 }));
 
 vi.mock("@/stores/editor-store", () => ({
-  useEditorStore: vi.fn((selector: (state: { splitEditorPane: typeof mockSplitEditorPane; navigatePane: typeof mockNavigatePane }) => unknown) =>
-    selector({ splitEditorPane: mockSplitEditorPane, navigatePane: mockNavigatePane })),
+  useEditorStore: vi.fn(
+    (
+      selector: (state: {
+        splitEditorPane: typeof mockSplitEditorPane;
+        navigatePane: typeof mockNavigatePane;
+      }) => unknown,
+    ) => selector({ splitEditorPane: mockSplitEditorPane, navigatePane: mockNavigatePane }),
+  ),
 }));
 
 vi.mock("../FileTree", () => ({
@@ -86,7 +92,9 @@ vi.mock("@/components/ui/dialog", () => ({
 }));
 
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => <button onClick={onClick}>{children}</button>,
+  Button: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{children}</button>
+  ),
 }));
 
 describe("FeatureEditorTab", () => {

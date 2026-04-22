@@ -57,8 +57,16 @@ interface UseWebSocketSessionReturn {
   setModel: (modelId: string) => void;
   setThinkingEffort: (thinkingEffort?: string) => void;
   setProvider: (providerId: string) => void;
-  sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
-  respondToPermission: (requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
+  sendPrompt: (
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    useWorktree?: boolean,
+  ) => void;
+  respondToPermission: (
+    requestId: string,
+    decision: PermissionDecisionValue,
+    feedback?: string,
+  ) => void;
   interrupt: () => void;
   destroy: () => void;
   clearSession: () => void;
@@ -70,7 +78,10 @@ interface UseWebSocketSessionReturn {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useWebSocketSession(sessionId: string, featureId?: number): UseWebSocketSessionReturn {
+export function useWebSocketSession(
+  sessionId: string,
+  featureId?: number,
+): UseWebSocketSessionReturn {
   const store = useWsSessionStore();
   const session = store.sessions[sessionId];
 
@@ -152,11 +163,20 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     runtimeSessionId: session?.runtimeSessionId ?? "",
     hasFileChanges: session?.hasFileChanges ?? false,
 
-    sendPrompt: (text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => store.sendPrompt(sessionId, text, images, useWorktree),
-    respondToPermission: (requestId: string, decision: PermissionDecisionValue, feedback?: string) => {
+    sendPrompt: (
+      text: string,
+      images?: Array<{ base64: string; mimeType: string }>,
+      useWorktree?: boolean,
+    ) => store.sendPrompt(sessionId, text, images, useWorktree),
+    respondToPermission: (
+      requestId: string,
+      decision: PermissionDecisionValue,
+      feedback?: string,
+    ) => {
       store.respondToPermission(sessionId, requestId, decision, feedback);
     },
-    respondToQuestion: (response: AgentQuestionAnswers) => store.respondToQuestion(sessionId, response),
+    respondToQuestion: (response: AgentQuestionAnswers) =>
+      store.respondToQuestion(sessionId, response),
     interrupt: () => store.interrupt(sessionId),
     destroy: () => store.destroy(sessionId),
     clearSession: () => store.clearSession(sessionId),
@@ -164,7 +184,8 @@ export function useWebSocketSession(sessionId: string, featureId?: number): UseW
     initSession: (config: SessionConfig) => store.initSession(sessionId, config),
     setProvider: (providerId: string) => store.setProvider(sessionId, providerId),
     setModel: (modelId: string) => store.setModel(sessionId, modelId),
-    setThinkingEffort: (thinkingEffort?: string) => store.setThinkingEffort(sessionId, thinkingEffort),
+    setThinkingEffort: (thinkingEffort?: string) =>
+      store.setThinkingEffort(sessionId, thinkingEffort),
     setPermissionMode: (mode: PermissionMode) => store.setPermissionMode(sessionId, mode),
     approvePlan: () => store.approvePlan(sessionId),
     requestPlanChanges: (feedback: string) => store.requestPlanChanges(sessionId, feedback),

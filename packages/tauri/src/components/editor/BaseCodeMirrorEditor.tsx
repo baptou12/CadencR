@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
-import { EditorView, lineNumbers, highlightActiveLine, drawSelection, keymap } from "@codemirror/view";
+import {
+  EditorView,
+  lineNumbers,
+  highlightActiveLine,
+  drawSelection,
+  keymap,
+} from "@codemirror/view";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, indentOnInput } from "@codemirror/language";
@@ -65,7 +71,9 @@ export default function BaseCodeMirrorEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: readOnlyCompartment.current.reconfigure(EditorState.readOnly.of(readOnly)) });
+    view.dispatch({
+      effects: readOnlyCompartment.current.reconfigure(EditorState.readOnly.of(readOnly)),
+    });
   }, [readOnly]);
 
   // Hot-swap language
@@ -85,13 +93,15 @@ export default function BaseCodeMirrorEditor({
       }
     });
 
-    const saveKeymap = keymap.of([{
-      key: "Mod-s",
-      run: () => {
-        onSaveRef.current?.();
-        return true;
+    const saveKeymap = keymap.of([
+      {
+        key: "Mod-s",
+        run: () => {
+          onSaveRef.current?.();
+          return true;
+        },
       },
-    }]);
+    ]);
 
     const extensions: Extension[] = [
       history(),

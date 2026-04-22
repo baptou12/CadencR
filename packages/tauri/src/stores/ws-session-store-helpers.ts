@@ -51,12 +51,7 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
   }
   for (const prompt of session.queuedPrompts) {
     envelopes.push(
-      createPromptSend(
-        session.serverSessionId,
-        prompt.text,
-        prompt.images,
-        prompt.useWorktree,
-      ),
+      createPromptSend(session.serverSessionId, prompt.text, prompt.images, prompt.useWorktree),
     );
   }
   return envelopes;

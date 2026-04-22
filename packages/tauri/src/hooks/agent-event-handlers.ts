@@ -8,11 +8,7 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
-import {
-  createStreamingState,
-  processSdkMessage,
-  applyMutations,
-} from "@/stores/ws-session-store";
+import { createStreamingState, processSdkMessage, applyMutations } from "@/stores/ws-session-store";
 import {
   type WorkflowState,
   type AgentSessionState,
@@ -60,10 +56,7 @@ function slotKeyForEvent(slot: AgentSlot, sessionId?: number): string {
 }
 
 /** Find the agents Map key for a multi-instance slot, preferring running/paused agents. */
-export function resolveSlotKey(
-  agents: Map<string, AgentSessionState>,
-  slot: AgentSlot,
-): string {
+export function resolveSlotKey(agents: Map<string, AgentSessionState>, slot: AgentSlot): string {
   if (slot.type === "queue_item") return agentSlotKey(slot);
   if (!MULTI_INSTANCE_TYPES.has(slot.type)) return agentSlotKey(slot);
   // If slot has an id, use it directly
@@ -74,7 +67,8 @@ export function resolveSlotKey(
   let fallback: string | null = null;
   for (const [key, agent] of agents) {
     if (agent.agentType === slot.type) {
-      if (agent.status === "running" || agent.status === "paused" || agent.status === "waiting") return key;
+      if (agent.status === "running" || agent.status === "paused" || agent.status === "waiting")
+        return key;
       if (fallback === null) fallback = key;
     }
   }
@@ -100,9 +94,15 @@ export function processAgentStream(
   const { mutations } = processSdkMessage(msg, agent.streamingState);
   if (mutations.length === 0) return agent;
   const blocks = applyMutations(agent.blocks, mutations, agent.streamingState);
-  const hasNewFileChange = !agent.hasFileChanges && mutations.some(
-    (m) => m.action === "append" && m.block.type === "tool_call" && m.block.toolName && FILE_CHANGE_TOOLS.has(m.block.toolName),
-  );
+  const hasNewFileChange =
+    !agent.hasFileChanges &&
+    mutations.some(
+      (m) =>
+        m.action === "append" &&
+        m.block.type === "tool_call" &&
+        m.block.toolName &&
+        FILE_CHANGE_TOOLS.has(m.block.toolName),
+    );
   return { ...agent, blocks, ...(hasNewFileChange ? { hasFileChanges: true } : {}) };
 }
 
@@ -151,7 +151,10 @@ export function insertAgentSession(
 ): { agents: Map<string, AgentSessionState> } {
   const agents = new Map(state.agents);
   const existing = agents.get(slotKey);
-  agents.set(slotKey, { ...createAgentSession(sessionId, agentType), blocks: existing?.blocks ?? [] });
+  agents.set(slotKey, {
+    ...createAgentSession(sessionId, agentType),
+    blocks: existing?.blocks ?? [],
+  });
   return { agents };
 }
 
@@ -162,10 +165,7 @@ export type SetFn = (
 
 // -- Agent WS event handlers --
 
-export function handleAgentStream(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleAgentStream(payload: Record<string, unknown>, set: SetFn): void {
   const streamSlot = parseAgentSlot(payload);
   const blocks = (payload.blocks ?? []) as Record<string, unknown>[];
   const singleMsg = payload.message as Record<string, unknown> | undefined;
@@ -174,7 +174,7 @@ export function handleAgentStream(
 
   if (streamSlot.type === "plan" || streamSlot.type === "prd" || streamSlot.type === "refine") {
     const key = streamSlot.type === "prd" ? PRD_KEY : PLAN_KEY;
-    set(state => {
+    set((state) => {
       let agent = state.agents.get(key) ?? createAgentSession(0, streamSlot.type);
       for (const msg of msgs) {
         agent = processAgentStream(agent, msg);
@@ -186,7 +186,7 @@ export function handleAgentStream(
     return;
   }
 
-  set(state => {
+  set((state) => {
     const slotKey = resolveSlotKey(state.agents, streamSlot);
     const agent = state.agents.get(slotKey);
     if (!agent) return state;
@@ -201,37 +201,37 @@ export function handleAgentStream(
   });
 }
 
-export function handleAgentPaused(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleAgentPaused(payload: Record<string, unknown>, set: SetFn): void {
   const pausedSlot = parseAgentSlot(payload);
   const pausedSessionId = payload.session_id as number;
   const pausedRuntimeSessionId = (payload.runtime_session_id as string) || null;
-  set(state => {
+  set((state) => {
     const key = slotKeyForEvent(pausedSlot, pausedSessionId);
     return upsertAgent(state, key, pausedSessionId, {
-      sessionId: pausedSessionId, status: "paused", runtimeSessionId: pausedRuntimeSessionId,
+      sessionId: pausedSessionId,
+      status: "paused",
+      runtimeSessionId: pausedRuntimeSessionId,
       agentType: pausedSlot.type,
     });
   });
 }
 
-export function handleAgentRunning(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleAgentRunning(payload: Record<string, unknown>, set: SetFn): void {
   const runSlot = parseAgentSlot(payload);
   const runSessionId = payload.session_id as number;
-  set(state => {
+  set((state) => {
     const key = slotKeyForEvent(runSlot, runSessionId);
     const agentPatch = upsertAgent(state, key, runSessionId, {
-      sessionId: runSessionId, status: "running", agentType: runSlot.type,
+      sessionId: runSessionId,
+      status: "running",
+      agentType: runSlot.type,
     });
     // Update queue item if this is a queue_item slot
     if (runSlot.type === "queue_item") {
-      const queue = state.queue.map(q =>
-        q.id === runSlot.id ? { ...q, status: "running" as const, agent_session_id: runSessionId } : q,
+      const queue = state.queue.map((q) =>
+        q.id === runSlot.id
+          ? { ...q, status: "running" as const, agent_session_id: runSessionId }
+          : q,
       );
       return { ...agentPatch, queue, selectedItemId: state.selectedItemId ?? runSlot.id };
     }
@@ -239,23 +239,17 @@ export function handleAgentRunning(
   });
 }
 
-export function handleAgentSessionId(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleAgentSessionId(payload: Record<string, unknown>, set: SetFn): void {
   const sidSlot = parseAgentSlot(payload);
   const rtSessionId = payload.runtime_session_id as string;
   if (!rtSessionId) return;
-  set(state => {
+  set((state) => {
     const key = resolveSlotKey(state.agents, sidSlot);
     return patchAgent(state, key, { runtimeSessionId: rtSessionId });
   });
 }
 
-export function handleAgentUserMessage(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleAgentUserMessage(payload: Record<string, unknown>, set: SetFn): void {
   const umSlot = parseAgentSlot(payload);
   const umContent = payload.content as string;
   if (!umContent) return;
@@ -266,7 +260,7 @@ export function handleAgentUserMessage(
     isError: false,
     createdAt: new Date().toISOString(),
   };
-  set(state => {
+  set((state) => {
     const key = resolveSlotKey(state.agents, umSlot);
     const existing = state.agents.get(key);
     const agent = existing ?? createAgentSession(0, umSlot.type);
@@ -290,12 +284,9 @@ export function handleAgentUserMessage(
 
 /** Frontend receives `workflow.pending_cleared` when a permission respond
  *  succeeds server-side — clears every pending-* state on the target slot. */
-export function handlePendingCleared(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handlePendingCleared(payload: Record<string, unknown>, set: SetFn): void {
   const slot = parseAgentSlot(payload);
-  set(state => {
+  set((state) => {
     const key = resolveSlotKey(state.agents, slot);
     const agent = state.agents.get(key);
     if (!agent) return {};
@@ -312,17 +303,14 @@ export function handlePendingCleared(
   });
 }
 
-export function handleUsageUpdate(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handleUsageUpdate(payload: Record<string, unknown>, set: SetFn): void {
   const usageSlot = parseAgentSlot(payload);
   const inputTokens = (payload.input_tokens ?? 0) as number;
   const outputTokens = (payload.output_tokens ?? 0) as number;
   const rawContextWindow = payload.context_window;
   const contextWindow =
     typeof rawContextWindow === "number" && rawContextWindow > 0 ? rawContextWindow : null;
-  set(state => {
+  set((state) => {
     const key = resolveSlotKey(state.agents, usageSlot);
     const existing = state.agents.get(key);
     const effectiveContextWindow = contextWindow ?? existing?.contextWindow ?? null;
@@ -334,10 +322,7 @@ export function handleUsageUpdate(
   });
 }
 
-export function handlePermissionRequest(
-  payload: Record<string, unknown>,
-  set: SetFn,
-): void {
+export function handlePermissionRequest(payload: Record<string, unknown>, set: SetFn): void {
   const permSlot = parseAgentSlot(payload);
   const toolName = payload.tool_name as string;
   const toolInput = (payload.tool_input ?? payload.input ?? {}) as Record<string, unknown>;
@@ -350,7 +335,7 @@ export function handlePermissionRequest(
       pendingQuestionRequestId: requestId,
       pendingPermission: null,
     };
-    set(state => {
+    set((state) => {
       const key = resolveSlotKey(state.agents, permSlot);
       const agent = state.agents.get(key);
       if (!agent) return {};
@@ -368,11 +353,11 @@ export function handlePermissionRequest(
     pattern: (payload.pattern ?? "") as string,
     preview: typeof payload.preview === "string" ? payload.preview : undefined,
     options: Array.isArray(payload.options)
-      ? payload.options as PendingPermission["options"]
+      ? (payload.options as PendingPermission["options"])
       : [],
     requestId,
   };
-  set(state => {
+  set((state) => {
     const key = resolveSlotKey(state.agents, permSlot);
     const agent = state.agents.get(key);
     if (!agent) return {};

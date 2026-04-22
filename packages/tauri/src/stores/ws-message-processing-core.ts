@@ -10,9 +10,7 @@ interface StreamContext {
 
 type StreamSessionId = string | symbol;
 
-const DEFAULT_STREAM_SESSION_ID: StreamSessionId = Symbol(
-  "default-stream-session",
-);
+const DEFAULT_STREAM_SESSION_ID: StreamSessionId = Symbol("default-stream-session");
 
 export interface StreamingState {
   streams: Map<StreamSessionId, StreamContext>;
@@ -113,10 +111,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object";
 }
 
-function processStreamEvent(
-  msg: Record<string, unknown>,
-  state: StreamingState,
-): BlockMutation[] {
+function processStreamEvent(msg: Record<string, unknown>, state: StreamingState): BlockMutation[] {
   const event = msg.event as Record<string, unknown> | undefined;
   if (!event) return [];
 
@@ -222,7 +217,9 @@ function processContentBlockDelta(
 
   switch (delta.type as string) {
     case "text_delta":
-      return [{ action: "update", block: { id: blockId, type: "text", content: delta.text as string } }];
+      return [
+        { action: "update", block: { id: blockId, type: "text", content: delta.text as string } },
+      ];
     case "thinking_delta":
       return [
         {
@@ -361,14 +358,7 @@ function createAssistantMutation(
       }
       return {
         action: "append",
-        block: createToolUseBlock(
-          state,
-          blockId,
-          contentBlock,
-          parentToolUseId,
-          createdAt,
-          true,
-        ),
+        block: createToolUseBlock(state, blockId, contentBlock, parentToolUseId, createdAt, true),
       };
     default:
       return null;
@@ -417,9 +407,7 @@ function processUserMessage(
         id: `ws-${state.counter}`,
         type: "tool_result",
         content:
-          typeof item.content === "string"
-            ? item.content
-            : JSON.stringify(item.content ?? ""),
+          typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
         isError: item.is_error === true,
         sourceToolName,
         toolUseId,
@@ -434,9 +422,7 @@ function processUserMessage(
 }
 
 function getStreamSessionId(msg: Record<string, unknown>): StreamSessionId {
-  return typeof msg.session_id === "string"
-    ? msg.session_id
-    : DEFAULT_STREAM_SESSION_ID;
+  return typeof msg.session_id === "string" ? msg.session_id : DEFAULT_STREAM_SESSION_ID;
 }
 
 function getOrCreateStreamContext(

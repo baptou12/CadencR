@@ -7,7 +7,7 @@ describe("CollapsibleBlock", () => {
     render(
       <CollapsibleBlock totalCount={3} visibleCount={5} unit="items" header={<span>Header</span>}>
         {() => <div>All items</div>}
-      </CollapsibleBlock>
+      </CollapsibleBlock>,
     );
     expect(screen.getByText("Header")).toBeInTheDocument();
     expect(screen.getByText("All items")).toBeInTheDocument();
@@ -17,7 +17,7 @@ describe("CollapsibleBlock", () => {
     render(
       <CollapsibleBlock totalCount={10} visibleCount={3} unit="lines" header={<span>H</span>}>
         {() => <div>Content</div>}
-      </CollapsibleBlock>
+      </CollapsibleBlock>,
     );
     expect(screen.getByRole("button", { name: /show all 10/i })).toBeInTheDocument();
   });
@@ -26,7 +26,7 @@ describe("CollapsibleBlock", () => {
     render(
       <CollapsibleBlock totalCount={3} visibleCount={5} unit="lines" header={<span>H</span>}>
         {() => <div>Content</div>}
-      </CollapsibleBlock>
+      </CollapsibleBlock>,
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
@@ -35,7 +35,7 @@ describe("CollapsibleBlock", () => {
     render(
       <CollapsibleBlock totalCount={10} visibleCount={3} unit="actions" header={<span>H</span>}>
         {() => <div>Content</div>}
-      </CollapsibleBlock>
+      </CollapsibleBlock>,
     );
     expect(screen.getByText(/7 actions above/)).toBeInTheDocument();
   });
@@ -44,7 +44,7 @@ describe("CollapsibleBlock", () => {
     const { user } = render(
       <CollapsibleBlock totalCount={10} visibleCount={3} unit="lines" header={<span>H</span>}>
         {({ showAll }) => <div>{showAll ? "showing all" : "collapsed"}</div>}
-      </CollapsibleBlock>
+      </CollapsibleBlock>,
     );
     expect(screen.getByText("collapsed")).toBeInTheDocument();
     await user.click(screen.getByRole("button"));

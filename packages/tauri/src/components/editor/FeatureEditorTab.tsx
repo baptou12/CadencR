@@ -6,11 +6,7 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useActiveTab } from "@/hooks/useActiveTab";
 import { PanelLeft } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +41,8 @@ const SIDEBAR_MAX_SIZE = "500px";
 
 const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(
   function FeatureEditorTab({ featureId, projectId, projectPath }, ref) {
-    const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } = useEditorState(featureId);
+    const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
+      useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
     const { activeTab } = useActiveTab(featureId);
@@ -69,18 +66,22 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       );
     }, [panes]);
 
-    useImperativeHandle(ref, () => ({
-      requestLeave(proceed: () => void) {
-        const dirty = getDirtyTabs();
-        if (dirty.length === 0) {
-          proceed();
-        } else {
-          // Store proceed as a function in a wrapper to avoid React treating it as a state updater
-          setPendingProceed(() => proceed);
-          setLeaveDialogOpen(true);
-        }
-      },
-    }), [getDirtyTabs]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        requestLeave(proceed: () => void) {
+          const dirty = getDirtyTabs();
+          if (dirty.length === 0) {
+            proceed();
+          } else {
+            // Store proceed as a function in a wrapper to avoid React treating it as a state updater
+            setPendingProceed(() => proceed);
+            setLeaveDialogOpen(true);
+          }
+        },
+      }),
+      [getDirtyTabs],
+    );
 
     async function handleSaveAllAndSwitch() {
       const dirty = getDirtyTabs();
@@ -109,23 +110,73 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       setPendingProceed(null);
     }
 
-    useGlobalShortcut("meta+p", (e) => {
-      e.preventDefault();
-      setFileSearchOpen(true);
-    }, { enabled: isEditorActive });
+    useGlobalShortcut(
+      "meta+p",
+      (e) => {
+        e.preventDefault();
+        setFileSearchOpen(true);
+      },
+      { enabled: isEditorActive },
+    );
 
-    useGlobalShortcut("meta+shift+f", (e) => {
-      e.preventDefault();
-      setContentSearchOpen(true);
-    }, { enabled: isEditorActive });
+    useGlobalShortcut(
+      "meta+shift+f",
+      (e) => {
+        e.preventDefault();
+        setContentSearchOpen(true);
+      },
+      { enabled: isEditorActive },
+    );
 
     // Split pane shortcuts — only active when editor tab is selected
-    useHotkeys("meta+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "vertical"); }, { enabled: isEditorActive });
-    useHotkeys("meta+shift+d", (e) => { e.preventDefault(); splitEditorPane(featureId, activePaneId, "horizontal"); }, { enabled: isEditorActive });
-    useHotkeys("meta+alt+left", (e) => { e.preventDefault(); navigatePane(featureId, "left"); }, { enabled: isEditorActive });
-    useHotkeys("meta+alt+right", (e) => { e.preventDefault(); navigatePane(featureId, "right"); }, { enabled: isEditorActive });
-    useHotkeys("meta+alt+up", (e) => { e.preventDefault(); navigatePane(featureId, "up"); }, { enabled: isEditorActive });
-    useHotkeys("meta+alt+down", (e) => { e.preventDefault(); navigatePane(featureId, "down"); }, { enabled: isEditorActive });
+    useHotkeys(
+      "meta+d",
+      (e) => {
+        e.preventDefault();
+        splitEditorPane(featureId, activePaneId, "vertical");
+      },
+      { enabled: isEditorActive },
+    );
+    useHotkeys(
+      "meta+shift+d",
+      (e) => {
+        e.preventDefault();
+        splitEditorPane(featureId, activePaneId, "horizontal");
+      },
+      { enabled: isEditorActive },
+    );
+    useHotkeys(
+      "meta+alt+left",
+      (e) => {
+        e.preventDefault();
+        navigatePane(featureId, "left");
+      },
+      { enabled: isEditorActive },
+    );
+    useHotkeys(
+      "meta+alt+right",
+      (e) => {
+        e.preventDefault();
+        navigatePane(featureId, "right");
+      },
+      { enabled: isEditorActive },
+    );
+    useHotkeys(
+      "meta+alt+up",
+      (e) => {
+        e.preventDefault();
+        navigatePane(featureId, "up");
+      },
+      { enabled: isEditorActive },
+    );
+    useHotkeys(
+      "meta+alt+down",
+      (e) => {
+        e.preventDefault();
+        navigatePane(featureId, "down");
+      },
+      { enabled: isEditorActive },
+    );
 
     useEffect(() => {
       initFeature();
@@ -163,12 +214,18 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
           onOpenChange={setContentSearchOpen}
         />
 
-        <Dialog open={leaveDialogOpen} onOpenChange={(open) => { if (!open) handleCancelLeave(); }}>
+        <Dialog
+          open={leaveDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) handleCancelLeave();
+          }}
+        >
           <DialogContent showCloseButton={false}>
             <DialogHeader>
               <DialogTitle>Unsaved Changes</DialogTitle>
               <DialogDescription>
-                You have unsaved changes in {dirtyCount} file{dirtyCount !== 1 ? "s" : ""}. Switch tab anyway?
+                You have unsaved changes in {dirtyCount} file{dirtyCount !== 1 ? "s" : ""}. Switch
+                tab anyway?
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -227,7 +284,9 @@ export default FeatureEditorTab;
 function SidebarHeader({ onToggle }: { onToggle: () => void }) {
   return (
     <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Explorer</span>
+      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        Explorer
+      </span>
       <button
         type="button"
         title="Collapse sidebar"

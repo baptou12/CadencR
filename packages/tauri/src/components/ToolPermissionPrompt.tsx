@@ -68,7 +68,12 @@ interface PermissionOptionButtonProps {
   onClick: (index: number) => void;
 }
 
-function PermissionOptionButton({ option, index, highlighted, onClick }: PermissionOptionButtonProps) {
+function PermissionOptionButton({
+  option,
+  index,
+  highlighted,
+  onClick,
+}: PermissionOptionButtonProps) {
   return (
     <button
       type="button"
@@ -156,14 +161,19 @@ function usePermissionHotkeys({ disableShortcuts, onTrigger }: PermissionHotkeys
  * Inline permission prompt shown when an agent tool call requires user approval.
  * Displays the tool name, description, request preview, and runtime-provided options.
  */
-export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts }: ToolPermissionPromptProps) {
+export function ToolPermissionPrompt({
+  permission,
+  onDecision,
+  disableShortcuts,
+}: ToolPermissionPromptProps) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const options = permission.options && permission.options.length > 0 ? permission.options : FALLBACK_OPTIONS;
+  const options =
+    permission.options && permission.options.length > 0 ? permission.options : FALLBACK_OPTIONS;
   const rawCommand = getPermissionPreview(permission);
 
   useEffect(() => {
@@ -179,33 +189,42 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
 
-  const submitDecision = useCallback((decision: PermissionDecisionValue) => {
-    if (decision === "deny") {
-      onDecision("deny", feedback.trim() || undefined);
-      return;
-    }
-    onDecision(decision);
-  }, [feedback, onDecision]);
+  const submitDecision = useCallback(
+    (decision: PermissionDecisionValue) => {
+      if (decision === "deny") {
+        onDecision("deny", feedback.trim() || undefined);
+        return;
+      }
+      onDecision(decision);
+    },
+    [feedback, onDecision],
+  );
 
-  const handleOption = useCallback((index: number) => {
-    const option = options[index];
-    if (!option) return;
-    if (option.decision === "deny" && option.collectFeedback && !showFeedback) {
-      setShowFeedback(true);
-      return;
-    }
-    submitDecision(option.decision);
-  }, [options, showFeedback, submitDecision]);
+  const handleOption = useCallback(
+    (index: number) => {
+      const option = options[index];
+      if (!option) return;
+      if (option.decision === "deny" && option.collectFeedback && !showFeedback) {
+        setShowFeedback(true);
+        return;
+      }
+      submitDecision(option.decision);
+    },
+    [options, showFeedback, submitDecision],
+  );
 
   const handleDenyWithEnter = useCallback(() => {
     submitDecision("deny");
   }, [submitDecision]);
 
-  const handleHotkey = useCallback((index: number) => {
-    if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
-    flashHighlight(index);
-    actionTimerRef.current = setTimeout(() => handleOption(index), 150);
-  }, [flashHighlight, handleOption]);
+  const handleHotkey = useCallback(
+    (index: number) => {
+      if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
+      flashHighlight(index);
+      actionTimerRef.current = setTimeout(() => handleOption(index), 150);
+    },
+    [flashHighlight, handleOption],
+  );
 
   usePermissionHotkeys({ disableShortcuts, onTrigger: handleHotkey });
 
@@ -216,7 +235,9 @@ export function ToolPermissionPrompt({ permission, onDecision, disableShortcuts 
         <ShieldAlertIcon className="size-3.5" />
         <span className="font-medium">Permission Required</span>
         <span className="text-muted-foreground">-</span>
-        <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-foreground">{permission.toolName}</code>
+        <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-foreground">
+          {permission.toolName}
+        </code>
       </div>
 
       {/* Description */}

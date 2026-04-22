@@ -12,7 +12,11 @@ describe("parseApplyPatchChanges", () => {
     );
 
     expect(changes).toHaveLength(2);
-    expect(changes[0]).toMatchObject({ kind: "add", filePath: "src/new.ts", addedLines: ["hello"] });
+    expect(changes[0]).toMatchObject({
+      kind: "add",
+      filePath: "src/new.ts",
+      addedLines: ["hello"],
+    });
     expect(changes[1]).toMatchObject({ kind: "update", filePath: "src/existing.ts" });
   });
 });

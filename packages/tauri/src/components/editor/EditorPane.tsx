@@ -12,7 +12,9 @@ interface EditorPaneProps {
 }
 
 export default function EditorPane({ featureId, paneId, projectId, isActive }: EditorPaneProps) {
-  const activeFilePath = useEditorStore((s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null);
+  const activeFilePath = useEditorStore(
+    (s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null,
+  );
   const setActivePane = useEditorStore((s) => s.setActivePane);
 
   function handleFocus() {

@@ -71,9 +71,7 @@ describe("useFeatureAgentState", () => {
   it("maps session data correctly", () => {
     mockUseQuery.mockReturnValue({
       data: {
-        sessions: [
-          makeSession({ inputTokens: 100, outputTokens: 50 }),
-        ],
+        sessions: [makeSession({ inputTokens: 100, outputTokens: 50 })],
       },
       isLoading: false,
       refetch: mockRefetch,
@@ -114,9 +112,7 @@ describe("useFeatureAgentState", () => {
   it("maps status=waiting to paused", () => {
     mockUseQuery.mockReturnValue({
       data: {
-        sessions: [
-          makeSession({ agentType: "execute", status: "waiting" }),
-        ],
+        sessions: [makeSession({ agentType: "execute", status: "waiting" })],
       },
       isLoading: false,
       refetch: mockRefetch,
@@ -141,9 +137,7 @@ describe("useFeatureAgentState", () => {
     };
     mockUseQuery.mockReturnValue({
       data: {
-        sessions: [
-          makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions }),
-        ],
+        sessions: [makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions })],
       },
       isLoading: false,
       refetch: mockRefetch,
@@ -163,9 +157,7 @@ describe("useFeatureAgentState", () => {
     };
     mockUseQuery.mockReturnValue({
       data: {
-        sessions: [
-          makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions }),
-        ],
+        sessions: [makeSession({ status: "paused", subprocessId: "sub-1", pendingQuestions })],
       },
       isLoading: false,
       refetch: mockRefetch,
@@ -186,7 +178,11 @@ describe("useFeatureAgentState", () => {
     mockUseQuery.mockReturnValue({
       data: {
         sessions: [
-          makeSession({ maxMessageId: 100, isIncremental: false, blocks: [{ id: "msg-1", type: "text", content: "hello" }] }),
+          makeSession({
+            maxMessageId: 100,
+            isIncremental: false,
+            blocks: [{ id: "msg-1", type: "text", content: "hello" }],
+          }),
         ],
       },
       isLoading: false,
@@ -197,7 +193,9 @@ describe("useFeatureAgentState", () => {
 
     // After first render + useEffect (dataVersion bump), the query should
     // be called with afterMessageIds derived from accumulated state
-    act(() => { rerender(); });
+    act(() => {
+      rerender();
+    });
 
     // The second call to useQuery should include featureId and after param (JSON-encoded afterMessageIds)
     const lastCall = mockUseQuery.mock.calls[mockUseQuery.mock.calls.length - 1];
@@ -232,7 +230,15 @@ describe("useFeatureAgentState", () => {
           makeSession({
             maxMessageId: 105,
             isIncremental: true,
-            blocks: [{ id: "msg-101", type: "tool_call", content: "{}", toolName: "Read", toolUseId: "tu-1" }],
+            blocks: [
+              {
+                id: "msg-101",
+                type: "tool_call",
+                content: "{}",
+                toolName: "Read",
+                toolUseId: "tu-1",
+              },
+            ],
           }),
         ],
       },
@@ -335,29 +341,31 @@ describe("useFeatureAgentState", () => {
           makeSession({
             maxMessageId: 100,
             isIncremental: false,
-            blocks: [{
-              id: "task-1",
-              type: "tool_call",
-              content: '{"description":"Find OpenCode UI rendering","status":"pending"}',
-              toolName: "Task",
-              toolUseId: "task-tu-1",
-              childBlocks: [
-                {
-                  id: "msg-10",
-                  type: "tool_call",
-                  content: '{"status":"pending"}',
-                  toolName: "Read",
-                  toolUseId: "read-tu-1",
-                  parentToolUseId: "task-tu-1",
-                },
-                {
-                  id: "msg-11",
-                  type: "text",
-                  content: "Final answer",
-                  parentToolUseId: "task-tu-1",
-                },
-              ],
-            }],
+            blocks: [
+              {
+                id: "task-1",
+                type: "tool_call",
+                content: '{"description":"Find OpenCode UI rendering","status":"pending"}',
+                toolName: "Task",
+                toolUseId: "task-tu-1",
+                childBlocks: [
+                  {
+                    id: "msg-10",
+                    type: "tool_call",
+                    content: '{"status":"pending"}',
+                    toolName: "Read",
+                    toolUseId: "read-tu-1",
+                    parentToolUseId: "task-tu-1",
+                  },
+                  {
+                    id: "msg-11",
+                    type: "text",
+                    content: "Final answer",
+                    parentToolUseId: "task-tu-1",
+                  },
+                ],
+              },
+            ],
           }),
         ],
       },
@@ -373,14 +381,16 @@ describe("useFeatureAgentState", () => {
           makeSession({
             maxMessageId: 101,
             isIncremental: true,
-            blocks: [{
-              id: "msg-12",
-              type: "tool_call",
-              content: '{"file_path":"/tmp/example.ts"}',
-              toolName: "Read",
-              toolUseId: "read-tu-1",
-              parentToolUseId: "task-tu-1",
-            }],
+            blocks: [
+              {
+                id: "msg-12",
+                type: "tool_call",
+                content: '{"file_path":"/tmp/example.ts"}',
+                toolName: "Read",
+                toolUseId: "read-tu-1",
+                parentToolUseId: "task-tu-1",
+              },
+            ],
           }),
         ],
       },
@@ -413,10 +423,9 @@ describe("useFeatureAgentState", () => {
       refetch: mockRefetch,
     });
 
-    const { result, rerender } = renderHook(
-      ({ featureId }) => useFeatureAgentState(featureId),
-      { initialProps: { featureId: 1 } },
-    );
+    const { result, rerender } = renderHook(({ featureId }) => useFeatureAgentState(featureId), {
+      initialProps: { featureId: 1 },
+    });
     expect(result.current.sessions[0].blocks[0].content).toBe("feature 1 text");
 
     // Switch feature — accumulated state should be cleared, so the first query

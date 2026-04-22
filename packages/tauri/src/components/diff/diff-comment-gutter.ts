@@ -1,9 +1,4 @@
-import {
-  EditorView,
-  GutterMarker,
-  gutter,
-  ViewPlugin,
-} from "@codemirror/view";
+import { EditorView, GutterMarker, gutter, ViewPlugin } from "@codemirror/view";
 import { type Extension, StateField, StateEffect } from "@codemirror/state";
 import { DIFF_PALETTE } from "@/components/editor/editor-theme";
 
@@ -30,31 +25,34 @@ class AddCommentMarker extends GutterMarker {
 
 const visibleMarker = new AddCommentMarker();
 
-const gutterTheme = EditorView.theme({
-  ".cm-add-comment-gutter": {
-    width: "24px",
+const gutterTheme = EditorView.theme(
+  {
+    ".cm-add-comment-gutter": {
+      width: "24px",
+    },
+    ".cm-add-comment-gutter .cm-gutterElement": {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      cursor: "pointer",
+    },
+    ".cm-add-comment-marker": {
+      cursor: "pointer",
+      color: DIFF_PALETTE.fg,
+      background: DIFF_PALETTE.purple,
+      fontWeight: "bold",
+      fontSize: "12px",
+      lineHeight: "1",
+      width: "18px",
+      height: "18px",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: "4px",
+    },
   },
-  ".cm-add-comment-gutter .cm-gutterElement": {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-  },
-  ".cm-add-comment-marker": {
-    cursor: "pointer",
-    color: DIFF_PALETTE.fg,
-    background: DIFF_PALETTE.purple,
-    fontWeight: "bold",
-    fontSize: "12px",
-    lineHeight: "1",
-    width: "18px",
-    height: "18px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: "4px",
-  },
-}, { dark: true });
+  { dark: true },
+);
 
 function hoverPlugin(): ViewPlugin<{ destroy(): void }> {
   return ViewPlugin.define((view) => {

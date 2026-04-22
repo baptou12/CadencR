@@ -4,12 +4,7 @@
  * Widgets render React components via createRoot in toDOM(),
  * and a ViewPlugin handles cleanup of React roots on destroy.
  */
-import {
-  EditorView,
-  Decoration,
-  WidgetType,
-  type DecorationSet,
-} from "@codemirror/view";
+import { EditorView, Decoration, WidgetType, type DecorationSet } from "@codemirror/view";
 import { StateEffect, StateField, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { createRoot, type Root } from "react-dom/client";
 import { createElement } from "react";
@@ -101,7 +96,9 @@ class CommentDisplayWidget extends WidgetType {
   eq(other: CommentDisplayWidget): boolean {
     return (
       this.comments.length === other.comments.length &&
-      this.comments.every((c, i) => c.id === other.comments[i].id && c.content === other.comments[i].content)
+      this.comments.every(
+        (c, i) => c.id === other.comments[i].id && c.content === other.comments[i].content,
+      )
     );
   }
 
@@ -145,7 +142,10 @@ class CommentFormWidget extends WidgetType {
 
 // ---- State field ----
 
-function buildDecorations(state: CommentState, doc: { lines: number; line: (n: number) => { from: number } }): DecorationSet {
+function buildDecorations(
+  state: CommentState,
+  doc: { lines: number; line: (n: number) => { from: number } },
+): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const entries: { pos: number; deco: Decoration }[] = [];
 

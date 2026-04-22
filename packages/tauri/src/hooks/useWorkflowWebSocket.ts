@@ -6,10 +6,7 @@ import { createWsConnection } from "@/lib/ws-connection";
 import { createCommandsGet } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
 import { hydrateFromSnapshotPatch } from "@/hooks/workflow-store-helpers";
-import {
-  type WorkflowState,
-  slotKeyToAgentSlot,
-} from "@/types/workflow";
+import { type WorkflowState, slotKeyToAgentSlot } from "@/types/workflow";
 
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
@@ -95,9 +92,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       // tokens stay missing. The only observable difference from a hard reset
       // is the `isReconnecting` flag, which drives a thin refresh stripe.
       const isSoftReconnect =
-        prev.featureId === featureId &&
-        prev.projectId === projectId &&
-        prev.hydrated;
+        prev.featureId === featureId && prev.projectId === projectId && prev.hydrated;
 
       prev.conn?.close();
 
@@ -118,7 +113,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           // Otherwise they race with `hydrateFromSnapshot` and streamed blocks
           // get overwritten by the snapshot merge.
           if (!get().hydrated) {
-            set(state => ({ bufferedEvents: [...state.bufferedEvents, evt] }));
+            set((state) => ({ bufferedEvents: [...state.bufferedEvents, evt] }));
             return;
           }
           handleMessage(evt);
@@ -129,12 +124,30 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       });
 
       set({
-        conn, featureId, projectId,
-        queue: [], agents: new Map(),
-        workflowStatus: "idle", pauseReason: null, selectedItemId: null, error: null, hydrated: false, startingBuild: false, continuingBuild: false,
-        worktreeStatus: "idle" as const, worktreePath: null, worktreeSetupOutput: [], worktreeError: null,
-        featureTitle: null, isAutoNaming: false, slashCommands: [], slashCommandsLoading: false, slashCommandsKey: null, slashCommandsRequestRef: null,
-        bufferedEvents: [], isReconnecting: isSoftReconnect,
+        conn,
+        featureId,
+        projectId,
+        queue: [],
+        agents: new Map(),
+        workflowStatus: "idle",
+        pauseReason: null,
+        selectedItemId: null,
+        error: null,
+        hydrated: false,
+        startingBuild: false,
+        continuingBuild: false,
+        worktreeStatus: "idle" as const,
+        worktreePath: null,
+        worktreeSetupOutput: [],
+        worktreeError: null,
+        featureTitle: null,
+        isAutoNaming: false,
+        slashCommands: [],
+        slashCommandsLoading: false,
+        slashCommandsKey: null,
+        slashCommandsRequestRef: null,
+        bufferedEvents: [],
+        isReconnecting: isSoftReconnect,
       });
     },
 
@@ -192,7 +205,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     rejectPlan(feedback, requestId) {
       const isPrd = get().workflowStatus === "prd";
-      send(isPrd ? "prd.rejected" : "plan.rejected", { approved: false, feedback, request_id: requestId });
+      send(isPrd ? "prd.rejected" : "plan.rejected", {
+        approved: false,
+        feedback,
+        request_id: requestId,
+      });
       // Backend handles the feedback block + pending clear; see approvePlan.
     },
 
@@ -290,7 +307,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     removeAgent(slotKey) {
-      set(state => {
+      set((state) => {
         const agents = new Map(state.agents);
         agents.delete(slotKey);
         return { agents };
@@ -305,7 +322,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         action: "delete",
         payload: { session_id: String(sessionDbId) },
       });
-      set(state => {
+      set((state) => {
         const agents = new Map(state.agents);
         for (const [key, agent] of agents) {
           if (agent.sessionId === sessionDbId) {
@@ -318,13 +335,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     populateAgentBlocks(slotKey, blocks, hasMore, oldestMessageId) {
-      set(state => {
+      set((state) => {
         const agent = state.agents.get(slotKey);
         if (!agent) return state;
         if (agent.historyLoaded || agent.blocks.length > 0) {
           const nextHasMore = hasMore ?? agent.hasMore ?? false;
           const nextOldest = oldestMessageId ?? agent.oldestMessageId ?? null;
-          if (agent.historyLoaded && nextHasMore === agent.hasMore && nextOldest === agent.oldestMessageId) {
+          if (
+            agent.historyLoaded &&
+            nextHasMore === agent.hasMore &&
+            nextOldest === agent.oldestMessageId
+          ) {
             return state;
           }
           return patchAgent(state, slotKey, {
@@ -334,12 +355,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           });
         }
         const fileChanges = agent.hasFileChanges || blocksContainFileChange(blocks);
-        return patchAgent(state, slotKey, { blocks, historyLoaded: true, hasFileChanges: fileChanges, hasMore: hasMore ?? false, oldestMessageId: oldestMessageId ?? null });
+        return patchAgent(state, slotKey, {
+          blocks,
+          historyLoaded: true,
+          hasFileChanges: fileChanges,
+          hasMore: hasMore ?? false,
+          oldestMessageId: oldestMessageId ?? null,
+        });
       });
     },
 
     populateOlderBlocks(slotKey, olderBlocks, hasMore, oldestMessageId) {
-      set(state => {
+      set((state) => {
         const agent = state.agents.get(slotKey);
         if (!agent) return state;
         return patchAgent(state, slotKey, {

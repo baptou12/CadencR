@@ -8,7 +8,12 @@ import { ModelSelector } from "../components/ModelSelector";
 import { ProvidersTab } from "../components/settings/ProvidersTab";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { DEFAULT_LOADER_STYLE, LOADER_STYLE_DETAILS, LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
+import {
+  DEFAULT_LOADER_STYLE,
+  LOADER_STYLE_DETAILS,
+  LOADER_STYLE_KEY,
+  parseLoaderStyle,
+} from "@/lib/loader-style";
 import {
   useGetWorkspaceSetting,
   useSetWorkspaceSetting,
@@ -103,7 +108,9 @@ function GeneralTab() {
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Agent Runtime</h2>
-          <p className="text-sm text-muted-foreground">Choose the runtime provider and model for each agent type.</p>
+          <p className="text-sm text-muted-foreground">
+            Choose the runtime provider and model for each agent type.
+          </p>
         </div>
         <ModelSelector level="global" />
       </section>
@@ -111,7 +118,9 @@ function GeneralTab() {
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Agent Autonomy</h2>
-          <p className="text-sm text-muted-foreground">Controls how much automation the execute agent uses when building features.</p>
+          <p className="text-sm text-muted-foreground">
+            Controls how much automation the execute agent uses when building features.
+          </p>
         </div>
         <AgentAutonomySelect />
       </section>
@@ -119,7 +128,9 @@ function GeneralTab() {
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Parallel Execution</h2>
-          <p className="text-sm text-muted-foreground">Run multiple agents in parallel within each execution step.</p>
+          <p className="text-sm text-muted-foreground">
+            Run multiple agents in parallel within each execution step.
+          </p>
         </div>
         <ParallelExecutionToggle />
       </section>
@@ -127,7 +138,9 @@ function GeneralTab() {
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Loader Style</h2>
-          <p className="text-sm text-muted-foreground">Choose between the default square loader and a discreet animated usage glow.</p>
+          <p className="text-sm text-muted-foreground">
+            Choose between the default square loader and a discreet animated usage glow.
+          </p>
         </div>
         <LoaderStyleControl />
       </section>
@@ -148,7 +161,9 @@ function ParallelExecutionToggle() {
   const queryClient = useQueryClient();
   const setParallel = useSetWorkspaceSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("parallel_execution") });
+      void queryClient.invalidateQueries({
+        queryKey: getGetWorkspaceSettingQueryKey("parallel_execution"),
+      });
       toast.success("Settings saved");
     },
   });
@@ -176,7 +191,9 @@ function AgentAutonomySelect() {
   const queryClient = useQueryClient();
   const setAutonomy = useSetWorkspaceSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy") });
+      void queryClient.invalidateQueries({
+        queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy"),
+      });
       toast.success("Settings saved");
     },
   });
@@ -226,7 +243,9 @@ function LoaderStyleControl() {
             <div
               className={[
                 "mt-1 size-3 shrink-0 rounded-full border transition-colors",
-                isSelected ? "border-primary bg-primary" : "border-muted-foreground/40 bg-transparent",
+                isSelected
+                  ? "border-primary bg-primary"
+                  : "border-muted-foreground/40 bg-transparent",
               ].join(" ")}
             />
           </button>
@@ -241,10 +260,16 @@ function ZoomControl() {
 
   return (
     <div className="flex items-center gap-3">
-      <Button variant="outline" size="sm" onClick={zoomOut}>−</Button>
+      <Button variant="outline" size="sm" onClick={zoomOut}>
+        −
+      </Button>
       <span className="text-sm w-12 text-center tabular-nums">{zoomLevel}%</span>
-      <Button variant="outline" size="sm" onClick={zoomIn}>+</Button>
-      <Button variant="ghost" size="sm" onClick={resetZoom}>Reset</Button>
+      <Button variant="outline" size="sm" onClick={zoomIn}>
+        +
+      </Button>
+      <Button variant="ghost" size="sm" onClick={resetZoom}>
+        Reset
+      </Button>
       <span className="text-xs text-muted-foreground ml-2">⌘+ / ⌘− / ⌘0</span>
     </div>
   );
@@ -270,7 +295,9 @@ function EditorSettings() {
           checked={isVimEnabled}
           onCheckedChange={(checked) => vimMode.setValue(checked ? "true" : "false")}
         />
-        <label htmlFor="editor-vim-mode" className="text-sm cursor-pointer">Vim mode</label>
+        <label htmlFor="editor-vim-mode" className="text-sm cursor-pointer">
+          Vim mode
+        </label>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -280,9 +307,13 @@ function EditorSettings() {
             checked={isAutoSaveEnabled}
             onCheckedChange={(checked) => autoSave.setValue(checked ? "true" : "false")}
           />
-          <label htmlFor="editor-auto-save" className="text-sm cursor-pointer">Auto-save</label>
+          <label htmlFor="editor-auto-save" className="text-sm cursor-pointer">
+            Auto-save
+          </label>
         </div>
-        <p className="text-xs text-muted-foreground ml-9">Automatically save files after a short delay.</p>
+        <p className="text-xs text-muted-foreground ml-9">
+          Automatically save files after a short delay.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -292,9 +323,13 @@ function EditorSettings() {
             checked={(gitBlame.value ?? "false") === "true"}
             onCheckedChange={(checked) => gitBlame.setValue(checked ? "true" : "false")}
           />
-          <label htmlFor="editor-git-blame" className="text-sm cursor-pointer">Git blame</label>
+          <label htmlFor="editor-git-blame" className="text-sm cursor-pointer">
+            Git blame
+          </label>
         </div>
-        <p className="text-xs text-muted-foreground ml-9">Show blame annotation on the current line.</p>
+        <p className="text-xs text-muted-foreground ml-9">
+          Show blame annotation on the current line.
+        </p>
       </div>
 
       <div className="flex flex-col gap-2">

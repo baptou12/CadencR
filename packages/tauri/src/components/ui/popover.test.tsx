@@ -8,7 +8,7 @@ describe("Popover", () => {
       <Popover>
         <PopoverTrigger>Show</PopoverTrigger>
         <PopoverContent>Popover content</PopoverContent>
-      </Popover>
+      </Popover>,
     );
     expect(screen.getByText("Show")).toBeInTheDocument();
   });
@@ -18,7 +18,7 @@ describe("Popover", () => {
       <Popover>
         <PopoverTrigger>Open</PopoverTrigger>
         <PopoverContent>Pop content</PopoverContent>
-      </Popover>
+      </Popover>,
     );
     expect(screen.queryByText("Pop content")).not.toBeInTheDocument();
     await user.click(screen.getByText("Open"));
@@ -30,7 +30,7 @@ describe("Popover", () => {
       <Popover>
         <PopoverTrigger>Toggle</PopoverTrigger>
         <PopoverContent>Content</PopoverContent>
-      </Popover>
+      </Popover>,
     );
     await user.click(screen.getByText("Toggle"));
     expect(screen.getByText("Content")).toBeInTheDocument();

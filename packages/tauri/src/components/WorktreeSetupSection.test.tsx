@@ -23,9 +23,7 @@ function settingsArray(obj: Record<string, string>) {
 describe("WorktreeSetupSection", () => {
   it("renders nothing when no step is set", () => {
     mockGetSettings.mockReturnValue({ data: null });
-    const { container } = render(
-      <WorktreeSetupSection featureId={1} projectId={1} />
-    );
+    const { container } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -76,11 +74,11 @@ describe("WorktreeSetupSection", () => {
         wsWorktreeStatus="ready"
         wsWorktreeBranch="feat/test"
         wsWorktreeSetupOutput={["installing deps", "all done"]}
-      />
+      />,
     );
     await user.click(screen.getByText("Worktree Setup"));
-    const logEl = screen.getByText((_, el) =>
-      el?.tagName === "PRE" && el.textContent === "installing deps\nall done"
+    const logEl = screen.getByText(
+      (_, el) => el?.tagName === "PRE" && el.textContent === "installing deps\nall done",
     );
     expect(logEl.className).toContain("bg-zinc-900");
     expect(logEl.className).toContain("text-zinc-100");
@@ -94,12 +92,14 @@ describe("WorktreeSetupSection", () => {
         wsWorktreeStatus="ready"
         wsWorktreeBranch="feat/resume"
         wsWorktreeSetupOutput={["pnpm install", "completed"]}
-      />
+      />,
     );
     await user.click(screen.getByText("Worktree Setup"));
-    expect(screen.getByText((_, el) =>
-      el?.tagName === "PRE" && el.textContent === "pnpm install\ncompleted"
-    )).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        (_, el) => el?.tagName === "PRE" && el.textContent === "pnpm install\ncompleted",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("maps DB 'ready' value to done badge (not running)", () => {

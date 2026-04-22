@@ -1,8 +1,22 @@
 import { useState, useCallback, memo, useMemo } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
-import { ChevronRightIcon, WrenchIcon, BrainIcon, Loader2Icon, TerminalIcon, CopyIcon, CheckIcon } from "lucide-react";
+import {
+  ChevronRightIcon,
+  WrenchIcon,
+  BrainIcon,
+  Loader2Icon,
+  TerminalIcon,
+  CopyIcon,
+  CheckIcon,
+} from "lucide-react";
 import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
-import { extractBashOutput, extractInlineDiffPreview, isFileChangeTool, isToolCallRunning, normalizeToolName } from "@/lib/tool-adapter";
+import {
+  extractBashOutput,
+  extractInlineDiffPreview,
+  isFileChangeTool,
+  isToolCallRunning,
+  normalizeToolName,
+} from "@/lib/tool-adapter";
 import { CadenceMcpBlock } from "@/components/CadenceMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
@@ -15,7 +29,15 @@ import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 
 /** Block types that the agent stream can produce */
-export type BlockType = "text" | "code" | "tool_call" | "tool_result" | "thinking" | "user_message" | "compact_divider" | "clear_divider";
+export type BlockType =
+  | "text"
+  | "code"
+  | "tool_call"
+  | "tool_result"
+  | "thinking"
+  | "user_message"
+  | "compact_divider"
+  | "clear_divider";
 
 /** Build a lookup map from toolUseId → tool_result block. */
 export function buildToolResultMap(blocks: AgentBlockData[]): Map<string, AgentBlockData> {
@@ -68,12 +90,21 @@ interface AgentBlockProps {
   toolResultMap?: Map<string, AgentBlockData>;
 }
 
-export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePath, toolResultMap }: AgentBlockProps) {
+export const AgentBlock = memo(function AgentBlock({
+  block,
+  isStreaming,
+  basePath,
+  toolResultMap,
+}: AgentBlockProps) {
   switch (block.type) {
     case "text":
-      return block.isError
-        ? <div className="text-red-400 text-sm"><TextBlock content={block.content} /></div>
-        : <TextBlock content={block.content} />;
+      return block.isError ? (
+        <div className="text-red-400 text-sm">
+          <TextBlock content={block.content} />
+        </div>
+      ) : (
+        <TextBlock content={block.content} />
+      );
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call": {
@@ -81,7 +112,11 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
       if ((block.toolName === "Task" || block.toolName === "Agent") && block.childBlocks) {
         return <TaskAgentBlock block={block} isStreaming={isStreaming} basePath={basePath} />;
       }
-      if (block.toolName === "ExitPlanMode" || block.toolName?.endsWith("__show_plan") || block.toolName?.endsWith("__show_prd")) {
+      if (
+        block.toolName === "ExitPlanMode" ||
+        block.toolName?.endsWith("__show_plan") ||
+        block.toolName?.endsWith("__show_prd")
+      ) {
         return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
       }
       // Bash: unified block with command header + output body
@@ -113,7 +148,13 @@ export const AgentBlock = memo(function AgentBlock({ block, isStreaming, basePat
           );
         }
       }
-      return <ToolCallBlock name={block.toolName ?? "unknown"} args={block.toolArgs} basePath={basePath} />;
+      return (
+        <ToolCallBlock
+          name={block.toolName ?? "unknown"}
+          args={block.toolArgs}
+          basePath={basePath}
+        />
+      );
     }
     case "tool_result": {
       // Bash results are inlined into the tool_call block — skip standalone rendering
@@ -219,14 +260,23 @@ function CodeBlock({ content, language }: { content: string; language?: string }
   );
 }
 
-function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; basePath?: string }) {
+function ToolCallBlock({
+  name,
+  args,
+  basePath,
+}: {
+  name: string;
+  args?: string;
+  basePath?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const canonicalName = normalizeToolName(name);
   const cadenceMcp = parseCadenceMcpTool(canonicalName, args);
   if (cadenceMcp) return <CadenceMcpBlock mcp={cadenceMcp} args={args} />;
 
   const summary = parseToolCall(canonicalName, args);
-  const detail = summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
+  const detail =
+    summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
 
   return (
     <div className="my-1 rounded-md border border-border bg-blue-500/5">
@@ -237,13 +287,11 @@ function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; 
       >
         <WrenchIcon className="size-3 text-blue-400" />
         <span className="font-medium text-blue-300">{canonicalName}</span>
-        {detail && (
-          <span className="truncate text-muted-foreground">{detail}</span>
-        )}
+        {detail && <span className="truncate text-muted-foreground">{detail}</span>}
         <ChevronRightIcon
           className={cn(
             "ml-auto size-3 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-90"
+            expanded && "rotate-90",
           )}
         />
       </button>
@@ -255,7 +303,6 @@ function ToolCallBlock({ name, args, basePath }: { name: string; args?: string; 
     </div>
   );
 }
-
 
 const DEFAULT_BASH_LINES = 10;
 
@@ -283,7 +330,10 @@ const BashBlock = memo(function BashBlock({
     [content],
   );
   const hasOutput = typeof content === "string" && content.length > 0;
-  const formattedCommand = useMemo(() => command ? formatShellCommand(command) : undefined, [command]);
+  const formattedCommand = useMemo(
+    () => (command ? formatShellCommand(command) : undefined),
+    [command],
+  );
 
   return (
     <CollapsibleBlock
@@ -295,20 +345,22 @@ const BashBlock = memo(function BashBlock({
       toggleClassName="ml-auto text-zinc-500 hover:text-zinc-300"
       bodyClassName={cn(
         "bg-zinc-950 px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
-        isError ? "text-red-300" : "text-zinc-300"
+        isError ? "text-red-300" : "text-zinc-300",
       )}
       truncationClassName="text-zinc-600"
-      header={<>
-        <TerminalIcon className="size-3 shrink-0" />
-        <span className="font-medium text-zinc-300">Bash</span>
-        <pre className="font-mono whitespace-pre-wrap break-all">{formattedCommand ?? "Running command…"}</pre>
-      </>}
+      header={
+        <>
+          <TerminalIcon className="size-3 shrink-0" />
+          <span className="font-medium text-zinc-300">Bash</span>
+          <pre className="font-mono whitespace-pre-wrap break-all">
+            {formattedCommand ?? "Running command…"}
+          </pre>
+        </>
+      }
     >
       {({ showAll }) =>
         hasOutput ? (
-          <pre className="whitespace-pre-wrap">
-            {showAll ? parseAnsi(content) : truncatedAnsi}
-          </pre>
+          <pre className="whitespace-pre-wrap">{showAll ? parseAnsi(content) : truncatedAnsi}</pre>
         ) : running ? (
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <Loader2Icon className="size-3 animate-spin" />
@@ -338,7 +390,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string
         <ChevronRightIcon
           className={cn(
             "ml-auto size-3 text-muted-foreground transition-transform",
-            expanded && "rotate-90"
+            expanded && "rotate-90",
           )}
         />
       </button>
@@ -380,7 +432,11 @@ function formatCompactSummary(metadata: CompactMetadata): string {
   return bits.join(" · ");
 }
 
-function StreamDivider({ label, tone, detail }: {
+function StreamDivider({
+  label,
+  tone,
+  detail,
+}: {
   label: string;
   tone: "yellow" | "cyan";
   detail?: string;
@@ -389,9 +445,7 @@ function StreamDivider({ label, tone, detail }: {
   const text = tone === "yellow" ? "text-yellow-500" : "text-cyan-500";
   return (
     <div className="flex flex-col items-center gap-1 py-3">
-      {detail && (
-        <span className="text-[10px] text-muted-foreground/50 font-mono">{detail}</span>
-      )}
+      {detail && <span className="text-[10px] text-muted-foreground/50 font-mono">{detail}</span>}
       <div className="flex w-full items-center gap-3">
         <div className={cn("h-px flex-1", line)} />
         <span className={cn("text-xs font-medium", text)}>{label}</span>

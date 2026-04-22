@@ -1,12 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@/test-utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 
 describe("Select", () => {
   it("renders a select trigger as combobox", () => {
@@ -18,7 +12,7 @@ describe("Select", () => {
         <SelectContent>
           <SelectItem value="a">Option A</SelectItem>
         </SelectContent>
-      </Select>
+      </Select>,
     );
     expect(screen.getByRole("combobox")).toBeInTheDocument();
   });
@@ -32,7 +26,7 @@ describe("Select", () => {
         <SelectContent>
           <SelectItem value="x">X</SelectItem>
         </SelectContent>
-      </Select>
+      </Select>,
     );
     expect(screen.getByText("Choose...")).toBeInTheDocument();
   });
@@ -47,7 +41,7 @@ describe("Select", () => {
           <SelectItem value="a">A</SelectItem>
           <SelectItem value="b">B selected</SelectItem>
         </SelectContent>
-      </Select>
+      </Select>,
     );
     expect(screen.getByText("B selected")).toBeInTheDocument();
   });
@@ -61,7 +55,7 @@ describe("Select", () => {
         <SelectContent>
           <SelectItem value="1">One</SelectItem>
         </SelectContent>
-      </Select>
+      </Select>,
     );
     expect(container.querySelector(".custom-trigger")).toBeInTheDocument();
   });

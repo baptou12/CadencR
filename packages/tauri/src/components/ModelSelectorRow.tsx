@@ -12,7 +12,11 @@ import {
 import { ThinkingEffortBars } from "./ThinkingEffortBars";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { ProviderIcon } from "@/lib/provider-icons";
-import { THINKING_EFFORT_LABELS, nextThinkingEffort, type ThinkingEffortLevel } from "@/shared/thinking-effort";
+import {
+  THINKING_EFFORT_LABELS,
+  nextThinkingEffort,
+  type ThinkingEffortLevel,
+} from "@/shared/thinking-effort";
 import type { RuntimeModelOption } from "@/api/agentRuntime";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
@@ -73,7 +77,9 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
   return (
     <div className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center sm:gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/60 text-muted-foreground">{icon}</div>
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/60 text-muted-foreground">
+          {icon}
+        </div>
         <div className="min-w-0">
           <div className="truncate text-sm font-medium text-foreground">{agentLabel}</div>
           <div className="text-[11px] text-muted-foreground sm:max-w-[180px]">{stateLabel}</div>
@@ -90,10 +96,20 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
                 title={selectedModelDescription}
               >
                 <span className="flex min-w-0 items-center gap-2.5 overflow-hidden">
-                  <ProviderIcon providerId={selectedProviderId} alt={agentLabel} className="size-4 shrink-0 rounded-sm" />
+                  <ProviderIcon
+                    providerId={selectedProviderId}
+                    alt={agentLabel}
+                    className="size-4 shrink-0 rounded-sm"
+                  />
                   <span className="min-w-0 truncate">
-                    <span className="truncate text-sm text-foreground">{selectedProviderLabel} / {selectedModelLabel}</span>
-                    {level !== "global" && isInherited && <span className="ml-1 hidden truncate text-[11px] text-muted-foreground sm:inline">Inherited</span>}
+                    <span className="truncate text-sm text-foreground">
+                      {selectedProviderLabel} / {selectedModelLabel}
+                    </span>
+                    {level !== "global" && isInherited && (
+                      <span className="ml-1 hidden truncate text-[11px] text-muted-foreground sm:inline">
+                        Inherited
+                      </span>
+                    )}
                   </span>
                 </span>
                 <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
@@ -109,26 +125,57 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
               )}
               {providers.map((provider) => (
                 <DropdownMenuSub key={provider.id}>
-                  <DropdownMenuSubTrigger className="text-xs data-[disabled]:text-muted-foreground" disabled={provider.disabled}>
-                    <ProviderIcon providerId={provider.id} alt={provider.label} className="size-3.5 rounded-sm" />
-                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>{provider.label}</span>
-                    {provider.id === selectedProviderId && <CheckIcon className="ml-1 size-3 text-violet-400" />}
+                  <DropdownMenuSubTrigger
+                    className="text-xs data-[disabled]:text-muted-foreground"
+                    disabled={provider.disabled}
+                  >
+                    <ProviderIcon
+                      providerId={provider.id}
+                      alt={provider.label}
+                      className="size-3.5 rounded-sm"
+                    />
+                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>
+                      {provider.label}
+                    </span>
+                    {provider.id === selectedProviderId && (
+                      <CheckIcon className="ml-1 size-3 text-violet-400" />
+                    )}
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="min-w-[240px]">
                     <DropdownMenuLabel className="text-xs">Model</DropdownMenuLabel>
-                    {provider.disabled && <DropdownMenuItem disabled className="text-xs text-muted-foreground">Coming soon</DropdownMenuItem>}
-                    {!provider.disabled && provider.models.map((model) => (
-                      <DropdownMenuItem key={model.id} onClick={() => onSelect(provider.id, model.id)} className="flex items-start justify-between gap-2 text-xs" title={model.description}>
-                        <span className="flex items-start gap-2 min-w-0">
-                          <ProviderIcon providerId={provider.id} alt={model.label} className="size-3.5 rounded-sm mt-0.5 shrink-0" />
-                          <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="truncate text-foreground">{model.label}</span>
-                            {model.description && <span className="truncate text-[11px] text-muted-foreground">{model.description}</span>}
-                          </span>
-                        </span>
-                        {isModelSelected(provider.id, model.id) && <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />}
+                    {provider.disabled && (
+                      <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                        Coming soon
                       </DropdownMenuItem>
-                    ))}
+                    )}
+                    {!provider.disabled &&
+                      provider.models.map((model) => (
+                        <DropdownMenuItem
+                          key={model.id}
+                          onClick={() => onSelect(provider.id, model.id)}
+                          className="flex items-start justify-between gap-2 text-xs"
+                          title={model.description}
+                        >
+                          <span className="flex items-start gap-2 min-w-0">
+                            <ProviderIcon
+                              providerId={provider.id}
+                              alt={model.label}
+                              className="size-3.5 rounded-sm mt-0.5 shrink-0"
+                            />
+                            <span className="flex min-w-0 flex-col gap-0.5">
+                              <span className="truncate text-foreground">{model.label}</span>
+                              {model.description && (
+                                <span className="truncate text-[11px] text-muted-foreground">
+                                  {model.description}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                          {isModelSelected(provider.id, model.id) && (
+                            <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               ))}
@@ -136,7 +183,10 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
           </DropdownMenu>
         </div>
         {thinkingEffortLevels.length > 0 && (
-          <ShortcutTooltip label={`Thinking effort: ${THINKING_EFFORT_LABELS[tooltipEffort]}`} above>
+          <ShortcutTooltip
+            label={`Thinking effort: ${THINKING_EFFORT_LABELS[tooltipEffort]}`}
+            above
+          >
             <button
               type="button"
               onClick={handleThinkingEffortCycle}

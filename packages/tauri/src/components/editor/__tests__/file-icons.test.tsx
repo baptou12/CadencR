@@ -25,8 +25,10 @@ describe("FolderSymbolIcon", () => {
     expect(container.querySelector("span")).toBeTruthy();
   });
 
-it("applies className to wrapper", () => {
-    const { container } = render(<FolderSymbolIcon folderName="node_modules" className="folder-cls" />);
+  it("applies className to wrapper", () => {
+    const { container } = render(
+      <FolderSymbolIcon folderName="node_modules" className="folder-cls" />,
+    );
     expect(container.querySelector(".folder-cls")).toBeTruthy();
   });
 });

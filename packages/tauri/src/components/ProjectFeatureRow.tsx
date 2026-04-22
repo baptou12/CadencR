@@ -8,12 +8,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGetStats, type Feature } from "@/api/generated";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
@@ -64,8 +59,7 @@ export function ProjectFeatureRow({
     },
   );
 
-  const hasStats =
-    gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
+  const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
 
   return (
     <div
@@ -90,12 +84,8 @@ export function ProjectFeatureRow({
     >
       {/* Turn state icon */}
       <div className="shrink-0 w-3.5">
-        {turn === "agent" && (
-          <BotIcon className="size-3.5 text-blue-500 animate-pulse" />
-        )}
-        {turn === "askUser" && (
-          <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
-        )}
+        {turn === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
+        {turn === "askUser" && <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />}
       </div>
 
       {/* Name + optional metadata sub-line (stats + status badge) */}
@@ -174,9 +164,7 @@ export function ProjectFeatureRow({
           ) : (
             <ArchiveIcon className="size-3.5" />
           )}
-          <span className="sr-only">
-            {feature.status === "archived" ? "Delete" : "Archive"}
-          </span>
+          <span className="sr-only">{feature.status === "archived" ? "Delete" : "Archive"}</span>
         </Button>
       </div>
     </div>

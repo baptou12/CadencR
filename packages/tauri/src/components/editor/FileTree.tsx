@@ -34,10 +34,11 @@ function TreeNode({
   onToggle,
   onOpenFile,
 }: TreeNodeProps) {
-  const { data: entries, isLoading, isError } = useFileTree(
-    { projectId, featureId, dirPath },
-    { enabled: true },
-  );
+  const {
+    data: entries,
+    isLoading,
+    isError,
+  } = useFileTree({ projectId, featureId, dirPath }, { enabled: true });
 
   if (isLoading) {
     return (
@@ -53,7 +54,10 @@ function TreeNode({
 
   if (isError || !entries) {
     return (
-      <div className="px-4 py-0.5 text-xs text-destructive" style={{ paddingLeft: `${8 + depth * 12}px` }}>
+      <div
+        className="px-4 py-0.5 text-xs text-destructive"
+        style={{ paddingLeft: `${8 + depth * 12}px` }}
+      >
         Failed to load
       </div>
     );
@@ -89,7 +93,16 @@ interface EntryRowProps {
   onOpenFile: (path: string) => void;
 }
 
-function EntryRow({ entry, depth, projectId, featureId, activeFilePath, expandedDirs, onToggle, onOpenFile }: EntryRowProps) {
+function EntryRow({
+  entry,
+  depth,
+  projectId,
+  featureId,
+  activeFilePath,
+  expandedDirs,
+  onToggle,
+  onOpenFile,
+}: EntryRowProps) {
   const isExpanded = expandedDirs.has(entry.path);
   const isActive = activeFilePath === entry.path;
 

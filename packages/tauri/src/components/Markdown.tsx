@@ -121,20 +121,14 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
         {children}
       </th>
     ),
-    td: ({ children }) => (
-      <td className="border border-border px-2 py-1">{children}</td>
-    ),
+    td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
     blockquote: ({ children }) => (
       <blockquote className="my-1 border-l-2 border-[var(--drac-comment)] pl-3 text-[var(--drac-comment)] italic">
         {children}
       </blockquote>
     ),
-    ul: ({ children }) => (
-      <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>
-    ),
-    ol: ({ children }) => (
-      <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>
-    ),
+    ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
+    ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
     hr: () => <hr className="my-3 border-border" />,
     p: ({ children }) => <p className="my-1">{children}</p>,
   };

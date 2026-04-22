@@ -21,7 +21,15 @@ const SHOW_DELAY = 400;
  * Hover tooltip with a show delay. Renders below the trigger.
  * Uses a timer so the tooltip only appears after hovering for 400ms.
  */
-export function ShortcutTooltip({ label, keys, children, showOnFocus = false, alignRight, above, className }: ShortcutTooltipProps) {
+export function ShortcutTooltip({
+  label,
+  keys,
+  children,
+  showOnFocus = false,
+  alignRight,
+  above,
+  className,
+}: ShortcutTooltipProps) {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -57,7 +65,9 @@ export function ShortcutTooltip({ label, keys, children, showOnFocus = false, al
     >
       {children}
       {visible && (
-        <div className={`pointer-events-none absolute z-50 whitespace-nowrap rounded bg-[#1e2030] px-2 py-1 text-xs text-[#c0caf5] shadow-lg border border-[#292e42] ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} ${alignRight ? "right-0" : "left-1/2 -translate-x-1/2"}`}>
+        <div
+          className={`pointer-events-none absolute z-50 whitespace-nowrap rounded bg-[#1e2030] px-2 py-1 text-xs text-[#c0caf5] shadow-lg border border-[#292e42] ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} ${alignRight ? "right-0" : "left-1/2 -translate-x-1/2"}`}
+        >
           <span>{label}</span>
           {keys && keys.length > 0 && <KbdShortcut keys={keys} size="sm" />}
         </div>

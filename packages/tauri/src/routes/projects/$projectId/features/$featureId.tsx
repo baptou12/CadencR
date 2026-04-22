@@ -8,12 +8,11 @@ interface FeatureSearch {
   useWorktree?: boolean;
 }
 
-export const Route = createFileRoute(
-  "/projects/$projectId/features/$featureId",
-)({
+export const Route = createFileRoute("/projects/$projectId/features/$featureId")({
   component: FeaturePage,
   validateSearch: (search: Record<string, unknown>): FeatureSearch => ({
-    initialDescription: typeof search.initialDescription === "string" ? search.initialDescription : undefined,
+    initialDescription:
+      typeof search.initialDescription === "string" ? search.initialDescription : undefined,
     useWorktree: typeof search.useWorktree === "boolean" ? search.useWorktree : undefined,
   }),
 });
@@ -32,12 +31,7 @@ function FeaturePage() {
   const isWsSession = feature?.type === "ws-session";
 
   if (isWsSession) {
-    return (
-      <WsSessionRedirect
-        featureId={numericFeatureId}
-        projectId={numericProjectId}
-      />
-    );
+    return <WsSessionRedirect featureId={numericFeatureId} projectId={numericProjectId} />;
   }
 
   return (
@@ -56,13 +50,7 @@ function FeaturePage() {
 // WS session redirect — navigates to the WS session route
 // ---------------------------------------------------------------------------
 
-function WsSessionRedirect({
-  featureId,
-  projectId,
-}: {
-  featureId: number;
-  projectId: number;
-}) {
+function WsSessionRedirect({ featureId, projectId }: { featureId: number; projectId: number }) {
   const projectsQuery = useListProjects();
   const project = projectsQuery.data?.find((p) => p.id === projectId);
 

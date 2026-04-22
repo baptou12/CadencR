@@ -43,9 +43,7 @@ export type MetaBarModelProps = Required<
  * picker above a pre-agent kickoff prompt (PlanInputView, NextStepsBar). All
  * writes persist at the feature level via `useResolvedModel`.
  */
-export function useMetaBarModelProps(
-  params: UseMetaBarModelPropsParams,
-): MetaBarModelProps {
+export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBarModelProps {
   const { featureId, projectId, agentType, secondaryAgentType } = params;
   const agentCatalog = useAgentCatalog();
   const {

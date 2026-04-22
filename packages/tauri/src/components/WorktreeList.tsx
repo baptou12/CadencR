@@ -20,8 +20,7 @@ const statusColors: Record<string, string> = {
 
 export function WorktreeList({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
-  const { data: worktrees, isLoading } =
-    useListProjectWorktrees({ projectId });
+  const { data: worktrees, isLoading } = useListProjectWorktrees({ projectId });
 
   const deleteWorktree = useDeleteWorktree({
     onSuccess: () => {
@@ -48,11 +47,7 @@ export function WorktreeList({ projectId }: { projectId: number }) {
   }
 
   if (!worktrees?.length) {
-    return (
-      <p className="py-3 text-center text-xs text-muted-foreground">
-        No worktrees
-      </p>
-    );
+    return <p className="py-3 text-center text-xs text-muted-foreground">No worktrees</p>;
   }
 
   function handleDelete(wt: NonNullable<typeof worktrees>[number]) {
@@ -78,16 +73,11 @@ export function WorktreeList({ projectId }: { projectId: number }) {
   return (
     <div className="max-h-[240px] space-y-1 overflow-y-auto pr-1">
       {worktrees.map((wt) => (
-        <div
-          key={wt.path}
-          className="flex items-center gap-2 rounded-md border px-2.5 py-1.5"
-        >
+        <div key={wt.path} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
           <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{wt.branch}</div>
-            <div className="truncate text-[11px] font-mono text-muted-foreground/70">
-              {wt.path}
-            </div>
+            <div className="truncate text-[11px] font-mono text-muted-foreground/70">{wt.path}</div>
             <div className="truncate text-xs text-muted-foreground">
               {wt.feature_title ? (
                 <span className="flex items-center gap-1.5">
@@ -116,9 +106,7 @@ export function WorktreeList({ projectId }: { projectId: number }) {
               size="icon"
               className="h-6 w-6 shrink-0"
               onClick={() => handleDelete(wt)}
-              title={
-                confirmPath === wt.path ? "Click again to confirm" : "Remove worktree"
-              }
+              title={confirmPath === wt.path ? "Click again to confirm" : "Remove worktree"}
             >
               <Trash2 className="size-3" />
             </Button>

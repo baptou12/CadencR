@@ -1,12 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  ChevronDown,
-  Ellipsis,
-  Plus,
-  PlusIcon,
-} from "lucide-react";
+import { ChevronRight, ChevronDown, Ellipsis, Plus, PlusIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListProjects,
@@ -145,16 +139,12 @@ export function ProjectTree({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-2">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">
-          Projects
-        </span>
+        <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
         <Button
           variant="ghost"
           size="icon-xs"
           onClick={handleAddProject}
-          disabled={
-            isSelectingFolder || createProjectMutation.isLoading
-          }
+          disabled={isSelectingFolder || createProjectMutation.isLoading}
         >
           <Plus />
         </Button>
@@ -176,9 +166,7 @@ export function ProjectTree({
                   data-nav-id={String(project.id)}
                   onClick={() => toggleExpand(project.id)}
                   className={`group/project flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
-                    isActive
-                      ? "text-accent-foreground font-medium"
-                      : "hover:bg-accent/50"
+                    isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
                   }`}
                 >
                   {isExpanded ? (
@@ -294,9 +282,7 @@ export function ProjectTree({
           })}
 
           {projects.length === 0 && (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">
-              No projects yet
-            </p>
+            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
           )}
         </div>
       </ScrollArea>

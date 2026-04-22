@@ -9,7 +9,18 @@ export const DEFAULT_PROVIDER = DEFAULT_PROVIDER_ID;
  * available models comes from `useAgentCatalog()` → `/api/agent-catalog`.
  */
 export const FALLBACK_MODEL_ID = "opus";
-export const AGENT_TYPES = ["plan", "prd", "execute", "risk", "review", "review-fixer", "session", "qa", "retro", "auto_name"] as const;
+export const AGENT_TYPES = [
+  "plan",
+  "prd",
+  "execute",
+  "risk",
+  "review",
+  "review-fixer",
+  "session",
+  "qa",
+  "retro",
+  "auto_name",
+] as const;
 export type AgentTypeSetting = (typeof AGENT_TYPES)[number];
 
 export interface CatalogProviderLike {
@@ -24,7 +35,10 @@ export interface RuntimeSelection {
 
 export type AgentSettingMap = Partial<Record<AgentTypeSetting, string>>;
 
-function explicitSetting(settings: AgentSettingMap | undefined, agentType: AgentTypeSetting): string | undefined {
+function explicitSetting(
+  settings: AgentSettingMap | undefined,
+  agentType: AgentTypeSetting,
+): string | undefined {
   const value = settings?.[agentType];
   return value && value !== "" ? value : undefined;
 }
@@ -33,7 +47,9 @@ export function defaultModelForProvider(
   providers: readonly CatalogProviderLike[] | undefined,
   providerId: string,
 ): string {
-  return providers?.find((provider) => provider.id === providerId)?.default_model ?? FALLBACK_MODEL_ID;
+  return (
+    providers?.find((provider) => provider.id === providerId)?.default_model ?? FALLBACK_MODEL_ID
+  );
 }
 
 function applySelectionOverride(
@@ -82,7 +98,8 @@ export function resolveRuntimeSelection(params: {
     featureModels,
     featureProviders,
   } = params;
-  const rootProviderId = explicitSetting(globalProviders, agentType) ?? defaultProviderId ?? DEFAULT_PROVIDER;
+  const rootProviderId =
+    explicitSetting(globalProviders, agentType) ?? defaultProviderId ?? DEFAULT_PROVIDER;
   const rootModelId =
     explicitSetting(globalModels, agentType) ?? defaultModelForProvider(providers, rootProviderId);
   const projectSelection = applySelectionOverride(

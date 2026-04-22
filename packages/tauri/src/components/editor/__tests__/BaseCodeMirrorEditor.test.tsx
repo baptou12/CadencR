@@ -30,8 +30,12 @@ vi.mock("@codemirror/view", () => {
 
 vi.mock("@codemirror/state", () => {
   class MockCompartment {
-    of() { return []; }
-    reconfigure() { return []; }
+    of() {
+      return [];
+    }
+    reconfigure() {
+      return [];
+    }
   }
   return {
     EditorState: { create: vi.fn(() => ({})), readOnly: { of: vi.fn(() => []) } },
@@ -91,7 +95,9 @@ describe("BaseCodeMirrorEditor", () => {
 
   it("nulls editorViewRef on unmount", () => {
     const ref = createRef<unknown>();
-    const { unmount } = render(<BaseCodeMirrorEditor editorViewRef={ref as React.MutableRefObject<null>} />);
+    const { unmount } = render(
+      <BaseCodeMirrorEditor editorViewRef={ref as React.MutableRefObject<null>} />,
+    );
     expect(ref.current).not.toBeNull();
     unmount();
     expect(ref.current).toBeNull();

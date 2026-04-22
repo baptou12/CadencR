@@ -30,7 +30,14 @@ interface PhaseCardProps {
   onOverrideStatus?: (phase: PhaseData, status: string) => void;
 }
 
-export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset, onOverrideStatus }: PhaseCardProps) {
+export function PhaseCard({
+  phase,
+  displayNumber,
+  onExpand,
+  canReset,
+  onReset,
+  onOverrideStatus,
+}: PhaseCardProps) {
   const [statusOpen, setStatusOpen] = useState(false);
   const config = PHASE_STATUS_CONFIG[phase.status] ?? PHASE_STATUS_CONFIG.pending;
   const StatusIcon = config.icon;
@@ -80,13 +87,13 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset, o
             })}
           </PopoverContent>
         </Popover>
-        {phase.phase_type === 'qa' && (
+        {phase.phase_type === "qa" && (
           <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-purple)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-purple)] shrink-0">
             <FlaskConical className="size-2.5" />
             QA
           </span>
         )}
-        {phase.phase_type === 'setup' && (
+        {phase.phase_type === "setup" && (
           <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-cyan)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-cyan)] shrink-0">
             <Wrench className="size-2.5" />
             Setup
@@ -99,7 +106,10 @@ export function PhaseCard({ phase, displayNumber, onExpand, canReset, onReset, o
         )}
         {canReset && onReset && (
           <button
-            onClick={(e) => { e.stopPropagation(); onReset(phase); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onReset(phase);
+            }}
             className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-[var(--drac-orange)] shrink-0 ml-auto"
             title="Reset phase to pending"
           >

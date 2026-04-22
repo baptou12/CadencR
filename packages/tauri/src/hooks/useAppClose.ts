@@ -15,7 +15,9 @@ interface RunningAgentInfo {
 
 function lookupFeatureTitle(featureId: number | null, queryClient: QueryClient): string | null {
   if (!featureId) return null;
-  for (const [, data] of queryClient.getQueriesData<{ id: number; title: string }[]>({ queryKey: ["features", "list"] })) {
+  for (const [, data] of queryClient.getQueriesData<{ id: number; title: string }[]>({
+    queryKey: ["features", "list"],
+  })) {
     const feature = data?.find((f) => f.id === featureId);
     if (feature) return feature.title;
   }
@@ -29,9 +31,8 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
   const sessions = useWsSessionStore.getState().sessions;
   for (const [sessionId, session] of Object.entries(sessions)) {
     if (!isTurnActive(session.lifecycle)) continue;
-    const title = session.featureTitle
-      ?? lookupFeatureTitle(session.featureId, queryClient)
-      ?? "Untitled";
+    const title =
+      session.featureTitle ?? lookupFeatureTitle(session.featureId, queryClient) ?? "Untitled";
     const isFeature = sessionId.startsWith("ws-feature-");
     agents.push({
       sessionId,
@@ -44,9 +45,8 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
   if (wfState.featureId) {
     for (const [slotKey, agent] of wfState.agents) {
       if (agent.status !== "running") continue;
-      const title = wfState.featureTitle
-        ?? lookupFeatureTitle(wfState.featureId, queryClient)
-        ?? "Workflow";
+      const title =
+        wfState.featureTitle ?? lookupFeatureTitle(wfState.featureId, queryClient) ?? "Workflow";
       agents.push({
         sessionId: `wf:${wfState.featureId}:${slotKey}`,
         label: `${title} - ${agent.agentType}`,
@@ -79,13 +79,18 @@ export function useAppClose(queryClient: QueryClient) {
         // Workflow agent — extract slotKey and interrupt via workflow store
         const slotKey = sessionId.split(":").slice(2).join(":");
         wfStore.interruptItem(slotKey);
-      } else if (wsStore.sessions[sessionId] && isTurnActive(wsStore.sessions[sessionId].lifecycle)) {
+      } else if (
+        wsStore.sessions[sessionId] &&
+        isTurnActive(wsStore.sessions[sessionId].lifecycle)
+      ) {
         wsStore.interrupt(sessionId);
       }
     }
     setShowConfirm(false);
     if (isTauri()) {
-      setTimeout(() => { void getCurrentWindow().destroy(); }, 300);
+      setTimeout(() => {
+        void getCurrentWindow().destroy();
+      }, 300);
     }
   }, [runningAgents]);
 
@@ -96,7 +101,9 @@ export function useAppClose(queryClient: QueryClient) {
       event.preventDefault();
       requestClose();
     });
-    return () => { void unlisten.then((fn) => fn()); };
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
   }, [requestClose]);
 
   // CMD+Q → close app

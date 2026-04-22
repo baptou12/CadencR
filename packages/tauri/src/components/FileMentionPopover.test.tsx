@@ -13,7 +13,7 @@ describe("FileMentionPopover", () => {
         onClose={vi.fn()}
       >
         <input placeholder="Type here" />
-      </FileMentionPopover>
+      </FileMentionPopover>,
     );
     expect(screen.getByPlaceholderText("Type here")).toBeInTheDocument();
   });
@@ -28,7 +28,7 @@ describe("FileMentionPopover", () => {
         onClose={vi.fn()}
       >
         <input />
-      </FileMentionPopover>
+      </FileMentionPopover>,
     );
     expect(screen.queryByText("src/index.ts")).not.toBeInTheDocument();
   });
@@ -46,7 +46,7 @@ describe("FileMentionPopover", () => {
         onClose={vi.fn()}
       >
         <input />
-      </FileMentionPopover>
+      </FileMentionPopover>,
     );
     expect(screen.getByText("src/app.ts")).toBeInTheDocument();
     expect(screen.getByText("src/components")).toBeInTheDocument();
@@ -63,7 +63,7 @@ describe("FileMentionPopover", () => {
         onClose={vi.fn()}
       >
         <input />
-      </FileMentionPopover>
+      </FileMentionPopover>,
     );
     // Use pointer down since onMouseDown is used instead of onClick
     await user.pointer({ keys: "[MouseLeft>]", target: screen.getByText("src/utils.ts") });
@@ -83,7 +83,7 @@ describe("FileMentionPopover", () => {
         onClose={vi.fn()}
       >
         <input />
-      </FileMentionPopover>
+      </FileMentionPopover>,
     );
     const buttons = screen.getAllByRole("button");
     expect(buttons[1]).toHaveAttribute("data-selected", "true");

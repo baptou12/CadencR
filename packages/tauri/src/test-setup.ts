@@ -5,7 +5,6 @@ import { cleanup } from "@testing-library/react";
 // Automatically cleanup DOM after each test
 afterEach(cleanup);
 
-
 // ---------------------------------------------------------------------------
 // window.matchMedia
 // ---------------------------------------------------------------------------
@@ -89,4 +88,3 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   clearRect: vi.fn(),
   fillRect: vi.fn(),
 })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
-

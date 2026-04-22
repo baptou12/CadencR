@@ -11,12 +11,16 @@ export const Route = createFileRoute("/")({
   },
 });
 
-function parseSavedFeature(value: string | undefined | null): { projectId: number; featureId: number; activeTab?: string } | null {
+function parseSavedFeature(
+  value: string | undefined | null,
+): { projectId: number; featureId: number; activeTab?: string } | null {
   if (!value) return null;
   try {
     const parsed = JSON.parse(value);
     if (typeof parsed.projectId === "number" && typeof parsed.featureId === "number") return parsed;
-  } catch { /* invalid JSON */ }
+  } catch {
+    /* invalid JSON */
+  }
   return null;
 }
 
@@ -41,9 +45,10 @@ function HomePage() {
     enabled: targetProjectId != null,
   });
 
-  const startupError = lastFeatureQuery.error
-    ?? projectsQuery.error
-    ?? (targetProjectId != null ? featuresQuery.error : null);
+  const startupError =
+    lastFeatureQuery.error ??
+    projectsQuery.error ??
+    (targetProjectId != null ? featuresQuery.error : null);
 
   useEffect(() => {
     if (lastFeatureQuery.isLoading) return;
@@ -79,15 +84,29 @@ function HomePage() {
         replace: true,
       });
     }
-  }, [lastFeatureQuery.isLoading, lastFeature, searchProjectId, targetProjectId, featuresQuery.data, navigate]);
+  }, [
+    lastFeatureQuery.isLoading,
+    lastFeature,
+    searchProjectId,
+    targetProjectId,
+    featuresQuery.data,
+    navigate,
+  ]);
 
   // Show helpful message if project exists but has no features
-  if (projectsQuery.isSuccess && targetProjectId != null && featuresQuery.isSuccess && (featuresQuery.data?.length ?? 0) === 0) {
+  if (
+    projectsQuery.isSuccess &&
+    targetProjectId != null &&
+    featuresQuery.isSuccess &&
+    (featuresQuery.data?.length ?? 0) === 0
+  ) {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <div className="text-center">
           <p className="text-muted-foreground">No features in this project yet</p>
-          <p className="mt-2 text-sm text-muted-foreground">Use the + button in the sidebar to create a new feature</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Use the + button in the sidebar to create a new feature
+          </p>
         </div>
       </div>
     );
@@ -99,7 +118,9 @@ function HomePage() {
       <div className="flex h-full items-center justify-center p-6">
         <div className="text-center">
           <p className="text-muted-foreground">No projects yet</p>
-          <p className="mt-2 text-sm text-muted-foreground">Use the + button in the sidebar to add a project</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Use the + button in the sidebar to add a project
+          </p>
         </div>
       </div>
     );

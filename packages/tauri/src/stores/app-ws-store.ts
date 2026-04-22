@@ -58,10 +58,7 @@ function isTurn(val: unknown): val is TurnState {
 
 function isPendingKind(val: unknown): val is PendingKind {
   return (
-    val === "question" ||
-    val === "permission" ||
-    val === "plan-approval" ||
-    val === "prd-approval"
+    val === "question" || val === "permission" || val === "plan-approval" || val === "prd-approval"
   );
 }
 
@@ -213,11 +210,7 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
     }
   }
 
-  function handleEnvelope(
-    domain: string,
-    action: string,
-    payload: Record<string, unknown>,
-  ): void {
+  function handleEnvelope(domain: string, action: string, payload: Record<string, unknown>): void {
     if (domain === "editor" && action === "file_tree.changed") {
       void queryClient.invalidateQueries({ queryKey: ["editor", "tree"] });
       void queryClient.invalidateQueries({ queryKey: ["editor", "search"] });

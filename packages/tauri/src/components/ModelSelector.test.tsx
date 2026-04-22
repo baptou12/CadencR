@@ -27,41 +27,59 @@ const {
   mockGetWorkspaceProviderSettings: vi.fn(() => ({ data: {}, isLoading: false })),
   mockGetProjectProviderSettings: vi.fn(() => ({ data: {}, isLoading: false })),
   mockGetFeatureProviderSettings: vi.fn(() => ({ data: {}, isLoading: false })),
-  mockAgentCatalog: vi.fn<() => { data?: unknown; isLoading: boolean; error: unknown | null }>(() => ({
-    data: {
-      default_provider: "claude_code",
-      providers: [
-        {
-          id: "claude_code",
-          label: "Claude Code",
-          status: "available",
-          models: [{ id: "opus", label: "Opus" }],
-          default_model: "opus",
-        },
-        {
-          id: "codex_cli",
-          label: "Codex CLI",
-          status: "coming_soon",
-          models: [],
-          default_model: null,
-        },
-      ],
-    },
-    isLoading: false,
-    error: null,
-  })),
-  workspaceProviderMutationImpl: vi.fn((options?: { onSuccess?: (_data: unknown, vars: { agentType: string; providerId: string }) => void; onError?: (_error: unknown, vars: { agentType: string; providerId: string }) => void }) => ({
-    mutate: (variables: { agentType: string; providerId: string }) => {
-      workspaceProviderMutate(variables);
-      options?.onSuccess?.({}, variables);
-    },
-  })),
-  projectProviderMutationImpl: vi.fn((options?: { onSuccess?: (_data: unknown, vars: { projectId: number; providerType: string; provider: string }) => void; onError?: (_error: unknown, vars: { projectId: number; providerType: string; provider: string }) => void }) => ({
-    mutate: (variables: { projectId: number; providerType: string; provider: string }) => {
-      projectProviderMutate(variables);
-      options?.onSuccess?.({}, variables);
-    },
-  })),
+  mockAgentCatalog: vi.fn<() => { data?: unknown; isLoading: boolean; error: unknown | null }>(
+    () => ({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus" }],
+            default_model: "opus",
+          },
+          {
+            id: "codex_cli",
+            label: "Codex CLI",
+            status: "coming_soon",
+            models: [],
+            default_model: null,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    }),
+  ),
+  workspaceProviderMutationImpl: vi.fn(
+    (options?: {
+      onSuccess?: (_data: unknown, vars: { agentType: string; providerId: string }) => void;
+      onError?: (_error: unknown, vars: { agentType: string; providerId: string }) => void;
+    }) => ({
+      mutate: (variables: { agentType: string; providerId: string }) => {
+        workspaceProviderMutate(variables);
+        options?.onSuccess?.({}, variables);
+      },
+    }),
+  ),
+  projectProviderMutationImpl: vi.fn(
+    (options?: {
+      onSuccess?: (
+        _data: unknown,
+        vars: { projectId: number; providerType: string; provider: string },
+      ) => void;
+      onError?: (
+        _error: unknown,
+        vars: { projectId: number; providerType: string; provider: string },
+      ) => void;
+    }) => ({
+      mutate: (variables: { projectId: number; providerType: string; provider: string }) => {
+        projectProviderMutate(variables);
+        options?.onSuccess?.({}, variables);
+      },
+    }),
+  ),
 }));
 
 vi.mock("sonner", () => ({
@@ -101,8 +119,10 @@ vi.mock("../api/agentRuntime", () => ({
   useGetWorkspaceProviderSettings: () => mockGetWorkspaceProviderSettings(),
   useGetProjectProviderSettings: () => mockGetProjectProviderSettings(),
   useGetFeatureProviderSettings: () => mockGetFeatureProviderSettings(),
-  useSetWorkspaceProviderSetting: (options?: unknown) => workspaceProviderMutationImpl(options as never),
-  useSetProjectProviderSetting: (options?: unknown) => projectProviderMutationImpl(options as never),
+  useSetWorkspaceProviderSetting: (options?: unknown) =>
+    workspaceProviderMutationImpl(options as never),
+  useSetProjectProviderSetting: (options?: unknown) =>
+    projectProviderMutationImpl(options as never),
   useSetFeatureProviderSetting: vi.fn(() => ({ mutate: vi.fn() })),
 }));
 
@@ -179,7 +199,11 @@ describe("ModelSelector", () => {
   });
 
   it("shows an error state when the provider catalog fails", () => {
-    mockAgentCatalog.mockReturnValue({ data: undefined, isLoading: false, error: new Error("boom") });
+    mockAgentCatalog.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      error: new Error("boom"),
+    });
     render(<ModelSelector level="global" />);
     expect(screen.getByText("Failed to load provider catalog.")).toBeInTheDocument();
   });
@@ -196,7 +220,10 @@ describe("ModelSelector", () => {
 
   it("uses mutation callbacks so provider success and error toasts track the actual result", async () => {
     const user = userEvent.setup();
-    mockGetProjectProviderSettings.mockReturnValue({ data: { plan: "claude_code" }, isLoading: false });
+    mockGetProjectProviderSettings.mockReturnValue({
+      data: { plan: "claude_code" },
+      isLoading: false,
+    });
     projectProviderMutationImpl.mockImplementation((options) => ({
       mutate: (variables) => {
         projectProviderMutate(variables);
@@ -229,7 +256,10 @@ describe("ModelSelector", () => {
   });
 
   it("uses the selected provider default model instead of inheriting a Claude model id", () => {
-    mockGetWorkspaceProviderSettings.mockReturnValue({ data: { plan: "opencode" }, isLoading: false });
+    mockGetWorkspaceProviderSettings.mockReturnValue({
+      data: { plan: "opencode" },
+      isLoading: false,
+    });
     mockAgentCatalog.mockReturnValue({
       data: {
         default_provider: "claude_code",

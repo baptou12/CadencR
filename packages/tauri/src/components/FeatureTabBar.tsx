@@ -22,12 +22,22 @@ const TABS: { id: FeatureTab; label: string; icon: typeof BotIcon; keys: string[
   { id: "editor", label: "Editor", icon: CodeIcon, keys: ["cmd", "shift", "E"] },
 ];
 
-export function FeatureTabBar({ activeTab, featureId, onTabChange, gitStats, gitBranch, onTerminalActivate }: FeatureTabBarProps) {
+export function FeatureTabBar({
+  activeTab,
+  featureId,
+  onTabChange,
+  gitStats,
+  gitBranch,
+  onTerminalActivate,
+}: FeatureTabBarProps) {
   const terminalRoot = useTerminalStore((s) => s.features[featureId]?.root ?? null);
   const terminalPaneCount = terminalRoot ? getLeaves(terminalRoot).length : 0;
   useHotkeys(
     "meta+shift+a",
-    (e) => { e.preventDefault(); onTabChange("agent"); },
+    (e) => {
+      e.preventDefault();
+      onTabChange("agent");
+    },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
@@ -43,13 +53,19 @@ export function FeatureTabBar({ activeTab, featureId, onTabChange, gitStats, git
 
   useHotkeys(
     "meta+shift+g",
-    (e) => { e.preventDefault(); onTabChange("git"); },
+    (e) => {
+      e.preventDefault();
+      onTabChange("git");
+    },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   useHotkeys(
     "meta+shift+e",
-    (e) => { e.preventDefault(); onTabChange("editor"); },
+    (e) => {
+      e.preventDefault();
+      onTabChange("editor");
+    },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 

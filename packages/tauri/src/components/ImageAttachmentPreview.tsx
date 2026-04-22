@@ -1,15 +1,19 @@
-import { X } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { ImageAttachment } from '@/hooks/useImageAttachments'
+import { X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ImageAttachment } from "@/hooks/useImageAttachments";
 
 interface ImageAttachmentPreviewProps {
-  attachments: ImageAttachment[]
-  onRemove: (id: string) => void
-  className?: string
+  attachments: ImageAttachment[];
+  onRemove: (id: string) => void;
+  className?: string;
 }
 
-export function ImageAttachmentPreview({ attachments, onRemove, className }: ImageAttachmentPreviewProps) {
-  if (attachments.length === 0) return null
+export function ImageAttachmentPreview({
+  attachments,
+  onRemove,
+  className,
+}: ImageAttachmentPreviewProps) {
+  if (attachments.length === 0) return null;
 
   return (
     <div className={cn("flex flex-wrap gap-2 p-2", className)}>
@@ -31,5 +35,5 @@ export function ImageAttachmentPreview({ attachments, onRemove, className }: Ima
         </div>
       ))}
     </div>
-  )
+  );
 }

@@ -48,9 +48,7 @@ export function useFileMention(files: string[] | undefined) {
     if (!state.isOpen) return [];
     const q = state.query.toLowerCase();
     if (!q) return allItems.slice(0, MAX_RESULTS);
-    return allItems
-      .filter((item) => item.path.toLowerCase().includes(q))
-      .slice(0, MAX_RESULTS);
+    return allItems.filter((item) => item.path.toLowerCase().includes(q)).slice(0, MAX_RESULTS);
   }, [state.isOpen, state.query, allItems]);
 
   const close = useCallback(() => {
@@ -113,7 +111,10 @@ export function useFileMention(files: string[] | undefined) {
   );
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>, text: string): { newText: string; newCursorPos: number } | true | false => {
+    (
+      e: React.KeyboardEvent<HTMLTextAreaElement>,
+      text: string,
+    ): { newText: string; newCursorPos: number } | true | false => {
       if (!state.isOpen || filteredItems.length === 0) return false;
 
       if (e.key === "ArrowDown") {
@@ -129,8 +130,7 @@ export function useFileMention(files: string[] | undefined) {
         e.preventDefault();
         setState((s) => ({
           ...s,
-          selectedIndex:
-            (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
+          selectedIndex: (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
         }));
         return true;
       }

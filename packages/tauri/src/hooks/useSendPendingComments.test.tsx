@@ -18,10 +18,7 @@ vi.mock("sonner", () => ({
   toast: { error: mocks.toastError },
 }));
 
-import {
-  useSendPendingComments,
-  type PendingDiffComment,
-} from "./useSendPendingComments";
+import { useSendPendingComments, type PendingDiffComment } from "./useSendPendingComments";
 
 function makeWrapper() {
   const client = new QueryClient({
@@ -154,7 +151,10 @@ describe("useSendPendingComments", () => {
   it("does nothing when already sending", async () => {
     let resolveDelete!: () => void;
     mocks.mutateAsync.mockImplementation(
-      () => new Promise<{ deleted: number }>((resolve) => { resolveDelete = () => resolve({ deleted: 2 }); }),
+      () =>
+        new Promise<{ deleted: number }>((resolve) => {
+          resolveDelete = () => resolve({ deleted: 2 });
+        }),
     );
     const onSend = vi.fn();
     const { result } = renderHook(

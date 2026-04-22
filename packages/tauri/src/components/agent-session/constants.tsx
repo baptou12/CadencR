@@ -1,9 +1,4 @@
-import {
-  Loader2Icon,
-  CheckCircleIcon,
-  XCircleIcon,
-  PauseCircleIcon,
-} from "lucide-react";
+import { Loader2Icon, CheckCircleIcon, XCircleIcon, PauseCircleIcon } from "lucide-react";
 import type { AgentType } from "../../types/agent-types";
 
 export type { AgentStatus } from "@/types/agent";

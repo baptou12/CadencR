@@ -25,8 +25,20 @@ const mockAgentCatalog = vi.fn(() => ({
   data: {
     default_provider: "claude_code",
     providers: [
-      { id: "claude_code", label: "Claude Code", status: "available", models: [], default_model: "default" },
-      { id: "opencode", label: "OpenCode", status: "available", models: [], default_model: "default/default" },
+      {
+        id: "claude_code",
+        label: "Claude Code",
+        status: "available",
+        models: [],
+        default_model: "default",
+      },
+      {
+        id: "opencode",
+        label: "OpenCode",
+        status: "available",
+        models: [],
+        default_model: "default/default",
+      },
     ],
   },
 }));
@@ -55,7 +67,8 @@ vi.mock("../api/generated", () => ({
 
 vi.mock("@/api/settings", () => ({
   useGetWorkspaceSettings: () => mockWorkspaceKvSettings(),
-  settingsArrayToMap: (entries: KvEntry[] | undefined) => Object.fromEntries((entries ?? []).map((entry) => [entry.key, entry.value ?? ""])),
+  settingsArrayToMap: (entries: KvEntry[] | undefined) =>
+    Object.fromEntries((entries ?? []).map((entry) => [entry.key, entry.value ?? ""])),
 }));
 
 vi.mock("../api/agentRuntime", () => ({
@@ -94,8 +107,20 @@ describe("useResolvedModel", () => {
       data: {
         default_provider: "claude_code",
         providers: [
-          { id: "claude_code", label: "Claude Code", status: "available", models: [], default_model: "default" },
-          { id: "opencode", label: "OpenCode", status: "available", models: [], default_model: "default/default" },
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [],
+            default_model: "default",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [],
+            default_model: "default/default",
+          },
         ],
       },
     });

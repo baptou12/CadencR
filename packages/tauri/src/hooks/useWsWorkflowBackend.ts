@@ -20,7 +20,11 @@ import type { FeatureStatus } from "./useFeatureState";
 // ---------------------------------------------------------------------------
 
 const QUEUE_STATUS_MAP: Record<string, AgentStatus> = {
-  running: "running", completed: "completed", error: "error", paused: "paused", skipped: "completed",
+  running: "running",
+  completed: "completed",
+  error: "error",
+  paused: "paused",
+  skipped: "completed",
 };
 
 function toFeatureSession(
@@ -29,7 +33,7 @@ function toFeatureSession(
   item?: QueueItem,
 ): FeatureSession {
   const status = item
-    ? (QUEUE_STATUS_MAP[item.status] ?? agent?.status ?? "idle") as AgentStatus
+    ? ((QUEUE_STATUS_MAP[item.status] ?? agent?.status ?? "idle") as AgentStatus)
     : (agent?.status ?? "idle");
   return {
     sessionDbId: agent?.sessionId ?? item?.agent_session_id ?? (item ? -item.id : 0),
@@ -42,13 +46,18 @@ function toFeatureSession(
     resumable: item?.status === "paused" || agent?.status === "paused",
     phaseId: item?.phase_id ?? null,
     phaseTitle: item?.phase_title ?? null,
-    subprocessId: null, model: null, runId: null, todos: null,
+    subprocessId: null,
+    model: null,
+    runId: null,
+    todos: null,
     runtimeSessionId: agent?.runtimeSessionId ?? null,
-    permissionMode: "acceptEdits", pendingPlanApproval: agent?.pendingPlanApproval ?? null,
+    permissionMode: "acceptEdits",
+    pendingPlanApproval: agent?.pendingPlanApproval ?? null,
     inputTokens: agent?.inputTokens ?? 0,
     outputTokens: agent?.outputTokens ?? 0,
     contextWindow: agent?.contextWindow ?? null,
-    wasCompacted: false, draftPrompt: null,
+    wasCompacted: false,
+    draftPrompt: null,
     hasMore: agent?.hasMore ?? false,
     oldestMessageId: agent?.oldestMessageId ?? null,
   };
@@ -62,7 +71,11 @@ export function buildSessionEntries(
   queue: QueueItem[],
   agents: Map<string, AgentSessionState>,
   workflowStatus?: string,
-): { sessions: FeatureSession[]; planSession: FeatureSession | null; prdSession: FeatureSession | null } {
+): {
+  sessions: FeatureSession[];
+  planSession: FeatureSession | null;
+  prdSession: FeatureSession | null;
+} {
   const planAgent = agents.get(PLAN_KEY) ?? null;
   const prdAgent = agents.get(PRD_KEY) ?? null;
 
@@ -87,7 +100,13 @@ export function buildSessionEntries(
   // Add queue item sessions
   for (const item of queue) {
     const agentState = agents.get(`qi:${item.id}`);
-    if (item.status === "running" || item.status === "completed" || item.status === "error" || item.status === "paused" || agentState) {
+    if (
+      item.status === "running" ||
+      item.status === "completed" ||
+      item.status === "error" ||
+      item.status === "paused" ||
+      agentState
+    ) {
       sessions.push(toFeatureSession(agentState, item.item_type as AgentType, item));
     }
   }
@@ -163,11 +182,16 @@ export function useWsWorkflowBackend(
   // snapshot. `limit: 100` fetches the most recent 100 messages per session;
   // scroll-to-top in `AgentSession` triggers `loadOlderMessages` for older
   // pages via `/api/features/{id}/agent-state?before=…`.
-  const agentStateQuery = useGetFeatureAgentState(featureId, undefined, {
-    enabled: enabled && !store.hydrated,
-    staleTime: Infinity,
-    refetchOnMount: "always",
-  }, 100);
+  const agentStateQuery = useGetFeatureAgentState(
+    featureId,
+    undefined,
+    {
+      enabled: enabled && !store.hydrated,
+      staleTime: Infinity,
+      refetchOnMount: "always",
+    },
+    100,
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -205,40 +229,51 @@ export function useWsWorkflowBackend(
 
   const historyFetchInFlight = useRef(false);
 
-  const loadAgentHistory = useCallback((entry: FeatureSession) => {
-    if (entry.sessionDbId <= 0) return;
-    if (historyFetchInFlight.current) return;
+  const loadAgentHistory = useCallback(
+    (entry: FeatureSession) => {
+      if (entry.sessionDbId <= 0) return;
+      if (historyFetchInFlight.current) return;
 
-    const storeState = useWorkflowStore.getState();
-    const slotKey = findSlotKey(entry, storeState.queue, storeState.agents);
-    const agent = storeState.agents.get(slotKey);
-    if (agent && (agent.historyLoaded || agent.blocks.length > 0)) return;
+      const storeState = useWorkflowStore.getState();
+      const slotKey = findSlotKey(entry, storeState.queue, storeState.agents);
+      const agent = storeState.agents.get(slotKey);
+      if (agent && (agent.historyLoaded || agent.blocks.length > 0)) return;
 
-    historyFetchInFlight.current = true;
+      historyFetchInFlight.current = true;
 
-    customInstance<FeatureAgentStateResponse>({
-      url: `/api/features/${featureId}/agent-state`,
-      method: "GET",
-      params: { limit: 100 },
-    }).then((resp) => {
-      for (const session of resp.sessions) {
-        if (session.blocks.length === 0) continue;
-        const blocks = serverBlocksToAgentBlocks(session.blocks as never[]);
-        const state = useWorkflowStore.getState();
-        // Find the slot key for this session
-        for (const [key, a] of state.agents) {
-          if (a.sessionId === session.sessionDbId) {
-            storeState.populateAgentBlocks(key, blocks, session.hasMore, session.oldestMessageId);
-            break;
+      customInstance<FeatureAgentStateResponse>({
+        url: `/api/features/${featureId}/agent-state`,
+        method: "GET",
+        params: { limit: 100 },
+      })
+        .then((resp) => {
+          for (const session of resp.sessions) {
+            if (session.blocks.length === 0) continue;
+            const blocks = serverBlocksToAgentBlocks(session.blocks as never[]);
+            const state = useWorkflowStore.getState();
+            // Find the slot key for this session
+            for (const [key, a] of state.agents) {
+              if (a.sessionId === session.sessionDbId) {
+                storeState.populateAgentBlocks(
+                  key,
+                  blocks,
+                  session.hasMore,
+                  session.oldestMessageId,
+                );
+                break;
+              }
+            }
           }
-        }
-      }
-    }).catch(() => {
-      // Silently ignore — user can retry by collapsing/expanding
-    }).finally(() => {
-      historyFetchInFlight.current = false;
-    });
-  }, [featureId]);
+        })
+        .catch(() => {
+          // Silently ignore — user can retry by collapsing/expanding
+        })
+        .finally(() => {
+          historyFetchInFlight.current = false;
+        });
+    },
+    [featureId],
+  );
 
   return {
     workflowStatus: store.workflowStatus,
@@ -253,7 +288,12 @@ export function useWsWorkflowBackend(
     actions: (() => {
       const notArchived = featureStatus !== "archived";
       const ws = store.workflowStatus;
-      const hasActiveWorkflow = ws === "ready_to_build" || ws === "building" || ws === "paused" || ws === "completed" || ws === "error";
+      const hasActiveWorkflow =
+        ws === "ready_to_build" ||
+        ws === "building" ||
+        ws === "paused" ||
+        ws === "completed" ||
+        ws === "error";
       return {
         canStartPlan: notArchived && (ws === "idle" || ws === "planning"),
         canStartPrd: notArchived && ws === "idle",
@@ -268,7 +308,7 @@ export function useWsWorkflowBackend(
 
     hasAnyAgentOutput,
     noAgentsRunning,
-    view: isLoading ? "loading" as const : view,
+    view: isLoading ? ("loading" as const) : view,
     isLoading,
 
     isStartingPlan: false,
@@ -287,8 +327,10 @@ export function useWsWorkflowBackend(
 
     startPlan: (description, images) => store.startPlan(description, images),
     startPrd: (description, images) => store.startPrd(description, images),
-    approvePlan: (_subprocessId, _sessionDbId, requestId) => store.approvePlan(requestId ?? undefined),
-    rejectPlan: (feedback, _subprocessId, _sessionDbId, requestId) => store.rejectPlan(feedback, requestId ?? undefined),
+    approvePlan: (_subprocessId, _sessionDbId, requestId) =>
+      store.approvePlan(requestId ?? undefined),
+    rejectPlan: (feedback, _subprocessId, _sessionDbId, requestId) =>
+      store.rejectPlan(feedback, requestId ?? undefined),
     startBuilding: () => store.startBuild(),
     continueWorkflow: () => store.continueWorkflow(),
     sendToAgent: (entry, message, images) => {
@@ -306,17 +348,33 @@ export function useWsWorkflowBackend(
     submitPermission: (entry, decision, feedback) => {
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       const requestId = entry.pendingPermission?.requestId ?? "";
-      const mapped = decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_future";
-      store.respondToPermission(slotKey, requestId, mapped as "allow_once" | "allow_future" | "deny", feedback);
+      const mapped =
+        decision === "allow" ? "allow_once" : decision === "deny" ? "deny" : "allow_future";
+      store.respondToPermission(
+        slotKey,
+        requestId,
+        mapped as "allow_once" | "allow_future" | "deny",
+        feedback,
+      );
     },
     submitAnswers: (entry, response) => {
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       store.respondToQuestion(slotKey, response);
     },
-    startSession: (prompt, images) => store.startSession(prompt, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
-    startRefine: (description, images) => store.startRefine(description, images?.map(i => ({ base64: i, mimeType: "image/png" }))),
+    startSession: (prompt, images) =>
+      store.startSession(
+        prompt,
+        images?.map((i) => ({ base64: i, mimeType: "image/png" })),
+      ),
+    startRefine: (description, images) =>
+      store.startRefine(
+        description,
+        images?.map((i) => ({ base64: i, mimeType: "image/png" })),
+      ),
     startRisk: () => store.startRisk(),
-    startReview: () => { /* WS workflow handles review via queue */ },
+    startReview: () => {
+      /* WS workflow handles review via queue */
+    },
     startRetro: () => store.startRetro(),
     startReviewFixer: (comments) => store.startReviewFixer(comments),
     markDone: (sessionDbId) => {
@@ -333,7 +391,7 @@ export function useWsWorkflowBackend(
       void queryClient.invalidateQueries({ queryKey: ["feature-snapshot", featureId] });
     },
     handleResume: (_agentType, sessionDbId) => {
-      const entry = sessions.find(s => s.sessionDbId === sessionDbId);
+      const entry = sessions.find((s) => s.sessionDbId === sessionDbId);
       if (!entry) return;
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       store.resumeItem(slotKey);
@@ -368,7 +426,12 @@ export function useWsWorkflowBackend(
       }
 
       const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
-      state.populateOlderBlocks(slotKey, olderBlocks, serverSession.hasMore, serverSession.oldestMessageId);
+      state.populateOlderBlocks(
+        slotKey,
+        olderBlocks,
+        serverSession.hasMore,
+        serverSession.oldestMessageId,
+      );
     },
 
     skipItem: (itemId) => store.skipItem(itemId),

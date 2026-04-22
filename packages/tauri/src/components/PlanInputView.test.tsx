@@ -19,9 +19,7 @@ describe("PlanInputView", () => {
 
   it("renders editor with placeholder text", () => {
     render(<PlanInputView {...defaultProps} />);
-    expect(
-      screen.getByText(/send a message/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/send a message/i)).toBeInTheDocument();
   });
 
   it("renders Plan button", () => {

@@ -110,7 +110,8 @@ vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
 import { Route } from "./projects/$projectId/features/$featureId";
 
 function FeaturePage() {
-  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options?.component;
+  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
+    ?.component;
   if (!Component) return null;
   return <Component />;
 }

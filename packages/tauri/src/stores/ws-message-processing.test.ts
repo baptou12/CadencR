@@ -68,7 +68,10 @@ describe("injectPlanIntoBlocks", () => {
   });
 
   it("returns blocks unchanged when no plan tool_call found", () => {
-    const blocks = [textBlock, { id: "3", type: "tool_call" as const, content: "", toolName: "Write" }];
+    const blocks = [
+      textBlock,
+      { id: "3", type: "tool_call" as const, content: "", toolName: "Write" },
+    ];
     const result = injectPlanIntoBlocks(blocks, { plan: "# Plan" });
     expect(result).toBe(blocks);
   });
@@ -85,10 +88,7 @@ describe("processSdkMessage – system messages", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const state = createStreamingState();
     try {
-      processSdkMessage(
-        { type: "system", subtype: "init", session_id: "s1" },
-        state,
-      );
+      processSdkMessage({ type: "system", subtype: "init", session_id: "s1" }, state);
       expect(info).toHaveBeenCalled();
       const [prefix, payload] = info.mock.calls[0];
       expect(prefix).toBe("[AGENT-SYSTEM] init");
@@ -116,7 +116,7 @@ describe("processSdkMessage – system messages", () => {
       const mutation = result.mutations[0];
       expect(mutation.action).toBe("append");
       expect(mutation.block.type).toBe("compact_divider");
-      expect(mutation.block.content).toContain("\"trigger\":\"auto\"");
+      expect(mutation.block.content).toContain('"trigger":"auto"');
     } finally {
       info.mockRestore();
     }

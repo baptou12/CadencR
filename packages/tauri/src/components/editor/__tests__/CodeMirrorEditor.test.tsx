@@ -29,7 +29,13 @@ vi.mock("@codemirror/view", () => {
 
 // Mock BaseCodeMirrorEditor to render a simple div with the className
 vi.mock("../BaseCodeMirrorEditor", () => ({
-  default: ({ className, editorViewRef }: { className?: string; editorViewRef?: React.MutableRefObject<unknown> }) => {
+  default: ({
+    className,
+    editorViewRef,
+  }: {
+    className?: string;
+    editorViewRef?: React.MutableRefObject<unknown>;
+  }) => {
     if (editorViewRef) {
       editorViewRef.current = {
         state: { doc: { toString: () => "", length: 0 } },
@@ -54,7 +60,11 @@ vi.mock("../git-blame-extension", () => ({
   gitBlameExtension: vi.fn(() => []),
 }));
 
-let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = { data: undefined, isLoading: true, error: null };
+let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = {
+  data: undefined,
+  isLoading: true,
+  error: null,
+};
 
 vi.mock("@/api/generated", () => ({
   useReadFile: vi.fn(() => mockReadFileReturn),

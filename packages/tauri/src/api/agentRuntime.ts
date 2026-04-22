@@ -34,7 +34,9 @@ interface ProviderMutationCallbacks<TVariables> {
 }
 
 function defaultProviderSettings(): ProviderSettings {
-  return Object.fromEntries(AGENT_TYPES.map((agentType) => [agentType, DEFAULT_PROVIDER])) as ProviderSettings;
+  return Object.fromEntries(
+    AGENT_TYPES.map((agentType) => [agentType, DEFAULT_PROVIDER]),
+  ) as ProviderSettings;
 }
 
 export function useAgentCatalog() {
@@ -48,7 +50,10 @@ export function useGetWorkspaceProviderSettings(enabled = true) {
   return useQuery({
     queryKey: ["workspace", "provider-settings"],
     queryFn: async () => {
-      const data = await customInstance<ProviderSettings>({ method: "GET", url: "/api/workspace/provider-settings" });
+      const data = await customInstance<ProviderSettings>({
+        method: "GET",
+        url: "/api/workspace/provider-settings",
+      });
       return { ...defaultProviderSettings(), ...data };
     },
     enabled,
@@ -87,18 +92,32 @@ export function useGetProjectProviderSettings(projectId: number, enabled = true)
 }
 
 export function useSetProjectProviderSetting(
-  callbacks?: ProviderMutationCallbacks<{ projectId: number; providerType: AgentTypeSetting; provider: string }>,
+  callbacks?: ProviderMutationCallbacks<{
+    projectId: number;
+    providerType: AgentTypeSetting;
+    provider: string;
+  }>,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ projectId, providerType, provider }: { projectId: number; providerType: AgentTypeSetting; provider: string }) =>
+    mutationFn: ({
+      projectId,
+      providerType,
+      provider,
+    }: {
+      projectId: number;
+      providerType: AgentTypeSetting;
+      provider: string;
+    }) =>
       customInstance<{ success: boolean }>({
         method: "PUT",
         url: `/api/projects/${projectId}/provider-settings`,
         data: { provider_type: providerType, provider },
       }),
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ["projects", "provider-settings", variables.projectId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["projects", "provider-settings", variables.projectId],
+      });
       callbacks?.onSuccess?.(data, variables);
     },
     onError: (error, variables) => callbacks?.onError?.(error, variables),
@@ -247,18 +266,32 @@ export function useGetFeatureProviderSettings(featureId: number, enabled = true)
 }
 
 export function useSetFeatureProviderSetting(
-  callbacks?: ProviderMutationCallbacks<{ featureId: number; providerType: AgentTypeSetting; provider: string }>,
+  callbacks?: ProviderMutationCallbacks<{
+    featureId: number;
+    providerType: AgentTypeSetting;
+    provider: string;
+  }>,
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ featureId, providerType, provider }: { featureId: number; providerType: AgentTypeSetting; provider: string }) =>
+    mutationFn: ({
+      featureId,
+      providerType,
+      provider,
+    }: {
+      featureId: number;
+      providerType: AgentTypeSetting;
+      provider: string;
+    }) =>
       customInstance<{ success: boolean }>({
         method: "PUT",
         url: `/api/features/${featureId}/provider-settings`,
         data: { provider_type: providerType, provider },
       }),
     onSuccess: async (data, variables) => {
-      await queryClient.invalidateQueries({ queryKey: ["features", "provider-settings", variables.featureId] });
+      await queryClient.invalidateQueries({
+        queryKey: ["features", "provider-settings", variables.featureId],
+      });
       callbacks?.onSuccess?.(data, variables);
     },
     onError: (error, variables) => callbacks?.onError?.(error, variables),

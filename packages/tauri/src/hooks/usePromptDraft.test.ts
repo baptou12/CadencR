@@ -4,7 +4,9 @@ import { usePromptDraft } from "./usePromptDraft";
 
 const mockSaveDraftMutate = vi.fn();
 const mockSendRaw = vi.fn();
-const mockSendRequest = vi.fn((): Promise<{ draft: string | null }> => Promise.resolve({ draft: null }));
+const mockSendRequest = vi.fn(
+  (): Promise<{ draft: string | null }> => Promise.resolve({ draft: null }),
+);
 const mockDraftQueryData = vi.fn((): { draftPrompt: string | null } | undefined => undefined);
 
 vi.mock("../api/generated", () => ({
@@ -45,18 +47,18 @@ describe("usePromptDraft", () => {
   });
 
   it("returns null initialDraft when not provided", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: null }),
-    );
+    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
     expect(result.current.initialDraft).toBeNull();
   });
 
   it("saves via HTTP when no wsSessionId", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: null }),
-    );
-    act(() => { result.current.saveDraft("final text"); });
-    act(() => { vi.advanceTimersByTime(500); });
+    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
+    act(() => {
+      result.current.saveDraft("final text");
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "final text" });
     expect(mockSendRaw).not.toHaveBeenCalled();
   });
@@ -65,8 +67,12 @@ describe("usePromptDraft", () => {
     const { result } = renderHook(() =>
       usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
     );
-    act(() => { result.current.saveDraft("ws draft"); });
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => {
+      result.current.saveDraft("ws draft");
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(mockSendRaw).toHaveBeenCalledTimes(1);
     expect(mockSaveDraftMutate).not.toHaveBeenCalled();
   });
@@ -76,28 +82,28 @@ describe("usePromptDraft", () => {
     const { result } = renderHook(() =>
       usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
     );
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(result.current.initialDraft).toBe("restored text");
   });
 
   it("restores draft from HTTP query for workflow agents", () => {
     mockDraftQueryData.mockReturnValue({ draftPrompt: "workflow draft" });
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: null }),
-    );
+    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
     expect(result.current.initialDraft).toBe("workflow draft");
   });
 
   it("debounces multiple saves — only persists the last one", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: null }),
-    );
+    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
     act(() => {
       result.current.saveDraft("a");
       result.current.saveDraft("ab");
       result.current.saveDraft("abc");
     });
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(mockSaveDraftMutate).toHaveBeenCalledTimes(1);
     expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "abc" });
   });
@@ -106,8 +112,12 @@ describe("usePromptDraft", () => {
     const { result } = renderHook(() =>
       usePromptDraft({ sessionId: undefined, initialDraft: null }),
     );
-    act(() => { result.current.saveDraft("some text"); });
-    act(() => { vi.advanceTimersByTime(500); });
+    act(() => {
+      result.current.saveDraft("some text");
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(mockSaveDraftMutate).not.toHaveBeenCalled();
   });
 
@@ -115,17 +125,21 @@ describe("usePromptDraft", () => {
     const { result, unmount } = renderHook(() =>
       usePromptDraft({ sessionId: 1, initialDraft: null }),
     );
-    act(() => { result.current.saveDraft("pending on unmount"); });
+    act(() => {
+      result.current.saveDraft("pending on unmount");
+    });
     unmount();
     expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "pending on unmount" });
   });
 
   it("saves null draft (clearing draft)", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: "old" }),
-    );
-    act(() => { result.current.saveDraft(null); });
-    act(() => { vi.advanceTimersByTime(500); });
+    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: "old" }));
+    act(() => {
+      result.current.saveDraft(null);
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: null });
   });
 });

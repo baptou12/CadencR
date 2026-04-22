@@ -35,10 +35,7 @@ export function DiffViewerModal({
   onSendComments,
 }: DiffViewerModalProps) {
   const { data: comments = [] } = useListDiffComments(featureId, { enabled: open });
-  const pendingComments = useMemo(
-    () => comments.filter((c) => c.status === "pending"),
-    [comments],
-  );
+  const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
 
   const closeModal = useCallback(() => onOpenChange(false), [onOpenChange]);
   const { send, sending, buttonLabel, disabled } = useSendPendingComments({
@@ -74,12 +71,7 @@ export function DiffViewerModal({
         {onSendComments && (
           <DialogFooter className="border-t px-4 py-3">
             <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]}>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={disabled}
-                onClick={() => void send()}
-              >
+              <Button variant="outline" size="sm" disabled={disabled} onClick={() => void send()}>
                 {sending ? (
                   <Loader2Icon className="mr-2 size-4 animate-spin" />
                 ) : (

@@ -6,12 +6,7 @@
 import type { FeatureSession } from "./useFeatureAgentState";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
-import type {
-  WorkflowStatus,
-  WorktreeStatus,
-  QueueItem,
-  AutonomyLevel,
-} from "@/types/workflow";
+import type { WorkflowStatus, WorktreeStatus, QueueItem, AutonomyLevel } from "@/types/workflow";
 import type { ActionAvailability } from "./useFeatureState";
 
 // ---------------------------------------------------------------------------
@@ -33,10 +28,7 @@ export type ViewState =
  * Pure function that derives the current view state from workflow status and
  * session list. Used by both adapters so the logic is shared.
  */
-export function deriveViewState(
-  status: WorkflowStatus,
-  sessions: FeatureSession[],
-): ViewState {
+export function deriveViewState(status: WorkflowStatus, sessions: FeatureSession[]): ViewState {
   // If sessions exist, never show plan-input — the feature has been worked on
   const hasSessions = sessions.length > 0;
 
@@ -58,9 +50,7 @@ export function deriveViewState(
     case "completed":
       return "done";
     case "error": {
-      const hasActive = sessions.some(
-        (s) => s.status === "running" || s.status === "waiting",
-      );
+      const hasActive = sessions.some((s) => s.status === "running" || s.status === "waiting");
       return hasActive || hasSessions ? "agents-active" : "plan-input";
     }
     default:
@@ -111,11 +101,7 @@ export interface WorkflowBackend {
   // -- Commands --
   startPlan(description: string, images?: Array<{ base64: string; mimeType: string }>): void;
   startPrd(description: string, images?: Array<{ base64: string; mimeType: string }>): void;
-  approvePlan(
-    subprocessId?: string | null,
-    sessionDbId?: number,
-    requestId?: string,
-  ): void;
+  approvePlan(subprocessId?: string | null, sessionDbId?: number, requestId?: string): void;
   rejectPlan(
     feedback: string,
     subprocessId?: string | null,
@@ -131,11 +117,7 @@ export interface WorkflowBackend {
   ): void;
   stopAgent(entry: FeatureSession): void;
   interruptAgent(entry: FeatureSession): void;
-  submitPermission(
-    entry: FeatureSession,
-    decision: string,
-    feedback?: string,
-  ): void;
+  submitPermission(entry: FeatureSession, decision: string, feedback?: string): void;
   submitAnswers(entry: FeatureSession, response: AgentQuestionAnswers): void;
   startSession(prompt: string, images?: string[]): void;
   startRefine(description: string, images?: string[]): void;

@@ -128,10 +128,9 @@ describe("useGlobalShortcut", () => {
   it("uses latest callback without re-attaching listener", () => {
     const cb1 = vi.fn<(e: KeyboardEvent) => void>();
     const cb2 = vi.fn<(e: KeyboardEvent) => void>();
-    const { rerender } = renderHook(
-      ({ cb }) => useGlobalShortcut("meta+p", cb),
-      { initialProps: { cb: cb1 } },
-    );
+    const { rerender } = renderHook(({ cb }) => useGlobalShortcut("meta+p", cb), {
+      initialProps: { cb: cb1 },
+    });
     rerender({ cb: cb2 });
     fireKey("p", { metaKey: true, code: "KeyP" });
     expect(cb1).not.toHaveBeenCalled();

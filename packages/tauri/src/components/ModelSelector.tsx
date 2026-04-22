@@ -37,7 +37,11 @@ import {
   useSetFeatureModelSetting,
 } from "../api/generated";
 import { ModelSelectorRow } from "./ModelSelectorRow";
-import { getWorkspaceSettingsQueryKey, useGetWorkspaceSettings, settingsArrayToMap } from "@/api/settings";
+import {
+  getWorkspaceSettingsQueryKey,
+  useGetWorkspaceSettings,
+  settingsArrayToMap,
+} from "@/api/settings";
 import {
   isThinkingEffortSupported,
   parseThinkingEffort,
@@ -94,14 +98,27 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     enabled: level === "feature" && projectId != null,
   });
   const workspaceKvSettings = useGetWorkspaceSettings();
-  const projectKvSettings = useGetProjectSettings(projectId ?? 0, { enabled: level !== "global" && projectId != null });
-  const featureKvSettings = useGetFeatureSettings(featureId ?? 0, { enabled: level === "feature" && featureId != null });
+  const projectKvSettings = useGetProjectSettings(projectId ?? 0, {
+    enabled: level !== "global" && projectId != null,
+  });
+  const featureKvSettings = useGetFeatureSettings(featureId ?? 0, {
+    enabled: level === "feature" && featureId != null,
+  });
 
   const globalProviderSettings = useGetWorkspaceProviderSettings(level === "global");
-  const projectProviderSettings = useGetProjectProviderSettings(projectId ?? 0, level === "project" && projectId != null);
-  const featureProviderSettings = useGetFeatureProviderSettings(featureId ?? 0, level === "feature" && featureId != null);
+  const projectProviderSettings = useGetProjectProviderSettings(
+    projectId ?? 0,
+    level === "project" && projectId != null,
+  );
+  const featureProviderSettings = useGetFeatureProviderSettings(
+    featureId ?? 0,
+    level === "feature" && featureId != null,
+  );
   const parentGlobalProviderSettings = useGetWorkspaceProviderSettings(level !== "global");
-  const parentProjectProviderSettings = useGetProjectProviderSettings(projectId ?? 0, level === "feature" && projectId != null);
+  const parentProjectProviderSettings = useGetProjectProviderSettings(
+    projectId ?? 0,
+    level === "feature" && projectId != null,
+  );
 
   const globalMutation = useSetWorkspaceModelSetting({
     onSuccess: () => {
@@ -111,13 +128,17 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   });
   const projectMutation = useSetProjectModelSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0) });
+      void queryClient.invalidateQueries({
+        queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0),
+      });
       toast.success("Settings saved");
     },
   });
   const featureMutation = useSetFeatureModelSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0) });
+      void queryClient.invalidateQueries({
+        queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0),
+      });
       toast.success("Settings saved");
     },
   });
@@ -129,13 +150,17 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   });
   const projectSettingMutation = useSetProjectSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId ?? 0) });
+      void queryClient.invalidateQueries({
+        queryKey: getGetProjectSettingsQueryKey(projectId ?? 0),
+      });
       toast.success("Settings saved");
     },
   });
   const featureSettingMutation = useSetFeatureSetting({
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0) });
+      void queryClient.invalidateQueries({
+        queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0),
+      });
       toast.success("Settings saved");
     },
   });
@@ -161,9 +186,17 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   });
 
   const settings =
-    level === "global" ? globalSettings.data : level === "project" ? projectSettings.data : featureSettings.data;
+    level === "global"
+      ? globalSettings.data
+      : level === "project"
+        ? projectSettings.data
+        : featureSettings.data;
   const providerSettings =
-    level === "global" ? globalProviderSettings.data : level === "project" ? projectProviderSettings.data : featureProviderSettings.data;
+    level === "global"
+      ? globalProviderSettings.data
+      : level === "project"
+        ? projectProviderSettings.data
+        : featureProviderSettings.data;
 
   const isLoading =
     (level === "global" && globalSettings.isLoading) ||
@@ -183,13 +216,17 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
 
   // useMemo must run on every render — keep it above any conditional return
   // so the hook order stays stable when `isLoading` flips.
-  const providers = useMemo(() => (agentCatalog.data?.providers ?? []).map((provider) => ({
-    id: provider.id,
-    label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
-    providerId: provider.id,
-    disabled: provider.status !== "available",
-    models: provider.models,
-  })), [agentCatalog.data]);
+  const providers = useMemo(
+    () =>
+      (agentCatalog.data?.providers ?? []).map((provider) => ({
+        id: provider.id,
+        label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
+        providerId: provider.id,
+        disabled: provider.status !== "available",
+        models: provider.models,
+      })),
+    [agentCatalog.data],
+  );
 
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading model settings...</div>;
@@ -199,7 +236,10 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     return <div className="text-sm text-destructive">Failed to load provider catalog.</div>;
   }
 
-  function getSelection(agentType: AgentType, targetLevel: "global" | "project" | "feature"): RuntimeSelection {
+  function getSelection(
+    agentType: AgentType,
+    targetLevel: "global" | "project" | "feature",
+  ): RuntimeSelection {
     return resolveRuntimeSelection({
       agentType,
       providers: agentCatalog.data?.providers,
@@ -261,7 +301,9 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
   function handleProviderChange(agentType: AgentType, value: string): void {
     const providerId = value === INHERIT_VALUE ? "" : value;
     const resolvedProviderId = providerId || DEFAULT_PROVIDER;
-    const selectedProvider = agentCatalog.data?.providers.find((provider) => provider.id === resolvedProviderId);
+    const selectedProvider = agentCatalog.data?.providers.find(
+      (provider) => provider.id === resolvedProviderId,
+    );
     if (providerId !== "" && (!selectedProvider || selectedProvider.status !== "available")) {
       return;
     }
@@ -324,14 +366,23 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
 
   function currentScopeThinkingEffort(agentType: AgentType): ThinkingEffortLevel | undefined {
     const key = thinkingEffortSettingKey(agentType);
-    const source = level === "global" ? workspaceSettingMap : level === "project" ? projectSettingMap : featureSettingMap;
+    const source =
+      level === "global"
+        ? workspaceSettingMap
+        : level === "project"
+          ? projectSettingMap
+          : featureSettingMap;
     return parseThinkingEffort(source[key]);
   }
 
   function getEffectiveThinkingEffort(agentType: AgentType): ThinkingEffortLevel | undefined {
     const levels = supportedThinkingEffortLevels(getModelOption(agentType));
     const key = thinkingEffortSettingKey(agentType);
-    for (const value of [featureSettingMap[key], projectSettingMap[key], workspaceSettingMap[key]]) {
+    for (const value of [
+      featureSettingMap[key],
+      projectSettingMap[key],
+      workspaceSettingMap[key],
+    ]) {
       const effort = parseThinkingEffort(value);
       if (effort && isThinkingEffortSupported(levels, effort)) return effort;
     }
@@ -349,7 +400,11 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
     }
   }
 
-  function resetScopeThinkingEffortIfInvalid(agentType: AgentType, providerId: string, modelId: string): void {
+  function resetScopeThinkingEffortIfInvalid(
+    agentType: AgentType,
+    providerId: string,
+    modelId: string,
+  ): void {
     const model = agentCatalog.data?.providers
       .find((provider) => provider.id === providerId)
       ?.models.find((entry) => entry.id === modelId);
@@ -368,15 +423,31 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
         <ModelSelectorRow
           key={agentType}
           agentLabel={AGENT_LABELS[agentType] ?? agentType}
-          stateLabel={level === "global" ? "Default" : getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE ? "Inherited" : "Override"}
+          stateLabel={
+            level === "global"
+              ? "Default"
+              : getCurrentProviderValue(agentType) === INHERIT_VALUE ||
+                  getCurrentValue(agentType) === INHERIT_VALUE
+                ? "Inherited"
+                : "Override"
+          }
           level={level}
           selectedProviderId={getSelectedProvider(agentType)}
           selectedProviderLabel={getProviderLabel(getSelectedProvider(agentType))}
           selectedModelId={getSelectedModel(agentType)}
-          selectedModelLabel={getModelLabel(getSelectedProvider(agentType), getSelectedModel(agentType))}
-          selectedModelDescription={getModelDescription(getSelectedProvider(agentType), getSelectedModel(agentType))}
+          selectedModelLabel={getModelLabel(
+            getSelectedProvider(agentType),
+            getSelectedModel(agentType),
+          )}
+          selectedModelDescription={getModelDescription(
+            getSelectedProvider(agentType),
+            getSelectedModel(agentType),
+          )}
           providers={providers}
-          isInherited={getCurrentProviderValue(agentType) === INHERIT_VALUE || getCurrentValue(agentType) === INHERIT_VALUE}
+          isInherited={
+            getCurrentProviderValue(agentType) === INHERIT_VALUE ||
+            getCurrentValue(agentType) === INHERIT_VALUE
+          }
           isModelSelected={(providerId, modelId) => isModelSelected(agentType, providerId, modelId)}
           onInherit={level !== "global" ? () => handleInheritSelection(agentType) : undefined}
           onSelect={(providerId, modelId) => {

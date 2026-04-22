@@ -22,16 +22,35 @@ const AUTO_SAVE_DELAY_MS = 1500;
 function getLanguageName(filePath: string): string {
   const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
   const MAP: Record<string, string> = {
-    ts: "TypeScript", tsx: "TSX", js: "JavaScript", jsx: "JSX",
-    json: "JSON", html: "HTML", css: "CSS", rs: "Rust",
-    md: "Markdown", mdx: "MDX", yaml: "YAML", yml: "YAML",
-    toml: "TOML", py: "Python", go: "Go", sql: "SQL",
-    sh: "Shell", bash: "Shell", zsh: "Shell",
+    ts: "TypeScript",
+    tsx: "TSX",
+    js: "JavaScript",
+    jsx: "JSX",
+    json: "JSON",
+    html: "HTML",
+    css: "CSS",
+    rs: "Rust",
+    md: "Markdown",
+    mdx: "MDX",
+    yaml: "YAML",
+    yml: "YAML",
+    toml: "TOML",
+    py: "Python",
+    go: "Go",
+    sql: "SQL",
+    sh: "Shell",
+    bash: "Shell",
+    zsh: "Shell",
   };
   return MAP[ext] ?? "Plain Text";
 }
 
-export default function CodeMirrorEditor({ filePath, projectId, paneId, featureId }: CodeMirrorEditorProps) {
+export default function CodeMirrorEditor({
+  filePath,
+  projectId,
+  paneId,
+  featureId,
+}: CodeMirrorEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
@@ -60,10 +79,14 @@ export default function CodeMirrorEditor({ filePath, projectId, paneId, featureI
   const setCursorPosition = useEditorStore((s) => s.setCursorPosition);
   const clearPendingGoToLine = useEditorStore((s) => s.clearPendingGoToLine);
   const cursorPosition = useEditorStore(
-    (s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)?.cursorPosition ?? { line: 1, col: 1 },
+    (s) =>
+      s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)
+        ?.cursorPosition ?? { line: 1, col: 1 },
   );
   const pendingGoToLine = useEditorStore(
-    (s) => s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)?.pendingGoToLine,
+    (s) =>
+      s.features[featureId]?.panes[paneId]?.tabs.find((t) => t.filePath === filePath)
+        ?.pendingGoToLine,
   );
 
   const { data, isLoading, error } = useReadFile(
@@ -83,7 +106,12 @@ export default function CodeMirrorEditor({ filePath, projectId, paneId, featureI
     if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await mutateAsyncRef.current({ project_id: projectId, feature_id: featureId, file_path: filePath, content });
+      await mutateAsyncRef.current({
+        project_id: projectId,
+        feature_id: featureId,
+        file_path: filePath,
+        content,
+      });
       setDirty(featureId, paneId, filePath, false);
       setAutoSavedVisible(true);
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
@@ -99,7 +127,12 @@ export default function CodeMirrorEditor({ filePath, projectId, paneId, featureI
     if (!view || !mutateAsyncRef.current) return;
     const content = view.state.doc.toString();
     try {
-      await mutateAsyncRef.current({ project_id: projectId, feature_id: featureId, file_path: filePath, content });
+      await mutateAsyncRef.current({
+        project_id: projectId,
+        feature_id: featureId,
+        file_path: filePath,
+        content,
+      });
       setDirty(featureId, paneId, filePath, false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save file";
@@ -107,13 +140,17 @@ export default function CodeMirrorEditor({ filePath, projectId, paneId, featureI
     }
   }, [projectId, filePath, featureId, paneId, setDirty]);
 
-  const handleSave = useCallback(() => { void save(); }, [save]);
+  const handleSave = useCallback(() => {
+    void save();
+  }, [save]);
 
   const handleChange = useCallback(() => {
     setDirty(featureId, paneId, filePath, true);
     if (isAutoSaveEnabledRef.current) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = setTimeout(() => { void saveQuiet(); }, AUTO_SAVE_DELAY_MS);
+      autoSaveTimerRef.current = setTimeout(() => {
+        void saveQuiet();
+      }, AUTO_SAVE_DELAY_MS);
     }
   }, [featureId, paneId, filePath, setDirty, saveQuiet]);
 

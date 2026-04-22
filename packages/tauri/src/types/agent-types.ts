@@ -13,7 +13,7 @@ export type AgentType =
   | "review-fixer"
   | "retro"
   | "auto_name"
-  | (string & {});  // Custom workflow phase slugs (e.g. "specify", "analyze")
+  | (string & {}); // Custom workflow phase slugs (e.g. "specify", "analyze")
 
 /** Image payload sent with prompts to agents. */
 interface ImagePayload {
@@ -36,7 +36,7 @@ export function buildUserMessageContent(text: string, images?: ImagePayload[]): 
   if (!images || images.length === 0) return text;
   return JSON.stringify([
     { type: "text", text },
-    ...images.map(img => ({
+    ...images.map((img) => ({
       type: "image",
       source: { type: "base64", media_type: img.mimeType, data: img.base64 },
     })),

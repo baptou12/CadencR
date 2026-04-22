@@ -61,8 +61,9 @@ vi.mock("@/stores/ws-session-store", () => ({
 }));
 
 vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn((selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
-    selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
+  useWorkflowStore: vi.fn(
+    (selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
+      selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
   ),
 }));
 
@@ -88,71 +89,35 @@ describe("ProjectTree", () => {
   });
 
   it("renders project list", () => {
-    render(
-      <ProjectTree
-        activeProjectId={null}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={null} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     expect(screen.getByText("Alpha Project")).toBeInTheDocument();
     expect(screen.getByText("Beta Project")).toBeInTheDocument();
   });
 
   it("renders color dots for each project", () => {
-    render(
-      <ProjectTree
-        activeProjectId={null}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={null} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     expect(screen.getByTestId("color-dot-1")).toBeInTheDocument();
     expect(screen.getByTestId("color-dot-2")).toBeInTheDocument();
   });
 
   it("renders Projects heading", () => {
-    render(
-      <ProjectTree
-        activeProjectId={null}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={null} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     expect(screen.getByText("Projects")).toBeInTheDocument();
   });
 
   it("shows add project button", () => {
-    render(
-      <ProjectTree
-        activeProjectId={null}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={null} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     expect(screen.getAllByRole("button").length).toBeGreaterThan(0);
   });
 
   it("expands active project to show features", () => {
-    render(
-      <ProjectTree
-        activeProjectId={1}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     expect(screen.getByText("Feature One")).toBeInTheDocument();
   });
 
   it("toggles project expansion on click", async () => {
     const user = userEvent.setup();
-    render(
-      <ProjectTree
-        activeProjectId={null}
-        activeFeatureId={null}
-        onSelectFeature={vi.fn()}
-      />,
-    );
+    render(<ProjectTree activeProjectId={null} activeFeatureId={null} onSelectFeature={vi.fn()} />);
     // Click project button to expand
     await user.click(screen.getByText("Alpha Project"));
     expect(screen.getByText("Feature One")).toBeInTheDocument();

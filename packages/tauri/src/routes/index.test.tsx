@@ -17,10 +17,28 @@ const mocks = vi.hoisted(() => {
 
   const mockNavigate = vi.fn();
   const mockUseSearch = vi.fn(() => ({}));
-  const mockProjectsListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({ data: [], isSuccess: false, error: null }));
-  const mockFeaturesListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({ data: [], isSuccess: false, error: null }));
-  const mockLastFeatureQuery = vi.fn<() => MockSettingQueryResult>(() => ({ data: undefined, isLoading: false, error: null }));
-  return { mockNavigate, mockUseSearch, mockProjectsListQuery, mockFeaturesListQuery, mockLastFeatureQuery };
+  const mockProjectsListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({
+    data: [],
+    isSuccess: false,
+    error: null,
+  }));
+  const mockFeaturesListQuery = vi.fn<() => MockQueryResult<unknown[]>>(() => ({
+    data: [],
+    isSuccess: false,
+    error: null,
+  }));
+  const mockLastFeatureQuery = vi.fn<() => MockSettingQueryResult>(() => ({
+    data: undefined,
+    isLoading: false,
+    error: null,
+  }));
+  return {
+    mockNavigate,
+    mockUseSearch,
+    mockProjectsListQuery,
+    mockFeaturesListQuery,
+    mockLastFeatureQuery,
+  };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -51,7 +69,8 @@ import { Route } from "./index";
 
 function HomePage() {
   (Route as unknown as { useSearch: typeof mocks.mockUseSearch }).useSearch = mocks.mockUseSearch;
-  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options?.component;
+  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
+    ?.component;
   if (!Component) return null;
   return <Component />;
 }
@@ -126,12 +145,18 @@ describe("HomePage route", () => {
       error: null,
     });
     mocks.mockProjectsListQuery.mockReturnValue({
-      data: [{ id: 1, name: "P1", path: "/p1" }, { id: 2, name: "P2", path: "/p2" }],
+      data: [
+        { id: 1, name: "P1", path: "/p1" },
+        { id: 2, name: "P2", path: "/p2" },
+      ],
       isSuccess: true,
       error: null,
     });
     mocks.mockFeaturesListQuery.mockReturnValue({
-      data: [{ id: 10, title: "Saved Feature" }, { id: 11, title: "Other" }],
+      data: [
+        { id: 10, title: "Saved Feature" },
+        { id: 11, title: "Other" },
+      ],
       isSuccess: true,
       error: null,
     });

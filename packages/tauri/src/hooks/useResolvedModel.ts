@@ -1,10 +1,6 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  DEFAULT_PROVIDER,
-  resolveRuntimeSelection,
-  type AgentTypeSetting,
-} from "../shared/models";
+import { DEFAULT_PROVIDER, resolveRuntimeSelection, type AgentTypeSetting } from "../shared/models";
 import type { AgentType } from "../types/agent-types";
 import {
   useGetWorkspaceModelSettings,
@@ -58,11 +54,13 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const globalProviderSettings = useGetWorkspaceProviderSettings();
 
   const setModelMutation = useSetFeatureModelSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
   });
   const setProviderMutation = useSetFeatureProviderSetting();
   const setThinkingEffortMutation = useSetFeatureSetting({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
   });
 
   const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
@@ -70,17 +68,18 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const workspaceSettingMap = settingsArrayToMap(workspaceKvSettings.data);
 
   const resolveSelection = useCallback(
-    (agentType: AgentType) => resolveRuntimeSelection({
-      agentType: agentType as AgentTypeSetting,
-      providers: agentCatalog.data?.providers,
-      defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
-      globalModels: globalSettings.data,
-      globalProviders: globalProviderSettings.data,
-      projectModels: projectSettings.data,
-      projectProviders: projectProviderSettings.data,
-      featureModels: featureSettings.data,
-      featureProviders: featureProviderSettings.data,
-    }),
+    (agentType: AgentType) =>
+      resolveRuntimeSelection({
+        agentType: agentType as AgentTypeSetting,
+        providers: agentCatalog.data?.providers,
+        defaultProviderId: agentCatalog.data?.default_provider ?? DEFAULT_PROVIDER,
+        globalModels: globalSettings.data,
+        globalProviders: globalProviderSettings.data,
+        projectModels: projectSettings.data,
+        projectProviders: projectProviderSettings.data,
+        featureModels: featureSettings.data,
+        featureProviders: featureProviderSettings.data,
+      }),
     [
       agentCatalog.data,
       featureProviderSettings.data,
@@ -118,18 +117,32 @@ export function useResolvedModel(featureId: number, projectId: number) {
         ?.models.find((entry) => entry.id === selection.modelId);
       const levels = supportedThinkingEffortLevels(model);
       const key = thinkingEffortSettingKey(agentType as AgentTypeSetting);
-      for (const value of [featureSettingMap[key], projectSettingMap[key], workspaceSettingMap[key]]) {
+      for (const value of [
+        featureSettingMap[key],
+        projectSettingMap[key],
+        workspaceSettingMap[key],
+      ]) {
         const effort = parseThinkingEffort(value);
         if (effort && isThinkingEffortSupported(levels, effort)) return effort;
       }
       return undefined;
     },
-    [agentCatalog.data?.providers, featureSettingMap, projectSettingMap, resolveSelection, workspaceSettingMap],
+    [
+      agentCatalog.data?.providers,
+      featureSettingMap,
+      projectSettingMap,
+      resolveSelection,
+      workspaceSettingMap,
+    ],
   );
 
   const handleProviderChange = useCallback(
     (agentType: AgentType, providerId: string) => {
-      setProviderMutation.mutate({ featureId, providerType: agentType as AgentTypeSetting, provider: providerId });
+      setProviderMutation.mutate({
+        featureId,
+        providerType: agentType as AgentTypeSetting,
+        provider: providerId,
+      });
     },
     [featureId, setProviderMutation],
   );

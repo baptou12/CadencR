@@ -1,12 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "./dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./dialog";
 
 describe("Dialog", () => {
   it("opens dialog on trigger click", async () => {
@@ -19,7 +13,7 @@ describe("Dialog", () => {
           </DialogHeader>
           <p>Dialog content</p>
         </DialogContent>
-      </Dialog>
+      </Dialog>,
     );
     expect(screen.queryByText("Dialog content")).not.toBeInTheDocument();
     await user.click(screen.getByText("Open"));
@@ -33,7 +27,7 @@ describe("Dialog", () => {
           <DialogTitle>My Dialog</DialogTitle>
           <p>Open by default</p>
         </DialogContent>
-      </Dialog>
+      </Dialog>,
     );
     expect(screen.getByText("Open by default")).toBeInTheDocument();
   });
@@ -46,7 +40,7 @@ describe("Dialog", () => {
           <DialogTitle>Dialog</DialogTitle>
           <p>Content</p>
         </DialogContent>
-      </Dialog>
+      </Dialog>,
     );
     // Press Escape to close
     await user.keyboard("{Escape}");
@@ -59,7 +53,7 @@ describe("Dialog", () => {
         <DialogContent>
           <DialogTitle>No Description</DialogTitle>
         </DialogContent>
-      </Dialog>
+      </Dialog>,
     );
     const dialog = screen.getByRole("dialog");
     expect(dialog).not.toHaveAttribute("aria-describedby");
@@ -72,7 +66,7 @@ describe("Dialog", () => {
           <DialogTitle>Dialog</DialogTitle>
           <p>Hidden content</p>
         </DialogContent>
-      </Dialog>
+      </Dialog>,
     );
     expect(screen.queryByText("Hidden content")).not.toBeInTheDocument();
   });

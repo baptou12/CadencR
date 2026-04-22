@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { handleEnvelope, type StoreAccessors } from "./ws-envelope-handler";
-import {
-  createSessionEntry,
-  type SessionEntry,
-  type WsSessionStore,
-} from "./ws-session-types";
+import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 
 function createTestContext(session: SessionEntry): StoreAccessors {

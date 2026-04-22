@@ -27,61 +27,28 @@ vi.mock("@/api/generated", () => ({
 describe("MergeArchiveDialog", () => {
   it("renders nothing when closed", () => {
     const { container } = render(
-      <MergeArchiveDialog
-        open={false}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
+      <MergeArchiveDialog open={false} onOpenChange={vi.fn()} projectId={1} featureId={1} />,
     );
     expect(container.querySelector("[role='dialog']")).not.toBeInTheDocument();
   });
 
   it("renders dialog with title when open", () => {
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getByText("Merge & Archive")).toBeInTheDocument();
   });
 
   it("shows no conflicts message", () => {
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getByText("No conflicts detected")).toBeInTheDocument();
   });
 
   it("shows merge button", () => {
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getByRole("button", { name: /merge branch/i })).toBeInTheDocument();
   });
 
   it("shows archive section", () => {
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getByRole("heading", { name: "Archive Feature" })).toBeInTheDocument();
   });
 
@@ -94,26 +61,12 @@ describe("MergeArchiveDialog", () => {
       error: null,
     });
 
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getByRole("button", { name: /merge branch/i })).toBeDisabled();
   });
 
   it("shows close button", () => {
-    render(
-      <MergeArchiveDialog
-        open={true}
-        onOpenChange={vi.fn()}
-        projectId={1}
-        featureId={1}
-      />
-    );
+    render(<MergeArchiveDialog open={true} onOpenChange={vi.fn()} projectId={1} featureId={1} />);
     expect(screen.getAllByRole("button", { name: /close/i }).length).toBeGreaterThan(0);
   });
 });

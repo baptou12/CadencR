@@ -124,35 +124,36 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         if (!mountedRef.current) return;
         exitedRef.current = true;
         const id = ptyIdRef.current;
-        terminalRef.current?.write(
-          `\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m\r\n`,
-        );
+        terminalRef.current?.write(`\r\n\x1b[90m[Process exited with code ${code}]\x1b[0m\r\n`);
         if (id) onExit?.(id);
       },
       [onExit],
     );
 
-    const onWsReconnected = useCallback((scrollback: string, alive: boolean) => {
-      if (!mountedRef.current) return;
-      if (!alive) {
-        exitedRef.current = true;
-        terminalRef.current?.write("\r\n\x1b[90m[Terminal session ended]\x1b[0m\r\n");
-        const id = ptyIdRef.current;
-        if (id) onExit?.(id);
-        return;
-      }
-      if (scrollback) terminalRef.current?.write(scrollback);
-      // Sync size after reconnect
-      try {
-        fitAddonRef.current?.fit();
-        const term = terminalRef.current;
-        if (term) resizeRef.current?.(term.cols, term.rows);
-      } catch {
-        // Ignore resize errors
-      }
-      terminalRef.current?.focus();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [onExit]);
+    const onWsReconnected = useCallback(
+      (scrollback: string, alive: boolean) => {
+        if (!mountedRef.current) return;
+        if (!alive) {
+          exitedRef.current = true;
+          terminalRef.current?.write("\r\n\x1b[90m[Terminal session ended]\x1b[0m\r\n");
+          const id = ptyIdRef.current;
+          if (id) onExit?.(id);
+          return;
+        }
+        if (scrollback) terminalRef.current?.write(scrollback);
+        // Sync size after reconnect
+        try {
+          fitAddonRef.current?.fit();
+          const term = terminalRef.current;
+          if (term) resizeRef.current?.(term.cols, term.rows);
+        } catch {
+          // Ignore resize errors
+        }
+        terminalRef.current?.focus();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      },
+      [onExit],
+    );
 
     const onWsError = useCallback((message: string) => {
       if (!mountedRef.current) return;

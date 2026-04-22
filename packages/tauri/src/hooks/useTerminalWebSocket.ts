@@ -58,11 +58,7 @@ interface UseTerminalWebSocketReturn {
   isConnected: boolean;
 }
 
-function buildWsUrl(
-  options: UseTerminalWebSocketOptions,
-  cols?: number,
-  rows?: number,
-): string {
+function buildWsUrl(options: UseTerminalWebSocketOptions, cols?: number, rows?: number): string {
   const params = new URLSearchParams();
 
   if (options.ptyId) {

@@ -99,10 +99,12 @@ function handleCommandsDomain(
       name: c.name,
       description: c.description ?? "",
     }));
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      slashCommands: cmds,
-      slashCommandsLoading: false,
-    }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        slashCommands: cmds,
+        slashCommandsLoading: false,
+      }),
+    );
   }
 }
 
@@ -119,9 +121,11 @@ function handleSessionAction(
       const p = parseRuntimeSessionIdPayload(envelope.payload);
       const sessionIdValue = p?.runtime_session_id;
       if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).runtimeSessionId) {
-        ctx.set(updateSession(ctx.get(), sessionId, {
-          runtimeSessionId: sessionIdValue,
-        }));
+        ctx.set(
+          updateSession(ctx.get(), sessionId, {
+            runtimeSessionId: sessionIdValue,
+          }),
+        );
       }
       break;
     }
@@ -141,10 +145,12 @@ function handleSessionAction(
     case "provider.set.ok": {
       const p = parseProviderPayload(envelope.payload);
       if (p?.provider) {
-        ctx.set(updateSession(ctx.get(), sessionId, {
-          currentProviderId: p.provider,
-          runtimeProvider: p.provider,
-        }));
+        ctx.set(
+          updateSession(ctx.get(), sessionId, {
+            currentProviderId: p.provider,
+            runtimeProvider: p.provider,
+          }),
+        );
       }
       break;
     }
@@ -165,10 +171,12 @@ function handleSessionAction(
               contextWindow: nextContextWindow,
               wasCompacted: false,
             };
-        ctx.set(updateSession(ctx.get(), sessionId, {
-          currentModelId: p.model,
-          contextUsage: nextUsage,
-        }));
+        ctx.set(
+          updateSession(ctx.get(), sessionId, {
+            currentModelId: p.model,
+            contextUsage: nextUsage,
+          }),
+        );
       }
       break;
     }
@@ -181,12 +189,14 @@ function handleSessionAction(
       handleError(ctx, sessionId, envelope.payload);
       break;
     case "compact.ok":
-      ctx.set(updateSession(ctx.get(), sessionId, {
-        lifecycle: transitionTurn(ctx.getSession(sessionId).lifecycle, {
-          type: "turn_ended",
-          reason: "completed",
+      ctx.set(
+        updateSession(ctx.get(), sessionId, {
+          lifecycle: transitionTurn(ctx.getSession(sessionId).lifecycle, {
+            type: "turn_ended",
+            reason: "completed",
+          }),
         }),
-      }));
+      );
       break;
     case "cleared":
       handleCleared(ctx, sessionId, envelope.payload);
@@ -218,11 +228,7 @@ function handleSessionAction(
   }
 }
 
-function handleInitialized(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleInitialized(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseInitializedPayload(payload);
   if (!p) return;
   const session = ctx.getSession(sessionId);
@@ -239,7 +245,8 @@ function handleInitialized(
   if (p.model) updates.currentModelId = p.model;
   updates.currentThinkingEffort = p.thinking_effort;
   if (p.input_tokens != null || p.output_tokens != null) {
-    const contextWindow = normalizeContextWindow(p.context_window) ?? session.contextUsage?.contextWindow ?? null;
+    const contextWindow =
+      normalizeContextWindow(p.context_window) ?? session.contextUsage?.contextWindow ?? null;
     updates.contextUsage = {
       inputTokens: p.input_tokens ?? 0,
       outputTokens: p.output_tokens ?? 0,
@@ -250,11 +257,7 @@ function handleInitialized(
   ctx.set(updateSession(ctx.get(), sessionId, updates));
 }
 
-function handleMessage(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseMessageBlocksPayload(payload);
   if (!p) return;
   const state = ctx.getSession(sessionId).streamingState;
@@ -297,11 +300,7 @@ function handleMessage(
   ctx.set(updateSession(ctx.get(), sessionId, patch));
 }
 
-function handlePermissionRequest(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handlePermissionRequest(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parsePermissionPayload(payload);
   if (!p?.request_id || !p.tool_name) return;
   const session = ctx.get().sessions[sessionId];
@@ -314,114 +313,118 @@ function handlePermissionRequest(
         ? { ...b, toolArgs: enrichedArgs }
         : b,
     );
-    ctx.set(updateSession(current, sessionId, {
-      ...(updatedBlocks ? { blocks: updatedBlocks } : {}),
-      pendingRequestId: p.request_id,
-      pendingPlanApproval: p.tool_input ?? {},
-      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "plan_approval_requested" }),
-    }));
+    ctx.set(
+      updateSession(current, sessionId, {
+        ...(updatedBlocks ? { blocks: updatedBlocks } : {}),
+        pendingRequestId: p.request_id,
+        pendingPlanApproval: p.tool_input ?? {},
+        lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
+          type: "plan_approval_requested",
+        }),
+      }),
+    );
   } else if (p.tool_name === "AskUserQuestion") {
     const toolInput = p.tool_input ?? {};
     const questions: AgentQuestion[] = parseAskUserQuestions(toolInput);
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      pendingRequestId: p.request_id,
-      pendingQuestions: questions,
-      pendingQuestionToolInput: toolInput,
-      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "question_requested" }),
-    }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        pendingRequestId: p.request_id,
+        pendingQuestions: questions,
+        pendingQuestionToolInput: toolInput,
+        lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
+          type: "question_requested",
+        }),
+      }),
+    );
   } else {
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      pendingRequestId: p.request_id,
-      pendingPermission: {
-        toolName: p.tool_name,
-        input: p.tool_input ?? {},
-        description: p.description ?? "",
-        pattern: p.pattern ?? "",
-        preview: p.preview,
-        options: p.options,
-      },
-      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "permission_requested" }),
-    }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        pendingRequestId: p.request_id,
+        pendingPermission: {
+          toolName: p.tool_name,
+          input: p.tool_input ?? {},
+          description: p.description ?? "",
+          pattern: p.pattern ?? "",
+          preview: p.preview,
+          options: p.options,
+        },
+        lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
+          type: "permission_requested",
+        }),
+      }),
+    );
   }
 }
 
-function handleError(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseErrorPayload(payload);
   const session = ctx.getSession(sessionId);
   const state = session.streamingState;
   if (p?.message) {
     state.counter += 1;
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
-      blocks: [
-        ...session.blocks,
-        {
-          id: `ws-err-${state.counter}`,
-          type: "text",
-          content: `Error: ${p.message}`,
-          isError: true,
-        },
-      ],
-    }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
+        blocks: [
+          ...session.blocks,
+          {
+            id: `ws-err-${state.counter}`,
+            type: "text",
+            content: `Error: ${p.message}`,
+            isError: true,
+          },
+        ],
+      }),
+    );
   } else {
-    ctx.set(updateSession(ctx.get(), sessionId, {
-      lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored" }),
-    }));
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored" }),
+      }),
+    );
   }
 }
 
-function handleCleared(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const session = ctx.get().sessions[sessionId];
   const existingBlocks = session?.blocks ?? [];
   const previousSessionId = parseClearedPayload(payload)?.previous_session_id ?? "";
-  ctx.set(updateSession(ctx.get(), sessionId, {
-    blocks: [
-      ...existingBlocks,
-      { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
-    ],
-    lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
-    streamingState: createStreamingState(),
-    pendingPermission: null,
-    pendingRequestId: "",
-    pendingQuestions: [],
-    pendingPlanApproval: null,
-    hasFileChanges: false,
-    runtimeSessionId: "",
-  }));
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      blocks: [
+        ...existingBlocks,
+        { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
+      ],
+      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
+      streamingState: createStreamingState(),
+      pendingPermission: null,
+      pendingRequestId: "",
+      pendingQuestions: [],
+      pendingPlanApproval: null,
+      hasFileChanges: false,
+      runtimeSessionId: "",
+    }),
+  );
 }
 
-function handleUsageUpdate(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleUsageUpdate(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const u = parseUsagePayload(payload);
   if (!u) return;
   const session = ctx.getSession(sessionId);
   const contextWindow = u.context_window ?? session.contextUsage?.contextWindow ?? null;
-  ctx.set(updateSession(ctx.get(), sessionId, {
-    contextUsage: {
-      inputTokens: u.input_tokens,
-      outputTokens: u.output_tokens,
-      contextWindow,
-      wasCompacted: session.contextUsage?.wasCompacted ?? false,
-    },
-  }));
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      contextUsage: {
+        inputTokens: u.input_tokens,
+        outputTokens: u.output_tokens,
+        contextWindow,
+        wasCompacted: session.contextUsage?.wasCompacted ?? false,
+      },
+    }),
+  );
 }
 
-function handleTurnComplete(
-  ctx: StoreAccessors,
-  sessionId: string,
-  payload: unknown,
-): void {
+function handleTurnComplete(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const session = ctx.getSession(sessionId);
   const state = session.streamingState;
   for (const stream of state.streams.values()) {
@@ -432,12 +435,14 @@ function handleTurnComplete(
     if (parent?.childBlocks) parent.taskComplete = true;
     stream.parentToolUseId = null;
   }
-  ctx.set(updateSession(ctx.get(), sessionId, {
-    lifecycle: transitionTurn(session.lifecycle, {
-      type: "turn_ended",
-      reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      lifecycle: transitionTurn(session.lifecycle, {
+        type: "turn_ended",
+        reason: mapTerminalReason(parseEndedPayload(payload)?.reason),
+      }),
     }),
-  }));
+  );
 }
 
 function mapTerminalReason(reason: string | undefined): TurnTerminalReason {

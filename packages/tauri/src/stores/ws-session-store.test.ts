@@ -142,7 +142,10 @@ describe("ws-session-store", () => {
     expect(destroyMsg.action).toBe("destroy");
     expect(destroyMsg.payload.session_id).toBe("srv-1");
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
-    expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+    expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+      phase: "terminal",
+      reason: "completed",
+    });
   });
 
   it("sendPrompt appends user message block and sets running", async () => {
@@ -381,7 +384,9 @@ describe("ws-session-store", () => {
       action: "initialized",
       payload: { session_id: "42", model: "claude-haiku-4-5-20251001" },
     });
-    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("claude-haiku-4-5-20251001");
+    expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe(
+      "claude-haiku-4-5-20251001",
+    );
   });
 
   it("session.initialized without model keeps frontend model", async () => {
@@ -429,7 +434,9 @@ describe("ws-session-store", () => {
       payload: { session_id: "srv-1" },
     });
 
-    useWsSessionStore.setState((state) => updateSession(state, "s1", { currentProviderId: "stale-provider" }));
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", { currentProviderId: "stale-provider" }),
+    );
     store.setProvider("s1", "claude_code");
     expect(useWsSessionStore.getState().sessions["s1"].currentProviderId).toBe("stale-provider");
 
@@ -452,7 +459,9 @@ describe("ws-session-store", () => {
       payload: { session_id: "srv-1" },
     });
 
-    useWsSessionStore.setState((state) => updateSession(state, "s1", { currentModelId: "opus[1m]" }));
+    useWsSessionStore.setState((state) =>
+      updateSession(state, "s1", { currentModelId: "opus[1m]" }),
+    );
     store.setModel("s1", "haiku");
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
 
@@ -565,7 +574,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     expect(useWsSessionStore.getState().sessions["s1"].hasFileChanges).toBe(false);
 
@@ -579,7 +592,12 @@ describe("ws-session-store", () => {
             type: "assistant",
             message: {
               content: [
-                { type: "tool_use", id: "tu-1", name: "Write", input: { file_path: "/tmp/test.ts", content: "hello" } },
+                {
+                  type: "tool_use",
+                  id: "tu-1",
+                  name: "Write",
+                  input: { file_path: "/tmp/test.ts", content: "hello" },
+                },
               ],
             },
           },
@@ -595,7 +613,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     ws.simulateMessage({
       domain: "session",
@@ -606,7 +628,12 @@ describe("ws-session-store", () => {
             type: "assistant",
             message: {
               content: [
-                { type: "tool_use", id: "tu-2", name: "Edit", input: { file_path: "/tmp/test.ts" } },
+                {
+                  type: "tool_use",
+                  id: "tu-2",
+                  name: "Edit",
+                  input: { file_path: "/tmp/test.ts" },
+                },
               ],
             },
           },
@@ -622,7 +649,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     ws.simulateMessage({
       domain: "session",
@@ -633,7 +664,12 @@ describe("ws-session-store", () => {
             type: "assistant",
             message: {
               content: [
-                { type: "tool_use", id: "tu-3", name: "Read", input: { file_path: "/tmp/test.ts" } },
+                {
+                  type: "tool_use",
+                  id: "tu-3",
+                  name: "Read",
+                  input: { file_path: "/tmp/test.ts" },
+                },
               ],
             },
           },
@@ -649,7 +685,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     // Set hasFileChanges via a Write tool
     ws.simulateMessage({
@@ -661,7 +701,12 @@ describe("ws-session-store", () => {
             type: "assistant",
             message: {
               content: [
-                { type: "tool_use", id: "tu-4", name: "Write", input: { file_path: "/tmp/test.ts", content: "x" } },
+                {
+                  type: "tool_use",
+                  id: "tu-4",
+                  name: "Write",
+                  input: { file_path: "/tmp/test.ts", content: "x" },
+                },
               ],
             },
           },
@@ -680,16 +725,18 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     // Add a message block
     ws.simulateMessage({
       domain: "session",
       action: "message",
       payload: {
-        blocks: [
-          { type: "assistant", message: { content: [{ type: "text", text: "hello" }] } },
-        ],
+        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "hello" }] } }],
       },
     });
     const blocksBefore = useWsSessionStore.getState().sessions["s1"].blocks;
@@ -717,7 +764,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     ws.simulateMessage({
       domain: "session",
@@ -734,7 +785,11 @@ describe("ws-session-store", () => {
                   name: "TodoWrite",
                   input: {
                     todos: [
-                      { content: "Write tests", status: "in_progress", activeForm: "Writing tests" },
+                      {
+                        content: "Write tests",
+                        status: "in_progress",
+                        activeForm: "Writing tests",
+                      },
                       { content: "Deploy", status: "pending", activeForm: "Deploy app" },
                     ],
                   },
@@ -758,7 +813,11 @@ describe("ws-session-store", () => {
     store.connect("s1");
     await tick();
     const ws = getWs();
-    ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
 
     // 1. content_block_start — creates tool_call with empty args
     ws.simulateMessage({
@@ -789,7 +848,10 @@ describe("ws-session-store", () => {
             event: {
               type: "content_block_delta",
               index: 0,
-              delta: { type: "input_json_delta", partial_json: '{"todos":[{"content":"Task 1","status":"comple' },
+              delta: {
+                type: "input_json_delta",
+                partial_json: '{"todos":[{"content":"Task 1","status":"comple',
+              },
             },
           },
         ],
@@ -825,9 +887,7 @@ describe("ws-session-store", () => {
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.todos).toEqual([
-      { content: "Task 1", status: "completed", activeForm: "Done" },
-    ]);
+    expect(session.todos).toEqual([{ content: "Task 1", status: "completed", activeForm: "Done" }]);
   });
 
   it("setPersistedState extracts todos from restored blocks", () => {
@@ -837,9 +897,13 @@ describe("ws-session-store", () => {
       {
         id: "b2",
         type: "tool_call" as const,
-        content: JSON.stringify({ todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }] }),
+        content: JSON.stringify({
+          todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }],
+        }),
         toolName: "TodoWrite",
-        toolArgs: JSON.stringify({ todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }] }),
+        toolArgs: JSON.stringify({
+          todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }],
+        }),
       },
       { id: "b3", type: "text" as const, content: "done" },
     ];
@@ -865,9 +929,13 @@ describe("ws-session-store", () => {
           {
             id: "b2",
             type: "tool_call" as const,
-            content: JSON.stringify({ todos: [{ content: "Child task", status: "completed", activeForm: "Done" }] }),
+            content: JSON.stringify({
+              todos: [{ content: "Child task", status: "completed", activeForm: "Done" }],
+            }),
             toolName: "TodoWrite",
-            toolArgs: JSON.stringify({ todos: [{ content: "Child task", status: "completed", activeForm: "Done" }] }),
+            toolArgs: JSON.stringify({
+              todos: [{ content: "Child task", status: "completed", activeForm: "Done" }],
+            }),
           },
         ],
       },
@@ -897,7 +965,10 @@ describe("ws-session-store", () => {
     useWsSessionStore.getState().connect("s1");
     // Simulate streaming blocks already present
     const store = useWsSessionStore.getState();
-    store.sessions["s1"] = { ...store.sessions["s1"], blocks: [{ id: "live-1", type: "text" as never, content: "streaming" }] };
+    store.sessions["s1"] = {
+      ...store.sessions["s1"],
+      blocks: [{ id: "live-1", type: "text" as never, content: "streaming" }],
+    };
 
     // Now call setPersistedState with different blocks (stale DB data)
     useWsSessionStore.getState().setPersistedState("s1", {
@@ -918,9 +989,17 @@ describe("ws-session-store", () => {
     expect(MockWebSocket.instances.length).toBe(2);
 
     const wsA = MockWebSocket.instances[0];
-    wsA.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-a" } });
+    wsA.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-a" },
+    });
     const wsB = MockWebSocket.instances[1];
-    wsB.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-b" } });
+    wsB.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-b" },
+    });
 
     store.sendPrompt("a", "msg-a");
     store.sendPrompt("b", "msg-b");
@@ -966,7 +1045,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
       return { store, ws };
     }
 
@@ -975,14 +1058,21 @@ describe("ws-session-store", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant",
-            message: {
-              content: [
-                { type: "tool_use", id: "toolu_plan", name: "ExitPlanMode", input: { plan: "## My Plan" } },
-              ],
+          blocks: [
+            {
+              type: "assistant",
+              message: {
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_plan",
+                    name: "ExitPlanMode",
+                    input: { plan: "## My Plan" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     }
@@ -1015,12 +1105,16 @@ describe("ws-session-store", () => {
       const store = useWsSessionStore.getState();
       store.connect("s1");
 
-      useWsSessionStore.setState(updateSession(useWsSessionStore.getState(), "s1", {
-        blocks: [{ id: "live-1", type: "text" as const, content: "live block" }],
-      }));
+      useWsSessionStore.setState(
+        updateSession(useWsSessionStore.getState(), "s1", {
+          blocks: [{ id: "live-1", type: "text" as const, content: "live block" }],
+        }),
+      );
 
       store.setPersistedState("s1", {
-        blocks: [{ id: "plan-1", type: "tool_call" as const, content: "", toolName: "ExitPlanMode" }],
+        blocks: [
+          { id: "plan-1", type: "tool_call" as const, content: "", toolName: "ExitPlanMode" },
+        ],
         lifecycle: { phase: "terminal", reason: "completed" },
         pendingPlanApproval: { plan: "## Restored Plan" },
       });
@@ -1147,20 +1241,24 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant",
-            message: {
-              content: [
-                { type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} },
-              ],
+          blocks: [
+            {
+              type: "assistant",
+              message: {
+                content: [{ type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} }],
+              },
             },
-          }],
+          ],
         },
       });
 
@@ -1172,20 +1270,24 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant",
-            message: {
-              content: [
-                { type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} },
-              ],
+          blocks: [
+            {
+              type: "assistant",
+              message: {
+                content: [{ type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} }],
+              },
             },
-          }],
+          ],
         },
       });
 
@@ -1229,8 +1331,16 @@ describe("ws-session-store", () => {
       await tick();
       const ws = getWs();
       ws.simulateMessage({ domain: "workflow", action: "worktree.setup_running", payload: {} });
-      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_output", payload: { line: "Installing deps..." } });
-      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_output", payload: { line: "Done." } });
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_output",
+        payload: { line: "Installing deps..." },
+      });
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_output",
+        payload: { line: "Done." },
+      });
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.worktreeStatus).toBe("setup_running");
       expect(session.worktreeSetupOutput).toEqual(["Installing deps...", "Done."]);
@@ -1284,7 +1394,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       store.compactSession("s1");
 
@@ -1301,7 +1415,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       store.compactSession("s1");
       ws.simulateMessage({ domain: "session", action: "compact.ok", payload: null });
@@ -1315,7 +1433,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
@@ -1336,8 +1458,8 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       const divider = session.blocks.find((b) => b.type === "compact_divider");
       expect(divider).toBeDefined();
-      expect(divider?.content).toContain("\"trigger\":\"auto\"");
-      expect(divider?.content).toContain("\"pre_tokens\":90000");
+      expect(divider?.content).toContain('"trigger":"auto"');
+      expect(divider?.content).toContain('"pre_tokens":90000');
     });
 
     it("sets contextUsage.wasCompacted when compact_boundary arrives", async () => {
@@ -1385,7 +1507,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
@@ -1412,7 +1538,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
@@ -1440,7 +1570,11 @@ describe("ws-session-store", () => {
       store.connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "session", action: "initialized", payload: { session_id: "srv-1" } });
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
 
       ws.simulateMessage({
         domain: "session",
@@ -1481,18 +1615,22 @@ describe("ws-session-store", () => {
       const firstRequest = JSON.parse(ws.sent[ws.sent.length - 1]);
       expect(firstRequest.payload.provider).toBe("claude_code");
 
-      useWsSessionStore.setState((state) => updateSession(state, "s1", {
-        slashCommands: [{ name: "compact", description: "Compact" }],
-        slashCommandsLoading: false,
-        slashCommandsKey: "claude_code::/repo",
-        slashCommandsRequestRef: firstRequest.id,
-      }));
+      useWsSessionStore.setState((state) =>
+        updateSession(state, "s1", {
+          slashCommands: [{ name: "compact", description: "Compact" }],
+          slashCommandsLoading: false,
+          slashCommandsKey: "claude_code::/repo",
+          slashCommandsRequestRef: firstRequest.id,
+        }),
+      );
 
       store.requestSlashCommands("s1", "/repo", "opencode");
 
       const secondRequest = JSON.parse(ws.sent[ws.sent.length - 1]);
       expect(secondRequest.payload.provider).toBe("opencode");
-      expect(useWsSessionStore.getState().sessions["s1"].slashCommandsRequestRef).toBe(secondRequest.id);
+      expect(useWsSessionStore.getState().sessions["s1"].slashCommandsRequestRef).toBe(
+        secondRequest.id,
+      );
       expect(useWsSessionStore.getState().sessions["s1"].slashCommandsLoading).toBe(true);
       expect(useWsSessionStore.getState().sessions["s1"].slashCommands).toEqual([]);
     });
@@ -1526,13 +1664,31 @@ describe("ws-session-store", () => {
     it("preserves toolArgs when content is partial JSON", () => {
       const validArgs = JSON.stringify({ description: "Find files", prompt: "search" });
       const existing = [
-        { id: "b1", type: "tool_call" as const, content: validArgs, toolName: "Agent", toolArgs: validArgs },
+        {
+          id: "b1",
+          type: "tool_call" as const,
+          content: validArgs,
+          toolName: "Agent",
+          toolArgs: validArgs,
+        },
       ];
       const streamState = createStreamingState();
       // Simulate a streaming delta that makes content partial JSON
-      const result = applyMutations(existing, [
-        { action: "replace", block: { id: "b1", type: "tool_call", content: '{"description": "Fi', toolName: "Agent" } },
-      ], streamState);
+      const result = applyMutations(
+        existing,
+        [
+          {
+            action: "replace",
+            block: {
+              id: "b1",
+              type: "tool_call",
+              content: '{"description": "Fi',
+              toolName: "Agent",
+            },
+          },
+        ],
+        streamState,
+      );
       // toolArgs should still hold the previous valid value
       expect(result[0].toolArgs).toBe(validArgs);
     });
@@ -1543,27 +1699,50 @@ describe("ws-session-store", () => {
       ];
       const streamState = createStreamingState();
       const newArgs = JSON.stringify({ description: "Run tests" });
-      const result = applyMutations(existing, [
-        { action: "replace", block: { id: "b1", type: "tool_call", content: newArgs, toolName: "Agent" } },
-      ], streamState);
+      const result = applyMutations(
+        existing,
+        [
+          {
+            action: "replace",
+            block: { id: "b1", type: "tool_call", content: newArgs, toolName: "Agent" },
+          },
+        ],
+        streamState,
+      );
       expect(result[0].toolArgs).toBe(newArgs);
     });
 
     it("preserves child block toolArgs when content is partial JSON", () => {
       const validArgs = JSON.stringify({ description: "Explore code" });
       const parent = {
-        id: "p1", type: "tool_call" as const, content: "{}", toolName: "Agent",
+        id: "p1",
+        type: "tool_call" as const,
+        content: "{}",
+        toolName: "Agent",
         toolUseId: "tu1",
         childBlocks: [
-          { id: "c1", type: "tool_call" as const, content: validArgs, toolName: "Read", toolArgs: validArgs },
+          {
+            id: "c1",
+            type: "tool_call" as const,
+            content: validArgs,
+            toolName: "Read",
+            toolArgs: validArgs,
+          },
         ],
       };
       const streamState = createStreamingState();
       streamState.toolUseIdToBlock.set("tu1", parent);
       // Update targets child block (not found in root, so falls through to child search)
-      const result = applyMutations([], [
-        { action: "replace", block: { id: "c1", type: "tool_call", content: '{"desc', toolName: "Read" } },
-      ], streamState);
+      const result = applyMutations(
+        [],
+        [
+          {
+            action: "replace",
+            block: { id: "c1", type: "tool_call", content: '{"desc', toolName: "Read" },
+          },
+        ],
+        streamState,
+      );
       const updatedChild = streamState.toolUseIdToBlock.get("tu1")!.childBlocks![0];
       expect(updatedChild.toolArgs).toBe(validArgs);
     });

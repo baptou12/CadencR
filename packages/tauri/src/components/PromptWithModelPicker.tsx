@@ -1,8 +1,5 @@
 import { AgentPromptBar } from "@/components/AgentPromptBar";
-import type {
-  AgentPromptBarHandle,
-  SplitSendAction,
-} from "@/components/AgentPromptBar";
+import type { AgentPromptBarHandle, SplitSendAction } from "@/components/AgentPromptBar";
 import { StandaloneModelPicker } from "@/components/StandaloneModelPicker";
 import type { AgentType } from "@/types/agent-types";
 

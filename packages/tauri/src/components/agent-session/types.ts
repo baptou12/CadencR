@@ -101,7 +101,10 @@ export interface AgentSessionProps {
   /** Pending tool permission request from canUseTool callback */
   pendingPermission?: PendingPermission | null;
   /** Called when user makes a permission decision */
-  onPermissionDecision?: (decision: "allow_once" | "allow_future" | "deny", feedback?: string) => void;
+  onPermissionDecision?: (
+    decision: "allow_once" | "allow_future" | "deny",
+    feedback?: string,
+  ) => void;
   /** Called when user clicks "Mark Done" (session agents in workflow) */
   onMarkDone?: () => void;
   /** Whether this agent is maximized (takes full height, hides others) */

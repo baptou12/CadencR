@@ -6,7 +6,12 @@
  * backend is running.
  */
 
-import { useQuery, useMutation, type UseQueryOptions, type UseMutationOptions } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  type UseQueryOptions,
+  type UseMutationOptions,
+} from "@tanstack/react-query";
 import { customInstance, type ErrorType } from "../client";
 
 // ---------------------------------------------------------------------------
@@ -328,7 +333,10 @@ export function useGetFileContent(
 
 export function useGetFileContentBatch(
   params: GetFileContentBatchParams,
-  options?: Omit<UseQueryOptions<FileContentBatchItem[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<FileContentBatchItem[], ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<FileContentBatchItem[], ErrorType<unknown>>({
     queryKey: getGetFileContentBatchQueryKey(params),
@@ -386,7 +394,10 @@ export function useListFiles(
 
 export function useListProjectWorktrees(
   params: ListProjectWorktreesParams,
-  options?: Omit<UseQueryOptions<ProjectWorktreeInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<ProjectWorktreeInfo[], ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<ProjectWorktreeInfo[], ErrorType<unknown>>({
     queryKey: getListProjectWorktreesQueryKey(params),
@@ -398,12 +409,18 @@ export function useListProjectWorktrees(
 
 export function useListFeatureWorktrees(
   params: ListFeatureWorktreesParams,
-  options?: Omit<UseQueryOptions<FeatureWorktreeInfo[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<FeatureWorktreeInfo[], ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<FeatureWorktreeInfo[], ErrorType<unknown>>({
     queryKey: getListFeatureWorktreesQueryKey(params),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/feature-worktrees${qs(toSnakeParams(params))}` }),
+      customInstance({
+        method: "GET",
+        url: `/api/git/feature-worktrees${qs(toSnakeParams(params))}`,
+      }),
     ...options,
   });
 }
@@ -415,19 +432,28 @@ export function useCheckMergeConflicts(
   return useQuery<MergeConflictResult, ErrorType<unknown>>({
     queryKey: getCheckMergeConflictsQueryKey(params),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/merge-conflicts${qs(toSnakeParams(params))}` }),
+      customInstance({
+        method: "GET",
+        url: `/api/git/merge-conflicts${qs(toSnakeParams(params))}`,
+      }),
     ...options,
   });
 }
 
 export function useHasUncommittedChanges(
   params: HasUncommittedChangesParams,
-  options?: Omit<UseQueryOptions<HasUncommittedChangesResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<HasUncommittedChangesResponse, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<HasUncommittedChangesResponse, ErrorType<unknown>>({
     queryKey: getHasUncommittedChangesQueryKey(params),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/git/has-uncommitted-changes${qs(toSnakeParams(params))}` }),
+      customInstance({
+        method: "GET",
+        url: `/api/git/has-uncommitted-changes${qs(toSnakeParams(params))}`,
+      }),
     ...options,
   });
 }
@@ -547,17 +573,24 @@ export function getGetWorkspaceModelSettingsQueryKey() {
 
 export function useGetWorkspaceSetting(
   key: string,
-  options?: Omit<UseQueryOptions<WorkspaceSettingValueResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<WorkspaceSettingValueResponse, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<WorkspaceSettingValueResponse, ErrorType<unknown>>({
     queryKey: getGetWorkspaceSettingQueryKey(key),
-    queryFn: () => customInstance({ method: "GET", url: `/api/workspace/settings/${encodeURIComponent(key)}` }),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/workspace/settings/${encodeURIComponent(key)}` }),
     ...options,
   });
 }
 
 export function useGetWorkspaceModelSettings(
-  options?: Omit<UseQueryOptions<WorkspaceModelSettings, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<WorkspaceModelSettings, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<WorkspaceModelSettings, ErrorType<unknown>>({
     queryKey: getGetWorkspaceModelSettingsQueryKey(),
@@ -571,9 +604,17 @@ export function useGetWorkspaceModelSettings(
 // ---------------------------------------------------------------------------
 
 export function useSetWorkspaceSetting(
-  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>,
+  options?: UseMutationOptions<
+    WorkspaceSettingValueResponse,
+    ErrorType<unknown>,
+    { key: string; value: string }
+  >,
 ) {
-  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { key: string; value: string }>({
+  return useMutation<
+    WorkspaceSettingValueResponse,
+    ErrorType<unknown>,
+    { key: string; value: string }
+  >({
     mutationFn: ({ key, value }) =>
       customInstance({
         method: "PUT",
@@ -585,9 +626,17 @@ export function useSetWorkspaceSetting(
 }
 
 export function useSetWorkspaceModelSetting(
-  options?: UseMutationOptions<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>,
+  options?: UseMutationOptions<
+    WorkspaceSettingValueResponse,
+    ErrorType<unknown>,
+    { agentType: string; modelId: string }
+  >,
 ) {
-  return useMutation<WorkspaceSettingValueResponse, ErrorType<unknown>, { agentType: string; modelId: string }>({
+  return useMutation<
+    WorkspaceSettingValueResponse,
+    ErrorType<unknown>,
+    { agentType: string; modelId: string }
+  >({
     mutationFn: ({ agentType, modelId }) =>
       customInstance({
         method: "PUT",
@@ -678,7 +727,8 @@ export function useGetProjectModelSettings(
 ) {
   return useQuery<ProjectModelSettings, ErrorType<unknown>>({
     queryKey: getGetProjectModelSettingsQueryKey(projectId),
-    queryFn: () => customInstance({ method: "GET", url: `/api/projects/${projectId}/model-settings` }),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/projects/${projectId}/model-settings` }),
     ...options,
   });
 }
@@ -691,8 +741,7 @@ export function useCreateProject(
   options?: UseMutationOptions<Project, ErrorType<unknown>, { name: string; path: string }>,
 ) {
   return useMutation<Project, ErrorType<unknown>, { name: string; path: string }>({
-    mutationFn: (body) =>
-      customInstance({ method: "POST", url: "/api/projects", data: body }),
+    mutationFn: (body) => customInstance({ method: "POST", url: "/api/projects", data: body }),
     ...options,
   });
 }
@@ -701,16 +750,23 @@ export function useDeleteProject(
   options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
 ) {
   return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
-    mutationFn: ({ id }) =>
-      customInstance({ method: "DELETE", url: `/api/projects/${id}` }),
+    mutationFn: ({ id }) => customInstance({ method: "DELETE", url: `/api/projects/${id}` }),
     ...options,
   });
 }
 
 export function useSetProjectSetting(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { projectId: number; key: string; value: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; key: string; value: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { projectId: number; key: string; value: string }
+  >({
     mutationFn: ({ projectId, key, value }) =>
       customInstance({
         method: "PUT",
@@ -722,9 +778,17 @@ export function useSetProjectSetting(
 }
 
 export function useSetProjectModelSetting(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { projectId: number; modelType: string; model: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { projectId: number; modelType: string; model: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { projectId: number; modelType: string; model: string }
+  >({
     mutationFn: ({ projectId, modelType, model }) =>
       customInstance({
         method: "PUT",
@@ -879,7 +943,10 @@ export function useGetFeature(
 
 export function useGetFeaturePrd(
   id: number,
-  options?: Omit<UseQueryOptions<{ prd: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<{ prd: string | null }, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<{ prd: string | null }, ErrorType<unknown>>({
     queryKey: getGetFeaturePrdQueryKey(id),
@@ -901,7 +968,10 @@ export function useGetFeatureEmpty(
 
 export function useGetFeaturePlan(
   id: number,
-  options?: Omit<UseQueryOptions<PlanWithPhases | null, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<PlanWithPhases | null, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<PlanWithPhases | null, ErrorType<unknown>>({
     queryKey: getGetFeaturePlanQueryKey(id),
@@ -935,11 +1005,18 @@ export function useGetFeatureModelSettings(
 export function useGetFeatureWorkingDir(
   id: number,
   projectId: number,
-  options?: Omit<UseQueryOptions<{ path: string | null }, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<{ path: string | null }, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   return useQuery<{ path: string | null }, ErrorType<unknown>>({
     queryKey: getGetFeatureWorkingDirQueryKey(id, projectId),
-    queryFn: () => customInstance({ method: "GET", url: `/api/features/${id}/working-dir?project_id=${projectId}` }),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/features/${id}/working-dir?project_id=${projectId}`,
+      }),
     ...options,
   });
 }
@@ -949,9 +1026,17 @@ export function useGetFeatureWorkingDir(
 // ---------------------------------------------------------------------------
 
 export function useCreateFeature(
-  options?: UseMutationOptions<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>,
+  options?: UseMutationOptions<
+    { id: number },
+    ErrorType<unknown>,
+    { project_id: number; title?: string; type?: string }
+  >,
 ) {
-  return useMutation<{ id: number }, ErrorType<unknown>, { project_id: number; title?: string; type?: string }>({
+  return useMutation<
+    { id: number },
+    ErrorType<unknown>,
+    { project_id: number; title?: string; type?: string }
+  >({
     mutationFn: (body) => customInstance({ method: "POST", url: "/api/features", data: body }),
     ...options,
   });
@@ -967,7 +1052,11 @@ export function useDeleteFeature(
 }
 
 export function useUpdateFeatureStatus(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { id: number; status: string }
+  >,
 ) {
   return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; status: string }>({
     mutationFn: ({ id, status }) =>
@@ -977,19 +1066,39 @@ export function useUpdateFeatureStatus(
 }
 
 export function useSetFeatureSetting(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; key: string; value: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; key: string; value: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; key: string; value: string }
+  >({
     mutationFn: ({ featureId, key, value }) =>
-      customInstance({ method: "PUT", url: `/api/features/${featureId}/settings`, data: { key, value } }),
+      customInstance({
+        method: "PUT",
+        url: `/api/features/${featureId}/settings`,
+        data: { key, value },
+      }),
     ...options,
   });
 }
 
 export function useSetFeatureModelSetting(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; modelType: string; model: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; modelType: string; model: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; modelType: string; model: string }
+  >({
     mutationFn: ({ featureId, modelType, model }) =>
       customInstance({
         method: "PUT",
@@ -1029,23 +1138,46 @@ export function useListDiffComments(
 ) {
   return useQuery<DiffComment[], ErrorType<unknown>>({
     queryKey: ["diff-comments", featureId],
-    queryFn: () => customInstance({ method: "GET", url: `/api/features/${featureId}/diff-comments` }),
+    queryFn: () =>
+      customInstance({ method: "GET", url: `/api/features/${featureId}/diff-comments` }),
     ...options,
   });
 }
 
 export function useCreateDiffComment(
-  options?: UseMutationOptions<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>,
+  options?: UseMutationOptions<
+    DiffComment,
+    ErrorType<unknown>,
+    { featureId: number; filePath: string; lineNumber: number; side: string; content: string }
+  >,
 ) {
-  return useMutation<DiffComment, ErrorType<unknown>, { featureId: number; filePath: string; lineNumber: number; side: string; content: string }>({
+  return useMutation<
+    DiffComment,
+    ErrorType<unknown>,
+    { featureId: number; filePath: string; lineNumber: number; side: string; content: string }
+  >({
     mutationFn: ({ featureId, filePath, lineNumber, side, content }) =>
-      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-comments`, data: { feature_id: featureId, file_path: filePath, line_number: lineNumber, side, content } }),
+      customInstance({
+        method: "POST",
+        url: `/api/features/${featureId}/diff-comments`,
+        data: {
+          feature_id: featureId,
+          file_path: filePath,
+          line_number: lineNumber,
+          side,
+          content,
+        },
+      }),
     ...options,
   });
 }
 
 export function useUpdateDiffComment(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { id: number; content: string }
+  >,
 ) {
   return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number; content: string }>({
     mutationFn: ({ id, content }) =>
@@ -1058,8 +1190,7 @@ export function useDeleteDiffComment(
   options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
 ) {
   return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
-    mutationFn: ({ id }) =>
-      customInstance({ method: "DELETE", url: `/api/diff-comments/${id}` }),
+    mutationFn: ({ id }) => customInstance({ method: "DELETE", url: `/api/diff-comments/${id}` }),
     ...options,
   });
 }
@@ -1090,19 +1221,39 @@ export function useListDiffViewed(
 }
 
 export function useMarkDiffViewed(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; filePath: string; blobSha: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string; blobSha: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; filePath: string; blobSha: string }
+  >({
     mutationFn: ({ featureId, filePath, blobSha }) =>
-      customInstance({ method: "POST", url: `/api/features/${featureId}/diff-viewed`, data: { feature_id: featureId, file_path: filePath, blob_sha: blobSha } }),
+      customInstance({
+        method: "POST",
+        url: `/api/features/${featureId}/diff-viewed`,
+        data: { feature_id: featureId, file_path: filePath, blob_sha: blobSha },
+      }),
     ...options,
   });
 }
 
 export function useUnmarkDiffViewed(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; filePath: string }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { featureId: number; filePath: string }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { featureId: number; filePath: string }
+  >({
     mutationFn: ({ featureId, filePath }) =>
       customInstance({
         method: "DELETE",
@@ -1177,7 +1328,12 @@ interface DraftResponse {
 // Sessions — query key factories
 // ---------------------------------------------------------------------------
 
-function getGetFeatureAgentStateQueryKey(featureId: number, after?: string, limit?: number, before?: string) {
+function getGetFeatureAgentStateQueryKey(
+  featureId: number,
+  after?: string,
+  limit?: number,
+  before?: string,
+) {
   return ["sessions", "agentState", featureId, after, limit, before] as const;
 }
 
@@ -1192,7 +1348,10 @@ function getGetSessionDraftQueryKey(sessionId: number) {
 export function useGetFeatureAgentState(
   featureId: number,
   after?: string,
-  options?: Omit<UseQueryOptions<FeatureAgentStateResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<FeatureAgentStateResponse, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
   limit?: number,
 ) {
   return useQuery<FeatureAgentStateResponse, ErrorType<unknown>>({
@@ -1236,9 +1395,17 @@ export function useGetSessionDraft(
 }
 
 export function useSaveSessionDraft(
-  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>,
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { sessionId: number; draft: string | null }
+  >,
 ) {
-  return useMutation<{ success: boolean }, ErrorType<unknown>, { sessionId: number; draft: string | null }>({
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { sessionId: number; draft: string | null }
+  >({
     mutationFn: ({ sessionId, draft }) =>
       customInstance({ method: "PUT", url: `/api/sessions/${sessionId}/draft`, data: { draft } }),
     ...options,
@@ -1256,9 +1423,17 @@ interface OpenExternalResponse {
 }
 
 export function useOpenExternalHandler(
-  options?: UseMutationOptions<OpenExternalResponse, ErrorType<unknown>, { id: number; data: OpenExternalRequest }>,
+  options?: UseMutationOptions<
+    OpenExternalResponse,
+    ErrorType<unknown>,
+    { id: number; data: OpenExternalRequest }
+  >,
 ) {
-  return useMutation<OpenExternalResponse, ErrorType<unknown>, { id: number; data: OpenExternalRequest }>({
+  return useMutation<
+    OpenExternalResponse,
+    ErrorType<unknown>,
+    { id: number; data: OpenExternalRequest }
+  >({
     mutationFn: ({ id, data }) =>
       customInstance({ method: "POST", url: `/api/features/${id}/open-external`, data }),
     ...options,
@@ -1288,9 +1463,9 @@ interface UsageResponse {
 
 const getGetUsageHandlerQueryKey = () => ["getUsageHandler"] as const;
 
-export function useGetUsageHandler(
-  options?: { query?: Omit<UseQueryOptions<UsageResponse, ErrorType<unknown>>, "queryKey" | "queryFn"> },
-) {
+export function useGetUsageHandler(options?: {
+  query?: Omit<UseQueryOptions<UsageResponse, ErrorType<unknown>>, "queryKey" | "queryFn">;
+}) {
   return useQuery<UsageResponse, ErrorType<unknown>>({
     queryKey: getGetUsageHandlerQueryKey(),
     queryFn: () => customInstance({ method: "GET", url: "/api/usage" }),
@@ -1393,7 +1568,10 @@ export function useFileSearch(
   return useQuery<FileSearchResponse, ErrorType<unknown>>({
     queryKey: getFileSearchQueryKey(projectId, featureId, query),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/editor/search?project_id=${projectId}${featureParam}${queryParam}` }),
+      customInstance({
+        method: "GET",
+        url: `/api/editor/search?project_id=${projectId}${featureParam}${queryParam}`,
+      }),
     ...options,
   });
 }
@@ -1428,7 +1606,11 @@ export interface ContentSearchResponse {
   truncated: boolean;
 }
 
-function getContentSearchQueryKey(projectId: number, featureId: number | undefined, params: ContentSearchParams) {
+function getContentSearchQueryKey(
+  projectId: number,
+  featureId: number | undefined,
+  params: ContentSearchParams,
+) {
   return ["editor", "content-search", projectId, featureId ?? null, params] as const;
 }
 
@@ -1436,7 +1618,10 @@ export function useContentSearch(
   projectId: number,
   featureId: number | undefined,
   params: ContentSearchParams,
-  options?: Omit<UseQueryOptions<ContentSearchResponse, ErrorType<unknown>>, "queryKey" | "queryFn">,
+  options?: Omit<
+    UseQueryOptions<ContentSearchResponse, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
 ) {
   const searchParams = new URLSearchParams();
   searchParams.set("project_id", String(projectId));
@@ -1453,7 +1638,10 @@ export function useContentSearch(
   return useQuery<ContentSearchResponse, ErrorType<unknown>>({
     queryKey: getContentSearchQueryKey(projectId, featureId, params),
     queryFn: () =>
-      customInstance({ method: "GET", url: `/api/editor/content-search?${searchParams.toString()}` }),
+      customInstance({
+        method: "GET",
+        url: `/api/editor/content-search?${searchParams.toString()}`,
+      }),
     ...options,
   });
 }

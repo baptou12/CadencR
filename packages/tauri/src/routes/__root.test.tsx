@@ -80,7 +80,8 @@ vi.mock("@/components/ui/resizable", () => ({
 import { Route } from "./__root";
 
 function RootLayout() {
-  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options?.component;
+  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
+    ?.component;
   if (!Component) return null;
   return <Component />;
 }

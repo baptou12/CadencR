@@ -11,7 +11,8 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 // Must import after mocks are set up
-const { initNotificationPermission, notifyAgentDone, notifyAgentNeedsInput } = await import("./notify-agent-done");
+const { initNotificationPermission, notifyAgentDone, notifyAgentNeedsInput } =
+  await import("./notify-agent-done");
 
 const baseOpts = { featureId: 1, projectId: 2, routeType: "workflow" as const };
 
@@ -61,7 +62,13 @@ describe("notifyAgentDone", () => {
       writable: true,
     });
 
-    notifyAgentDone({ status: "completed", featureTitle: "My Feature", featureId: 1, projectId: 2, routeType: "session" });
+    notifyAgentDone({
+      status: "completed",
+      featureTitle: "My Feature",
+      featureId: 1,
+      projectId: 2,
+      routeType: "session",
+    });
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
@@ -75,7 +82,13 @@ describe("notifyAgentDone", () => {
       writable: true,
     });
 
-    notifyAgentDone({ status: "completed", featureTitle: "My Feature", agentKind: "Execute", agentTitle: "Build login", ...baseOpts });
+    notifyAgentDone({
+      status: "completed",
+      featureTitle: "My Feature",
+      agentKind: "Execute",
+      agentTitle: "Build login",
+      ...baseOpts,
+    });
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent finished",
       body: "My Feature\nExecute: Build login",
@@ -95,7 +108,12 @@ describe("notifyAgentDone", () => {
       writable: true,
     });
 
-    notifyAgentDone({ status: "error", featureTitle: "Broken Feature", agentKind: "Execute", ...baseOpts });
+    notifyAgentDone({
+      status: "error",
+      featureTitle: "Broken Feature",
+      agentKind: "Execute",
+      ...baseOpts,
+    });
     expect(mockInvoke).toHaveBeenCalledWith("plugin:notification-router|send_notification", {
       title: "Agent error",
       body: "Broken Feature\nExecute",

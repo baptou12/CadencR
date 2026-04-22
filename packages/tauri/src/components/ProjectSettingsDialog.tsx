@@ -9,12 +9,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -91,7 +86,9 @@ export function ProjectSettingsDialog({
               <Input
                 placeholder="e.g. 3b82f6"
                 value={colorInput}
-                onChange={(e) => setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))}
+                onChange={(e) =>
+                  setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))
+                }
                 onBlur={() =>
                   setSettingMutation.mutate({
                     projectId,
@@ -101,18 +98,14 @@ export function ProjectSettingsDialog({
                 }
                 className="h-8 text-sm w-32 font-mono"
               />
-              <p className="text-xs text-muted-foreground">
-                Hex color code (no #)
-              </p>
+              <p className="text-xs text-muted-foreground">Hex color code (no #)</p>
             </div>
           </div>
 
           <div className="space-y-3">
             <div>
               <h4 className="text-sm font-semibold">Model Configuration</h4>
-              <p className="text-xs text-muted-foreground">
-                Override models for this project
-              </p>
+              <p className="text-xs text-muted-foreground">Override models for this project</p>
             </div>
             <ModelSelector level="project" projectId={projectId} />
           </div>
@@ -134,9 +127,7 @@ export function ProjectSettingsDialog({
                 }
                 className="h-8 text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Prefix added to worktree branch names
-              </p>
+              <p className="text-xs text-muted-foreground">Prefix added to worktree branch names</p>
             </div>
 
             <div className="space-y-1">
@@ -201,7 +192,10 @@ export function ProjectSettingsDialog({
                     })
                   }
                 />
-                <label htmlFor="project-parallel-execution" className="text-xs font-medium cursor-pointer">
+                <label
+                  htmlFor="project-parallel-execution"
+                  className="text-xs font-medium cursor-pointer"
+                >
                   Enable parallel agent execution
                 </label>
               </div>

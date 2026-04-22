@@ -40,7 +40,10 @@ describe("invalidateFeatureQueries", () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "detail", 1] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "prd", 1] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "settings", 1] });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "list"], exact: false });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["features", "list"],
+      exact: false,
+    });
   });
 
   it("deduplicates when 'plan' and 'phases' both resolve to the same key", () => {
@@ -62,7 +65,15 @@ describe("invalidateFeatureQueries", () => {
   });
 
   it("handles all known fields at once", () => {
-    invalidateFeatureQueries(7, ["title", "plan", "prd", "phases", "progress", "settings", "status"]);
+    invalidateFeatureQueries(7, [
+      "title",
+      "plan",
+      "prd",
+      "phases",
+      "progress",
+      "settings",
+      "status",
+    ]);
     // plan and phases share a key, title and status share a key, so 5 unique + 1 list invalidation
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(6);
   });

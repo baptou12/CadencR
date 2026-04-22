@@ -12,7 +12,7 @@ export type ParsedTodo = TodoItem;
 
 /** Extract todos from the last TodoWrite block in a block list. */
 export function parseTodosFromBlocks(blocks: AgentBlockData[]): ParsedTodo[] | undefined {
-  const allBlocks = blocks.flatMap((b) => b.childBlocks ? [b, ...b.childBlocks] : [b]);
+  const allBlocks = blocks.flatMap((b) => (b.childBlocks ? [b, ...b.childBlocks] : [b]));
   for (let i = allBlocks.length - 1; i >= 0; i--) {
     const b = allBlocks[i];
     if (b.type === "tool_call" && b.toolName === "TodoWrite") {
@@ -27,7 +27,9 @@ export function parseTodosFromBlocks(blocks: AgentBlockData[]): ParsedTodo[] | u
             activeForm: String(t.activeForm ?? ""),
           }));
         }
-      } catch { /* Malformed JSON */ }
+      } catch {
+        /* Malformed JSON */
+      }
       return undefined;
     }
   }
@@ -47,7 +49,8 @@ export function buildMessagePatch(
   signals: Pick<ParserSignals, "enterPlanModeRequested">,
 ): MessagePatch {
   const hasNewFileChange = allMutations.some(
-    (m) => m.action === "append" && m.block.type === "tool_call" && isFileChangeTool(m.block.toolName),
+    (m) =>
+      m.action === "append" && m.block.type === "tool_call" && isFileChangeTool(m.block.toolName),
   );
 
   const mutatedIds = new Set(allMutations.map((m) => m.block.id));
@@ -81,9 +84,8 @@ function findTodoBlock(
     );
     if (child) return child;
   }
-  return allMutations.find(
-    (m) => m.block.type === "tool_call" && m.block.toolName === "TodoWrite",
-  )?.block;
+  return allMutations.find((m) => m.block.type === "tool_call" && m.block.toolName === "TodoWrite")
+    ?.block;
 }
 
 export function applyMutations(
@@ -132,7 +134,7 @@ export function applyMutations(
       // Fall through to recover the last full JSON object from concatenated snapshots.
     }
 
-    for (let index = content.lastIndexOf("{"); index >= 0;) {
+    for (let index = content.lastIndexOf("{"); index >= 0; ) {
       const candidate = content.slice(index);
       try {
         JSON.parse(candidate);
@@ -172,9 +174,8 @@ export function applyMutations(
     const idx = result.findIndex((b) => b.id === mut.block.id);
     if (idx !== -1) {
       const existing = { ...result[idx] };
-      existing.content = mut.action === "replace"
-        ? mut.block.content
-        : existing.content + mut.block.content;
+      existing.content =
+        mut.action === "replace" ? mut.block.content : existing.content + mut.block.content;
       syncToolUseMap(existing);
       result[idx] = existing;
     } else {
@@ -183,9 +184,8 @@ export function applyMutations(
         const childIdx = parentBlock.childBlocks.findIndex((b) => b.id === mut.block.id);
         if (childIdx === -1) continue;
         const child = { ...parentBlock.childBlocks[childIdx] };
-        child.content = mut.action === "replace"
-          ? mut.block.content
-          : child.content + mut.block.content;
+        child.content =
+          mut.action === "replace" ? mut.block.content : child.content + mut.block.content;
         syncToolUseMap(child);
         parentBlock.childBlocks[childIdx] = child;
         break;

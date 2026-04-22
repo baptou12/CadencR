@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -12,12 +6,7 @@ import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
 import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import {
-  $createParagraphNode,
-  $getRoot,
-  type EditorState,
-  type LexicalEditor,
-} from "lexical";
+import { $createParagraphNode, $getRoot, type EditorState, type LexicalEditor } from "lexical";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { MentionNode } from "./nodes/MentionNode";
@@ -84,7 +73,21 @@ function AutoResizePlugin() {
 }
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
-  function PromptEditorInner({ onChange, placeholder, className, mentionFiles, slashCommands, slashCommandsLoading, onEnterSend, onArrowUp, onArrowDown, disabled }, ref) {
+  function PromptEditorInner(
+    {
+      onChange,
+      placeholder,
+      className,
+      mentionFiles,
+      slashCommands,
+      slashCommandsLoading,
+      onEnterSend,
+      onArrowUp,
+      onArrowDown,
+      disabled,
+    },
+    ref,
+  ) {
     const editorRef = useRef<LexicalEditor | null>(null);
 
     useImperativeHandle(ref, () => ({
@@ -148,7 +151,11 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
         <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
-        <KeyboardShortcutsPlugin onEnterSend={onEnterSend} onArrowUp={onArrowUp} onArrowDown={onArrowDown} />
+        <KeyboardShortcutsPlugin
+          onEnterSend={onEnterSend}
+          onArrowUp={onArrowUp}
+          onArrowDown={onArrowDown}
+        />
       </>
     );
   },

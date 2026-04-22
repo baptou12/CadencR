@@ -1,8 +1,12 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach } from "vitest";
 import {
-  useTerminalState, useTerminalStore, getLeaves, findAdjacentLeaf,
-  type SplitNode, type TerminalLeaf,
+  useTerminalState,
+  useTerminalStore,
+  getLeaves,
+  findAdjacentLeaf,
+  type SplitNode,
+  type TerminalLeaf,
 } from "./useTerminalState";
 
 describe("useTerminalState", () => {
@@ -174,7 +178,8 @@ describe("useTerminalState", () => {
     it("navigates left/right in a horizontal split", () => {
       // [A | B]
       const root: SplitNode = {
-        type: "split", orientation: "horizontal",
+        type: "split",
+        orientation: "horizontal",
         children: [leaf("A"), leaf("B")],
       };
       expect(findAdjacentLeaf(root, "A", "right")).toBe("B");
@@ -186,7 +191,8 @@ describe("useTerminalState", () => {
     it("navigates up/down in a vertical split", () => {
       // [A / B] (top/bottom)
       const root: SplitNode = {
-        type: "split", orientation: "vertical",
+        type: "split",
+        orientation: "vertical",
         children: [leaf("A"), leaf("B")],
       };
       expect(findAdjacentLeaf(root, "A", "down")).toBe("B");
@@ -197,7 +203,8 @@ describe("useTerminalState", () => {
 
     it("does not navigate across wrong axis", () => {
       const root: SplitNode = {
-        type: "split", orientation: "horizontal",
+        type: "split",
+        orientation: "horizontal",
         children: [leaf("A"), leaf("B")],
       };
       expect(findAdjacentLeaf(root, "A", "up")).toBeNull();
@@ -207,7 +214,8 @@ describe("useTerminalState", () => {
     it("navigates in mixed layout (horizontal root, vertical right child)", () => {
       // [A | [B / C]]
       const root: SplitNode = {
-        type: "split", orientation: "horizontal",
+        type: "split",
+        orientation: "horizontal",
         children: [
           leaf("A"),
           { type: "split", orientation: "vertical", children: [leaf("B"), leaf("C")] },
@@ -228,7 +236,8 @@ describe("useTerminalState", () => {
     it("navigates in deeply nested layout", () => {
       // [[A / B] | [C / D]]
       const root: SplitNode = {
-        type: "split", orientation: "horizontal",
+        type: "split",
+        orientation: "horizontal",
         children: [
           { type: "split", orientation: "vertical", children: [leaf("A"), leaf("B")] },
           { type: "split", orientation: "vertical", children: [leaf("C"), leaf("D")] },
@@ -246,7 +255,8 @@ describe("useTerminalState", () => {
 
     it("returns null for unknown leaf id", () => {
       const root: SplitNode = {
-        type: "split", orientation: "horizontal",
+        type: "split",
+        orientation: "horizontal",
         children: [leaf("A"), leaf("B")],
       };
       expect(findAdjacentLeaf(root, "Z", "left")).toBeNull();

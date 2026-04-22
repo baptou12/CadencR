@@ -32,7 +32,8 @@ const OLDER_MESSAGE_LIMIT = 100;
 
 export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBlockData[] {
   return serverBlocks.map((sb) => {
-    const isSubagent = sb.type === "tool_call" && (sb.toolName === "Task" || sb.toolName === "Agent");
+    const isSubagent =
+      sb.type === "tool_call" && (sb.toolName === "Task" || sb.toolName === "Agent");
     return {
       id: sb.id,
       type: sb.type as AgentBlockData["type"],
@@ -70,7 +71,9 @@ interface AccumulatedSession {
 }
 
 /** Build the toolUseIdMap from a complete block tree (used on full fetch). */
-function buildToolUseIdMap(blocks: AgentBlockData[]): Map<string, { toolName: string; block: AgentBlockData }> {
+function buildToolUseIdMap(
+  blocks: AgentBlockData[],
+): Map<string, { toolName: string; block: AgentBlockData }> {
   const map = new Map<string, { toolName: string; block: AgentBlockData }>();
   function walk(list: AgentBlockData[]) {
     for (const b of list) {
@@ -93,10 +96,7 @@ function buildToolUseIdMap(blocks: AgentBlockData[]): Map<string, { toolName: st
  * - sourceToolName resolution for tool_result blocks via toolUseIdMap
  * - Registering new tool_call blocks in toolUseIdMap
  */
-function mergeIncrementalBlocks(
-  acc: AccumulatedSession,
-  newBlocks: AgentBlockData[],
-): void {
+function mergeIncrementalBlocks(acc: AccumulatedSession, newBlocks: AgentBlockData[]): void {
   for (const block of newBlocks) {
     if (block.type === "tool_call" && block.toolUseId) {
       const existing = acc.toolUseIdMap.get(block.toolUseId)?.block;
@@ -160,10 +160,7 @@ function mergeIncrementalBlocks(
  * via input_json_delta after the initial insert (invisible to incremental fetch).
  * Returns true if any block was updated.
  */
-function applyToolCallUpdates(
-  blocks: AgentBlockData[],
-  updates: Record<string, string>,
-): boolean {
+function applyToolCallUpdates(blocks: AgentBlockData[], updates: Record<string, string>): boolean {
   let changed = false;
   function walk(list: AgentBlockData[]) {
     for (const b of list) {
@@ -206,7 +203,10 @@ export interface FeatureSession {
   phaseTitle: string | null;
   todos: TodoItem[] | null;
   permissionMode: string;
-  pendingPlanApproval: { allowedPrompts?: Array<{ tool: string; prompt: string }>; plan?: string } | null;
+  pendingPlanApproval: {
+    allowedPrompts?: Array<{ tool: string; prompt: string }>;
+    plan?: string;
+  } | null;
   pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
@@ -262,7 +262,12 @@ export function useFeatureAgentState(featureId: number) {
   const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
   // Only apply limit on initial load (no afterMessageIds yet)
   const initialLimit = afterMessageIds ? undefined : INITIAL_MESSAGE_LIMIT;
-  const query = useGetFeatureAgentState(featureId, afterParam, { keepPreviousData: true }, initialLimit);
+  const query = useGetFeatureAgentState(
+    featureId,
+    afterParam,
+    { keepPreviousData: true },
+    initialLimit,
+  );
 
   const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -324,7 +329,8 @@ export function useFeatureAgentState(featureId: number) {
             acc.maxMessageId = s.maxMessageId;
           }
           // Apply in-flight tool_call content updates (input_json_delta)
-          const updates = (s as unknown as { toolCallUpdates?: Record<string, string> | null }).toolCallUpdates;
+          const updates = (s as unknown as { toolCallUpdates?: Record<string, string> | null })
+            .toolCallUpdates;
           if (updates && Object.keys(updates).length > 0) {
             if (applyToolCallUpdates(acc.blocks, updates)) {
               acc.blocks = [...acc.blocks];
@@ -342,7 +348,10 @@ export function useFeatureAgentState(featureId: number) {
       const acc = accMap.get(s.sessionDbId);
 
       const status: AgentStatus =
-        s.status === "running" || s.status === "paused" || s.status === "completed" || s.status === "error"
+        s.status === "running" ||
+        s.status === "paused" ||
+        s.status === "completed" ||
+        s.status === "error"
           ? s.status
           : s.status === "waiting"
             ? "paused"
@@ -389,47 +398,53 @@ export function useFeatureAgentState(featureId: number) {
     }
   }, [query.data]);
 
-  const loadOlderMessages = useCallback(async (sessionDbId: number) => {
-    const acc = accumulatedRef.current.get(sessionDbId);
-    if (!acc || !acc.hasMore || acc.oldestMessageId == null) return;
+  const loadOlderMessages = useCallback(
+    async (sessionDbId: number) => {
+      const acc = accumulatedRef.current.get(sessionDbId);
+      if (!acc || !acc.hasMore || acc.oldestMessageId == null) return;
 
-    const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
-    const data = await fetchFeatureAgentState(featureId, {
-      before: beforeParam,
-      limit: OLDER_MESSAGE_LIMIT,
-    });
+      const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
+      const data = await fetchFeatureAgentState(featureId, {
+        before: beforeParam,
+        limit: OLDER_MESSAGE_LIMIT,
+      });
 
-    const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
-    if (!serverSession) return;
+      const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);
+      if (!serverSession) return;
 
-    const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks);
-    if (olderBlocks.length === 0) {
-      acc.hasMore = false;
-      return;
-    }
-
-    // Register tool_call blocks from older messages so future merges work
-    for (const block of olderBlocks) {
-      if (block.type === "tool_call" && block.toolUseId) {
-        acc.toolUseIdMap.set(block.toolUseId, { toolName: block.toolName ?? "tool", block });
+      const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks);
+      if (olderBlocks.length === 0) {
+        acc.hasMore = false;
+        return;
       }
-      if (block.childBlocks) {
-        for (const child of block.childBlocks) {
-          if (child.type === "tool_call" && child.toolUseId) {
-            acc.toolUseIdMap.set(child.toolUseId, { toolName: child.toolName ?? "tool", block: child });
+
+      // Register tool_call blocks from older messages so future merges work
+      for (const block of olderBlocks) {
+        if (block.type === "tool_call" && block.toolUseId) {
+          acc.toolUseIdMap.set(block.toolUseId, { toolName: block.toolName ?? "tool", block });
+        }
+        if (block.childBlocks) {
+          for (const child of block.childBlocks) {
+            if (child.type === "tool_call" && child.toolUseId) {
+              acc.toolUseIdMap.set(child.toolUseId, {
+                toolName: child.toolName ?? "tool",
+                block: child,
+              });
+            }
           }
         }
       }
-    }
 
-    // Prepend older blocks
-    acc.blocks = [...olderBlocks, ...acc.blocks];
-    acc.hasMore = serverSession.hasMore ?? false;
-    acc.oldestMessageId = serverSession.oldestMessageId ?? null;
+      // Prepend older blocks
+      acc.blocks = [...olderBlocks, ...acc.blocks];
+      acc.hasMore = serverSession.hasMore ?? false;
+      acc.oldestMessageId = serverSession.oldestMessageId ?? null;
 
-    // Force re-render
-    setOlderHistoryVersion((v) => v + 1);
-  }, [featureId]);
+      // Force re-render
+      setOlderHistoryVersion((v) => v + 1);
+    },
+    [featureId],
+  );
 
   return {
     sessions,

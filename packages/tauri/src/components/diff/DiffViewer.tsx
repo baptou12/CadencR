@@ -21,7 +21,10 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [focusedFileIndex, setFocusedFileIndex] = useState(-1);
-  const [activeCommentWidget, setActiveCommentWidget] = useState<{ filePath: string; lineNumber: number } | null>(null);
+  const [activeCommentWidget, setActiveCommentWidget] = useState<{
+    filePath: string;
+    lineNumber: number;
+  } | null>(null);
   const diffAreaRef = useRef<HTMLDivElement>(null);
 
   const data = useDiffData(featureId, mode, targetBranch);
@@ -42,21 +45,36 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     return map;
   }, [data.comments]);
 
-  const callbacksRef = useRef<{ activeWidget: typeof activeCommentWidget; data: typeof data }>({ activeWidget: activeCommentWidget, data });
+  const callbacksRef = useRef<{ activeWidget: typeof activeCommentWidget; data: typeof data }>({
+    activeWidget: activeCommentWidget,
+    data,
+  });
   callbacksRef.current = { activeWidget: activeCommentWidget, data };
 
-  const stableCallbacks = useMemo<CommentCallbacks>(() => ({
-    onSubmit: (lineNumber: number, content: string) => {
-      const { activeWidget, data: d } = callbacksRef.current;
-      if (!activeWidget || !content) { return; }
-      d.createComment.mutate({ featureId, filePath: activeWidget.filePath, lineNumber, side: "new" as const, content });
-      setActiveCommentWidget(null);
-    },
-    onClose: () => setActiveCommentWidget(null),
-    onEdit: (id: number, content: string) => callbacksRef.current.data.updateComment.mutate({ id, content }),
-    onDelete: (id: number) => callbacksRef.current.data.deleteComment.mutate({ id }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [featureId]);
+  const stableCallbacks = useMemo<CommentCallbacks>(
+    () => ({
+      onSubmit: (lineNumber: number, content: string) => {
+        const { activeWidget, data: d } = callbacksRef.current;
+        if (!activeWidget || !content) {
+          return;
+        }
+        d.createComment.mutate({
+          featureId,
+          filePath: activeWidget.filePath,
+          lineNumber,
+          side: "new" as const,
+          content,
+        });
+        setActiveCommentWidget(null);
+      },
+      onClose: () => setActiveCommentWidget(null),
+      onEdit: (id: number, content: string) =>
+        callbacksRef.current.data.updateComment.mutate({ id, content }),
+      onDelete: (id: number) => callbacksRef.current.data.deleteComment.mutate({ id }),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }),
+    [featureId],
+  );
 
   // Auto-collapse viewed files on initial load
   useEffect(() => {
@@ -107,7 +125,12 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const changedFileEntries: ChangedFileEntry[] = useMemo(
     () =>
       data.fileMeta.map(({ section, displayName, additions, deletions }) => {
-        const status = section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
+        const status =
+          section.oldFileName === "/dev/null"
+            ? "A"
+            : section.newFileName === "/dev/null"
+              ? "D"
+              : "M";
         return { file: displayName, status, additions, deletions };
       }),
     [data.fileMeta],
@@ -153,26 +176,29 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
       {/* Commit header */}
-      {data.selectedCommit && (() => {
-        const commit = data.commits.find((c) => c.sha === data.selectedCommit);
-        return (
-          <div className="border-b border-border px-4 py-2 text-sm text-foreground">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-primary">{data.selectedCommit.slice(0, 7)}</span>
-              <span className="min-w-0 flex-1 text-foreground">{commit?.message}</span>
-              <button
-                className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs text-foreground hover:bg-muted-foreground"
-                onClick={() => data.setSelectedCommit(null)}
-              >
-                Working Changes
-              </button>
+      {data.selectedCommit &&
+        (() => {
+          const commit = data.commits.find((c) => c.sha === data.selectedCommit);
+          return (
+            <div className="border-b border-border px-4 py-2 text-sm text-foreground">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-primary">{data.selectedCommit.slice(0, 7)}</span>
+                <span className="min-w-0 flex-1 text-foreground">{commit?.message}</span>
+                <button
+                  className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs text-foreground hover:bg-muted-foreground"
+                  onClick={() => data.setSelectedCommit(null)}
+                >
+                  Working Changes
+                </button>
+              </div>
+              {commit?.body && (
+                <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
+                  {commit.body}
+                </p>
+              )}
             </div>
-            {commit?.body && (
-              <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{commit.body}</p>
-            )}
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* Diff area + file tree */}
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
@@ -212,10 +238,16 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                     showViewedCheckbox={!data.selectedCommit}
                     onToggle={() => toggleFile(displayName)}
                     onMarkViewed={() => {
-                      data.markViewed.mutate({ featureId, filePath: displayName, blobSha: currentBlobSha });
+                      data.markViewed.mutate({
+                        featureId,
+                        filePath: displayName,
+                        blobSha: currentBlobSha,
+                      });
                       setCollapsedFiles((prev) => new Set([...prev, displayName]));
                     }}
-                    onUnmarkViewed={() => data.unmarkViewed.mutate({ featureId, filePath: displayName })}
+                    onUnmarkViewed={() =>
+                      data.unmarkViewed.mutate({ featureId, filePath: displayName })
+                    }
                   />
                   <DiffFileBlock
                     section={section}
@@ -234,7 +266,9 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                         : null
                     }
                     commentCallbacks={stableCallbacks}
-                    onAddComment={(lineNumber) => setActiveCommentWidget({ filePath: displayName, lineNumber })}
+                    onAddComment={(lineNumber) =>
+                      setActiveCommentWidget({ filePath: displayName, lineNumber })
+                    }
                   />
                 </div>
               );
@@ -245,13 +279,26 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
       {/* Bottom bar */}
       <div className="flex items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">
-        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃J</kbd> next</span>
-        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃K</kbd> prev</span>
-        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃L</kbd> expand</span>
-        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃H</kbd> viewed</span>
-        <span><kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃D</kbd>/<kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃U</kbd> scroll</span>
+        <span>
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃J</kbd> next
+        </span>
+        <span>
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃K</kbd> prev
+        </span>
+        <span>
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃L</kbd> expand
+        </span>
+        <span>
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃H</kbd> viewed
+        </span>
+        <span>
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃D</kbd>/
+          <kbd className="rounded bg-accent px-1 py-0.5 text-foreground">⌃U</kbd> scroll
+        </span>
         <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">{data.viewedFilesSet.size}/{data.fileMeta.length} viewed</span>
+          <span className="text-xs text-muted-foreground">
+            {data.viewedFilesSet.size}/{data.fileMeta.length} viewed
+          </span>
           <div className="h-4 w-px bg-border" />
           <div className="flex items-center gap-2">
             <button
@@ -298,8 +345,14 @@ function FileHeader({
   onUnmarkViewed: () => void;
 }) {
   return (
-    <div className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}>
-      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={onToggle}>
+    <div
+      className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
+    >
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        onClick={onToggle}
+      >
         {isCollapsed ? (
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         ) : (
@@ -307,11 +360,18 @@ function FileHeader({
         )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
       </button>
-      <CopyButton text={displayName} hoverClass="opacity-0 group-hover/header:opacity-100" sizeClass="h-3.5 w-3.5" />
+      <CopyButton
+        text={displayName}
+        hoverClass="opacity-0 group-hover/header:opacity-100"
+        sizeClass="h-3.5 w-3.5"
+      />
       <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
       <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
       {showViewedCheckbox && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
           <Checkbox
             checked={isFileViewed}
             onCheckedChange={(checked) => {

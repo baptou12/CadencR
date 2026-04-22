@@ -14,23 +14,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-type SetupStep =
-  | "naming"
-  | "named"
-  | "creating"
-  | "created"
-  | "setup"
-  | "done"
-  | "error";
+type SetupStep = "naming" | "named" | "creating" | "created" | "setup" | "done" | "error";
 
-const STEP_ORDER: SetupStep[] = [
-  "naming",
-  "named",
-  "creating",
-  "created",
-  "setup",
-  "done",
-];
+const STEP_ORDER: SetupStep[] = ["naming", "named", "creating", "created", "setup", "done"];
 
 function stepIndex(step: SetupStep): number {
   const idx = STEP_ORDER.indexOf(step);
@@ -48,8 +34,7 @@ function StepIcon({
 }) {
   if (error) return <AlertCircleIcon className="size-4 text-red-400" />;
   if (complete) return <CheckCircle2Icon className="size-4 text-green-500" />;
-  if (active)
-    return <Loader2Icon className="size-4 animate-spin text-blue-400" />;
+  if (active) return <Loader2Icon className="size-4 animate-spin text-blue-400" />;
   return <div className="size-4 rounded-full border border-muted-foreground/30" />;
 }
 
@@ -73,12 +58,18 @@ function LogOutput({ log }: { log: string }) {
 /** Map WorktreeStatus from WS store to tRPC-style SetupStep */
 function wsStatusToStep(status: WorktreeStatus): SetupStep | null {
   switch (status) {
-    case "idle": return null;
-    case "creating": return "creating";
-    case "created": return "created";
-    case "setup_running": return "setup";
-    case "ready": return "done";
-    case "setup_error": return "error";
+    case "idle":
+      return null;
+    case "creating":
+      return "creating";
+    case "created":
+      return "created";
+    case "setup_running":
+      return "setup";
+    case "ready":
+      return "done";
+    case "setup_error":
+      return "error";
   }
 }
 
@@ -111,9 +102,10 @@ export function WorktreeSetupSection({
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
 
   const { data: settingsArray } = useGetFeatureSettings(featureId, { enabled: !useWsMode });
-  const settings = !useWsMode && settingsArray
-    ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
-    : undefined;
+  const settings =
+    !useWsMode && settingsArray
+      ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
+      : undefined;
 
   const workflowRetry = useWorkflowStore((s) => s.retryWorktreeSetup);
   const retryWorktreeSetup = onRetrySetup ?? workflowRetry;
@@ -124,9 +116,7 @@ export function WorktreeSetupSection({
   const log = useWsMode
     ? (wsWorktreeSetupOutput ?? []).join("\n")
     : (settings?.worktree_setup_log ?? "");
-  const branch = useWsMode
-    ? (wsWorktreeBranch ?? "")
-    : (settings?.worktree_branch ?? "");
+  const branch = useWsMode ? (wsWorktreeBranch ?? "") : (settings?.worktree_branch ?? "");
 
   const isDone = step === "done";
   const isError = step === "error";
@@ -238,17 +228,11 @@ export function WorktreeSetupSection({
           {steps.map((s, i) => (
             <div key={i} className="flex items-start gap-2">
               <div className="mt-0.5">
-                <StepIcon
-                  complete={s.complete}
-                  active={s.active}
-                  error={s.error}
-                />
+                <StepIcon complete={s.complete} active={s.active} error={s.error} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground">
-                    {i + 1}.
-                  </span>
+                  <span className="text-[10px] text-muted-foreground">{i + 1}.</span>
                   <span className="text-xs">{s.label}</span>
                   {s.detail && (
                     <span className="text-[10px] text-muted-foreground font-mono truncate">
@@ -256,9 +240,7 @@ export function WorktreeSetupSection({
                     </span>
                   )}
                 </div>
-                {s.showLog && log && (s.active || s.complete || s.error) && (
-                  <LogOutput log={log} />
-                )}
+                {s.showLog && log && (s.active || s.complete || s.error) && <LogOutput log={log} />}
               </div>
             </div>
           ))}

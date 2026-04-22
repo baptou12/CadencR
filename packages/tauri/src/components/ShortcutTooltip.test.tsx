@@ -74,7 +74,9 @@ describe("ShortcutTooltip", () => {
     fireEvent.mouseEnter(wrapper);
     act(() => vi.advanceTimersByTime(400));
 
-    const tooltip = screen.getByText("Above").closest("div.pointer-events-none") ?? screen.getByText("Above").parentElement!;
+    const tooltip =
+      screen.getByText("Above").closest("div.pointer-events-none") ??
+      screen.getByText("Above").parentElement!;
     expect(tooltip?.className).toContain("bottom-full");
     expect(tooltip?.className).not.toContain("top-full");
   });
@@ -89,7 +91,9 @@ describe("ShortcutTooltip", () => {
     fireEvent.mouseEnter(wrapper);
     act(() => vi.advanceTimersByTime(400));
 
-    const tooltip = screen.getByText("Below").closest("div.pointer-events-none") ?? screen.getByText("Below").parentElement!;
+    const tooltip =
+      screen.getByText("Below").closest("div.pointer-events-none") ??
+      screen.getByText("Below").parentElement!;
     expect(tooltip?.className).toContain("top-full");
     expect(tooltip?.className).not.toContain("bottom-full");
   });

@@ -38,16 +38,47 @@ import type { QueueItem, QueueItemStatus } from "@/types/workflow";
 // Status icon mapping
 // ---------------------------------------------------------------------------
 
-const STATUS_CONFIG: Record<QueueItemStatus, { icon: React.ReactNode; className: string; label: string }> = {
+const STATUS_CONFIG: Record<
+  QueueItemStatus,
+  { icon: React.ReactNode; className: string; label: string }
+> = {
   draft: { icon: <PencilIcon className="size-3.5" />, className: "text-gray-600", label: "Draft" },
-  pending: { icon: <CircleIcon className="size-3.5" />, className: "text-gray-500", label: "Pending" },
-  blocked: { icon: <LockIcon className="size-3.5" />, className: "text-gray-600", label: "Blocked" },
-  ready: { icon: <PlayCircleIcon className="size-3.5" />, className: "text-yellow-400", label: "Ready" },
-  running: { icon: <Loader2Icon className="size-3.5 animate-spin" />, className: "text-blue-400", label: "Running" },
-  paused: { icon: <PauseCircleIcon className="size-3.5" />, className: "text-yellow-400", label: "Paused" },
-  completed: { icon: <CheckCircle2Icon className="size-3.5" />, className: "text-green-400", label: "Completed" },
+  pending: {
+    icon: <CircleIcon className="size-3.5" />,
+    className: "text-gray-500",
+    label: "Pending",
+  },
+  blocked: {
+    icon: <LockIcon className="size-3.5" />,
+    className: "text-gray-600",
+    label: "Blocked",
+  },
+  ready: {
+    icon: <PlayCircleIcon className="size-3.5" />,
+    className: "text-yellow-400",
+    label: "Ready",
+  },
+  running: {
+    icon: <Loader2Icon className="size-3.5 animate-spin" />,
+    className: "text-blue-400",
+    label: "Running",
+  },
+  paused: {
+    icon: <PauseCircleIcon className="size-3.5" />,
+    className: "text-yellow-400",
+    label: "Paused",
+  },
+  completed: {
+    icon: <CheckCircle2Icon className="size-3.5" />,
+    className: "text-green-400",
+    label: "Completed",
+  },
   error: { icon: <XCircleIcon className="size-3.5" />, className: "text-red-400", label: "Error" },
-  skipped: { icon: <SkipForwardIcon className="size-3.5" />, className: "text-gray-500", label: "Skipped" },
+  skipped: {
+    icon: <SkipForwardIcon className="size-3.5" />,
+    className: "text-gray-500",
+    label: "Skipped",
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -103,32 +134,46 @@ interface QueueSidebarProps {
   className?: string;
 }
 
-export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, onRetryItem, onSkipItem, className }: QueueSidebarProps) {
+export function QueueSidebar({
+  queue,
+  featureId,
+  selectedItemId,
+  onSelectItem,
+  onRetryItem,
+  onSkipItem,
+  className,
+}: QueueSidebarProps) {
   // When queue is empty but plan has phases, synthesize draft items from phases
-  const { data: plan } = useGetFeaturePlan(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
+  const { data: plan } = useGetFeaturePlan(featureId ?? 0, {
+    enabled: featureId != null && featureId > 0,
+  });
 
   const effectiveQueue = useMemo(() => {
     if (queue.length > 0 || !plan?.phases?.length) return queue;
-    return plan.phases.map((p, i): QueueItem => ({
-      id: -p.id, // negative to distinguish from real queue items
-      item_type: p.phase_type ?? "execute",
-      phase_id: p.id,
-      phase_title: p.title,
-      status: "draft" as QueueItemStatus,
-      order_index: i,
-      group_index: p.step_number ?? i,
-      agent_session_id: null,
-      result: null,
-      retry_count: 0,
-      max_retries: 0,
-    }));
+    return plan.phases.map(
+      (p, i): QueueItem => ({
+        id: -p.id, // negative to distinguish from real queue items
+        item_type: p.phase_type ?? "execute",
+        phase_id: p.id,
+        phase_title: p.title,
+        status: "draft" as QueueItemStatus,
+        order_index: i,
+        group_index: p.step_number ?? i,
+        agent_session_id: null,
+        result: null,
+        retry_count: 0,
+        max_retries: 0,
+      }),
+    );
   }, [queue, plan]);
 
   const groups = useMemo(() => groupItems(effectiveQueue), [effectiveQueue]);
   const [expandedPhase, setExpandedPhase] = useState<PhaseInfo | null>(null);
   const [showPrd, setShowPrd] = useState(false);
 
-  const { data: prdData } = useGetFeaturePrd(featureId ?? 0, { enabled: featureId != null && featureId > 0 });
+  const { data: prdData } = useGetFeaturePrd(featureId ?? 0, {
+    enabled: featureId != null && featureId > 0,
+  });
   const prd = prdData?.prd;
 
   // Build a map from phase_id to phase data for quick lookup
@@ -151,7 +196,9 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
   }, [plan]);
 
   // Progress (only count real queue items, not draft placeholders)
-  const completedCount = queue.filter(i => i.status === "completed" || i.status === "skipped").length;
+  const completedCount = queue.filter(
+    (i) => i.status === "completed" || i.status === "skipped",
+  ).length;
   const totalCount = queue.length;
 
   if (effectiveQueue.length === 0 && !plan && !prd) {
@@ -165,9 +212,7 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
         {plan && (
           <div className="border-b border-gray-800 px-3 py-2.5">
             <h3 className="truncate text-sm font-semibold text-foreground">{plan.title}</h3>
-            {plan.summary && (
-              <p className="mt-0.5 text-xs text-muted-foreground">{plan.summary}</p>
-            )}
+            {plan.summary && <p className="mt-0.5 text-xs text-muted-foreground">{plan.summary}</p>}
           </div>
         )}
 
@@ -194,7 +239,7 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
               <div className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">
                 Step {gi + 1}
               </div>
-              {group.items.map(item => {
+              {group.items.map((item) => {
                 const phase = item.phase_id != null ? phaseMap.get(item.phase_id) : undefined;
                 return (
                   <QueueItemRow
@@ -217,7 +262,12 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
       </div>
 
       {/* PRD Dialog */}
-      <Dialog open={showPrd} onOpenChange={(open) => { if (!open) setShowPrd(false); }}>
+      <Dialog
+        open={showPrd}
+        onOpenChange={(open) => {
+          if (!open) setShowPrd(false);
+        }}
+      >
         {prd && (
           <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
             <DialogHeader className="shrink-0">
@@ -237,49 +287,55 @@ export function QueueSidebar({ queue, featureId, selectedItemId, onSelectItem, o
       </Dialog>
 
       {/* Phase Detail Dialog */}
-      <Dialog open={expandedPhase !== null} onOpenChange={(open) => { if (!open) setExpandedPhase(null); }}>
+      <Dialog
+        open={expandedPhase !== null}
+        onOpenChange={(open) => {
+          if (!open) setExpandedPhase(null);
+        }}
+      >
         {expandedPhase && (
           <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
             <DialogHeader className="shrink-0">
               <div className="flex items-center gap-3">
                 <DialogTitle className="text-lg">
-                  {expandedPhase.step_number != null && `Phase ${expandedPhase.step_number}: `}{expandedPhase.title}
+                  {expandedPhase.step_number != null && `Phase ${expandedPhase.step_number}: `}
+                  {expandedPhase.title}
                 </DialogTitle>
               </div>
-              <DialogDescription className="sr-only">
-                Phase details
-              </DialogDescription>
+              <DialogDescription className="sr-only">Phase details</DialogDescription>
               <div className="flex items-center gap-2 mt-1">
-                {expandedPhase.status && (
-                  <Badge variant="secondary">{expandedPhase.status}</Badge>
-                )}
+                {expandedPhase.status && <Badge variant="secondary">{expandedPhase.status}</Badge>}
                 {expandedPhase.complexity != null && (
                   <Badge variant="outline">Complexity: {expandedPhase.complexity}</Badge>
                 )}
               </div>
             </DialogHeader>
             <ScrollArea className="flex-1 min-h-0 mt-4 overflow-auto">
-              {expandedPhase.prompt && (
-                <Markdown content={expandedPhase.prompt} />
-              )}
+              {expandedPhase.prompt && <Markdown content={expandedPhase.prompt} />}
               {expandedPhase.commit_message && (
                 <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1">Commit message</p>
-                  <code className="text-sm text-[var(--drac-green)]">{expandedPhase.commit_message}</code>
+                  <code className="text-sm text-[var(--drac-green)]">
+                    {expandedPhase.commit_message}
+                  </code>
                 </div>
               )}
-              {expandedPhase.implementation_notes && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
-                <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Implementation Notes</p>
-                  <Markdown content={expandedPhase.implementation_notes} className="text-sm" />
-                </div>
-              )}
-              {expandedPhase.deviations && (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
-                <div className="mt-4 rounded-md border border-[var(--drac-orange)]/40 bg-[var(--drac-orange)]/10 p-3">
-                  <p className="text-xs font-medium text-[var(--drac-orange)] mb-1">Deviations</p>
-                  <Markdown content={expandedPhase.deviations} className="text-sm" />
-                </div>
-              )}
+              {expandedPhase.implementation_notes &&
+                (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                  <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
+                    <p className="text-xs font-medium text-muted-foreground mb-1">
+                      Implementation Notes
+                    </p>
+                    <Markdown content={expandedPhase.implementation_notes} className="text-sm" />
+                  </div>
+                )}
+              {expandedPhase.deviations &&
+                (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
+                  <div className="mt-4 rounded-md border border-[var(--drac-orange)]/40 bg-[var(--drac-orange)]/10 p-3">
+                    <p className="text-xs font-medium text-[var(--drac-orange)] mb-1">Deviations</p>
+                    <Markdown content={expandedPhase.deviations} className="text-sm" />
+                  </div>
+                )}
             </ScrollArea>
           </DialogContent>
         )}
@@ -303,7 +359,14 @@ interface PhaseInfo {
   status?: string;
 }
 
-function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
+function QueueItemRow({
+  item,
+  phase,
+  isSelected,
+  onClick,
+  onRetry,
+  onSkip,
+}: {
   item: QueueItem;
   phase?: PhaseInfo;
   isSelected: boolean;
@@ -334,7 +397,9 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
             {title ? (
               <span className="min-w-0 truncate text-xs font-medium text-gray-300">{title}</span>
             ) : (
-              <span className="shrink-0 text-xs font-medium text-muted-foreground">{typeLabel}</span>
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                {typeLabel}
+              </span>
             )}
           </div>
         </div>
@@ -344,7 +409,10 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
           </Badge>
         )}
         {(item.retry_count ?? 0) > 0 && (
-          <Badge variant="outline" className="shrink-0 text-[9px] px-1 py-0 border-yellow-600 text-yellow-400">
+          <Badge
+            variant="outline"
+            className="shrink-0 text-[9px] px-1 py-0 border-yellow-600 text-yellow-400"
+          >
             Retrying ({item.retry_count}/{item.max_retries ?? 1})
           </Badge>
         )}
@@ -356,7 +424,10 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
           {onRetry && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onRetry(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRetry();
+              }}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-gray-200"
             >
               <RotateCcwIcon className="size-2.5" />
@@ -366,7 +437,10 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
           {onSkip && (
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onSkip(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSkip();
+              }}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-gray-400 hover:bg-gray-700 hover:text-gray-200"
             >
               <SkipForwardIcon className="size-2.5" />
@@ -375,7 +449,6 @@ function QueueItemRow({ item, phase, isSelected, onClick, onRetry, onSkip }: {
           )}
         </div>
       )}
-
     </div>
   );
 }

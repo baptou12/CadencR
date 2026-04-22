@@ -86,7 +86,9 @@ function lastWs(): MockWebSocket {
   return MockWebSocket.instances[MockWebSocket.instances.length - 1]!;
 }
 
-function defaultOptions(overrides?: Partial<UseTerminalWebSocketOptions>): UseTerminalWebSocketOptions {
+function defaultOptions(
+  overrides?: Partial<UseTerminalWebSocketOptions>,
+): UseTerminalWebSocketOptions {
   return {
     featureId: 1,
     projectId: 2,
@@ -176,7 +178,9 @@ describe("useTerminalWebSocket", () => {
     const onReconnected = vi.fn();
     renderAndConnect({ onReconnected });
     act(() => lastWs().simulateOpen());
-    act(() => lastWs().simulateMessage({ type: "reconnected", scrollback: "old data", alive: true }));
+    act(() =>
+      lastWs().simulateMessage({ type: "reconnected", scrollback: "old data", alive: true }),
+    );
     expect(onReconnected).toHaveBeenCalledWith("old data", true);
   });
 
@@ -251,10 +255,9 @@ describe("useTerminalWebSocket", () => {
   describe("connection stability", () => {
     it("does not reconnect when options change after mount", () => {
       const opts = defaultOptions();
-      const { result, rerender } = renderHook(
-        (props) => useTerminalWebSocket(props),
-        { initialProps: opts },
-      );
+      const { result, rerender } = renderHook((props) => useTerminalWebSocket(props), {
+        initialProps: opts,
+      });
 
       act(() => result.current.connect(80, 24));
       expect(MockWebSocket.instances).toHaveLength(1);
@@ -270,10 +273,9 @@ describe("useTerminalWebSocket", () => {
     const onData1 = vi.fn();
     const onData2 = vi.fn();
     const opts = defaultOptions({ onData: onData1 });
-    const { result, rerender } = renderHook(
-      (props) => useTerminalWebSocket(props),
-      { initialProps: opts },
-    );
+    const { result, rerender } = renderHook((props) => useTerminalWebSocket(props), {
+      initialProps: opts,
+    });
     act(() => result.current.connect(80, 24));
     act(() => lastWs().simulateOpen());
 

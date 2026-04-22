@@ -17,12 +17,16 @@ function isInteractive(e: MouseEvent): boolean {
 export function startDragging(e: MouseEvent) {
   if (isInteractive(e)) return;
   e.preventDefault();
-  getWindow().startDragging().catch(() => toast.error("Failed to drag window"));
+  getWindow()
+    .startDragging()
+    .catch(() => toast.error("Failed to drag window"));
 }
 
 /** Attach as `onDoubleClick` to toggle maximize on double-click. */
 export function toggleMaximize(e: MouseEvent) {
   if (isInteractive(e)) return;
   e.preventDefault();
-  getWindow().toggleMaximize().catch(() => toast.error("Failed to toggle maximize"));
+  getWindow()
+    .toggleMaximize()
+    .catch(() => toast.error("Failed to toggle maximize"));
 }

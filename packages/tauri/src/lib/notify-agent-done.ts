@@ -32,18 +32,24 @@ interface NotifyOptions {
 
 function isViewingFeature(opts: NotifyOptions): boolean {
   const pathname = window.location.pathname;
-  if (opts.routeType === "workflow" &&
-      pathname === `/projects/${opts.projectId}/features/${opts.featureId}`) return true;
-  if (opts.routeType === "session" &&
-      pathname === `/ws-session/ws-feature-${opts.featureId}`) return true;
+  if (
+    opts.routeType === "workflow" &&
+    pathname === `/projects/${opts.projectId}/features/${opts.featureId}`
+  )
+    return true;
+  if (opts.routeType === "session" && pathname === `/ws-session/ws-feature-${opts.featureId}`)
+    return true;
   return false;
 }
 
 function titleForStatus(status: NotifyOptions["status"]): string {
   switch (status) {
-    case "completed": return "Agent finished";
-    case "error": return "Agent error";
-    case "needs_input": return "Agent needs input";
+    case "completed":
+      return "Agent finished";
+    case "error":
+      return "Agent error";
+    case "needs_input":
+      return "Agent needs input";
   }
 }
 
@@ -73,9 +79,7 @@ export function notifyAgentDone(opts: NotifyOptions): void {
 /**
  * Convenience wrapper: notify that an agent is waiting for user input.
  */
-export function notifyAgentNeedsInput(
-  opts: Omit<NotifyOptions, "status">,
-): void {
+export function notifyAgentNeedsInput(opts: Omit<NotifyOptions, "status">): void {
   notifyAgentDone({ ...opts, status: "needs_input" });
 }
 
@@ -101,26 +105,35 @@ export function listenForNotificationClicks(
 ): () => void {
   const unlisten = listen<NotificationClickPayload>("notification-clicked", (event) => {
     const { feature_id, project_id, route_type } = event.payload;
-    const nav = route_type === "session"
-      ? navigate({
-          to: "/ws-session/$sessionId",
-          params: { sessionId: `ws-feature-${feature_id}` },
-          search: { cwd: lookupProjectPath(queryClient, project_id), featureId: feature_id, projectId: project_id },
-        })
-      : navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: { projectId: String(project_id), featureId: String(feature_id) },
-        });
+    const nav =
+      route_type === "session"
+        ? navigate({
+            to: "/ws-session/$sessionId",
+            params: { sessionId: `ws-feature-${feature_id}` },
+            search: {
+              cwd: lookupProjectPath(queryClient, project_id),
+              featureId: feature_id,
+              projectId: project_id,
+            },
+          })
+        : navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: { projectId: String(project_id), featureId: String(feature_id) },
+          });
     void nav.then(() => {
       setTimeout(() => window.dispatchEvent(new CustomEvent("cadence:focus-prompt")), 100);
     });
   });
-  return () => { void unlisten.then(fn => fn()).catch(() => {}); };
+  return () => {
+    void unlisten.then((fn) => fn()).catch(() => {});
+  };
 }
 
 function lookupProjectPath(queryClient: QueryClient, projectId: number): string {
-  for (const [, data] of queryClient.getQueriesData<Project[]>({ queryKey: ["projects", "list"] })) {
-    const project = data?.find(p => p.id === projectId);
+  for (const [, data] of queryClient.getQueriesData<Project[]>({
+    queryKey: ["projects", "list"],
+  })) {
+    const project = data?.find((p) => p.id === projectId);
     if (project) return project.path;
   }
   return "";

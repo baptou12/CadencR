@@ -32,7 +32,14 @@ describe("Input", () => {
 
   it("updates controlled value", async () => {
     let value = "";
-    const { rerender } = render(<Input value={value} onChange={(e) => { value = e.target.value; }} />);
+    const { rerender } = render(
+      <Input
+        value={value}
+        onChange={(e) => {
+          value = e.target.value;
+        }}
+      />,
+    );
     rerender(<Input value="updated" onChange={vi.fn()} />);
     expect(screen.getByRole("textbox")).toHaveValue("updated");
   });

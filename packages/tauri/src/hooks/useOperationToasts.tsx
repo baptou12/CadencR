@@ -14,9 +14,7 @@ const EXCLUDED_PREFIXES = ["agents.", "sessions.", "features."];
 function humanizeKey(key: string): string {
   // Take the router name (first segment), split camelCase, and title-case it
   const router = key.split(".")[0];
-  const words = router
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .toLowerCase();
+  const words = router.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
   return `Loading ${words}`;
 }
 

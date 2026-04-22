@@ -47,9 +47,7 @@ function RadioGroup({ label, value, options, onChange }: RadioGroupProps) {
             onClick={() => onChange(opt.value)}
           >
             {opt.label}
-            {opt.note && (
-              <span className="ml-1 text-[10px] text-[#ff79c6]">{opt.note}</span>
-            )}
+            {opt.note && <span className="ml-1 text-[10px] text-[#ff79c6]">{opt.note}</span>}
           </button>
         ))}
       </div>

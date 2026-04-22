@@ -62,13 +62,19 @@ export function useDiffKeyboard({
   useGlobalShortcut("ctrl+d", (e) => {
     e.preventDefault();
     e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({ top: diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+    diffAreaRef.current?.scrollBy({
+      top: diffAreaRef.current.clientHeight / 2,
+      behavior: "smooth",
+    });
   });
 
   useGlobalShortcut("ctrl+u", (e) => {
     e.preventDefault();
     e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({ top: -diffAreaRef.current.clientHeight / 2, behavior: "smooth" });
+    diffAreaRef.current?.scrollBy({
+      top: -diffAreaRef.current.clientHeight / 2,
+      behavior: "smooth",
+    });
   });
 
   useGlobalShortcut("ctrl+h", (e) => {

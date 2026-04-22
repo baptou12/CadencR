@@ -187,9 +187,7 @@ export function MergeArchiveDialog({
           {/* Merge */}
           {!merged && (
             <div className="space-y-2">
-              {mergeError && (
-                <p className="text-sm text-destructive">{mergeError}</p>
-              )}
+              {mergeError && <p className="text-sm text-destructive">{mergeError}</p>}
               <Button
                 onClick={() => mergeMutation.mutate({ projectId, featureId })}
                 disabled={
@@ -224,9 +222,7 @@ export function MergeArchiveDialog({
 
               {/* Delete Branch */}
               <div className="space-y-1">
-                {branchError && (
-                  <p className="text-xs text-destructive">{branchError}</p>
-                )}
+                {branchError && <p className="text-xs text-destructive">{branchError}</p>}
                 {branchDeleted ? (
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <CheckCircle2Icon className="size-4" />
@@ -236,9 +232,7 @@ export function MergeArchiveDialog({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() =>
-                      deleteBranchMutation.mutate({ projectId, featureId })
-                    }
+                    onClick={() => deleteBranchMutation.mutate({ projectId, featureId })}
                     disabled={deleteBranchMutation.isLoading}
                     className="w-full"
                   >
@@ -254,9 +248,7 @@ export function MergeArchiveDialog({
 
               {/* Delete Worktree */}
               <div className="space-y-1">
-                {worktreeError && (
-                  <p className="text-xs text-destructive">{worktreeError}</p>
-                )}
+                {worktreeError && <p className="text-xs text-destructive">{worktreeError}</p>}
                 {worktreeDeleted ? (
                   <div className="flex items-center gap-2 text-sm text-green-600">
                     <CheckCircle2Icon className="size-4" />
@@ -267,9 +259,7 @@ export function MergeArchiveDialog({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        deleteWorktreeMutation.mutate({ projectId, featureId })
-                      }
+                      onClick={() => deleteWorktreeMutation.mutate({ projectId, featureId })}
                       disabled={hasUncommitted || deleteWorktreeMutation.isLoading}
                       className="w-full"
                     >
@@ -306,9 +296,7 @@ export function MergeArchiveDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() =>
-                  archiveMutation.mutate({ id: featureId, status: "archived" })
-                }
+                onClick={() => archiveMutation.mutate({ id: featureId, status: "archived" })}
                 disabled={archiveMutation.isLoading}
                 className="w-full"
               >

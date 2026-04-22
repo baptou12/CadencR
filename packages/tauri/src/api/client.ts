@@ -23,10 +23,7 @@ function envFallback(): RuntimeConfig {
       typeof baseUrl === "string" && baseUrl.length > 0
         ? baseUrl.replace(/\/$/, "")
         : DEFAULT_DEV_BASE_URL,
-    authToken:
-      typeof authToken === "string" && authToken.length > 0
-        ? authToken
-        : null,
+    authToken: typeof authToken === "string" && authToken.length > 0 ? authToken : null,
   };
 }
 
@@ -91,9 +88,7 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-export async function customInstance<T>(
-  config: AxiosRequestConfig,
-): Promise<T> {
+export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> {
   const response = await axiosInstance(config);
   return response.data;
 }

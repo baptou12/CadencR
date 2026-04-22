@@ -22,8 +22,13 @@ function AutoScrollText({ text, className }: { text: string; className?: string 
   }, [text]);
 
   return (
-    <div ref={wrapperRef} className={`auto-scroll-wrapper min-w-0 flex-1 overflow-hidden ${className ?? ""}`}>
-      <span ref={textRef} className="auto-scroll-text" data-overflows={overflows}>{text}</span>
+    <div
+      ref={wrapperRef}
+      className={`auto-scroll-wrapper min-w-0 flex-1 overflow-hidden ${className ?? ""}`}
+    >
+      <span ref={textRef} className="auto-scroll-text" data-overflows={overflows}>
+        {text}
+      </span>
     </div>
   );
 }
@@ -32,7 +37,10 @@ function formatRelativeDate(dateStr: string): string {
   const now = Date.now();
   // Git dates like "2026-04-08 22:27:55 +0200" need the space before tz replaced with "T" or parsed as-is.
   // Replace the space between date and time with "T" for ISO compat, and remove space before tz offset.
-  const normalized = dateStr.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})$/, "$1T$2$3");
+  const normalized = dateStr.replace(
+    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})$/,
+    "$1T$2$3",
+  );
   const then = new Date(normalized).getTime();
   if (Number.isNaN(then)) return dateStr;
   const diffSec = Math.floor((now - then) / 1000);
@@ -266,7 +274,9 @@ export function DiffFileTree({
 
         {/* Viewed indicator */}
         {isViewed && (
-          <span className="shrink-0 text-[#50fa7b]" title="Viewed">✓</span>
+          <span className="shrink-0 text-[#50fa7b]" title="Viewed">
+            ✓
+          </span>
         )}
       </div>
     );

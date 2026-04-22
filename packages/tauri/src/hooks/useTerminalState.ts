@@ -42,7 +42,12 @@ export function getLeaves(node: SplitNode): TerminalLeaf[] {
 }
 
 /** Replace a leaf with a split containing the original + a new leaf */
-function splitLeaf(node: SplitNode, leafId: string, orientation: SplitOrientation, newLeaf: TerminalLeaf): SplitNode {
+function splitLeaf(
+  node: SplitNode,
+  leafId: string,
+  orientation: SplitOrientation,
+  newLeaf: TerminalLeaf,
+): SplitNode {
   if (node.type === "leaf") {
     if (node.id === leafId) {
       return { type: "split", orientation, children: [node, newLeaf] };
@@ -78,7 +83,10 @@ function removeLeaf(node: SplitNode, leafId: string): SplitNode | null {
 
 type Direction = "left" | "right" | "up" | "down";
 
-interface PathStep { node: TerminalSplit; childIndex: 0 | 1 }
+interface PathStep {
+  node: TerminalSplit;
+  childIndex: 0 | 1;
+}
 
 function directionAxis(dir: Direction): SplitOrientation {
   return dir === "left" || dir === "right" ? "horizontal" : "vertical";
@@ -107,7 +115,11 @@ function nearestLeafOnEdge(node: SplitNode, dir: Direction): string {
 }
 
 /** Find the spatially adjacent leaf in the given direction */
-export function findAdjacentLeaf(root: SplitNode, leafId: string, direction: Direction): string | null {
+export function findAdjacentLeaf(
+  root: SplitNode,
+  leafId: string,
+  direction: Direction,
+): string | null {
   const path = findPathToLeaf(root, leafId);
   if (!path) return null;
   const axis = directionAxis(direction);
@@ -124,7 +136,11 @@ export function findAdjacentLeaf(root: SplitNode, leafId: string, direction: Dir
 }
 
 /** Update a leaf's fields by id */
-function updateLeaf(node: SplitNode, leafId: string, updater: (leaf: TerminalLeaf) => TerminalLeaf): SplitNode {
+function updateLeaf(
+  node: SplitNode,
+  leafId: string,
+  updater: (leaf: TerminalLeaf) => TerminalLeaf,
+): SplitNode {
   if (node.type === "leaf") {
     return node.id === leafId ? updater(node) : node;
   }
@@ -206,7 +222,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) {
-        return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root: makeLeaf() });
+        return updateFeature(state, featureId, {
+          isOpen: true,
+          isMinimized: false,
+          root: makeLeaf(),
+        });
       }
       if (prev.isOpen) {
         return updateFeature(state, featureId, { ...prev, isOpen: false, isMinimized: false });
@@ -218,7 +238,11 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) {
-        return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root: makeLeaf() });
+        return updateFeature(state, featureId, {
+          isOpen: true,
+          isMinimized: false,
+          root: makeLeaf(),
+        });
       }
       const targetId = leafId ?? getLeaves(prev.root).at(-1)?.id;
       if (!targetId) return state;
@@ -258,8 +282,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       return updateFeature(state, featureId, { ...prev, isMinimized: true });
     }),
 
-  closePanel: (featureId) =>
-    set((state) => updateFeature(state, featureId, { ...defaultState })),
+  closePanel: (featureId) => set((state) => updateFeature(state, featureId, { ...defaultState })),
 
   setPtyId: (featureId, paneId, ptyId) =>
     set((state) => {
@@ -280,14 +303,22 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       const lastLeaf = getLeaves(prev.root).at(-1);
       if (!lastLeaf) return state;
       const newRoot = splitLeaf(prev.root, lastLeaf.id, "horizontal", newLeaf);
-      return updateFeature(state, featureId, { ...prev, isOpen: true, isMinimized: false, root: newRoot });
+      return updateFeature(state, featureId, {
+        ...prev,
+        isOpen: true,
+        isMinimized: false,
+        root: newRoot,
+      });
     }),
 
   clearInitialCommand: (featureId, paneId) =>
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) return state;
-      const newRoot = updateLeaf(prev.root, paneId, (leaf) => ({ ...leaf, initialCommand: undefined }));
+      const newRoot = updateLeaf(prev.root, paneId, (leaf) => ({
+        ...leaf,
+        initialCommand: undefined,
+      }));
       return updateFeature(state, featureId, { ...prev, root: newRoot });
     }),
 }));
@@ -303,11 +334,15 @@ export function useTerminalState(featureId: number) {
   const panes = getPanes(state);
   const togglePanel = useCallback(() => store.togglePanel(featureId), [store, featureId]);
   const splitPane = useCallback(
-    (leafId: string | undefined, orientation: SplitOrientation) => store.splitPane(featureId, leafId, orientation),
+    (leafId: string | undefined, orientation: SplitOrientation) =>
+      store.splitPane(featureId, leafId, orientation),
     [store, featureId],
   );
   const addPane = useCallback(() => store.addPane(featureId), [store, featureId]);
-  const removePane = useCallback((paneId: string) => store.removePane(featureId, paneId), [store, featureId]);
+  const removePane = useCallback(
+    (paneId: string) => store.removePane(featureId, paneId),
+    [store, featureId],
+  );
   const minimize = useCallback(() => store.minimize(featureId), [store, featureId]);
   const closePanel = useCallback(() => store.closePanel(featureId), [store, featureId]);
 

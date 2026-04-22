@@ -23,10 +23,7 @@ function hasDomSiblingInDirection(
   let current: Node | null = node;
 
   while (current && current !== rootElement) {
-    const sibling =
-      direction === "previous"
-        ? current.previousSibling
-        : current.nextSibling;
+    const sibling = direction === "previous" ? current.previousSibling : current.nextSibling;
     if (sibling) return true;
     current = current.parentNode;
   }

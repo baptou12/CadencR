@@ -2,11 +2,7 @@ import { cn } from "@/lib/utils";
 import { CheckIcon, CircleIcon, Loader2Icon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { TodoItem } from "@/types/agent";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 interface AgentTodoListProps {
   todos: TodoItem[];
@@ -60,10 +56,7 @@ export function AgentTodoList({ todos, chipClass }: AgentTodoListProps): ReactEl
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(
-            chipClass,
-            "bg-rose-500/15 text-rose-400 hover:bg-rose-500/25",
-          )}
+          className={cn(chipClass, "bg-rose-500/15 text-rose-400 hover:bg-rose-500/25")}
         >
           {inProgress ? (
             <Loader2Icon className="size-3 animate-spin" />
@@ -99,15 +92,12 @@ export function AgentTodoList({ todos, chipClass }: AgentTodoListProps): ReactEl
               <span
                 className={cn(
                   "break-words",
-                  todo.status === "completed" &&
-                    "text-muted-foreground line-through",
+                  todo.status === "completed" && "text-muted-foreground line-through",
                   todo.status === "in_progress" && "text-foreground",
                   todo.status === "pending" && "text-muted-foreground/60",
                 )}
               >
-                {todo.status === "in_progress" && todo.activeForm
-                  ? todo.activeForm
-                  : todo.content}
+                {todo.status === "in_progress" && todo.activeForm ? todo.activeForm : todo.content}
               </span>
             </li>
           ))}

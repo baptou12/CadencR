@@ -25,11 +25,11 @@ interface DraftResultPayload {
 export function usePromptDraft({ sessionId, wsSessionId, initialDraft }: UsePromptDraftOptions) {
   const sendRaw = useWsSessionStore((s) => s.send);
   const sendRequest = useWsSessionStore((s) => s.sendRequest);
-  const isConnected = useWsSessionStore(
-    (s) => wsSessionId ? s.sessions[wsSessionId]?.isConnected ?? false : false,
+  const isConnected = useWsSessionStore((s) =>
+    wsSessionId ? (s.sessions[wsSessionId]?.isConnected ?? false) : false,
   );
-  const serverSessionId = useWsSessionStore(
-    (s) => wsSessionId ? s.sessions[wsSessionId]?.serverSessionId ?? "" : "",
+  const serverSessionId = useWsSessionStore((s) =>
+    wsSessionId ? (s.sessions[wsSessionId]?.serverSessionId ?? "") : "",
   );
   const saveDraftMutation = useSaveSessionDraft();
 

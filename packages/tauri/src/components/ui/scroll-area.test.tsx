@@ -7,7 +7,7 @@ describe("ScrollArea", () => {
     render(
       <ScrollArea>
         <div>Scrollable content</div>
-      </ScrollArea>
+      </ScrollArea>,
     );
     expect(screen.getByText("Scrollable content")).toBeInTheDocument();
   });
@@ -16,7 +16,7 @@ describe("ScrollArea", () => {
     const { container } = render(
       <ScrollArea className="my-scroll">
         <div>Content</div>
-      </ScrollArea>
+      </ScrollArea>,
     );
     expect(container.querySelector("[data-slot='scroll-area']")).toHaveClass("my-scroll");
   });

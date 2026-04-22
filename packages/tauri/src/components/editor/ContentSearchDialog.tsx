@@ -1,23 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  CaseSensitive,
-  WholeWord,
-  Regex,
-  Loader2,
-} from "lucide-react";
+import { CaseSensitive, WholeWord, Regex, Loader2 } from "lucide-react";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import {
-  useContentSearch,
-  type ContentMatch,
-  type ContentSearchParams,
-} from "@/api/generated";
+import { useContentSearch, type ContentMatch, type ContentSearchParams } from "@/api/generated";
 import { useEditorState } from "@/hooks/useEditorState";
 import { SearchIcon } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FileSymbolIcon } from "./file-icons";
 import SearchResultEditor from "./SearchResultEditor";
@@ -75,8 +63,25 @@ export default function ContentSearchDialog({
 
   // Persist filters to cache whenever they change
   useEffect(() => {
-    filterCache.set(featureId, { query, caseSensitive, wholeWord, isRegex, respectGitignore, includePattern, excludePattern });
-  }, [featureId, query, caseSensitive, wholeWord, isRegex, respectGitignore, includePattern, excludePattern]);
+    filterCache.set(featureId, {
+      query,
+      caseSensitive,
+      wholeWord,
+      isRegex,
+      respectGitignore,
+      includePattern,
+      excludePattern,
+    });
+  }, [
+    featureId,
+    query,
+    caseSensitive,
+    wholeWord,
+    isRegex,
+    respectGitignore,
+    includePattern,
+    excludePattern,
+  ]);
 
   const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
 
@@ -90,7 +95,15 @@ export default function ContentSearchDialog({
       include_pattern: includePattern || undefined,
       exclude_pattern: excludePattern || undefined,
     }),
-    [debouncedQuery, caseSensitive, wholeWord, isRegex, respectGitignore, includePattern, excludePattern],
+    [
+      debouncedQuery,
+      caseSensitive,
+      wholeWord,
+      isRegex,
+      respectGitignore,
+      includePattern,
+      excludePattern,
+    ],
   );
 
   const { data, isLoading } = useContentSearch(projectId, featureId, searchParams, {
@@ -120,7 +133,10 @@ export default function ContentSearchDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent showCloseButton={false} className="sm:max-w-[900px] h-[80vh] !flex !flex-col gap-2 p-0 pt-3 overflow-hidden">
+      <DialogContent
+        showCloseButton={false}
+        className="sm:max-w-[900px] h-[80vh] !flex !flex-col gap-2 p-0 pt-3 overflow-hidden"
+      >
         <div className="flex items-center border-b border-border px-3 pb-2 gap-2">
           <SearchIcon className="size-4 shrink-0 opacity-50" />
           <Input
@@ -132,10 +148,30 @@ export default function ContentSearchDialog({
             className="flex-1"
           />
           <div className="flex items-center gap-1 shrink-0">
-            <ToggleButton active={caseSensitive} onToggle={setCaseSensitive} title="Case Sensitive" icon={<CaseSensitive className="w-4 h-4" />} />
-            <ToggleButton active={wholeWord} onToggle={setWholeWord} title="Whole Word" icon={<WholeWord className="w-4 h-4" />} />
-            <ToggleButton active={isRegex} onToggle={setIsRegex} title="Regex" icon={<Regex className="w-4 h-4" />} />
-            <ToggleButton active={respectGitignore} onToggle={setRespectGitignore} title="Only search git-tracked files" label="Git only" />
+            <ToggleButton
+              active={caseSensitive}
+              onToggle={setCaseSensitive}
+              title="Case Sensitive"
+              icon={<CaseSensitive className="w-4 h-4" />}
+            />
+            <ToggleButton
+              active={wholeWord}
+              onToggle={setWholeWord}
+              title="Whole Word"
+              icon={<WholeWord className="w-4 h-4" />}
+            />
+            <ToggleButton
+              active={isRegex}
+              onToggle={setIsRegex}
+              title="Regex"
+              icon={<Regex className="w-4 h-4" />}
+            />
+            <ToggleButton
+              active={respectGitignore}
+              onToggle={setRespectGitignore}
+              title="Only search git-tracked files"
+              label="Git only"
+            />
           </div>
         </div>
         <div className="flex items-center gap-2 px-3 border-b border-border pb-2">
@@ -164,16 +200,10 @@ export default function ContentSearchDialog({
             </div>
           )}
           {!isLoading && debouncedQuery.length > 0 && grouped.length === 0 && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              No results found.
-            </div>
+            <div className="py-8 text-center text-sm text-muted-foreground">No results found.</div>
           )}
           {grouped.map((group) => (
-            <FileGroup
-              key={group.path}
-              group={group}
-              onSelect={handleSelect}
-            />
+            <FileGroup key={group.path} group={group} onSelect={handleSelect} />
           ))}
           {data?.truncated && (
             <div className="py-2 text-center text-xs text-muted-foreground">
@@ -220,7 +250,6 @@ function ToggleButton({
   );
 }
 
-
 // ---------------------------------------------------------------------------
 // Results rendering
 // ---------------------------------------------------------------------------
@@ -262,9 +291,7 @@ function FileGroup({
       >
         <FileSymbolIcon fileName={fileName} className="shrink-0 flex items-center" />
         <span className="truncate">{group.path}</span>
-        <span className="ml-auto text-muted-foreground shrink-0">
-          {group.matches.length}
-        </span>
+        <span className="ml-auto text-muted-foreground shrink-0">{group.matches.length}</span>
       </button>
       <div className="mt-1">
         <SearchResultEditor
@@ -276,4 +303,3 @@ function FileGroup({
     </div>
   );
 }
-

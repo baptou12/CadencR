@@ -21,18 +21,27 @@ export function thinkingEffortSettingKey(agentType: AgentTypeSetting): string {
   return `thinking_effort_${agentType}`;
 }
 
-export function parseThinkingEffort(value: string | null | undefined): ThinkingEffortLevel | undefined {
+export function parseThinkingEffort(
+  value: string | null | undefined,
+): ThinkingEffortLevel | undefined {
   return isThinkingEffortLevel(value) ? value : undefined;
 }
 
-export function supportedThinkingEffortLevels(model: Pick<RuntimeModelOption, "supports_effort" | "supported_effort_levels"> | null | undefined): ThinkingEffortLevel[] {
+export function supportedThinkingEffortLevels(
+  model: Pick<RuntimeModelOption, "supports_effort" | "supported_effort_levels"> | null | undefined,
+): ThinkingEffortLevel[] {
   if (!model?.supports_effort) return [];
   return [...(model.supported_effort_levels ?? [])]
     .filter(isThinkingEffortLevel)
-    .sort((left, right) => THINKING_EFFORT_LEVELS.indexOf(left) - THINKING_EFFORT_LEVELS.indexOf(right));
+    .sort(
+      (left, right) => THINKING_EFFORT_LEVELS.indexOf(left) - THINKING_EFFORT_LEVELS.indexOf(right),
+    );
 }
 
-export function isThinkingEffortSupported(levels: readonly ThinkingEffortLevel[], effort: string | null | undefined): effort is ThinkingEffortLevel {
+export function isThinkingEffortSupported(
+  levels: readonly ThinkingEffortLevel[],
+  effort: string | null | undefined,
+): effort is ThinkingEffortLevel {
   return typeof effort === "string" && levels.includes(effort as ThinkingEffortLevel);
 }
 

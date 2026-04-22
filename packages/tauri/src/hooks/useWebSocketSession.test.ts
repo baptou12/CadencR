@@ -90,7 +90,8 @@ describe("useWebSocketSession", () => {
   it("connects to WebSocket on mount", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
     expect(result.current.isConnected).toBe(true);
@@ -99,7 +100,8 @@ describe("useWebSocketSession", () => {
   it("currentModelId defaults to FALLBACK_MODEL_ID before catalog loads", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(result.current.currentModelId).toBe(FALLBACK_MODEL_ID);
   });
@@ -111,7 +113,8 @@ describe("useWebSocketSession", () => {
 
     renderHook(() => useWebSocketSession("persisted-unbounded", 42));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(mockedQuery).toHaveBeenCalled();
@@ -122,7 +125,8 @@ describe("useWebSocketSession", () => {
   it("initSession sends correct envelope", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       result.current.initSession({ model: "opus" });
@@ -137,7 +141,8 @@ describe("useWebSocketSession", () => {
   it("sendPrompt sends correct envelope once session is initialized", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -159,7 +164,8 @@ describe("useWebSocketSession", () => {
   it("incoming session.message updates blocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     // Send a full assistant message (fallback path when no stream events)
     act(() => {
@@ -167,19 +173,21 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant",
-            uuid: "u1",
-            session_id: "s1",
-            parent_tool_use_id: null,
-            error: null,
-            message: {
-              id: "msg1",
-              model: "claude-opus-4-6",
-              content: [{ type: "text", text: "hi" }],
-              stop_reason: null,
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-opus-4-6",
+                content: [{ type: "text", text: "hi" }],
+                stop_reason: null,
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -191,7 +199,8 @@ describe("useWebSocketSession", () => {
   it("incoming permission.request sets pendingPermission", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -219,7 +228,8 @@ describe("useWebSocketSession", () => {
   it("permission.request stores request_id in pendingRequestId", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -234,7 +244,8 @@ describe("useWebSocketSession", () => {
   it("respondToPermission sends request_id in envelope and clears state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     // Simulate server assigning session
     act(() => {
@@ -266,7 +277,8 @@ describe("useWebSocketSession", () => {
   it("deny permission response returns session to idle", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -294,7 +306,8 @@ describe("useWebSocketSession", () => {
   it("session.error sets error status", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -309,7 +322,8 @@ describe("useWebSocketSession", () => {
   it("session.ended sets completed status", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     act(() => {
       getWs().simulateMessage({
@@ -324,7 +338,8 @@ describe("useWebSocketSession", () => {
   it("message events with no recognized mutations do not re-enter running after end", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     act(() => {
@@ -366,7 +381,8 @@ describe("useWebSocketSession", () => {
   it("late tool updates after end do not re-enter running", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     act(() => {
@@ -449,7 +465,8 @@ describe("useWebSocketSession", () => {
   it("multi-turn conversation accumulates blocks across turns", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -503,7 +520,11 @@ describe("useWebSocketSession", () => {
               uuid: "se3",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi there" } },
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "text_delta", text: "Hi there" },
+              },
             },
           ],
         },
@@ -560,7 +581,11 @@ describe("useWebSocketSession", () => {
               uuid: "se6",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "You're welcome" } },
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "text_delta", text: "You're welcome" },
+              },
             },
           ],
         },
@@ -601,7 +626,8 @@ describe("useWebSocketSession", () => {
   it("ExitPlanMode in stream does not trigger plan approval without permission.request", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -654,7 +680,8 @@ describe("useWebSocketSession", () => {
   it("turn_complete without ExitPlanMode goes terminal normally", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -699,7 +726,8 @@ describe("useWebSocketSession", () => {
   it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -751,7 +779,8 @@ describe("useWebSocketSession", () => {
   it("requestPlanChanges clears approval, echoes feedback, sends prompt", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -802,7 +831,8 @@ describe("useWebSocketSession", () => {
   it("setPermissionMode sends mode.set envelope and updates state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -827,7 +857,8 @@ describe("useWebSocketSession", () => {
   it("mode.changed envelope updates permissionMode state", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     act(() => {
@@ -844,7 +875,8 @@ describe("useWebSocketSession", () => {
   it("assistant message backfills ExitPlanMode tool args", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -894,12 +926,14 @@ describe("useWebSocketSession", () => {
               message: {
                 id: "msg1",
                 model: "claude-opus-4-6",
-                content: [{
-                  type: "tool_use",
-                  id: "toolu_1",
-                  name: "ExitPlanMode",
-                  input: { plan: "# My Plan\nDo stuff", planFilePath: "/tmp/plan.md" },
-                }],
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_1",
+                    name: "ExitPlanMode",
+                    input: { plan: "# My Plan\nDo stuff", planFilePath: "/tmp/plan.md" },
+                  },
+                ],
                 stop_reason: null,
               },
             },
@@ -924,7 +958,8 @@ describe("useWebSocketSession", () => {
   it("subagent tool calls are nested into parent Agent block's childBlocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -936,13 +971,20 @@ describe("useWebSocketSession", () => {
         payload: {
           blocks: [
             {
-              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: { type: "message_start", message: { model: "claude-opus-4-6" } },
             },
             {
-              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: {
-                type: "content_block_start", index: 0,
+                type: "content_block_start",
+                index: 0,
                 content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
               },
             },
@@ -962,14 +1004,23 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: "toolu_agent", error: null,
-            message: {
-              id: "msg2", model: "claude-haiku-4-5-20251001", stop_reason: null,
-              content: [{ type: "tool_use", id: "toolu_bash1", name: "Bash", input: { command: "ls" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              error: null,
+              message: {
+                id: "msg2",
+                model: "claude-haiku-4-5-20251001",
+                stop_reason: null,
+                content: [
+                  { type: "tool_use", id: "toolu_bash1", name: "Bash", input: { command: "ls" } },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -985,7 +1036,8 @@ describe("useWebSocketSession", () => {
   it("subagent childBlocks only shows tool_call types (text/thinking filtered by UI)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -995,13 +1047,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1012,17 +1070,24 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: "toolu_agent", error: null,
-            message: {
-              id: "msg2", model: "claude-haiku-4-5-20251001", stop_reason: null,
-              content: [
-                { type: "text", text: "Let me search" },
-                { type: "tool_use", id: "toolu_grep", name: "Grep", input: { pattern: "foo" } },
-              ],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              error: null,
+              message: {
+                id: "msg2",
+                model: "claude-haiku-4-5-20251001",
+                stop_reason: null,
+                content: [
+                  { type: "text", text: "Let me search" },
+                  { type: "tool_use", id: "toolu_grep", name: "Grep", input: { pattern: "foo" } },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1038,7 +1103,8 @@ describe("useWebSocketSession", () => {
   it("multiple subagent tool calls accumulate in childBlocks without duplicates", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1048,13 +1114,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1066,14 +1138,28 @@ describe("useWebSocketSession", () => {
           domain: "session",
           action: "message",
           payload: {
-            blocks: [{
-              type: "assistant", uuid: `a${i}`, session_id: "s1",
-              parent_tool_use_id: "toolu_agent", error: null,
-              message: {
-                id: `msg${i}`, model: "claude-haiku-4-5-20251001", stop_reason: null,
-                content: [{ type: "tool_use", id: `toolu_${i}`, name: "Bash", input: { command: `cmd${i}` } }],
+            blocks: [
+              {
+                type: "assistant",
+                uuid: `a${i}`,
+                session_id: "s1",
+                parent_tool_use_id: "toolu_agent",
+                error: null,
+                message: {
+                  id: `msg${i}`,
+                  model: "claude-haiku-4-5-20251001",
+                  stop_reason: null,
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: `toolu_${i}`,
+                      name: "Bash",
+                      input: { command: `cmd${i}` },
+                    },
+                  ],
+                },
               },
-            }],
+            ],
           },
         });
       });
@@ -1096,7 +1182,8 @@ describe("useWebSocketSession", () => {
   it("concurrent child sessions with the same content index do not overwrite each other", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1105,28 +1192,56 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a-parent-1", session_id: "root",
-            parent_tool_use_id: null, error: null,
-            message: {
-              id: "msg-parent-1", model: "claude-opus-4-6", stop_reason: null,
-              content: [{ type: "tool_use", id: "task_a", name: "Task", input: { description: "Task A" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a-parent-1",
+              session_id: "root",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg-parent-1",
+                model: "claude-opus-4-6",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "task_a",
+                    name: "Task",
+                    input: { description: "Task A" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
       ws.simulateMessage({
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a-parent-2", session_id: "root",
-            parent_tool_use_id: null, error: null,
-            message: {
-              id: "msg-parent-2", model: "claude-opus-4-6", stop_reason: null,
-              content: [{ type: "tool_use", id: "task_b", name: "Task", input: { description: "Task B" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a-parent-2",
+              session_id: "root",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg-parent-2",
+                model: "claude-opus-4-6",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "task_b",
+                    name: "Task",
+                    input: { description: "Task B" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1138,28 +1253,62 @@ describe("useWebSocketSession", () => {
         payload: {
           blocks: [
             {
-              type: "stream_event", uuid: "child-a-start", session_id: "child-a", parent_tool_use_id: "task_a",
+              type: "stream_event",
+              uuid: "child-a-start",
+              session_id: "child-a",
+              parent_tool_use_id: "task_a",
               event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
             },
             {
-              type: "stream_event", uuid: "child-a-block", session_id: "child-a", parent_tool_use_id: "task_a",
-              event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "grep_a", name: "Grep" } },
+              type: "stream_event",
+              uuid: "child-a-block",
+              session_id: "child-a",
+              parent_tool_use_id: "task_a",
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "grep_a", name: "Grep" },
+              },
             },
             {
-              type: "stream_event", uuid: "child-b-start", session_id: "child-b", parent_tool_use_id: "task_b",
+              type: "stream_event",
+              uuid: "child-b-start",
+              session_id: "child-b",
+              parent_tool_use_id: "task_b",
               event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
             },
             {
-              type: "stream_event", uuid: "child-b-block", session_id: "child-b", parent_tool_use_id: "task_b",
-              event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "read_b", name: "Read" } },
+              type: "stream_event",
+              uuid: "child-b-block",
+              session_id: "child-b",
+              parent_tool_use_id: "task_b",
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "read_b", name: "Read" },
+              },
             },
             {
-              type: "stream_event", uuid: "child-a-delta", session_id: "child-a", parent_tool_use_id: "task_a",
-              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"pattern":"parse"}' } },
+              type: "stream_event",
+              uuid: "child-a-delta",
+              session_id: "child-a",
+              parent_tool_use_id: "task_a",
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "input_json_delta", partial_json: '{"pattern":"parse"}' },
+              },
             },
             {
-              type: "stream_event", uuid: "child-b-delta", session_id: "child-b", parent_tool_use_id: "task_b",
-              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/file.ts"}' } },
+              type: "stream_event",
+              uuid: "child-b-delta",
+              session_id: "child-b",
+              parent_tool_use_id: "task_b",
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/file.ts"}' },
+              },
             },
           ],
         },
@@ -1181,7 +1330,8 @@ describe("useWebSocketSession", () => {
   it("subagent assistant messages skip backfill path (different parentToolUseId)", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1193,27 +1343,53 @@ describe("useWebSocketSession", () => {
         payload: {
           blocks: [
             {
-              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: { type: "message_start", message: { model: "claude-opus-4-6" } },
             },
             {
-              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: {
-                type: "content_block_start", index: 0,
+                type: "content_block_start",
+                index: 0,
                 content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
               },
             },
             {
-              type: "stream_event", uuid: "se3", session_id: "s1", parent_tool_use_id: null,
-              event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: '{"desc' } },
+              type: "stream_event",
+              uuid: "se3",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "input_json_delta", partial_json: '{"desc' },
+              },
             },
             // Backfill from parent's assistant message (same parent context)
             {
-              type: "assistant", uuid: "a0", session_id: "s1",
-              parent_tool_use_id: null, error: null,
+              type: "assistant",
+              uuid: "a0",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
               message: {
-                id: "msg0", model: "claude-opus-4-6", stop_reason: null,
-                content: [{ type: "tool_use", id: "toolu_agent", name: "Agent", input: { description: "explore" } }],
+                id: "msg0",
+                model: "claude-opus-4-6",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_agent",
+                    name: "Agent",
+                    input: { description: "explore" },
+                  },
+                ],
               },
             },
           ],
@@ -1228,14 +1404,28 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: "toolu_agent", error: null,
-            message: {
-              id: "msg1", model: "claude-haiku-4-5-20251001", stop_reason: null,
-              content: [{ type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "/tmp/a" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-haiku-4-5-20251001",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_read",
+                    name: "Read",
+                    input: { file_path: "/tmp/a" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1249,7 +1439,8 @@ describe("useWebSocketSession", () => {
   it("preserves parent task backfill after child message_start clears stream indexes", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1260,13 +1451,20 @@ describe("useWebSocketSession", () => {
         payload: {
           blocks: [
             {
-              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
             },
             {
-              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: {
-                type: "content_block_start", index: 0,
+                type: "content_block_start",
+                index: 0,
                 content_block: { type: "tool_use", id: "task_1", name: "Task" },
               },
             },
@@ -1280,10 +1478,15 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se3", session_id: "s1", parent_tool_use_id: "task_1",
-            event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
-          }],
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se3",
+              session_id: "s1",
+              parent_tool_use_id: "task_1",
+              event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
+            },
+          ],
         },
       });
     });
@@ -1293,16 +1496,31 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1", parent_tool_use_id: null, error: null,
-            message: {
-              id: "msg-parent", model: "openai/gpt-5.3-codex", stop_reason: null,
-              content: [{
-                type: "tool_use", id: "task_1", name: "Task",
-                input: { description: "Find parsing", output: "<task_result>done</task_result>" },
-              }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg-parent",
+                model: "openai/gpt-5.3-codex",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "task_1",
+                    name: "Task",
+                    input: {
+                      description: "Find parsing",
+                      output: "<task_result>done</task_result>",
+                    },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1315,7 +1533,8 @@ describe("useWebSocketSession", () => {
   it("taskComplete is set when parentToolUseId changes", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1327,13 +1546,20 @@ describe("useWebSocketSession", () => {
         payload: {
           blocks: [
             {
-              type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: { type: "message_start", message: { model: "claude-opus-4-6" } },
             },
             {
-              type: "stream_event", uuid: "se2", session_id: "s1", parent_tool_use_id: null,
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: null,
               event: {
-                type: "content_block_start", index: 0,
+                type: "content_block_start",
+                index: 0,
                 content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
               },
             },
@@ -1348,11 +1574,15 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se3", session_id: "s1",
-            parent_tool_use_id: "toolu_agent",
-            event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
-          }],
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se3",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+            },
+          ],
         },
       });
     });
@@ -1363,11 +1593,15 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se4", session_id: "s1",
-            parent_tool_use_id: null,
-            event: { type: "message_start", message: { model: "claude-opus-4-6" } },
-          }],
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se4",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+            },
+          ],
         },
       });
     });
@@ -1379,7 +1613,8 @@ describe("useWebSocketSession", () => {
   it("taskComplete is set on turn end if subagent was active", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1389,13 +1624,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1406,11 +1647,15 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se2", session_id: "s1",
-            parent_tool_use_id: "toolu_agent",
-            event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
-          }],
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se2",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+            },
+          ],
         },
       });
     });
@@ -1433,7 +1678,8 @@ describe("useWebSocketSession", () => {
   it("Task tool_call blocks also get childBlocks initialized", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1442,14 +1688,28 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: null, error: null,
-            message: {
-              id: "msg1", model: "claude-opus-4-6", stop_reason: null,
-              content: [{ type: "tool_use", id: "toolu_task", name: "Task", input: { description: "do thing" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-opus-4-6",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_task",
+                    name: "Task",
+                    input: { description: "do thing" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1466,7 +1726,8 @@ describe("useWebSocketSession", () => {
   it("user message with tool_result creates tool_result block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1476,13 +1737,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_bash1", name: "Bash" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_bash1", name: "Bash" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1493,18 +1760,25 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user",
-            uuid: "u1",
-            session_id: "s1",
-            parent_tool_use_id: null,
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_bash1", type: "tool_result", content: "hello world", is_error: false },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    tool_use_id: "toolu_bash1",
+                    type: "tool_result",
+                    content: "hello world",
+                    is_error: false,
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1522,7 +1796,8 @@ describe("useWebSocketSession", () => {
   it("user message with is_error=true sets isError on result block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1532,13 +1807,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_bash2", name: "Bash" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_bash2", name: "Bash" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1548,15 +1829,25 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_bash2", type: "tool_result", content: "command failed", is_error: true },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    tool_use_id: "toolu_bash2",
+                    type: "tool_result",
+                    content: "command failed",
+                    is_error: true,
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1569,7 +1860,8 @@ describe("useWebSocketSession", () => {
   it("user message without matching tool_call uses 'unknown' sourceToolName", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1578,15 +1870,25 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_unknown", type: "tool_result", content: "output", is_error: false },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    tool_use_id: "toolu_unknown",
+                    type: "tool_result",
+                    content: "output",
+                    is_error: false,
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1598,7 +1900,8 @@ describe("useWebSocketSession", () => {
   it("user message with non-string content JSON-stringifies it", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1607,15 +1910,25 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_x", type: "tool_result", content: [{ type: "text", text: "hi" }], is_error: false },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    tool_use_id: "toolu_x",
+                    type: "tool_result",
+                    content: [{ type: "text", text: "hi" }],
+                    is_error: false,
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1626,7 +1939,8 @@ describe("useWebSocketSession", () => {
   it("user message with no content array is ignored", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1635,10 +1949,15 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
-            message: { role: "user" },
-          }],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: { role: "user" },
+            },
+          ],
         },
       });
     });
@@ -1649,7 +1968,8 @@ describe("useWebSocketSession", () => {
   it("user message tool_result nests under parent Agent block", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1659,13 +1979,19 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "stream_event", uuid: "se1", session_id: "s1", parent_tool_use_id: null,
-            event: {
-              type: "content_block_start", index: 0,
-              content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+          blocks: [
+            {
+              type: "stream_event",
+              uuid: "se1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1676,14 +2002,28 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: "toolu_agent", error: null,
-            message: {
-              id: "msg1", model: "claude-haiku-4-5-20251001", stop_reason: null,
-              content: [{ type: "tool_use", id: "toolu_bash_sub", name: "Bash", input: { command: "ls" } }],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-haiku-4-5-20251001",
+                stop_reason: null,
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "toolu_bash_sub",
+                    name: "Bash",
+                    input: { command: "ls" },
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1694,16 +2034,25 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1",
-            parent_tool_use_id: "toolu_agent",
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_bash_sub", type: "tool_result", content: "file1.txt\nfile2.txt", is_error: false },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: "toolu_agent",
+              message: {
+                role: "user",
+                content: [
+                  {
+                    tool_use_id: "toolu_bash_sub",
+                    type: "tool_result",
+                    content: "file1.txt\nfile2.txt",
+                    is_error: false,
+                  },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1723,7 +2072,8 @@ describe("useWebSocketSession", () => {
   it("user message with multiple tool_results creates multiple blocks", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
 
@@ -1733,17 +2083,24 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "assistant", uuid: "a1", session_id: "s1",
-            parent_tool_use_id: null, error: null,
-            message: {
-              id: "msg1", model: "claude-opus-4-6", stop_reason: null,
-              content: [
-                { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "echo a" } },
-                { type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "echo b" } },
-              ],
+          blocks: [
+            {
+              type: "assistant",
+              uuid: "a1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              error: null,
+              message: {
+                id: "msg1",
+                model: "claude-opus-4-6",
+                stop_reason: null,
+                content: [
+                  { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "echo a" } },
+                  { type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "echo b" } },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1754,16 +2111,21 @@ describe("useWebSocketSession", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{
-            type: "user", uuid: "u1", session_id: "s1", parent_tool_use_id: null,
-            message: {
-              role: "user",
-              content: [
-                { tool_use_id: "toolu_1", type: "tool_result", content: "a", is_error: false },
-                { tool_use_id: "toolu_2", type: "tool_result", content: "b", is_error: false },
-              ],
+          blocks: [
+            {
+              type: "user",
+              uuid: "u1",
+              session_id: "s1",
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  { tool_use_id: "toolu_1", type: "tool_result", content: "a", is_error: false },
+                  { tool_use_id: "toolu_2", type: "tool_result", content: "b", is_error: false },
+                ],
+              },
             },
-          }],
+          ],
         },
       });
     });
@@ -1796,7 +2158,8 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("test-id", 42));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     // Status should be reset to idle, not stuck on running
@@ -1823,7 +2186,8 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("test-id", 43));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(result.current.status).toBe("completed");
@@ -1854,7 +2218,8 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("hydrate-id", 99));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(result.current.contextUsage?.inputTokens).toBe(25_000);
@@ -1887,7 +2252,8 @@ describe("useWebSocketSession", () => {
 
     const { result } = renderHook(() => useWebSocketSession("hydrate-null-id", 100));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(result.current.contextUsage).toBeNull();
@@ -1901,7 +2267,8 @@ describe("useWebSocketSession", () => {
   it("unmount does NOT close WebSocket (connection is cached)", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
     act(() => {
@@ -1919,7 +2286,8 @@ describe("useWebSocketSession", () => {
   it("explicit destroy sends destroy and closes WebSocket", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     const ws = getWs();
     act(() => {
@@ -1942,7 +2310,8 @@ describe("useWebSocketSession", () => {
   it("reuses existing WebSocket connection across unmount/remount", async () => {
     const { unmount } = renderHook(() => useWebSocketSession("reuse-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
 
@@ -1950,7 +2319,8 @@ describe("useWebSocketSession", () => {
     unmount();
     const { result } = renderHook(() => useWebSocketSession("reuse-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(1);
     expect(result.current.isConnected).toBe(true);
@@ -1960,7 +2330,8 @@ describe("useWebSocketSession", () => {
     const { result: r1 } = renderHook(() => useWebSocketSession("session-a"));
     const { result: r2 } = renderHook(() => useWebSocketSession("session-b"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
     expect(MockWebSocket.instances.length).toBe(2);
     expect(r1.current.isConnected).toBe(true);
@@ -1970,7 +2341,8 @@ describe("useWebSocketSession", () => {
   it("preserves blocks across unmount/remount", async () => {
     const { result, unmount } = renderHook(() => useWebSocketSession("persist-id"));
     await act(async () => {
-      await Promise.resolve(); await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
 
     // Simulate a message that adds a block

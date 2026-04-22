@@ -1,7 +1,4 @@
-import {
-  extractApplyPatchPreview,
-  isApplyPatchToolName,
-} from "@/lib/apply-patch";
+import { extractApplyPatchPreview, isApplyPatchToolName } from "@/lib/apply-patch";
 import { stringArg } from "@/lib/tool-args";
 
 export interface InlineDiffPreview {
@@ -10,16 +7,9 @@ export interface InlineDiffPreview {
   newContent: string;
 }
 
-const FILE_CHANGE_TOOLS = new Set([
-  "Write",
-  "Edit",
-  "NotebookEdit",
-  "ApplyPatch",
-]);
+const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "ApplyPatch"]);
 
-function parseToolArgsObject(
-  toolArgs?: string,
-): Record<string, unknown> | null {
+function parseToolArgsObject(toolArgs?: string): Record<string, unknown> | null {
   if (!toolArgs) return null;
   try {
     return JSON.parse(toolArgs) as Record<string, unknown>;
@@ -79,9 +69,7 @@ export function extractToolStatus(toolArgs?: string): string | undefined {
   return typeof status === "string" ? status.toLowerCase() : undefined;
 }
 
-function extractStructuredTaskOutput(
-  output: Record<string, unknown>,
-): string | undefined {
+function extractStructuredTaskOutput(output: Record<string, unknown>): string | undefined {
   if (typeof output.output === "string") return output.output;
   if (typeof output.stdout === "string") return output.stdout;
   if (typeof output.text === "string") return output.text;

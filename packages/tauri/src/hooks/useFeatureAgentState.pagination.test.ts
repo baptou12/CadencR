@@ -85,7 +85,10 @@ describe("useFeatureAgentState pagination", () => {
       await result.current.loadOlderMessages(1);
     });
 
-    expect(result.current.sessions[0].blocks.map((block) => block.content)).toEqual(["older", "latest"]);
+    expect(result.current.sessions[0].blocks.map((block) => block.content)).toEqual([
+      "older",
+      "latest",
+    ]);
     expect(result.current.sessions[0].hasMore).toBe(false);
     expect(result.current.sessions[0].oldestMessageId).toBe(1);
   });

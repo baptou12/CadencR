@@ -30,9 +30,7 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
     if (!q) return commands.slice(0, MAX_RESULTS);
     return commands
       .filter(
-        (cmd) =>
-          cmd.name.toLowerCase().includes(q) ||
-          cmd.description.toLowerCase().includes(q),
+        (cmd) => cmd.name.toLowerCase().includes(q) || cmd.description.toLowerCase().includes(q),
       )
       .slice(0, MAX_RESULTS);
   }, [state.isOpen, state.query, commands]);
@@ -104,8 +102,7 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
         e.preventDefault();
         setState((s) => ({
           ...s,
-          selectedIndex:
-            (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
+          selectedIndex: (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
         }));
         return true;
       }

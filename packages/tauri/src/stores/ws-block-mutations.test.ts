@@ -9,7 +9,9 @@ describe("parseTodosFromBlocks", () => {
     const blocks: AgentBlockData[] = [
       { id: "1", type: "text", content: "hello" },
       {
-        id: "2", type: "tool_call", content: JSON.stringify({
+        id: "2",
+        type: "tool_call",
+        content: JSON.stringify({
           todos: [
             { content: "Fix bug", status: "in_progress", activeForm: "Fixing bug" },
             { content: "Write tests", status: "pending", activeForm: "Writing tests" },
@@ -32,22 +34,28 @@ describe("parseTodosFromBlocks", () => {
   });
 
   it("returns undefined when no TodoWrite block exists", () => {
-    const blocks: AgentBlockData[] = [
-      { id: "1", type: "text", content: "hello" },
-    ];
+    const blocks: AgentBlockData[] = [{ id: "1", type: "text", content: "hello" }];
     expect(parseTodosFromBlocks(blocks)).toBeUndefined();
   });
 
   it("extracts todos from child blocks", () => {
     const blocks: AgentBlockData[] = [
       {
-        id: "agent-1", type: "tool_call", content: "", toolName: "Agent",
+        id: "agent-1",
+        type: "tool_call",
+        content: "",
+        toolName: "Agent",
         childBlocks: [
           {
-            id: "child-1", type: "tool_call",
-            content: JSON.stringify({ todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }] }),
+            id: "child-1",
+            type: "tool_call",
+            content: JSON.stringify({
+              todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }],
+            }),
             toolName: "TodoWrite",
-            toolArgs: JSON.stringify({ todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }] }),
+            toolArgs: JSON.stringify({
+              todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }],
+            }),
           },
         ],
       },
@@ -58,7 +66,13 @@ describe("parseTodosFromBlocks", () => {
 
   it("returns undefined for malformed JSON", () => {
     const blocks: AgentBlockData[] = [
-      { id: "1", type: "tool_call", content: "{bad json", toolName: "TodoWrite", toolArgs: "{bad json" },
+      {
+        id: "1",
+        type: "tool_call",
+        content: "{bad json",
+        toolName: "TodoWrite",
+        toolArgs: "{bad json",
+      },
     ];
     expect(parseTodosFromBlocks(blocks)).toBeUndefined();
   });
@@ -69,9 +83,7 @@ describe("buildMessagePatch", () => {
     const blocks: AgentBlockData[] = [
       { id: "b1", type: "tool_call", content: "", toolName: "Write" },
     ];
-    const mutations: BlockMutation[] = [
-      { action: "append", block: blocks[0] },
-    ];
+    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
     const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
     expect(patch.hasFileChanges).toBe(true);
   });
@@ -80,9 +92,7 @@ describe("buildMessagePatch", () => {
     const blocks: AgentBlockData[] = [
       { id: "b1", type: "tool_call", content: "", toolName: "apply_patch" },
     ];
-    const mutations: BlockMutation[] = [
-      { action: "append", block: blocks[0] },
-    ];
+    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
     const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
     expect(patch.hasFileChanges).toBe(true);
   });
@@ -91,9 +101,7 @@ describe("buildMessagePatch", () => {
     const blocks: AgentBlockData[] = [
       { id: "b1", type: "tool_call", content: "", toolName: "Read" },
     ];
-    const mutations: BlockMutation[] = [
-      { action: "append", block: blocks[0] },
-    ];
+    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
     const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
     expect(patch.hasFileChanges).toBeUndefined();
   });
@@ -110,11 +118,15 @@ describe("buildMessagePatch", () => {
       todos: [{ content: "Do X", status: "pending", activeForm: "Doing X" }],
     });
     const blocks: AgentBlockData[] = [
-      { id: "t1", type: "tool_call", content: todoContent, toolName: "TodoWrite", toolArgs: todoContent },
+      {
+        id: "t1",
+        type: "tool_call",
+        content: todoContent,
+        toolName: "TodoWrite",
+        toolArgs: todoContent,
+      },
     ];
-    const mutations: BlockMutation[] = [
-      { action: "append", block: blocks[0] },
-    ];
+    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
     const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
     expect(patch.todos).toEqual([{ content: "Do X", status: "pending", activeForm: "Doing X" }]);
   });
@@ -138,7 +150,12 @@ describe("applyMutations", () => {
 
     const result = applyMutations(
       existing,
-      [{ action: "update", block: { id: "bash-1", type: "tool_call", content: latest, toolName: "Bash" } }],
+      [
+        {
+          action: "update",
+          block: { id: "bash-1", type: "tool_call", content: latest, toolName: "Bash" },
+        },
+      ],
       streamState,
     );
 
@@ -161,7 +178,17 @@ describe("applyMutations", () => {
 
     const result = applyMutations(
       existing,
-      [{ action: "replace", block: { id: "agent-1", type: "tool_call", content: '{"description": "Fi', toolName: "Agent" } }],
+      [
+        {
+          action: "replace",
+          block: {
+            id: "agent-1",
+            type: "tool_call",
+            content: '{"description": "Fi',
+            toolName: "Agent",
+          },
+        },
+      ],
       streamState,
     );
 

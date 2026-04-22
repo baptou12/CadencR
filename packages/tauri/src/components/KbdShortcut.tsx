@@ -24,10 +24,14 @@ const KEY_MAP_SM: Record<string, ReactNode> = {
 };
 
 const VARIANT_CLASSES = {
-  inline: "ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-2 py-1 text-[10px] font-medium leading-none text-current [&_svg]:!size-2.5",
-  "inline-sm": "ml-1 inline-flex items-center gap-px rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[8px] font-medium leading-none text-current [&_svg]:!size-2",
-  square: "mr-1.5 inline-flex size-6 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground",
-  modal: "inline-flex items-center justify-center rounded border border-border bg-muted px-2 py-1 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[24px]",
+  inline:
+    "ml-2 inline-flex items-center gap-0.5 rounded border border-current/20 bg-current/10 px-2 py-1 text-[10px] font-medium leading-none text-current [&_svg]:!size-2.5",
+  "inline-sm":
+    "ml-1 inline-flex items-center gap-px rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[8px] font-medium leading-none text-current [&_svg]:!size-2",
+  square:
+    "mr-1.5 inline-flex size-6 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground",
+  modal:
+    "inline-flex items-center justify-center rounded border border-border bg-muted px-2 py-1 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[24px]",
 } as const;
 
 type Variant = keyof typeof VARIANT_CLASSES;
@@ -46,7 +50,15 @@ export function KbdShortcut({ keys, size = "default", variant }: KbdShortcutProp
     <kbd className={VARIANT_CLASSES[resolvedVariant]}>
       {keys.map((k, i) => {
         const icon = map[k.toLowerCase()];
-        return icon ? <span key={i} className="flex items-center">{icon}</span> : <span key={i} className="leading-none">{k}</span>;
+        return icon ? (
+          <span key={i} className="flex items-center">
+            {icon}
+          </span>
+        ) : (
+          <span key={i} className="leading-none">
+            {k}
+          </span>
+        );
       })}
     </kbd>
   );

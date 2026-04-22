@@ -1,9 +1,9 @@
-import * as React from "react"
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 const baseClasses =
-  "w-full min-w-0 bg-transparent outline-none placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50"
+  "w-full min-w-0 bg-transparent outline-none placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50";
 
 const variantClasses = {
   default: cn(
@@ -13,7 +13,7 @@ const variantClasses = {
   ),
   /** Borderless transparent input matching the command palette style. */
   ghost: "text-sm",
-} as const
+} as const;
 
 function Input({
   className,
@@ -28,7 +28,7 @@ function Input({
       className={cn(baseClasses, variantClasses[variant], className)}
       {...props}
     />
-  )
+  );
 }
 
-export { Input }
+export { Input };

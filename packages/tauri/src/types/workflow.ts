@@ -194,9 +194,18 @@ export interface WorkflowState {
   skipItem: (itemId: number) => void;
   retryItem: (itemId: number) => void;
   retryWorktreeSetup: () => void;
-  respondToPermission: (slotKey: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
+  respondToPermission: (
+    slotKey: string,
+    requestId: string,
+    decision: PermissionDecisionValue,
+    feedback?: string,
+  ) => void;
   respondToQuestion: (slotKey: string, response: AgentQuestionAnswers) => void;
-  sendPromptToAgent: (slotKey: string, text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  sendPromptToAgent: (
+    slotKey: string,
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void;
   interruptItem: (slotKey: string) => void;
   resumeItem: (slotKey: string) => void;
   startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
@@ -209,8 +218,18 @@ export interface WorkflowState {
   deleteSession: (sessionDbId: number) => void;
   clearError: () => void;
 
-  populateAgentBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore?: boolean, oldestMessageId?: number | null) => void;
-  populateOlderBlocks: (slotKey: string, blocks: AgentBlockData[], hasMore: boolean, oldestMessageId: number | null) => void;
+  populateAgentBlocks: (
+    slotKey: string,
+    blocks: AgentBlockData[],
+    hasMore?: boolean,
+    oldestMessageId?: number | null,
+  ) => void;
+  populateOlderBlocks: (
+    slotKey: string,
+    blocks: AgentBlockData[],
+    hasMore: boolean,
+    oldestMessageId: number | null,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,14 +267,22 @@ export function parseAgentSlot(payload: Record<string, unknown>): AgentSlot {
 /** Convert a legacy numeric ID to an AgentSlot (for backward compat with old WS payloads). */
 function legacyIdToSlot(id: number): AgentSlot {
   switch (id) {
-    case -1: return { type: "plan" };
-    case -2: return { type: "prd" };
-    case -3: return { type: "session", id: 0 };
-    case -4: return { type: "refine" };
-    case -5: return { type: "review-fixer", id: 0 };
-    case -6: return { type: "risk", id: 0 };
-    case -7: return { type: "retro", id: 0 };
-    default: return { type: "queue_item", id };
+    case -1:
+      return { type: "plan" };
+    case -2:
+      return { type: "prd" };
+    case -3:
+      return { type: "session", id: 0 };
+    case -4:
+      return { type: "refine" };
+    case -5:
+      return { type: "review-fixer", id: 0 };
+    case -6:
+      return { type: "risk", id: 0 };
+    case -7:
+      return { type: "retro", id: 0 };
+    default:
+      return { type: "queue_item", id };
   }
 }
 

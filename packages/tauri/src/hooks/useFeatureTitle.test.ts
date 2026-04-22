@@ -23,19 +23,37 @@ interface StoreOpts {
 }
 
 function setupStores(opts: StoreOpts) {
-  mockWorkflowStore.mockImplementation((selector: (s: { featureId: number | null; featureTitle: string | null; isAutoNaming: boolean }) => unknown) =>
-    selector({
-      featureId: opts.workflowFeatureId ?? null,
-      featureTitle: opts.workflowTitle ?? null,
-      isAutoNaming: opts.workflowAutoNaming ?? false,
-    }),
+  mockWorkflowStore.mockImplementation(
+    (
+      selector: (s: {
+        featureId: number | null;
+        featureTitle: string | null;
+        isAutoNaming: boolean;
+      }) => unknown,
+    ) =>
+      selector({
+        featureId: opts.workflowFeatureId ?? null,
+        featureTitle: opts.workflowTitle ?? null,
+        isAutoNaming: opts.workflowAutoNaming ?? false,
+      }),
   );
-  mockWsSessionStore.mockImplementation((selector: (s: { sessions: Record<string, { featureTitle?: string | null; isAutoNaming?: boolean }> }) => unknown) =>
-    selector({
-      sessions: (opts.sessionTitle || opts.sessionAutoNaming)
-        ? { "ws-feature-42": { featureTitle: opts.sessionTitle ?? null, isAutoNaming: opts.sessionAutoNaming ?? false } }
-        : {},
-    }),
+  mockWsSessionStore.mockImplementation(
+    (
+      selector: (s: {
+        sessions: Record<string, { featureTitle?: string | null; isAutoNaming?: boolean }>;
+      }) => unknown,
+    ) =>
+      selector({
+        sessions:
+          opts.sessionTitle || opts.sessionAutoNaming
+            ? {
+                "ws-feature-42": {
+                  featureTitle: opts.sessionTitle ?? null,
+                  isAutoNaming: opts.sessionAutoNaming ?? false,
+                },
+              }
+            : {},
+      }),
   );
 }
 

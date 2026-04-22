@@ -13,7 +13,8 @@ export function getWorkspaceSettingsQueryKey() {
 export function useGetWorkspaceSettings() {
   return useQuery({
     queryKey: getWorkspaceSettingsQueryKey(),
-    queryFn: () => customInstance<SettingEntry[]>({ method: "GET", url: "/api/workspace/settings" }),
+    queryFn: () =>
+      customInstance<SettingEntry[]>({ method: "GET", url: "/api/workspace/settings" }),
   });
 }
 

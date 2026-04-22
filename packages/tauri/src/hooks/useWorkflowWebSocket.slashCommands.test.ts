@@ -148,10 +148,7 @@ describe("slash commands", () => {
         domain: "commands",
         action: "list",
         payload: {
-          commands: [
-            { name: "clear", description: "Clear conversation" },
-            { name: "compact" },
-          ],
+          commands: [{ name: "clear", description: "Clear conversation" }, { name: "compact" }],
         },
       }),
     });

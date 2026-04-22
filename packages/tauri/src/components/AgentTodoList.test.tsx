@@ -124,7 +124,7 @@ describe("AgentTodoList", () => {
       <div>
         <input aria-label="Prompt" />
         <AgentTodoList todos={[pendingTodo]} />
-      </div>
+      </div>,
     );
     const input = screen.getByRole("textbox", { name: "Prompt" });
     input.focus();
@@ -133,7 +133,7 @@ describe("AgentTodoList", () => {
       <div>
         <input aria-label="Prompt" />
         <AgentTodoList todos={[pendingTodo, completedTodo]} />
-      </div>
+      </div>,
     );
 
     expect(screen.getByText("Tasks")).toBeInTheDocument();

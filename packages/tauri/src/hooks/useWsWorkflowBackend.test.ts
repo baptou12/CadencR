@@ -47,7 +47,26 @@ describe("findSlotKey", () => {
   it("finds slot key from agents by sessionId", () => {
     const entry = makeEntry({ sessionDbId: 100 });
     const agents = new Map<string, AgentSessionState>([
-      ["qi:5", { sessionId: 100, blocks: [], streamingState: {} as never, status: "running", pendingPermission: null, agentType: "execute", pendingQuestions: [], pendingQuestionToolInput: {}, pendingQuestionRequestId: "", historyLoaded: false, runtimeSessionId: null, inputTokens: 0, outputTokens: 0, contextWindow: 0, hasFileChanges: false }],
+      [
+        "qi:5",
+        {
+          sessionId: 100,
+          blocks: [],
+          streamingState: {} as never,
+          status: "running",
+          pendingPermission: null,
+          agentType: "execute",
+          pendingQuestions: [],
+          pendingQuestionToolInput: {},
+          pendingQuestionRequestId: "",
+          historyLoaded: false,
+          runtimeSessionId: null,
+          inputTokens: 0,
+          outputTokens: 0,
+          contextWindow: 0,
+          hasFileChanges: false,
+        },
+      ],
     ]);
     expect(findSlotKey(entry, [], agents)).toBe("qi:5");
   });
@@ -69,7 +88,11 @@ function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionSta
     sessionId: 1,
     agentType: "execute",
     blocks: [],
-    streamingState: { activeTextIndex: null, activeThinkingIndex: null, toolCalls: new Map() } as never,
+    streamingState: {
+      activeTextIndex: null,
+      activeThinkingIndex: null,
+      toolCalls: new Map(),
+    } as never,
     status: "running",
     pendingPermission: null,
     pendingQuestions: [],
@@ -133,7 +156,17 @@ describe("buildSessionEntries", () => {
 
   it("includes running queue item with matching agent in sessions", () => {
     const queue = [
-      { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Phase 1", order_index: 0, group_index: 0, agent_session_id: 88, result: null },
+      {
+        id: 10,
+        status: "running" as const,
+        item_type: "execute",
+        phase_id: 1,
+        phase_title: "Phase 1",
+        order_index: 0,
+        group_index: 0,
+        agent_session_id: 88,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 88, status: "running" })],
@@ -148,7 +181,17 @@ describe("buildSessionEntries", () => {
 
   it("queue_update before item_started: agent appears in sessions after both arrive", () => {
     const queue = [
-      { id: 10, status: "running" as const, item_type: "execute", phase_id: 1, phase_title: "Setup", order_index: 0, group_index: 0, agent_session_id: 42, result: null },
+      {
+        id: 10,
+        status: "running" as const,
+        item_type: "execute",
+        phase_id: 1,
+        phase_title: "Setup",
+        order_index: 0,
+        group_index: 0,
+        agent_session_id: 42,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 42, status: "running" })],
@@ -162,7 +205,17 @@ describe("buildSessionEntries", () => {
 
   it("passes hasFileChanges from agentState to session entry via queue item", () => {
     const queue = [
-      { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+      {
+        id: 10,
+        status: "completed" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 88,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 88, status: "completed", hasFileChanges: true })],
@@ -175,7 +228,17 @@ describe("buildSessionEntries", () => {
 
   it("defaults hasFileChanges to false when agentState has no file changes", () => {
     const queue = [
-      { id: 11, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 89, result: null },
+      {
+        id: 11,
+        status: "completed" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 89,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:11", makeAgentState({ sessionId: 89, status: "completed", hasFileChanges: false })],
@@ -187,7 +250,17 @@ describe("buildSessionEntries", () => {
 
   it("defaults hasFileChanges to false when no agentState exists for queue item", () => {
     const queue = [
-      { id: 12, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 90, result: null },
+      {
+        id: 12,
+        status: "completed" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 90,
+        result: null,
+      },
     ];
     const { sessions } = buildSessionEntries(queue, new Map(), "building");
 
@@ -197,7 +270,17 @@ describe("buildSessionEntries", () => {
 
   it("sessions with paused/running status and empty blocks indicate history is needed", () => {
     const queue = [
-      { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+      {
+        id: 10,
+        status: "paused" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 88,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 88, status: "paused", blocks: [] })],
@@ -212,14 +295,27 @@ describe("buildSessionEntries", () => {
 
   it("sessions with blocks loaded do not indicate history is needed", () => {
     const queue = [
-      { id: 10, status: "paused" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+      {
+        id: 10,
+        status: "paused" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 88,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
-      ["qi:10", makeAgentState({
-        sessionId: 88,
-        status: "paused",
-        blocks: [{ id: "1", type: "text", content: "hello" }] as never[],
-      })],
+      [
+        "qi:10",
+        makeAgentState({
+          sessionId: 88,
+          status: "paused",
+          blocks: [{ id: "1", type: "text", content: "hello" }] as never[],
+        }),
+      ],
     ]);
     const { sessions } = buildSessionEntries(queue, agents, "paused");
 
@@ -231,7 +327,17 @@ describe("buildSessionEntries", () => {
 
   it("completed sessions with empty blocks do not indicate history is needed", () => {
     const queue = [
-      { id: 10, status: "completed" as const, item_type: "execute", phase_id: null, phase_title: null, order_index: 0, group_index: null, agent_session_id: 88, result: null },
+      {
+        id: 10,
+        status: "completed" as const,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: 88,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 88, status: "completed", blocks: [] })],
@@ -253,8 +359,8 @@ describe("buildSessionEntries", () => {
     const { sessions } = buildSessionEntries([], agents, "building");
 
     expect(sessions).toHaveLength(3);
-    expect(sessions.map(s => s.agentType)).toEqual(["session", "session", "risk"]);
-    expect(sessions.map(s => s.sessionDbId)).toEqual([50, 51, 52]);
+    expect(sessions.map((s) => s.agentType)).toEqual(["session", "session", "risk"]);
+    expect(sessions.map((s) => s.sessionDbId)).toEqual([50, 51, 52]);
   });
 
   it("orders plan and prd sessions by sessionId (creation order), not hardcoded order", () => {
@@ -283,8 +389,28 @@ describe("buildSessionEntries", () => {
 
   it("passes custom workflow phase slugs as agentType without mapping to execute", () => {
     const queue = [
-      { id: 10, status: "running" as const, item_type: "specify", phase_id: 1, phase_title: "Specify", order_index: 0, group_index: 0, agent_session_id: 99, result: null },
-      { id: 11, status: "blocked" as const, item_type: "analyze", phase_id: 2, phase_title: "Analyze", order_index: 1, group_index: 0, agent_session_id: null, result: null },
+      {
+        id: 10,
+        status: "running" as const,
+        item_type: "specify",
+        phase_id: 1,
+        phase_title: "Specify",
+        order_index: 0,
+        group_index: 0,
+        agent_session_id: 99,
+        result: null,
+      },
+      {
+        id: 11,
+        status: "blocked" as const,
+        item_type: "analyze",
+        phase_id: 2,
+        phase_title: "Analyze",
+        order_index: 1,
+        group_index: 0,
+        agent_session_id: null,
+        result: null,
+      },
     ];
     const agents = new Map<string, AgentSessionState>([
       ["qi:10", makeAgentState({ sessionId: 99, status: "running", agentType: "specify" })],

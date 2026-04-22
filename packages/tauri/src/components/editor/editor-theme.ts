@@ -6,17 +6,17 @@ import type { Extension } from "@codemirror/state";
 // Cadence uses Dracula palette variables defined in index.css
 // We map them to hex values here since CM6 themes can't use CSS vars directly.
 const PALETTE = {
-  bg: "#1e2030",         // slightly darker than drac-bg for editor
+  bg: "#1e2030", // slightly darker than drac-bg for editor
   bgSelected: "#44475a", // drac-selection
-  fg: "#f8f8f2",         // drac-fg
-  comment: "#6272a4",    // drac-comment
-  cyan: "#8be9fd",       // drac-cyan
-  green: "#50fa7b",      // drac-green
-  orange: "#ffb86c",     // drac-orange
-  pink: "#ff79c6",       // drac-pink
-  purple: "#bd93f9",     // drac-purple
-  red: "#ff5555",        // drac-red
-  yellow: "#f1fa8c",     // drac-yellow
+  fg: "#f8f8f2", // drac-fg
+  comment: "#6272a4", // drac-comment
+  cyan: "#8be9fd", // drac-cyan
+  green: "#50fa7b", // drac-green
+  orange: "#ffb86c", // drac-orange
+  pink: "#ff79c6", // drac-pink
+  purple: "#bd93f9", // drac-purple
+  red: "#ff5555", // drac-red
+  yellow: "#f1fa8c", // drac-yellow
   border: "#383a59",
   cursor: "#bd93f9",
   lineHighlight: "#2a2c3e",
@@ -34,7 +34,8 @@ const cadenceTheme = EditorView.theme(
       fontSize: "13px",
     },
     ".cm-scroller": {
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+      fontFamily:
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     },
     ".cm-content": { caretColor: PALETTE.cursor },
     ".cm-cursor, .cm-dropCursor": { borderLeftColor: PALETTE.cursor },
@@ -76,8 +77,23 @@ const cadenceHighlightStyle = HighlightStyle.define([
   { tag: [t.function(t.variableName), t.labelName], color: PALETTE.green },
   { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: PALETTE.purple },
   { tag: [t.definition(t.name), t.separator], color: PALETTE.fg },
-  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: PALETTE.cyan },
-  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: PALETTE.pink },
+  {
+    tag: [
+      t.typeName,
+      t.className,
+      t.number,
+      t.changed,
+      t.annotation,
+      t.modifier,
+      t.self,
+      t.namespace,
+    ],
+    color: PALETTE.cyan,
+  },
+  {
+    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
+    color: PALETTE.pink,
+  },
   { tag: [t.meta, t.comment], color: PALETTE.comment, fontStyle: "italic" },
   { tag: t.strong, fontWeight: "bold" },
   { tag: t.emphasis, fontStyle: "italic" },
@@ -135,7 +151,10 @@ const cadenceDiffTheme = EditorView.theme(
 
 export const DIFF_PALETTE = PALETTE;
 
-export const cadenceEditorTheme: Extension[] = [cadenceTheme, syntaxHighlighting(cadenceHighlightStyle)];
+export const cadenceEditorTheme: Extension[] = [
+  cadenceTheme,
+  syntaxHighlighting(cadenceHighlightStyle),
+];
 
 export const cadenceDiffExtensions: Extension[] = [
   cadenceTheme,

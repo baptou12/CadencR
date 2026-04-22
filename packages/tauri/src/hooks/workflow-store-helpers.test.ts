@@ -7,7 +7,11 @@ import { hydrateFromSnapshotPatch } from "./workflow-store-helpers";
 import type { WorkflowState, FeatureSnapshot } from "@/types/workflow";
 
 vi.mock("@/stores/ws-session-store", () => ({
-  createStreamingState: () => ({ activeTextIndex: null, activeThinkingIndex: null, toolCalls: new Map() }),
+  createStreamingState: () => ({
+    activeTextIndex: null,
+    activeThinkingIndex: null,
+    toolCalls: new Map(),
+  }),
   processSdkMessage: () => [],
   applyMutations: () => [],
 }));
@@ -108,9 +112,33 @@ describe("hydrateFromSnapshotPatch", () => {
   });
 
   it("uses snapshot queue unconditionally (no hasWsQueue guard; buffer-then-drain guarantees no WS queue exists at hydrate time)", () => {
-    const preExistingQueue = [{ id: 1, item_type: "execute", phase_id: null, phase_title: null, status: "running" as const, order_index: 0, group_index: null, agent_session_id: null, result: null }];
+    const preExistingQueue = [
+      {
+        id: 1,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        status: "running" as const,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: null,
+        result: null,
+      },
+    ];
     const state = makeState({ queue: preExistingQueue, workflowStatus: "building" });
-    const snapshotQueue = [{ id: 42, item_type: "execute", phase_id: null, phase_title: null, status: "ready" as const, order_index: 0, group_index: null, agent_session_id: null, result: null }];
+    const snapshotQueue = [
+      {
+        id: 42,
+        item_type: "execute",
+        phase_id: null,
+        phase_title: null,
+        status: "ready" as const,
+        order_index: 0,
+        group_index: null,
+        agent_session_id: null,
+        result: null,
+      },
+    ];
     const snapshot = makeSnapshot({ queue: snapshotQueue, workflow_status: "idle" });
     const patch = hydrateFromSnapshotPatch(state, snapshot);
     expect(patch.queue).toBe(snapshotQueue);
@@ -122,7 +150,9 @@ describe("hydrateFromSnapshotPatch", () => {
     const existingAgent = {
       sessionId: 99,
       agentType: "plan",
-      blocks: [{ id: "live", type: "user_message", content: "from ws", isError: false, createdAt: "t" }],
+      blocks: [
+        { id: "live", type: "user_message", content: "from ws", isError: false, createdAt: "t" },
+      ],
       streamingState: { activeTextIndex: null, activeThinkingIndex: null, toolCalls: new Map() },
       status: "running" as const,
       pendingPermission: null,
@@ -139,19 +169,23 @@ describe("hydrateFromSnapshotPatch", () => {
       hasFileChanges: false,
       pendingPlanApproval: null,
     };
-    const agents = new Map([["plan", existingAgent as unknown as import("@/types/workflow").AgentSessionState]]);
+    const agents = new Map([
+      ["plan", existingAgent as unknown as import("@/types/workflow").AgentSessionState],
+    ]);
     const state = makeState({ agents });
     const snapshot = makeSnapshot({
-      agent_sessions: [{
-        id: 99,
-        agent_type: "plan",
-        queue_item_id: null,
-        status: "running",
-        runtime_session_id: null,
-        input_tokens: null,
-        output_tokens: null,
-        context_window: null,
-      } as unknown as FeatureSnapshot["agent_sessions"][number]],
+      agent_sessions: [
+        {
+          id: 99,
+          agent_type: "plan",
+          queue_item_id: null,
+          status: "running",
+          runtime_session_id: null,
+          input_tokens: null,
+          output_tokens: null,
+          context_window: null,
+        } as unknown as FeatureSnapshot["agent_sessions"][number],
+      ],
     });
     const patch = hydrateFromSnapshotPatch(state, snapshot);
     expect(warnSpy).toHaveBeenCalled();

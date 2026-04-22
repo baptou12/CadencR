@@ -14,17 +14,17 @@ vi.mock("./AgentBlock", async () => {
   };
 });
 
-function makeBlock(id: string, content: string, type: AgentBlockData["type"] = "text"): AgentBlockData {
+function makeBlock(
+  id: string,
+  content: string,
+  type: AgentBlockData["type"] = "text",
+): AgentBlockData {
   return { id, type, content };
 }
 
 describe("AgentStream", () => {
   it("renders blocks", () => {
-    render(
-      <AgentStream
-        blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]}
-      />,
-    );
+    render(<AgentStream blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]} />);
     expect(screen.getByTestId("block-1")).toBeInTheDocument();
     expect(screen.getByTestId("block-2")).toBeInTheDocument();
   });
@@ -35,12 +35,7 @@ describe("AgentStream", () => {
   });
 
   it("shows streaming cursor when isStreaming is true", () => {
-    render(
-      <AgentStream
-        blocks={[makeBlock("1", "Some output", "tool_call")]}
-        isStreaming
-      />,
-    );
+    render(<AgentStream blocks={[makeBlock("1", "Some output", "tool_call")]} isStreaming />);
     expect(screen.getByText("█")).toBeInTheDocument();
   });
 
@@ -83,12 +78,7 @@ describe("AgentStream", () => {
   });
 
   it("does not show streaming indicator when not streaming", () => {
-    render(
-      <AgentStream
-        blocks={[makeBlock("1", "Done output")]}
-        isStreaming={false}
-      />,
-    );
+    render(<AgentStream blocks={[makeBlock("1", "Done output")]} isStreaming={false} />);
     expect(screen.queryByText(/\.\.\./)).not.toBeInTheDocument();
   });
 

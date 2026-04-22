@@ -9,10 +9,7 @@ import {
   type Spread,
 } from "lexical";
 
-type SerializedSlashCommandNode = Spread<
-  { commandName: string },
-  SerializedTextNode
->;
+type SerializedSlashCommandNode = Spread<{ commandName: string }, SerializedTextNode>;
 
 export class SlashCommandNode extends TextNode {
   __commandName: string;

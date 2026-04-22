@@ -61,7 +61,11 @@ export default function FileSearchDialog({
   }, [firstPath]);
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} commandProps={{ shouldFilter: false, value: selectedValue, onValueChange: setSelectedValue }}>
+    <CommandDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      commandProps={{ shouldFilter: false, value: selectedValue, onValueChange: setSelectedValue }}
+    >
       <CommandInput
         placeholder="Search files..."
         value={searchQuery}
@@ -94,9 +98,7 @@ function FileResultItem({ file, onSelect }: FileResultItemProps) {
     <CommandItem value={filePath} onSelect={() => onSelect(filePath)}>
       <FileSymbolIcon fileName={fileName} className="mr-2 shrink-0 flex items-center" />
       <div className="flex flex-col min-w-0">
-        <span className="truncate">
-          {highlightMatches(fileName, positions, fileNameOffset)}
-        </span>
+        <span className="truncate">{highlightMatches(fileName, positions, fileNameOffset)}</span>
         <span className="text-xs text-muted-foreground truncate">
           {highlightMatches(filePath, positions, 0)}
         </span>
@@ -105,11 +107,7 @@ function FileResultItem({ file, onSelect }: FileResultItemProps) {
   );
 }
 
-function highlightMatches(
-  text: string,
-  positions: number[],
-  offset: number,
-): ReactNode {
+function highlightMatches(text: string, positions: number[], offset: number): ReactNode {
   if (positions.length === 0) return text;
 
   const posSet = new Set(positions.map((p) => p - offset));

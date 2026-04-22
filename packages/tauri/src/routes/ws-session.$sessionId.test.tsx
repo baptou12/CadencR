@@ -33,7 +33,13 @@ vi.mock("@/components/FeatureTopBar", () => ({
 }));
 
 vi.mock("@/components/FeatureTabBar", () => ({
-  FeatureTabBar: ({ activeTab, onTabChange }: { activeTab: string; onTabChange: (tab: string) => void }) => (
+  FeatureTabBar: ({
+    activeTab,
+    onTabChange,
+  }: {
+    activeTab: string;
+    onTabChange: (tab: string) => void;
+  }) => (
     <div data-testid="feature-tab-bar">
       <button onClick={() => onTabChange("agent")}>Agent</button>
       <button onClick={() => onTabChange("editor")}>Editor</button>
@@ -132,7 +138,8 @@ vi.mock("@/api/generated", () => ({
 import { Route } from "./ws-session.$sessionId";
 
 function WsSessionPage() {
-  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options?.component;
+  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
+    ?.component;
   if (!Component) return null;
   return <Component />;
 }
@@ -163,7 +170,8 @@ describe("WsSessionPage route", () => {
     // Agent div is visible (h-full), editor div should be h-full hidden
     const allHFull = container.querySelectorAll(".h-full");
     const editorWrapper = Array.from(allHFull).find(
-      (el) => el.className === "h-full hidden" && !el.querySelector("[data-testid='agent-session']"),
+      (el) =>
+        el.className === "h-full hidden" && !el.querySelector("[data-testid='agent-session']"),
     );
     expect(editorWrapper).toBeTruthy();
   });

@@ -1,10 +1,6 @@
 import { type EditorSplitNode } from "@/stores/editor-store";
 import { useEditorStore } from "@/stores/editor-store";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import EditorPane from "./EditorPane";
 
 interface EditorSplitTreeProps {
@@ -19,7 +15,9 @@ export default function EditorSplitTree({ node, featureId, projectId }: EditorSp
   if (node.type === "leaf") {
     const isActive = node.id === activePaneId;
     return (
-      <div className={`h-full flex flex-col ${isActive ? "ring-1 ring-primary/30 ring-inset" : ""}`}>
+      <div
+        className={`h-full flex flex-col ${isActive ? "ring-1 ring-primary/30 ring-inset" : ""}`}
+      >
         <EditorPane
           featureId={featureId}
           paneId={node.id}

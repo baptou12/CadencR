@@ -7,8 +7,11 @@ import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useListFeatures, getListFeaturesQueryKey,
-  useUpdateFeatureStatus, useDeleteFeature, useGetFeatureEmpty,
+  useListFeatures,
+  getListFeaturesQueryKey,
+  useUpdateFeatureStatus,
+  useDeleteFeature,
+  useGetFeatureEmpty,
   useListFeatureWorktrees,
   type Feature,
 } from "@/api/generated";
@@ -24,7 +27,7 @@ export function ProjectFeatures({
   projectId: number;
   projectPath: string;
   activeFeatureId: number | null;
-  featureTurnStates: Record<number, { turn: 'agent' | 'askUser'; kind: string | null }>;
+  featureTurnStates: Record<number, { turn: "agent" | "askUser"; kind: string | null }>;
   onSelectFeature: (featureId: number) => void;
 }) {
   const navigate = useNavigate();
@@ -70,8 +73,8 @@ export function ProjectFeatures({
 
   const invalidateFeatures = () => {
     void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(projectId) });
-    void queryClient.invalidateQueries({ queryKey: ['features', 'detail'] });
-    void queryClient.invalidateQueries({ queryKey: ['features', 'planProgress'] });
+    void queryClient.invalidateQueries({ queryKey: ["features", "detail"] });
+    void queryClient.invalidateQueries({ queryKey: ["features", "planProgress"] });
   };
 
   const updateStatusMutation = useUpdateFeatureStatus({
@@ -157,7 +160,9 @@ export function ProjectFeatures({
 
       <ConfirmDialog
         open={confirmFeatureId != null && (isConfirmDelete || !isEmptyQuery.isLoading)}
-        onOpenChange={(open) => { if (!open) setConfirmFeatureId(null); }}
+        onOpenChange={(open) => {
+          if (!open) setConfirmFeatureId(null);
+        }}
         title={isConfirmDelete || shouldDirectDelete ? "Delete feature?" : "Archive feature?"}
         description={isConfirmDelete || shouldDirectDelete ? "This cannot be undone." : undefined}
         confirmText={isConfirmDelete || shouldDirectDelete ? "Delete" : "Archive"}
@@ -167,7 +172,10 @@ export function ProjectFeatures({
           if (isConfirmDelete || shouldDirectDelete) {
             deleteMutation.mutate({ id: confirmFeatureId });
           } else {
-            updateStatusMutation.mutate({ id: confirmFeatureId, status: "archived" as FeatureStatus });
+            updateStatusMutation.mutate({
+              id: confirmFeatureId,
+              status: "archived" as FeatureStatus,
+            });
           }
         }}
       />

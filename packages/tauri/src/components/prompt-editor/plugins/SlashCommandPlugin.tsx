@@ -40,8 +40,7 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
         const match = getTriggerMatch(node, anchor.offset, "/");
         // Slash commands only trigger at the very start of the editor
         const isFirstNode =
-          node.getPreviousSibling() === null &&
-          node.getParent() === $getRoot().getFirstChild();
+          node.getPreviousSibling() === null && node.getParent() === $getRoot().getFirstChild();
         if (!match || match.triggerOffset !== 0 || !isFirstNode) {
           if (s.isOpen) s.close();
           return;

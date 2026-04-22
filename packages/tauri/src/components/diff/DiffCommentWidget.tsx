@@ -102,9 +102,7 @@ export function CommentDisplay({
   return (
     <div className="mx-4 my-2 rounded border border-[#6272a4] bg-[#343746] p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="flex-1 whitespace-pre-wrap text-sm !text-[#f8f8f2]">
-          {comment.content}
-        </p>
+        <p className="flex-1 whitespace-pre-wrap text-sm !text-[#f8f8f2]">{comment.content}</p>
         <div className="flex shrink-0 gap-1">
           <button
             className="rounded p-1 !text-[#8892b0] hover:bg-[#44475a] hover:!text-[#f8f8f2]"
@@ -134,7 +132,9 @@ export function CommentDisplay({
         >
           {comment.status}
         </span>
-        <span className="!text-[#8892b0]">{format(parseUTCDateTime(comment.created_at), "MMM d, yyyy h:mm a")}</span>
+        <span className="!text-[#8892b0]">
+          {format(parseUTCDateTime(comment.created_at), "MMM d, yyyy h:mm a")}
+        </span>
       </div>
     </div>
   );
@@ -159,12 +159,7 @@ export function CommentWidgetLine({
   return (
     <div className="border-t border-b border-[#6272a4] bg-[#282a36]">
       {comments.map((c) => (
-        <CommentDisplay
-          key={c.id}
-          comment={c}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
+        <CommentDisplay key={c.id} comment={c} onEdit={onEdit} onDelete={onDelete} />
       ))}
       <CommentForm onSubmit={onSubmit} onClose={onClose} />
     </div>
@@ -188,14 +183,8 @@ export function CommentExtendLine({
   return (
     <div className="border-t border-[#6272a4] bg-[#282a36]">
       {comments.map((c) => (
-        <CommentDisplay
-          key={c.id}
-          comment={c}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
+        <CommentDisplay key={c.id} comment={c} onEdit={onEdit} onDelete={onDelete} />
       ))}
     </div>
   );
 }
-

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildUserMessageContent, extractUserMessageText, parseUserMessageContent } from "./agent-types";
+import {
+  buildUserMessageContent,
+  extractUserMessageText,
+  parseUserMessageContent,
+} from "./agent-types";
 
 describe("buildUserMessageContent", () => {
   it("returns plain text when no images", () => {

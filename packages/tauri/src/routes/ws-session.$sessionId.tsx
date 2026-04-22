@@ -57,13 +57,10 @@ function WebSocketSessionPage() {
     { featureId, mode: "worktree" },
     { refetchInterval: 5 * 60 * 1000 },
   );
-  const { data: branchData } = useGetBranch(
-    { projectId },
-    { refetchInterval: 10000 },
-  );
+  const { data: branchData } = useGetBranch({ projectId }, { refetchInterval: 10000 });
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettings = useMemo(
-    () => Object.fromEntries((featureSettingsData ?? []).map(s => [s.key, s.value])),
+    () => Object.fromEntries((featureSettingsData ?? []).map((s) => [s.key, s.value])),
     [featureSettingsData],
   );
   const liveWorktreeBranch = useWsSessionStore((s) => s.sessions[sessionId]?.worktreeBranch);
@@ -73,7 +70,10 @@ function WebSocketSessionPage() {
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel, resolveProvider, resolveThinkingEffort } = useResolvedModel(featureId, projectId);
+  const { resolveModel, resolveProvider, resolveThinkingEffort } = useResolvedModel(
+    featureId,
+    projectId,
+  );
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
@@ -87,26 +87,35 @@ function WebSocketSessionPage() {
   // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
 
-  const handleTabChange = useCallback((tab: import("@/hooks/useActiveTab").FeatureTab) => {
-    if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
-      editorTabRef.current.requestLeave(() => setActiveTab(tab));
-    } else {
-      setActiveTab(tab);
-    }
-  }, [activeTab, setActiveTab]);
+  const handleTabChange = useCallback(
+    (tab: import("@/hooks/useActiveTab").FeatureTab) => {
+      if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
+        editorTabRef.current.requestLeave(() => setActiveTab(tab));
+      } else {
+        setActiveTab(tab);
+      }
+    },
+    [activeTab, setActiveTab],
+  );
 
   const agentSessionRef = useRef<AgentSessionHandle>(null);
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
 
-  const sendPromptAndFocus = useCallback((message: string) => {
-    ws.sendPrompt(message);
-    requestAnimationFrame(() => agentSessionRef.current?.focusPromptBar());
-  }, [ws]);
-  const sendFromGitTab = useCallback((message: string) => {
-    sendPromptAndFocus(message);
-    setActiveTab("agent");
-  }, [sendPromptAndFocus, setActiveTab]);
+  const sendPromptAndFocus = useCallback(
+    (message: string) => {
+      ws.sendPrompt(message);
+      requestAnimationFrame(() => agentSessionRef.current?.focusPromptBar());
+    },
+    [ws],
+  );
+  const sendFromGitTab = useCallback(
+    (message: string) => {
+      sendPromptAndFocus(message);
+      setActiveTab("agent");
+    },
+    [sendPromptAndFocus, setActiveTab],
+  );
   useHotkeys(
     "meta+g",
     (e) => {
@@ -119,7 +128,8 @@ function WebSocketSessionPage() {
     "ctrl+t",
     (e) => {
       const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || !active.closest("[data-agent-prompt-bar='true']")) return;
+      if (!(active instanceof HTMLElement) || !active.closest("[data-agent-prompt-bar='true']"))
+        return;
       if (supportedThinkingEfforts.length === 0) return;
       e.preventDefault();
       const next = nextThinkingEffort(supportedThinkingEfforts, ws.currentThinkingEffort);
@@ -133,15 +143,34 @@ function WebSocketSessionPage() {
   const slashCommandsLoading = session?.slashCommandsLoading ?? false;
   const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
   const retryWorktreeSetup = useWsSessionStore((s) => s.retryWorktreeSetup);
-  const handleRetryWorktreeSetup = useCallback(() => retryWorktreeSetup(sessionId), [retryWorktreeSetup, sessionId]);
+  const handleRetryWorktreeSetup = useCallback(
+    () => retryWorktreeSetup(sessionId),
+    [retryWorktreeSetup, sessionId],
+  );
 
   const { isConnected, initSession } = ws;
   useEffect(() => {
     if (isConnected && initializedRef.current !== sessionId && session?.serverSessionId === "") {
       initializedRef.current = sessionId;
-      initSession({ cwd, featureId, provider: resolvedProviderId, model: resolvedModelId, thinkingEffort: resolvedThinkingEffort });
+      initSession({
+        cwd,
+        featureId,
+        provider: resolvedProviderId,
+        model: resolvedModelId,
+        thinkingEffort: resolvedThinkingEffort,
+      });
     }
-  }, [isConnected, initSession, cwd, featureId, sessionId, session?.serverSessionId, resolvedProviderId, resolvedModelId, resolvedThinkingEffort]);
+  }, [
+    isConnected,
+    initSession,
+    cwd,
+    featureId,
+    sessionId,
+    session?.serverSessionId,
+    resolvedProviderId,
+    resolvedModelId,
+    resolvedThinkingEffort,
+  ]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -173,9 +202,19 @@ function WebSocketSessionPage() {
         wsWorktreeSetupOutput={session?.worktreeSetupOutput}
         onRetryWorktreeSetup={handleRetryWorktreeSetup}
       />
-      <FeatureTabBar activeTab={activeTab} featureId={featureId} onTabChange={handleTabChange} gitStats={gitStats} gitBranch={gitBranch} />
+      <FeatureTabBar
+        activeTab={activeTab}
+        featureId={featureId}
+        onTabChange={handleTabChange}
+        gitStats={gitStats}
+        gitBranch={gitBranch}
+      />
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <FeatureTerminalTab featureId={featureId} projectId={projectId} hidden={activeTab !== "terminal"} />
+        <FeatureTerminalTab
+          featureId={featureId}
+          projectId={projectId}
+          hidden={activeTab !== "terminal"}
+        />
 
         {/* Editor tab — stays mounted to preserve state */}
         <div className={cn("h-full", activeTab !== "editor" && "hidden")}>

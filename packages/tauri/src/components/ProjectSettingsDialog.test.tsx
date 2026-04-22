@@ -28,7 +28,7 @@ describe("ProjectSettingsDialog", () => {
         projectName="My Project"
         open={false}
         onOpenChange={vi.fn()}
-      />
+      />,
     );
     expect(container.querySelector("[role='dialog']")).not.toBeInTheDocument();
   });
@@ -40,43 +40,28 @@ describe("ProjectSettingsDialog", () => {
         projectName="My Project"
         open={true}
         onOpenChange={vi.fn()}
-      />
+      />,
     );
     expect(screen.getByText("Project Settings: My Project")).toBeInTheDocument();
   });
 
   it("renders branch prefix input", () => {
     render(
-      <ProjectSettingsDialog
-        projectId={1}
-        projectName="Test"
-        open={true}
-        onOpenChange={vi.fn()}
-      />
+      <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
     expect(screen.getByPlaceholderText(/e.g. feature\//i)).toBeInTheDocument();
   });
 
   it("renders setup worktree label", () => {
     render(
-      <ProjectSettingsDialog
-        projectId={1}
-        projectName="Test"
-        open={true}
-        onOpenChange={vi.fn()}
-      />
+      <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
     expect(screen.getByText("Worktree Setup Commands")).toBeInTheDocument();
   });
 
   it("renders agent autonomy selector", () => {
     render(
-      <ProjectSettingsDialog
-        projectId={1}
-        projectName="Test"
-        open={true}
-        onOpenChange={vi.fn()}
-      />
+      <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
     expect(screen.getByText("Agent Autonomy")).toBeInTheDocument();
   });
@@ -89,7 +74,7 @@ describe("ProjectSettingsDialog", () => {
         projectName="Test"
         open={true}
         onOpenChange={onOpenChange}
-      />
+      />,
     );
     await user.keyboard("{Escape}");
     expect(onOpenChange).toHaveBeenCalledWith(false);

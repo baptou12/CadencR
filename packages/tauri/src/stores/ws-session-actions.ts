@@ -1,8 +1,4 @@
-import {
-  createModeSet,
-  createPermissionRespond,
-  createPromptSend,
-} from "@/lib/ws-envelope";
+import { createModeSet, createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
 import { fetchFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { injectPlanIntoBlocks, parseTodosFromBlocks } from "./ws-message-processing";
@@ -56,19 +52,12 @@ export function applyApprovePlan(
     sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
     sendRaw(
       sessionId,
-      createPermissionRespond(
-        session.serverSessionId,
-        session.pendingRequestId,
-        "allow_once",
-      ),
+      createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"),
     );
     if (isRestored) {
       sendRaw(
         sessionId,
-        createPromptSend(
-          session.serverSessionId,
-          "Plan approved. Proceed with execution.",
-        ),
+        createPromptSend(session.serverSessionId, "Plan approved. Proceed with execution."),
       );
     }
     ctx.set(
@@ -139,10 +128,7 @@ export function applyPlanChangesRequest(
     if (isRestored) {
       sendRaw(
         sessionId,
-        createPromptSend(
-          session.serverSessionId,
-          feedback || "Plan rejected. Revise the plan.",
-        ),
+        createPromptSend(session.serverSessionId, feedback || "Plan rejected. Revise the plan."),
       );
     }
     ctx.set(
@@ -206,19 +192,19 @@ export function applyPersistedState(
     ...(hasFileChanges !== undefined ? { hasFileChanges } : {}),
     ...(pendingPlanApproval != null
       ? {
-        pendingPlanApproval,
-        lifecycle: transitionTurn(lifecycle, { type: "plan_approval_requested" }),
-      }
+          pendingPlanApproval,
+          lifecycle: transitionTurn(lifecycle, { type: "plan_approval_requested" }),
+        }
       : {}),
   };
 
-  const restoredRequestId = pendingPlanApproval != null
-    ? existing?.pendingRequestId || `${planRestorePrefix}${Date.now()}`
-    : "";
+  const restoredRequestId =
+    pendingPlanApproval != null
+      ? existing?.pendingRequestId || `${planRestorePrefix}${Date.now()}`
+      : "";
 
-  const restoredPlanApprovalPatch = pendingPlanApproval != null
-    ? { pendingRequestId: restoredRequestId }
-    : {};
+  const restoredPlanApprovalPatch =
+    pendingPlanApproval != null ? { pendingRequestId: restoredRequestId } : {};
 
   const sessionMetaWithRequestId: Partial<SessionEntry> = {
     ...sessionMetaPatch,
@@ -237,9 +223,10 @@ export function applyPersistedState(
     updateSession(ctx.get(), sessionId, {
       ...sessionMetaWithRequestId,
       blocks: enrichedBlocks,
-      lifecycle: pendingPlanApproval != null
-        ? transitionTurn(lifecycle, { type: "plan_approval_requested" })
-        : lifecycle,
+      lifecycle:
+        pendingPlanApproval != null
+          ? transitionTurn(lifecycle, { type: "plan_approval_requested" })
+          : lifecycle,
       ...(todos ? { todos } : {}),
     }),
   );
@@ -251,7 +238,14 @@ export async function loadOlderSessionMessages(
   sessionId: string,
 ): Promise<void> {
   const session = ctx.get().sessions[sessionId];
-  if (!session || !session.hasMore || session.oldestMessageId == null || !session.featureId || !session.sessionDbId) return;
+  if (
+    !session ||
+    !session.hasMore ||
+    session.oldestMessageId == null ||
+    !session.featureId ||
+    !session.sessionDbId
+  )
+    return;
 
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
   const data = await fetchFeatureAgentState(session.featureId, {
@@ -268,11 +262,13 @@ export async function loadOlderSessionMessages(
   const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
   const currentSession = ctx.get().sessions[sessionId];
   if (!currentSession) return;
-  ctx.set(updateSession(ctx.get(), sessionId, {
-    blocks: [...olderBlocks, ...currentSession.blocks],
-    hasMore: serverSession.hasMore ?? false,
-    oldestMessageId: serverSession.oldestMessageId ?? null,
-  }));
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      blocks: [...olderBlocks, ...currentSession.blocks],
+      hasMore: serverSession.hasMore ?? false,
+      oldestMessageId: serverSession.oldestMessageId ?? null,
+    }),
+  );
 }
 
 /** Format question answers into a user-visible markdown string. */
@@ -288,9 +284,12 @@ export function formatQuestionResponse(
   return response
     .map((answerGroup, index) => {
       const rawQuestion = questions[index] as Record<string, unknown> | undefined;
-      const question = typeof rawQuestion === "object" && rawQuestion != null && typeof rawQuestion.question === "string"
-        ? rawQuestion.question as string
-        : `Question ${index + 1}`;
+      const question =
+        typeof rawQuestion === "object" &&
+        rawQuestion != null &&
+        typeof rawQuestion.question === "string"
+          ? (rawQuestion.question as string)
+          : `Question ${index + 1}`;
       return `*${question}*\n\n**${answerGroup.join("\n")}**`;
     })
     .join("\n\n\n\n");

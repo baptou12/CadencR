@@ -57,9 +57,7 @@ describe("AgentBlock", () => {
     });
 
     it("renders code without language", () => {
-      render(
-        <AgentBlock block={makeBlock({ type: "code", content: "some code" })} />,
-      );
+      render(<AgentBlock block={makeBlock({ type: "code", content: "some code" })} />);
       expect(screen.getByText("some code")).toBeInTheDocument();
     });
   });
@@ -186,7 +184,8 @@ describe("AgentBlock", () => {
             type: "tool_call",
             toolName: "ApplyPatch",
             toolArgs: JSON.stringify({
-              patch_text: "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
+              patch_text:
+                "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
             }),
           })}
         />,
@@ -195,11 +194,7 @@ describe("AgentBlock", () => {
     });
 
     it("renders thinking block", () => {
-      render(
-        <AgentBlock
-          block={makeBlock({ type: "thinking", content: "I am thinking..." })}
-        />,
-      );
+      render(<AgentBlock block={makeBlock({ type: "thinking", content: "I am thinking..." })} />);
       expect(screen.getByText("Thinking")).toBeInTheDocument();
     });
 
@@ -219,9 +214,7 @@ describe("AgentBlock", () => {
 
     it("does not render empty thinking block", () => {
       const { container } = render(
-        <AgentBlock
-          block={makeBlock({ type: "thinking", content: "" })}
-        />,
+        <AgentBlock block={makeBlock({ type: "thinking", content: "" })} />,
       );
       expect(container.firstChild).toBeNull();
     });
@@ -229,29 +222,21 @@ describe("AgentBlock", () => {
 
   describe("user_message block", () => {
     it("renders user message content", () => {
-      render(
-        <AgentBlock
-          block={makeBlock({ type: "user_message", content: "User said this" })}
-        />,
-      );
+      render(<AgentBlock block={makeBlock({ type: "user_message", content: "User said this" })} />);
       expect(screen.getByText("User said this")).toBeInTheDocument();
     });
   });
 
   describe("compact_divider block", () => {
     it("renders compacted divider", () => {
-      render(
-        <AgentBlock block={makeBlock({ type: "compact_divider", content: "" })} />,
-      );
+      render(<AgentBlock block={makeBlock({ type: "compact_divider", content: "" })} />);
       expect(screen.getByText("Compacted")).toBeInTheDocument();
     });
   });
 
   describe("clear_divider block", () => {
     it("renders cleared divider", () => {
-      render(
-        <AgentBlock block={makeBlock({ type: "clear_divider", content: "" })} />,
-      );
+      render(<AgentBlock block={makeBlock({ type: "clear_divider", content: "" })} />);
       expect(screen.getByText("Cleared")).toBeInTheDocument();
     });
 
@@ -304,11 +289,24 @@ describe("AgentBlock", () => {
     it("renders Bash output inlined via toolResultMap", () => {
       const toolUseId = "tu-1";
       const resultMap = new Map([
-        [toolUseId, makeBlock({ type: "tool_result", content: "line1\nline2", sourceToolName: "Bash", toolUseId })],
+        [
+          toolUseId,
+          makeBlock({
+            type: "tool_result",
+            content: "line1\nline2",
+            sourceToolName: "Bash",
+            toolUseId,
+          }),
+        ],
       ]);
       render(
         <AgentBlock
-          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "ls" }), toolUseId })}
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "ls" }),
+            toolUseId,
+          })}
           toolResultMap={resultMap}
         />,
       );
@@ -339,7 +337,11 @@ describe("AgentBlock", () => {
     it("shows Bash label in header", () => {
       render(
         <AgentBlock
-          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "echo hi" }) })}
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "echo hi" }),
+          })}
         />,
       );
       expect(screen.getByText("Bash")).toBeInTheDocument();
@@ -348,7 +350,12 @@ describe("AgentBlock", () => {
     it("shows running indicator when no result available", () => {
       render(
         <AgentBlock
-          block={makeBlock({ type: "tool_call", toolName: "Bash", toolArgs: JSON.stringify({ command: "sleep 10" }), toolUseId: "tu-2" })}
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "sleep 10" }),
+            toolUseId: "tu-2",
+          })}
           toolResultMap={new Map()}
         />,
       );
@@ -413,7 +420,13 @@ describe("AgentBlock", () => {
     it("builds a map of toolUseId to tool_result blocks", () => {
       const blocks = [
         makeBlock({ type: "tool_call", toolName: "Bash", toolUseId: "tu-1" }),
-        makeBlock({ id: "r1", type: "tool_result", content: "out", toolUseId: "tu-1", sourceToolName: "Bash" }),
+        makeBlock({
+          id: "r1",
+          type: "tool_result",
+          content: "out",
+          toolUseId: "tu-1",
+          sourceToolName: "Bash",
+        }),
         makeBlock({ type: "text", content: "hello" }),
       ];
       const map = buildToolResultMap(blocks);

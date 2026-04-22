@@ -18,9 +18,10 @@ export function parseQuestionAnswers(
     // Limit search region to before the next question starts
     const nextQ = questions[index + 1];
     const nextQPos = nextQ ? response.indexOf(nextQ.question, qPos + q.question.length) : -1;
-    const region = nextQPos === -1
-      ? response.substring(qPos + q.question.length)
-      : response.substring(qPos + q.question.length, nextQPos);
+    const region =
+      nextQPos === -1
+        ? response.substring(qPos + q.question.length)
+        : response.substring(qPos + q.question.length, nextQPos);
 
     const answerMatch = region.match(/\nAnswer:\s*(.+)/s);
     if (answerMatch) {

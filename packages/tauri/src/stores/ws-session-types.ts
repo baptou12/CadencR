@@ -131,8 +131,18 @@ export interface WsSessionStore {
 
   send: (sessionId: string, data: unknown) => void;
   initSession: (sessionId: string, config: SessionConfig) => void;
-  sendPrompt: (sessionId: string, text: string, images?: Array<{ base64: string; mimeType: string }>, useWorktree?: boolean) => void;
-  respondToPermission: (sessionId: string, requestId: string, decision: PermissionDecisionValue, feedback?: string) => void;
+  sendPrompt: (
+    sessionId: string,
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    useWorktree?: boolean,
+  ) => void;
+  respondToPermission: (
+    sessionId: string,
+    requestId: string,
+    decision: PermissionDecisionValue,
+    feedback?: string,
+  ) => void;
   respondToQuestion: (sessionId: string, response: AgentQuestionAnswers) => void;
   interrupt: (sessionId: string) => void;
   destroy: (sessionId: string) => void;
@@ -152,22 +162,25 @@ export interface WsSessionStore {
   requestSlashCommands: (sessionId: string, cwd: string, provider?: string) => void;
 
   markPersistedLoaded: (sessionId: string) => void;
-  setPersistedState: (sessionId: string, options: {
-    blocks: AgentBlockData[];
-    lifecycle: TurnLifecycle;
-    hasMore?: boolean;
-    oldestMessageId?: number | null;
-    featureId?: number;
-    sessionDbId?: number;
-    currentProviderId?: string;
-    currentModelId?: string;
-    runtimeProvider?: string | null;
-    runtimeSessionId?: string | null;
-    pendingPlanApproval?: PendingPlanApproval | null;
-    contextUsage?: ContextUsageState | null;
-    hasFileChanges?: boolean;
-    currentThinkingEffort?: string;
-  }) => void;
+  setPersistedState: (
+    sessionId: string,
+    options: {
+      blocks: AgentBlockData[];
+      lifecycle: TurnLifecycle;
+      hasMore?: boolean;
+      oldestMessageId?: number | null;
+      featureId?: number;
+      sessionDbId?: number;
+      currentProviderId?: string;
+      currentModelId?: string;
+      runtimeProvider?: string | null;
+      runtimeSessionId?: string | null;
+      pendingPlanApproval?: PendingPlanApproval | null;
+      contextUsage?: ContextUsageState | null;
+      hasFileChanges?: boolean;
+      currentThinkingEffort?: string;
+    },
+  ) => void;
   loadOlderMessages: (sessionId: string) => Promise<void>;
 }
 
@@ -195,7 +208,9 @@ export function markLastPlanBlock(
   status: "approved" | "rejected",
 ): AgentBlockData[] {
   const lastIdx = blocks.findLastIndex(
-    (b) => b.type === "tool_call" && (b.toolName === "ExitPlanMode" || b.toolName?.endsWith("__show_plan")),
+    (b) =>
+      b.type === "tool_call" &&
+      (b.toolName === "ExitPlanMode" || b.toolName?.endsWith("__show_plan")),
   );
   if (lastIdx === -1) return blocks;
   const updated = [...blocks];

@@ -32,21 +32,33 @@ export function PlanApprovalBar({
     setShowFeedback(true);
   };
 
-  useGlobalShortcut("meta+1", (e) => {
-    e.preventDefault();
-    onApprove();
-  }, { enabled: !showFeedback });
+  useGlobalShortcut(
+    "meta+1",
+    (e) => {
+      e.preventDefault();
+      onApprove();
+    },
+    { enabled: !showFeedback },
+  );
 
-  useGlobalShortcut("meta+2", (e) => {
-    e.preventDefault();
-    openFeedback();
-  }, { enabled: !showFeedback });
+  useGlobalShortcut(
+    "meta+2",
+    (e) => {
+      e.preventDefault();
+      openFeedback();
+    },
+    { enabled: !showFeedback },
+  );
 
-  useGlobalShortcut("escape", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onReject!();
-  }, { enabled: !showFeedback && !!onReject });
+  useGlobalShortcut(
+    "escape",
+    (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onReject!();
+    },
+    { enabled: !showFeedback && !!onReject },
+  );
 
   const handleSendFeedback = () => {
     const trimmed = feedback.trim();
@@ -113,12 +125,7 @@ export function PlanApprovalBar({
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={onApprove}
-            className="gap-1.5"
-          >
+          <Button variant="default" size="sm" onClick={onApprove} className="gap-1.5">
             <Play className="size-3.5" />
             {approveLabel ?? "Approve & Execute"}
             <KbdShortcut keys={["cmd", "1"]} />

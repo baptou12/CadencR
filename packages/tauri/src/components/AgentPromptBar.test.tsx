@@ -87,18 +87,22 @@ vi.mock("./prompt-editor/PromptEditor", () => {
   ) {
     const [value, setValue] = useState(initialText ?? "");
 
-    useImperativeHandle(ref, () => ({
-      focus: () => undefined,
-      clear: () => {
-        setValue("");
-        onChange?.("");
-      },
-      setText: (text: string) => {
-        setValue(text);
-        onChange?.(text);
-      },
-      getText: () => value,
-    }), [onChange, value]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => undefined,
+        clear: () => {
+          setValue("");
+          onChange?.("");
+        },
+        setText: (text: string) => {
+          setValue(text);
+          onChange?.(text);
+        },
+        getText: () => value,
+      }),
+      [onChange, value],
+    );
 
     return (
       <textarea
@@ -127,41 +131,31 @@ describe("AgentPromptBar", () => {
   });
 
   it("renders textarea", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("shows buttons when idle", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThan(0);
   });
 
   it("shows stop button when running", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="running" />);
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThan(0);
   });
 
   it("renders send button that is disabled when empty", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     const sendButton = screen.getByLabelText("Send message");
     expect(sendButton).toBeDisabled();
   });
 
   it("does not call onSend when text is empty and Enter pressed", async () => {
     const user = userEvent.setup();
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     await user.type(screen.getByRole("textbox"), "{Enter}");
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -203,21 +197,14 @@ describe("AgentPromptBar", () => {
 
   it("renders with initialDraft text", () => {
     render(
-      <AgentPromptBar
-        onSend={onSend}
-        onStop={onStop}
-        status="idle"
-        initialDraft="Draft text"
-      />,
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" initialDraft="Draft text" />,
     );
     expect(screen.getByRole("textbox")).toHaveTextContent("Draft text");
   });
 
   it("restores unsent text after a permission prompt closes", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     await user.type(screen.getByRole("textbox"), "Keep this draft");
 
@@ -239,18 +226,14 @@ describe("AgentPromptBar", () => {
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
-    rerender(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     expect(screen.getByRole("textbox")).toHaveTextContent("Keep this draft");
   });
 
   it("restores unsent text after plan approval closes", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     await user.type(screen.getByRole("textbox"), "Need a smaller plan");
 
@@ -267,18 +250,14 @@ describe("AgentPromptBar", () => {
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
-    rerender(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     expect(screen.getByRole("textbox")).toHaveTextContent("Need a smaller plan");
   });
 
   it("restores unsent text after question drawer closes", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-    );
+    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
     await user.type(screen.getByRole("textbox"), "Answer later");
 
@@ -297,18 +276,14 @@ describe("AgentPromptBar", () => {
     expect(await screen.findByText(/What do you need/i)).toBeInTheDocument();
 
     await act(async () => {
-      rerender(
-        <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />,
-      );
+      rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     });
 
     expect(screen.getByRole("textbox")).toHaveTextContent("Answer later");
   });
 
   it("escape calls onStop when focus is inside the prompt bar", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />,
-    );
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="running" />);
     // Focus the textbox (inside the wrapper)
     screen.getByRole("textbox").focus();
     const handler = hotkeyHandlers.get("escape");

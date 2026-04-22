@@ -9,10 +9,7 @@ import {
   type Spread,
 } from "lexical";
 
-type SerializedMentionNode = Spread<
-  { mentionPath: string },
-  SerializedTextNode
->;
+type SerializedMentionNode = Spread<{ mentionPath: string }, SerializedTextNode>;
 
 export class MentionNode extends TextNode {
   __mentionPath: string;
@@ -87,10 +84,7 @@ export class MentionNode extends TextNode {
   }
 }
 
-export function $createMentionNode(
-  mentionPath: string,
-  text?: string,
-): MentionNode {
+export function $createMentionNode(mentionPath: string, text?: string): MentionNode {
   const node = new MentionNode(mentionPath, text);
   node.setMode("token");
   return node;

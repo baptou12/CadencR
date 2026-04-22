@@ -7,7 +7,13 @@ export function useProjectColor(projectId: number): string {
   return colorSetting?.value ?? DEFAULT_PROJECT_COLOR;
 }
 
-export function ProjectColorDot({ projectId, className = "size-2" }: { projectId: number; className?: string }) {
+export function ProjectColorDot({
+  projectId,
+  className = "size-2",
+}: {
+  projectId: number;
+  className?: string;
+}) {
   const color = useProjectColor(projectId);
   return (
     <span

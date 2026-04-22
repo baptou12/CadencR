@@ -26,13 +26,11 @@ export function CadenceMcpBlock({ mcp, args }: { mcp: CadenceMcpTool; args?: str
           {mcp.server}
         </span>
         <span className="shrink-0 whitespace-nowrap font-medium text-primary/80">{mcp.label}</span>
-        {mcp.detail && (
-          <span className="truncate text-primary/50">{mcp.detail}</span>
-        )}
+        {mcp.detail && <span className="truncate text-primary/50">{mcp.detail}</span>}
         <ChevronRightIcon
           className={cn(
             "ml-auto size-3 shrink-0 text-primary/40 transition-transform",
-            expanded && "rotate-90"
+            expanded && "rotate-90",
           )}
         />
       </button>

@@ -126,9 +126,7 @@ export function createMockPhase(overrides: Partial<PhaseRow> = {}): PhaseRow {
 
 let _messageId = 1;
 
-export function createMockAgentMessage(
-  overrides: Partial<AgentMessageRow> = {},
-): AgentMessageRow {
+export function createMockAgentMessage(overrides: Partial<AgentMessageRow> = {}): AgentMessageRow {
   const id = overrides.id ?? _messageId++;
   return {
     id,
@@ -151,9 +149,7 @@ export function createMockAgentMessage(
 
 let _sessionId = 1;
 
-export function createMockAgentSession(
-  overrides: Partial<AgentSessionRow> = {},
-): AgentSessionRow {
+export function createMockAgentSession(overrides: Partial<AgentSessionRow> = {}): AgentSessionRow {
   const id = overrides.id ?? _sessionId++;
   return {
     id,
@@ -191,7 +187,12 @@ export interface MockDiffHunk {
   newStart: number;
   oldLines: number;
   newLines: number;
-  changes: { type: "normal" | "insert" | "delete"; content: string; oldLineNumber?: number; newLineNumber?: number }[];
+  changes: {
+    type: "normal" | "insert" | "delete";
+    content: string;
+    oldLineNumber?: number;
+    newLineNumber?: number;
+  }[];
 }
 
 export interface MockDiffFile {

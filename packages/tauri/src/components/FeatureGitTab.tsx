@@ -29,10 +29,7 @@ export function FeatureGitTab({
   onStartReviewFixer,
 }: FeatureGitTabProps) {
   const { data: comments = [] } = useListDiffComments(featureId);
-  const pendingComments = useMemo(
-    () => comments.filter((c) => c.status === "pending"),
-    [comments],
-  );
+  const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
 
   const onSend = onStartReviewFixer ?? onSendComments;
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
@@ -55,12 +52,7 @@ export function FeatureGitTab({
       {shouldRender && (
         <div className="border-t px-4 py-3 flex justify-end">
           <ShortcutTooltip label={buttonLabel} keys={["cmd", "enter"]} above>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={disabled}
-              onClick={() => void send()}
-            >
+            <Button variant="outline" size="sm" disabled={disabled} onClick={() => void send()}>
               {sending ? (
                 <Loader2Icon className="mr-2 size-4 animate-spin" />
               ) : (

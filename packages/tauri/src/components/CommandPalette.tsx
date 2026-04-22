@@ -56,22 +56,20 @@ function ProjectFeatureGroup({
 
   return (
     <CommandGroup heading={projectName}>
-      {featuresQuery.data.map(
-        (f: { id: number; title: string; type: string }) => (
-          <CommandItem
-            key={f.id}
-            keywords={[projectName, f.title]}
-            onSelect={() => onSelect(projectId, f.id)}
-          >
-            {f.type === "ws-session" ? (
-              <MessageSquareIcon className="mr-2" />
-            ) : (
-              <FileTextIcon className="mr-2" />
-            )}
-            <span className="truncate">{f.title}</span>
-          </CommandItem>
-        ),
-      )}
+      {featuresQuery.data.map((f: { id: number; title: string; type: string }) => (
+        <CommandItem
+          key={f.id}
+          keywords={[projectName, f.title]}
+          onSelect={() => onSelect(projectId, f.id)}
+        >
+          {f.type === "ws-session" ? (
+            <MessageSquareIcon className="mr-2" />
+          ) : (
+            <FileTextIcon className="mr-2" />
+          )}
+          <span className="truncate">{f.title}</span>
+        </CommandItem>
+      ))}
     </CommandGroup>
   );
 }
@@ -97,7 +95,9 @@ export function CommandPalette({
 
   const createFeatureMutation = useCreateFeature({
     onSuccess: (result, variables) => {
-      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(variables.project_id) });
+      void queryClient.invalidateQueries({
+        queryKey: getListFeaturesQueryKey(variables.project_id),
+      });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -110,7 +110,9 @@ export function CommandPalette({
 
   const createSessionMutation = useCreateFeature({
     onSuccess: (session, variables) => {
-      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(variables.project_id) });
+      void queryClient.invalidateQueries({
+        queryKey: getListFeaturesQueryKey(variables.project_id),
+      });
       void navigate({
         to: "/projects/$projectId/features/$featureId",
         params: {
@@ -209,12 +211,8 @@ export function CommandPalette({
   const projects = projectsQuery.data ?? [];
   const sortedProjects = activeProjectId
     ? [
-        ...projects.filter(
-          (p: { id: number }) => p.id === activeProjectId,
-        ),
-        ...projects.filter(
-          (p: { id: number }) => p.id !== activeProjectId,
-        ),
+        ...projects.filter((p: { id: number }) => p.id === activeProjectId),
+        ...projects.filter((p: { id: number }) => p.id !== activeProjectId),
       ]
     : projects;
 
@@ -230,22 +228,15 @@ export function CommandPalette({
         <CommandList>
           <CommandEmpty>No projects found.</CommandEmpty>
           <CommandGroup heading="Projects">
-            {sortedProjects.map(
-              (p: { id: number; name: string }) => (
-                <CommandItem
-                  key={p.id}
-                  onSelect={() => handleProjectPick(p.id)}
-                >
-                  <ArrowLeftIcon className="mr-2 opacity-0" />
-                  {p.name}
-                  {p.id === activeProjectId && (
-                    <span className="text-muted-foreground ml-2 text-xs">
-                      (current)
-                    </span>
-                  )}
-                </CommandItem>
-              ),
-            )}
+            {sortedProjects.map((p: { id: number; name: string }) => (
+              <CommandItem key={p.id} onSelect={() => handleProjectPick(p.id)}>
+                <ArrowLeftIcon className="mr-2 opacity-0" />
+                {p.name}
+                {p.id === activeProjectId && (
+                  <span className="text-muted-foreground ml-2 text-xs">(current)</span>
+                )}
+              </CommandItem>
+            ))}
           </CommandGroup>
         </CommandList>
       </CommandDialog>
@@ -270,7 +261,9 @@ export function CommandPalette({
           >
             <SettingsIcon className="mr-2" />
             Global Settings
-            <span className="ml-auto"><KbdShortcut keys={["cmd", ","]} /></span>
+            <span className="ml-auto">
+              <KbdShortcut keys={["cmd", ","]} />
+            </span>
           </CommandItem>
           <CommandItem onSelect={handleNewProject}>
             <FolderPlusIcon className="mr-2" />
@@ -288,7 +281,9 @@ export function CommandPalette({
           >
             <FilePlusIcon className="mr-2" />
             New Feature
-            <span className="ml-auto"><KbdShortcut keys={["cmd", "N"]} /></span>
+            <span className="ml-auto">
+              <KbdShortcut keys={["cmd", "N"]} />
+            </span>
           </CommandItem>
           <CommandItem
             onSelect={() => {
@@ -306,13 +301,17 @@ export function CommandPalette({
           >
             <MessageSquarePlusIcon className="mr-2" />
             New Session
-            <span className="ml-auto"><KbdShortcut keys={["cmd", "shift", "N"]} /></span>
+            <span className="ml-auto">
+              <KbdShortcut keys={["cmd", "shift", "N"]} />
+            </span>
           </CommandItem>
           {activeFeatureId != null && (
             <CommandItem onSelect={handleOpenDiff}>
               <DiffIcon className="mr-2" />
               Open Diff
-              <span className="ml-auto"><KbdShortcut keys={["cmd", "shift", "D"]} /></span>
+              <span className="ml-auto">
+                <KbdShortcut keys={["cmd", "shift", "D"]} />
+              </span>
             </CommandItem>
           )}
           {activeFeatureId != null && (
@@ -332,21 +331,21 @@ export function CommandPalette({
             >
               <TerminalIcon className="mr-2" />
               Toggle Terminal
-              <span className="ml-auto"><KbdShortcut keys={["ctrl", "`"]} /></span>
+              <span className="ml-auto">
+                <KbdShortcut keys={["ctrl", "`"]} />
+              </span>
             </CommandItem>
           )}
         </CommandGroup>
         {sortedProjects.length > 0 && <CommandSeparator />}
-        {sortedProjects.map(
-          (p: { id: number; name: string }) => (
-            <ProjectFeatureGroup
-              key={p.id}
-              projectId={p.id}
-              projectName={p.name}
-              onSelect={handleFeatureSelect}
-            />
-          ),
-        )}
+        {sortedProjects.map((p: { id: number; name: string }) => (
+          <ProjectFeatureGroup
+            key={p.id}
+            projectId={p.id}
+            projectName={p.name}
+            onSelect={handleFeatureSelect}
+          />
+        ))}
       </CommandList>
     </CommandDialog>
   );

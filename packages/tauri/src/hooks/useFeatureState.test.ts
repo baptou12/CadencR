@@ -45,9 +45,7 @@ describe("useFeatureState", () => {
   });
 
   it("returns planning view when prd agent has blocks", () => {
-    const blocks: AgentBlockData[] = [
-      { id: "1", type: "text", content: "Some output" },
-    ];
+    const blocks: AgentBlockData[] = [{ id: "1", type: "text", content: "Some output" }];
     const { result } = renderHook(() =>
       useFeatureState({
         featureStatus: "draft",

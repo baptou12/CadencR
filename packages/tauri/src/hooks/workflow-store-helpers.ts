@@ -30,7 +30,15 @@ export function hydrateFromSnapshotPatch(
   agentStateResp?: FeatureAgentStateResponse,
 ): Partial<WorkflowState> {
   // Build a lookup of REST-loaded blocks keyed by session DB id
-  const restBlocks = new Map<number, { blocks: AgentBlockData[]; hasMore: boolean; oldestMessageId: number | null; pendingPlanApproval: { plan?: string } | null }>();
+  const restBlocks = new Map<
+    number,
+    {
+      blocks: AgentBlockData[];
+      hasMore: boolean;
+      oldestMessageId: number | null;
+      pendingPlanApproval: { plan?: string } | null;
+    }
+  >();
   if (agentStateResp) {
     for (const s of agentStateResp.sessions) {
       if (s.blocks.length === 0 && !s.pendingPlanApproval) continue;
@@ -118,4 +126,3 @@ export function hydrateFromSnapshotPatch(
 
   return patch;
 }
-

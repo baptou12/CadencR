@@ -38,17 +38,32 @@ export function parseApplyPatchChanges(patchText: string): ApplyPatchChange[] {
   for (const line of patchText.split("\n")) {
     if (line === "*** End Patch") break;
     if (line.startsWith(ADD_PREFIX)) {
-      current = { kind: "add", filePath: line.slice(ADD_PREFIX.length), addedLines: [], removedLines: [] };
+      current = {
+        kind: "add",
+        filePath: line.slice(ADD_PREFIX.length),
+        addedLines: [],
+        removedLines: [],
+      };
       changes.push(current);
       continue;
     }
     if (line.startsWith(UPDATE_PREFIX)) {
-      current = { kind: "update", filePath: line.slice(UPDATE_PREFIX.length), addedLines: [], removedLines: [] };
+      current = {
+        kind: "update",
+        filePath: line.slice(UPDATE_PREFIX.length),
+        addedLines: [],
+        removedLines: [],
+      };
       changes.push(current);
       continue;
     }
     if (line.startsWith(DELETE_PREFIX)) {
-      current = { kind: "delete", filePath: line.slice(DELETE_PREFIX.length), addedLines: [], removedLines: [] };
+      current = {
+        kind: "delete",
+        filePath: line.slice(DELETE_PREFIX.length),
+        addedLines: [],
+        removedLines: [],
+      };
       changes.push(current);
       continue;
     }

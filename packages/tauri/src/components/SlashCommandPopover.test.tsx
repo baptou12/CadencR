@@ -18,7 +18,7 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       >
         <input placeholder="Type command" />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     expect(screen.getByPlaceholderText("Type command")).toBeInTheDocument();
   });
@@ -33,7 +33,7 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       >
         <input />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     expect(screen.queryByText("/commit")).not.toBeInTheDocument();
   });
@@ -48,7 +48,7 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       >
         <input />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     expect(screen.getByText("/commit")).toBeInTheDocument();
     expect(screen.getByText("/plan")).toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("SlashCommandPopover", () => {
         isLoading={true}
       >
         <input />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     expect(screen.getByText(/loading commands/i)).toBeInTheDocument();
   });
@@ -79,7 +79,7 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       >
         <input />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     expect(screen.getByText(/no matching commands/i)).toBeInTheDocument();
   });
@@ -95,7 +95,7 @@ describe("SlashCommandPopover", () => {
         isLoading={false}
       >
         <input />
-      </SlashCommandPopover>
+      </SlashCommandPopover>,
     );
     await user.pointer({ keys: "[MouseLeft>]", target: screen.getByText("/commit") });
     expect(onSelect).toHaveBeenCalledWith("commit");

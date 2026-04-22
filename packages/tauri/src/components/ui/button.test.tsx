@@ -48,7 +48,11 @@ describe("Button", () => {
 
   it("does not call onClick when disabled", async () => {
     const onClick = vi.fn();
-    const { user } = render(<Button disabled onClick={onClick}>Disabled</Button>);
+    const { user } = render(
+      <Button disabled onClick={onClick}>
+        Disabled
+      </Button>,
+    );
     await user.click(screen.getByRole("button"));
     expect(onClick).not.toHaveBeenCalled();
   });
@@ -57,7 +61,7 @@ describe("Button", () => {
     render(
       <Button asChild>
         <a href="/test">Link</a>
-      </Button>
+      </Button>,
     );
     expect(screen.getByRole("link", { name: "Link" })).toBeInTheDocument();
   });

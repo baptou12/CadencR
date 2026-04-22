@@ -35,7 +35,9 @@ describe("useImageAttachments", () => {
     );
 
     let counter = 0;
-    vi.spyOn(crypto, "randomUUID").mockImplementation(() => `mock-uuid-${++counter}` as `${string}-${string}-${string}-${string}-${string}`);
+    vi.spyOn(crypto, "randomUUID").mockImplementation(
+      () => `mock-uuid-${++counter}` as `${string}-${string}-${string}-${string}-${string}`,
+    );
   });
 
   it("starts with empty attachments", () => {
@@ -95,10 +97,7 @@ describe("useImageAttachments", () => {
 
   it("clears all attachments", async () => {
     const { result } = renderHook(() => useImageAttachments());
-    const files = [
-      createMockFile("a.png", "image/png"),
-      createMockFile("b.jpg", "image/jpeg"),
-    ];
+    const files = [createMockFile("a.png", "image/png"), createMockFile("b.jpg", "image/jpeg")];
 
     act(() => {
       result.current.addFiles(files);

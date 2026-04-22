@@ -8,7 +8,12 @@ interface CodeBlockHeaderProps {
   onSendToTerminal?: (command: string) => void;
 }
 
-export function CodeBlockHeader({ language, code, showTerminalButton, onSendToTerminal }: CodeBlockHeaderProps) {
+export function CodeBlockHeader({
+  language,
+  code,
+  showTerminalButton,
+  onSendToTerminal,
+}: CodeBlockHeaderProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {

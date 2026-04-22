@@ -2,7 +2,13 @@ import { cn } from "@/lib/utils";
 import { ClipboardCheck, CircleCheckIcon, CircleXIcon } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 
-export function PlanBlock({ args, approvalStatus }: { args?: string; approvalStatus?: "approved" | "rejected" }) {
+export function PlanBlock({
+  args,
+  approvalStatus,
+}: {
+  args?: string;
+  approvalStatus?: "approved" | "rejected";
+}) {
   let plan: string | undefined;
   if (args) {
     try {
@@ -25,15 +31,23 @@ export function PlanBlock({ args, approvalStatus }: { args?: string; approvalSta
         <Markdown content={plan} />
       </div>
       {approvalStatus && (
-        <div className={cn(
-          "flex items-center gap-1.5 border-t px-3 py-1.5 text-xs font-medium",
-          approvalStatus === "approved"
-            ? "border-green-800/50 text-green-400"
-            : "border-red-800/50 text-red-400",
-        )}>
-          {approvalStatus === "approved"
-            ? <><CircleCheckIcon className="size-3" /> Approved</>
-            : <><CircleXIcon className="size-3" /> Rejected</>}
+        <div
+          className={cn(
+            "flex items-center gap-1.5 border-t px-3 py-1.5 text-xs font-medium",
+            approvalStatus === "approved"
+              ? "border-green-800/50 text-green-400"
+              : "border-red-800/50 text-red-400",
+          )}
+        >
+          {approvalStatus === "approved" ? (
+            <>
+              <CircleCheckIcon className="size-3" /> Approved
+            </>
+          ) : (
+            <>
+              <CircleXIcon className="size-3" /> Rejected
+            </>
+          )}
         </div>
       )}
     </div>

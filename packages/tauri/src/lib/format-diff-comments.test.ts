@@ -19,8 +19,6 @@ describe("formatCommentsForAgent", () => {
       { file_path: "b.ts", line_number: 5, content: "second" },
       { file_path: "a.ts", line_number: 3, content: "third" },
     ]);
-    expect(result).toBe(
-      "## a.ts\n- Line 1: first\n- Line 3: third\n## b.ts\n- Line 5: second",
-    );
+    expect(result).toBe("## a.ts\n- Line 1: first\n- Line 3: third\n## b.ts\n- Line 5: second");
   });
 });

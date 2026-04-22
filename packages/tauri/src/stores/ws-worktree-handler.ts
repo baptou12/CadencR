@@ -13,10 +13,7 @@ export function handleWorktreeEvent(
   action: string,
   payload: unknown,
 ): void {
-  const value =
-    payload && typeof payload === "object"
-      ? (payload as Record<string, unknown>)
-      : {};
+  const value = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
   const payloadString = (key: string): string | null =>
     typeof value[key] === "string" ? (value[key] as string) : null;
 
