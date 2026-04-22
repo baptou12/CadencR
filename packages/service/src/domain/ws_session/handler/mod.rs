@@ -165,7 +165,7 @@ pub async fn ws_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(resp) = validate_ws_origin(&headers) {
+    if let Err(resp) = validate_ws_origin(&headers, state.frontend_port) {
         return resp;
     }
     let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
@@ -349,8 +349,7 @@ async fn handle_session_action(
 mod tests {
     use super::*;
     use crate::domain::agents::adapter::{
-        AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMessageRx,
-        RuntimePermissionMode,
+        AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMessageRx, RuntimePermissionMode,
     };
     use crate::domain::agents::claude_code::ClaudeCodeSession;
     use claude_agent_sdk_rs::{Query, SdkError};

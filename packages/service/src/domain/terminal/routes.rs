@@ -40,7 +40,7 @@ async fn terminal_ws_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(resp) = validate_ws_origin(&headers) {
+    if let Err(resp) = validate_ws_origin(&headers, state.frontend_port) {
         return resp;
     }
     let selected_proto = match validate_ws_token(&headers, &state.auth_token) {

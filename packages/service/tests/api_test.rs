@@ -204,6 +204,7 @@ async fn start_test_server() -> TestServer {
         file_change_tx,
         file_watcher: cadence_service::domain::editor::watcher::new_shared(),
         auth_token: TEST_AUTH_TOKEN.to_string(),
+        frontend_port: 1420,
         port,
     };
 
@@ -544,10 +545,7 @@ async fn test_file_tree_includes_dotfiles() {
 
 /// Full RFC 6455 header set; axum's extractor rejects the request before
 /// our handler runs if any are missing.
-fn apply_ws_upgrade_headers(
-    req: reqwest::RequestBuilder,
-    origin: &str,
-) -> reqwest::RequestBuilder {
+fn apply_ws_upgrade_headers(req: reqwest::RequestBuilder, origin: &str) -> reqwest::RequestBuilder {
     req.header("Upgrade", "websocket")
         .header("Connection", "Upgrade")
         .header("Sec-WebSocket-Version", "13")

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
@@ -94,6 +94,8 @@ pub struct AppState {
     /// `X-Cadence-Token` header) and WebSocket upgrade (via the
     /// `cadence-token.<tok>` `Sec-WebSocket-Protocol` entry).
     pub auth_token: String,
+    /// Frontend dev server port used for WebSocket origin allowlisting.
+    pub frontend_port: u16,
     /// Listener port, pinned against the `Host` header for DNS-rebinding defense.
     pub port: u16,
 }
@@ -130,6 +132,7 @@ impl AppState {
             file_change_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
             auth_token: "test-token".to_string(),
+            frontend_port: 1420,
             port: 0,
         }
     }
