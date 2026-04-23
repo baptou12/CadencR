@@ -11,7 +11,6 @@ pub mod sessions;
 pub mod settings;
 pub mod settings_allowlist;
 pub mod terminal;
-pub mod usage;
 pub mod workflow;
 pub mod workspace;
 pub mod ws_session;
