@@ -11,7 +11,6 @@ use crate::domain::git::routes::git_router;
 use crate::domain::projects::routes::projects_router;
 use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
-use crate::domain::usage::routes::usage_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
 use axum::extract::State;
@@ -33,7 +32,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(features_router())
         .merge(diff_comments_router())
         .merge(sessions_router())
-        .merge(usage_router())
         .merge(terminal_router())
         .merge(editor_router())
         .merge(claude_code_router())

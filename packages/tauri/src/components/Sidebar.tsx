@@ -6,7 +6,7 @@ import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
 import { getActiveFocusZone } from "@/lib/focus-zones";
-import { UsageIndicator } from "@/components/UsageIndicator";
+import { APP_VERSION } from "@/lib/app-version";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 
@@ -130,12 +130,6 @@ export function Sidebar() {
           )}
         </div>
         <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Link to="/settings">
-            <Button variant="ghost" size="icon" className="size-7">
-              <Settings className="size-4" />
-              <span className="sr-only">Settings</span>
-            </Button>
-          </Link>
           <Button
             variant="ghost"
             size="icon"
@@ -157,7 +151,17 @@ export function Sidebar() {
         />
       </div>
 
-      <UsageIndicator />
+      <Link
+        to="/settings"
+        data-nav-item
+        className="flex items-center justify-between gap-2 px-3 py-2 text-xs border-t border-border/40 text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
+      >
+        <span className="flex items-center gap-2">
+          <Settings className="size-4" />
+          <span>Settings</span>
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
+      </Link>
     </aside>
   );
 }

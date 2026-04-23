@@ -15,8 +15,6 @@ use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
-use crate::domain::usage::models as usage_models;
-use crate::domain::usage::routes as usage_routes;
 use crate::domain::workspace::models as workspace_models;
 use crate::domain::workspace::routes as workspace_routes;
 
@@ -97,7 +95,6 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::get_feature_agent_state_handler,
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
-        usage_routes::get_usage_handler,
         super::get_agent_catalog,
         claude_code_routes::list_profiles_handler,
         claude_code_routes::upsert_profile_handler,
@@ -203,9 +200,6 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_models::DraftResponse,
         sessions_models::SaveDraftRequest,
         sessions_models::SaveDraftResponse,
-        usage_models::UsageResponse,
-        usage_models::UsageBucket,
-        usage_models::UsageStatus,
         claude_code_routes::ProfileView,
         claude_code_routes::ProfilesResponse,
         claude_code_routes::UpsertProfileRequest,

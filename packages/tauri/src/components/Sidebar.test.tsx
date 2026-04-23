@@ -65,12 +65,8 @@ vi.mock("./ProjectSettingsDialog", () => ({
   ProjectSettingsDialog: () => null,
 }));
 
-// Mock UsageIndicator
-vi.mock("./UsageIndicator", () => ({
-  UsageIndicator: () => {
-    const React = require("react");
-    return React.createElement("div", { "data-testid": "usage-indicator" });
-  },
+vi.mock("@/lib/app-version", () => ({
+  APP_VERSION: "1.2.3",
 }));
 
 const mockSetCollapsed = vi.fn();
@@ -121,9 +117,9 @@ describe("Sidebar", () => {
     expect(screen.getByText("My Project")).toBeInTheDocument();
   });
 
-  it("renders UsageIndicator", () => {
+  it("renders app version", () => {
     render(<Sidebar />);
-    expect(screen.getByTestId("usage-indicator")).toBeInTheDocument();
+    expect(screen.getByText("v1.2.3")).toBeInTheDocument();
   });
 
   it("renders without crashing on any route", () => {

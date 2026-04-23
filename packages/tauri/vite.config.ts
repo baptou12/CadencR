@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
+import pkg from "./package.json" with { type: "json" };
 
 function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
@@ -21,6 +22,9 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
     },
     envPrefix: "VITE_",
+    define: {
+      __APP_VERSION__: JSON.stringify(pkg.version),
+    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "src"),
