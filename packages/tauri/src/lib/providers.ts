@@ -2,7 +2,15 @@ import claudeLogo from "../../assets/providers/claude.png";
 import codexLogo from "../../assets/providers/codex.png";
 import opencodeLogo from "../../assets/providers/opencode.png";
 
-export const DEFAULT_PROVIDER_ID = "claude_code";
+export const PROVIDER_IDS = {
+  CLAUDE_CODE: "claude_code",
+  OPENCODE: "opencode",
+  CODEX_CLI: "codex_cli",
+} as const;
+
+export type ProviderId = (typeof PROVIDER_IDS)[keyof typeof PROVIDER_IDS];
+
+export const DEFAULT_PROVIDER_ID: ProviderId = PROVIDER_IDS.CLAUDE_CODE;
 
 export interface ProviderMetadata {
   id: string;
@@ -11,10 +19,10 @@ export interface ProviderMetadata {
 }
 
 /** Map provider IDs to their bundled icon assets. */
-const PROVIDER_ICONS: Record<string, string> = {
-  claude_code: claudeLogo,
-  codex_cli: codexLogo,
-  opencode: opencodeLogo,
+const PROVIDER_ICONS: Record<ProviderId, string> = {
+  [PROVIDER_IDS.CLAUDE_CODE]: claudeLogo,
+  [PROVIDER_IDS.CODEX_CLI]: codexLogo,
+  [PROVIDER_IDS.OPENCODE]: opencodeLogo,
 };
 
 /**
@@ -32,7 +40,7 @@ export function getProviderMetadata(
   return {
     id: providerId,
     label: catalogLabel ?? formatProviderId(providerId),
-    iconSrc: PROVIDER_ICONS[providerId] ?? null,
+    iconSrc: PROVIDER_ICONS[providerId as ProviderId] ?? null,
   };
 }
 
