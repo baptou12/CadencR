@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
+import { SessionInfoChip } from "./SessionInfoChip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +68,9 @@ export interface MetaBarProps {
   todos?: TodoItem[] | null;
   runtimeProvider?: string;
   runtimeSessionId?: string;
+  projectPath?: string;
+  isRunning?: boolean;
+  onPause?: () => void;
   /**
    * Layout variant. `"session"` (default) fades into the agent stream above
    * via a negative margin + background gradient. `"standalone"` drops that
@@ -107,6 +111,9 @@ export function MetaBar({
   todos,
   runtimeProvider,
   runtimeSessionId,
+  projectPath,
+  isRunning = false,
+  onPause,
   variant = "session",
 }: MetaBarProps) {
   const displayProviderId = currentProviderId ?? runtimeProvider;
@@ -367,11 +374,18 @@ export function MetaBar({
       {/* Tasks chip */}
       {todos && todos.length > 0 && <AgentTodoList todos={todos} chipClass={CHIP} />}
 
-      {/* Session ID */}
-      {runtimeSessionId && (
-        <span className="ml-auto select-all font-mono text-[10px] text-muted-foreground/50">
-          {runtimeProvider ? `${runtimeProvider}: ${runtimeSessionId}` : runtimeSessionId}
-        </span>
+      {/* Session info */}
+      {runtimeSessionId && onPause && (
+        <div className="ml-auto">
+          <SessionInfoChip
+            runtimeProvider={runtimeProvider}
+            runtimeSessionId={runtimeSessionId}
+            projectPath={projectPath}
+            isRunning={isRunning}
+            onPause={onPause}
+            chipClass={CHIP}
+          />
+        </div>
       )}
     </div>
   );

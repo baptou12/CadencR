@@ -320,6 +320,9 @@ export const AgentSession = memo(
         todos={todos}
         runtimeProvider={runtimeProvider}
         runtimeSessionId={runtimeSessionId}
+        projectPath={projectPath}
+        isRunning={status === "running"}
+        onPause={onStop}
       />
     ) : null;
 
