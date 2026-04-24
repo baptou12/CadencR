@@ -1,8 +1,8 @@
-# Cadence — Claude Code UI
+# Cadence — Desktop IDE for AI coding agents
 
 ## Vision
 
-A desktop application that provides a fully-fledged UI for Claude Code, replacing the terminal-based workflow with a structured project management experience. The app manages codebases as projects, breaks work into features, and orchestrates dedicated AI agents for planning, execution, risk analysis, and code review.
+A desktop application that provides a fully-fledged UI for local AI coding agents (Claude Code, OpenCode, and more), replacing the terminal-based workflow with a structured project management experience. The app manages codebases as projects, breaks work into features, and orchestrates dedicated AI agents for planning, execution, risk analysis, and code review.
 
 ## Problems Solved
 
@@ -26,10 +26,11 @@ A desktop application that provides a fully-fledged UI for Claude Code, replacin
 
 ## Tech Stack
 
-| Layer         | Technology                  |
-| ------------- | --------------------------- |
-| Desktop shell | Electron                    |
-| UI framework  | React                       |
-| Styling       | Tailwind CSS + shadcn/ui    |
-| AI backbone   | Claude Code (CLI / SDK)     |
-| Local storage | SQLite (via better-sqlite3) |
+| Layer           | Technology                              |
+| --------------- | --------------------------------------- |
+| Desktop shell   | Tauri v2 (Rust)                         |
+| Backend service | Rust (Axum, Tokio) — spawned as sidecar |
+| UI framework    | React 19                                |
+| Styling         | Tailwind CSS + shadcn/ui                |
+| AI backbone     | Claude Code & OpenCode (CLI / SDK)      |
+| Local storage   | SQLite (via `sqlx`)                     |

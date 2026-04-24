@@ -12,7 +12,7 @@ This is a pnpm workspaces + Turborepo monorepo. The desktop app lives in `packag
 
 ## Architecture
 
-The app uses Tauri v2 as the desktop shell with a React frontend. The backend is a Rust API server in `packages/service/` spawned as a sidecar in production. In dev mode, run `cadence-service` manually. The frontend communicates with the backend via HTTP (Axios) and WebSocket (Zustand store). Folder selection uses `@tauri-apps/plugin-dialog`.
+The app uses Tauri v2 as the desktop shell with a React frontend. The backend is a Rust API server in `packages/service/` spawned as a sidecar in production. In dev, `pnpm dev` from the repo root runs the service alongside the desktop app via Turborepo. The frontend communicates with the backend via HTTP (Axios) and WebSocket (Zustand store). Folder selection uses `@tauri-apps/plugin-dialog`.
 
 Frontend path alias: `@` -> `packages/tauri/src/` (for example `import { foo } from "@/lib/foo"`).
 
