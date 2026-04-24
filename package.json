@@ -1,7 +1,8 @@
 {
   "name": "cadence",
   "private": true,
-  "description": "A desktop app providing a UI for Claude Code",
+  "description": "A desktop IDE for AI coding agents — unified workspace for Claude Code, OpenCode, and more.",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22.0.0"
   },

@@ -2,7 +2,8 @@
   "name": "@cadence/landing",
   "private": true,
   "version": "0.1.0",
-  "description": "Cadence marketing site, docs, news and roadmap",
+  "description": "Cadence marketing site, docs, news and roadmap.",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "astro dev",

@@ -2,7 +2,8 @@
   "name": "@cadence/desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Cadence desktop app (Tauri)",
+  "description": "Cadence desktop shell — Tauri app with a React frontend for driving local AI coding agents.",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "node ./tauri-dev.mjs",
     "build": "tauri build",

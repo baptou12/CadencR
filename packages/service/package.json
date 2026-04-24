@@ -2,6 +2,8 @@
   "name": "@cadence/service",
   "private": true,
   "version": "0.1.0",
+  "description": "Cadence Rust backend service — HTTP/WebSocket API powering the desktop app.",
+  "license": "Apache-2.0",
   "dependencies": {
     "@cadence/claude-agent-sdk-rs": "workspace:*"
   },

@@ -2,6 +2,8 @@
   "name": "@cadence/opencode-sdk-rs",
   "private": true,
   "version": "0.1.0",
+  "description": "Rust SDK wrapping the OpenCode CLI — used by Cadence to stream and control OpenCode sessions.",
+  "license": "Apache-2.0",
   "scripts": {
     "format": "cargo fmt",
     "format:check": "cargo fmt -- --check"

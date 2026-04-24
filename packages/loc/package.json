@@ -2,6 +2,8 @@
   "name": "@cadence/loc",
   "private": true,
   "version": "0.1.0",
+  "description": "Lines-of-code counter for the Cadence monorepo.",
+  "license": "Apache-2.0",
   "scripts": {
     "format": "cargo fmt",
     "format:check": "cargo fmt -- --check"
