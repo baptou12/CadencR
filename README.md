@@ -1,78 +1,97 @@
 # Cadence
 
-Cadence is a Tauri desktop app with a React frontend and Rust backend for driving local coding agents through a desktop UI.
+**A desktop IDE for AI coding agents — a unified workspace for Claude Code, OpenCode, and more.**
 
-## Prerequisites
+Cadence replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, planned phases, visual diffs, and orchestration across multiple agents running in parallel.
 
-- Node.js 22+
-- `pnpm`
-- Rust toolchain
-- Tauri system dependencies for your platform
+- **Website:** [rle-mino.github.io/cadence](https://rle-mino.github.io/cadence/)
+- **License:** Apache-2.0
 
-## Quickstart
+---
 
-1. Install dependencies:
+## Why Cadence?
+
+- **Readable diffs** — Visual diff viewer with inline commenting, not raw terminal output.
+- **Parallel agents** — Run multiple Claude Code or OpenCode sessions on the same project without stepping on each other.
+- **Structured features** — Plan → Execute → Review lifecycle for every task, backed by dedicated sub-agents.
+- **Local-first** — Everything runs on your machine. No account, no hosted state.
+
+---
+
+## Install
+
+**Binaries are not yet published.** Until the first release, build from source — see [Build from source](#build-from-source) below.
+
+When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/rle-mino/cadence/releases).
+
+---
+
+## Build from source
+
+### Prerequisites
+
+- **Node.js 22.x** — managed via [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), or [asdf](https://asdf-vm.com/). Cadence pins `22` in `.nvmrc`, `.node-version`, and `package.json` engines; `engine-strict=true` makes install fail on a mismatched Node.
+- **pnpm** (`npm i -g pnpm`) — `npm` and `yarn` are not supported.
+- **Rust toolchain** — install via [rustup](https://rustup.rs).
+- **Tauri system dependencies** — follow the [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) for your OS (WebView2 on Windows, `libwebkit2gtk-4.1` on Linux, Xcode CLT on macOS).
+
+### Setup
 
 ```bash
+# 1. Clone
+git clone https://github.com/rle-mino/cadence.git
+cd cadence
+
+# 2. Install
 pnpm install
-```
 
-2. Create your local env files:
-
-```bash
+# 3. Create local env files
 cp packages/service/.env.example packages/service/.env
-cp packages/tauri/.env.example packages/tauri/.env
+cp packages/tauri/.env.example   packages/tauri/.env
 ```
 
-3. Set matching local values in both files:
+Edit both `.env` files so the shared values match: any random string for `CADENCE_AUTH_TOKEN` / `VITE_API_TOKEN` (they must be identical), frontend port aligned on both sides (default `1420`), and `VITE_API_URL` pointing at the service port (default `http://127.0.0.1:5005`).
 
-```bash
-# packages/service/.env
-CADENCE_AUTH_TOKEN=replace-with-a-random-local-token
-CADENCE_FRONTEND_PORT=1420
-CADENCE_RUST_PORT=5005
-
-# packages/tauri/.env
-VITE_API_TOKEN=replace-with-the-same-local-token
-VITE_FRONTEND_PORT=1420
-VITE_API_URL=http://127.0.0.1:5005
-```
-
-4. Start the app:
+### Run
 
 ```bash
 pnpm dev
 ```
 
-The example files use frontend port `1420`, service port `5005`, and `./cadence.local.db` for the service database. Override those values in `packages/service/.env` and `packages/tauri/.env` if you need multiple local clones running at once.
+This runs the Rust service and the Tauri desktop app together via Turborepo.
 
-## Useful Commands
+Other common commands are listed in [CONTRIBUTING.md](./CONTRIBUTING.md#common-commands).
 
-```bash
-pnpm dev
-pnpm start
-pnpm test
-pnpm run lint
-```
-
-## Local Configuration
-
-- `packages/service/.env` is required for service dev and is read only by the service.
-- `packages/tauri/.env` is required for desktop/frontend dev and is read only by Tauri and Vite.
-- Missing either required `.env` file, or required keys within it, fails fast during dev startup.
-- Keep `CADENCE_FRONTEND_PORT` and `VITE_FRONTEND_PORT` aligned.
-- Point `VITE_API_URL` at the service URL from `CADENCE_RUST_PORT`.
-- Keep `CADENCE_AUTH_TOKEN` and `VITE_API_TOKEN` aligned.
-- `CADENCE_DB_PATH` sets the local service database path.
+---
 
 ## Architecture
 
-- `packages/tauri/`: desktop shell and React frontend
-- `packages/service/`: Rust HTTP/WebSocket backend
-- `packages/claude-agent-sdk-rs/`: Rust SDK support crate
+```
+packages/
+├── tauri/                   # Desktop shell (Tauri v2) + React frontend
+├── service/                 # Rust HTTP/WebSocket backend (Axum)
+├── claude-agent-sdk-rs/     # Rust SDK wrapping the Claude Code CLI
+├── opencode-sdk-rs/         # Rust SDK wrapping the OpenCode CLI
+├── landing/                 # Astro marketing site
+└── loc/                     # Lines-of-code counter CLI
+```
 
-The frontend talks to the backend over HTTP and WebSockets. In production, Tauri spawns the Rust service as a sidecar.
+- **Frontend ↔ Backend** — HTTP (Axios) for requests, WebSocket (Zustand store) for live agent streams.
+- **Backend ↔ CLIs** — Provider-specific SDKs stream and control local agent processes.
+- **Production** — Tauri spawns the compiled `cadence-service` binary as a sidecar.
+
+---
 
 ## Contributing
 
-See `CONTRIBUTING.md` for local development and contribution notes.
+Contributions welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development setup, commit convention, and pull request process. Please also read the [Code of Conduct](./.github/CODE_OF_CONDUCT.md).
+
+To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/rle-mino/cadence/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
+
+---
+
+## License
+
+Apache-2.0 © 2026 Raphael Le Minor. See [LICENSE](./LICENSE).
+
+Third-party dependency and brand-asset attributions are listed in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
