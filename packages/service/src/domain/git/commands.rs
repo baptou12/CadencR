@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tokio::process::Command;
 
+use crate::domain::git::file_size::classify_content;
 use crate::domain::git::models::{
-    ChangedFile, CommitLogEntry, GitStats, MergeConflictResult, MergeResult, WorktreeInfo,
+    ChangedFile, CommitLogEntry, FileContentBatchItem, GitStats, MergeConflictResult, MergeResult,
+    WorktreeInfo,
 };
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_safe, run_git_safe_refs};
@@ -355,14 +357,23 @@ pub async fn get_file_content(
 }
 
 /// Get file content for multiple files (batch).
+///
+/// We fetch both sides of every file (same per-file cost as the original
+/// implementation) and then derive size + binary + large flags from the
+/// returned content. For binary files or files whose largest side meets
+/// `LARGE_FILE_BYTES`, content is omitted from the response — the frontend
+/// renders a placeholder and pulls the content via the single-file endpoint
+/// on opt-in. Deriving metadata from the already-fetched content avoids
+/// adding extra git calls per file (which was making the batch slow and
+/// produced visible empty blocks while the diff view loaded).
 pub async fn get_file_content_batch(
     git_path: &Path,
     file_paths: &[String],
     old_ref: &str,
     new_ref: Option<&str>,
-) -> Result<HashMap<String, (String, String)>, AppError> {
+) -> Result<Vec<FileContentBatchItem>, AppError> {
     if file_paths.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(Vec::new());
     }
 
     use futures::stream::{self, StreamExt};
@@ -371,26 +382,29 @@ pub async fn get_file_content_batch(
     let old_ref = old_ref.to_string();
     let new_ref = new_ref.map(|s| s.to_string());
 
-    let results: Vec<_> = stream::iter(file_paths.to_vec())
+    let items: Vec<FileContentBatchItem> = stream::iter(file_paths.to_vec())
         .map(|file_path| {
             let git_path = git_path.clone();
             let old_ref = old_ref.clone();
             let new_ref = new_ref.clone();
             async move {
-                let old_content = get_file_content(&git_path, &file_path, Some(&old_ref))
-                    .await
-                    .unwrap_or_default();
-                let new_content = get_file_content(&git_path, &file_path, new_ref.as_deref())
-                    .await
-                    .unwrap_or_default();
-                (file_path, (old_content, new_content))
+                let (old, new) = tokio::join!(
+                    get_file_content(&git_path, &file_path, Some(&old_ref)),
+                    get_file_content(&git_path, &file_path, new_ref.as_deref()),
+                );
+                classify_content(
+                    file_path,
+                    old.unwrap_or_default(),
+                    new.unwrap_or_default(),
+                    /* keep_large_content */ false,
+                )
             }
         })
         .buffer_unordered(20)
         .collect()
         .await;
 
-    Ok(results.into_iter().collect())
+    Ok(items)
 }
 
 /// Get commit log for a feature branch relative to a base branch.
