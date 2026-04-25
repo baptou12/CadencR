@@ -293,10 +293,10 @@ fn push_if_executable(
     });
 }
 
-async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
+pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
     let output = tokio::time::timeout(
         Duration::from_secs(5),
-        Command::new(command).args(args).output(),
+        Command::new(command).args(args).kill_on_drop(true).output(),
     )
     .await
     .ok()?

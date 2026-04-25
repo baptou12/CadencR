@@ -22,12 +22,6 @@ pub enum SdkError {
 
     #[error("protocol error: {0}")]
     Protocol(String),
-
-    #[error("invalid base URL: {0}")]
-    InvalidBaseUrl(String),
-
-    #[error("missing port in URL: {0}")]
-    MissingPort(String),
 }
 
 impl From<reqwest_eventsource::Error> for SdkError {

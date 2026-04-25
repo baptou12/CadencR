@@ -4,6 +4,7 @@ pub mod error;
 pub mod event_parsing;
 pub mod parsing;
 pub mod process;
+mod server_health;
 pub mod sse;
 mod sse_reconcile;
 mod tool_input;

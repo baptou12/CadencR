@@ -1,21 +1,19 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex as StdMutex;
 
 use axum::extract::{Path, State};
 use axum::response::sse::{Event, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use once_cell::sync::Lazy;
 use serde_json::Value;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio_stream::iter;
 
 use opencode_sdk_rs::{
-    parse_sse_event, shared_dispatcher, OpenCodeClient, OpenCodeServer, PromptOptions, PromptPart,
-    SessionStatus, SseEvent,
+    parse_sse_event, shared_dispatcher, OpenCodeClient, PromptOptions, PromptPart, SessionStatus,
+    SseEvent,
 };
 
 #[derive(Default)]
@@ -27,10 +25,8 @@ struct ServerState {
     question_reply_payload: Option<Value>,
 }
 
-static OPENCODE_ENV_LOCK: Lazy<StdMutex<()>> = Lazy::new(|| StdMutex::new(()));
-
 async fn health_handler() -> Json<Value> {
-    Json(serde_json::json!({ "ok": true }))
+    Json(serde_json::json!({ "healthy": true, "version": "1.14.24" }))
 }
 
 async fn create_session_handler(
@@ -236,22 +232,6 @@ async fn question_reply_in_directory_includes_scope_header() {
     let payload = locked.question_reply_payload.clone().unwrap();
     assert_eq!(payload["answers"][0][0], "Alpha");
     assert_eq!(payload["answers"][1][0], "Beta");
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn client_init_starts_from_configured_base_url() {
-    let _guard = OPENCODE_ENV_LOCK.lock().unwrap();
-    let (addr, _) = start_server().await;
-    let base_url = format!("http://{addr}");
-    let _ = OpenCodeServer::shutdown().await;
-    std::env::set_var("CADENCE_OPENCODE_BASE_URL", &base_url);
-
-    let client = OpenCodeClient::init().await.unwrap();
-    assert_eq!(client.base_url(), base_url);
-    client.health().await.unwrap();
-
-    std::env::remove_var("CADENCE_OPENCODE_BASE_URL");
-    let _ = OpenCodeServer::shutdown().await;
 }
 
 #[tokio::test]

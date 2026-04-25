@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::sync::RwLock;
 use std::time::Duration;
 
-use cli_discovery::DiscoverySpec;
+use cli_discovery::{query_version, DiscoverySpec, VersionKey};
 use once_cell::sync::Lazy;
 use regex_lite::Regex;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -12,8 +12,11 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::time::sleep;
 use tracing::{info, warn};
 
-use crate::client::OpenCodeClient;
 use crate::error::SdkError;
+use crate::server_health::{fetch_server_health, ServerHealth};
+
+const DEFAULT_OPENCODE_PORT: u16 = 4096;
+const DEFAULT_OPENCODE_BASE_URL: &str = "http://127.0.0.1:4096";
 
 /// Provider-neutral spec for finding the `opencode` binary.
 ///
@@ -67,14 +70,15 @@ static SERVER: Lazy<Mutex<Option<OpenCodeServer>>> = Lazy::new(|| Mutex::new(Non
 
 impl OpenCodeServer {
     pub async fn ensure_running() -> Result<OpenCodeServerInfo, SdkError> {
+        let opencode_command = resolved_opencode_command().await?;
         let mut guard = SERVER.lock().await;
         if let Some(server) = guard.as_mut() {
-            if server.is_healthy().await {
+            if server.is_compatible_with(opencode_command.version).await {
                 return Ok(server.info.clone());
             }
             *guard = None;
         }
-        let server = Self::spawn().await?;
+        let server = Self::spawn(opencode_command).await?;
         let info = server.info.clone();
         *guard = Some(server);
         Ok(info)
@@ -91,41 +95,30 @@ impl OpenCodeServer {
         Ok(())
     }
 
-    async fn spawn() -> Result<Self, SdkError> {
-        if let Ok(base_url) = std::env::var("CADENCE_OPENCODE_BASE_URL") {
-            let port = parse_port(&base_url)?;
-            let info = OpenCodeServerInfo {
-                base_url,
-                port,
-                pid: None,
-            };
-            let client = OpenCodeClient::with_base_url(info.base_url.clone());
-            wait_for_health(&client).await?;
-            return Ok(Self { child: None, info });
-        }
-
-        let default_client = OpenCodeClient::new(4096);
-        if default_client.health().await.is_ok() {
+    async fn spawn(opencode_command: ResolvedOpenCodeCommand) -> Result<Self, SdkError> {
+        if can_attach_to_default_server(opencode_command.version).await {
             return Ok(Self {
                 child: None,
                 info: OpenCodeServerInfo {
-                    base_url: "http://127.0.0.1:4096".to_string(),
-                    port: 4096,
+                    base_url: DEFAULT_OPENCODE_BASE_URL.to_string(),
+                    port: DEFAULT_OPENCODE_PORT,
                     pid: None,
                 },
             });
         }
 
-        let opencode_command = resolved_opencode_command().await;
-        info!(command = %opencode_command.display(), "spawning opencode server");
-        let mut child = Command::new(&opencode_command)
+        info!(command = %opencode_command.path.display(), "spawning opencode server");
+        let mut child = Command::new(&opencode_command.path)
             .arg("serve")
+            .arg("--port")
+            .arg("0")
+            .kill_on_drop(true)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| {
-                SdkError::Spawn(format!("{} ({})", error, opencode_command.display()))
+                SdkError::Spawn(format!("{} ({})", error, opencode_command.path.display()))
             })?;
 
         let pid = child.id();
@@ -142,10 +135,11 @@ impl OpenCodeServer {
         spawn_output_reader(stdout, tx.clone());
         spawn_output_reader(stderr, tx);
 
-        let discovered_port = wait_for_port_from_logs(&mut rx).await.unwrap_or(4096);
+        let discovered_port = wait_for_port_from_logs(&mut rx).await.ok_or_else(|| {
+            SdkError::Timeout("OpenCode did not report a server port".to_string())
+        })?;
         let base_url = format!("http://127.0.0.1:{discovered_port}");
-        let client = OpenCodeClient::with_base_url(base_url.clone());
-        wait_for_health(&client).await?;
+        wait_for_matching_health(&base_url, opencode_command.version).await?;
 
         info!(port = discovered_port, pid = ?pid, "opencode server started");
         Ok(Self {
@@ -158,7 +152,7 @@ impl OpenCodeServer {
         })
     }
 
-    async fn is_healthy(&mut self) -> bool {
+    async fn is_compatible_with(&mut self, expected_version: VersionKey) -> bool {
         if let Some(child) = self.child.as_mut() {
             match child.try_wait() {
                 Ok(Some(_)) => return false,
@@ -166,9 +160,38 @@ impl OpenCodeServer {
                 Err(_) => return false,
             }
         }
-        let client = OpenCodeClient::with_base_url(self.info.base_url.clone());
-        client.health().await.is_ok()
+        server_matches_version(&self.info.base_url, expected_version).await
     }
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedOpenCodeCommand {
+    path: PathBuf,
+    version: VersionKey,
+}
+
+async fn can_attach_to_default_server(expected_version: VersionKey) -> bool {
+    server_matches_version(DEFAULT_OPENCODE_BASE_URL, expected_version).await
+}
+
+async fn server_matches_version(base_url: &str, expected_version: VersionKey) -> bool {
+    match fetch_server_health(base_url).await {
+        Ok(health) if health_matches_version(&health, expected_version) => true,
+        Ok(health) => {
+            warn!(
+                base_url,
+                server_version = ?health.version,
+                cli_version = ?expected_version,
+                "ignoring opencode server with non-matching version"
+            );
+            false
+        }
+        Err(_) => false,
+    }
+}
+
+fn health_matches_version(health: &ServerHealth, expected_version: VersionKey) -> bool {
+    health.version == Some(expected_version)
 }
 
 fn spawn_output_reader<T>(stream: T, tx: mpsc::Sender<String>)
@@ -204,29 +227,26 @@ async fn wait_for_port_from_logs(rx: &mut mpsc::Receiver<String>) -> Option<u16>
     }
 }
 
-async fn wait_for_health(client: &OpenCodeClient) -> Result<(), SdkError> {
+async fn wait_for_matching_health(
+    base_url: &str,
+    expected_version: VersionKey,
+) -> Result<(), SdkError> {
     for _ in 0..80 {
-        if client.health().await.is_ok() {
-            return Ok(());
+        if let Ok(health) = fetch_server_health(base_url).await {
+            if health_matches_version(&health, expected_version) {
+                return Ok(());
+            }
         }
         sleep(Duration::from_millis(250)).await;
     }
     warn!(
-        base_url = client.base_url(),
+        base_url,
+        cli_version = ?expected_version,
         "timed out waiting for opencode health check"
     );
     Err(SdkError::Timeout(format!(
-        "OpenCode health check failed for {}",
-        client.base_url()
+        "OpenCode health check failed for {base_url}"
     )))
-}
-
-fn parse_port(base_url: &str) -> Result<u16, SdkError> {
-    let parsed = reqwest::Url::parse(base_url)
-        .map_err(|error| SdkError::InvalidBaseUrl(error.to_string()))?;
-    parsed
-        .port_or_known_default()
-        .ok_or_else(|| SdkError::MissingPort(base_url.to_string()))
 }
 
 /// Resolve the `opencode` binary path with the documented precedence:
@@ -238,28 +258,50 @@ fn parse_port(base_url: &str) -> Result<u16, SdkError> {
 ///
 /// Falls back to the bare `"opencode"` string (so `Command::new` will defer
 /// to whatever the OS finds) only when nothing concrete is discovered.
-async fn resolved_opencode_command() -> PathBuf {
+async fn resolved_opencode_command() -> Result<ResolvedOpenCodeCommand, SdkError> {
     if let Some(command) = current_binary_override() {
         info!(command = %command.display(), "using opencode binary override");
-        return command;
+        return resolved_single_command(command).await;
     }
 
     if let Some(command) = legacy_env_opencode_command() {
         info!(command = %command.display(), "using CADENCE_OPENCODE_BIN");
-        return command;
+        return resolved_single_command(command).await;
     }
 
     let spec = opencode_discovery_spec();
     let candidates = cli_discovery::discover_all(&spec, None).await;
     if candidates.is_empty() {
         info!("no concrete opencode binaries discovered; falling back to PATH resolution");
-        return PathBuf::from(spec.bin_name);
+        return resolved_single_command(PathBuf::from(spec.bin_name)).await;
     }
 
     log_candidate_selection(&candidates);
-    cli_discovery::select_best(&candidates)
-        .map(|candidate| candidate.path.clone())
-        .unwrap_or_else(|| PathBuf::from(spec.bin_name))
+    let Some(candidate) = cli_discovery::select_best(&candidates) else {
+        return resolved_single_command(PathBuf::from(spec.bin_name)).await;
+    };
+    Ok(ResolvedOpenCodeCommand {
+        path: candidate.path.clone(),
+        version: candidate.version.ok_or_else(|| {
+            SdkError::Protocol(format!(
+                "failed to parse opencode CLI version from {}",
+                candidate.path.display()
+            ))
+        })?,
+    })
+}
+
+async fn resolved_single_command(path: PathBuf) -> Result<ResolvedOpenCodeCommand, SdkError> {
+    let spec = opencode_discovery_spec();
+    let version = query_version(&path, spec.version_args)
+        .await
+        .ok_or_else(|| {
+            SdkError::Protocol(format!(
+                "failed to parse opencode CLI version from {}",
+                path.display()
+            ))
+        })?;
+    Ok(ResolvedOpenCodeCommand { path, version })
 }
 
 fn legacy_env_opencode_command() -> Option<PathBuf> {
@@ -317,5 +359,20 @@ mod tests {
         set_binary_override(None);
         assert!(current_binary_override().is_none());
         set_binary_override(prior);
+    }
+
+    #[test]
+    fn health_matches_expected_version_only() {
+        let health = ServerHealth {
+            version: Some(VersionKey(1, 14, 24)),
+        };
+        assert!(health_matches_version(&health, VersionKey(1, 14, 24)));
+        assert!(!health_matches_version(&health, VersionKey(1, 4, 3)));
+    }
+
+    #[test]
+    fn health_without_version_never_matches() {
+        let health = ServerHealth { version: None };
+        assert!(!health_matches_version(&health, VersionKey(1, 14, 24)));
     }
 }
