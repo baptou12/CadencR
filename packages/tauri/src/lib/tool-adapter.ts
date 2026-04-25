@@ -1,5 +1,5 @@
 import { extractApplyPatchPreviewPartial, isApplyPatchToolName } from "@/lib/apply-patch";
-import { stringArg } from "@/lib/tool-args";
+import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 
 export interface InlineDiffPreview {
   filePath: string;
@@ -8,15 +8,6 @@ export interface InlineDiffPreview {
 }
 
 const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "ApplyPatch"]);
-
-function parseToolArgsObject(toolArgs?: string): Record<string, unknown> | null {
-  if (!toolArgs) return null;
-  try {
-    return JSON.parse(toolArgs) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 export function normalizeToolName(toolName: string): string {
   if (isApplyPatchToolName(toolName)) return "ApplyPatch";

@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useMemo } from "react";
 import { Loader2Icon, LayersIcon } from "lucide-react";
 import { AgentBlock, type AgentBlockData, buildToolResultMap } from "@/components/AgentBlock";
 import { extractTaskOutput } from "@/lib/tool-adapter";
+import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 
 export function TaskAgentBlock({
   block,
@@ -26,15 +27,7 @@ export function TaskAgentBlock({
   const childResultMap = useMemo(() => buildToolResultMap(children), [children]);
   const isRunning = !!isStreaming && !block.taskComplete;
 
-  let description = "Subtask";
-  if (block.toolArgs) {
-    try {
-      const args = JSON.parse(block.toolArgs) as Record<string, unknown>;
-      if (typeof args.description === "string") description = args.description;
-    } catch {
-      // partial JSON during streaming
-    }
-  }
+  const description = stringArg(parseToolArgsObject(block.toolArgs), "description") ?? "Subtask";
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);

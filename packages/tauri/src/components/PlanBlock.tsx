@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 import { ClipboardCheck, CircleCheckIcon, CircleXIcon } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
+import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 
 export function PlanBlock({
   args,
@@ -9,15 +10,7 @@ export function PlanBlock({
   args?: string;
   approvalStatus?: "approved" | "rejected";
 }) {
-  let plan: string | undefined;
-  if (args) {
-    try {
-      const parsed = JSON.parse(args) as Record<string, unknown>;
-      if (typeof parsed.plan === "string") plan = parsed.plan;
-    } catch {
-      // partial JSON during streaming
-    }
-  }
+  const plan = stringArg(parseToolArgsObject(args), "plan");
 
   if (!plan) return null;
 

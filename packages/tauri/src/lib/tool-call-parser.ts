@@ -1,5 +1,5 @@
 import { extractApplyPatchPrimaryPath } from "@/lib/apply-patch";
-import { stringArg } from "@/lib/tool-args";
+import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 import { normalizeToolName } from "@/lib/tool-adapter";
 
 /**
@@ -105,14 +105,7 @@ export function parseCadenceMcpTool(
   const server = rest.slice(0, sep);
   const tool = rest.slice(sep + 2);
 
-  let args: Record<string, unknown> = {};
-  if (toolArgs) {
-    try {
-      args = JSON.parse(toolArgs) as Record<string, unknown>;
-    } catch {
-      /* streaming */
-    }
-  }
+  const args = parseToolArgsObject(toolArgs) ?? {};
 
   return {
     server,
@@ -217,15 +210,7 @@ export function parseToolCall(toolName: string, toolArgs?: string): ToolSummary 
   const parser = toolParsers[normalizeToolName(toolName)];
   if (!parser) return undefined;
 
-  let args: Record<string, unknown> = {};
-  if (toolArgs) {
-    try {
-      args = JSON.parse(toolArgs) as Record<string, unknown>;
-    } catch {
-      // Args may be partial JSON during streaming — that's fine
-      return { label: parser({}).label };
-    }
-  }
+  const args = parseToolArgsObject(toolArgs) ?? {};
 
   return parser(args);
 }

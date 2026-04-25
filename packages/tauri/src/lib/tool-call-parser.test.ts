@@ -96,6 +96,11 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Reading file", detail: undefined });
   });
 
+  it("handles null args gracefully", () => {
+    const result = parseToolCall("Edit", "null");
+    expect(result).toEqual({ label: "Editing file", detail: undefined });
+  });
+
   it("handles args with wrong types gracefully", () => {
     const result = parseToolCall("Read", JSON.stringify({ file_path: 123 }));
     expect(result).toEqual({ label: "Reading file", detail: undefined });
@@ -191,6 +196,13 @@ describe("parseCadenceMcpTool", () => {
 
   it("handles malformed JSON args", () => {
     const result = parseCadenceMcpTool("mcp__cadence-plan__read_plan", "{bad json");
+    expect(result).toBeDefined();
+    expect(result!.label).toBe("Reading plan");
+    expect(result!.detail).toBeUndefined();
+  });
+
+  it("handles null args", () => {
+    const result = parseCadenceMcpTool("mcp__cadence-plan__read_plan", "null");
     expect(result).toBeDefined();
     expect(result!.label).toBe("Reading plan");
     expect(result!.detail).toBeUndefined();
