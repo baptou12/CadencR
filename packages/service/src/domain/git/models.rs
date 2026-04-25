@@ -181,6 +181,16 @@ pub struct ChangedFile {
 pub struct FileContent {
     pub old_content: Option<String>,
     pub new_content: Option<String>,
+    /// Byte size of the file at the old ref (0 if absent).
+    pub old_size: u64,
+    /// Byte size of the file at the new ref / working tree (0 if absent).
+    pub new_size: u64,
+    /// True if either side appears to be a binary blob.
+    pub is_binary: bool,
+    /// True if the file is too large to render automatically. When true the
+    /// frontend shows a placeholder and the content fields may be `None` in
+    /// batch responses (the single-file endpoint always returns content).
+    pub is_large: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -188,6 +198,23 @@ pub struct FileContentBatchItem {
     pub file_path: String,
     pub old_content: Option<String>,
     pub new_content: Option<String>,
+    pub old_size: u64,
+    pub new_size: u64,
+    pub is_binary: bool,
+    pub is_large: bool,
+}
+
+impl From<FileContentBatchItem> for FileContent {
+    fn from(item: FileContentBatchItem) -> Self {
+        Self {
+            old_content: item.old_content,
+            new_content: item.new_content,
+            old_size: item.old_size,
+            new_size: item.new_size,
+            is_binary: item.is_binary,
+            is_large: item.is_large,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -420,14 +447,59 @@ mod tests {
             file_path: "src/lib.rs".into(),
             old_content: Some("old".into()),
             new_content: None,
+            old_size: 3,
+            new_size: 0,
+            is_binary: false,
+            is_large: false,
         };
         let json = serde_json::to_string(&item).unwrap();
         assert!(json.contains("file_path"));
         assert!(json.contains("src/lib.rs"));
+        assert!(json.contains("\"old_size\":3"));
+        assert!(json.contains("\"is_binary\":false"));
+        assert!(json.contains("\"is_large\":false"));
         let back: FileContentBatchItem = serde_json::from_str(&json).unwrap();
         assert_eq!(back.file_path, "src/lib.rs");
         assert_eq!(back.old_content, Some("old".into()));
         assert_eq!(back.new_content, None);
+        assert_eq!(back.old_size, 3);
+        assert_eq!(back.new_size, 0);
+        assert!(!back.is_binary);
+        assert!(!back.is_large);
+    }
+
+    #[test]
+    fn test_file_content_serde_roundtrip_with_metadata() {
+        let fc = FileContent {
+            old_content: None,
+            new_content: None,
+            old_size: 1_000_000,
+            new_size: 2_000_000,
+            is_binary: false,
+            is_large: true,
+        };
+        let json = serde_json::to_string(&fc).unwrap();
+        let back: FileContent = serde_json::from_str(&json).unwrap();
+        assert!(back.is_large);
+        assert_eq!(back.new_size, 2_000_000);
+        assert!(back.old_content.is_none());
+    }
+
+    #[test]
+    fn file_content_from_batch_item_drops_path_and_keeps_metadata() {
+        let item = FileContentBatchItem {
+            file_path: "src/big.rs".into(),
+            old_content: None,
+            new_content: Some("hi".into()),
+            old_size: 0,
+            new_size: 2,
+            is_binary: false,
+            is_large: true,
+        };
+        let fc: FileContent = item.into();
+        assert_eq!(fc.new_content.as_deref(), Some("hi"));
+        assert_eq!(fc.new_size, 2);
+        assert!(fc.is_large);
     }
 
     #[test]

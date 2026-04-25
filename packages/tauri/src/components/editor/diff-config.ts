@@ -1,15 +1,22 @@
 import type { DiffConfig } from "@codemirror/merge";
 
-const LARGE_DIFF_CHARACTER_THRESHOLD = 20_000;
+/**
+ * Mid-sized files (above ~20 KB but below `LARGE_DIFF_BYTES`) get a higher
+ * `scanLimit` so CodeMirror's diff algorithm can find multiple small changes
+ * spread across the file instead of collapsing them into one giant chunk.
+ *
+ * Anything ≥ `LARGE_DIFF_BYTES` (200 KB) never reaches CodeMirror — the
+ * `DiffFileBlock` shows a "Display diff" placeholder for those — so we don't
+ * pay the cost of scanning huge files here.
+ */
+const SPARSE_DIFF_CHARACTER_THRESHOLD = 20_000;
 
-// CodeMirror defaults scanLimit to 500, which can collapse large sparse diffs
-// into a single giant chunk instead of matching git's smaller changed regions.
-const LARGE_DIFF_CONFIG: DiffConfig = { scanLimit: 20_000 };
+const SPARSE_DIFF_CONFIG: DiffConfig = { scanLimit: 20_000 };
 
 export function getCadenceDiffConfig(
   oldContent: string,
   newContent: string,
 ): DiffConfig | undefined {
   const contentLength = Math.max(oldContent.length, newContent.length);
-  return contentLength >= LARGE_DIFF_CHARACTER_THRESHOLD ? LARGE_DIFF_CONFIG : undefined;
+  return contentLength >= SPARSE_DIFF_CHARACTER_THRESHOLD ? SPARSE_DIFF_CONFIG : undefined;
 }

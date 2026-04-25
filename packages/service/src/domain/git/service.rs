@@ -4,6 +4,7 @@ use chrono::DateTime;
 
 use crate::app_state::AppState;
 use crate::domain::git::commands;
+use crate::domain::git::file_size::classify_content;
 use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::error::AppError;
@@ -134,6 +135,40 @@ pub async fn get_changed_files(
     .await
 }
 
+/// Resolve which (old_ref, new_ref) pair the diff endpoints should use for a
+/// given request. `None` for `new_ref` means "the working tree". Shared by
+/// `get_file_content` and `get_file_content_batch` so both endpoints stay in
+/// lock-step.
+async fn resolve_diff_refs(
+    state: &AppState,
+    feature_id: i64,
+    mode: &str,
+    target_branch: Option<&str>,
+    commit_sha: Option<&str>,
+    path: &Path,
+) -> Result<(String, Option<String>), AppError> {
+    if let Some(sha) = commit_sha {
+        return Ok((format!("{sha}^"), Some(sha.to_string())));
+    }
+    if mode == "worktree" {
+        return Ok(("HEAD".to_string(), None));
+    }
+    let branch =
+        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
+            .await?;
+    let fallback = target_branch.unwrap_or("main");
+    let base = match branch {
+        Some(ref b) => commands::get_original_branch(path, b)
+            .await
+            .unwrap_or_else(|_| fallback.to_string()),
+        None => fallback.to_string(),
+    };
+    Ok((base, Some("HEAD".to_string())))
+}
+
+/// Always returns the full content even for large text files — the
+/// single-file endpoint is the explicit "user opted in" path. Binary
+/// content is still suppressed (no useful textual diff to show).
 pub async fn get_file_content(
     state: &AppState,
     params: GetFileContentParams,
@@ -145,57 +180,36 @@ pub async fn get_file_content(
             return Ok(FileContent {
                 old_content: None,
                 new_content: None,
+                old_size: 0,
+                new_size: 0,
+                is_binary: false,
+                is_large: false,
             })
         }
     };
     let path = Path::new(&git_path);
-
-    if let Some(ref commit_sha) = params.commit_sha {
-        let parent = format!("{commit_sha}^");
-        let (old_content, new_content) = tokio::join!(
-            commands::get_file_content(path, &params.file_path, Some(&parent)),
-            commands::get_file_content(path, &params.file_path, Some(commit_sha)),
-        );
-        return Ok(FileContent {
-            old_content: Some(old_content?),
-            new_content: Some(new_content?),
-        });
-    }
-
-    if params.mode == "worktree" {
-        let (old_content, new_content) = tokio::join!(
-            commands::get_file_content(path, &params.file_path, Some("HEAD")),
-            commands::get_file_content(path, &params.file_path, None),
-        );
-        return Ok(FileContent {
-            old_content: Some(old_content?),
-            new_content: Some(new_content?),
-        });
-    }
-
-    // Branch mode
-    let branch = repository::get_feature_setting(
-        &state.read_pool,
+    let (old_ref, new_ref) = resolve_diff_refs(
+        state,
         params.feature_id,
-        SETTING_WORKTREE_BRANCH,
+        &params.mode,
+        params.target_branch.as_deref(),
+        params.commit_sha.as_deref(),
+        path,
     )
     .await?;
-    let fallback = params.target_branch.as_deref().unwrap_or("main");
-    let base_branch = match branch {
-        Some(ref b) => commands::get_original_branch(path, b)
-            .await
-            .unwrap_or_else(|_| fallback.to_string()),
-        None => fallback.to_string(),
-    };
 
     let (old_content, new_content) = tokio::join!(
-        commands::get_file_content(path, &params.file_path, Some(&base_branch)),
-        commands::get_file_content(path, &params.file_path, Some("HEAD")),
+        commands::get_file_content(path, &params.file_path, Some(&old_ref)),
+        commands::get_file_content(path, &params.file_path, new_ref.as_deref()),
     );
-    Ok(FileContent {
-        old_content: Some(old_content?),
-        new_content: Some(new_content?),
-    })
+
+    Ok(classify_content(
+        params.file_path,
+        old_content?,
+        new_content?,
+        /* keep_large_content */ true,
+    )
+    .into())
 }
 
 pub async fn get_file_content_batch(
@@ -211,46 +225,17 @@ pub async fn get_file_content_batch(
         return Ok(vec![]);
     }
     let path = Path::new(&git_path);
+    let (old_ref, new_ref) = resolve_diff_refs(
+        state,
+        body.feature_id,
+        &body.mode,
+        body.target_branch.as_deref(),
+        body.commit_sha.as_deref(),
+        path,
+    )
+    .await?;
 
-    let (old_ref, new_ref): (String, Option<String>) = if let Some(ref commit_sha) = body.commit_sha
-    {
-        (format!("{commit_sha}^"), Some(commit_sha.clone()))
-    } else if body.mode == "worktree" {
-        ("HEAD".to_string(), None)
-    } else {
-        // Branch mode
-        let branch = repository::get_feature_setting(
-            &state.read_pool,
-            body.feature_id,
-            SETTING_WORKTREE_BRANCH,
-        )
-        .await?;
-        let fallback = body.target_branch.as_deref().unwrap_or("main");
-        let base = match branch {
-            Some(ref b) => commands::get_original_branch(path, b)
-                .await
-                .unwrap_or_else(|_| fallback.to_string()),
-            None => fallback.to_string(),
-        };
-        (base, Some("HEAD".to_string()))
-    };
-
-    let batch =
-        commands::get_file_content_batch(path, &body.file_paths, &old_ref, new_ref.as_deref())
-            .await?;
-
-    Ok(body
-        .file_paths
-        .iter()
-        .map(|fp| {
-            let (old, new) = batch.get(fp).cloned().unwrap_or_default();
-            FileContentBatchItem {
-                file_path: fp.clone(),
-                old_content: Some(old),
-                new_content: Some(new),
-            }
-        })
-        .collect())
+    commands::get_file_content_batch(path, &body.file_paths, &old_ref, new_ref.as_deref()).await
 }
 
 pub async fn get_commit_log(

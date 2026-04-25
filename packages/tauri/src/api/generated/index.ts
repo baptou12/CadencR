@@ -35,12 +35,22 @@ interface DiffResponse {
 export interface FileContent {
   old_content: string | null;
   new_content: string | null;
+  /** Byte size at the old ref (0 if absent). */
+  old_size: number;
+  /** Byte size at the new ref / working tree (0 if absent). */
+  new_size: number;
+  /** True if either side is a binary blob — diff is not rendered. */
+  is_binary: boolean;
+  /**
+   * True if the file is too large to render automatically. The frontend
+   * shows a placeholder; the per-file `useGetFileContent` endpoint always
+   * returns the actual content when the user opts in.
+   */
+  is_large: boolean;
 }
 
-interface FileContentBatchItem {
+export interface FileContentBatchItem extends FileContent {
   file_path: string;
-  old_content: string | null;
-  new_content: string | null;
 }
 
 interface CommitLogEntry {

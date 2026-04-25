@@ -81,6 +81,10 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
       queryClient.setQueryData(key, {
         old_content: item.old_content,
         new_content: item.new_content,
+        old_size: item.old_size,
+        new_size: item.new_size,
+        is_binary: item.is_binary,
+        is_large: item.is_large,
       } as FileContent);
       rafId = requestAnimationFrame(seedNext);
     }

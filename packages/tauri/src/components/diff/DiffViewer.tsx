@@ -259,6 +259,8 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                     displayName={displayName}
                     isCollapsed={isCollapsed}
                     forceRender={selectedFile === displayName}
+                    additions={additions}
+                    deletions={deletions}
                     commentLines={commentLinesByFile.get(displayName)}
                     activeWidget={
                       activeCommentWidget?.filePath === displayName
