@@ -390,3 +390,283 @@ pub async fn touch_schedule_last_run(pool: &SqlitePool, schedule_id: i64) -> Res
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::SqlitePool;
+
+    async fn pool_with_project_and_feature() -> (SqlitePool, i64, i64) {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        crate::shared::migrate::run_migrations(&pool).await.unwrap();
+        let project_id: i64 =
+            sqlx::query_scalar("INSERT INTO projects (name, path) VALUES (?, ?) RETURNING id")
+                .bind("p")
+                .bind("/tmp/p")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let feature_id: i64 = sqlx::query_scalar(
+            "INSERT INTO features (project_id, title) VALUES (?, ?) RETURNING id",
+        )
+        .bind(project_id)
+        .bind("f")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        (pool, project_id, feature_id)
+    }
+
+    #[tokio::test]
+    async fn insert_then_get_returns_hydrated_action_with_variables() {
+        let (pool, project_id, _) = pool_with_project_and_feature().await;
+        let id = insert(
+            &pool,
+            "Greet",
+            "echo hi ${NAME}",
+            None,
+            Scope::Project,
+            Some(project_id),
+        )
+        .await
+        .unwrap();
+
+        let row = get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.name, "Greet");
+        assert_eq!(row.variable_names, vec!["NAME".to_string()]);
+        assert!(row.last_run.is_none(), "no runs recorded yet");
+    }
+
+    #[tokio::test]
+    async fn list_for_project_returns_global_and_project_scoped() {
+        let (pool, project_id, _) = pool_with_project_and_feature().await;
+        let other_project: i64 =
+            sqlx::query_scalar("INSERT INTO projects (name, path) VALUES (?, ?) RETURNING id")
+                .bind("o")
+                .bind("/tmp/o")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        insert(&pool, "global", "echo g", None, Scope::Global, None)
+            .await
+            .unwrap();
+        insert(
+            &pool,
+            "mine",
+            "echo m",
+            None,
+            Scope::Project,
+            Some(project_id),
+        )
+        .await
+        .unwrap();
+        insert(
+            &pool,
+            "other",
+            "echo o",
+            None,
+            Scope::Project,
+            Some(other_project),
+        )
+        .await
+        .unwrap();
+
+        let rows = list_for_project(&pool, project_id, None).await.unwrap();
+        let names: Vec<_> = rows.iter().map(|r| r.name.clone()).collect();
+        assert!(names.contains(&"global".to_string()));
+        assert!(names.contains(&"mine".to_string()));
+        assert!(!names.contains(&"other".to_string()));
+    }
+
+    #[tokio::test]
+    async fn list_for_project_embeds_last_run_for_feature() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
+            .await
+            .unwrap();
+        finalize_run(&pool, run_id, Some(0), "ok\n", "")
+            .await
+            .unwrap();
+
+        let rows = list_for_project(&pool, project_id, Some(feature_id))
+            .await
+            .unwrap();
+        let action = rows.iter().find(|a| a.id == action_id).unwrap();
+        let last = action.last_run.as_ref().expect("last_run embedded");
+        assert_eq!(last.exit_code, Some(0));
+        assert!(last.ended_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn update_partial_keeps_unset_fields() {
+        let (pool, project_id, _) = pool_with_project_and_feature().await;
+        let id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        update(&pool, id, Some("renamed"), None, None, None, None, None)
+            .await
+            .unwrap();
+        let row = get(&pool, id).await.unwrap().unwrap();
+        assert_eq!(row.name, "renamed");
+        assert_eq!(row.command, "echo");
+    }
+
+    #[tokio::test]
+    async fn update_can_clear_icon_via_some_none() {
+        let (pool, project_id, _) = pool_with_project_and_feature().await;
+        let id = insert(
+            &pool,
+            "n",
+            "echo",
+            Some("data:image/png;base64,xx"),
+            Scope::Project,
+            Some(project_id),
+        )
+        .await
+        .unwrap();
+        update(&pool, id, None, None, Some(None), None, None, None)
+            .await
+            .unwrap();
+        let row = get(&pool, id).await.unwrap().unwrap();
+        assert!(row.icon_data.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_returns_not_found_for_missing_id() {
+        let (pool, _, _) = pool_with_project_and_feature().await;
+        let err = update(&pool, 9_999, Some("x"), None, None, None, None, None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn delete_cascades_to_variables_runs_and_schedules() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        upsert_variable(&pool, action_id, feature_id, "X", "v")
+            .await
+            .unwrap();
+        let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
+            .await
+            .unwrap();
+        finalize_run(&pool, run_id, Some(0), "", "").await.unwrap();
+        upsert_schedule(&pool, action_id, feature_id, 60, true)
+            .await
+            .unwrap();
+
+        delete(&pool, action_id).await.unwrap();
+
+        assert!(list_variables(&pool, action_id, feature_id)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(list_runs(&pool, action_id, feature_id, 10)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(get_schedule(&pool, action_id, feature_id)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn upsert_variable_overwrites_existing_value() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        upsert_variable(&pool, action_id, feature_id, "X", "first")
+            .await
+            .unwrap();
+        upsert_variable(&pool, action_id, feature_id, "X", "second")
+            .await
+            .unwrap();
+        let vars = list_variables(&pool, action_id, feature_id).await.unwrap();
+        assert_eq!(vars.len(), 1);
+        assert_eq!(vars[0].value, "second");
+    }
+
+    #[tokio::test]
+    async fn finalize_run_returns_stamped_ended_at() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Schedule)
+            .await
+            .unwrap();
+        let ended = finalize_run(&pool, run_id, Some(2), "out", "err")
+            .await
+            .unwrap();
+        assert!(
+            !ended.is_empty(),
+            "finalize_run returns the stamped timestamp"
+        );
+
+        let runs = list_runs(&pool, action_id, feature_id, 10).await.unwrap();
+        assert_eq!(runs[0].exit_code, Some(2));
+        assert_eq!(runs[0].stdout, "out");
+        assert_eq!(runs[0].stderr, "err");
+        assert_eq!(runs[0].ended_at.as_deref(), Some(ended.as_str()));
+    }
+
+    #[tokio::test]
+    async fn upsert_schedule_then_disable_via_delete() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        upsert_schedule(&pool, action_id, feature_id, 30, true)
+            .await
+            .unwrap();
+        let s = get_schedule(&pool, action_id, feature_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(s.interval_seconds, 30);
+        assert!(s.enabled);
+
+        upsert_schedule(&pool, action_id, feature_id, 90, true)
+            .await
+            .unwrap();
+        let s2 = get_schedule(&pool, action_id, feature_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(s2.interval_seconds, 90, "upsert overrides interval");
+
+        delete_schedule(&pool, action_id, feature_id).await.unwrap();
+        assert!(get_schedule(&pool, action_id, feature_id)
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn list_enabled_schedules_filters_disabled_rows() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let a = insert(&pool, "a", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        let b = insert(&pool, "b", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        upsert_schedule(&pool, a, feature_id, 30, true)
+            .await
+            .unwrap();
+        upsert_schedule(&pool, b, feature_id, 30, false)
+            .await
+            .unwrap();
+
+        let enabled = list_enabled_schedules(&pool).await.unwrap();
+        assert_eq!(enabled.len(), 1);
+        assert_eq!(enabled[0].action_id, a);
+    }
+}

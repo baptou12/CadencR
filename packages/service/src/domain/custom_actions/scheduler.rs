@@ -152,4 +152,161 @@ impl CustomActionScheduler {
             prev.handle.abort();
         }
     }
+
+    #[cfg(test)]
+    async fn tracked_keys(&self) -> Vec<(i64, i64)> {
+        let mut keys: Vec<_> = self.inner.lock().await.keys().copied().collect();
+        keys.sort();
+        keys
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::app_state::AppState;
+    use crate::domain::custom_actions::models::Scope;
+    use crate::domain::custom_actions::repository;
+    use sqlx::SqlitePool;
+
+    async fn fixture() -> (AppState, i64, i64) {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        crate::shared::migrate::run_migrations(&pool).await.unwrap();
+        let state = AppState::with_pool(pool.clone());
+        let project_id: i64 =
+            sqlx::query_scalar("INSERT INTO projects (name, path) VALUES (?, ?) RETURNING id")
+                .bind("p")
+                .bind("/tmp/p")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let feature_id: i64 = sqlx::query_scalar(
+            "INSERT INTO features (project_id, title) VALUES (?, ?) RETURNING id",
+        )
+        .bind(project_id)
+        .bind("f")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let action_id =
+            repository::insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+                .await
+                .unwrap();
+        (state, action_id, feature_id)
+    }
+
+    #[tokio::test]
+    async fn apply_change_starts_then_stops_on_disable() {
+        let (state, action_id, feature_id) = fixture().await;
+        let scheduler = state.custom_action_scheduler.clone();
+
+        repository::upsert_schedule(&state.write_pool, action_id, feature_id, 5, true)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+        assert_eq!(
+            scheduler.tracked_keys().await,
+            vec![(action_id, feature_id)]
+        );
+
+        // Simulate the disable path: row deleted *before* apply_change is called
+        // — the original bug was that we couldn't recover the row id to abort.
+        repository::delete_schedule(&state.write_pool, action_id, feature_id)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+        assert!(scheduler.tracked_keys().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn apply_change_skips_no_op_when_interval_unchanged() {
+        let (state, action_id, feature_id) = fixture().await;
+        let scheduler = state.custom_action_scheduler.clone();
+
+        repository::upsert_schedule(&state.write_pool, action_id, feature_id, 30, true)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+        let first = scheduler.tracked_keys().await;
+
+        // Re-applying with the same interval should be a no-op (no abort/respawn).
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+        let second = scheduler.tracked_keys().await;
+        assert_eq!(first, second);
+    }
+
+    #[tokio::test]
+    async fn apply_change_swaps_when_interval_changes() {
+        let (state, action_id, feature_id) = fixture().await;
+        let scheduler = state.custom_action_scheduler.clone();
+
+        repository::upsert_schedule(&state.write_pool, action_id, feature_id, 5, true)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+
+        repository::upsert_schedule(&state.write_pool, action_id, feature_id, 60, true)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+
+        let entry_interval = scheduler
+            .inner
+            .lock()
+            .await
+            .get(&(action_id, feature_id))
+            .unwrap()
+            .interval_seconds;
+        assert_eq!(entry_interval, 60);
+    }
+
+    #[tokio::test]
+    async fn stop_for_action_aborts_every_feature() {
+        let (state, action_id, feature_id) = fixture().await;
+        let scheduler = state.custom_action_scheduler.clone();
+
+        let other_feature: i64 = sqlx::query_scalar(
+            "INSERT INTO features (project_id, title) VALUES (?, ?) RETURNING id",
+        )
+        .bind(1_i64)
+        .bind("f2")
+        .fetch_one(&state.write_pool)
+        .await
+        .unwrap();
+        repository::upsert_schedule(&state.write_pool, action_id, feature_id, 5, true)
+            .await
+            .unwrap();
+        repository::upsert_schedule(&state.write_pool, action_id, other_feature, 5, true)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, feature_id)
+            .await
+            .unwrap();
+        scheduler
+            .apply_change(&state, action_id, other_feature)
+            .await
+            .unwrap();
+        assert_eq!(scheduler.tracked_keys().await.len(), 2);
+
+        scheduler.stop_for_action(action_id).await;
+        assert!(scheduler.tracked_keys().await.is_empty());
+    }
 }
