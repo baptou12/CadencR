@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  getCustomActionRunsQueryKey,
+  getGetCustomActionRunsQueryKey,
   getListCustomActionsQueryKey,
   useDeleteCustomAction,
   useRunCustomAction,
@@ -42,25 +42,29 @@ export function CustomActionsOverflowDropdown({
   const queryClient = useQueryClient();
 
   const runMutation = useRunCustomAction({
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, vars.featureId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: getCustomActionRunsQueryKey(vars.actionId, vars.featureId),
-      });
+    mutation: {
+      onSuccess: (_data, vars) => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, ...vars.params }),
+        });
+        queryClient.invalidateQueries({
+          queryKey: getGetCustomActionRunsQueryKey(vars.id, vars.params),
+        });
+      },
+      onError: (err) => toast.error(`Run failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Run failed: ${err.message}`),
   });
 
   const deleteMutation = useDeleteCustomAction({
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, featureId),
-      });
-      toast.success("Action deleted");
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, feature_id: featureId }),
+        });
+        toast.success("Action deleted");
+      },
+      onError: (err) => toast.error(`Delete failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Delete failed: ${err.message}`),
   });
 
   return (
@@ -74,12 +78,14 @@ export function CustomActionsOverflowDropdown({
         {actions.map((action) => (
           <DropdownMenuSub key={action.id}>
             <DropdownMenuSubTrigger>
-              <CustomActionIcon iconData={action.icon_data} name={action.name} />
+              <CustomActionIcon iconData={action.icon_data ?? null} name={action.name} />
               <span className="truncate">{action.name}</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
               <DropdownMenuItem
-                onSelect={() => runMutation.mutate({ actionId: action.id, featureId })}
+                onSelect={() =>
+                  runMutation.mutate({ id: action.id, params: { feature_id: featureId } })
+                }
               >
                 <PlayIcon className="size-4" /> Run now
               </DropdownMenuItem>

@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  getCustomActionRunsQueryKey,
-  getCustomActionVariablesQueryKey,
+  getGetCustomActionVariablesQueryKey,
   getListCustomActionsQueryKey,
   useDeleteCustomAction,
   useGetCustomActionRuns,
@@ -37,37 +36,45 @@ export function CustomActionPopover({
   onAfterDelete,
 }: CustomActionPopoverProps) {
   const queryClient = useQueryClient();
-  const { data: storedVars } = useGetCustomActionVariables(action.id, featureId);
+  const { data: storedVars } = useGetCustomActionVariables(action.id, { feature_id: featureId });
   // Tight refetch so live runs (manual or scheduled) paint logs without a
   // manual refresh. `runs[0]` doubles as the source of "is a run in flight?".
-  const runsQuery = useGetCustomActionRuns(action.id, featureId, 5, {
-    refetchInterval: 2000,
-  });
+  const runsQuery = useGetCustomActionRuns(
+    action.id,
+    { feature_id: featureId, limit: 5 },
+    { query: { refetchInterval: 2000 } },
+  );
   const latestRun = runsQuery.data?.[0];
   const isRunning = latestRun != null && latestRun.ended_at == null;
 
   const runMutation = useRunCustomAction({
-    onError: (err) => toast.error(`Run failed: ${err.message}`),
+    mutation: {
+      onError: (err) => toast.error(`Run failed: ${err.message}`),
+    },
   });
 
   const setVariableMutation = useSetCustomActionVariable({
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: getCustomActionVariablesQueryKey(variables.actionId, variables.featureId),
-      });
+    mutation: {
+      onSuccess: (_data, variables) => {
+        queryClient.invalidateQueries({
+          queryKey: getGetCustomActionVariablesQueryKey(variables.id, variables.params),
+        });
+      },
+      onError: (err) => toast.error(`Saving variable failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Saving variable failed: ${err.message}`),
   });
 
   const deleteMutation = useDeleteCustomAction({
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, featureId),
-      });
-      onAfterDelete();
-      toast.success("Action deleted");
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, feature_id: featureId }),
+        });
+        onAfterDelete();
+        toast.success("Action deleted");
+      },
+      onError: (err) => toast.error(`Delete failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Delete failed: ${err.message}`),
   });
 
   const valuesByName = useMemo(() => {
@@ -145,8 +152,8 @@ export function CustomActionPopover({
                   onChange={(e) => setDrafts((d) => ({ ...d, [name]: e.target.value }))}
                   onBlur={() =>
                     setVariableMutation.mutate({
-                      actionId: action.id,
-                      featureId,
+                      id: action.id,
+                      params: { feature_id: featureId },
                       data: { var_name: name, value: drafts[name] ?? "" },
                     })
                   }
@@ -161,7 +168,7 @@ export function CustomActionPopover({
       <section>
         <Button
           size="sm"
-          onClick={() => runMutation.mutate({ actionId: action.id, featureId })}
+          onClick={() => runMutation.mutate({ id: action.id, params: { feature_id: featureId } })}
           disabled={isRunning || runMutation.isPending}
           className="w-full"
         >

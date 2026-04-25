@@ -184,13 +184,14 @@ export function useWsWorkflowBackend(
   // pages via `/api/features/{id}/agent-state?before=…`.
   const agentStateQuery = useGetFeatureAgentState(
     featureId,
-    undefined,
+    { limit: 100 },
     {
-      enabled: enabled && !store.hydrated,
-      staleTime: Infinity,
-      refetchOnMount: "always",
+      query: {
+        enabled: enabled && !store.hydrated,
+        staleTime: Infinity,
+        refetchOnMount: "always",
+      },
     },
-    100,
   );
 
   useEffect(() => {
@@ -429,8 +430,8 @@ export function useWsWorkflowBackend(
       state.populateOlderBlocks(
         slotKey,
         olderBlocks,
-        serverSession.hasMore,
-        serverSession.oldestMessageId,
+        serverSession.hasMore ?? false,
+        serverSession.oldestMessageId ?? null,
       );
     },
 

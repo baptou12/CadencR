@@ -189,7 +189,7 @@ pub async fn has_uncommitted_changes_handler(
     ))
 }
 
-#[utoipa::path(get, path = "/api/git/blame", params(("project_id" = i64, Query,), ("file_path" = String, Query,)), responses((status = 200, body = BlameResponse)))]
+#[utoipa::path(get, path = "/api/git/blame", params(("project_id" = i64, Query,), ("feature_id" = Option<i64>, Query,), ("file_path" = String, Query,)), responses((status = 200, body = BlameResponse)))]
 pub async fn get_blame_handler(
     State(state): State<AppState>,
     Query(params): Query<GetBlameParams>,

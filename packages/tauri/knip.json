@@ -5,14 +5,15 @@
     "src/routes/**/*.tsx"
   ],
   "project": ["src/**/*.{ts,tsx}"],
-  "ignoreBinaries": ["tauri", "oxlint", "oxfmt", "vitest", "tsc", "knip"],
+  "ignoreBinaries": ["tauri", "oxlint", "oxfmt", "vitest", "tsc", "knip", "orval"],
   "ignoreDependencies": [
     "@tauri-apps/cli",
     "autoprefixer",
     "postcss",
     "oxlint",
     "tailwindcss",
-    "@vitest/coverage-v8"
+    "@vitest/coverage-v8",
+    "orval"
   ],
   "tags": ["+@public"],
   "vitest": {

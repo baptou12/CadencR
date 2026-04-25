@@ -50,7 +50,11 @@ function ProviderCard({ provider }: { provider: ProviderDiscovery }) {
 
   return (
     <div className="space-y-3">
-      <SummaryRow binName={provider.bin_name} selected={selected} overridePath={overridePath} />
+      <SummaryRow
+        binName={provider.bin_name}
+        selected={selected ?? null}
+        overridePath={overridePath ?? null}
+      />
 
       {candidates.length === 0 ? (
         <ErrorRow

@@ -152,7 +152,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const { attachments, addFiles, removeAttachment, clearAttachments, dragHandlers, isDragging } =
       useImageAttachments();
 
-    const filesQuery = useListFiles({ featureId: featureId! }, { enabled: !!featureId });
+    const filesQuery = useListFiles(
+      { feature_id: featureId! },
+      { query: { enabled: !!featureId } },
+    );
 
     useImperativeHandle(ref, () => ({
       focusInput: () => editorRef.current?.focus(),

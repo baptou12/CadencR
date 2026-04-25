@@ -94,8 +94,10 @@ export function useWebSocketSession(
   // Load persisted state from DB when featureId is provided.
   const persistedLoaded = session?.persistedLoaded ?? false;
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
-    enabled: !!featureId && !persistedLoaded,
-    cacheTime: 0,
+    query: {
+      enabled: !!featureId && !persistedLoaded,
+      cacheTime: 0,
+    },
   });
 
   useEffect(() => {

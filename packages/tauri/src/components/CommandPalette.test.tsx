@@ -9,10 +9,23 @@ vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
 }));
 
-const _mockCreateProject = vi.fn();
-const mockCreateFeature = vi.fn();
-const _mockCreateSession = vi.fn();
-const _mockInvalidate = vi.fn();
+const generatedMocks = vi.hoisted(() => ({
+  createProject: vi.fn(),
+  createFeature: vi.fn(),
+}));
+
+vi.mock("../api/generated", () => ({
+  useListProjects: vi.fn(() => ({
+    data: [{ id: 1, name: "Test Project", path: "/test/project" }],
+  })),
+  useListFeatures: vi.fn(() => ({ data: [] })),
+  useCreateProject: vi.fn(() => ({ mutate: generatedMocks.createProject })),
+  useCreateFeature: vi.fn(() => ({ mutate: generatedMocks.createFeature })),
+  getListProjectsQueryKey: vi.fn(() => ["/api/projects"] as const),
+  getListFeaturesQueryKey: vi.fn(
+    (params?: { project_id?: number }) => ["/api/features", params] as const,
+  ),
+}));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
@@ -22,7 +35,8 @@ describe("CommandPalette", () => {
   beforeEach(() => {
     onOpenChange.mockClear();
     mockNavigate.mockClear();
-    mockCreateFeature.mockClear();
+    generatedMocks.createProject.mockClear();
+    generatedMocks.createFeature.mockClear();
   });
 
   it("renders when open", () => {

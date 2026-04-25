@@ -20,17 +20,25 @@ const statusColors: Record<string, string> = {
 
 export function WorktreeList({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
-  const { data: worktrees, isLoading } = useListProjectWorktrees({ projectId });
+  const { data: worktrees, isLoading } = useListProjectWorktrees({ project_id: projectId });
 
   const deleteWorktree = useDeleteWorktree({
-    onSuccess: () => {
-      void queryClient.invalidateQueries(getListProjectWorktreesQueryKey({ projectId }));
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getListProjectWorktreesQueryKey({ project_id: projectId }),
+        });
+      },
     },
   });
 
   const removeOrphan = useRemoveOrphanWorktree({
-    onSuccess: () => {
-      void queryClient.invalidateQueries(getListProjectWorktreesQueryKey({ projectId }));
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getListProjectWorktreesQueryKey({ project_id: projectId }),
+        });
+      },
     },
   });
 
@@ -64,9 +72,15 @@ export function WorktreeList({ projectId }: { projectId: number }) {
         return next;
       });
     if (wt.feature_id) {
-      deleteWorktree.mutate({ projectId, featureId: wt.feature_id }, { onSettled });
+      deleteWorktree.mutate(
+        { params: { project_id: projectId, feature_id: wt.feature_id } },
+        { onSettled },
+      );
     } else {
-      removeOrphan.mutate({ projectId, worktreePath: wt.path }, { onSettled });
+      removeOrphan.mutate(
+        { data: { project_id: projectId, worktree_path: wt.path } },
+        { onSettled },
+      );
     }
   }
 

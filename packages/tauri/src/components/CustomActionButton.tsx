@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import {
-  getCustomActionRunsQueryKey,
+  getGetCustomActionRunsQueryKey,
   getListCustomActionsQueryKey,
   useRunCustomAction,
   type CustomAction,
@@ -42,23 +42,25 @@ export function CustomActionButton({
   const [open, setOpen] = useState(false);
 
   const runMutation = useRunCustomAction({
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, featureId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: getCustomActionRunsQueryKey(action.id, featureId),
-      });
-      if (data.exit_code !== 0) {
-        const detail = data.stderr.trim() || `exit ${data.exit_code ?? "?"}`;
-        toast.error(`${action.name} failed: ${detail.slice(0, 200)}`);
-      }
+    mutation: {
+      onSuccess: (data, vars) => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, ...vars.params }),
+        });
+        queryClient.invalidateQueries({
+          queryKey: getGetCustomActionRunsQueryKey(vars.id, vars.params),
+        });
+        if (data.exit_code !== 0) {
+          const detail = data.stderr.trim() || `exit ${data.exit_code ?? "?"}`;
+          toast.error(`${action.name} failed: ${detail.slice(0, 200)}`);
+        }
+      },
+      onError: (err) => toast.error(`${action.name} failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`${action.name} failed: ${err.message}`),
   });
 
   function handleClick(): void {
-    runMutation.mutate({ actionId: action.id, featureId });
+    runMutation.mutate({ id: action.id, params: { feature_id: featureId } });
   }
 
   function handleContextMenu(e: MouseEvent<HTMLButtonElement>): void {
@@ -78,8 +80,11 @@ export function CustomActionButton({
           onContextMenu={handleContextMenu}
           disabled={runMutation.isPending}
         >
-          <CustomActionIcon iconData={action.icon_data} name={action.name} />
-          <CustomActionStatusDot lastRun={action.last_run} isRunning={runMutation.isPending} />
+          <CustomActionIcon iconData={action.icon_data ?? null} name={action.name} />
+          <CustomActionStatusDot
+            lastRun={action.last_run ?? null}
+            isRunning={runMutation.isPending}
+          />
         </Button>
       </PopoverAnchor>
       <PopoverContent align="end" className="w-[28rem]">

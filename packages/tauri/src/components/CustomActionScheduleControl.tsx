@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  getCustomActionScheduleQueryKey,
+  getGetCustomActionScheduleQueryKey,
   useGetCustomActionSchedule,
   useSetCustomActionSchedule,
 } from "@/api/generated";
@@ -60,7 +60,9 @@ export function CustomActionScheduleControl({
   featureId,
 }: CustomActionScheduleControlProps) {
   const queryClient = useQueryClient();
-  const { data: schedule, isLoading } = useGetCustomActionSchedule(actionId, featureId);
+  const { data: schedule, isLoading } = useGetCustomActionSchedule(actionId, {
+    feature_id: featureId,
+  });
 
   // Local draft state: what the user is currently typing/picking. We commit
   // it to the backend on blur or unit change, then let the refetched query
@@ -74,12 +76,14 @@ export function CustomActionScheduleControl({
   }, [schedule]);
 
   const mutation = useSetCustomActionSchedule({
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({
-        queryKey: getCustomActionScheduleQueryKey(vars.actionId, vars.featureId),
-      });
+    mutation: {
+      onSuccess: (_data, vars) => {
+        queryClient.invalidateQueries({
+          queryKey: getGetCustomActionScheduleQueryKey(vars.id, vars.params),
+        });
+      },
+      onError: (err) => toast.error(`Scheduling failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Scheduling failed: ${err.message}`),
   });
 
   const enabled = !!schedule && schedule.enabled;
@@ -91,8 +95,8 @@ export function CustomActionScheduleControl({
       return;
     }
     mutation.mutate({
-      actionId,
-      featureId,
+      id: actionId,
+      params: { feature_id: featureId },
       data: { interval_seconds: intervalSeconds, enabled: true },
     });
   }
@@ -102,8 +106,8 @@ export function CustomActionScheduleControl({
       commit(draft);
     } else {
       mutation.mutate({
-        actionId,
-        featureId,
+        id: actionId,
+        params: { feature_id: featureId },
         data: { interval_seconds: null, enabled: false },
       });
     }

@@ -101,7 +101,9 @@ export function WorktreeSetupSection({
 }) {
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
 
-  const { data: settingsArray } = useGetFeatureSettings(featureId, { enabled: !useWsMode });
+  const { data: settingsArray } = useGetFeatureSettings(featureId, {
+    query: { enabled: !useWsMode },
+  });
   const settings =
     !useWsMode && settingsArray
       ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))

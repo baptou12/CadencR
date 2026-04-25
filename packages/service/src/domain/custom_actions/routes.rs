@@ -14,19 +14,19 @@ use super::service;
 use crate::app_state::AppState;
 use crate::error::AppError;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ListActionsQuery {
     pub project_id: i64,
     /// Optional feature id to embed `last_run` summaries on each action.
     pub feature_id: Option<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct FeatureIdQuery {
     pub feature_id: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct FeatureIdAndLimitQuery {
     pub feature_id: i64,
     pub limit: Option<i64>,
@@ -36,7 +36,7 @@ pub struct FeatureIdAndLimitQuery {
 // Action CRUD
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(get, path = "/api/custom-actions", responses((status = 200, body = Vec<CustomAction>)))]
+#[utoipa::path(get, path = "/api/custom-actions", params(ListActionsQuery), responses((status = 200, body = Vec<CustomAction>)))]
 pub async fn list_actions_handler(
     State(state): State<AppState>,
     Query(q): Query<ListActionsQuery>,
@@ -127,7 +127,7 @@ pub async fn delete_action_handler(
     Ok(Json(SuccessResponse { success: true }))
 }
 
-#[utoipa::path(get, path = "/api/custom-actions/{id}/variables", params(("id" = i64, Path,)), responses((status = 200, body = Vec<CustomActionVariable>)))]
+#[utoipa::path(get, path = "/api/custom-actions/{id}/variables", params(("id" = i64, Path,), FeatureIdQuery), responses((status = 200, body = Vec<CustomActionVariable>)))]
 pub async fn list_variables_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -138,7 +138,7 @@ pub async fn list_variables_handler(
     ))
 }
 
-#[utoipa::path(put, path = "/api/custom-actions/{id}/variables", params(("id" = i64, Path,)), request_body = SetCustomActionVariableRequest, responses((status = 200, body = SuccessResponse)))]
+#[utoipa::path(put, path = "/api/custom-actions/{id}/variables", params(("id" = i64, Path,), FeatureIdQuery), request_body = SetCustomActionVariableRequest, responses((status = 200, body = SuccessResponse)))]
 pub async fn set_variable_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -163,7 +163,7 @@ pub async fn set_variable_handler(
 // Run + history
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(post, path = "/api/custom-actions/{id}/run", params(("id" = i64, Path,)), responses((status = 200, body = RunResponse)))]
+#[utoipa::path(post, path = "/api/custom-actions/{id}/run", params(("id" = i64, Path,), FeatureIdQuery), responses((status = 200, body = RunResponse)))]
 pub async fn run_action_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -179,7 +179,7 @@ pub async fn run_action_handler(
     }))
 }
 
-#[utoipa::path(get, path = "/api/custom-actions/{id}/runs", params(("id" = i64, Path,)), responses((status = 200, body = Vec<CustomActionRun>)))]
+#[utoipa::path(get, path = "/api/custom-actions/{id}/runs", params(("id" = i64, Path,), FeatureIdAndLimitQuery), responses((status = 200, body = Vec<CustomActionRun>)))]
 pub async fn list_runs_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -195,7 +195,7 @@ pub async fn list_runs_handler(
 // Schedule
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(get, path = "/api/custom-actions/{id}/schedule", params(("id" = i64, Path,)), responses((status = 200, body = Option<CustomActionSchedule>)))]
+#[utoipa::path(get, path = "/api/custom-actions/{id}/schedule", params(("id" = i64, Path,), FeatureIdQuery), responses((status = 200, body = Option<CustomActionSchedule>)))]
 pub async fn get_schedule_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -206,7 +206,7 @@ pub async fn get_schedule_handler(
     ))
 }
 
-#[utoipa::path(put, path = "/api/custom-actions/{id}/schedule", params(("id" = i64, Path,)), request_body = SetCustomActionScheduleRequest, responses((status = 200, body = SuccessResponse)))]
+#[utoipa::path(put, path = "/api/custom-actions/{id}/schedule", params(("id" = i64, Path,), FeatureIdQuery), request_body = SetCustomActionScheduleRequest, responses((status = 200, body = SuccessResponse)))]
 pub async fn set_schedule_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,

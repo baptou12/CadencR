@@ -16,6 +16,7 @@ import {
   useUpdateFeatureStatus,
   type Feature,
 } from "@/api/generated";
+import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { customInstance } from "@/api/client";
 import { focusZoneByDirection } from "@/lib/focus-zones";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -77,84 +78,91 @@ function RootLayout() {
       : null;
 
   const invalidateFeatures = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["features", "list"] });
-    void queryClient.invalidateQueries({ queryKey: ["features", "detail"] });
-    void queryClient.invalidateQueries({ queryKey: ["features", "planProgress"] });
+    // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
+    void invalidateByUrlPrefix(queryClient, "/api/features");
   }, [queryClient]);
 
   const createFeatureMutation = useCreateFeature({
-    onSuccess: (result) => {
-      invalidateFeatures();
-      if (activeProjectId != null) {
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(activeProjectId),
-            featureId: String(result.id),
-          },
-        });
-      }
+    mutation: {
+      onSuccess: (result) => {
+        invalidateFeatures();
+        if (activeProjectId != null) {
+          void navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: {
+              projectId: String(activeProjectId),
+              featureId: String(result.id),
+            },
+          });
+        }
+      },
     },
   });
 
   const createSessionMutation = useCreateFeature({
-    onSuccess: (session) => {
-      invalidateFeatures();
-      if (activeProjectId != null) {
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(activeProjectId),
-            featureId: String(session.id),
-          },
-        });
-      }
+    mutation: {
+      onSuccess: (session) => {
+        invalidateFeatures();
+        if (activeProjectId != null) {
+          void navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: {
+              projectId: String(activeProjectId),
+              featureId: String(session.id),
+            },
+          });
+        }
+      },
     },
   });
 
   // Track which feature to navigate to after deletion
   const deleteNavTargetRef = useRef<number | null>(null);
   const deleteFeatureMutation = useDeleteFeature({
-    onError: () => {
-      toast.error("Failed to delete feature");
-    },
-    onSuccess: () => {
-      invalidateFeatures();
-      if (activeProjectId == null) return;
-      const targetId = deleteNavTargetRef.current;
-      deleteNavTargetRef.current = null;
-      if (targetId != null) {
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(activeProjectId),
-            featureId: String(targetId),
-          },
-        });
-      } else {
-        void navigate({ to: "/" });
-      }
+    mutation: {
+      onError: () => {
+        toast.error("Failed to delete feature");
+      },
+      onSuccess: () => {
+        invalidateFeatures();
+        if (activeProjectId == null) return;
+        const targetId = deleteNavTargetRef.current;
+        deleteNavTargetRef.current = null;
+        if (targetId != null) {
+          void navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: {
+              projectId: String(activeProjectId),
+              featureId: String(targetId),
+            },
+          });
+        } else {
+          void navigate({ to: "/" });
+        }
+      },
     },
   });
 
   const archiveNavTargetRef = useRef<number | null>(null);
   const archiveFeatureMutation = useUpdateFeatureStatus({
-    onSuccess: () => {
-      invalidateFeatures();
-      if (activeProjectId == null) return;
-      const targetId = archiveNavTargetRef.current;
-      archiveNavTargetRef.current = null;
-      if (targetId != null) {
-        void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(activeProjectId),
-            featureId: String(targetId),
-          },
-        });
-      } else {
-        void navigate({ to: "/" });
-      }
+    mutation: {
+      onSuccess: () => {
+        invalidateFeatures();
+        if (activeProjectId == null) return;
+        const targetId = archiveNavTargetRef.current;
+        archiveNavTargetRef.current = null;
+        if (targetId != null) {
+          void navigate({
+            to: "/projects/$projectId/features/$featureId",
+            params: {
+              projectId: String(activeProjectId),
+              featureId: String(targetId),
+            },
+          });
+        } else {
+          void navigate({ to: "/" });
+        }
+      },
     },
   });
 
@@ -247,8 +255,7 @@ function RootLayout() {
       e.preventDefault();
       if (activeProjectId == null) return;
       createFeatureMutation.mutate({
-        project_id: activeProjectId,
-        title: "Untitled Feature",
+        data: { project_id: activeProjectId, title: "Untitled Feature" },
       });
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
@@ -260,7 +267,7 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       if (activeProjectId == null) return;
-      createSessionMutation.mutate({ project_id: activeProjectId, type: "ws-session" });
+      createSessionMutation.mutate({ data: { project_id: activeProjectId, type: "ws-session" } });
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
@@ -400,7 +407,10 @@ function RootLayout() {
             if (confirmAction === "delete") {
               deleteFeatureMutation.mutate({ id: activeFeatureId });
             } else {
-              archiveFeatureMutation.mutate({ id: activeFeatureId, status: "archived" });
+              archiveFeatureMutation.mutate({
+                id: activeFeatureId,
+                data: { status: "archived" },
+              });
             }
           }}
         />

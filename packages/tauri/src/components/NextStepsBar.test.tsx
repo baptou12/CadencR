@@ -2,6 +2,46 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { NextStepsBar } from "./NextStepsBar";
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    onDragDropEvent: vi.fn(async () => () => undefined),
+  }),
+}));
+
+vi.mock("@/api/agentRuntime", () => ({
+  useAgentCatalog: vi.fn(() => ({
+    data: {
+      default_provider: "claude_code",
+      providers: [
+        {
+          id: "claude_code",
+          label: "Claude Code",
+          status: "available",
+          models: [{ id: "opus", label: "Opus" }],
+          default_model: "opus",
+        },
+      ],
+    },
+    isLoading: false,
+  })),
+}));
+
+vi.mock("@/hooks/useResolvedModel", () => ({
+  useResolvedModel: vi.fn(() => ({
+    resolveProvider: vi.fn(() => "claude_code"),
+    resolveModel: vi.fn(() => "opus"),
+    resolveThinkingEffort: vi.fn(() => undefined),
+    handleProviderChange: vi.fn(),
+    handleModelChange: vi.fn(),
+    handleThinkingEffortChange: vi.fn(),
+  })),
+}));
+
+vi.mock("@/api/generated", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/api/generated")>()),
+  useListFiles: vi.fn(() => ({ data: [] })),
+}));
+
 const defaultProps = {
   show: true,
   canStartBuild: true,

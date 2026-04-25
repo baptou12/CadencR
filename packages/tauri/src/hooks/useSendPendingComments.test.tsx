@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("@/api/generated", () => ({
   useDeletePendingDiffComments: mocks.useDeletePendingDiffComments,
+  // The hook now invalidates via the orval-generated query-key helper. Mocking
+  // it here closes the gap that previously let the hook's catch-block swallow
+  // a "function is not defined" error and silently mask the success path.
+  getListDiffCommentsQueryKey: (featureId?: number) =>
+    [`/api/features/${featureId ?? ""}/diff-comments`] as const,
 }));
 
 vi.mock("sonner", () => ({
@@ -123,29 +128,43 @@ describe("useSendPendingComments", () => {
     expect(events).toEqual(["delete:start", "delete:resolve", "send", "afterSend"]);
     expect(onSend).toHaveBeenCalledWith(expect.stringContaining("src/a.ts"));
     expect(result.current.sending).toBe(false);
+    // Regression guard: the success path must not surface an error toast.
+    // Previously a missing `getListDiffCommentsQueryKey` mock made the hook
+    // throw inside its `try`, hit the catch-block, and call `toast.error` —
+    // but the assertions above all still passed.
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
   it("surfaces errors via toast and clears sending state", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.mutateAsync.mockRejectedValue(new Error("boom"));
     const onSend = vi.fn();
     const onAfterSend = vi.fn();
-    const { result } = renderHook(
-      () =>
-        useSendPendingComments({
-          featureId: 1,
-          pendingComments: sampleComments,
-          onSend,
-          onAfterSend,
-        }),
-      { wrapper: makeWrapper() },
-    );
-    await act(async () => {
-      await result.current.send();
-    });
-    expect(onSend).not.toHaveBeenCalled();
-    expect(onAfterSend).not.toHaveBeenCalled();
-    expect(mocks.toastError).toHaveBeenCalledWith("Failed to send comments");
-    expect(result.current.sending).toBe(false);
+    try {
+      const { result } = renderHook(
+        () =>
+          useSendPendingComments({
+            featureId: 1,
+            pendingComments: sampleComments,
+            onSend,
+            onAfterSend,
+          }),
+        { wrapper: makeWrapper() },
+      );
+      await act(async () => {
+        await result.current.send();
+      });
+      expect(onSend).not.toHaveBeenCalled();
+      expect(onAfterSend).not.toHaveBeenCalled();
+      expect(mocks.toastError).toHaveBeenCalledWith("Failed to send comments");
+      expect(result.current.sending).toBe(false);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to send pending comments",
+        expect.any(Error),
+      );
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 
   it("does nothing when already sending", async () => {

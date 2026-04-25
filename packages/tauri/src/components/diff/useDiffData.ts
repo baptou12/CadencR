@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   useGetFileBlobShas,
   useGetCommitLog,
@@ -14,9 +14,50 @@ import {
   useUpdateDiffComment,
   useDeleteDiffComment,
   type FileContent,
+  type FileContentBatchItem,
+  type GetFileContentBatchBody,
+  getListDiffViewedQueryKey,
+  getListDiffCommentsQueryKey,
 } from "@/api/generated";
 import { parseUnifiedDiff, countHunkStats } from "@/lib/parse-unified-diff";
 import type { CommitEntry } from "./DiffFileTree";
+
+/**
+ * Seed individual `useGetFileContent` caches from a batch response. Keys are
+ * derived from the request variables (`params`) — *not* from any React state
+ * the caller might be holding — so a late response from a previous
+ * commit/branch/mode cannot poison the cache for the current view.
+ *
+ * Exposed for unit testing: this is the surface that the original race bug
+ * lived on, and it must stay verifiable without standing up a full hook.
+ */
+export function seedBatchFileContentCache(
+  client: QueryClient,
+  items: FileContentBatchItem[],
+  params: GetFileContentBatchBody,
+): void {
+  for (const item of items) {
+    client.setQueryData(
+      getGetFileContentQueryKey({
+        feature_id: params.feature_id,
+        file_path: item.file_path,
+        mode: params.mode,
+        // Batch body uses `string | null`; query params use `string | undefined` —
+        // coerce so the seeded key matches what `useGetFileContent` computes.
+        target_branch: params.target_branch ?? undefined,
+        commit_sha: params.commit_sha ?? undefined,
+      }),
+      {
+        old_content: item.old_content,
+        new_content: item.new_content,
+        old_size: item.old_size,
+        new_size: item.new_size,
+        is_binary: item.is_binary,
+        is_large: item.is_large,
+      } as FileContent,
+    );
+  }
+}
 
 export interface FileMeta {
   section: import("@/lib/parse-unified-diff").FileDiffSection;
@@ -32,10 +73,10 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
 
   // ---- Diff & file content ----
   const { data: diffResponse, isLoading } = useGetDiff({
-    featureId,
+    feature_id: featureId,
     mode,
-    targetBranch,
-    commitSha: selectedCommit ?? undefined,
+    target_branch: targetBranch,
+    commit_sha: selectedCommit ?? undefined,
   });
   const rawDiff = diffResponse?.diff;
 
@@ -57,44 +98,34 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
   );
 
   // ---- Batch file content prefetch ----
-  const { data: batchFileContentList } = useGetFileContentBatch(
-    { featureId, filePaths: fileNames, mode, targetBranch, commitSha: selectedCommit ?? undefined },
-    { enabled: fileNames.length > 0 },
-  );
+  // Seeding runs in `onSuccess` (via `seedBatchFileContentCache`) so cache
+  // keys are derived from the request variables — not from current React
+  // state. A late response from a previous commit/branch/mode therefore
+  // cannot seed the cache under the *new* key, which `staleTime: Infinity`
+  // would otherwise pin indefinitely.
+  const batchFileContent = useGetFileContentBatch({
+    mutation: {
+      onSuccess: (items, variables) =>
+        seedBatchFileContentCache(queryClient, items, variables.data),
+    },
+  });
 
+  const batchMutate = batchFileContent.mutate;
   useEffect(() => {
-    if (!batchFileContentList) return;
-    const items = batchFileContentList;
-    let i = 0;
-    let rafId: number;
-
-    function seedNext() {
-      if (i >= items.length) return;
-      const item = items[i++];
-      const key = getGetFileContentQueryKey({
-        featureId,
-        filePath: item.file_path,
+    if (fileNames.length === 0) return;
+    batchMutate({
+      data: {
+        feature_id: featureId,
+        file_paths: fileNames,
         mode,
-        targetBranch,
-        commitSha: selectedCommit ?? undefined,
-      });
-      queryClient.setQueryData(key, {
-        old_content: item.old_content,
-        new_content: item.new_content,
-        old_size: item.old_size,
-        new_size: item.new_size,
-        is_binary: item.is_binary,
-        is_large: item.is_large,
-      } as FileContent);
-      rafId = requestAnimationFrame(seedNext);
-    }
-
-    rafId = requestAnimationFrame(seedNext);
-    return () => cancelAnimationFrame(rafId);
-  }, [batchFileContentList, featureId, mode, targetBranch, selectedCommit, queryClient]);
+        target_branch: targetBranch,
+        commit_sha: selectedCommit ?? undefined,
+      },
+    });
+  }, [batchMutate, featureId, fileNames, mode, targetBranch, selectedCommit]);
 
   // ---- Blob SHAs & viewed tracking ----
-  const { data: blobShasList = [] } = useGetFileBlobShas({ featureId });
+  const { data: blobShasList = [] } = useGetFileBlobShas({ feature_id: featureId });
   const blobShas: Record<string, string> = useMemo(() => {
     const map: Record<string, string> = {};
     for (const item of blobShasList) {
@@ -115,16 +146,22 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
   }, [viewedList, blobShas]);
 
   const markViewed = useMarkDiffViewed({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
+    },
   });
   const unmarkViewed = useUnmarkDiffViewed({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-viewed", featureId] }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffViewedQueryKey(featureId) }),
+    },
   });
 
   // ---- Commit log ----
   const { data: commitData } = useGetCommitLog(
-    { featureId, limit: commitLimit },
-    { keepPreviousData: true },
+    { feature_id: featureId, limit: commitLimit },
+    { query: { keepPreviousData: true } },
   );
   const commits = useMemo(
     () =>
@@ -145,13 +182,22 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
   const { data: comments = [] } = useListDiffComments(featureId);
 
   const createComment = useCreateDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
+    },
   });
   const updateComment = useUpdateDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
+    },
   });
   const deleteComment = useDeleteDiffComment({
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
+    },
   });
 
   // ---- Auto-collapse viewed files ----

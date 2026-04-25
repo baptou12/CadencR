@@ -38,7 +38,10 @@ function TreeNode({
     data: entries,
     isLoading,
     isError,
-  } = useFileTree({ projectId, featureId, dirPath }, { enabled: true });
+  } = useFileTree(
+    { project_id: projectId, feature_id: featureId, dir_path: dirPath },
+    { query: { enabled: true } },
+  );
 
   if (isLoading) {
     return (

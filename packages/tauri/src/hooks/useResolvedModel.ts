@@ -54,13 +54,17 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const globalProviderSettings = useGetWorkspaceProviderSettings();
 
   const setModelMutation = useSetFeatureModelSetting({
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getGetFeatureModelSettingsQueryKey(featureId) }),
+    },
   });
   const setProviderMutation = useSetFeatureProviderSetting();
   const setThinkingEffortMutation = useSetFeatureSetting({
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+    mutation: {
+      onSuccess: () =>
+        queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+    },
   });
 
   const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
@@ -99,7 +103,10 @@ export function useResolvedModel(featureId: number, projectId: number) {
 
   const handleModelChange = useCallback(
     (agentType: AgentType, modelId: string) => {
-      setModelMutation.mutate({ featureId, modelType: agentType, model: modelId });
+      setModelMutation.mutate({
+        id: featureId,
+        data: { model_type: agentType, model: modelId },
+      });
     },
     [featureId, setModelMutation],
   );
@@ -150,9 +157,11 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const handleThinkingEffortChange = useCallback(
     (agentType: AgentType, effort?: ThinkingEffortLevel) => {
       setThinkingEffortMutation.mutate({
-        featureId,
-        key: thinkingEffortSettingKey(agentType as AgentTypeSetting),
-        value: effort ?? "",
+        id: featureId,
+        data: {
+          key: thinkingEffortSettingKey(agentType as AgentTypeSetting),
+          value: effort ?? "",
+        },
       });
     },
     [featureId, setThinkingEffortMutation],

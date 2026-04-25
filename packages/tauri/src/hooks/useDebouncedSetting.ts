@@ -27,7 +27,7 @@ export function useDebouncedSetting(key: string, debounceMs = 300, { immediateCa
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         mutation.mutate(
-          { key, value },
+          { key, data: { value } },
           {
             onSuccess: () => {
               void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey(key) });

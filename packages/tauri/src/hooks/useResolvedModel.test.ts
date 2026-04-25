@@ -165,9 +165,8 @@ describe("useResolvedModel", () => {
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
     result.current.handleModelChange("execute", "claude-3-5-sonnet");
     expect(mockSetModelMutate).toHaveBeenCalledWith({
-      featureId: 1,
-      modelType: "execute",
-      model: "claude-3-5-sonnet",
+      id: 1,
+      data: { model_type: "execute", model: "claude-3-5-sonnet" },
     });
   });
 

@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { DEFAULT_ARTIFACT_TYPE } from "@/api/generated";
+
+// Sentinel artifact-type for tabs that point at a working-tree file rather than
+// a saved artifact (PRD, plan, …). Lived in the hand-written API client; moved
+// here when generation was restored.
+const DEFAULT_ARTIFACT_TYPE = "default";
 
 // ---------------------------------------------------------------------------
 // Types

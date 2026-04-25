@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { QueryClient } from "@tanstack/react-query";
-import type { Project } from "@/api/generated";
+import { getListProjectsQueryKey, type Project } from "@/api/generated";
 
 let permissionCache: boolean | null = null;
 
@@ -131,7 +131,7 @@ export function listenForNotificationClicks(
 
 function lookupProjectPath(queryClient: QueryClient, projectId: number): string {
   for (const [, data] of queryClient.getQueriesData<Project[]>({
-    queryKey: ["projects", "list"],
+    queryKey: getListProjectsQueryKey(),
   })) {
     const project = data?.find((p) => p.id === projectId);
     if (project) return project.path;

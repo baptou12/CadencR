@@ -66,23 +66,25 @@ export function useModelSelectorState(
   const { level, projectId, featureId } = params;
   const queryClient = useQueryClient();
   const agentCatalog = useAgentCatalog();
-  const globalSettings = useGetWorkspaceModelSettings({ enabled: level === "global" });
+  const globalSettings = useGetWorkspaceModelSettings({ query: { enabled: level === "global" } });
   const projectSettings = useGetProjectModelSettings(projectId ?? 0, {
-    enabled: level === "project" && projectId != null,
+    query: { enabled: level === "project" && projectId != null },
   });
   const featureSettings = useGetFeatureModelSettings(featureId ?? 0, {
-    enabled: level === "feature" && featureId != null,
+    query: { enabled: level === "feature" && featureId != null },
   });
-  const parentGlobalSettings = useGetWorkspaceModelSettings({ enabled: level !== "global" });
+  const parentGlobalSettings = useGetWorkspaceModelSettings({
+    query: { enabled: level !== "global" },
+  });
   const parentProjectSettings = useGetProjectModelSettings(projectId ?? 0, {
-    enabled: level === "feature" && projectId != null,
+    query: { enabled: level === "feature" && projectId != null },
   });
   const workspaceKvSettings = useGetWorkspaceSettings();
   const projectKvSettings = useGetProjectSettings(projectId ?? 0, {
-    enabled: level !== "global" && projectId != null,
+    query: { enabled: level !== "global" && projectId != null },
   });
   const featureKvSettings = useGetFeatureSettings(featureId ?? 0, {
-    enabled: level === "feature" && featureId != null,
+    query: { enabled: level === "feature" && featureId != null },
   });
   const globalProviderSettings = useGetWorkspaceProviderSettings(level === "global");
   const projectProviderSettings = useGetProjectProviderSettings(
@@ -100,47 +102,59 @@ export function useModelSelectorState(
   );
 
   const globalMutation = useSetWorkspaceModelSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetWorkspaceModelSettingsQueryKey() });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getGetWorkspaceModelSettingsQueryKey() });
+        toast.success("Settings saved");
+      },
     },
   });
   const projectMutation = useSetProjectModelSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetProjectModelSettingsQueryKey(projectId ?? 0),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
   const featureMutation = useSetFeatureModelSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetFeatureModelSettingsQueryKey(featureId ?? 0),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
   const workspaceSettingMutation = useSetWorkspaceSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+        toast.success("Settings saved");
+      },
     },
   });
   const projectSettingMutation = useSetProjectSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetProjectSettingsQueryKey(projectId ?? 0),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetProjectSettingsQueryKey(projectId ?? 0),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
   const featureSettingMutation = useSetFeatureSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
 
@@ -229,7 +243,8 @@ export function useModelSelectorState(
   }
 
   function getCurrentValue(agentType: AgentTypeSetting): string {
-    const value = settings?.[agentType];
+    const settingsRecord = settings as Record<string, string> | undefined;
+    const value = settingsRecord?.[agentType];
     if (level === "global") return getSelection(agentType, "global").modelId;
     return value && value !== "" ? value : INHERIT_VALUE;
   }
@@ -244,17 +259,25 @@ export function useModelSelectorState(
     const modelId = value === INHERIT_VALUE ? "" : value;
     if (level === "global") {
       globalMutation.mutate({
-        agentType,
-        modelId: modelId || getSelection(agentType, "global").modelId,
+        data: {
+          agent_type: agentType,
+          model_id: modelId || getSelection(agentType, "global").modelId,
+        },
       });
       return;
     }
     if (level === "project" && projectId != null) {
-      projectMutation.mutate({ projectId, modelType: agentType, model: modelId });
+      projectMutation.mutate({
+        id: projectId,
+        data: { model_type: agentType, model: modelId },
+      });
       return;
     }
     if (level === "feature" && featureId != null) {
-      featureMutation.mutate({ featureId, modelType: agentType, model: modelId });
+      featureMutation.mutate({
+        id: featureId,
+        data: { model_type: agentType, model: modelId },
+      });
     }
   }
 
@@ -329,15 +352,15 @@ export function useModelSelectorState(
   function setThinkingEffort(agentType: AgentTypeSetting, effort?: ThinkingEffortLevel): void {
     const key = thinkingEffortSettingKey(agentType);
     if (level === "global") {
-      workspaceSettingMutation.mutate({ key, value: effort ?? "" });
+      workspaceSettingMutation.mutate({ key, data: { value: effort ?? "" } });
       return;
     }
     if (level === "project" && projectId != null) {
-      projectSettingMutation.mutate({ projectId, key, value: effort ?? "" });
+      projectSettingMutation.mutate({ id: projectId, data: { key, value: effort ?? "" } });
       return;
     }
     if (level === "feature" && featureId != null) {
-      featureSettingMutation.mutate({ featureId, key, value: effort ?? "" });
+      featureSettingMutation.mutate({ id: featureId, data: { key, value: effort ?? "" } });
     }
   }
 

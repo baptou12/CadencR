@@ -50,7 +50,7 @@ function ProjectFeatureGroup({
   projectName: string;
   onSelect: (projectId: number, featureId: number) => void;
 }) {
-  const featuresQuery = useListFeatures(projectId);
+  const featuresQuery = useListFeatures({ project_id: projectId });
 
   if (!featuresQuery.data?.length) return null;
 
@@ -88,38 +88,44 @@ export function CommandPalette({
   const projectsQuery = useListProjects();
 
   const createProjectMutation = useCreateProject({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      },
     },
   });
 
   const createFeatureMutation = useCreateFeature({
-    onSuccess: (result, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: getListFeaturesQueryKey(variables.project_id),
-      });
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(variables.project_id),
-          featureId: String(result.id),
-        },
-      });
+    mutation: {
+      onSuccess: (result, variables) => {
+        void queryClient.invalidateQueries({
+          queryKey: getListFeaturesQueryKey({ project_id: variables.data.project_id }),
+        });
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(variables.data.project_id),
+            featureId: String(result.id),
+          },
+        });
+      },
     },
   });
 
   const createSessionMutation = useCreateFeature({
-    onSuccess: (session, variables) => {
-      void queryClient.invalidateQueries({
-        queryKey: getListFeaturesQueryKey(variables.project_id),
-      });
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(variables.project_id),
-          featureId: String(session.id),
-        },
-      });
+    mutation: {
+      onSuccess: (session, variables) => {
+        void queryClient.invalidateQueries({
+          queryKey: getListFeaturesQueryKey({ project_id: variables.data.project_id }),
+        });
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(variables.data.project_id),
+            featureId: String(session.id),
+          },
+        });
+      },
     },
   });
 
@@ -156,15 +162,14 @@ export function CommandPalette({
     const folder = await openDialog({ directory: true, multiple: false });
     if (!folder) return;
     const name = folder.split("/").pop() ?? folder;
-    createProjectMutation.mutate({ name, path: folder });
+    createProjectMutation.mutate({ data: { name, path: folder } });
     close();
   }, [createProjectMutation, close]);
 
   const handleNewFeature = useCallback(
     (projectId: number) => {
       createFeatureMutation.mutate({
-        project_id: projectId,
-        title: "Untitled Feature",
+        data: { project_id: projectId, title: "Untitled Feature" },
       });
       close();
     },
@@ -176,7 +181,7 @@ export function CommandPalette({
       if (mode === "pick-project-feature") {
         handleNewFeature(projectId);
       } else if (mode === "pick-project-session") {
-        createSessionMutation.mutate({ project_id: projectId, type: "ws-session" });
+        createSessionMutation.mutate({ data: { project_id: projectId, type: "ws-session" } });
         close();
       }
     },
@@ -289,8 +294,7 @@ export function CommandPalette({
             onSelect={() => {
               if (activeProjectId != null) {
                 createSessionMutation.mutate({
-                  project_id: activeProjectId,
-                  type: "ws-session",
+                  data: { project_id: activeProjectId, type: "ws-session" },
                 });
                 close();
               } else {

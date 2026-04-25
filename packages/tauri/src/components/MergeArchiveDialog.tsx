@@ -68,65 +68,75 @@ export function MergeArchiveDialog({
 
   // Conflict check query
   const conflictsQuery = useCheckMergeConflicts(
-    { projectId, featureId },
-    { enabled: open, retry: false },
+    { project_id: projectId, feature_id: featureId },
+    { query: { enabled: open, retry: false } },
   );
 
   // Uncommitted changes check
   const uncommittedQuery = useHasUncommittedChanges(
-    { projectId, featureId },
-    { enabled: open, retry: false },
+    { project_id: projectId, feature_id: featureId },
+    { query: { enabled: open, retry: false } },
   );
 
   // Mutations
   const mergeMutation = useMergeFeatureBranch({
-    onSuccess: (result) => {
-      if (result.success) {
-        setMerged(true);
-        setMergeError(null);
-      } else {
-        setMergeError(result.error ?? "Merge failed");
-      }
-    },
-    onError: (err) => {
-      setMergeError(err.message);
+    mutation: {
+      onSuccess: (result) => {
+        if (result.success) {
+          setMerged(true);
+          setMergeError(null);
+        } else {
+          setMergeError(result.error ?? "Merge failed");
+        }
+      },
+      onError: (err: Error) => {
+        setMergeError(err.message);
+      },
     },
   });
 
   const deleteBranchMutation = useDeleteFeatureBranch({
-    onSuccess: (result) => {
-      if (result.success) {
-        setBranchDeleted(true);
-        setBranchError(null);
-      } else {
-        setBranchError(result.error ?? "Failed to delete branch");
-      }
-    },
-    onError: (err) => {
-      setBranchError(err.message);
+    mutation: {
+      onSuccess: (result) => {
+        if (result.success) {
+          setBranchDeleted(true);
+          setBranchError(null);
+        } else {
+          setBranchError("Failed to delete branch");
+        }
+      },
+      onError: (err: Error) => {
+        setBranchError(err.message);
+      },
     },
   });
 
   const deleteWorktreeMutation = useDeleteWorktree({
-    onSuccess: (result) => {
-      if (result.success) {
-        setWorktreeDeleted(true);
-        setWorktreeError(null);
-        void uncommittedQuery.refetch();
-      } else {
-        setWorktreeError(result.error ?? "Failed to delete worktree");
-      }
-    },
-    onError: (err) => {
-      setWorktreeError(err.message);
+    mutation: {
+      onSuccess: (result) => {
+        if (result.success) {
+          setWorktreeDeleted(true);
+          setWorktreeError(null);
+          void uncommittedQuery.refetch();
+        } else {
+          setWorktreeError("Failed to delete worktree");
+        }
+      },
+      onError: (err: Error) => {
+        setWorktreeError(err.message);
+      },
     },
   });
 
   const archiveMutation = useUpdateFeatureStatus({
-    onSuccess: (_data, variables) => {
-      setArchived(true);
-      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(projectId) });
-      void queryClient.invalidateQueries({ queryKey: getGetFeatureQueryKey(variables.id) });
+    mutation: {
+      onSuccess: (_data, variables) => {
+        setArchived(true);
+        void queryClient.invalidateQueries({
+          queryKey: getListFeaturesQueryKey({ project_id: projectId }),
+        });
+        void queryClient.invalidateQueries({ queryKey: getGetFeatureQueryKey(variables.id) });
+      },
     },
   });
 
@@ -189,7 +199,11 @@ export function MergeArchiveDialog({
             <div className="space-y-2">
               {mergeError && <p className="text-sm text-destructive">{mergeError}</p>}
               <Button
-                onClick={() => mergeMutation.mutate({ projectId, featureId })}
+                onClick={() =>
+                  mergeMutation.mutate({
+                    data: { project_id: projectId, feature_id: featureId },
+                  })
+                }
                 disabled={
                   hasConflicts ||
                   conflictsQuery.isLoading ||
@@ -232,7 +246,11 @@ export function MergeArchiveDialog({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => deleteBranchMutation.mutate({ projectId, featureId })}
+                    onClick={() =>
+                      deleteBranchMutation.mutate({
+                        params: { project_id: projectId, feature_id: featureId },
+                      })
+                    }
                     disabled={deleteBranchMutation.isLoading}
                     className="w-full"
                   >
@@ -259,7 +277,11 @@ export function MergeArchiveDialog({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => deleteWorktreeMutation.mutate({ projectId, featureId })}
+                      onClick={() =>
+                        deleteWorktreeMutation.mutate({
+                          params: { project_id: projectId, feature_id: featureId },
+                        })
+                      }
                       disabled={hasUncommitted || deleteWorktreeMutation.isLoading}
                       className="w-full"
                     >
@@ -296,7 +318,9 @@ export function MergeArchiveDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => archiveMutation.mutate({ id: featureId, status: "archived" })}
+                onClick={() =>
+                  archiveMutation.mutate({ id: featureId, data: { status: "archived" } })
+                }
                 disabled={archiveMutation.isLoading}
                 className="w-full"
               >

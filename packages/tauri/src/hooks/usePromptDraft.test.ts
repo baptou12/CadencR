@@ -59,7 +59,10 @@ describe("usePromptDraft", () => {
     act(() => {
       vi.advanceTimersByTime(500);
     });
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "final text" });
+    expect(mockSaveDraftMutate).toHaveBeenCalledWith({
+      sessionId: 1,
+      data: { draft: "final text" },
+    });
     expect(mockSendRaw).not.toHaveBeenCalled();
   });
 
@@ -105,7 +108,7 @@ describe("usePromptDraft", () => {
       vi.advanceTimersByTime(500);
     });
     expect(mockSaveDraftMutate).toHaveBeenCalledTimes(1);
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "abc" });
+    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, data: { draft: "abc" } });
   });
 
   it("does not save when no sessionId and no wsSessionId", () => {
@@ -129,7 +132,10 @@ describe("usePromptDraft", () => {
       result.current.saveDraft("pending on unmount");
     });
     unmount();
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: "pending on unmount" });
+    expect(mockSaveDraftMutate).toHaveBeenCalledWith({
+      sessionId: 1,
+      data: { draft: "pending on unmount" },
+    });
   });
 
   it("saves null draft (clearing draft)", () => {
@@ -140,6 +146,6 @@ describe("usePromptDraft", () => {
     act(() => {
       vi.advanceTimersByTime(500);
     });
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, draft: null });
+    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, data: { draft: null } });
   });
 });

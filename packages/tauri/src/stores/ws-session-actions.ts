@@ -1,5 +1,5 @@
 import { createModeSet, createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
-import { fetchFeatureAgentState } from "@/api/generated";
+import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { injectPlanIntoBlocks, parseTodosFromBlocks } from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
@@ -248,7 +248,7 @@ export async function loadOlderSessionMessages(
     return;
 
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
-  const data = await fetchFeatureAgentState(session.featureId, {
+  const data = await getFeatureAgentState(session.featureId, {
     before: beforeParam,
     limit: 100,
   });

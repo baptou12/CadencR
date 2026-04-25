@@ -17,7 +17,9 @@ export function useSaveLastOpenedFeature(
     if (skip) return;
     mutate({
       key: "lastOpenedFeature",
-      value: JSON.stringify({ projectId, featureId, activeTab: activeTab ?? "agent" }),
+      data: {
+        value: JSON.stringify({ projectId, featureId, activeTab: activeTab ?? "agent" }),
+      },
     });
   }, [projectId, featureId, activeTab, skip, mutate]);
 }

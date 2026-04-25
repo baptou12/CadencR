@@ -61,6 +61,7 @@ pub struct UpsertCustomModelRequest {
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
+#[schema(as = ClaudeCodeSuccessResponse)]
 pub struct SuccessResponse {
     pub ok: bool,
 }

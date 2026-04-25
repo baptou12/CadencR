@@ -95,9 +95,11 @@ export function FeatureTopBar({
   );
 
   const setFeatureSetting = useSetFeatureSetting({
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
+        toast.success("Settings saved");
+      },
     },
   });
   if (!feature) return null;
@@ -189,9 +191,8 @@ export function FeatureTopBar({
                     value={featureSettings?.agent_autonomy ?? ""}
                     onValueChange={(value) => {
                       setFeatureSetting.mutate({
-                        featureId,
-                        key: "agent_autonomy",
-                        value,
+                        id: featureId,
+                        data: { key: "agent_autonomy", value },
                       });
                       setAutonomyLevel(Number(value) as AutonomyLevel);
                     }}
@@ -228,9 +229,8 @@ export function FeatureTopBar({
                     }
                     onCheckedChange={(checked) => {
                       setFeatureSetting.mutate({
-                        featureId,
-                        key: "parallel_execution",
-                        value: checked ? "true" : "false",
+                        id: featureId,
+                        data: { key: "parallel_execution", value: checked ? "true" : "false" },
                       });
                       setParallelExecution(checked);
                     }}

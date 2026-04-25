@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetFeatureAgentState, fetchFeatureAgentState } from "../api/generated";
+import { useGetFeatureAgentState, getFeatureAgentState } from "../api/generated";
 import type { AgentBlock } from "../api/generated";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { AgentType } from "../types/agent-types";
@@ -30,23 +30,30 @@ const OLDER_MESSAGE_LIMIT = 100;
 // Convert server blocks (plain objects) to AgentBlockData (with IDs)
 // ---------------------------------------------------------------------------
 
+function nullToUndefined<T>(value: T | null | undefined): T | undefined {
+  return value ?? undefined;
+}
+
 export function serverBlocksToAgentBlocks(serverBlocks: AgentBlock[]): AgentBlockData[] {
   return serverBlocks.map((sb) => {
     const isSubagent =
       sb.type === "tool_call" && (sb.toolName === "Task" || sb.toolName === "Agent");
+    const childBlocks = sb.childBlocks
+      ? serverBlocksToAgentBlocks(sb.childBlocks as unknown as AgentBlock[])
+      : undefined;
     return {
       id: sb.id,
       type: sb.type as AgentBlockData["type"],
       content: sb.content,
-      toolName: sb.toolName,
-      toolArgs: sb.toolArgs,
-      isError: sb.isError,
-      toolUseId: sb.toolUseId,
-      parentToolUseId: sb.parentToolUseId,
-      childBlocks: sb.childBlocks ? serverBlocksToAgentBlocks(sb.childBlocks) : undefined,
-      sourceToolName: sb.sourceToolName,
-      createdAt: sb.createdAt,
-      model: sb.model,
+      toolName: nullToUndefined(sb.toolName),
+      toolArgs: nullToUndefined(sb.toolArgs),
+      isError: nullToUndefined(sb.isError),
+      toolUseId: nullToUndefined(sb.toolUseId),
+      parentToolUseId: sb.parentToolUseId ?? null,
+      childBlocks,
+      sourceToolName: nullToUndefined(sb.sourceToolName),
+      createdAt: nullToUndefined(sb.createdAt),
+      model: nullToUndefined(sb.model),
       // DB-loaded sub-agents are always complete (streaming state handles the active one)
       ...(isSubagent ? { taskComplete: true } : {}),
     };
@@ -264,9 +271,8 @@ export function useFeatureAgentState(featureId: number) {
   const initialLimit = afterMessageIds ? undefined : INITIAL_MESSAGE_LIMIT;
   const query = useGetFeatureAgentState(
     featureId,
-    afterParam,
-    { keepPreviousData: true },
-    initialLimit,
+    { after: afterParam, limit: initialLimit },
+    { query: { keepPreviousData: true } },
   );
 
   const parseQuestions = useCallback((raw: unknown): AgentQuestion[] | null => {
@@ -361,23 +367,24 @@ export function useFeatureAgentState(featureId: number) {
         sessionDbId: s.sessionDbId,
         agentType: s.agentType as AgentType,
         status,
-        subprocessId: s.subprocessId,
-        model: s.model,
+        subprocessId: s.subprocessId ?? null,
+        model: s.model ?? null,
         blocks: injectPlanIntoBlocks(
           acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
-          s.pendingPlanApproval,
+          (s.pendingPlanApproval ?? null) as { plan?: string } | null,
         ),
         pendingQuestions: parseQuestions(s.pendingQuestions),
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,
         runtimeProvider: getOptionalSessionString(s, "runtimeProvider"),
-        runtimeSessionId: s.runtimeSessionId,
-        runId: s.runId,
-        phaseId: s.phaseId,
-        phaseTitle: s.phaseTitle,
+        runtimeSessionId: s.runtimeSessionId ?? null,
+        runId: s.runId ?? null,
+        phaseId: s.phaseId ?? null,
+        phaseTitle: s.phaseTitle ?? null,
         todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
         permissionMode: s.permissionMode ?? "acceptEdits",
-        pendingPlanApproval: s.pendingPlanApproval ?? null,
+        pendingPlanApproval: (s.pendingPlanApproval ??
+          null) as FeatureSession["pendingPlanApproval"],
         pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
         inputTokens: s.inputTokens ?? 0,
         outputTokens: s.outputTokens ?? 0,
@@ -404,7 +411,7 @@ export function useFeatureAgentState(featureId: number) {
       if (!acc || !acc.hasMore || acc.oldestMessageId == null) return;
 
       const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
-      const data = await fetchFeatureAgentState(featureId, {
+      const data = await getFeatureAgentState(featureId, {
         before: beforeParam,
         limit: OLDER_MESSAGE_LIMIT,
       });

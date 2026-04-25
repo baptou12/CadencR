@@ -110,9 +110,11 @@ export const AgentSession = memo(
 
     const loaderStyleSetting = useGetWorkspaceSetting(LOADER_STYLE_KEY);
     const agentCatalog = useAgentCatalog();
-    const cwdQuery = useGetFeatureWorkingDir(featureId ?? 0, projectId ?? 0, {
-      enabled: featureId != null && projectId != null,
-    });
+    const cwdQuery = useGetFeatureWorkingDir(
+      featureId ?? 0,
+      { project_id: projectId ?? 0 },
+      { query: { enabled: featureId != null && projectId != null } },
+    );
     const projectPath = cwdQuery.data?.path ?? undefined;
     const loaderStyle = parseLoaderStyle(loaderStyleSetting.data?.value);
     // Per-agent components read per-agent state. The global `featureTurnStates`

@@ -9,8 +9,15 @@ interface UseDiffKeyboardParams {
   toggleFile: (fileName: string) => void;
   blobShas: Record<string, string>;
   viewedFilesSet: Set<string>;
-  markViewed: { mutate: (args: { featureId: number; filePath: string; blobSha: string }) => void };
-  unmarkViewed: { mutate: (args: { featureId: number; filePath: string }) => void };
+  markViewed: {
+    mutate: (args: {
+      featureId: number;
+      data: { feature_id: number; file_path: string; blob_sha: string };
+    }) => void;
+  };
+  unmarkViewed: {
+    mutate: (args: { featureId: number; params: { file_path: string } }) => void;
+  };
   featureId: number;
   diffAreaRef: RefObject<HTMLDivElement | null>;
   setCollapsedFiles: (updater: (prev: Set<string>) => Set<string>) => void;
@@ -85,9 +92,12 @@ export function useDiffKeyboard({
       const name = fileNames[idx];
       const sha = blobShas[name] ?? "";
       if (viewedFilesSet.has(name)) {
-        unmarkViewed.mutate({ featureId, filePath: name });
+        unmarkViewed.mutate({ featureId, params: { file_path: name } });
       } else {
-        markViewed.mutate({ featureId, filePath: name, blobSha: sha });
+        markViewed.mutate({
+          featureId,
+          data: { feature_id: featureId, file_path: name, blob_sha: sha },
+        });
         setCollapsedFiles((p) => new Set([...p, name]));
       }
     }

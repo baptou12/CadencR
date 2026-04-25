@@ -1,1 +1,4 @@
 /target
+# Generated locally by `cargo run --bin dump-openapi`; consumed by orval to
+# regenerate the TS client. Source of truth lives in the utoipa annotations.
+openapi.json

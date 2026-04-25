@@ -2,22 +2,19 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 
-const { mockGetSettings: _mockGetSettings, mockSetSetting: _mockSetSetting } = vi.hoisted(() => ({
-  mockGetSettings: vi.fn(() => ({
-    data: {
-      branch_prefix: "feature/",
-      agent_autonomy: "1",
-      setup_worktree: "pnpm install",
-      qa_prompt: "pnpm test",
-    },
-  })),
-  mockSetSetting: vi.fn(),
+const generatedMocks = vi.hoisted(() => ({
+  setProjectSetting: vi.fn(),
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
   useGetProjectSettings: vi.fn(() => ({ data: [] })),
+  useSetProjectSetting: vi.fn(() => ({ mutate: generatedMocks.setProjectSetting })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
+}));
+
+vi.mock("./ModelSelector", () => ({
+  ModelSelector: () => <div data-testid="model-selector" />,
 }));
 
 describe("ProjectSettingsDialog", () => {

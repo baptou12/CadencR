@@ -9,6 +9,7 @@ use crate::domain::diff_comments::repository;
 use crate::error::AppError;
 
 #[derive(Serialize, utoipa::ToSchema)]
+#[schema(as = DiffCommentsSuccessResponse)]
 pub struct SuccessResponse {
     pub success: bool,
 }

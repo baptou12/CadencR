@@ -37,6 +37,10 @@ nucleo-matcher = "0.3"
 notify-debouncer-mini = "0.5"
 dotenvy = "0.15"
 
+[[bin]]
+name = "dump-openapi"
+path = "src/bin/dump_openapi.rs"
+
 [lints]
 workspace = true
 

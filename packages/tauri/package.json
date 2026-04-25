@@ -14,7 +14,9 @@
     "format:check": "oxfmt --check src/ && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "test": "vitest run",
     "ts-check": "tsc --noEmit",
-    "knip": "knip"
+    "knip": "knip",
+    "generate:openapi": "cargo run --quiet --manifest-path ../service/Cargo.toml --bin dump-openapi",
+    "generate:api": "pnpm generate:openapi && orval --config ./orval.config.ts && oxfmt src/api/generated/"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
@@ -80,6 +82,7 @@
     "autoprefixer": "^10.4.24",
     "jsdom": "^28.1.0",
     "knip": "^6.3.0",
+    "orval": "7.13.2",
     "oxlint": "^1.46.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18",

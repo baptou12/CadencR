@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useDeletePendingDiffComments } from "@/api/generated";
+import { useDeletePendingDiffComments, getListDiffCommentsQueryKey } from "@/api/generated";
 import { formatCommentsForAgent } from "@/lib/format-diff-comments";
 
 /**
@@ -63,7 +63,7 @@ export function useSendPendingComments(
       await deletePending.mutateAsync({ featureId });
       onSend(message);
       onAfterSend?.();
-      await queryClient.invalidateQueries({ queryKey: ["diff-comments", featureId] });
+      await queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) });
     } catch (err) {
       console.error("Failed to send pending comments", err);
       toast.error("Failed to send comments");

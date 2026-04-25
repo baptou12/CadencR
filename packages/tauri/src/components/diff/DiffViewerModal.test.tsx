@@ -7,15 +7,26 @@ const mocks = vi.hoisted(() => {
   const mockDeletePending = vi.fn(() => ({
     mutateAsync: vi.fn().mockResolvedValue({ deleted: 0 }),
   }));
+  const toastError = vi.fn();
   return {
     mockListQuery,
     mockDeletePending,
+    toastError,
   };
 });
 
 vi.mock("@/api/generated", () => ({
   useListDiffComments: mocks.mockListQuery,
   useDeletePendingDiffComments: mocks.mockDeletePending,
+  // Required by `useSendPendingComments`. Without this stub the hook throws
+  // mid-`try` and silently routes through its `toast.error` branch, masking
+  // a green test for the actual send path.
+  getListDiffCommentsQueryKey: (featureId?: number) =>
+    [`/api/features/${featureId ?? ""}/diff-comments`] as const,
+}));
+
+vi.mock("sonner", () => ({
+  toast: { error: mocks.toastError },
 }));
 
 // Mock child DiffViewer (complex, tested separately)
@@ -41,6 +52,7 @@ const pendingComment = {
 describe("DiffViewerModal", () => {
   beforeEach(() => {
     mocks.mockListQuery.mockReturnValue({ data: [] });
+    mocks.toastError.mockReset();
   });
 
   it("does not render when closed", () => {
@@ -101,6 +113,8 @@ describe("DiffViewerModal", () => {
     await vi.waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });
+    // Regression guard: the success path must not raise an error toast.
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
   it("calls onOpenChange when close button is clicked", () => {

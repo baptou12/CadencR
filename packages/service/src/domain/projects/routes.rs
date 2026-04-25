@@ -10,6 +10,7 @@ use crate::domain::settings_allowlist;
 use crate::error::AppError;
 
 #[derive(Serialize, utoipa::ToSchema)]
+#[schema(as = ProjectsSuccessResponse)]
 pub struct SuccessResponse {
     pub success: bool,
 }
