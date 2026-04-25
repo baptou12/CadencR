@@ -12,6 +12,7 @@ import type { WorktreeStatus } from "@/types/workflow";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/CopyButton";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "naming" | "named" | "creating" | "created" | "setup" | "done" | "error";
@@ -127,7 +128,6 @@ export function WorktreeSetupSection({
   // Collapse by default when done; expand while running or on error
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
   const isOpen = userToggle ?? (isRunning || isError);
-  const [copied, setCopied] = useState(false);
 
   // Don't render if setup hasn't started
   if (!step) return null;
@@ -177,22 +177,17 @@ export function WorktreeSetupSection({
         <GitBranchIcon className="size-3.5" />
         <span className="text-xs font-medium">Worktree Setup</span>
         {branch && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              navigator.clipboard.writeText(branch);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-            title={copied ? "Copied" : "Click to copy branch name"}
-            className={cn(
-              "text-xs font-mono transition-colors hover:text-foreground",
-              copied ? "text-green-400" : "text-muted-foreground",
-            )}
-          >
-            {branch}
-          </button>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-xs font-mono text-muted-foreground">{branch}</span>
+            <CopyButton
+              text={branch}
+              label="Copy branch name"
+              copiedLabel="Copied branch name"
+              idleClassName="text-muted-foreground opacity-70"
+              iconClassName="size-3"
+              className="hover:text-foreground"
+            />
+          </div>
         )}
         <Badge
           variant="secondary"

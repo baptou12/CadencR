@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { render, screen, within } from "@/test-utils";
 
 const mocks = vi.hoisted(() => {
   const useGetDiffMock = vi.fn(() => ({ data: undefined as unknown, isLoading: false }));
@@ -73,6 +73,30 @@ index abc..def 100644
     mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
     render(<DiffViewer featureId={1} mode="worktree" />);
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
+  });
+
+  it("renders the file copy button before the file name", () => {
+    const mockDiff = `diff --git a/src/foo.ts b/src/foo.ts
+index abc..def 100644
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1,1 +1,2 @@
+ line1
++line2
+`;
+    mocks.useGetDiffMock.mockReturnValue({ data: { diff: mockDiff } as unknown, isLoading: false });
+    render(<DiffViewer featureId={1} mode="worktree" />);
+
+    const fileName = screen.getByText("src/foo.ts");
+    const fileHeader = fileName.closest(".group\\/header");
+
+    if (!(fileHeader instanceof HTMLElement)) {
+      throw new Error("Expected diff file header to render");
+    }
+
+    expect(fileHeader.firstElementChild).toBe(
+      within(fileHeader).getByRole("button", { name: /copy path/i }),
+    );
   });
 
   it("renders split/unified toggle buttons", () => {

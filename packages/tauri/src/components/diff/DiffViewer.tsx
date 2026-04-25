@@ -1,13 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { CopyButton } from "./CopyButton";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import { DiffFileBlock } from "./DiffFileBlock";
+import { DiffFileHeader } from "./DiffFileHeader";
 import { useDiffData } from "./useDiffData";
 import { useDiffKeyboard } from "./useDiffKeyboard";
-import type { CommentCallbacks, CommentLineData, ActiveWidget } from "./diff-comment-decorations";
+import type { CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { DiffComment } from "./DiffCommentWidget";
 
 interface DiffViewerProps {
@@ -231,7 +229,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
               return (
                 <div key={displayName} data-file={displayName} className="border-b border-border">
-                  <FileHeader
+                  <DiffFileHeader
                     displayName={displayName}
                     additions={additions}
                     deletions={deletions}
@@ -327,81 +325,6 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Sticky file header row with collapse toggle, stats, and viewed checkbox. */
-function FileHeader({
-  displayName,
-  additions,
-  deletions,
-  isCollapsed,
-  isFocused,
-  isFileViewed,
-  showViewedCheckbox,
-  onToggle,
-  onMarkViewed,
-  onUnmarkViewed,
-}: {
-  displayName: string;
-  additions: number;
-  deletions: number;
-  isCollapsed: boolean;
-  isFocused: boolean;
-  isFileViewed: boolean;
-  showViewedCheckbox: boolean;
-  onToggle: () => void;
-  onMarkViewed: () => void;
-  onUnmarkViewed: () => void;
-}) {
-  return (
-    <div
-      className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
-    >
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        onClick={onToggle}
-      >
-        {isCollapsed ? (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
-      </button>
-      <CopyButton
-        text={displayName}
-        hoverClass="opacity-0 group-hover/header:opacity-100"
-        sizeClass="h-3.5 w-3.5"
-      />
-      <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
-      <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
-      {showViewedCheckbox && (
-        <div
-          className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Checkbox
-            checked={isFileViewed}
-            onCheckedChange={(checked) => {
-              if (checked) onMarkViewed();
-              else onUnmarkViewed();
-            }}
-            className="h-3.5 w-3.5 cursor-pointer"
-          />
-          <span
-            className="cursor-pointer select-none"
-            onClick={() => {
-              if (isFileViewed) onUnmarkViewed();
-              else onMarkViewed();
-            }}
-          >
-            Viewed
-          </span>
-        </div>
-      )}
     </div>
   );
 }

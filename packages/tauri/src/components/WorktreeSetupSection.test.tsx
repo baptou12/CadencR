@@ -172,7 +172,7 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("Define name")).toBeInTheDocument();
   });
 
-  it("copies branch name to clipboard when header branch is clicked without toggling the section", async () => {
+  it("copies branch name from a dedicated header button without toggling the section", async () => {
     mockGetSettings.mockReturnValue({
       data: settingsArray({
         worktree_setup_step: "done",
@@ -195,10 +195,12 @@ describe("WorktreeSetupSection", () => {
     const { user } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
     // Section is collapsed by default when done — steps should not be visible
     expect(screen.queryByText("Define name")).not.toBeInTheDocument();
+    expect(screen.getByText("feature/add-one-dark-theme")).toHaveClass("text-muted-foreground");
 
-    await user.click(screen.getByRole("button", { name: "feature/add-one-dark-theme" }));
+    await user.click(screen.getByRole("button", { name: "Copy branch name" }));
 
     expect(writeText).toHaveBeenCalledWith("feature/add-one-dark-theme");
+    expect(screen.getByRole("button", { name: "Copied branch name" })).toBeInTheDocument();
     // stopPropagation prevents expanding the collapsed section
     expect(screen.queryByText("Define name")).not.toBeInTheDocument();
 

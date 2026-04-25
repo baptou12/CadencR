@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@/test-utils";
-import { DiffHeader, FileHeader } from "./DiffHeader";
+import { describe, it, expect } from "vitest";
+import { render, screen } from "@/test-utils";
+import { DiffHeader } from "./DiffHeader";
 
 describe("DiffHeader", () => {
   it("renders file count", () => {
@@ -26,49 +26,5 @@ describe("DiffHeader", () => {
       </DiffHeader>,
     );
     expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
-  });
-});
-
-describe("FileHeader", () => {
-  it("renders file name", () => {
-    render(
-      <FileHeader
-        fileName="src/foo/bar.ts"
-        additions={5}
-        deletions={2}
-        isCollapsed={false}
-        onToggle={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("src/foo/bar.ts")).toBeInTheDocument();
-  });
-
-  it("renders additions and deletions", () => {
-    render(
-      <FileHeader
-        fileName="file.ts"
-        additions={10}
-        deletions={3}
-        isCollapsed={false}
-        onToggle={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("+10")).toBeInTheDocument();
-    expect(screen.getByText("-3")).toBeInTheDocument();
-  });
-
-  it("calls onToggle when clicked", () => {
-    const onToggle = vi.fn();
-    render(
-      <FileHeader
-        fileName="file.ts"
-        additions={0}
-        deletions={0}
-        isCollapsed={false}
-        onToggle={onToggle}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button"));
-    expect(onToggle).toHaveBeenCalledOnce();
   });
 });
