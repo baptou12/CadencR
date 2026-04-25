@@ -222,15 +222,10 @@ mod tests {
 }
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification_router::init());
-
-    #[cfg(debug_assertions)]
-    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-
-    builder
+        .plugin(tauri_plugin_notification_router::init())
         .invoke_handler(tauri::generate_handler![
             read_file_base64,
             get_runtime_config

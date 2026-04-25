@@ -17,7 +17,6 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:webview:allow-set-webview-zoom",
-    "notification-router:default",
-    "mcp-bridge:default"
+    "notification-router:default"
   ]
 }

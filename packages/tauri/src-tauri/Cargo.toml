@@ -25,7 +25,6 @@ base64 = "0.22"
 dirs = "6"
 rand = "0.8"
 dotenvy = "0.15"
-tauri-plugin-mcp-bridge = "0.10"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
