@@ -18,14 +18,16 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     shortcuts: [
       { keys: ["⌘", "K"], description: "Open command palette" },
       { keys: ["⌘", ","], description: "Open settings" },
+      { keys: ["⌘", "B"], description: "Toggle sidebar" },
       { keys: ["⌘", "N"], description: "New feature" },
       { keys: ["⌘", "⇧", "N"], description: "New session" },
       { keys: ["⌘", "⇧", "X"], description: "Delete feature" },
       { keys: ["⌘", "Esc"], description: "Stop all agents" },
+      { keys: ["⌘", "Q"], description: "Quit application" },
       { keys: ["⌘", "+"], description: "Zoom in" },
       { keys: ["⌘", "−"], description: "Zoom out" },
       { keys: ["⌘", "0"], description: "Reset zoom" },
-      { keys: ["⌘", "?"], description: "Show this help" },
+      { keys: ["⌘", "/"], description: "Show this help" },
     ],
   },
   {
@@ -33,20 +35,26 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     shortcuts: [
       { keys: ["⌘", "⌥", "←/→"], description: "Cycle focus zones" },
       { keys: ["⌘", "⌥", "↑/↓"], description: "Navigate within zone" },
+      { keys: ["⌘", "⌥", "Z"], description: "Reset focus to workflow" },
       { keys: ["Enter"], description: "Activate focused item" },
     ],
   },
   {
     title: "Feature / Workflow",
     shortcuts: [
-      { keys: ["⌘", "⇧", "G"], description: "Git panel" },
+      { keys: ["⌘", "⇧", "A"], description: "Agent tab" },
+      { keys: ["⌘", "⇧", "T"], description: "Terminal tab" },
+      { keys: ["⌘", "⇧", "G"], description: "Git tab" },
+      { keys: ["⌘", "⇧", "E"], description: "Editor tab" },
       { keys: ["⌘", "⇧", "P"], description: "Feature settings" },
+      { keys: ["⌥", "P"], description: "Feature settings (alt)" },
       { keys: ["⌘", "⇧", "B"], description: "Start / continue build" },
       { keys: ["⌘", "⇧", "S"], description: "Start session" },
       { keys: ["⌘", "⇧", "M"], description: "Merge & archive" },
       { keys: ["⌘", "M"], description: "Mark session agent done" },
       { keys: ["⌘", "1"], description: "Approve plan" },
       { keys: ["⌘", "2"], description: "Request plan changes" },
+      { keys: ["Esc"], description: "Reject plan" },
     ],
   },
   {
@@ -54,6 +62,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     shortcuts: [
       { keys: ["⌘", "G"], description: "Agent diff (current agent)" },
       { keys: ["⌘", "P"], description: "Cycle model" },
+      { keys: ["⌘", "T"], description: "Cycle thinking effort" },
       { keys: ["⌘", "Enter"], description: "Maximize agent" },
       { keys: ["⌘", "⇧", "Z"], description: "Collapse agent" },
       { keys: ["⇧", "Tab"], description: "Toggle permission mode" },
@@ -86,12 +95,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Editor",
     shortcuts: [
-      { keys: ["⌘", "⇧", "E"], description: "Editor tab" },
       { keys: ["⌘", "P"], description: "Fuzzy file search" },
+      { keys: ["⌘", "⇧", "F"], description: "Content search" },
       { keys: ["⌘", "S"], description: "Save file" },
       { keys: ["⌘", "W"], description: "Close tab" },
-      { keys: ["⌘", "⌥", "["], description: "Previous sub-tab" },
-      { keys: ["⌘", "⌥", "]"], description: "Next sub-tab" },
+      { keys: ["⌘", "⇧", "["], description: "Previous sub-tab" },
+      { keys: ["⌘", "⇧", "]"], description: "Next sub-tab" },
       { keys: ["⌘", "D"], description: "Split pane vertically" },
       { keys: ["⌘", "⇧", "D"], description: "Split pane horizontally" },
       { keys: ["⌘", "⌥", "←/→/↑/↓"], description: "Navigate panes" },
@@ -103,7 +112,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["^", "`"], description: "Toggle terminal" },
       { keys: ["⌘", "D"], description: "Split vertical" },
       { keys: ["⌘", "⇧", "D"], description: "Split horizontal" },
-      { keys: ["⌘", "⌥", "←/→"], description: "Switch panes" },
+      { keys: ["⌘", "⌥", "←/→/↑/↓"], description: "Switch panes" },
     ],
   },
 ];

@@ -236,6 +236,12 @@ pub fn run() {
             get_runtime_config
         ])
         .menu(|handle| {
+            // No "Help" submenu: macOS gives any submenu literally named "Help"
+            // special treatment (it captures Cmd+Shift+? to focus the menu's
+            // search field). Since we provide a complete custom menu via
+            // Menu::with_items, macOS does not auto-generate one — keyboard
+            // shortcuts can be handled freely in the frontend (the shortcuts
+            // modal uses Cmd+/ via useGlobalShortcut).
             // Custom menu that omits CMD+W (Close Window) so the frontend controls it
             let app_menu = Submenu::with_items(
                 handle,

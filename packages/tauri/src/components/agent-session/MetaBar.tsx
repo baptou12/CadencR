@@ -333,7 +333,7 @@ export function MetaBar({
                 <div className="w-px bg-violet-300/15" aria-hidden="true" />
                 <ShortcutTooltip
                   label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
-                  keys={["ctrl", "T"]}
+                  keys={["cmd", "T"]}
                   showOnFocus
                 >
                   <button

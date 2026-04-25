@@ -184,8 +184,10 @@ function RootLayout() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // CMD+? -> open keyboard shortcuts help modal
-  useGlobalShortcut("meta+shift+?", (e) => {
+  // CMD+/ -> open keyboard shortcuts help modal.
+  // Industry-standard shortcut (Slack, Discord, GitHub) that avoids macOS's
+  // reserved Cmd+Shift+? Help menu accelerator entirely.
+  useGlobalShortcut("meta+/", (e) => {
     e.preventDefault();
     setShortcutsHelpOpen((prev) => !prev);
   });

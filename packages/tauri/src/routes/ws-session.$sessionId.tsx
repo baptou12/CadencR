@@ -125,7 +125,7 @@ function WebSocketSessionPage() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
   useHotkeys(
-    "ctrl+t",
+    "meta+t",
     (e) => {
       const active = document.activeElement;
       if (!(active instanceof HTMLElement) || !active.closest("[data-agent-prompt-bar='true']"))
