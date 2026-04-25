@@ -44,6 +44,18 @@ pub async fn get_setting(pool: &SqlitePool, key: &str) -> Result<Option<String>,
     Ok(row.and_then(|r| r.0))
 }
 
+/// Like `get_setting` but treats empty/whitespace-only values as unset. The
+/// settings table stores user input verbatim — a stray empty string from the
+/// UI shouldn't look different from "no value set".
+pub async fn get_nonempty_setting(
+    pool: &SqlitePool,
+    key: &str,
+) -> Result<Option<String>, AppError> {
+    Ok(get_setting(pool, key)
+        .await?
+        .filter(|value| !value.trim().is_empty()))
+}
+
 pub async fn set_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), AppError> {
     sqlx::query(
         "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

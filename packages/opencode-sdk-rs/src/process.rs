@@ -1,8 +1,9 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::RwLock;
 use std::time::Duration;
 
+use cli_discovery::DiscoverySpec;
 use once_cell::sync::Lazy;
 use regex_lite::Regex;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -14,13 +15,40 @@ use tracing::{info, warn};
 use crate::client::OpenCodeClient;
 use crate::error::SdkError;
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-struct VersionKey(u64, u64, u64);
+/// Provider-neutral spec for finding the `opencode` binary.
+///
+/// Exposed publicly so the host app can call `cli_discovery::discover_all`
+/// directly to render an onboarding "pick a binary" UI without re-declaring
+/// the well-known install dirs here.
+pub fn opencode_discovery_spec() -> DiscoverySpec {
+    DiscoverySpec {
+        bin_name: "opencode",
+        well_known_relative_to_home: vec![".opencode/bin"],
+        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
+        version_args: &["--version"],
+    }
+}
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct BinaryCandidate {
-    path: PathBuf,
-    version: Option<VersionKey>,
+/// Globally-set override for the `opencode` binary path.
+///
+/// Set once by the host app at startup (e.g. read from settings). The
+/// `OpenCodeServer` is a process-wide singleton — once spawned, it stays for
+/// the app's lifetime — so a `RwLock<Option<PathBuf>>` is enough; changes
+/// after first spawn require an app restart.
+static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+/// Set (or clear, with `None`) the override path for the `opencode` binary.
+///
+/// Wins over `CADENCE_OPENCODE_BIN` and discovery. The host app should call
+/// this once at startup with the user's persisted setting.
+pub fn set_binary_override(path: Option<PathBuf>) {
+    if let Ok(mut guard) = BINARY_OVERRIDE.write() {
+        *guard = path;
+    }
+}
+
+fn current_binary_override() -> Option<PathBuf> {
+    BINARY_OVERRIDE.read().ok().and_then(|guard| guard.clone())
 }
 
 #[derive(Debug, Clone)]
@@ -201,170 +229,93 @@ fn parse_port(base_url: &str) -> Result<u16, SdkError> {
         .ok_or_else(|| SdkError::MissingPort(base_url.to_string()))
 }
 
+/// Resolve the `opencode` binary path with the documented precedence:
+/// 1. Settings-backed override (set by the host app via `set_binary_override`).
+/// 2. Legacy `CADENCE_OPENCODE_BIN` env var (kept for backwards compat).
+/// 3. Multi-install discovery via `cli_discovery::discover_all` — picks
+///    the highest semver across `$PATH`, login-shell PATH, and well-known
+///    install dirs.
+///
+/// Falls back to the bare `"opencode"` string (so `Command::new` will defer
+/// to whatever the OS finds) only when nothing concrete is discovered.
 async fn resolved_opencode_command() -> PathBuf {
-    if let Some(command) = configured_opencode_command() {
-        info!(command = %command.display(), "using configured opencode binary");
+    if let Some(command) = current_binary_override() {
+        info!(command = %command.display(), "using opencode binary override");
         return command;
     }
 
-    let candidates = discover_opencode_commands(
-        std::env::var_os("HOME").map(PathBuf::from),
-        std::env::var_os("PATH"),
-        |path| path.is_file(),
-    );
-    if candidates.is_empty() {
-        info!("no concrete opencode binaries discovered; falling back to PATH resolution");
-        return PathBuf::from("opencode");
+    if let Some(command) = legacy_env_opencode_command() {
+        info!(command = %command.display(), "using CADENCE_OPENCODE_BIN");
+        return command;
     }
 
-    let inspected = inspect_opencode_candidates(candidates).await;
-    log_candidate_selection(&inspected);
-    select_best_opencode_candidate(&inspected)
+    let spec = opencode_discovery_spec();
+    let candidates = cli_discovery::discover_all(&spec, None).await;
+    if candidates.is_empty() {
+        info!("no concrete opencode binaries discovered; falling back to PATH resolution");
+        return PathBuf::from(spec.bin_name);
+    }
+
+    log_candidate_selection(&candidates);
+    cli_discovery::select_best(&candidates)
         .map(|candidate| candidate.path.clone())
-        .unwrap_or_else(|| PathBuf::from("opencode"))
+        .unwrap_or_else(|| PathBuf::from(spec.bin_name))
 }
 
-fn configured_opencode_command() -> Option<PathBuf> {
+fn legacy_env_opencode_command() -> Option<PathBuf> {
     std::env::var_os("CADENCE_OPENCODE_BIN")
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
 }
 
-fn discover_opencode_commands<F>(
-    home_dir: Option<PathBuf>,
-    path_var: Option<std::ffi::OsString>,
-    path_exists: F,
-) -> Vec<PathBuf>
-where
-    F: Fn(&Path) -> bool,
-{
-    let mut seen = HashSet::new();
-    let mut commands = Vec::new();
-    if let Some(home_dir) = home_dir {
-        let user_install = home_dir.join(".opencode/bin/opencode");
-        if path_exists(&user_install) && seen.insert(user_install.clone()) {
-            commands.push(user_install);
-        }
-    }
-
-    if let Some(path_var) = path_var {
-        for dir in std::env::split_paths(&path_var) {
-            let candidate = dir.join(format!("opencode{}", std::env::consts::EXE_SUFFIX));
-            if path_exists(&candidate) && seen.insert(candidate.clone()) {
-                commands.push(candidate);
-            }
-        }
-    }
-
-    commands
-}
-
-async fn inspect_opencode_candidates(commands: Vec<PathBuf>) -> Vec<BinaryCandidate> {
-    let mut inspected = Vec::with_capacity(commands.len());
-    for path in commands {
-        let version = query_opencode_version(&path).await;
-        inspected.push(BinaryCandidate { path, version });
-    }
-    inspected
-}
-
-async fn query_opencode_version(command: &Path) -> Option<VersionKey> {
-    let output = Command::new(command).arg("--version").output().await.ok()?;
-    parse_opencode_version_output(&String::from_utf8_lossy(&output.stdout))
-        .or_else(|| parse_opencode_version_output(&String::from_utf8_lossy(&output.stderr)))
-}
-
-fn parse_opencode_version_output(raw: &str) -> Option<VersionKey> {
-    let matcher = Regex::new(r"(?m)\b(\d+)\.(\d+)\.(\d+)\b").ok()?;
-    let captures = matcher.captures(raw)?;
-    Some(VersionKey(
-        captures.get(1)?.as_str().parse().ok()?,
-        captures.get(2)?.as_str().parse().ok()?,
-        captures.get(3)?.as_str().parse().ok()?,
-    ))
-}
-
-fn select_best_opencode_candidate(candidates: &[BinaryCandidate]) -> Option<&BinaryCandidate> {
-    let mut best: Option<&BinaryCandidate> = None;
-    for candidate in candidates {
-        match best {
-            None => best = Some(candidate),
-            Some(current) => {
-                let candidate_key = candidate.version.as_ref();
-                let current_key = current.version.as_ref();
-                if candidate_key > current_key {
-                    best = Some(candidate);
-                }
-            }
-        }
-    }
-    best
-}
-
-fn log_candidate_selection(candidates: &[BinaryCandidate]) {
-    let selected = select_best_opencode_candidate(candidates);
+fn log_candidate_selection(candidates: &[cli_discovery::Candidate]) {
     let resolved = candidates
         .iter()
         .map(|candidate| match &candidate.version {
-            Some(version) => format!(
-                "{}@{}.{}.{}",
-                candidate.path.display(),
-                version.0,
-                version.1,
-                version.2
-            ),
+            Some(version) => {
+                format!(
+                    "{}@{}",
+                    candidate.path.display(),
+                    version.to_string_dotted()
+                )
+            }
             None => format!("{}@unknown", candidate.path.display()),
         })
         .collect::<Vec<_>>();
-    if let Some(selected) = selected {
-        info!(
+    match cli_discovery::select_best(candidates) {
+        Some(selected) => info!(
             candidates = ?resolved,
             selected = %selected.path.display(),
             "resolved opencode binary"
-        );
-    } else {
-        warn!(candidates = ?resolved, "failed to select an opencode binary");
+        ),
+        None => warn!(candidates = ?resolved, "failed to select an opencode binary"),
     }
 }
 
 #[cfg(test)]
-#[rustfmt::skip]
 mod tests {
-    use super::{discover_opencode_commands, parse_opencode_version_output, select_best_opencode_candidate, BinaryCandidate, VersionKey};
-    use std::path::{Path, PathBuf};
+    use super::*;
 
-    fn candidate(path: &str, version: Option<VersionKey>) -> BinaryCandidate {
-        BinaryCandidate { path: PathBuf::from(path), version }
+    #[test]
+    fn opencode_discovery_spec_includes_user_install_and_homebrew() {
+        let spec = opencode_discovery_spec();
+        assert_eq!(spec.bin_name, "opencode");
+        assert!(spec.well_known_relative_to_home.contains(&".opencode/bin"));
+        assert!(spec.well_known_absolute.contains(&"/opt/homebrew/bin"));
     }
 
     #[test]
-    fn discovers_commands_and_parses_versions() {
-        let commands = discover_opencode_commands(Some(PathBuf::from("/Users/test")), Some("/opt/custom/bin:/opt/homebrew/bin".into()), |path| {
-            path == Path::new("/Users/test/.opencode/bin/opencode")
-                || path == Path::new("/opt/custom/bin/opencode")
-                || path == Path::new("/opt/homebrew/bin/opencode")
-        });
-        assert_eq!(commands, vec![
-            PathBuf::from("/Users/test/.opencode/bin/opencode"),
-            PathBuf::from("/opt/custom/bin/opencode"),
-            PathBuf::from("/opt/homebrew/bin/opencode"),
-        ]);
-        assert_eq!(parse_opencode_version_output("1.4.3"), Some(VersionKey(1, 4, 3)));
-        assert_eq!(parse_opencode_version_output("ERROR service=models.dev\n1.1.65\n"), Some(VersionKey(1, 1, 65)));
-    }
-
-    #[test]
-    fn selects_best_candidate_or_falls_back_to_first() {
-        let selected = select_best_opencode_candidate(&[
-            candidate("/Users/test/.opencode/bin/opencode", Some(VersionKey(1, 4, 3))),
-            candidate("/opt/homebrew/bin/opencode", Some(VersionKey(1, 1, 65))),
-        ]).unwrap().path.clone();
-        assert_eq!(selected, PathBuf::from("/Users/test/.opencode/bin/opencode"));
-
-        let fallback = select_best_opencode_candidate(&[
-            candidate("/Users/test/.opencode/bin/opencode", None),
-            candidate("/opt/homebrew/bin/opencode", None),
-        ]).unwrap().path.clone();
-        assert_eq!(fallback, PathBuf::from("/Users/test/.opencode/bin/opencode"));
+    fn binary_override_round_trips() {
+        // Save and restore so this test doesn't leak state into the shared
+        // singleton used by other tests in the same process.
+        let prior = current_binary_override();
+        set_binary_override(Some(PathBuf::from("/custom/opencode")));
+        assert_eq!(
+            current_binary_override(),
+            Some(PathBuf::from("/custom/opencode"))
+        );
+        set_binary_override(None);
+        assert!(current_binary_override().is_none());
+        set_binary_override(prior);
     }
 }

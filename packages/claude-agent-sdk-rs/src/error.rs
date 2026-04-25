@@ -1,11 +1,16 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 /// All errors that can occur in the Claude Agent SDK.
 #[derive(Debug, Error)]
 pub enum SdkError {
-    /// The `claude` binary was not found in PATH or at the specified path.
-    #[error("claude CLI not found in PATH or at specified path")]
-    CliNotFound,
+    /// The `claude` binary was not found anywhere we looked. The included
+    /// `searched` list (every directory we probed for an executable named
+    /// `claude`) lets the host app surface an actionable message and an
+    /// onboarding "pick a path" UI.
+    #[error("claude CLI not found; searched {} location(s)", searched.len())]
+    CliNotFound { searched: Vec<PathBuf> },
 
     /// Failed to spawn the child process.
     #[error("failed to spawn child process: {0}")]

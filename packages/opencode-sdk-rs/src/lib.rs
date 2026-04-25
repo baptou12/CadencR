@@ -16,7 +16,9 @@ pub use parsing::{
     parse_message_from, parse_part_from, parse_permission_from, parse_question_from,
     parse_session_from,
 };
-pub use process::{OpenCodeServer, OpenCodeServerInfo};
+pub use process::{
+    opencode_discovery_spec, set_binary_override, OpenCodeServer, OpenCodeServerInfo,
+};
 pub use sse::{shared_dispatcher, SseDispatcher, SseStream};
 pub use types::{
     Command, Message, MessagePart, MessageRole, ModelRef, PermissionReply, PermissionRequest,

@@ -617,7 +617,7 @@ async fn reader_loop(
 /// # }
 /// ```
 pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Query, SdkError> {
-    let cli_path = find_cli(options.path_to_cli.as_deref())?;
+    let cli_path = find_cli(options.path_to_cli.as_deref()).await?;
     let mut process = CliProcess::spawn(&cli_path, &options).await?;
 
     // Capture PID before moving process into reader loop.
@@ -718,7 +718,7 @@ pub async fn supported_commands(
     use crate::messages::{SdkMessage, SystemMessage};
     use crate::transport::{find_cli, CliProcess};
 
-    let cli_path = find_cli(path_to_cli)?;
+    let cli_path = find_cli(path_to_cli).await?;
 
     // Build minimal options — just enough to spawn the CLI and get init message.
     let options = Options {
@@ -839,7 +839,7 @@ pub async fn supported_models(
 ) -> Result<Vec<crate::types::ModelInfo>, SdkError> {
     use crate::transport::{find_cli, CliProcess};
 
-    let cli_path = find_cli(path_to_cli)?;
+    let cli_path = find_cli(path_to_cli).await?;
 
     let options = Options {
         cwd: std::path::PathBuf::from(cwd),

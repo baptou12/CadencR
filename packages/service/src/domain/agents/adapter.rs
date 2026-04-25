@@ -76,11 +76,30 @@ impl Default for RuntimeSpawnConfig {
 }
 
 #[derive(Debug)]
-pub struct RuntimeError(String);
+pub enum RuntimeError {
+    /// Generic runtime failure with a free-form message.
+    Generic(String),
+    /// The provider's CLI binary could not be located on disk. Carries the
+    /// directories that were probed so the host can render an actionable
+    /// message and prompt the user to set an explicit path via onboarding.
+    CliNotFound {
+        provider: &'static str,
+        searched: Vec<PathBuf>,
+    },
+}
 
 impl Display for RuntimeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        match self {
+            Self::Generic(message) => f.write_str(message),
+            Self::CliNotFound { provider, searched } => {
+                write!(
+                    f,
+                    "{provider} CLI not found; searched {} location(s)",
+                    searched.len()
+                )
+            }
+        }
     }
 }
 
@@ -88,19 +107,30 @@ impl std::error::Error for RuntimeError {}
 
 impl RuntimeError {
     pub fn new(message: impl Into<String>) -> Self {
-        Self(message.into())
+        Self::Generic(message.into())
+    }
+
+    /// Build a structured "CLI not found" error so the host can surface an
+    /// actionable message + a link to the binary picker in onboarding.
+    pub fn cli_not_found(provider: &'static str, searched: Vec<PathBuf>) -> Self {
+        Self::CliNotFound { provider, searched }
     }
 }
 
 impl From<claude_agent_sdk_rs::SdkError> for RuntimeError {
     fn from(value: claude_agent_sdk_rs::SdkError) -> Self {
-        Self(value.to_string())
+        match value {
+            claude_agent_sdk_rs::SdkError::CliNotFound { searched } => {
+                Self::cli_not_found("claude", searched)
+            }
+            other => Self::Generic(other.to_string()),
+        }
     }
 }
 
 impl From<opencode_sdk_rs::SdkError> for RuntimeError {
     fn from(value: opencode_sdk_rs::SdkError) -> Self {
-        Self(value.to_string())
+        Self::Generic(value.to_string())
     }
 }
 

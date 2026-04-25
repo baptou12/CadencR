@@ -1,58 +1,100 @@
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
+use cli_discovery::DiscoverySpec;
+use once_cell::sync::Lazy;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
 use tokio::process::{ChildStdin, ChildStdout};
 
 use crate::error::SdkError;
 use crate::options::Options;
 
+/// Globally-set override for the `claude` binary path. Set once at app startup
+/// from settings; consulted by `find_cli` when no per-call override is given.
+static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
+
+/// Cache of the discovery result keyed on the override snapshot. `find_cli` is
+/// hit on every spawn / supported_models / supported_commands call; without
+/// this cache we'd re-walk PATH and re-spawn N `--version` subprocesses every
+/// time. Invalidated whenever `set_binary_override` swaps the override.
+static RESOLVED: Lazy<RwLock<Option<(Option<PathBuf>, PathBuf)>>> = Lazy::new(|| RwLock::new(None));
+
+/// Set (or clear, with `None`) the global override path for the `claude`
+/// binary. Wins over `$PATH`/login-shell/well-known discovery, but loses to
+/// a per-call `Options.path_to_cli`.
+pub fn set_binary_override(path: Option<PathBuf>) {
+    if let Ok(mut guard) = BINARY_OVERRIDE.write() {
+        *guard = path;
+    }
+    if let Ok(mut cache) = RESOLVED.write() {
+        *cache = None;
+    }
+}
+
+fn current_binary_override() -> Option<PathBuf> {
+    BINARY_OVERRIDE.read().ok().and_then(|guard| guard.clone())
+}
+
 // ---------------------------------------------------------------------------
 // CLI discovery
 // ---------------------------------------------------------------------------
 
+/// Provider-neutral spec for finding the `claude` binary.
+///
+/// Exposed publicly so the host app (e.g. an HTTP discovery endpoint or
+/// onboarding picker) can call `cli_discovery::discover_all` directly
+/// without re-declaring the well-known install locations.
+pub fn claude_discovery_spec() -> DiscoverySpec {
+    DiscoverySpec {
+        bin_name: "claude",
+        well_known_relative_to_home: vec![
+            ".claude/local",
+            ".local/bin",
+            ".bun/bin",
+            ".npm-global/bin",
+            ".volta/bin",
+            ".fnm/aliases/default/bin",
+            ".asdf/shims",
+        ],
+        well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
+        version_args: &["--version"],
+    }
+}
+
 /// Find the `claude` CLI binary.
 ///
-/// If `path_override` is provided, verify it exists and is executable.
-/// Otherwise search `$PATH` for an executable named `claude`.
-pub fn find_cli(path_override: Option<&Path>) -> Result<PathBuf, SdkError> {
-    if let Some(path) = path_override {
-        if is_executable(path) {
-            return Ok(path.to_path_buf());
-        }
-        return Err(SdkError::CliNotFound);
-    }
+/// Discovery order:
+/// 1. `path_override` (caller-supplied, e.g. user setting). Used as-is if executable.
+/// 2. `$PATH` walk.
+/// 3. Login-shell PATH walk (fixes macOS GUI launches that miss `~/.zshrc`).
+/// 4. Well-known install dirs (Homebrew, bun, npm-global, volta, asdf, etc.).
+///
+/// On multiple installs, picks the highest semver. On `CliNotFound`, the error
+/// carries every directory that was probed so the host can render an
+/// actionable "we looked here" message.
+pub async fn find_cli(path_override: Option<&Path>) -> Result<PathBuf, SdkError> {
+    let spec = claude_discovery_spec();
+    let global_override = current_binary_override();
+    let effective_override = path_override.map(Path::to_path_buf).or(global_override);
 
-    let path_var = std::env::var("PATH").unwrap_or_default();
-    find_cli_in_path_dirs(&path_var)
-}
-
-/// Search for `claude` executable in the given PATH-style string.
-fn find_cli_in_path_dirs(path_var: &str) -> Result<PathBuf, SdkError> {
-    let separator = if cfg!(windows) { ';' } else { ':' };
-
-    for dir in path_var.split(separator) {
-        let candidate = Path::new(dir).join("claude");
-        if is_executable(&candidate) {
-            return Ok(candidate);
+    if let Some(cached) = RESOLVED.read().ok().and_then(|guard| guard.clone()) {
+        if cached.0 == effective_override {
+            return Ok(cached.1);
         }
     }
 
-    Err(SdkError::CliNotFound)
-}
+    let candidates = cli_discovery::discover_all(&spec, effective_override.as_deref()).await;
+    let Some(best) = cli_discovery::select_best(&candidates) else {
+        return Err(SdkError::CliNotFound {
+            searched: cli_discovery::searched_dirs(&spec).await,
+        });
+    };
 
-fn is_executable(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        match std::fs::metadata(path) {
-            Ok(meta) => meta.is_file() && (meta.permissions().mode() & 0o111 != 0),
-            Err(_) => false,
-        }
+    let resolved = best.path.clone();
+    if let Ok(mut cache) = RESOLVED.write() {
+        *cache = Some((effective_override, resolved.clone()));
     }
-    #[cfg(not(unix))]
-    {
-        path.is_file()
-    }
+    Ok(resolved)
 }
 
 // ---------------------------------------------------------------------------
@@ -267,36 +309,40 @@ mod tests {
         path
     }
 
-    #[test]
-    fn find_cli_with_override_exists() {
+    #[tokio::test]
+    async fn find_cli_with_override_exists_returns_override() {
         let dir = TempDir::new().unwrap();
         let path = make_executable(dir.path(), "claude");
-        let result = find_cli(Some(&path));
+        let result = find_cli(Some(&path)).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), path);
     }
 
     #[test]
-    fn find_cli_with_override_missing() {
-        let result = find_cli(Some(Path::new("/nonexistent/claude")));
-        assert!(matches!(result, Err(SdkError::CliNotFound)));
+    fn claude_discovery_spec_includes_well_known_install_dirs() {
+        let spec = claude_discovery_spec();
+        assert_eq!(spec.bin_name, "claude");
+        // The official Claude local install dir must be searched.
+        assert!(spec.well_known_relative_to_home.contains(&".claude/local"));
+        // Apple Silicon Homebrew is a critical macOS-GUI fallback.
+        assert!(spec.well_known_absolute.contains(&"/opt/homebrew/bin"));
     }
 
-    #[test]
-    fn find_cli_in_path() {
-        let dir = TempDir::new().unwrap();
-        make_executable(dir.path(), "claude");
-
-        let path_var = format!("/nonexistent:{}", dir.path().display());
-        let result = find_cli_in_path_dirs(&path_var);
-
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn find_cli_not_in_path() {
-        let result = find_cli_in_path_dirs("/tmp/definitely_empty_dir_xyz");
-        assert!(matches!(result, Err(SdkError::CliNotFound)));
+    #[tokio::test]
+    async fn find_cli_returns_searched_dirs_on_not_found() {
+        // We can't guarantee the host machine *lacks* a claude binary, so we
+        // only assert: when CliNotFound *is* returned, the `searched` list is
+        // non-empty (i.e. we surface where we looked, per the new error
+        // contract). Skipping when the host machine has claude installed.
+        let bogus_override = Path::new("/definitely/not/here/claude");
+        let result = find_cli(Some(bogus_override)).await;
+        match result {
+            Ok(_) => {} // host has a real claude — skip
+            Err(SdkError::CliNotFound { searched }) => {
+                assert!(!searched.is_empty(), "searched dirs must be reported");
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[tokio::test]

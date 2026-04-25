@@ -42,10 +42,10 @@ export function CustomModelsSection() {
     <section className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Custom Claude Code models</h2>
+          <h3 className="text-base font-semibold">Custom models</h3>
           <p className="text-sm text-muted-foreground">
-            Additional model IDs merged into the Claude Code catalog — e.g. older aliases, Bedrock
-            ARNs, or gateway names.
+            Additional model IDs merged into the catalog — e.g. older aliases, Bedrock ARNs, or
+            gateway names.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>

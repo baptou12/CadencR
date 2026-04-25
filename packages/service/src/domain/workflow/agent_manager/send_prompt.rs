@@ -380,7 +380,9 @@ impl AgentManager {
             }
             Err(e) => {
                 error!(slot = %slot, error = %e, "failed to resume agent");
-                Err(format!("Failed to resume agent: {e}"))
+                let message = crate::domain::agents::discovery::cli_not_found_message(&e)
+                    .unwrap_or_else(|| format!("Failed to resume agent: {e}"));
+                Err(message)
             }
         }
     }

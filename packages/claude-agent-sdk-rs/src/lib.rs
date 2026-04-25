@@ -19,6 +19,7 @@ pub use permissions::{
     PermissionUpdate,
 };
 pub use query::{query, supported_commands, supported_models, Query, TurnState};
+pub use transport::{claude_discovery_spec, set_binary_override};
 pub use types::{
     AccountInfo, AgentInfo, CompactMetadata, ContentBlock, ContentDelta, McpServerStatus,
     ModelInfo, PermissionDenial, PluginInfo, SlashCommand, Usage,

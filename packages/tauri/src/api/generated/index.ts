@@ -1627,4 +1627,56 @@ export function useWriteFile(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Binary discovery — for onboarding's "pick your CLI" picker
+// ---------------------------------------------------------------------------
+
+/** Where a discovered CLI binary candidate was found. */
+export type DiscoveredSource = "override" | "login_shell_path" | "env_path" | "well_known";
+
+export interface DiscoveredCandidate {
+  /** Path as discovered (may be a symlink/shim). */
+  path: string;
+  /** Resolved through symlinks — the real binary behind nvm/asdf shims. */
+  canonical: string;
+  /** Parsed semver (e.g. "1.4.3"); null when --version couldn't be parsed. */
+  version: string | null;
+  source: DiscoveredSource;
+}
+
+export interface ProviderDiscovery {
+  bin_name: string;
+  candidates: DiscoveredCandidate[];
+  /** What would be spawned right now. Null when no candidates were found. */
+  selected: DiscoveredCandidate | null;
+  /** User-set override path persisted in settings. Null if unset. */
+  override_path: string | null;
+}
+
+export interface BinaryDiscoveryResponse {
+  /** Keyed by provider id ("claude", "opencode"). */
+  providers: Record<string, ProviderDiscovery>;
+}
+
+export const getBinaryDiscoveryQueryKey = (): readonly unknown[] => [
+  "/api/agents/binary-discovery",
+];
+
+export function useBinaryDiscovery(
+  options?: Omit<
+    UseQueryOptions<BinaryDiscoveryResponse, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
+) {
+  return useQuery<BinaryDiscoveryResponse, ErrorType<unknown>>({
+    queryKey: getBinaryDiscoveryQueryKey(),
+    queryFn: () => customInstance({ method: "GET", url: "/api/agents/binary-discovery" }),
+    // Each call hits the backend, which spawns one subprocess per candidate.
+    // The set of installs on disk doesn't change minute-to-minute; default
+    // refetch-on-mount/focus would burn cycles for no UX benefit.
+    staleTime: Infinity,
+    ...options,
+  });
+}
+
 export const DEFAULT_ARTIFACT_TYPE = "default";

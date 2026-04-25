@@ -58,9 +58,9 @@ export function ProfilesSection() {
     <section className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">Claude Code profiles</h2>
+          <h3 className="text-base font-semibold">Profiles</h3>
           <p className="text-sm text-muted-foreground">
-            Named sets of environment variables applied when spawning Claude Code. The{" "}
+            Named sets of environment variables applied when spawning the CLI. The{" "}
             <code className="px-1 py-0.5 rounded bg-muted text-xs">default</code> profile injects
             nothing.
           </p>

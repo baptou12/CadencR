@@ -3,6 +3,7 @@ pub mod openapi;
 
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes::claude_code_router;
+use crate::domain::agents::discovery::routes::discovery_router;
 use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::diff_comments::routes::diff_comments_router;
 use crate::domain::editor::routes::editor_router;
@@ -35,6 +36,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(terminal_router())
         .merge(editor_router())
         .merge(claude_code_router())
+        .merge(discovery_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
         .layer(axum::middleware::from_fn_with_state(

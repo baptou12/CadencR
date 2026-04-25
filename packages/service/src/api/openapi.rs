@@ -5,6 +5,7 @@ use utoipa::OpenApi;
 
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes as claude_code_routes;
+use crate::domain::agents::discovery::routes as discovery_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
 use crate::domain::features::models as features_models;
@@ -96,6 +97,7 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
         super::get_agent_catalog,
+        discovery_routes::binary_discovery_handler,
         claude_code_routes::list_profiles_handler,
         claude_code_routes::upsert_profile_handler,
         claude_code_routes::delete_profile_handler,
@@ -110,6 +112,10 @@ use crate::domain::workspace::routes as workspace_routes;
         crate::domain::agents::runtime::ProviderCatalogEntry,
         crate::domain::agents::runtime::ModelCatalogEntry,
         crate::domain::agents::runtime::ProviderStatus,
+        discovery_routes::BinaryDiscoveryResponse,
+        discovery_routes::ProviderDiscovery,
+        discovery_routes::DiscoveredCandidate,
+        discovery_routes::DiscoveredSource,
         models::BranchResponse,
         models::GitStats,
         models::DiffResponse,

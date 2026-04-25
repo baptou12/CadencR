@@ -102,6 +102,10 @@ async fn main() -> anyhow::Result<()> {
                 port: config.port,
             };
 
+            // Push user-selected CLI binary paths into the SDK overrides
+            // BEFORE the warmup runs — the opencode warmup spawns the server
+            // process, which needs to honor the override on first launch.
+            domain::agents::apply_binary_overrides_from_settings(&state.read_pool).await;
             domain::agents::spawn_runtime_startup_warmups();
 
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
