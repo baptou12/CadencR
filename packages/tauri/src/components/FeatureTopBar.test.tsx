@@ -22,7 +22,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
 
-const mockOpenTerminal = vi.fn();
 const mockSetFeatureSetting = vi.fn();
 
 let mockFeatureData: Record<string, unknown> = {
@@ -47,7 +46,14 @@ vi.mock("@/api/generated", () => ({
   })),
   useGetBranch: vi.fn(() => ({ data: { branch: "main" } })),
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
-  useOpenExternalHandler: vi.fn(() => ({ mutate: mockOpenTerminal })),
+}));
+
+// CustomActionsBar pulls in network hooks we don't care about for these tests.
+vi.mock("./CustomActionsBar", () => ({
+  CustomActionsBar: () => {
+    const React = require("react");
+    return React.createElement("div", { "data-testid": "custom-actions-bar" });
+  },
 }));
 
 vi.mock("@/hooks/useFeatureTitle", () => ({
@@ -91,7 +97,6 @@ vi.mock("@/components/SidebarContext", () => ({
 
 describe("FeatureTopBar", () => {
   beforeEach(() => {
-    mockOpenTerminal.mockClear();
     mockSetFeatureSetting.mockClear();
     mockSetAutonomyLevel.mockClear();
     mockSetCollapsed.mockClear();

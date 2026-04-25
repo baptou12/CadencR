@@ -13,14 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  TerminalIcon,
-  SettingsIcon,
-  BrainCircuitIcon,
-  CpuIcon,
-  PanelLeft,
-  Settings,
-} from "lucide-react";
+import { SettingsIcon, BrainCircuitIcon, CpuIcon, PanelLeft, Settings } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,8 +21,8 @@ import {
   useGetFeatureSettings,
   getGetFeatureSettingsQueryKey,
   useSetFeatureSetting,
-  useOpenExternalHandler,
 } from "@/api/generated";
+import { CustomActionsBar } from "./CustomActionsBar";
 import { ModelSelector } from "./ModelSelector";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
@@ -40,7 +33,6 @@ import { startDragging, toggleMaximize } from "@/lib/window-drag";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import logoSvg from "@/logo.svg";
-import zedLogo from "../../assets/zed-logo.png";
 import { STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 
 interface FeatureTopBarProps {
@@ -102,16 +94,12 @@ export function FeatureTopBar({
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  const openExternal = useOpenExternalHandler();
-
   const setFeatureSetting = useSetFeatureSetting({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
       toast.success("Settings saved");
     },
   });
-  const worktreeBranch = featureSettings?.worktree_branch;
-
   if (!feature) return null;
 
   return (
@@ -176,27 +164,7 @@ export function FeatureTopBar({
 
         <div className="flex-1" />
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          title="Open in Zed"
-          disabled={!isSession && !worktreeBranch}
-          onClick={() => openExternal.mutate({ id: featureId, data: { app: "zed" } })}
-        >
-          <img src={zedLogo} alt="Zed" className="size-4" />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          title="Open terminal"
-          disabled={!isSession && !worktreeBranch}
-          onClick={() => openExternal.mutate({ id: featureId, data: { app: "terminal" } })}
-        >
-          <TerminalIcon className="size-4" />
-        </Button>
+        <CustomActionsBar featureId={featureId} projectId={projectId} />
 
         {!isSession && (
           <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>

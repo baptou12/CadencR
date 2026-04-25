@@ -1412,30 +1412,286 @@ export function useSaveSessionDraft(
   });
 }
 
-type ExternalApp = "terminal" | "zed";
+// ---------------------------------------------------------------------------
+// Custom Actions — user-defined header buttons (replace Open in Zed/Terminal).
+// ---------------------------------------------------------------------------
 
-interface OpenExternalRequest {
-  app: ExternalApp;
+export type CustomActionScope = "global" | "project";
+
+export interface CustomActionLastRunSummary {
+  exit_code: number | null;
+  ended_at: string | null;
 }
 
-interface OpenExternalResponse {
-  success: boolean;
+export interface CustomAction {
+  id: number;
+  name: string;
+  command: string;
+  icon_data: string | null;
+  scope: CustomActionScope;
+  project_id: number | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+  /** `${VAR}` placeholders referenced by `command`, in declaration order. */
+  variable_names: string[];
+  /** Latest run for the (action, feature) pair the listing was scoped to. */
+  last_run: CustomActionLastRunSummary | null;
 }
 
-export function useOpenExternalHandler(
+export interface CustomActionVariable {
+  var_name: string;
+  value: string;
+}
+
+export interface CustomActionRun {
+  id: number;
+  action_id: number;
+  feature_id: number;
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  started_at: string;
+  ended_at: string | null;
+  triggered_by: "manual" | "schedule";
+}
+
+export interface CustomActionSchedule {
+  id: number;
+  action_id: number;
+  feature_id: number;
+  interval_seconds: number;
+  enabled: boolean;
+  last_run_at: string | null;
+}
+
+export interface CustomActionRunResponse {
+  run_id: number;
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  ended_at: string | null;
+}
+
+export interface CreateCustomActionRequest {
+  name: string;
+  command: string;
+  icon_data: string | null;
+  scope: CustomActionScope;
+  project_id: number | null;
+}
+
+export interface UpdateCustomActionRequest {
+  name?: string;
+  command?: string;
+  /** `""` clears the icon. */
+  icon_data?: string;
+  scope?: CustomActionScope;
+  project_id?: number | null;
+  position?: number;
+}
+
+export interface SetCustomActionVariableRequest {
+  var_name: string;
+  value: string;
+}
+
+export interface SetCustomActionScheduleRequest {
+  interval_seconds: number | null;
+  enabled?: boolean;
+}
+
+export function getListCustomActionsQueryKey(projectId: number, featureId: number) {
+  return ["custom-actions", projectId, featureId] as const;
+}
+
+export function getCustomActionVariablesQueryKey(actionId: number, featureId: number) {
+  return ["custom-action-variables", actionId, featureId] as const;
+}
+
+export function getCustomActionRunsQueryKey(actionId: number, featureId: number) {
+  return ["custom-action-runs", actionId, featureId] as const;
+}
+
+export function getCustomActionScheduleQueryKey(actionId: number, featureId: number) {
+  return ["custom-action-schedule", actionId, featureId] as const;
+}
+
+export function useListCustomActions(
+  projectId: number,
+  featureId: number,
+  options?: Omit<UseQueryOptions<CustomAction[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<CustomAction[], ErrorType<unknown>>({
+    queryKey: getListCustomActionsQueryKey(projectId, featureId),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/custom-actions`,
+        params: { project_id: projectId, feature_id: featureId },
+      }),
+    ...options,
+  });
+}
+
+export function useCreateCustomAction(
+  options?: UseMutationOptions<CustomAction, ErrorType<unknown>, CreateCustomActionRequest>,
+) {
+  return useMutation<CustomAction, ErrorType<unknown>, CreateCustomActionRequest>({
+    mutationFn: (data) => customInstance({ method: "POST", url: `/api/custom-actions`, data }),
+    ...options,
+  });
+}
+
+export function useUpdateCustomAction(
   options?: UseMutationOptions<
-    OpenExternalResponse,
+    CustomAction,
     ErrorType<unknown>,
-    { id: number; data: OpenExternalRequest }
+    { id: number; data: UpdateCustomActionRequest }
   >,
 ) {
   return useMutation<
-    OpenExternalResponse,
+    CustomAction,
     ErrorType<unknown>,
-    { id: number; data: OpenExternalRequest }
+    { id: number; data: UpdateCustomActionRequest }
   >({
     mutationFn: ({ id, data }) =>
-      customInstance({ method: "POST", url: `/api/features/${id}/open-external`, data }),
+      customInstance({ method: "PUT", url: `/api/custom-actions/${id}`, data }),
+    ...options,
+  });
+}
+
+export function useDeleteCustomAction(
+  options?: UseMutationOptions<{ success: boolean }, ErrorType<unknown>, { id: number }>,
+) {
+  return useMutation<{ success: boolean }, ErrorType<unknown>, { id: number }>({
+    mutationFn: ({ id }) => customInstance({ method: "DELETE", url: `/api/custom-actions/${id}` }),
+    ...options,
+  });
+}
+
+export function useGetCustomActionVariables(
+  actionId: number,
+  featureId: number,
+  options?: Omit<
+    UseQueryOptions<CustomActionVariable[], ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
+) {
+  return useQuery<CustomActionVariable[], ErrorType<unknown>>({
+    queryKey: getCustomActionVariablesQueryKey(actionId, featureId),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/custom-actions/${actionId}/variables`,
+        params: { feature_id: featureId },
+      }),
+    ...options,
+  });
+}
+
+export function useSetCustomActionVariable(
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { actionId: number; featureId: number; data: SetCustomActionVariableRequest }
+  >,
+) {
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { actionId: number; featureId: number; data: SetCustomActionVariableRequest }
+  >({
+    mutationFn: ({ actionId, featureId, data }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/custom-actions/${actionId}/variables`,
+        params: { feature_id: featureId },
+        data,
+      }),
+    ...options,
+  });
+}
+
+export function useRunCustomAction(
+  options?: UseMutationOptions<
+    CustomActionRunResponse,
+    ErrorType<unknown>,
+    { actionId: number; featureId: number }
+  >,
+) {
+  return useMutation<
+    CustomActionRunResponse,
+    ErrorType<unknown>,
+    { actionId: number; featureId: number }
+  >({
+    mutationFn: ({ actionId, featureId }) =>
+      customInstance({
+        method: "POST",
+        url: `/api/custom-actions/${actionId}/run`,
+        params: { feature_id: featureId },
+      }),
+    ...options,
+  });
+}
+
+export function useGetCustomActionRuns(
+  actionId: number,
+  featureId: number,
+  limit?: number,
+  options?: Omit<UseQueryOptions<CustomActionRun[], ErrorType<unknown>>, "queryKey" | "queryFn">,
+) {
+  return useQuery<CustomActionRun[], ErrorType<unknown>>({
+    queryKey: getCustomActionRunsQueryKey(actionId, featureId),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/custom-actions/${actionId}/runs`,
+        params: { feature_id: featureId, limit },
+      }),
+    ...options,
+  });
+}
+
+export function useGetCustomActionSchedule(
+  actionId: number,
+  featureId: number,
+  options?: Omit<
+    UseQueryOptions<CustomActionSchedule | null, ErrorType<unknown>>,
+    "queryKey" | "queryFn"
+  >,
+) {
+  return useQuery<CustomActionSchedule | null, ErrorType<unknown>>({
+    queryKey: getCustomActionScheduleQueryKey(actionId, featureId),
+    queryFn: () =>
+      customInstance({
+        method: "GET",
+        url: `/api/custom-actions/${actionId}/schedule`,
+        params: { feature_id: featureId },
+      }),
+    ...options,
+  });
+}
+
+export function useSetCustomActionSchedule(
+  options?: UseMutationOptions<
+    { success: boolean },
+    ErrorType<unknown>,
+    { actionId: number; featureId: number; data: SetCustomActionScheduleRequest }
+  >,
+) {
+  return useMutation<
+    { success: boolean },
+    ErrorType<unknown>,
+    { actionId: number; featureId: number; data: SetCustomActionScheduleRequest }
+  >({
+    mutationFn: ({ actionId, featureId, data }) =>
+      customInstance({
+        method: "PUT",
+        url: `/api/custom-actions/${actionId}/schedule`,
+        params: { feature_id: featureId },
+        data,
+      }),
     ...options,
   });
 }

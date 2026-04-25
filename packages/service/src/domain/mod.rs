@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod custom_actions;
 pub mod diff_comments;
 pub mod editor;
 pub mod features;

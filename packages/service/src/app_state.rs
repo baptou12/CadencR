@@ -4,6 +4,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
+use crate::domain::custom_actions::scheduler::CustomActionScheduler;
 use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::terminal::service::PtyManager;
 
@@ -98,6 +99,9 @@ pub struct AppState {
     pub frontend_port: u16,
     /// Listener port, pinned against the `Host` header for DNS-rebinding defense.
     pub port: u16,
+    /// Scheduler for periodic custom-action runs. Holds one tokio task per
+    /// enabled `custom_action_schedules` row.
+    pub custom_action_scheduler: CustomActionScheduler,
 }
 
 impl AppState {
@@ -134,6 +138,7 @@ impl AppState {
             auth_token: "test-token".to_string(),
             frontend_port: 1420,
             port: 0,
+            custom_action_scheduler: CustomActionScheduler::new(),
         }
     }
 }

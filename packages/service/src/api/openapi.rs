@@ -6,6 +6,8 @@ use utoipa::OpenApi;
 use crate::app_state::AppState;
 use crate::domain::agents::claude_code::routes as claude_code_routes;
 use crate::domain::agents::discovery::routes as discovery_routes;
+use crate::domain::custom_actions::models as custom_actions_models;
+use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
 use crate::domain::features::models as features_models;
@@ -81,7 +83,16 @@ use crate::domain::workspace::routes as workspace_routes;
         features_routes::get_feature_provider_settings_handler,
         features_routes::set_feature_provider_setting_handler,
         features_routes::get_working_dir_handler,
-        features_routes::open_external_handler,
+        custom_actions_routes::list_actions_handler,
+        custom_actions_routes::create_action_handler,
+        custom_actions_routes::update_action_handler,
+        custom_actions_routes::delete_action_handler,
+        custom_actions_routes::list_variables_handler,
+        custom_actions_routes::set_variable_handler,
+        custom_actions_routes::run_action_handler,
+        custom_actions_routes::list_runs_handler,
+        custom_actions_routes::get_schedule_handler,
+        custom_actions_routes::set_schedule_handler,
         diff_comments_routes::list_diff_comments_handler,
         diff_comments_routes::create_diff_comment_handler,
         diff_comments_routes::update_diff_comment_handler,
@@ -188,9 +199,20 @@ use crate::domain::workspace::routes as workspace_routes;
         features_models::SetFeatureModelSettingRequest,
         features_models::SetFeatureProviderSettingRequest,
         features_models::OverridePhaseStatusRequest,
-        features_models::OpenExternalRequest,
-        features_models::OpenExternalResponse,
         features_routes::SuccessResponse,
+        custom_actions_models::CustomAction,
+        custom_actions_models::CustomActionVariable,
+        custom_actions_models::CustomActionRun,
+        custom_actions_models::CustomActionSchedule,
+        custom_actions_models::CreateCustomActionRequest,
+        custom_actions_models::UpdateCustomActionRequest,
+        custom_actions_models::SetCustomActionVariableRequest,
+        custom_actions_models::SetCustomActionScheduleRequest,
+        custom_actions_models::LastRunSummary,
+        custom_actions_models::RunResponse,
+        custom_actions_models::Scope,
+        custom_actions_models::TriggeredBy,
+        custom_actions_models::SuccessResponse,
         diff_comments_models::DiffComment,
         diff_comments_models::CreateDiffCommentRequest,
         diff_comments_models::UpdateDiffCommentRequest,

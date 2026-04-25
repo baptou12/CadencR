@@ -105,6 +105,18 @@
   text-align: left;
 }
 
+/* Suppress the native number-input spinner for inputs that opt in via
+   `className="no-spinner"`. Used by the custom-action schedule control. */
+.no-spinner::-webkit-outer-spin-button,
+.no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-spinner[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Auto-scrolling text for overflowing single-line content (e.g. commit messages) */
 .auto-scroll-text {
   display: inline-block;

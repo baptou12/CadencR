@@ -206,6 +206,8 @@ async fn start_test_server() -> TestServer {
         auth_token: TEST_AUTH_TOKEN.to_string(),
         frontend_port: 1420,
         port,
+        custom_action_scheduler:
+            cadence_service::domain::custom_actions::scheduler::CustomActionScheduler::new(),
     };
 
     let app = api::build_router(state).layer(tower_http::cors::CorsLayer::permissive());

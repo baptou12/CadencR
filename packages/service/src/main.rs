@@ -100,6 +100,8 @@ async fn main() -> anyhow::Result<()> {
                 auth_token,
                 frontend_port: config.frontend_port,
                 port: config.port,
+                custom_action_scheduler:
+                    domain::custom_actions::scheduler::CustomActionScheduler::new(),
             };
 
             // Push user-selected CLI binary paths into the SDK overrides
@@ -107,6 +109,9 @@ async fn main() -> anyhow::Result<()> {
             // process, which needs to honor the override on first launch.
             domain::agents::apply_binary_overrides_from_settings(&state.read_pool).await;
             domain::agents::spawn_runtime_startup_warmups();
+
+            // Resume periodic custom-action schedules from a previous launch.
+            state.custom_action_scheduler.bootstrap(&state).await;
 
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 

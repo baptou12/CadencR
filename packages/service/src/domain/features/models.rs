@@ -197,23 +197,6 @@ pub struct QueueItem {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ExternalApp {
-    Terminal,
-    Zed,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-pub struct OpenExternalRequest {
-    pub app: ExternalApp,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct OpenExternalResponse {
-    pub success: bool,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
 pub struct OverridePhaseStatusRequest {
     pub status: String,
 }
