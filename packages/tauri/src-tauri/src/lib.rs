@@ -252,7 +252,12 @@ pub fn run() {
                     &PredefinedMenuItem::hide_others(handle, None)?,
                     &PredefinedMenuItem::show_all(handle, None)?,
                     &PredefinedMenuItem::separator(handle)?,
-                    &PredefinedMenuItem::quit(handle, None)?,
+                    // Pass an explicit accelerator instead of `None` so muda
+                    // handles the keybinding via JS keyboard events (character-based)
+                    // rather than macOS's default position-based matching, which
+                    // would otherwise fire Quit on Cmd+A on AZERTY layouts where
+                    // physical Q sits at the QWERTY A position. See issue #4.
+                    &PredefinedMenuItem::quit(handle, Some("CmdOrCtrl+Q"))?,
                 ],
             )?;
             let edit_menu = Submenu::with_items(
