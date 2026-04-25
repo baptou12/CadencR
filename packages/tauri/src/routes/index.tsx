@@ -41,9 +41,10 @@ function HomePage() {
   const fallbackProjectId = projectsQuery.data?.[0]?.id ?? null;
   const targetProjectId = searchProjectId ?? lastFeature?.projectId ?? fallbackProjectId;
 
-  const featuresQuery = useListFeatures(targetProjectId ?? 0, {
-    enabled: targetProjectId != null,
-  });
+  const featuresQuery = useListFeatures(
+    { project_id: targetProjectId ?? 0 },
+    { query: { enabled: targetProjectId != null } },
+  );
 
   const startupError =
     lastFeatureQuery.error ??

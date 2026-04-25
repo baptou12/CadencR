@@ -19,7 +19,8 @@ import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
 import { queryClient } from "@/lib/queryClient";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
-import type { Feature } from "@/api/generated";
+import { invalidateByUrlPrefix } from "@/lib/queryClient";
+import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 
 export type TurnState = "agent" | "askUser";
 export type PendingKind = "question" | "permission" | "plan-approval" | "prd-approval";
@@ -43,7 +44,8 @@ interface AppWsState {
 }
 
 function lookupFeature(featureId: number): Feature | undefined {
-  const queries = queryClient.getQueriesData<Feature[]>({ queryKey: ["features", "list"] });
+  // Prefix-match all per-project listFeatures caches via the orval-generated key.
+  const queries = queryClient.getQueriesData<Feature[]>({ queryKey: getListFeaturesQueryKey() });
   if (!queries) return undefined;
   for (const [, data] of queries) {
     const feature = data?.find((f) => f.id === featureId);
@@ -212,9 +214,12 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
 
   function handleEnvelope(domain: string, action: string, payload: Record<string, unknown>): void {
     if (domain === "editor" && action === "file_tree.changed") {
-      void queryClient.invalidateQueries({ queryKey: ["editor", "tree"] });
-      void queryClient.invalidateQueries({ queryKey: ["editor", "search"] });
-      void queryClient.invalidateQueries({ queryKey: ["git", "stats"] });
+      // Fold the editor + git-stats invalidations into a single cache walk.
+      void invalidateByUrlPrefix(queryClient, [
+        "/api/editor/tree",
+        "/api/editor/search",
+        "/api/git/stats",
+      ]);
       return;
     }
 

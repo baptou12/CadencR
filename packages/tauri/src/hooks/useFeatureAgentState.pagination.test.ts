@@ -4,11 +4,11 @@ import { useFeatureAgentState } from "./useFeatureAgentState";
 
 const mockRefetch = vi.fn();
 const mockUseQuery = vi.fn();
-const mockFetchFeatureAgentState = vi.fn();
+const mockGetFeatureAgentState = vi.fn();
 
 vi.mock("../api/generated", () => ({
   useGetFeatureAgentState: (...args: unknown[]) => mockUseQuery(...args),
-  fetchFeatureAgentState: (...args: unknown[]) => mockFetchFeatureAgentState(...args),
+  getFeatureAgentState: (...args: unknown[]) => mockGetFeatureAgentState(...args),
 }));
 
 function makeSession(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -43,7 +43,7 @@ function makeSession(overrides: Record<string, unknown> = {}): Record<string, un
 describe("useFeatureAgentState pagination", () => {
   beforeEach(() => {
     mockRefetch.mockClear();
-    mockFetchFeatureAgentState.mockReset();
+    mockGetFeatureAgentState.mockReset();
     mockUseQuery.mockReturnValue({
       data: { sessions: [] },
       isLoading: false,
@@ -68,7 +68,7 @@ describe("useFeatureAgentState pagination", () => {
       refetch: mockRefetch,
     });
 
-    mockFetchFeatureAgentState.mockResolvedValue({
+    mockGetFeatureAgentState.mockResolvedValue({
       sessions: [
         makeSession({
           sessionDbId: 1,

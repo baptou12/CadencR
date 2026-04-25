@@ -58,6 +58,7 @@ beforeEach(() => {
   useWsSessionStore.setState({ sessions: {} });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("window", { ...globalThis.window });
+  vi.spyOn(console, "info").mockImplementation(() => undefined);
 });
 
 afterEach(() => {

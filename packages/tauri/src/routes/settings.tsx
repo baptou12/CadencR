@@ -160,11 +160,13 @@ function ParallelExecutionToggle() {
   const parallel = useGetWorkspaceSetting("parallel_execution");
   const queryClient = useQueryClient();
   const setParallel = useSetWorkspaceSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetWorkspaceSettingQueryKey("parallel_execution"),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetWorkspaceSettingQueryKey("parallel_execution"),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
 
@@ -176,7 +178,10 @@ function ParallelExecutionToggle() {
         id="parallel-execution"
         checked={isChecked}
         onCheckedChange={(checked) =>
-          setParallel.mutate({ key: "parallel_execution", value: checked ? "true" : "false" })
+          setParallel.mutate({
+            key: "parallel_execution",
+            data: { value: checked ? "true" : "false" },
+          })
         }
       />
       <label htmlFor="parallel-execution" className="text-sm cursor-pointer">
@@ -190,11 +195,13 @@ function AgentAutonomySelect() {
   const autonomy = useGetWorkspaceSetting("agent_autonomy");
   const queryClient = useQueryClient();
   const setAutonomy = useSetWorkspaceSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy"),
-      });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetWorkspaceSettingQueryKey("agent_autonomy"),
+        });
+        toast.success("Settings saved");
+      },
     },
   });
 
@@ -204,7 +211,9 @@ function AgentAutonomySelect() {
     <select
       className="border rounded px-3 py-1.5 text-sm bg-background"
       value={currentValue}
-      onChange={(e) => setAutonomy.mutate({ key: "agent_autonomy", value: e.target.value })}
+      onChange={(e) =>
+        setAutonomy.mutate({ key: "agent_autonomy", data: { value: e.target.value } })
+      }
     >
       <option value="1">Low — ask before commit</option>
       <option value="2">Medium — manual continue</option>

@@ -44,7 +44,7 @@ export function usePromptDraft({ sessionId, wsSessionId, initialDraft }: UseProm
 
   // For HTTP-path agents, fetch the draft from DB on mount
   const httpDraftQuery = useGetSessionDraft(sessionId ?? 0, {
-    enabled: !wsSessionId && !!sessionId,
+    query: { enabled: !wsSessionId && !!sessionId },
   });
 
   const [restoredDraft, setRestoredDraft] = useState<string | null>(initialDraft);
@@ -88,7 +88,7 @@ export function usePromptDraft({ sessionId, wsSessionId, initialDraft }: UseProm
     if (wsSid) {
       sendRaw(wsSid, createDraftSave(sid, draft));
     } else {
-      saveDraftMutation.mutate({ sessionId: sid, draft });
+      saveDraftMutation.mutate({ sessionId: sid, data: { draft } });
     }
   }, [sendRaw, saveDraftMutation]);
 

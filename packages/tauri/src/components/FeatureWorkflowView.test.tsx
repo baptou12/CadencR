@@ -16,6 +16,10 @@ vi.mock("@/hooks/useWsWorkflowBackend", () => ({
   useWsWorkflowBackend: mockUseWorkflowBackend,
 }));
 
+vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
+  useSaveLastOpenedFeature: vi.fn(),
+}));
+
 const defaultBackend = {
   workflowStatus: "idle",
   sessionEntries: [],

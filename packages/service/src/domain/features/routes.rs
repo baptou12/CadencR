@@ -45,12 +45,18 @@ pub async fn create_feature_handler(
 
 #[utoipa::path(get, path = "/api/features/{id}",
     params(("id" = i64, Path,)),
-    responses((status = 200, body = Feature)))]
+    responses(
+        (status = 200, body = Feature),
+        (status = 404, description = "Feature not found"),
+    ))]
 pub async fn get_feature_handler(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-) -> Result<Json<Option<Feature>>, AppError> {
-    Ok(Json(service::get_by_id(&state.read_pool, id).await?))
+) -> Result<Json<Feature>, AppError> {
+    service::get_by_id(&state.read_pool, id)
+        .await?
+        .map(Json)
+        .ok_or_else(|| AppError::NotFound(format!("feature {id} not found")))
 }
 
 #[utoipa::path(delete, path = "/api/features/{id}",
@@ -272,6 +278,7 @@ pub async fn get_feature_snapshot_handler(
 }
 
 #[derive(serde::Serialize, utoipa::ToSchema)]
+#[schema(as = FeaturesSuccessResponse)]
 pub struct SuccessResponse {
     pub success: bool,
 }

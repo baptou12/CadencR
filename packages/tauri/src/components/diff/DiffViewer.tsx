@@ -60,16 +60,19 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         }
         d.createComment.mutate({
           featureId,
-          filePath: activeWidget.filePath,
-          lineNumber,
-          side: "new" as const,
-          content,
+          data: {
+            feature_id: featureId,
+            file_path: activeWidget.filePath,
+            line_number: lineNumber,
+            side: "new",
+            content,
+          },
         });
         setActiveCommentWidget(null);
       },
       onClose: () => setActiveCommentWidget(null),
       onEdit: (id: number, content: string) =>
-        callbacksRef.current.data.updateComment.mutate({ id, content }),
+        callbacksRef.current.data.updateComment.mutate({ id, data: { content } }),
       onDelete: (id: number) => callbacksRef.current.data.deleteComment.mutate({ id }),
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }),
@@ -240,13 +243,19 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
                     onMarkViewed={() => {
                       data.markViewed.mutate({
                         featureId,
-                        filePath: displayName,
-                        blobSha: currentBlobSha,
+                        data: {
+                          feature_id: featureId,
+                          file_path: displayName,
+                          blob_sha: currentBlobSha,
+                        },
                       });
                       setCollapsedFiles((prev) => new Set([...prev, displayName]));
                     }}
                     onUnmarkViewed={() =>
-                      data.unmarkViewed.mutate({ featureId, filePath: displayName })
+                      data.unmarkViewed.mutate({
+                        featureId,
+                        params: { file_path: displayName },
+                      })
                     }
                   />
                   <DiffFileBlock

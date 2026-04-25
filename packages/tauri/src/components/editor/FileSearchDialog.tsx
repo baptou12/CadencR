@@ -34,10 +34,10 @@ export default function FileSearchDialog({
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedQuery = useDebouncedValue(searchQuery, DEBOUNCE_MS);
 
-  const { data, isLoading } = useFileSearch(projectId, featureId, debouncedQuery || undefined, {
-    enabled: open,
-    keepPreviousData: true,
-  });
+  const { data, isLoading } = useFileSearch(
+    { project_id: projectId, feature_id: featureId, query: debouncedQuery || undefined },
+    { query: { enabled: open, keepPreviousData: true } },
+  );
 
   // Reset search when dialog opens
   useEffect(() => {

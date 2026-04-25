@@ -60,7 +60,7 @@ describe("useDebouncedSetting", () => {
       vi.advanceTimersByTime(300);
     });
     expect(mockMutate).toHaveBeenCalledWith(
-      { key: "my-key", value: "new-value" },
+      { key: "my-key", data: { value: "new-value" } },
       expect.any(Object),
     );
   });
@@ -76,7 +76,10 @@ describe("useDebouncedSetting", () => {
       vi.advanceTimersByTime(300);
     });
     expect(mockMutate).toHaveBeenCalledTimes(1);
-    expect(mockMutate).toHaveBeenCalledWith({ key: "my-key", value: "val3" }, expect.any(Object));
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "my-key", data: { value: "val3" } },
+      expect.any(Object),
+    );
   });
 
   it("uses custom debounce interval", () => {
@@ -124,7 +127,7 @@ describe("useDebouncedSetting", () => {
       vi.advanceTimersByTime(300);
     });
     expect(mockMutate).toHaveBeenCalledWith(
-      { key: "my-key", value: "new-value" },
+      { key: "my-key", data: { value: "new-value" } },
       expect.any(Object),
     );
   });

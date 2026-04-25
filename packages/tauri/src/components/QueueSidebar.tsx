@@ -145,7 +145,7 @@ export function QueueSidebar({
 }: QueueSidebarProps) {
   // When queue is empty but plan has phases, synthesize draft items from phases
   const { data: plan } = useGetFeaturePlan(featureId ?? 0, {
-    enabled: featureId != null && featureId > 0,
+    query: { enabled: featureId != null && featureId > 0 },
   });
 
   const effectiveQueue = useMemo(() => {
@@ -172,7 +172,7 @@ export function QueueSidebar({
   const [showPrd, setShowPrd] = useState(false);
 
   const { data: prdData } = useGetFeaturePrd(featureId ?? 0, {
-    enabled: featureId != null && featureId > 0,
+    query: { enabled: featureId != null && featureId > 0 },
   });
   const prd = prdData?.prd;
 

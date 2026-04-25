@@ -33,7 +33,7 @@ export function ProjectSettingsDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
-  const { data: settingsArray } = useGetProjectSettings(projectId, { enabled: open });
+  const { data: settingsArray } = useGetProjectSettings(projectId, { query: { enabled: open } });
   // Convert array to record for easy key access
   const settings: Record<string, string> = {};
   if (settingsArray) {
@@ -42,9 +42,11 @@ export function ProjectSettingsDialog({
     }
   }
   const setSettingMutation = useSetProjectSetting({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId) });
-      toast.success("Settings saved");
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId) });
+        toast.success("Settings saved");
+      },
     },
   });
 
@@ -91,9 +93,8 @@ export function ProjectSettingsDialog({
                 }
                 onBlur={() =>
                   setSettingMutation.mutate({
-                    projectId,
-                    key: "color",
-                    value: colorInput,
+                    id: projectId,
+                    data: { key: "color", value: colorInput },
                   })
                 }
                 className="h-8 text-sm w-32 font-mono"
@@ -120,9 +121,8 @@ export function ProjectSettingsDialog({
                 value={branchPrefix}
                 onChange={(e) =>
                   setSettingMutation.mutate({
-                    projectId: projectId,
-                    key: "branch_prefix",
-                    value: e.target.value,
+                    id: projectId,
+                    data: { key: "branch_prefix", value: e.target.value },
                   })
                 }
                 className="h-8 text-sm"
@@ -141,9 +141,8 @@ export function ProjectSettingsDialog({
                 onChange={(e) => setSetupWorktree(e.target.value)}
                 onBlur={() =>
                   setSettingMutation.mutate({
-                    projectId: projectId,
-                    key: "setup_worktree",
-                    value: setupWorktree,
+                    id: projectId,
+                    data: { key: "setup_worktree", value: setupWorktree },
                   })
                 }
                 className="text-sm"
@@ -159,9 +158,8 @@ export function ProjectSettingsDialog({
                 value={agentAutonomy}
                 onValueChange={(value) =>
                   setSettingMutation.mutate({
-                    projectId: projectId,
-                    key: "agent_autonomy",
-                    value,
+                    id: projectId,
+                    data: { key: "agent_autonomy", value },
                   })
                 }
               >
@@ -186,9 +184,11 @@ export function ProjectSettingsDialog({
                   checked={(settings?.parallel_execution ?? "true") === "true"}
                   onCheckedChange={(checked) =>
                     setSettingMutation.mutate({
-                      projectId: projectId,
-                      key: "parallel_execution",
-                      value: checked ? "true" : "false",
+                      id: projectId,
+                      data: {
+                        key: "parallel_execution",
+                        value: checked ? "true" : "false",
+                      },
                     })
                   }
                 />
@@ -217,9 +217,8 @@ export function ProjectSettingsDialog({
                 onChange={(e) => setQaPrompt(e.target.value)}
                 onBlur={() =>
                   setSettingMutation.mutate({
-                    projectId: projectId,
-                    key: "qa_prompt",
-                    value: qaPrompt,
+                    id: projectId,
+                    data: { key: "qa_prompt", value: qaPrompt },
                   })
                 }
                 className="text-sm"

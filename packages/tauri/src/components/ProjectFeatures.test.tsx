@@ -34,7 +34,7 @@ vi.mock("@/api/generated", () => ({
       opts?.onSuccess?.();
     },
   })),
-  useGetFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),

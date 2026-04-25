@@ -9,6 +9,7 @@ import {
   getGetFeaturePlanQueryKey,
   getGetFeaturePlanProgressQueryKey,
   getGetFeatureSettingsQueryKey,
+  getListFeaturesQueryKey,
 } from "@/api/generated";
 
 /** Valid values for the `changed` array in a `feature.updated` payload. */
@@ -46,6 +47,9 @@ export function invalidateFeatureQueries(featureId: number, changed: string[]): 
   // stale cached list entry.
   const LIST_RELEVANT: FeatureChangedField[] = ["status", "title"];
   if (changed.some((f) => LIST_RELEVANT.includes(f as FeatureChangedField))) {
-    void queryClient.invalidateQueries({ queryKey: ["features", "list"], exact: false });
+    // `getListFeaturesQueryKey()` (no args) returns `["/api/features"]` — a
+    // 1-element prefix that matches every per-project list query under React
+    // Query's default prefix matching.
+    void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(), exact: false });
   }
 }

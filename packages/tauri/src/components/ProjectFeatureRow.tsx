@@ -49,13 +49,15 @@ export function ProjectFeatureRow({
   const isActive = activeFeatureId === feature.id;
   const statsMode = feature.type === "ws-session" ? "worktree" : "branch";
   const { data: gitStats } = useGetStats(
-    { featureId: feature.id, mode: statsMode },
+    { feature_id: feature.id, mode: statsMode },
     {
-      // Limit fan-out: fetch only for live worktrees or the active row (which
-      // the Git tab is already fetching). Other rows reuse the cache.
-      enabled: hasLiveWorktree || isActive,
-      refetchInterval: 5 * 60 * 1000,
-      retry: false,
+      query: {
+        // Limit fan-out: fetch only for live worktrees or the active row (which
+        // the Git tab is already fetching). Other rows reuse the cache.
+        enabled: hasLiveWorktree || isActive,
+        refetchInterval: 5 * 60 * 1000,
+        retry: false,
+      },
     },
   );
 

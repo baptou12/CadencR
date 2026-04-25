@@ -10,7 +10,7 @@ import {
 import { type EditorView } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
 import { Loader2 } from "lucide-react";
-import { useGetFileContent } from "@/api/generated";
+import { useGetFileContent, type FileContent } from "@/api/generated";
 import { ReadOnlyDiffView } from "@/components/editor/ReadOnlyDiffView";
 import { isLargeDiff, isLargeDiffByLines } from "@/lib/diff-thresholds";
 import type { FileDiffSection } from "@/lib/parse-unified-diff";
@@ -22,7 +22,6 @@ import {
   type CommentCallbacks,
 } from "./diff-comment-decorations";
 import { commentGutter } from "./diff-comment-gutter";
-import type { DiffComment } from "./DiffCommentWidget";
 import { LargeDiffPlaceholder } from "./LargeDiffPlaceholder";
 
 type OptIn = "no" | "loading" | "yes";
@@ -177,8 +176,14 @@ export function DiffFileBlock({
     refetch,
     isFetching,
   } = useGetFileContent(
-    { featureId, filePath, mode, targetBranch, commitSha },
-    { enabled: shouldRender, staleTime: Infinity },
+    {
+      feature_id: featureId,
+      file_path: filePath,
+      mode,
+      target_branch: targetBranch,
+      commit_sha: commitSha,
+    },
+    { query: { enabled: shouldRender, staleTime: Infinity } },
   );
 
   const oldContent = fileContent?.old_content ?? "";
@@ -229,7 +234,7 @@ export function DiffFileBlock({
 }
 
 interface RenderBodyArgs {
-  fileContent: NonNullable<ReturnType<typeof useGetFileContent>["data"]>;
+  fileContent: FileContent;
   isBinary: boolean;
   isLarge: boolean;
   sizeBytes: number;

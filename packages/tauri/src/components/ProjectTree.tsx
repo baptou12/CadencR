@@ -49,19 +49,23 @@ export function ProjectTree({
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const setProjectSetting = useSetProjectSetting();
   const createProjectMutation = useCreateProject({
-    onSuccess: (project) => {
-      const color = PROJECT_COLORS[project.id % PROJECT_COLORS.length];
-      setProjectSetting.mutate({ projectId: project.id, key: "color", value: color });
-      void queryClient.invalidateQueries({
-        queryKey: getListProjectsQueryKey(),
-      });
+    mutation: {
+      onSuccess: (project) => {
+        const color = PROJECT_COLORS[project.id % PROJECT_COLORS.length];
+        setProjectSetting.mutate({ id: project.id, data: { key: "color", value: color } });
+        void queryClient.invalidateQueries({
+          queryKey: getListProjectsQueryKey(),
+        });
+      },
     },
   });
   const deleteProjectMutation = useDeleteProject({
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: getListProjectsQueryKey(),
-      });
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getListProjectsQueryKey(),
+        });
+      },
     },
   });
 
@@ -69,37 +73,41 @@ export function ProjectTree({
   const pendingProjectIdRef = useRef(0);
 
   const createFeatureMutation = useCreateFeature({
-    onSuccess: (feature) => {
-      void queryClient.invalidateQueries({
-        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
-      });
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(pendingProjectIdRef.current),
-          featureId: String(feature.id),
-        },
-      });
+    mutation: {
+      onSuccess: (feature) => {
+        void queryClient.invalidateQueries({
+          queryKey: getListFeaturesQueryKey({ project_id: pendingProjectIdRef.current }),
+        });
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(pendingProjectIdRef.current),
+            featureId: String(feature.id),
+          },
+        });
+      },
     },
   });
 
   const createWsSessionMutation = useCreateFeature({
-    onSuccess: (wsSession) => {
-      void queryClient.invalidateQueries({
-        queryKey: getListFeaturesQueryKey(pendingProjectIdRef.current),
-      });
-      const wsSessionId = wsSessionIdFromFeature(wsSession.id);
-      const projectId = pendingProjectIdRef.current;
-      const project = projects.find((p) => p.id === projectId);
-      void navigate({
-        to: "/ws-session/$sessionId",
-        params: { sessionId: wsSessionId },
-        search: {
-          cwd: project?.path ?? "",
-          featureId: wsSession.id,
-          projectId,
-        },
-      });
+    mutation: {
+      onSuccess: (wsSession) => {
+        void queryClient.invalidateQueries({
+          queryKey: getListFeaturesQueryKey({ project_id: pendingProjectIdRef.current }),
+        });
+        const wsSessionId = wsSessionIdFromFeature(wsSession.id);
+        const projectId = pendingProjectIdRef.current;
+        const project = projects.find((p) => p.id === projectId);
+        void navigate({
+          to: "/ws-session/$sessionId",
+          params: { sessionId: wsSessionId },
+          search: {
+            cwd: project?.path ?? "",
+            featureId: wsSession.id,
+            projectId,
+          },
+        });
+      },
     },
   });
 
@@ -130,7 +138,7 @@ export function ProjectTree({
       const folder = await open({ directory: true, multiple: false });
       if (!folder) return;
       const name = folder.split("/").pop() ?? folder;
-      createProjectMutation.mutate({ name, path: folder });
+      createProjectMutation.mutate({ data: { name, path: folder } });
     } finally {
       setIsSelectingFolder(false);
     }
@@ -200,8 +208,7 @@ export function ProjectTree({
                             }));
                             pendingProjectIdRef.current = project.id;
                             createFeatureMutation.mutate({
-                              project_id: project.id,
-                              type: "ws-feature",
+                              data: { project_id: project.id, type: "ws-feature" },
                             });
                           }}
                         >
@@ -216,8 +223,7 @@ export function ProjectTree({
                             }));
                             pendingProjectIdRef.current = project.id;
                             createWsSessionMutation.mutate({
-                              project_id: project.id,
-                              type: "ws-session",
+                              data: { project_id: project.id, type: "ws-session" },
                             });
                           }}
                         >

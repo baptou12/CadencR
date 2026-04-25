@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
-import type { CustomActionLastRunSummary } from "@/api/generated";
+import type { LastRunSummary } from "@/api/generated";
 
 interface CustomActionStatusDotProps {
-  lastRun: CustomActionLastRunSummary | null;
+  lastRun: LastRunSummary | null;
   isRunning: boolean;
   className?: string;
 }

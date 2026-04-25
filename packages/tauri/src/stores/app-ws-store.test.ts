@@ -12,12 +12,28 @@ vi.mock("@/lib/notify-agent-done", () => ({
 }));
 
 const mockGetQueriesData = vi.fn();
-vi.mock("@/lib/queryClient", () => ({
-  queryClient: {
+vi.mock("@/lib/queryClient", () => {
+  const client = {
     getQueriesData: (...args: unknown[]) => mockGetQueriesData(...args),
     invalidateQueries: (...args: unknown[]) => mockInvalidateQueries(...args),
-  },
-}));
+  };
+  return {
+    queryClient: client,
+    // Mirror the real helper so production code routed through the mocked
+    // module still hits `mockInvalidateQueries`. Keeping the implementation
+    // local avoids the vi.mock async-factory dance for one tiny function.
+    invalidateByUrlPrefix: (_client: unknown, urlPrefix: string | readonly string[]) => {
+      const prefixes = typeof urlPrefix === "string" ? [urlPrefix] : urlPrefix;
+      return client.invalidateQueries({
+        predicate: (query: { queryKey: readonly unknown[] }) => {
+          const head = query.queryKey[0];
+          if (typeof head !== "string") return false;
+          return prefixes.some((p) => head.startsWith(p));
+        },
+      });
+    },
+  };
+});
 
 vi.mock("@/lib/ws-url", () => ({
   getWsUrl: () => "ws://localhost:5005/ws",
@@ -445,7 +461,7 @@ describe("notifications from turn state", () => {
 });
 
 describe("editor.file_tree.changed", () => {
-  it("invalidates editor caches and git stats", () => {
+  it("invalidates editor + git-stats caches in a single predicate walk", () => {
     useAppWsStore.getState().connect();
     const ws = getWs();
 
@@ -455,9 +471,17 @@ describe("editor.file_tree.changed", () => {
       payload: { project_path: "/project" },
     });
 
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["editor", "tree"] });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["editor", "search"] });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["git", "stats"] });
+    // Single predicate-based call covering all three URL prefixes — replaces
+    // the prior three separate cache walks.
+    expect(mockInvalidateQueries).toHaveBeenCalledTimes(1);
+    const arg = mockInvalidateQueries.mock.calls[0]?.[0] as {
+      predicate?: (q: { queryKey: readonly unknown[] }) => boolean;
+    };
+    expect(typeof arg.predicate).toBe("function");
+    expect(arg.predicate?.({ queryKey: ["/api/editor/tree"] })).toBe(true);
+    expect(arg.predicate?.({ queryKey: ["/api/editor/search", { project_id: 1 }] })).toBe(true);
+    expect(arg.predicate?.({ queryKey: ["/api/git/stats"] })).toBe(true);
+    expect(arg.predicate?.({ queryKey: ["/api/features"] })).toBe(false);
   });
 });
 

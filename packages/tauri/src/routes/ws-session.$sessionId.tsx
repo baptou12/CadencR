@@ -54,10 +54,13 @@ function WebSocketSessionPage() {
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
   const { data: gitStats } = useGetStats(
-    { featureId, mode: "worktree" },
-    { refetchInterval: 5 * 60 * 1000 },
+    { feature_id: featureId, mode: "worktree" },
+    { query: { refetchInterval: 5 * 60 * 1000 } },
   );
-  const { data: branchData } = useGetBranch({ projectId }, { refetchInterval: 10000 });
+  const { data: branchData } = useGetBranch(
+    { project_id: projectId },
+    { query: { refetchInterval: 10000 } },
+  );
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettings = useMemo(
     () => Object.fromEntries((featureSettingsData ?? []).map((s) => [s.key, s.value])),

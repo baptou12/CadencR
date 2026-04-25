@@ -8,13 +8,13 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFeatures,
-  getListFeaturesQueryKey,
   useUpdateFeatureStatus,
   useDeleteFeature,
-  useGetFeatureEmpty,
+  useIsFeatureEmpty,
   useListFeatureWorktrees,
   type Feature,
 } from "@/api/generated";
+import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { ProjectFeatureRow, type FeatureStatus } from "@/components/ProjectFeatureRow";
 
 export function ProjectFeatures({
@@ -34,10 +34,10 @@ export function ProjectFeatures({
   const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
-  const { data: features = [] } = useListFeatures(projectId);
+  const { data: features = [] } = useListFeatures({ project_id: projectId });
   const { data: featureWorktrees = [] } = useListFeatureWorktrees(
-    { projectId },
-    { staleTime: 5 * 60 * 1000 },
+    { project_id: projectId },
+    { query: { staleTime: 5 * 60 * 1000 } },
   );
 
   const { worktreeFeatureIds, liveWorktreeFeatureIds } = useMemo(() => {
@@ -72,34 +72,37 @@ export function ProjectFeatures({
   const archivedFeatures = features.filter((f) => f.status === "archived");
 
   const invalidateFeatures = () => {
-    void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey(projectId) });
-    void queryClient.invalidateQueries({ queryKey: ["features", "detail"] });
-    void queryClient.invalidateQueries({ queryKey: ["features", "planProgress"] });
+    // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
+    void invalidateByUrlPrefix(queryClient, "/api/features");
   };
 
   const updateStatusMutation = useUpdateFeatureStatus({
-    onSuccess: invalidateFeatures,
+    mutation: {
+      onSuccess: invalidateFeatures,
+    },
   });
 
   const deleteMutation = useDeleteFeature({
-    onSuccess: (_data, variables) => {
-      const deletedId = variables.id;
-      if (deletedId === activeFeatureId) {
-        const idx = features.findIndex((f) => f.id === deletedId);
-        const next = features[idx + 1] ?? features[idx - 1];
-        if (next) {
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(projectId),
-              featureId: String(next.id),
-            },
-          });
-        } else {
-          void navigate({ to: "/" });
+    mutation: {
+      onSuccess: (_data, variables) => {
+        const deletedId = variables.id;
+        if (deletedId === activeFeatureId) {
+          const idx = features.findIndex((f) => f.id === deletedId);
+          const next = features[idx + 1] ?? features[idx - 1];
+          if (next) {
+            void navigate({
+              to: "/projects/$projectId/features/$featureId",
+              params: {
+                projectId: String(projectId),
+                featureId: String(next.id),
+              },
+            });
+          } else {
+            void navigate({ to: "/" });
+          }
         }
-      }
-      invalidateFeatures();
+        invalidateFeatures();
+      },
     },
   });
 
@@ -127,7 +130,7 @@ export function ProjectFeatures({
   };
 
   const handleStatusChange = (featureId: number, status: FeatureStatus) => {
-    updateStatusMutation.mutate({ id: featureId, status });
+    updateStatusMutation.mutate({ id: featureId, data: { status } });
   };
 
   const renderFeature = (feature: Feature) => (
@@ -149,8 +152,8 @@ export function ProjectFeatures({
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === "archived";
-  const isEmptyQuery = useGetFeatureEmpty(confirmFeatureId ?? 0, {
-    enabled: confirmFeatureId != null && !isConfirmDelete,
+  const isEmptyQuery = useIsFeatureEmpty(confirmFeatureId ?? 0, {
+    query: { enabled: confirmFeatureId != null && !isConfirmDelete },
   });
   const shouldDirectDelete = !isConfirmDelete && (isEmptyQuery.data?.empty ?? false);
 
@@ -174,7 +177,7 @@ export function ProjectFeatures({
           } else {
             updateStatusMutation.mutate({
               id: confirmFeatureId,
-              status: "archived" as FeatureStatus,
+              data: { status: "archived" },
             });
           }
         }}

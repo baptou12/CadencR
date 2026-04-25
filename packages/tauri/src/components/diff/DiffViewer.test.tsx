@@ -12,8 +12,12 @@ vi.mock("@/api/generated", () => ({
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
   useGetCommitLog: vi.fn(() => ({ data: { commits: [], is_on_base_branch: true } })),
   useGetFileContent: vi.fn(() => ({ data: undefined })),
-  useGetFileContentBatch: vi.fn(() => ({ data: undefined })),
+  // Orval emits a mutation hook for batch endpoints — mirror the mutation
+  // shape so call sites that read `.mutate` and `.data` don't blow up.
+  useGetFileContentBatch: mocks.useMutationMock,
   getGetFileContentQueryKey: vi.fn(() => ["git", "file-content"]),
+  getListDiffViewedQueryKey: vi.fn((id?: number) => ["/api/features", id, "diff-viewed"]),
+  getListDiffCommentsQueryKey: vi.fn((id?: number) => ["/api/features", id, "diff-comments"]),
   useListDiffViewed: vi.fn(() => ({ data: [] })),
   useMarkDiffViewed: mocks.useMutationMock,
   useUnmarkDiffViewed: mocks.useMutationMock,

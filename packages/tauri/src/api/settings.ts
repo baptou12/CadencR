@@ -3,7 +3,7 @@ import { customInstance } from "./client";
 
 export interface SettingEntry {
   key: string;
-  value: string | null;
+  value?: string | null;
 }
 
 export function getWorkspaceSettingsQueryKey() {

@@ -42,11 +42,11 @@ export function hydrateFromSnapshotPatch(
   if (agentStateResp) {
     for (const s of agentStateResp.sessions) {
       if (s.blocks.length === 0 && !s.pendingPlanApproval) continue;
-      const ppa = s.pendingPlanApproval;
+      const ppa = (s.pendingPlanApproval ?? null) as { plan?: string } | null;
       restBlocks.set(s.sessionDbId, {
         blocks: injectPlanIntoBlocks(serverBlocksToAgentBlocks(s.blocks), ppa),
-        hasMore: s.hasMore,
-        oldestMessageId: s.oldestMessageId,
+        hasMore: s.hasMore ?? false,
+        oldestMessageId: s.oldestMessageId ?? null,
         pendingPlanApproval: ppa,
       });
     }

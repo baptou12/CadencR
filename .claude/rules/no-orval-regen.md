@@ -1,1 +1,0 @@
-Do not run `pnpm orval` to regenerate API hooks. The file `packages/tauri/src/api/generated/index.ts` is hand-maintained. When adding new Rust API endpoints, manually add types and React Query hooks following the existing patterns in that file.

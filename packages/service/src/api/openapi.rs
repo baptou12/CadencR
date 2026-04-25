@@ -10,6 +10,7 @@ use crate::domain::custom_actions::models as custom_actions_models;
 use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
+use crate::domain::editor::routes as editor_routes;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
 use crate::domain::git::models;
@@ -48,6 +49,13 @@ use crate::domain::workspace::routes as workspace_routes;
         routes::check_merge_conflicts_handler,
         routes::merge_feature_branch_handler,
         routes::delete_feature_branch_handler,
+        routes::has_uncommitted_changes_handler,
+        routes::get_blame_handler,
+        editor_routes::read_file_handler,
+        editor_routes::write_file_handler,
+        editor_routes::tree_handler,
+        editor_routes::content_search_handler,
+        editor_routes::search_handler,
         workspace_routes::list_settings_handler,
         workspace_routes::get_setting_handler,
         workspace_routes::set_setting_handler,
@@ -93,6 +101,7 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_routes::list_runs_handler,
         custom_actions_routes::get_schedule_handler,
         custom_actions_routes::set_schedule_handler,
+        features_routes::get_feature_snapshot_handler,
         diff_comments_routes::list_diff_comments_handler,
         diff_comments_routes::create_diff_comment_handler,
         diff_comments_routes::update_diff_comment_handler,
@@ -144,26 +153,25 @@ use crate::domain::workspace::routes as workspace_routes;
         models::OriginalBranchResponse,
         models::SuccessResponse,
         models::CreateWorktreeResponse,
-        models::GetBranchParams,
-        models::GetStatsParams,
-        models::GetDiffParams,
-        models::GetChangedFilesParams,
-        models::GetFileContentParams,
+        // Only request bodies are registered as schemas. Query/path
+        // parameter structs are described inline in `#[utoipa::path(params(...))]`
+        // — listing them here would cause orval to emit duplicate TS types.
         models::GetFileContentBatchBody,
-        models::GetCommitLogParams,
-        models::GetFileBlobShasParams,
-        models::ListFilesParams,
-        models::WorktreeInfoParams,
         models::CreateWorktreeBody,
-        models::RemoveWorktreeParams,
-        models::DeleteWorktreeParams,
         models::RetryWorktreeBody,
-        models::ListProjectWorktreesParams,
         models::RemoveOrphanWorktreeBody,
-        models::GetOriginalBranchParams,
-        models::CheckMergeConflictsParams,
         models::MergeFeatureBranchBody,
-        models::DeleteFeatureBranchParams,
+        models::HasUncommittedChangesResponse,
+        models::BlameLine,
+        models::BlameResponse,
+        editor_routes::ReadFileResponse,
+        editor_routes::WriteFileRequest,
+        editor_routes::WriteFileResponse,
+        editor_routes::FileTreeEntry,
+        editor_routes::ContentMatch,
+        editor_routes::ContentSearchResponse,
+        editor_routes::FileMatchResult,
+        editor_routes::FileSearchResponse,
         workspace_models::Setting,
         workspace_models::ModelSettings,
         workspace_models::AgentProviderSettings,
@@ -199,6 +207,11 @@ use crate::domain::workspace::routes as workspace_routes;
         features_models::SetFeatureModelSettingRequest,
         features_models::SetFeatureProviderSettingRequest,
         features_models::OverridePhaseStatusRequest,
+        features_models::SnapshotQueueItem,
+        features_models::AgentSessionSummary,
+        features_models::PlanSnapshot,
+        features_models::WorktreeSnapshot,
+        features_models::FeatureSnapshotResponse,
         features_routes::SuccessResponse,
         custom_actions_models::CustomAction,
         custom_actions_models::CustomActionVariable,
@@ -265,7 +278,13 @@ async fn health() -> Json<HealthResponse> {
     responses((status = 200, description = "OpenAPI specification"))
 )]
 async fn openapi_spec() -> Json<utoipa::openapi::OpenApi> {
-    Json(ApiDoc::openapi())
+    Json(api_doc())
+}
+
+/// Returns the full OpenAPI spec. Used by the runtime endpoint above and by the
+/// `dump-openapi` binary that emits the spec for orval client generation.
+pub fn api_doc() -> utoipa::openapi::OpenApi {
+    ApiDoc::openapi()
 }
 
 pub fn routes() -> Router<AppState> {

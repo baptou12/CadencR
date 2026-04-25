@@ -212,8 +212,8 @@ export function FeatureWorkflowView({
 
   // Git stats for tab bar badge
   const { data: gitStats } = useGetStats(
-    { featureId, mode: "branch" },
-    { refetchInterval: 5 * 60 * 1000 },
+    { feature_id: featureId, mode: "branch" },
+    { query: { refetchInterval: 5 * 60 * 1000 } },
   );
 
   // Terminal state

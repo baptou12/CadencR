@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/api/generated", () => ({
-  getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
-  getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],
-  getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],
-  getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
-  getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
+  getGetFeatureQueryKey: (id: number) => [`/api/features/${id}`],
+  getGetFeaturePrdQueryKey: (id: number) => [`/api/features/${id}/prd`],
+  getGetFeaturePlanQueryKey: (id: number) => [`/api/features/${id}/plan`],
+  getGetFeaturePlanProgressQueryKey: (id: number) => [`/api/features/${id}/plan/progress`],
+  getGetFeatureSettingsQueryKey: (id: number) => [`/api/features/${id}/settings`],
+  getListFeaturesQueryKey: () => ["/api/features"],
 }));
 
 const mockInvalidateQueries = vi.fn();
@@ -25,10 +26,10 @@ describe("invalidateFeatureQueries", () => {
     // title now also invalidates the list so the sidebar picks up the new title
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "detail", 42],
+      queryKey: ["/api/features/42"],
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "list"],
+      queryKey: ["/api/features"],
       exact: false,
     });
   });
@@ -37,11 +38,11 @@ describe("invalidateFeatureQueries", () => {
     invalidateFeatureQueries(1, ["title", "prd", "settings"]);
     // title, prd, settings + the list invalidation triggered by title
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(4);
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "detail", 1] });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "prd", 1] });
-    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["features", "settings", 1] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["/api/features/1"] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["/api/features/1/prd"] });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ["/api/features/1/settings"] });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "list"],
+      queryKey: ["/api/features"],
       exact: false,
     });
   });
@@ -50,7 +51,7 @@ describe("invalidateFeatureQueries", () => {
     invalidateFeatureQueries(5, ["plan", "phases"]);
     expect(mockInvalidateQueries).toHaveBeenCalledOnce();
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "plan", 5],
+      queryKey: ["/api/features/5/plan"],
     });
   });
 
@@ -82,10 +83,10 @@ describe("invalidateFeatureQueries", () => {
     invalidateFeatureQueries(10, ["status"]);
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "detail", 10],
+      queryKey: ["/api/features/10"],
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "list"],
+      queryKey: ["/api/features"],
       exact: false,
     });
   });
@@ -95,10 +96,10 @@ describe("invalidateFeatureQueries", () => {
     // 1 unique feature detail key + 1 list invalidation for status
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "detail", 3],
+      queryKey: ["/api/features/3"],
     });
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["features", "list"],
+      queryKey: ["/api/features"],
       exact: false,
     });
   });

@@ -141,4 +141,40 @@ describe("FeaturePage route", () => {
     render(<FeaturePage />);
     expect(mocks.mockSaveLastOpened).not.toHaveBeenCalled();
   });
+
+  it("renders a not-found state when the feature query 404s", () => {
+    // The backend now returns 404 (not 200-null) for missing features. Mounting
+    // FeatureWorkflowView with `feature=undefined` after a *confirmed* missing
+    // response would silently produce a half-broken UI keyed on a phantom id.
+    // `axios.isAxiosError` requires the `isAxiosError: true` brand to recognise
+    // the rejection — mirror that here so the route's narrowing path runs.
+    const error = Object.assign(new Error("not found"), {
+      isAxiosError: true,
+      response: { status: 404 },
+    });
+    mocks.mockGetByIdQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error,
+      refetch: vi.fn(),
+    });
+    render(<FeaturePage />);
+    expect(screen.queryByTestId("feature-workflow-view")).not.toBeInTheDocument();
+    expect(screen.getByText("Feature #1 not found")).toBeInTheDocument();
+  });
+
+  it("renders a generic error state with a retry for non-404 failures", () => {
+    const refetch = vi.fn();
+    mocks.mockGetByIdQuery.mockReturnValue({
+      data: undefined,
+      isError: true,
+      error: new Error("network down"),
+      refetch,
+    });
+    render(<FeaturePage />);
+    expect(screen.queryByTestId("feature-workflow-view")).not.toBeInTheDocument();
+    expect(screen.getByText("network down")).toBeInTheDocument();
+    screen.getByRole("button", { name: "Retry" }).click();
+    expect(refetch).toHaveBeenCalled();
+  });
 });

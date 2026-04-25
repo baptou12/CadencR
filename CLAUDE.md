@@ -27,7 +27,7 @@ Frontend path alias: `@` -> `packages/tauri/src/` (for example `import { foo } f
 - Keep implementations simple and reusable; prefer extracting shared logic over duplication
 - Search for existing code before writing new code. Reuse helpers, hooks, utilities, and components instead of duplicating logic.
 - Avoid unnecessary re-renders, redundant network calls, and heavy main-thread work
-- Do not run `pnpm orval`; `packages/tauri/src/api/generated/index.ts` is hand-maintained
+- After changing the Rust API surface (utoipa attributes / new handlers): run `pnpm --filter @cadence/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/tauri/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/tauri/orval.transformer.cjs`.
 - In Rust source files, keep unit tests inline with the module they cover using `#[cfg(test)]`; do not create dedicated sibling `tests.rs` files for module unit tests
 - Do not spread provider-specific logic through shared frontend/backend codepaths; SDKs handle provider communication, adapters unify provider business logic, and shared code should stay provider-neutral
 - No file longer than 400 lines; refactor before crossing the limit

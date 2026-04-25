@@ -26,7 +26,7 @@ import {
   useCreateCustomAction,
   useUpdateCustomAction,
   type CustomAction,
-  type CustomActionScope,
+  type Scope as CustomActionScope,
 } from "@/api/generated";
 import { CustomActionIcon } from "./CustomActionIcon";
 
@@ -75,7 +75,7 @@ export function CustomActionEditorDialog({
         name: action.name,
         command: action.command,
         scope: action.scope,
-        iconData: action.icon_data,
+        iconData: action.icon_data ?? null,
       });
     } else {
       setForm(EMPTY_STATE);
@@ -97,25 +97,29 @@ export function CustomActionEditorDialog({
   }, [form.command]);
 
   const createMutation = useCreateCustomAction({
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, featureId),
-      });
-      onOpenChange(false);
-      toast.success("Action created");
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, feature_id: featureId }),
+        });
+        onOpenChange(false);
+        toast.success("Action created");
+      },
+      onError: (err) => toast.error(`Create failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Create failed: ${err.message}`),
   });
 
   const updateMutation = useUpdateCustomAction({
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: getListCustomActionsQueryKey(projectId, featureId),
-      });
-      onOpenChange(false);
-      toast.success("Action updated");
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCustomActionsQueryKey({ project_id: projectId, feature_id: featureId }),
+        });
+        onOpenChange(false);
+        toast.success("Action updated");
+      },
+      onError: (err) => toast.error(`Update failed: ${err.message}`),
     },
-    onError: (err) => toast.error(`Update failed: ${err.message}`),
   });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
@@ -162,11 +166,13 @@ export function CustomActionEditorDialog({
       });
     } else {
       createMutation.mutate({
-        name: form.name,
-        command: form.command,
-        scope: form.scope,
-        project_id: form.scope === "global" ? null : projectId,
-        icon_data: form.iconData,
+        data: {
+          name: form.name,
+          command: form.command,
+          scope: form.scope,
+          project_id: form.scope === "global" ? null : projectId,
+          icon_data: form.iconData,
+        },
       });
     }
   }

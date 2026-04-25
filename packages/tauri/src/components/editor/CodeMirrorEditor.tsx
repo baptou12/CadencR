@@ -68,10 +68,12 @@ export default function CodeMirrorEditor({
 
   const blameCompartment = useRef(new Compartment());
   const { data: blameData } = useGetBlame(
-    { projectId, featureId, filePath },
+    { project_id: projectId, feature_id: featureId, file_path: filePath },
     {
-      enabled: isBlameEnabled && Boolean(projectId && filePath),
-      refetchOnWindowFocus: false,
+      query: {
+        enabled: isBlameEnabled && Boolean(projectId && filePath),
+        refetchOnWindowFocus: false,
+      },
     },
   );
 
@@ -90,11 +92,13 @@ export default function CodeMirrorEditor({
   );
 
   const { data, isLoading, error } = useReadFile(
-    { projectId, featureId, filePath },
+    { project_id: projectId, feature_id: featureId, file_path: filePath },
     {
-      enabled: Boolean(filePath && projectId),
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
+      query: {
+        enabled: Boolean(filePath && projectId),
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+      },
     },
   );
 
@@ -107,10 +111,12 @@ export default function CodeMirrorEditor({
     const content = view.state.doc.toString();
     try {
       await mutateAsyncRef.current({
-        project_id: projectId,
-        feature_id: featureId,
-        file_path: filePath,
-        content,
+        data: {
+          project_id: projectId,
+          feature_id: featureId,
+          file_path: filePath,
+          content,
+        },
       });
       setDirty(featureId, paneId, filePath, false);
       setAutoSavedVisible(true);
@@ -128,10 +134,12 @@ export default function CodeMirrorEditor({
     const content = view.state.doc.toString();
     try {
       await mutateAsyncRef.current({
-        project_id: projectId,
-        feature_id: featureId,
-        file_path: filePath,
-        content,
+        data: {
+          project_id: projectId,
+          feature_id: featureId,
+          file_path: filePath,
+          content,
+        },
       });
       setDirty(featureId, paneId, filePath, false);
     } catch (err) {

@@ -128,6 +128,24 @@ vi.mock("@/hooks/useResolvedModel", () => ({
   })),
 }));
 
+vi.mock("@/api/agentRuntime", () => ({
+  useAgentCatalog: vi.fn(() => ({
+    data: {
+      default_provider: "claude_code",
+      providers: [
+        {
+          id: "claude_code",
+          label: "Claude Code",
+          status: "available",
+          models: [{ id: "claude-opus-4-5", label: "Opus" }],
+          default_model: "claude-opus-4-5",
+        },
+      ],
+    },
+    isLoading: false,
+  })),
+}));
+
 vi.mock("@/api/generated", () => ({
   useGetStats: vi.fn(() => ({ data: undefined })),
   useGetBranch: vi.fn(() => ({ data: undefined })),

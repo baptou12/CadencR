@@ -7,6 +7,7 @@ import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { getListFeaturesQueryKey } from "@/api/generated";
 
 interface RunningAgentInfo {
   sessionId: string;
@@ -16,7 +17,7 @@ interface RunningAgentInfo {
 function lookupFeatureTitle(featureId: number | null, queryClient: QueryClient): string | null {
   if (!featureId) return null;
   for (const [, data] of queryClient.getQueriesData<{ id: number; title: string }[]>({
-    queryKey: ["features", "list"],
+    queryKey: getListFeaturesQueryKey(),
   })) {
     const feature = data?.find((f) => f.id === featureId);
     if (feature) return feature.title;

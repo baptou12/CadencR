@@ -294,6 +294,7 @@ pub struct HasUncommittedChangesResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[schema(as = GitSuccessResponse)]
 pub struct SuccessResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

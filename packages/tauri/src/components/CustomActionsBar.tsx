@@ -21,7 +21,10 @@ interface CustomActionsBarProps {
  *   [act1] [act2] [act3 OR overflow] [+ add]
  */
 export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps) {
-  const { data: actions = [] } = useListCustomActions(projectId, featureId);
+  const { data: actions = [] } = useListCustomActions({
+    project_id: projectId,
+    feature_id: featureId,
+  });
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorTarget, setEditorTarget] = useState<CustomAction | undefined>(undefined);
 

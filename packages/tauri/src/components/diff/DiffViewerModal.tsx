@@ -34,7 +34,7 @@ export function DiffViewerModal({
   diffMode = "worktree",
   onSendComments,
 }: DiffViewerModalProps) {
-  const { data: comments = [] } = useListDiffComments(featureId, { enabled: open });
+  const { data: comments = [] } = useListDiffComments(featureId, { query: { enabled: open } });
   const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
 
   const closeModal = useCallback(() => onOpenChange(false), [onOpenChange]);

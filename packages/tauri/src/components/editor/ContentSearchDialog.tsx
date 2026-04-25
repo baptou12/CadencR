@@ -87,6 +87,8 @@ export default function ContentSearchDialog({
 
   const searchParams: ContentSearchParams = useMemo(
     () => ({
+      project_id: projectId,
+      feature_id: featureId,
       query: debouncedQuery,
       case_sensitive: caseSensitive,
       whole_word: wholeWord,
@@ -96,6 +98,8 @@ export default function ContentSearchDialog({
       exclude_pattern: excludePattern || undefined,
     }),
     [
+      projectId,
+      featureId,
       debouncedQuery,
       caseSensitive,
       wholeWord,
@@ -106,9 +110,11 @@ export default function ContentSearchDialog({
     ],
   );
 
-  const { data, isLoading } = useContentSearch(projectId, featureId, searchParams, {
-    enabled: open && debouncedQuery.length > 0,
-    keepPreviousData: true,
+  const { data, isLoading } = useContentSearch(searchParams, {
+    query: {
+      enabled: open && debouncedQuery.length > 0,
+      keepPreviousData: true,
+    },
   });
 
   useEffect(() => {
