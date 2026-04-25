@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractApplyPatchPreview,
+  extractApplyPatchPreviewPartial,
   extractApplyPatchPrimaryPath,
   parseApplyPatchChanges,
 } from "./apply-patch";
@@ -77,6 +78,83 @@ describe("extractApplyPatchPreview", () => {
       filePath: "toto.txt",
       oldContent: "(file deleted)",
       newContent: "",
+    });
+  });
+});
+
+describe("extractApplyPatchPreviewPartial", () => {
+  it("returns a preview from a JSON tail missing the closing quote and brace", () => {
+    const partial =
+      '{"patch_text": "*** Begin Patch\\n*** Update File: src/foo.ts\\n@@\\n-old\\n+new';
+    expect(extractApplyPatchPreviewPartial(partial)).toEqual({
+      filePath: "src/foo.ts",
+      oldContent: "old",
+      newContent: "new",
+    });
+  });
+
+  it("returns null when the patch_text key is absent", () => {
+    expect(extractApplyPatchPreviewPartial('{"file_path":')).toBeNull();
+  });
+
+  it("returns null for empty input", () => {
+    expect(extractApplyPatchPreviewPartial("")).toBeNull();
+  });
+
+  it("round-trips a fully complete JSON to the same result as extractApplyPatchPreview", () => {
+    const args = {
+      patch_text: "*** Begin Patch\n*** Add File: x.ts\n+hi\n*** End Patch\n",
+    };
+    const raw = JSON.stringify(args);
+    expect(extractApplyPatchPreviewPartial(raw)).toEqual(extractApplyPatchPreview(args));
+  });
+
+  it("decodes escaped newlines so parseApplyPatchChanges sees real lines", () => {
+    const partial = '{"patch_text":"*** Begin Patch\\n*** Add File: foo.txt\\n+a\\n+b';
+    expect(extractApplyPatchPreviewPartial(partial)).toEqual({
+      filePath: "foo.txt",
+      oldContent: "",
+      newContent: "a\nb",
+    });
+  });
+
+  it("recognises the camelCase patchText key as well", () => {
+    const partial = '{"patchText":"*** Begin Patch\\n*** Update File: bar.ts\\n@@\\n-x\\n+y';
+    expect(extractApplyPatchPreviewPartial(partial)).toEqual({
+      filePath: "bar.ts",
+      oldContent: "x",
+      newContent: "y",
+    });
+  });
+
+  it("decodes \\uXXXX escapes inline with surrounding text", () => {
+    // + == '+', - == '-' — exercises the unicode branch + surrounding runs.
+    const partial =
+      '{"patch_text":"*** Begin Patch\\n*** Update File: u.ts\\n@@\\n\\u002Dold\\n\\u002Bnew';
+    expect(extractApplyPatchPreviewPartial(partial)).toEqual({
+      filePath: "u.ts",
+      oldContent: "old",
+      newContent: "new",
+    });
+  });
+
+  it("drops a trailing lone backslash and partial \\uXXX silently", () => {
+    // Truncated `\\u00` and trailing lone `\\` must not crash or corrupt the
+    // preview — the next streaming chunk will resupply the bytes.
+    const truncatedUnicode =
+      '{"patch_text":"*** Begin Patch\\n*** Update File: t.ts\\n@@\\n-old\\n+new\\u00';
+    expect(extractApplyPatchPreviewPartial(truncatedUnicode)).toEqual({
+      filePath: "t.ts",
+      oldContent: "old",
+      newContent: "new",
+    });
+
+    const trailingBackslash =
+      '{"patch_text":"*** Begin Patch\\n*** Update File: t.ts\\n@@\\n-old\\n+new\\';
+    expect(extractApplyPatchPreviewPartial(trailingBackslash)).toEqual({
+      filePath: "t.ts",
+      oldContent: "old",
+      newContent: "new",
     });
   });
 });

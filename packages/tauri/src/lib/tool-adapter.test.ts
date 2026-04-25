@@ -102,4 +102,21 @@ describe("extractInlineDiffPreview", () => {
       newContent: "Hello Cadence 2",
     });
   });
+
+  it("falls back to the partial extractor for streaming ApplyPatch JSON", () => {
+    // Truncated mid-string — JSON.parse fails, but the tolerant extractor
+    // can still surface the partial diff so the inline view doesn't stay blank
+    // for the duration of the stream.
+    const partial =
+      '{"patch_text": "*** Begin Patch\\n*** Update File: src/foo.ts\\n@@\\n-old\\n+new';
+    expect(extractInlineDiffPreview("ApplyPatch", partial)).toEqual({
+      filePath: "src/foo.ts",
+      oldContent: "old",
+      newContent: "new",
+    });
+  });
+
+  it("returns null for non-ApplyPatch tools when args are unparseable", () => {
+    expect(extractInlineDiffPreview("Edit", '{"file_path":')).toBeNull();
+  });
 });

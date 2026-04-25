@@ -1,4 +1,4 @@
-import { extractApplyPatchPreview, isApplyPatchToolName } from "@/lib/apply-patch";
+import { extractApplyPatchPreviewPartial, isApplyPatchToolName } from "@/lib/apply-patch";
 import { stringArg } from "@/lib/tool-args";
 
 export interface InlineDiffPreview {
@@ -96,12 +96,15 @@ export function extractInlineDiffPreview(
   toolName: string,
   toolArgs?: string,
 ): InlineDiffPreview | null {
+  if (normalizeToolName(toolName) === "ApplyPatch") {
+    // The tolerant extractor already does a fast `JSON.parse` first and falls
+    // back to a streaming-friendly scanner — calling `parseToolArgsObject`
+    // here would just parse the same bytes a second time on every render.
+    return toolArgs ? extractApplyPatchPreviewPartial(toolArgs) : null;
+  }
+
   const args = parseToolArgsObject(toolArgs);
   if (!args) return null;
-
-  if (normalizeToolName(toolName) === "ApplyPatch") {
-    return extractApplyPatchPreview(args);
-  }
 
   const filePath = stringArg(args, "file_path", "filePath", "path");
   if (!filePath) return null;
