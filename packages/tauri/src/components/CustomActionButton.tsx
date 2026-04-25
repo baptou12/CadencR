@@ -1,9 +1,10 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type ReactElement } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { ChevronDownIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   getGetCustomActionRunsQueryKey,
   getListCustomActionsQueryKey,
@@ -22,22 +23,13 @@ interface CustomActionButtonProps {
   onEdit: (action: CustomAction) => void;
 }
 
-/**
- * Inline action button.
- *
- * - Left click: runs the command.
- * - Right click (context menu): opens the detailed popover (variables,
- *   schedule, recent run logs, edit/delete).
- *
- * Status dot is read straight from `action.last_run`, which the bar's
- * single `useListCustomActions` query embeds — no per-button polling.
- */
+/** Status comes from the bar's single list query, so buttons don't poll per action. */
 export function CustomActionButton({
   action,
   featureId,
   projectId,
   onEdit,
-}: CustomActionButtonProps) {
+}: CustomActionButtonProps): ReactElement {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -63,29 +55,35 @@ export function CustomActionButton({
     runMutation.mutate({ id: action.id, params: { feature_id: featureId } });
   }
 
-  function handleContextMenu(e: MouseEvent<HTMLButtonElement>): void {
-    e.preventDefault();
-    setOpen(true);
-  }
-
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative size-7"
-          title={`${action.name} — left click runs, right click opens details`}
-          onClick={handleClick}
-          onContextMenu={handleContextMenu}
-          disabled={runMutation.isPending}
-        >
-          <CustomActionIcon iconData={action.icon_data ?? null} name={action.name} />
-          <CustomActionStatusDot
-            lastRun={action.last_run ?? null}
-            isRunning={runMutation.isPending}
-          />
-        </Button>
+        <div className="inline-flex items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative size-7 rounded-r-none"
+            title={`Run ${action.name}`}
+            onClick={handleClick}
+            disabled={runMutation.isPending}
+          >
+            <CustomActionIcon iconData={action.icon_data ?? null} name={action.name} />
+            <CustomActionStatusDot
+              lastRun={action.last_run ?? null}
+              isRunning={runMutation.isPending}
+            />
+          </Button>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-5 rounded-l-none px-0"
+              title={`Open ${action.name} details`}
+            >
+              <ChevronDownIcon className="size-3" />
+            </Button>
+          </PopoverTrigger>
+        </div>
       </PopoverAnchor>
       <PopoverContent align="end" className="w-[28rem]">
         <CustomActionPopover

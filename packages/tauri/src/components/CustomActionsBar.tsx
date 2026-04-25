@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { PlusIcon } from "lucide-react";
-import { useHotkeys } from "react-hotkeys-hook";
 
 import { Button } from "@/components/ui/button";
 import { useListCustomActions, type CustomAction } from "@/api/generated";
@@ -20,7 +19,7 @@ interface CustomActionsBarProps {
  * Layout:
  *   [act1] [act2] [act3 OR overflow] [+ add]
  */
-export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps) {
+export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps): ReactElement {
   const { data: actions = [] } = useListCustomActions({
     project_id: projectId,
     feature_id: featureId,
@@ -37,16 +36,6 @@ export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps
     setEditorTarget(action);
     setEditorOpen(true);
   }
-
-  // CMD+SHIFT+A → quickly open the new-action editor.
-  useHotkeys(
-    "meta+shift+a",
-    (e) => {
-      e.preventDefault();
-      openCreate();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
 
   const inline = actions.length <= 3 ? actions : actions.slice(0, 2);
   const overflow = actions.length <= 3 ? [] : actions.slice(2);
@@ -74,7 +63,7 @@ export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps
         variant="ghost"
         size="icon"
         className="size-7"
-        title="Add custom action (⌘⇧A)"
+        title="Add custom action"
         onClick={openCreate}
       >
         <PlusIcon className="size-4" />
