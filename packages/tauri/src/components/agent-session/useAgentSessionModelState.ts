@@ -83,11 +83,6 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
     "Model";
 
   const canChangeProvider = !!onProviderChange && status === "idle" && blocksLength === 0;
-  const selectableProviders = useMemo(
-    () => providerOptions.filter((provider) => !provider.disabled && provider.models.length > 0),
-    [providerOptions],
-  );
-
   const supportedThinkingEfforts = supportedThinkingEffortLevels(
     visibleModels.find((model) => model.id === currentModelId),
   );
@@ -98,7 +93,6 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
     visibleModels,
     currentModelLabel,
     canChangeProvider,
-    selectableProviders,
     supportedThinkingEfforts,
   };
 }

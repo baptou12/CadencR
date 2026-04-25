@@ -1,7 +1,7 @@
 import React from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { render, screen, waitFor } from "@/test-utils";
 import { ModelSelector } from "./ModelSelector";
 
 const toastSuccess = vi.fn();
@@ -340,8 +340,49 @@ describe("ModelSelector", () => {
     render(<ModelSelector level="global" />);
     await user.click(screen.getAllByRole("combobox")[0]);
 
-    expect(screen.getByText("OpenCode")).toBeInTheDocument();
+    expect(screen.getByText("OpenCode / Default")).toBeInTheDocument();
     expect(screen.queryByText(/Use Claude Code/)).toBeNull();
     expect(screen.queryByText(/Use OpenCode/)).toBeNull();
+  });
+
+  it("auto-focuses search and filters provider/model options", async () => {
+    const user = userEvent.setup();
+    mockAgentCatalog.mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus", description: "Claude default" }],
+            default_model: "opus",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [{ id: "gpt-5", label: "GPT-5", description: "Codex default" }],
+            default_model: "gpt-5",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<ModelSelector level="global" />);
+    await user.click(screen.getAllByRole("combobox")[0]);
+
+    const searchInput = screen.getByPlaceholderText("Search providers or models...");
+    await waitFor(() => expect(searchInput).toHaveFocus());
+
+    await user.type(searchInput, "gpt");
+
+    const optionTexts = screen.getAllByRole("option").map((element) => element.textContent ?? "");
+    const opencodeOptionText = optionTexts.find((text) => text.includes("OpenCode / GPT-5"));
+    expect(opencodeOptionText).toBeDefined();
+    expect(opencodeOptionText).toContain("Codex default");
+    expect(optionTexts.some((text) => text.includes("Claude Code / Opus"))).toBe(false);
   });
 });

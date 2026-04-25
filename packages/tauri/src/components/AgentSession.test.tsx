@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { act, render, screen, waitFor } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentSession, shallowEqualSkipFunctions } from "./agent-session";
 import type { AgentSessionProps } from "./agent-session";
@@ -16,6 +16,7 @@ vi.mock("react-hotkeys-hook", () => ({
 vi.mock("../api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../api/generated")>()),
   useGetFeatureWorkingDir: vi.fn(() => ({ data: null })),
+  useGetWorkspaceSetting: vi.fn(() => ({ data: { value: null } })),
 }));
 
 vi.mock("../api/agentRuntime", () => ({
@@ -109,10 +110,33 @@ describe("AgentSession", () => {
   const onSend = vi.fn();
   const onStop = vi.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const runtimeApi = await import("../api/agentRuntime");
     onSend.mockClear();
     onStop.mockClear();
     hotkeyHandlers.clear();
+    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValue({
+      data: {
+        default_provider: "claude_code",
+        providers: [
+          {
+            id: "claude_code",
+            label: "Claude Code",
+            status: "available",
+            models: [{ id: "opus", label: "Opus" }],
+            default_model: "opus",
+          },
+          {
+            id: "opencode",
+            label: "OpenCode",
+            status: "available",
+            models: [],
+            default_model: null,
+          },
+        ],
+      },
+      isLoading: false,
+    } as ReturnType<typeof runtimeApi.useAgentCatalog>);
   });
 
   it("renders full-screen mode (collapsible=false)", () => {
@@ -137,7 +161,7 @@ describe("AgentSession", () => {
 
   it("shows cross-provider models before a session starts without standalone provider actions", async () => {
     const runtimeApi = await import("../api/agentRuntime");
-    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValueOnce({
+    const catalog = {
       data: {
         default_provider: "claude_code",
         providers: [
@@ -158,7 +182,8 @@ describe("AgentSession", () => {
         ],
       },
       isLoading: false,
-    } as ReturnType<typeof runtimeApi.useAgentCatalog>);
+    } as ReturnType<typeof runtimeApi.useAgentCatalog>;
+    vi.mocked(runtimeApi.useAgentCatalog).mockReturnValue(catalog);
 
     const user = userEvent.setup();
     render(
@@ -178,9 +203,36 @@ describe("AgentSession", () => {
 
     await user.click(screen.getByRole("button", { name: /Opus/i }));
 
-    expect(screen.getByText("OpenCode")).toBeInTheDocument();
+    const optionTexts = screen.getAllByRole("option").map((element) => element.textContent ?? "");
+    expect(optionTexts.some((text) => text.includes("Claude Code / Opus"))).toBe(true);
+    expect(optionTexts.some((text) => text.includes("OpenCode / GPT-5.3 Codex"))).toBe(true);
     expect(screen.queryByText(/Use Claude Code/)).toBeNull();
     expect(screen.queryByText(/Use OpenCode/)).toBeNull();
+  });
+
+  it("opens the searchable model picker with Cmd+P", async () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[]}
+        status="idle"
+        onSend={onSend}
+        onStop={onStop}
+        onProviderChange={vi.fn()}
+        onModelChange={vi.fn()}
+        currentProviderId="claude_code"
+        currentModelId="opus"
+        runtimeProvider="claude_code"
+      />,
+    );
+
+    await act(async () => {
+      hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    });
+
+    const searchInput = await screen.findByPlaceholderText("Search providers or models...");
+    expect(searchInput).toBeInTheDocument();
+    await waitFor(() => expect(searchInput).toHaveFocus());
   });
 
   it("locks the provider list once a session has history", async () => {
@@ -380,10 +432,7 @@ describe("AgentSession", () => {
     expect(screen.getByText("0/1")).toBeInTheDocument();
   });
 
-  it("skips providers without models when cycling with Cmd+P", () => {
-    const onProviderChange = vi.fn();
-    const onModelChange = vi.fn();
-
+  it("does not open provider-only actions when a provider has no models", async () => {
     render(
       <AgentSession
         agentType="session"
@@ -391,18 +440,22 @@ describe("AgentSession", () => {
         status="idle"
         onSend={onSend}
         onStop={onStop}
-        onProviderChange={onProviderChange}
-        onModelChange={onModelChange}
+        onProviderChange={vi.fn()}
+        onModelChange={vi.fn()}
         currentProviderId="claude_code"
         currentModelId="opus"
         runtimeProvider="claude_code"
       />,
     );
 
-    hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    await act(async () => {
+      hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    });
 
-    expect(onProviderChange).not.toHaveBeenCalledWith("opencode");
-    expect(onModelChange).not.toHaveBeenCalledWith(undefined);
+    expect(
+      screen.getByText((_, element) => element?.textContent === "OpenCode"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("No models available")).toBeInTheDocument();
   });
 
   it("uses model provider icon when persisted provider is stale after restart", async () => {

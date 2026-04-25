@@ -61,7 +61,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Agent / Prompt",
     shortcuts: [
       { keys: ["⌘", "G"], description: "Agent diff (current agent)" },
-      { keys: ["⌘", "P"], description: "Cycle model" },
+      { keys: ["⌘", "P"], description: "Open model picker" },
       { keys: ["⌘", "T"], description: "Cycle thinking effort" },
       { keys: ["⌘", "Enter"], description: "Maximize agent" },
       { keys: ["⌘", "⇧", "Z"], description: "Collapse agent" },

@@ -84,6 +84,7 @@ export function FeatureTopBar({
   useHotkeys(
     "alt+p",
     (e) => {
+      if (isSession) return;
       e.preventDefault();
       setSettingsOpen((prev) => !prev);
     },
@@ -94,6 +95,7 @@ export function FeatureTopBar({
   useHotkeys(
     "meta+shift+p",
     (e) => {
+      if (isSession) return;
       e.preventDefault();
       setSettingsOpen((prev) => !prev);
     },
@@ -196,85 +198,80 @@ export function FeatureTopBar({
           <TerminalIcon className="size-4" />
         </Button>
 
-        <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
-              <SettingsIcon className="size-4" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[560px] max-w-[calc(100vw-2rem)]" align="end">
-            <div className="space-y-4">
-              {/* Model Selection */}
-              <div className="space-y-2">
-                <h4 className="text-sm font-semibold">Model Configuration</h4>
-                <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
-              </div>
+        {!isSession && (
+          <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-7" title="Feature settings">
+                <SettingsIcon className="size-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[820px] max-w-[calc(100vw-2rem)]" align="end">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold">Model Configuration</h4>
+                  <ModelSelector level="feature" featureId={featureId} projectId={projectId} />
+                </div>
 
-              {!isSession && (
-                <>
-                  {/* Agent Autonomy */}
-                  <div className="space-y-1.5">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <BrainCircuitIcon className="size-3.5 text-muted-foreground" />
+                    <span className="text-xs font-medium">Agent Autonomy</span>
+                  </div>
+                  <Select
+                    value={featureSettings?.agent_autonomy ?? ""}
+                    onValueChange={(value) => {
+                      setFeatureSetting.mutate({
+                        featureId,
+                        key: "agent_autonomy",
+                        value,
+                      });
+                      setAutonomyLevel(Number(value) as AutonomyLevel);
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Inherit from project" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Low — ask before commit</SelectItem>
+                      <SelectItem value="2">Medium — manual continue</SelectItem>
+                      <SelectItem value="3">High — full auto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Controls how much the execute agent does automatically
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
                     <div className="flex items-center gap-1.5">
-                      <BrainCircuitIcon className="size-3.5 text-muted-foreground" />
-                      <span className="text-xs font-medium">Agent Autonomy</span>
+                      <CpuIcon className="size-3.5 text-muted-foreground" />
+                      <span className="text-xs font-medium">Parallel Execution</span>
                     </div>
-                    <Select
-                      value={featureSettings?.agent_autonomy ?? ""}
-                      onValueChange={(value) => {
-                        setFeatureSetting.mutate({
-                          featureId,
-                          key: "agent_autonomy",
-                          value,
-                        });
-                        setAutonomyLevel(Number(value) as AutonomyLevel);
-                      }}
-                    >
-                      <SelectTrigger className="h-8 text-sm">
-                        <SelectValue placeholder="Inherit from project" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Low — ask before commit</SelectItem>
-                        <SelectItem value="2">Medium — manual continue</SelectItem>
-                        <SelectItem value="3">High — full auto</SelectItem>
-                      </SelectContent>
-                    </Select>
                     <p className="text-xs text-muted-foreground">
-                      Controls how much the execute agent does automatically
+                      Run multiple agents in parallel within each step
                     </p>
                   </div>
-
-                  {/* Parallel Execution */}
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <CpuIcon className="size-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium">Parallel Execution</span>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Run multiple agents in parallel within each step
-                      </p>
-                    </div>
-                    <Switch
-                      id="feature-parallel-execution"
-                      checked={
-                        (featureSettings?.parallel_execution ?? "") === "true" ||
-                        featureSettings?.parallel_execution == null
-                      }
-                      onCheckedChange={(checked) => {
-                        setFeatureSetting.mutate({
-                          featureId,
-                          key: "parallel_execution",
-                          value: checked ? "true" : "false",
-                        });
-                        setParallelExecution(checked);
-                      }}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+                  <Switch
+                    id="feature-parallel-execution"
+                    checked={
+                      (featureSettings?.parallel_execution ?? "") === "true" ||
+                      featureSettings?.parallel_execution == null
+                    }
+                    onCheckedChange={(checked) => {
+                      setFeatureSetting.mutate({
+                        featureId,
+                        key: "parallel_execution",
+                        value: checked ? "true" : "false",
+                      });
+                      setParallelExecution(checked);
+                    }}
+                  />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
       <WorktreeSetupSection
         featureId={featureId}

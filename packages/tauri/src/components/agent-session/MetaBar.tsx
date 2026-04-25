@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   ArrowDownIcon,
@@ -11,19 +12,13 @@ import {
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
 import { SessionInfoChip } from "./SessionInfoChip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
 import type { TodoItem } from "@/types/agent";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
+import {
+  RuntimeModelPicker,
+  type RuntimeModelPickerProvider,
+} from "@/components/RuntimeModelPicker";
 import {
   THINKING_EFFORT_LABELS,
   nextThinkingEffort,
@@ -71,6 +66,7 @@ export interface MetaBarProps {
   projectPath?: string;
   isRunning?: boolean;
   onPause?: () => void;
+  onModelSelected?: () => void;
   /**
    * Layout variant. `"session"` (default) fades into the agent stream above
    * via a negative margin + background gradient. `"standalone"` drops that
@@ -80,48 +76,84 @@ export interface MetaBarProps {
   variant?: "session" | "standalone";
 }
 
+export interface MetaBarHandle {
+  openModelPicker: () => void;
+}
+
 const CHIP =
   "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
 const MODEL_GROUP =
   "inline-flex h-8 items-stretch rounded-md border border-violet-400/15 bg-violet-500/12 text-[11px] font-medium text-violet-300 shadow-sm";
 const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
-export function MetaBar({
-  showAutoScrollChip,
-  autoScrollEnabled,
-  onToggleAutoScroll,
-  permissionMode,
-  onPermissionModeToggle,
-  showWorktreeChip,
-  useWorktree,
-  onToggleWorktree,
-  onProviderChange,
-  currentProviderId,
-  onModelChange,
-  currentThinkingEffort,
-  supportedThinkingEfforts = [],
-  onThinkingEffortChange,
-  currentModelId,
-  currentModelLabel,
-  models,
-  providers = [],
-  canChangeProvider = false,
-  showDiffBar,
-  onViewDiff,
-  todos,
-  runtimeProvider,
-  runtimeSessionId,
-  projectPath,
-  isRunning = false,
-  onPause,
-  variant = "session",
-}: MetaBarProps) {
+export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
+  {
+    showAutoScrollChip,
+    autoScrollEnabled,
+    onToggleAutoScroll,
+    permissionMode,
+    onPermissionModeToggle,
+    showWorktreeChip,
+    useWorktree,
+    onToggleWorktree,
+    onProviderChange,
+    currentProviderId,
+    onModelChange,
+    currentThinkingEffort,
+    supportedThinkingEfforts = [],
+    onThinkingEffortChange,
+    currentModelId,
+    currentModelLabel,
+    models,
+    providers = [],
+    canChangeProvider = false,
+    showDiffBar,
+    onViewDiff,
+    todos,
+    runtimeProvider,
+    runtimeSessionId,
+    projectPath,
+    isRunning = false,
+    onPause,
+    onModelSelected,
+    variant = "session",
+  },
+  ref,
+) {
+  const [internalModelPickerOpen, setInternalModelPickerOpen] = useState(false);
   const displayProviderId = currentProviderId ?? runtimeProvider;
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openModelPicker: () => setInternalModelPickerOpen(true),
+    }),
+    [],
+  );
   const selectedThinkingEffort =
     currentThinkingEffort && supportedThinkingEfforts.includes(currentThinkingEffort)
       ? currentThinkingEffort
       : undefined;
   const displayedThinkingEffort = selectedThinkingEffort ?? supportedThinkingEfforts[0];
+  const pickerProviders = useMemo<RuntimeModelPickerProvider[]>(() => {
+    if (providers.length > 0) {
+      return providers.map((provider) => ({
+        id: provider.id,
+        label: provider.label,
+        disabled: !!provider.disabled,
+        models: provider.models,
+      }));
+    }
+    if (!displayProviderId) return [];
+    return [
+      {
+        id: displayProviderId,
+        label: displayProviderId,
+        disabled: false,
+        models,
+      },
+    ];
+  }, [displayProviderId, models, providers]);
 
   const handleThinkingEffortCycle = (): void => {
     if (!supportedThinkingEfforts.length || !onThinkingEffortChange) return;
@@ -211,9 +243,21 @@ export function MetaBar({
       {/* Model chip */}
       {onModelChange && (
         <div className={MODEL_GROUP}>
-          <DropdownMenu>
-            <ShortcutTooltip label="Switch provider or model" keys={["cmd", "P"]}>
-              <DropdownMenuTrigger asChild>
+          <ShortcutTooltip label="Open model picker" keys={["cmd", "P"]}>
+            <RuntimeModelPicker
+              open={internalModelPickerOpen}
+              onOpenChange={setInternalModelPickerOpen}
+              providers={pickerProviders}
+              selectedProviderId={displayProviderId}
+              selectedModelId={currentModelId}
+              onAfterSelectClose={onModelSelected}
+              onSelect={(providerId, modelId) => {
+                if (canChangeProvider && onProviderChange && providerId !== displayProviderId) {
+                  onProviderChange(providerId);
+                }
+                onModelChange(modelId);
+              }}
+              trigger={
                 <button
                   type="button"
                   className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-violet-500/16")}
@@ -226,105 +270,9 @@ export function MetaBar({
                   <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
                   <ChevronDownIcon className="size-3 shrink-0" />
                 </button>
-              </DropdownMenuTrigger>
-            </ShortcutTooltip>
-            <DropdownMenuContent align="start" className="min-w-[220px]">
-              <DropdownMenuLabel className="text-xs">Models</DropdownMenuLabel>
-              {providers.map((provider) => (
-                <DropdownMenuSub key={provider.id}>
-                  <DropdownMenuSubTrigger
-                    className="text-xs data-[disabled]:text-muted-foreground"
-                    disabled={provider.disabled}
-                  >
-                    <ProviderIcon
-                      providerId={provider.id}
-                      alt={provider.label}
-                      className="size-3.5 rounded-sm"
-                    />
-                    <span className={provider.disabled ? "text-muted-foreground" : undefined}>
-                      {provider.label}
-                    </span>
-                    {provider.id === currentProviderId && (
-                      <CheckIcon className="ml-1 size-3 text-violet-400" />
-                    )}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="min-w-[220px]">
-                    {provider.disabled ? (
-                      <DropdownMenuItem disabled className="text-xs text-muted-foreground">
-                        Coming soon
-                      </DropdownMenuItem>
-                    ) : null}
-                    {!provider.disabled &&
-                      provider.models.map((m) => (
-                        <DropdownMenuItem
-                          key={m.id}
-                          onClick={() => {
-                            if (
-                              canChangeProvider &&
-                              onProviderChange &&
-                              provider.id !== currentProviderId
-                            ) {
-                              onProviderChange(provider.id);
-                            }
-                            onModelChange(m.id);
-                          }}
-                          className="flex items-start justify-between gap-2 text-xs"
-                          title={m.description}
-                        >
-                          <span className="flex items-start gap-2 min-w-0">
-                            <ProviderIcon
-                              providerId={provider.id}
-                              alt={m.label}
-                              className="size-3.5 rounded-sm mt-0.5 shrink-0"
-                            />
-                            <span className="flex min-w-0 flex-col gap-0.5">
-                              <span className="truncate">{m.label}</span>
-                              {m.description && (
-                                <span className="truncate text-[11px] text-muted-foreground">
-                                  {m.description}
-                                </span>
-                              )}
-                            </span>
-                          </span>
-                          {provider.id === currentProviderId && m.id === currentModelId && (
-                            <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
-                          )}
-                        </DropdownMenuItem>
-                      ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ))}
-
-              {!providers.length &&
-                models.map((m) => (
-                  <DropdownMenuItem
-                    key={m.id}
-                    onClick={() => onModelChange(m.id)}
-                    className="flex items-start justify-between gap-2 text-xs"
-                    title={m.description}
-                  >
-                    <span className="flex items-start gap-2 min-w-0">
-                      <ProviderIcon
-                        providerId={displayProviderId}
-                        alt={m.label}
-                        className="size-3.5 rounded-sm mt-0.5 shrink-0"
-                      />
-                      <span className="flex min-w-0 flex-col gap-0.5">
-                        <span className="truncate">{m.label}</span>
-                        {m.description && (
-                          <span className="truncate text-[11px] text-muted-foreground">
-                            {m.description}
-                          </span>
-                        )}
-                      </span>
-                    </span>
-                    {m.id === currentModelId && (
-                      <CheckIcon className="size-3 text-violet-400 shrink-0 mt-0.5" />
-                    )}
-                  </DropdownMenuItem>
-                ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              }
+            />
+          </ShortcutTooltip>
 
           {supportedThinkingEfforts.length > 0 &&
             onThinkingEffortChange &&
@@ -389,4 +337,4 @@ export function MetaBar({
       )}
     </div>
   );
-}
+});

@@ -47,7 +47,7 @@ interface AgentPromptBarProps {
   onPlanApprove?: () => void;
   onPlanRequestChanges?: (feedback: string) => void;
   onPlanReject?: () => void;
-  onCycleModel?: () => void;
+  onOpenModelPicker?: () => void;
   featureId?: number;
   projectId?: number;
   sessionId?: number;
@@ -89,7 +89,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       onPlanApprove,
       onPlanRequestChanges,
       onPlanReject,
-      onCycleModel,
+      onOpenModelPicker,
       featureId,
       projectId,
       sessionId,
@@ -241,9 +241,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     useHotkeys(
       "meta+p",
       (e) => {
-        if (!onCycleModel) return;
+        if (!onOpenModelPicker) return;
         e.preventDefault();
-        onCycleModel();
+        onOpenModelPicker();
       },
       { enableOnFormTags: true, enableOnContentEditable: true },
     );

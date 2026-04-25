@@ -34,7 +34,7 @@ import type { AgentSessionProps, AgentSessionHandle } from "./types";
 import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
 import { useAgentSessionModelState } from "./useAgentSessionModelState";
-import { MetaBar } from "./MetaBar";
+import { MetaBar, type MetaBarHandle } from "./MetaBar";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { getLatestUserPromptText } from "./getLatestUserPromptText";
 
@@ -104,6 +104,7 @@ export const AgentSession = memo(
     } = props;
 
     const promptBarRef = useRef<AgentPromptBarHandle>(null);
+    const metaBarRef = useRef<MetaBarHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
 
@@ -214,7 +215,6 @@ export const AgentSession = memo(
       visibleModels,
       currentModelLabel,
       canChangeProvider,
-      selectableProviders,
       supportedThinkingEfforts,
     } = useAgentSessionModelState({
       agentCatalog: agentCatalog.data,
@@ -231,53 +231,6 @@ export const AgentSession = memo(
       [blocks, pendingPlanApproval],
     );
 
-    const handleCycleModel = useCallback(() => {
-      if (!onModelChange) return;
-      if (canChangeProvider && selectableProviders.length > 0) {
-        const cycleEntries = selectableProviders.flatMap((provider) => [
-          { type: "provider" as const, providerId: provider.id },
-          ...provider.models.map((model) => ({
-            type: "model" as const,
-            providerId: provider.id,
-            modelId: model.id,
-          })),
-        ]);
-
-        const currentIndex = cycleEntries.findIndex(
-          (entry) =>
-            entry.type === "model" &&
-            entry.providerId === activeProviderId &&
-            entry.modelId === currentModelId,
-        );
-        const next = cycleEntries[(currentIndex + 1 + cycleEntries.length) % cycleEntries.length];
-        if (next.type === "provider") {
-          onProviderChange?.(next.providerId);
-          const nextProvider = selectableProviders.find(
-            (provider) => provider.id === next.providerId,
-          );
-          const nextModel = nextProvider?.models[0];
-          if (nextModel) onModelChange(nextModel.id);
-          return;
-        }
-        onProviderChange?.(next.providerId);
-        onModelChange(next.modelId);
-        return;
-      }
-
-      if (visibleModels.length === 0) return;
-      const idx = visibleModels.findIndex((m) => m.id === currentModelId);
-      const next = visibleModels[(idx + 1 + visibleModels.length) % visibleModels.length];
-      onModelChange(next.id);
-    }, [
-      activeProviderId,
-      canChangeProvider,
-      currentModelId,
-      onModelChange,
-      onProviderChange,
-      selectableProviders,
-      visibleModels,
-    ]);
-
     const showWorktreeChip = !!onToggleWorktree && blocks.length === 0 && status === "idle";
     const showAutoScrollChip = !!shouldShowPromptBar;
     const hasMeta =
@@ -292,6 +245,7 @@ export const AgentSession = memo(
     // ---- Shared sub-sections ----
     const metaBar = hasMeta ? (
       <MetaBar
+        ref={metaBarRef}
         showAutoScrollChip={showAutoScrollChip}
         autoScrollEnabled={autoScrollEnabled}
         onToggleAutoScroll={() => setAutoScrollEnabled(!autoScrollEnabled)}
@@ -323,6 +277,7 @@ export const AgentSession = memo(
         projectPath={projectPath}
         isRunning={status === "running"}
         onPause={onStop}
+        onModelSelected={() => promptBarRef.current?.focusInput()}
       />
     ) : null;
 
@@ -369,7 +324,7 @@ export const AgentSession = memo(
         onPlanApprove={onPlanApprove}
         onPlanRequestChanges={onPlanRequestChanges}
         onPlanReject={onPlanReject}
-        onCycleModel={onModelChange ? handleCycleModel : undefined}
+        onOpenModelPicker={onModelChange ? () => metaBarRef.current?.openModelPicker() : undefined}
         featureId={featureId}
         projectId={projectId}
         sessionId={sessionId}

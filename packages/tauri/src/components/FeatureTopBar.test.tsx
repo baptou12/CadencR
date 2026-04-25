@@ -164,6 +164,12 @@ describe("FeatureTopBar", () => {
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
   });
 
+  it("hides feature settings in session mode", () => {
+    render(<FeatureTopBar featureId={1} projectId={1} mode="session" />);
+    expect(screen.queryByTitle("Feature settings")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("model-selector")).not.toBeInTheDocument();
+  });
+
   it("calls setCollapsed(false) when expand button is clicked", async () => {
     mockSidebarCollapsed = true;
     const { default: userEvent } = await import("@testing-library/user-event");
