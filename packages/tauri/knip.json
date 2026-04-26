@@ -13,7 +13,8 @@
     "oxlint",
     "tailwindcss",
     "@vitest/coverage-v8",
-    "orval"
+    "orval",
+    "@fontsource-variable/inter"
   ],
   "tags": ["+@public"],
   "vitest": {
