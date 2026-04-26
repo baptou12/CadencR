@@ -1,5 +1,12 @@
 use sqlx::SqlitePool;
 
+/// Workspace setting key holding the last-used thinking effort for a given
+/// provider/model pair. Mirrors the frontend helper in
+/// `packages/tauri/src/shared/thinking-effort.ts`.
+pub fn thinking_effort_model_key(provider_id: &str, model_id: &str) -> String {
+    format!("thinking_effort_model_{provider_id}_{model_id}")
+}
+
 /// Columns that exist on both `features` and `projects` tables.
 const SHARED_COLUMNS: &[&str] = &[
     "model_plan",
@@ -280,20 +287,19 @@ mod tests {
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'thinking_effort_session', 'medium')",
+            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'bypass_acknowledged', 'medium')",
         )
         .execute(&pool)
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'thinking_effort_session', 'high')",
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'bypass_acknowledged', 'high')",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        let result =
-            resolve_setting(&pool, "thinking_effort_session", Some(1), Some(1), None).await;
+        let result = resolve_setting(&pool, "bypass_acknowledged", Some(1), Some(1), None).await;
         assert_eq!(result, Some("high".to_string()));
     }
 

@@ -232,15 +232,6 @@ impl AgentManager {
         let selection = self
             .resolve_runtime_selection(agent_type_str, project_id)
             .await;
-        let thinking_effort_key = format!("thinking_effort_{agent_type_str}");
-        let thinking_effort = crate::domain::settings::resolve_setting(
-            &self.read_pool,
-            &thinking_effort_key,
-            Some(self.feature_id),
-            project_id,
-            None,
-        )
-        .await;
 
         // Model — prefer explicit override (e.g. from workflow phase definition)
         let model = match model_override.filter(|s| !s.is_empty()) {
@@ -254,6 +245,18 @@ impl AgentManager {
         // provider setting — we still need to spawn on OpenCode, not Claude Code.
         let provider =
             crate::domain::agents::resolve_effective_provider(selection.provider, Some(&model));
+
+        // Thinking effort is now keyed by model (workspace setting), not by
+        // agent_type. The user picks effort once per model in any conversation
+        // and it sticks for every subsequent spawn on that model.
+        let thinking_effort = crate::domain::settings::resolve_setting(
+            &self.read_pool,
+            &crate::domain::settings::thinking_effort_model_key(&provider, &model),
+            None,
+            None,
+            None,
+        )
+        .await;
         if runtime_adapter(&provider).is_none() {
             return Err(format!(
                 "Runtime provider '{provider}' is not implemented yet for workflow agents"

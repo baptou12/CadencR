@@ -73,14 +73,17 @@ function WebSocketSessionPage() {
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel, resolveProvider, resolveThinkingEffort } = useResolvedModel(
+  const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModel(
     featureId,
     projectId,
   );
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
-  const resolvedThinkingEffort = resolveThinkingEffort("session");
+  // Per-model default for the picked session model. The backend persists the
+  // conversation's own override on `agent_sessions.thinking_effort` and only
+  // falls back to this default when the row hasn't been ancored yet.
+  const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);
   const activeSessionModel = agentCatalog.data?.providers
     .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
     ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
@@ -288,11 +291,19 @@ function WebSocketSessionPage() {
             currentModelId={ws.currentModelId}
             onModelChange={(modelId) => {
               ws.setModel(modelId);
+              const nextProviderId = ws.currentProviderId || resolvedProviderId;
               const nextModel = agentCatalog.data?.providers
-                .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
+                .find((provider) => provider.id === nextProviderId)
                 ?.models.find((model) => model.id === modelId);
               const nextLevels = supportedThinkingEffortLevels(nextModel);
-              if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
+              // Pull the last-used effort for the model the user just switched
+              // to. Fall back to clearing if the previous effort isn't valid
+              // for this model — the backend will then persist whatever
+              // resolves on the next prompt (or stay None).
+              const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
+              if (nextEffort) {
+                ws.setThinkingEffort(nextEffort);
+              } else if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
                 ws.setThinkingEffort(undefined);
               }
             }}

@@ -439,7 +439,8 @@ mod tests {
                 plan_approval_result TEXT,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
-                context_window INTEGER NOT NULL DEFAULT 200000
+                context_window INTEGER NOT NULL DEFAULT 200000,
+                thinking_effort TEXT
             )"#,
         )
         .execute(&pool)

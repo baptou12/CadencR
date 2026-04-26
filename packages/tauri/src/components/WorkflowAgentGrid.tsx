@@ -21,8 +21,15 @@ interface WorkflowAgentGridProps {
   resolveProvider: (agentType: AgentType) => string;
   handleModelChange: (agentType: AgentType, modelId: string) => void;
   handleProviderChange: (agentType: AgentType, providerId: string) => void;
-  resolveThinkingEffort: (agentType: AgentType) => ThinkingEffortLevel | undefined;
-  handleThinkingEffortChange: (agentType: AgentType, effort?: ThinkingEffortLevel) => void;
+  resolveModelThinkingEffort: (
+    providerId: string,
+    modelId: string,
+  ) => ThinkingEffortLevel | undefined;
+  setModelThinkingEffort: (
+    providerId: string,
+    modelId: string,
+    effort: ThinkingEffortLevel | undefined,
+  ) => void;
   handleDeleteAgent: (entry: FeatureSession) => void;
   onViewDiff: (entry: FeatureSession) => void;
   slashCommands: { name: string; description: string }[];
@@ -44,8 +51,8 @@ export function WorkflowAgentGrid({
   resolveProvider,
   handleModelChange,
   handleProviderChange,
-  resolveThinkingEffort,
-  handleThinkingEffortChange,
+  resolveModelThinkingEffort,
+  setModelThinkingEffort,
   handleDeleteAgent,
   onViewDiff,
   slashCommands,
@@ -53,6 +60,8 @@ export function WorkflowAgentGrid({
 }: WorkflowAgentGridProps) {
   const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean) => {
     const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
+    const providerId = resolveProvider(entry.agentType);
+    const modelId = resolveModel(entry.agentType);
     const label = knownLabel
       ? (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
         ? `${knownLabel} - ${entry.phaseTitle}`
@@ -103,12 +112,12 @@ export function WorkflowAgentGrid({
         hasFileChanges={entry.hasFileChanges}
         onViewDiff={() => onViewDiff(entry)}
         todos={entry.todos}
-        currentProviderId={resolveProvider(entry.agentType)}
-        onProviderChange={(providerId) => handleProviderChange(entry.agentType, providerId)}
-        currentModelId={resolveModel(entry.agentType)}
-        onModelChange={(modelId) => handleModelChange(entry.agentType, modelId)}
-        currentThinkingEffort={resolveThinkingEffort(entry.agentType)}
-        onThinkingEffortChange={(effort) => handleThinkingEffortChange(entry.agentType, effort)}
+        currentProviderId={providerId}
+        onProviderChange={(newProviderId) => handleProviderChange(entry.agentType, newProviderId)}
+        currentModelId={modelId}
+        onModelChange={(newModelId) => handleModelChange(entry.agentType, newModelId)}
+        currentThinkingEffort={resolveModelThinkingEffort(providerId, modelId)}
+        onThinkingEffortChange={(effort) => setModelThinkingEffort(providerId, modelId, effort)}
         canDelete={
           entry.status !== "running" && entry.status !== "completed" && !!entry.sessionDbId
         }

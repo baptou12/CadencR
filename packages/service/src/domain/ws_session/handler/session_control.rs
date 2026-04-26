@@ -596,7 +596,7 @@ pub(super) async fn handle_effort_set(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
-    _app_state: &AppState,
+    app_state: &AppState,
 ) {
     let payload: EffortSetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -619,7 +619,15 @@ pub(super) async fn handle_effort_set(
         }
     };
 
-    let active_query: Option<RuntimeSessionHandle> = {
+    // Snapshot the (provider, model) at the moment of the change so the per-
+    // model workspace default is keyed against the model that's actually in
+    // use right now. If the user later switches models, that's a separate
+    // event and should not back-propagate to the previous model's default.
+    let (active_query, runtime_provider, current_model): (
+        Option<RuntimeSessionHandle>,
+        String,
+        Option<String>,
+    ) = {
         let mut sessions = sdk_sessions.lock().await;
         let handle = match sessions.get_mut(&db_session_id) {
             Some(h) => h,
@@ -642,13 +650,20 @@ pub(super) async fn handle_effort_set(
         handle.desired_thinking_effort = payload.thinking_effort.clone();
         handle.config.thinking_effort = payload.thinking_effort.clone();
 
-        match &mut handle.state {
+        let provider = handle.runtime_provider.clone();
+        let model = handle
+            .desired_model
+            .clone()
+            .or_else(|| handle.spawned_model.clone());
+
+        let active = match &mut handle.state {
             QueryState::Pending(options) => {
                 options.thinking_effort = payload.thinking_effort.clone();
                 None
             }
             QueryState::Active { query, .. } => Some(query.clone()),
-        }
+        };
+        (active, provider, model)
     };
 
     if let Some(query) = active_query {
@@ -665,6 +680,35 @@ pub(super) async fn handle_effort_set(
             if let Some(handle) = sessions.get_mut(&db_session_id) {
                 handle.spawned_thinking_effort = payload.thinking_effort.clone();
             }
+        }
+    }
+
+    // Persist the conversation-level override (column on agent_sessions). A
+    // None payload clears the override; the next session.init will fall back
+    // to the per-model workspace default.
+    WsSessionPersistence::update_thinking_effort_static(
+        &app_state.write_pool,
+        db_session_id,
+        payload.thinking_effort.as_deref(),
+    )
+    .await;
+
+    // Update the per-model workspace default so newly opened conversations on
+    // the same model start at the level the user just chose. Resets (None)
+    // intentionally do not erase the default — clearing for one conversation
+    // shouldn't surprise the next new one.
+    if let (Some(ref effort), Some(ref model_id)) = (&payload.thinking_effort, &current_model) {
+        let key = crate::domain::settings::thinking_effort_model_key(&runtime_provider, model_id);
+        if let Err(error) =
+            crate::domain::workspace::repository::set_setting(&app_state.write_pool, &key, effort)
+                .await
+        {
+            error!(
+                db_session_id,
+                %error,
+                key = %key,
+                "failed to persist per-model thinking effort default"
+            );
         }
     }
 

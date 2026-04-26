@@ -42,9 +42,6 @@ export function ModelSelector({ level, projectId, featureId }: ModelSelectorProp
           isInherited={row.isInherited}
           onInherit={row.onInherit}
           onSelect={row.onSelect}
-          thinkingEffortLevels={row.thinkingEffortLevels}
-          thinkingEffort={row.thinkingEffort}
-          onThinkingEffortChange={row.onThinkingEffortChange}
           icon={createElement(AGENT_ICONS[row.agentType], { className: "size-4" })}
         />
       ))}

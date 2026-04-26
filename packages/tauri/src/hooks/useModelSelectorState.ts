@@ -19,32 +19,19 @@ import {
 } from "@/api/agentRuntime";
 import {
   getGetFeatureModelSettingsQueryKey,
-  getGetFeatureSettingsQueryKey,
   getGetProjectModelSettingsQueryKey,
-  getGetProjectSettingsQueryKey,
   getGetWorkspaceModelSettingsQueryKey,
   useGetFeatureModelSettings,
-  useGetFeatureSettings,
   useGetProjectModelSettings,
-  useGetProjectSettings,
   useGetWorkspaceModelSettings,
   useSetFeatureModelSetting,
-  useSetFeatureSetting,
   useSetProjectModelSetting,
-  useSetProjectSetting,
   useSetWorkspaceModelSetting,
-  useSetWorkspaceSetting,
 } from "@/api/generated";
-import {
-  getWorkspaceSettingsQueryKey,
-  settingsArrayToMap,
-  useGetWorkspaceSettings,
-} from "@/api/settings";
 import type { ModelSelectorRowProvider } from "@/components/ModelSelectorRow";
 import {
   getModelDescription,
   getModelLabel,
-  getModelOption,
   getProviderLabel,
   INHERIT_VALUE,
   type UseModelSelectorStateParams,
@@ -53,13 +40,6 @@ import {
   type ModelSelectorLevel,
   type ModelSelectorRowState,
 } from "@/hooks/modelSelectorShared";
-import {
-  isThinkingEffortSupported,
-  parseThinkingEffort,
-  supportedThinkingEffortLevels,
-  thinkingEffortSettingKey,
-  type ThinkingEffortLevel,
-} from "@/shared/thinking-effort";
 export function useModelSelectorState(
   params: UseModelSelectorStateParams,
 ): UseModelSelectorStateResult {
@@ -78,13 +58,6 @@ export function useModelSelectorState(
   });
   const parentProjectSettings = useGetProjectModelSettings(projectId ?? 0, {
     query: { enabled: level === "feature" && projectId != null },
-  });
-  const workspaceKvSettings = useGetWorkspaceSettings();
-  const projectKvSettings = useGetProjectSettings(projectId ?? 0, {
-    query: { enabled: level !== "global" && projectId != null },
-  });
-  const featureKvSettings = useGetFeatureSettings(featureId ?? 0, {
-    query: { enabled: level === "feature" && featureId != null },
   });
   const globalProviderSettings = useGetWorkspaceProviderSettings(level === "global");
   const projectProviderSettings = useGetProjectProviderSettings(
@@ -129,35 +102,6 @@ export function useModelSelectorState(
       },
     },
   });
-  const workspaceSettingMutation = useSetWorkspaceSetting({
-    mutation: {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
-        toast.success("Settings saved");
-      },
-    },
-  });
-  const projectSettingMutation = useSetProjectSetting({
-    mutation: {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({
-          queryKey: getGetProjectSettingsQueryKey(projectId ?? 0),
-        });
-        toast.success("Settings saved");
-      },
-    },
-  });
-  const featureSettingMutation = useSetFeatureSetting({
-    mutation: {
-      onSuccess: () => {
-        void queryClient.invalidateQueries({
-          queryKey: getGetFeatureSettingsQueryKey(featureId ?? 0),
-        });
-        toast.success("Settings saved");
-      },
-    },
-  });
-
   const globalProviderMutation = useSetWorkspaceProviderSetting({
     onSuccess: () => toast.success("Settings saved"),
     onError: () => toast.error("Failed to save provider setting"),
@@ -191,14 +135,7 @@ export function useModelSelectorState(
     (level === "global" && globalProviderSettings.isLoading) ||
     (level === "project" && projectProviderSettings.isLoading) ||
     (level === "feature" && featureProviderSettings.isLoading) ||
-    workspaceKvSettings.isLoading ||
-    (level !== "global" && projectKvSettings.isLoading) ||
-    (level === "feature" && featureKvSettings.isLoading) ||
     agentCatalog.isLoading;
-
-  const workspaceSettingMap = settingsArrayToMap(workspaceKvSettings.data);
-  const projectSettingMap = settingsArrayToMap(projectKvSettings.data);
-  const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
 
   const providers = useMemo<ModelSelectorRowProvider[]>(
     () =>
@@ -317,66 +254,6 @@ export function useModelSelectorState(
     }
   }
 
-  function currentScopeThinkingEffort(
-    agentType: AgentTypeSetting,
-  ): ThinkingEffortLevel | undefined {
-    const key = thinkingEffortSettingKey(agentType);
-    const source =
-      level === "global"
-        ? workspaceSettingMap
-        : level === "project"
-          ? projectSettingMap
-          : featureSettingMap;
-    return parseThinkingEffort(source[key]);
-  }
-
-  function getEffectiveThinkingEffort(
-    agentType: AgentTypeSetting,
-  ): ThinkingEffortLevel | undefined {
-    const selection = getEffectiveSelection(agentType);
-    const levels = supportedThinkingEffortLevels(
-      getModelOption(agentCatalog.data?.providers, selection.providerId, selection.modelId),
-    );
-    const key = thinkingEffortSettingKey(agentType);
-    for (const value of [
-      featureSettingMap[key],
-      projectSettingMap[key],
-      workspaceSettingMap[key],
-    ]) {
-      const effort = parseThinkingEffort(value);
-      if (effort && isThinkingEffortSupported(levels, effort)) return effort;
-    }
-    return undefined;
-  }
-
-  function setThinkingEffort(agentType: AgentTypeSetting, effort?: ThinkingEffortLevel): void {
-    const key = thinkingEffortSettingKey(agentType);
-    if (level === "global") {
-      workspaceSettingMutation.mutate({ key, data: { value: effort ?? "" } });
-      return;
-    }
-    if (level === "project" && projectId != null) {
-      projectSettingMutation.mutate({ id: projectId, data: { key, value: effort ?? "" } });
-      return;
-    }
-    if (level === "feature" && featureId != null) {
-      featureSettingMutation.mutate({ id: featureId, data: { key, value: effort ?? "" } });
-    }
-  }
-
-  function resetScopeThinkingEffortIfInvalid(
-    agentType: AgentTypeSetting,
-    providerId: string,
-    modelId: string,
-  ): void {
-    const model = agentCatalog.data?.providers
-      .find((provider) => provider.id === providerId)
-      ?.models.find((entry) => entry.id === modelId);
-    const levels = supportedThinkingEffortLevels(model);
-    const current = currentScopeThinkingEffort(agentType);
-    if (current && !levels.includes(current)) setThinkingEffort(agentType);
-  }
-
   const visibleAgentTypes = AGENT_TYPES.filter(
     (agentType) => level === "global" || !WORKSPACE_ONLY_AGENT_TYPES.includes(agentType),
   );
@@ -411,14 +288,7 @@ export function useModelSelectorState(
           : undefined,
       onSelect: (providerId: string, modelId: string) => {
         applySelection(agentType, providerId, modelId);
-        resetScopeThinkingEffortIfInvalid(agentType, providerId, modelId);
       },
-      thinkingEffortLevels: supportedThinkingEffortLevels(
-        getModelOption(agentCatalog.data?.providers, selection.providerId, selection.modelId),
-      ),
-      thinkingEffort: getEffectiveThinkingEffort(agentType),
-      onThinkingEffortChange: (effort?: ThinkingEffortLevel) =>
-        setThinkingEffort(agentType, effort),
     } satisfies ModelSelectorRowState;
   });
 

@@ -3,7 +3,7 @@ import {
   nextThinkingEffort,
   parseThinkingEffort,
   supportedThinkingEffortLevels,
-  thinkingEffortSettingKey,
+  thinkingEffortModelKey,
 } from "./thinking-effort";
 
 describe("thinking-effort helpers", () => {
@@ -21,8 +21,13 @@ describe("thinking-effort helpers", () => {
     expect(parseThinkingEffort("nope")).toBeUndefined();
   });
 
-  it("builds scoped setting keys", () => {
-    expect(thinkingEffortSettingKey("session")).toBe("thinking_effort_session");
+  it("builds per-model setting keys matching the Rust helper", () => {
+    expect(thinkingEffortModelKey("claude_code", "claude-opus-4")).toBe(
+      "thinking_effort_model_claude_code_claude-opus-4",
+    );
+    expect(thinkingEffortModelKey("opencode", "claude-sonnet-4-5")).toBe(
+      "thinking_effort_model_opencode_claude-sonnet-4-5",
+    );
   });
 
   it("cycles to the next supported effort", () => {

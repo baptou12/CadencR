@@ -247,11 +247,15 @@ async fn build_spawn_config(
     } else {
         None
     };
-    let thinking_effort =
-        crate::domain::workspace::repository::get_setting(pool, "thinking_effort_auto_name")
-            .await
-            .ok()
-            .flatten();
+    // Per-model workspace default: same key the WS session handler writes to
+    // when the user adjusts effort in any conversation on this model.
+    let thinking_effort = crate::domain::workspace::repository::get_setting(
+        pool,
+        &crate::domain::settings::thinking_effort_model_key(provider_id, model_id),
+    )
+    .await
+    .ok()
+    .flatten();
 
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
