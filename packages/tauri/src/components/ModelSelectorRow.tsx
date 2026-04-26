@@ -1,13 +1,6 @@
 import { Button } from "./ui/button";
-import { ThinkingEffortBars } from "./ThinkingEffortBars";
-import { ShortcutTooltip } from "./ShortcutTooltip";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { RuntimeModelPicker } from "@/components/RuntimeModelPicker";
-import {
-  THINKING_EFFORT_LABELS,
-  nextThinkingEffort,
-  type ThinkingEffortLevel,
-} from "@/shared/thinking-effort";
 import type { RuntimeModelOption } from "@/api/agentRuntime";
 import { ChevronDownIcon } from "lucide-react";
 
@@ -31,9 +24,6 @@ interface ModelSelectorRowProps {
   isInherited: boolean;
   onInherit?: () => void;
   onSelect: (providerId: string, modelId: string) => void;
-  thinkingEffortLevels: ThinkingEffortLevel[];
-  thinkingEffort?: ThinkingEffortLevel;
-  onThinkingEffortChange?: (effort?: ThinkingEffortLevel) => void;
   icon: React.ReactNode;
 }
 
@@ -51,13 +41,9 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
     isInherited,
     onInherit,
     onSelect,
-    thinkingEffortLevels,
-    thinkingEffort,
-    onThinkingEffortChange,
     icon,
   } = props;
 
-  const tooltipEffort = thinkingEffort ?? thinkingEffortLevels[0];
   const inheritAction =
     level !== "global" && onInherit
       ? {
@@ -69,11 +55,6 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
           onSelect: onInherit,
         }
       : undefined;
-
-  const handleThinkingEffortCycle = (): void => {
-    if (!onThinkingEffortChange || thinkingEffortLevels.length === 0) return;
-    onThinkingEffortChange(nextThinkingEffort(thinkingEffortLevels, thinkingEffort));
-  };
 
   return (
     <div className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center sm:gap-4">
@@ -123,21 +104,6 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
             }
           />
         </div>
-        {thinkingEffortLevels.length > 0 && (
-          <ShortcutTooltip
-            label={`Thinking effort: ${THINKING_EFFORT_LABELS[tooltipEffort]}`}
-            above
-          >
-            <button
-              type="button"
-              onClick={handleThinkingEffortCycle}
-              className="inline-flex h-10 shrink-0 items-center rounded-md px-1.5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label="Cycle thinking effort"
-            >
-              <ThinkingEffortBars levels={thinkingEffortLevels} value={thinkingEffort} compact />
-            </button>
-          </ShortcutTooltip>
-        )}
       </div>
     </div>
   );

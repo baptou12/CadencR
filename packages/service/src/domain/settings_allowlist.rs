@@ -37,16 +37,6 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "parallel_execution",
     "skip_worktree",
     "bypass_acknowledged",
-    "thinking_effort_plan",
-    "thinking_effort_prd",
-    "thinking_effort_execute",
-    "thinking_effort_risk",
-    "thinking_effort_review",
-    "thinking_effort_review-fixer",
-    "thinking_effort_session",
-    "thinking_effort_qa",
-    "thinking_effort_retro",
-    "thinking_effort_auto_name",
 ];
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
@@ -77,16 +67,6 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "color",
     "setup_worktree",
     "bypass_acknowledged",
-    "thinking_effort_plan",
-    "thinking_effort_prd",
-    "thinking_effort_execute",
-    "thinking_effort_risk",
-    "thinking_effort_review",
-    "thinking_effort_review-fixer",
-    "thinking_effort_session",
-    "thinking_effort_qa",
-    "thinking_effort_retro",
-    "thinking_effort_auto_name",
 ];
 
 /// Keys writable via `PUT /api/workspace/settings/{key}`.
@@ -135,21 +115,17 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "agent_runtime_retro",
     "agent_runtime_auto_name",
     "agent_runtime_brainstorm",
-    "thinking_effort_plan",
-    "thinking_effort_prd",
-    "thinking_effort_execute",
-    "thinking_effort_risk",
-    "thinking_effort_review",
-    "thinking_effort_review-fixer",
-    "thinking_effort_session",
-    "thinking_effort_qa",
-    "thinking_effort_retro",
-    "thinking_effort_auto_name",
 ];
 
 /// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
 /// match the patterns used by `useDebouncedSetting` in the frontend.
-const WORKSPACE_ALLOWED_PREFIXES: &[&str] = &["editor_sidebar_visible_", "active_tab_"];
+const WORKSPACE_NUMERIC_PREFIXES: &[&str] = &["editor_sidebar_visible_", "active_tab_"];
+
+/// Prefixes whose suffix is a free-form provider/model identifier. Suffix
+/// characters are restricted to ASCII alphanumerics plus `._-` to keep the
+/// allowlist tight while accepting real model ids like `claude-sonnet-4-5` or
+/// `claude_code_claude-opus-4`.
+const WORKSPACE_MODEL_PREFIXES: &[&str] = &["thinking_effort_model_"];
 
 pub fn is_feature_key_allowed(key: &str) -> bool {
     FEATURE_ALLOWED_KEYS.contains(&key)
@@ -163,9 +139,19 @@ pub fn is_workspace_key_allowed(key: &str) -> bool {
     if WORKSPACE_ALLOWED_KEYS.contains(&key) {
         return true;
     }
-    WORKSPACE_ALLOWED_PREFIXES.iter().any(|p| {
+    if WORKSPACE_NUMERIC_PREFIXES.iter().any(|p| {
         key.strip_prefix(p)
             .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+    }) {
+        return true;
+    }
+    WORKSPACE_MODEL_PREFIXES.iter().any(|p| {
+        key.strip_prefix(p).is_some_and(|rest| {
+            !rest.is_empty()
+                && rest
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        })
     })
 }
 
@@ -187,7 +173,32 @@ mod tests {
         assert!(is_feature_key_allowed("bypass_acknowledged"));
         assert!(is_feature_key_allowed("skip_worktree"));
         assert!(is_feature_key_allowed("model_plan"));
-        assert!(is_feature_key_allowed("thinking_effort_session"));
+    }
+
+    #[test]
+    fn rejects_legacy_thinking_effort_keys_everywhere() {
+        // Per-agent-type thinking effort settings were removed in favour of
+        // per-model workspace defaults. Old keys should no longer be writable
+        // at any scope.
+        for k in [
+            "thinking_effort_session",
+            "thinking_effort_plan",
+            "thinking_effort_qa",
+            "thinking_effort_auto_name",
+        ] {
+            assert!(
+                !is_feature_key_allowed(k),
+                "{k} must be rejected on feature"
+            );
+            assert!(
+                !is_project_key_allowed(k),
+                "{k} must be rejected on project"
+            );
+            assert!(
+                !is_workspace_key_allowed(k),
+                "{k} must be rejected on workspace"
+            );
+        }
     }
 
     #[test]
@@ -225,6 +236,28 @@ mod tests {
     }
 
     #[test]
+    fn workspace_accepts_per_model_thinking_effort_keys() {
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_claude_code_claude-opus-4"
+        ));
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_claude_code_claude-sonnet-4-5"
+        ));
+        assert!(is_workspace_key_allowed("thinking_effort_model_opencode_x"));
+        assert!(is_workspace_key_allowed(
+            "thinking_effort_model_provider_model.v2"
+        ));
+    }
+
+    #[test]
+    fn workspace_rejects_malformed_per_model_thinking_effort_keys() {
+        assert!(!is_workspace_key_allowed("thinking_effort_model_"));
+        assert!(!is_workspace_key_allowed("thinking_effort_model_a/b"));
+        assert!(!is_workspace_key_allowed("thinking_effort_model_a;drop"));
+        assert!(!is_workspace_key_allowed("thinking_effort_model_a b"));
+    }
+
+    #[test]
     fn workspace_accepts_agent_defaults() {
         // These flow through the global Settings page + useDebouncedSetting.
         for k in [
@@ -234,7 +267,6 @@ mod tests {
             "model_execute",
             "agent_runtime_session",
             "agent_runtime_auto_name",
-            "thinking_effort_session",
             "sidebar_right_collapsed",
         ] {
             assert!(is_workspace_key_allowed(k), "{k} should be allowed");

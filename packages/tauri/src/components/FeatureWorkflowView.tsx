@@ -101,8 +101,8 @@ export function FeatureWorkflowView({
     handleModelChange: handleModelChangeForAgent,
     resolveProvider: resolveProviderForAgent,
     handleProviderChange: handleProviderChangeForAgent,
-    resolveThinkingEffort: resolveThinkingEffortForAgent,
-    handleThinkingEffortChange: handleThinkingEffortChangeForAgent,
+    resolveModelThinkingEffort: resolveModelThinkingEffortForAgent,
+    setModelThinkingEffort: setModelThinkingEffortForAgent,
   } = useResolvedModel(featureId, projectId);
   const slashCommandProviderId = resolveProviderForAgent("session");
 
@@ -346,8 +346,8 @@ export function FeatureWorkflowView({
                       resolveProvider={resolveProviderForAgent}
                       handleModelChange={handleModelChangeForAgent}
                       handleProviderChange={handleProviderChangeForAgent}
-                      resolveThinkingEffort={resolveThinkingEffortForAgent}
-                      handleThinkingEffortChange={handleThinkingEffortChangeForAgent}
+                      resolveModelThinkingEffort={resolveModelThinkingEffortForAgent}
+                      setModelThinkingEffort={setModelThinkingEffortForAgent}
                       handleDeleteAgent={handleDeleteAgent}
                       onViewDiff={handleViewDiffForAgent}
                       slashCommands={slashCommands}

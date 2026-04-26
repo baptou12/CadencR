@@ -73,6 +73,25 @@ impl WsSessionPersistence {
         }
     }
 
+    /// Persist (or clear) the conversation-level thinking effort. The per-model
+    /// workspace default is updated separately by the caller — this function
+    /// only owns the row column. Pass `None` to set NULL (the default cascades
+    /// through the per-model workspace setting at next session.init).
+    pub async fn update_thinking_effort_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        thinking_effort: Option<&str>,
+    ) {
+        if let Err(e) = sqlx::query("UPDATE agent_sessions SET thinking_effort = ? WHERE id = ?")
+            .bind(thinking_effort)
+            .bind(session_id)
+            .execute(pool)
+            .await
+        {
+            error!(error = %e, session_db_id = session_id, "failed to update thinking_effort");
+        }
+    }
+
     pub async fn update_token_usage(
         pool: &SqlitePool,
         session_id: i64,
@@ -163,7 +182,8 @@ mod session_state_tests {
                 started_at TEXT,
                 ended_at TEXT,
                 pending_plan_approval TEXT,
-                plan_approval_result TEXT
+                plan_approval_result TEXT,
+                thinking_effort TEXT
             )"#,
         )
         .execute(&pool)
@@ -287,6 +307,31 @@ mod session_state_tests {
                 .await
                 .unwrap();
         assert_eq!(row.0, "acceptEdits");
+    }
+
+    #[tokio::test]
+    async fn test_update_thinking_effort_static_set_and_clear() {
+        let pool = setup_test_db().await;
+        let mut p = WsSessionPersistence::new(pool.clone(), 1);
+        let id = p.find_or_create_session(None, None).await.unwrap();
+
+        WsSessionPersistence::update_thinking_effort_static(&pool, id, Some("high")).await;
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT thinking_effort FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(row.0.as_deref(), Some("high"));
+
+        WsSessionPersistence::update_thinking_effort_static(&pool, id, None).await;
+        let row: (Option<String>,) =
+            sqlx::query_as("SELECT thinking_effort FROM agent_sessions WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert!(row.0.is_none());
     }
 
     #[tokio::test]

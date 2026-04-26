@@ -1,7 +1,6 @@
 import type { AgentCatalog, RuntimeModelOption } from "@/api/agentRuntime";
 import type { AgentTypeSetting } from "@/shared/models";
 import type { ModelSelectorRowProvider } from "@/components/ModelSelectorRow";
-import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 
 export type ModelSelectorLevel = "global" | "project" | "feature";
 
@@ -34,9 +33,6 @@ export interface ModelSelectorRowState {
   isInherited: boolean;
   onInherit?: () => void;
   onSelect: (providerId: string, modelId: string) => void;
-  thinkingEffortLevels: ThinkingEffortLevel[];
-  thinkingEffort?: ThinkingEffortLevel;
-  onThinkingEffortChange: (effort?: ThinkingEffortLevel) => void;
 }
 
 export interface UseModelSelectorStateParams {

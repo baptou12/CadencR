@@ -49,18 +49,25 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
   const {
     resolveModel,
     resolveProvider,
-    resolveThinkingEffort,
+    resolveModelThinkingEffort,
+    setModelThinkingEffort,
     handleModelChange,
     handleProviderChange,
-    handleThinkingEffortChange,
   } = useResolvedModel(featureId, projectId);
 
   const currentModelId = resolveModel(agentType);
   const currentProviderId = resolveProvider(agentType);
-  const currentThinkingEffort = resolveThinkingEffort(agentType);
+  // Thinking effort is keyed by (provider, model) — same effort applies whether
+  // this picker is used by `plan`, `prd`, `session`, etc. as long as the model
+  // is the same.
+  const currentThinkingEffort = resolveModelThinkingEffort(currentProviderId, currentModelId);
 
   const onModelChange = useCallback(
-    (modelId: string) => {
+    // `_providerId` is part of the MetaBar contract — the picker passes both
+    // ids together so live-session handlers don't read stale provider state.
+    // Here we only persist the model: the provider is written separately by
+    // `onProviderChange` if it changed.
+    (_providerId: string, modelId: string) => {
       handleModelChange(agentType, modelId);
       if (secondaryAgentType) handleModelChange(secondaryAgentType, modelId);
     },
@@ -77,10 +84,11 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
 
   const onThinkingEffortChange = useCallback(
     (effort?: ThinkingEffortLevel) => {
-      handleThinkingEffortChange(agentType, effort);
-      if (secondaryAgentType) handleThinkingEffortChange(secondaryAgentType, effort);
+      // No agent_type fan-out: the effort lives on the model, so updating once
+      // is enough whether or not a `secondaryAgentType` is in play.
+      setModelThinkingEffort(currentProviderId, currentModelId, effort);
     },
-    [agentType, secondaryAgentType, handleThinkingEffortChange],
+    [currentProviderId, currentModelId, setModelThinkingEffort],
   );
 
   const {

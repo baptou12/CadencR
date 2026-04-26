@@ -136,25 +136,56 @@ pub(super) async fn handle_init(
     .unwrap_or_else(|| DEFAULT_PROVIDER.to_string());
     let stored_model = row.as_ref().and_then(|r| r.model.clone());
     let effective_model = stored_model.clone().or(payload.model.clone());
-    let effective_thinking_effort = match payload.thinking_effort.clone() {
-        Some(effort) => Some(effort),
-        None => {
-            settings::resolve_setting(
-                &app_state.read_pool,
-                "thinking_effort_session",
-                Some(feature_id),
-                project_id,
-                None,
-            )
-            .await
-        }
-    };
+    let stored_thinking_effort = row.as_ref().and_then(|r| r.thinking_effort.clone());
     let effective_provider = resolve_effective_provider(
         runtime_provider
             .or(payload.provider.clone())
             .unwrap_or(configured_provider),
         effective_model.as_deref(),
     );
+
+    // Thinking-effort cascade (model-keyed, not agent-type-keyed):
+    //   1. Explicit override from the init payload (frontend just toggled it).
+    //   2. Persisted conversation-level override (column on agent_sessions).
+    //   3. Workspace per-model default (`thinking_effort_model_<provider>_<model>`).
+    //   4. None.
+    // Skip the workspace lookup when an earlier step already resolved a value —
+    // hydrating from the row is the common case and we don't need a DB hit
+    // when no fallback would be consulted.
+    let prior_thinking_effort = payload
+        .thinking_effort
+        .clone()
+        .or_else(|| stored_thinking_effort.clone());
+    let effective_thinking_effort = match prior_thinking_effort {
+        Some(effort) => Some(effort),
+        None => match effective_model.as_ref() {
+            Some(model_id) => {
+                settings::resolve_setting(
+                    &app_state.read_pool,
+                    &settings::thinking_effort_model_key(&effective_provider, model_id),
+                    None,
+                    None,
+                    None,
+                )
+                .await
+            }
+            None => None,
+        },
+    };
+
+    // Anchor the resolved value to the conversation when it didn't already
+    // have one. Future model/effort changes on *other* conversations must not
+    // retroactively change this one.
+    if stored_thinking_effort.is_none() {
+        if let Some(ref effort) = effective_thinking_effort {
+            WsSessionPersistence::update_thinking_effort_static(
+                &app_state.write_pool,
+                db_session_id,
+                Some(effort),
+            )
+            .await;
+        }
+    }
     let resume_session_id = row.as_ref().and_then(|r| {
         resume_session_id_for_provider(
             &effective_provider,

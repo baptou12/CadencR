@@ -1,4 +1,3 @@
-import type { AgentTypeSetting } from "./models";
 import type { RuntimeModelOption } from "@/api/agentRuntime";
 
 export const THINKING_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -17,8 +16,13 @@ export function isThinkingEffortLevel(value: unknown): value is ThinkingEffortLe
   return typeof value === "string" && THINKING_EFFORT_LEVELS.includes(value as ThinkingEffortLevel);
 }
 
-export function thinkingEffortSettingKey(agentType: AgentTypeSetting): string {
-  return `thinking_effort_${agentType}`;
+/**
+ * Workspace setting key for the last-used thinking effort on a given
+ * provider/model pair. Mirrors the Rust helper
+ * `domain::settings::thinking_effort_model_key`.
+ */
+export function thinkingEffortModelKey(providerId: string, modelId: string): string {
+  return `thinking_effort_model_${providerId}_${modelId}`;
 }
 
 export function parseThinkingEffort(

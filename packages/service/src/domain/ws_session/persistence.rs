@@ -32,6 +32,7 @@ pub struct SessionRow {
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub context_window: Option<i64>,
+    pub thinking_effort: Option<String>,
 }
 
 struct ToolInputBuffer {

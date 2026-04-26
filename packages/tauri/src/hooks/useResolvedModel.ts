@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_PROVIDER, resolveRuntimeSelection, type AgentTypeSetting } from "../shared/models";
 import type { AgentType } from "../types/agent-types";
@@ -6,14 +6,15 @@ import {
   useGetWorkspaceModelSettings,
   useGetProjectModelSettings,
   useGetFeatureModelSettings,
-  useGetProjectSettings,
-  useGetFeatureSettings,
   getGetFeatureModelSettingsQueryKey,
   useSetFeatureModelSetting,
-  getGetFeatureSettingsQueryKey,
-  useSetFeatureSetting,
+  useSetWorkspaceSetting,
 } from "../api/generated";
-import { settingsArrayToMap, useGetWorkspaceSettings } from "@/api/settings";
+import {
+  getWorkspaceSettingsQueryKey,
+  settingsArrayToMap,
+  useGetWorkspaceSettings,
+} from "@/api/settings";
 import {
   useAgentCatalog,
   useGetWorkspaceProviderSettings,
@@ -25,7 +26,7 @@ import {
   isThinkingEffortSupported,
   parseThinkingEffort,
   supportedThinkingEffortLevels,
-  thinkingEffortSettingKey,
+  thinkingEffortModelKey,
   type ThinkingEffortLevel,
 } from "@/shared/thinking-effort";
 
@@ -46,8 +47,6 @@ export function useResolvedModel(featureId: number, projectId: number) {
   const featureSettings = useGetFeatureModelSettings(featureId);
   const projectSettings = useGetProjectModelSettings(projectId);
   const globalSettings = useGetWorkspaceModelSettings();
-  const featureKvSettings = useGetFeatureSettings(featureId);
-  const projectKvSettings = useGetProjectSettings(projectId);
   const workspaceKvSettings = useGetWorkspaceSettings();
   const featureProviderSettings = useGetFeatureProviderSettings(featureId);
   const projectProviderSettings = useGetProjectProviderSettings(projectId);
@@ -60,16 +59,18 @@ export function useResolvedModel(featureId: number, projectId: number) {
     },
   });
   const setProviderMutation = useSetFeatureProviderSetting();
-  const setThinkingEffortMutation = useSetFeatureSetting({
+  const setWorkspaceSettingMutation = useSetWorkspaceSetting({
     mutation: {
-      onSuccess: () =>
-        queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) }),
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() }),
     },
   });
 
-  const featureSettingMap = settingsArrayToMap(featureKvSettings.data);
-  const projectSettingMap = settingsArrayToMap(projectKvSettings.data);
-  const workspaceSettingMap = settingsArrayToMap(workspaceKvSettings.data);
+  // Memoized so `resolveModelThinkingEffort` keeps a stable identity across
+  // renders when the underlying KV array hasn't changed.
+  const workspaceSettingMap = useMemo(
+    () => settingsArrayToMap(workspaceKvSettings.data),
+    [workspaceKvSettings.data],
+  );
 
   const resolveSelection = useCallback(
     (agentType: AgentType) =>
@@ -116,31 +117,37 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [resolveSelection],
   );
 
-  const resolveThinkingEffort = useCallback(
-    (agentType: AgentType): ThinkingEffortLevel | undefined => {
-      const selection = resolveSelection(agentType);
+  /**
+   * Last-used thinking effort for the (provider, model) pair, read from the
+   * workspace EAV settings. Validated against the model's supported levels —
+   * an unsupported value returns `undefined`.
+   */
+  const resolveModelThinkingEffort = useCallback(
+    (providerId: string, modelId: string): ThinkingEffortLevel | undefined => {
       const model = agentCatalog.data?.providers
-        .find((provider) => provider.id === selection.providerId)
-        ?.models.find((entry) => entry.id === selection.modelId);
+        .find((provider) => provider.id === providerId)
+        ?.models.find((entry) => entry.id === modelId);
       const levels = supportedThinkingEffortLevels(model);
-      const key = thinkingEffortSettingKey(agentType as AgentTypeSetting);
-      for (const value of [
-        featureSettingMap[key],
-        projectSettingMap[key],
-        workspaceSettingMap[key],
-      ]) {
-        const effort = parseThinkingEffort(value);
-        if (effort && isThinkingEffortSupported(levels, effort)) return effort;
-      }
-      return undefined;
+      const value = workspaceSettingMap[thinkingEffortModelKey(providerId, modelId)];
+      const effort = parseThinkingEffort(value);
+      return effort && isThinkingEffortSupported(levels, effort) ? effort : undefined;
     },
-    [
-      agentCatalog.data?.providers,
-      featureSettingMap,
-      projectSettingMap,
-      resolveSelection,
-      workspaceSettingMap,
-    ],
+    [agentCatalog.data?.providers, workspaceSettingMap],
+  );
+
+  /**
+   * Persist the per-model default. Used when the user adjusts effort outside
+   * a live WS session (the WS effort.set handler writes its own copy on the
+   * backend during a live session).
+   */
+  const setModelThinkingEffort = useCallback(
+    (providerId: string, modelId: string, effort: ThinkingEffortLevel | undefined): void => {
+      setWorkspaceSettingMutation.mutate({
+        key: thinkingEffortModelKey(providerId, modelId),
+        data: { value: effort ?? "" },
+      });
+    },
+    [setWorkspaceSettingMutation],
   );
 
   const handleProviderChange = useCallback(
@@ -154,25 +161,12 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [featureId, setProviderMutation],
   );
 
-  const handleThinkingEffortChange = useCallback(
-    (agentType: AgentType, effort?: ThinkingEffortLevel) => {
-      setThinkingEffortMutation.mutate({
-        id: featureId,
-        data: {
-          key: thinkingEffortSettingKey(agentType as AgentTypeSetting),
-          value: effort ?? "",
-        },
-      });
-    },
-    [featureId, setThinkingEffortMutation],
-  );
-
   return {
     resolveModel,
     handleModelChange,
     resolveProvider,
     handleProviderChange,
-    resolveThinkingEffort,
-    handleThinkingEffortChange,
+    resolveModelThinkingEffort,
+    setModelThinkingEffort,
   };
 }

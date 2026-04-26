@@ -73,14 +73,17 @@ function WebSocketSessionPage() {
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
   const [useWorktree, setUseWorktree] = useState(false);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel, resolveProvider, resolveThinkingEffort } = useResolvedModel(
+  const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModel(
     featureId,
     projectId,
   );
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
-  const resolvedThinkingEffort = resolveThinkingEffort("session");
+  // Per-model default for the picked session model. The backend persists the
+  // conversation's own override on `agent_sessions.thinking_effort` and only
+  // falls back to this default when the row hasn't been ancored yet.
+  const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);
   const activeSessionModel = agentCatalog.data?.providers
     .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
     ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
@@ -286,13 +289,27 @@ function WebSocketSessionPage() {
             currentProviderId={ws.currentProviderId}
             onProviderChange={ws.setProvider}
             currentModelId={ws.currentModelId}
-            onModelChange={(modelId) => {
-              ws.setModel(modelId);
+            onModelChange={(nextProviderId, modelId) => {
+              // Avoid sending a redundant WS frame when the user re-picks the
+              // same model (the picker still fires onSelect on identical
+              // selections). Effort resolution below still runs so a stale
+              // effort can recover on a same-model re-pick.
+              if (modelId !== ws.currentModelId) {
+                ws.setModel(modelId);
+              }
               const nextModel = agentCatalog.data?.providers
-                .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
+                .find((provider) => provider.id === nextProviderId)
                 ?.models.find((model) => model.id === modelId);
               const nextLevels = supportedThinkingEffortLevels(nextModel);
-              if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
+              // Pull the last-used effort for the model the user just switched
+              // to. We trust the providerId from the picker rather than
+              // `ws.currentProviderId` — the WS store hasn't yet acknowledged
+              // a sibling `setProvider` call, so reading it here would yield
+              // the *previous* provider and miss the per-model default.
+              const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
+              if (nextEffort) {
+                ws.setThinkingEffort(nextEffort);
+              } else if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
                 ws.setThinkingEffort(undefined);
               }
             }}
