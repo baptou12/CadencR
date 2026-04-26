@@ -1,16 +1,17 @@
 ---
-import Placeholder from "@/components/Placeholder.astro";
+import { Image } from "astro:assets";
 import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import CodeIcon from "@/components/icons/CodeIcon.astro";
 import Wrap from "@/components/ui/Wrap.astro";
 import Eyebrow from "@/components/ui/Eyebrow.astro";
 import Button from "@/components/ui/Button.astro";
+import heroImage from "@/assets/hero.png";
 ---
 <section class="relative py-16 pb-14">
   <div class="hero-orbits pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true"></div>
   <Wrap>
     <div
-      class="relative z-10 grid grid-cols-1 items-center gap-12 md:gap-14 lg:[grid-template-columns:minmax(0,0.82fr)_minmax(0,1.18fr)]"
+      class="relative z-10 grid items-center gap-12 md:gap-14 [grid-template-columns:minmax(0,0.82fr)_minmax(0,1.18fr)]"
     >
       <div class="relative z-10 max-w-[520px]">
         <Eyebrow>Desktop IDE · macOS · Linux · Apache-2.0</Eyebrow>
@@ -19,49 +20,36 @@ import Button from "@/components/ui/Button.astro";
         >
           The IDE for the era of agents.<br />
           <span class="text-muted-foreground">
-            One workspace — Claude Code, OpenCode, and soon Codex.
+            One workspace — Claude Code, OpenCode, and Codex.
           </span>
         </h1>
         <p class="text-sm leading-[1.6] text-muted-foreground [text-wrap:pretty] [&_.em]:text-foreground">
           Cadence is the surface you read, steer and ship from.
           <span class="em">Your harness stays the same</span>
-          — the stream becomes readable, every session gets its own worktree, and git stays where you can see it.
+          — the stream becomes readable, sessions can branch into their own worktree or terminal, and git stays where you can see it.
         </p>
         <div class="mt-5 flex flex-wrap items-center gap-2">
-          <Button href="#install" size="lg">
+          <Button href="https://github.com/rle-mino/cadence/releases/latest" size="lg">
             <DownloadIcon />
             Download for Mac
           </Button>
-          <Button href="https://github.com/cadence-ide/cadence" variant="outline" size="lg">
+          <Button href="https://github.com/rle-mino/cadence" variant="outline" size="lg">
             <CodeIcon />
             Source on GitHub
           </Button>
         </div>
-        <span class="mt-3 block font-mono text-[11.5px] text-muted-foreground">
-          or <code class="rounded border border-border bg-muted/35 px-1.5 py-0.5 text-foreground">
-            brew install --cask cadence-ide
-          </code>
-        </span>
-        <div
-          class="mt-5 flex flex-wrap items-center gap-3 border-t border-border/55 pt-4.5 font-mono text-[10.5px] uppercase tracking-[0.05em] text-muted-foreground"
-        >
-          <span><span class="text-drac-green">●</span> runs local</span>
-          <span class="text-muted-foreground/40">·</span>
-          <span>no telemetry</span>
-          <span class="text-muted-foreground/40">·</span>
-          <span>bring your own keys</span>
-          <span class="text-muted-foreground/40">·</span>
-          <span>built on Tauri</span>
-        </div>
       </div>
 
-      <div class="relative z-10 min-w-0 lg:-mr-6">
-        <Placeholder
-          label="Cadence — demo"
-          hint="screenshot pending"
-          ratio="16/10"
-          variant="window"
-          caption="cadence · Unify code rendering with CodeMirror"
+      <div class="relative z-10 min-w-0">
+        <Image
+          src={heroImage}
+          alt="Cadence desktop app showing a session with code, streaming agent output, and git worktree"
+          loading="eager"
+          decoding="async"
+          widths={[800, 1200, 1600, 2048]}
+          sizes="(min-width: 1280px) 1024px, (min-width: 768px) 75vw, 100vw"
+          format="webp"
+          class="block h-auto w-[calc(100%+16rem)] max-w-none xl:w-[calc(100%+24rem)]"
         />
       </div>
     </div>

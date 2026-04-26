@@ -1,0 +1,33 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import Lede from "@/components/ui/Lede.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+---
+<FeatureSection
+  id="editor"
+  eyebrow="05 · Editor"
+  heading="A real editor — not a viewer."
+  placeholder={{
+    label: "Editor — CodeMirror",
+    hint: "screenshot pending",
+    ratio: "16/10",
+    variant: "window",
+    caption: "CodeMirror · themeable · LSP-aware",
+  }}
+>
+  <Fragment slot="lede">
+    <Lede>
+      Open any file the agent touched and
+      <span class="em">edit it on the spot</span>
+      — no jumping to another app to fix a typo, tweak a prompt, or unwind a chunk.
+    </Lede>
+    <Lede class="mt-2.5">
+      CodeMirror under the hood, the same syntax everywhere — diffs, previews, and the editor share one renderer.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li><strong>CodeMirror 6</strong> — fast, accurate, themeable.</li>
+    <li><strong>Quick open</strong> — <Kbd>⌘</Kbd><Kbd>P</Kbd> across the worktree.</li>
+    <li><strong>Inline diffs</strong> — accept, revert, or rewrite chunks without leaving the file.</li>
+  </Fragment>
+</FeatureSection>

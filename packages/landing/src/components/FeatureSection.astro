@@ -19,14 +19,14 @@ interface Props {
   eyebrow: string;
   heading: string;
   reverse?: boolean;
-  placeholder: PlaceholderProps;
+  placeholder?: PlaceholderProps;
 }
 const { id, eyebrow, heading, reverse = false, placeholder } = Astro.props;
 ---
 <section id={id} class="relative border-t border-border/55 py-20">
   <Wrap>
     <TwoUp reverse={reverse}>
-      {reverse && <Placeholder {...placeholder} />}
+      {reverse && <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>}
       <div>
         <Eyebrow>{eyebrow}</Eyebrow>
         <SectionHeading>{heading}</SectionHeading>
@@ -35,7 +35,7 @@ const { id, eyebrow, heading, reverse = false, placeholder } = Astro.props;
           <slot name="bullets" />
         </BulletList>
       </div>
-      {!reverse && <Placeholder {...placeholder} />}
+      {!reverse && <slot name="media">{placeholder && <Placeholder {...placeholder} />}</slot>}
     </TwoUp>
   </Wrap>
 </section>
