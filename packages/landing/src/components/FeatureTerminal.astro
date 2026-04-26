@@ -1,21 +1,27 @@
 ---
+import { Image } from "astro:assets";
 import FeatureSection from "@/components/FeatureSection.astro";
 import Lede from "@/components/ui/Lede.astro";
 import Kbd from "@/components/ui/Kbd.astro";
+import terminalImage from "@/assets/terminal.png";
 ---
 <FeatureSection
   id="terminal"
   eyebrow="04 · Terminal"
   heading="A real terminal, next to the agent."
   reverse
-  placeholder={{
-    label: "Terminal",
-    hint: "screenshot pending",
-    ratio: "16/10",
-    variant: "window",
-    caption: "one PTY per session · branch-aware prompt",
-  }}
 >
+  <Image
+    slot="media"
+    src={terminalImage}
+    alt="Cadence terminal pane: an xterm.js PTY rooted at the session's worktree, with a branch-aware prompt"
+    widths={[600, 900, 1200, 1800]}
+    sizes="(min-width: 1024px) 560px, 100vw"
+    format="webp"
+    loading="lazy"
+    decoding="async"
+    class="block h-auto w-[calc(100%+4rem)] max-w-none -ml-16 xl:w-[calc(100%+7rem)] xl:-ml-28"
+  />
   <Fragment slot="lede">
     <Lede>
       Every session gets a PTY rooted at its own worktree. Use it for
