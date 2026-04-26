@@ -63,7 +63,11 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
   const currentThinkingEffort = resolveModelThinkingEffort(currentProviderId, currentModelId);
 
   const onModelChange = useCallback(
-    (modelId: string) => {
+    // `_providerId` is part of the MetaBar contract — the picker passes both
+    // ids together so live-session handlers don't read stale provider state.
+    // Here we only persist the model: the provider is written separately by
+    // `onProviderChange` if it changed.
+    (_providerId: string, modelId: string) => {
       handleModelChange(agentType, modelId);
       if (secondaryAgentType) handleModelChange(secondaryAgentType, modelId);
     },

@@ -2,6 +2,8 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { queryClient } from "@/lib/queryClient";
+import { getWorkspaceSettingsQueryKey } from "@/api/settings";
 import {
   parseRuntimeSessionIdPayload,
   parseClearedPayload,
@@ -182,7 +184,15 @@ function handleSessionAction(
     }
     case "effort.set.ok": {
       const p = parseEffortPayload(envelope.payload);
+      const previous = ctx.get().sessions[sessionId]?.currentThinkingEffort;
       ctx.set(updateSession(ctx.get(), sessionId, { currentThinkingEffort: p?.thinking_effort }));
+      // The backend writes the per-model workspace default
+      // (`thinking_effort_model_<provider>_<model>`) only when the effort
+      // actually changed, so we mirror that condition to avoid a redundant
+      // workspace-settings refetch on no-op confirmations.
+      if (p?.thinking_effort !== previous) {
+        void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+      }
       break;
     }
     case "error":

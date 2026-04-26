@@ -49,7 +49,14 @@ export interface MetaBarProps {
   onToggleWorktree?: () => void;
   onProviderChange?: (providerId: string) => void;
   currentProviderId?: string;
-  onModelChange?: (modelId: string) => void;
+  /**
+   * Called when the user picks a model from the inline picker. The picker
+   * always knows both the provider and the model the user just chose, so we
+   * pass both — the parent must not read provider state from the WS store
+   * here (no-optimistic-updates rule means it would be stale right after a
+   * sibling provider change).
+   */
+  onModelChange?: (providerId: string, modelId: string) => void;
   currentThinkingEffort?: ThinkingEffortLevel;
   supportedThinkingEfforts?: ThinkingEffortLevel[];
   onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
@@ -255,7 +262,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
                 if (canChangeProvider && onProviderChange && providerId !== displayProviderId) {
                   onProviderChange(providerId);
                 }
-                onModelChange(modelId);
+                onModelChange(providerId, modelId);
               }}
               trigger={
                 <button

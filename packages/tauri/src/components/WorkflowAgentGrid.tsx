@@ -115,7 +115,9 @@ export function WorkflowAgentGrid({
         currentProviderId={providerId}
         onProviderChange={(newProviderId) => handleProviderChange(entry.agentType, newProviderId)}
         currentModelId={modelId}
-        onModelChange={(newModelId) => handleModelChange(entry.agentType, newModelId)}
+        onModelChange={(_newProviderId, newModelId) =>
+          handleModelChange(entry.agentType, newModelId)
+        }
         currentThinkingEffort={resolveModelThinkingEffort(providerId, modelId)}
         onThinkingEffortChange={(effort) => setModelThinkingEffort(providerId, modelId, effort)}
         canDelete={

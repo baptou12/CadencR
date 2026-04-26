@@ -289,17 +289,23 @@ function WebSocketSessionPage() {
             currentProviderId={ws.currentProviderId}
             onProviderChange={ws.setProvider}
             currentModelId={ws.currentModelId}
-            onModelChange={(modelId) => {
-              ws.setModel(modelId);
-              const nextProviderId = ws.currentProviderId || resolvedProviderId;
+            onModelChange={(nextProviderId, modelId) => {
+              // Avoid sending a redundant WS frame when the user re-picks the
+              // same model (the picker still fires onSelect on identical
+              // selections). Effort resolution below still runs so a stale
+              // effort can recover on a same-model re-pick.
+              if (modelId !== ws.currentModelId) {
+                ws.setModel(modelId);
+              }
               const nextModel = agentCatalog.data?.providers
                 .find((provider) => provider.id === nextProviderId)
                 ?.models.find((model) => model.id === modelId);
               const nextLevels = supportedThinkingEffortLevels(nextModel);
               // Pull the last-used effort for the model the user just switched
-              // to. Fall back to clearing if the previous effort isn't valid
-              // for this model — the backend will then persist whatever
-              // resolves on the next prompt (or stay None).
+              // to. We trust the providerId from the picker rather than
+              // `ws.currentProviderId` — the WS store hasn't yet acknowledged
+              // a sibling `setProvider` call, so reading it here would yield
+              // the *previous* provider and miss the per-model default.
               const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
               if (nextEffort) {
                 ws.setThinkingEffort(nextEffort);

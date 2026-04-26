@@ -80,8 +80,12 @@ export interface AgentSessionProps {
   currentProviderId?: string;
   /** Called when the user changes the provider before the first message */
   onProviderChange?: (providerId: string) => void;
-  /** Called when the user changes the model via the inline switcher */
-  onModelChange?: (modelId: string) => void;
+  /**
+   * Called when the user changes the model via the inline switcher. Receives
+   * both the picked provider and model id so handlers don't have to read
+   * (potentially stale) provider state from the WS store.
+   */
+  onModelChange?: (providerId: string, modelId: string) => void;
   /** Current thinking effort override for this live session (unvalidated from the store). */
   currentThinkingEffort?: string;
   /** Called when the user changes live thinking effort */
