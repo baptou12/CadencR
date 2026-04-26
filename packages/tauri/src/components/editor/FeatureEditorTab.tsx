@@ -252,7 +252,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             >
               <SidebarHeader onToggle={handleToggleSidebar} />
               <div className="flex-1 overflow-hidden">
-                <FileTree projectId={projectId} featureId={featureId} projectPath={projectPath} />
+                <FileTree projectId={projectId} featureId={featureId} />
               </div>
             </ResizablePanel>
             <ResizableHandle />

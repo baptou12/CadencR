@@ -2449,7 +2449,7 @@ describe("useWorkflowStore", () => {
     });
 
     it("continueWorkflow sets continuingBuild flag", () => {
-      const ws = connectStore();
+      connectStore();
       useWorkflowStore.getState().continueWorkflow();
       expect(useWorkflowStore.getState().continuingBuild).toBe(true);
     });

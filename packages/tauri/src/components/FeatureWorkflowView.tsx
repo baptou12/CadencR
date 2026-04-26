@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
-import { useEditorStore } from "@/stores/editor-store";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTabBar } from "@/components/FeatureTabBar";
@@ -42,7 +41,6 @@ export function FeatureWorkflowView({
   feature,
   featureQuery: _featureQuery,
   initialDescription,
-  initialUseWorktree,
 }: {
   featureId: number;
   projectId: number;
@@ -58,7 +56,6 @@ export function FeatureWorkflowView({
     | undefined;
   featureQuery: { refetch: () => unknown };
   initialDescription?: string;
-  initialUseWorktree?: boolean;
 }) {
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [description, setDescription] = useState("");

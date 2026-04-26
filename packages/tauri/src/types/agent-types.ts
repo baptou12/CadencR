@@ -82,11 +82,3 @@ export function parseUserMessageContent(content: string): ParsedUserMessageConte
 export function extractUserMessageText(content: string): string {
   return parseUserMessageContent(content).text;
 }
-
-interface AgentEvent {
-  type: string;
-  featureId?: number;
-  sessionDbId?: number;
-  agentType?: AgentType;
-  [key: string]: unknown;
-}

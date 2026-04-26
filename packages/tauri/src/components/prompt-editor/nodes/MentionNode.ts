@@ -3,7 +3,6 @@ import {
   type DOMConversionMap,
   type DOMExportOutput,
   type EditorConfig,
-  type LexicalNode,
   type NodeKey,
   type SerializedTextNode,
   type Spread,
@@ -88,8 +87,4 @@ export function $createMentionNode(mentionPath: string, text?: string): MentionN
   const node = new MentionNode(mentionPath, text);
   node.setMode("token");
   return node;
-}
-
-function $isMentionNode(node: LexicalNode): node is MentionNode {
-  return node instanceof MentionNode;
 }

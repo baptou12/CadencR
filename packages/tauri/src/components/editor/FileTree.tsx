@@ -9,8 +9,6 @@ import type { FileTreeEntry } from "@/api/generated";
 interface FileTreeProps {
   projectId: number;
   featureId: number;
-  /** Used only by the WebSocket file watcher subscription. API calls go through projectId/featureId. */
-  projectPath: string;
 }
 
 interface TreeNodeProps {
@@ -135,7 +133,7 @@ function EntryRow({
   );
 }
 
-export default function FileTree({ projectId, featureId, projectPath }: FileTreeProps) {
+export default function FileTree({ projectId, featureId }: FileTreeProps) {
   const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
   const { activePaneId, panes, openFile } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;

@@ -108,14 +108,6 @@ export function processAgentStream(
 
 // -- Agent state routing helpers (unified) --
 
-/** Resolve an agent from the agents Map by slot key. */
-function resolveAgent(
-  agents: Map<string, AgentSessionState>,
-  slotKey: string,
-): AgentSessionState | null {
-  return agents.get(slotKey) ?? null;
-}
-
 /** Patch an agent in the agents Map. Returns a Zustand state patch. */
 export function patchAgent(
   state: Pick<WorkflowState, "agents">,

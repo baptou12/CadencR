@@ -1856,7 +1856,7 @@ describe("ws-session-store", () => {
       const streamState = createStreamingState();
       streamState.toolUseIdToBlock.set("tu1", parent);
       // Update targets child block (not found in root, so falls through to child search)
-      const result = applyMutations(
+      applyMutations(
         [],
         [
           {

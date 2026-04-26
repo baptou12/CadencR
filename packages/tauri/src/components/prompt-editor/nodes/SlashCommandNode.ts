@@ -3,7 +3,6 @@ import {
   type DOMConversionMap,
   type DOMExportOutput,
   type EditorConfig,
-  type LexicalNode,
   type NodeKey,
   type SerializedTextNode,
   type Spread,
@@ -87,8 +86,4 @@ export function $createSlashCommandNode(commandName: string): SlashCommandNode {
   const node = new SlashCommandNode(commandName);
   node.setMode("token");
   return node;
-}
-
-function $isSlashCommandNode(node: LexicalNode): node is SlashCommandNode {
-  return node instanceof SlashCommandNode;
 }
