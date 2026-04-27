@@ -201,6 +201,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             id: "claude_code".to_string(),
             label: "Claude Code".to_string(),
             status: ProviderStatus::Available,
+            status_message: None,
             models,
             default_model,
         }
@@ -215,6 +216,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         });
     }
 
+    fn supports_builtin_compact_command(&self) -> bool {
+        true
+    }
+
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
         let default_model = Self::default_model_from(&models);
@@ -222,6 +227,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             id: "claude_code".to_string(),
             label: "Claude Code".to_string(),
             status: ProviderStatus::Available,
+            status_message: None,
             models,
             default_model,
         }

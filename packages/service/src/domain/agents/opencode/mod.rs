@@ -22,13 +22,14 @@ use self::permissions::{
 use self::session::OpenCodeSession;
 use self::session_resolution::resolve_session_id;
 use super::adapter::{
-    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimePermissionRequest,
-    RuntimeSpawnConfig,
+    AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
+    RuntimePermissionRequest, RuntimeSlashCommandDiscovery, RuntimeSpawnConfig,
 };
 
 pub struct OpenCodeAdapter;
 
 pub static OPENCODE_ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
+pub const PROVIDER_ID: &str = "opencode";
 
 const RICH_MARKDOWN_INSTRUCTION: &str = "Format every non-trivial response using rich GitHub-flavored Markdown. Use real headings, lists, tables, and fenced code blocks when they improve readability. Do not use bold-only pseudo-headings as a substitute for headings. For example:\n\n## Summary\n- Item one\n- Item two\n\n```ts\nconst ok = true;\n```";
 
@@ -86,6 +87,14 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
                 tracing::info!("opencode startup warmup completed");
             }
         });
+    }
+
+    fn slash_command_discovery(&self) -> RuntimeSlashCommandDiscovery {
+        RuntimeSlashCommandDiscovery::RuntimeNative
+    }
+
+    fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
+        Some(RuntimeCompactionStrategy::SummaryReplay)
     }
 
     async fn session_finished(&self, runtime_session_id: &str) -> bool {

@@ -28,6 +28,7 @@ fn build_catalog_entry(
         id: "opencode".to_string(),
         label: "OpenCode".to_string(),
         status: ProviderStatus::Available,
+        status_message: None,
         models: models.iter().map(OpencodeModel::to_catalog_entry).collect(),
         default_model: resolved_default,
     }
