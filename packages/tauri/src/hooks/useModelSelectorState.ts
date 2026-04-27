@@ -141,8 +141,13 @@ export function useModelSelectorState(
     () =>
       (agentCatalog.data?.providers ?? []).map((provider) => ({
         id: provider.id,
-        label: provider.status === "available" ? provider.label : `${provider.label} (Coming soon)`,
+        label:
+          provider.status === "available"
+            ? provider.label
+            : `${provider.label} (${provider.status === "unavailable" ? "Unavailable" : "Coming soon"})`,
         disabled: provider.status !== "available",
+        status: provider.status,
+        statusMessage: provider.status_message,
         models: provider.models,
       })),
     [agentCatalog.data],

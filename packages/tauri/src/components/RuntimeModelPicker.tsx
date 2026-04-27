@@ -22,6 +22,8 @@ export interface RuntimeModelPickerProvider {
   id: string;
   label: string;
   disabled: boolean;
+  status?: "available" | "unavailable" | "coming_soon";
+  statusMessage?: string;
   models: RuntimeModelPickerModel[];
 }
 
@@ -112,7 +114,11 @@ export function RuntimeModelPicker({
           {
             providerId: provider.id,
             providerLabel: provider.label,
-            statusLabel: provider.disabled ? "Coming soon" : "No models available",
+            statusLabel: provider.disabled
+              ? provider.status === "unavailable"
+                ? (provider.statusMessage ?? "Unavailable")
+                : "Coming soon"
+              : "No models available",
           },
         ];
       }),

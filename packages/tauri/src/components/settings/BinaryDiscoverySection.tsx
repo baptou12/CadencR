@@ -1,4 +1,5 @@
 import { CheckCircle2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useBinaryDiscovery } from "@/api/generated";
 import type { DiscoveredCandidate, DiscoveredSource, ProviderDiscovery } from "@/api/generated";
 import { cn } from "@/lib/utils";
@@ -17,9 +18,9 @@ export function BinaryDiscoverySection({
   discoveryKey,
   description,
 }: {
-  /** Key into `BinaryDiscoveryResponse.providers` — `"claude"` or `"opencode"`. */
+  /** Key into `BinaryDiscoveryResponse.providers`. */
   discoveryKey: string;
-  description: string;
+  description: ReactNode;
 }) {
   const query = useBinaryDiscovery();
   const provider = query.data?.providers[discoveryKey];
@@ -58,7 +59,12 @@ function ProviderCard({ provider }: { provider: ProviderDiscovery }) {
 
       {candidates.length === 0 ? (
         <ErrorRow
-          label={`No \`${provider.bin_name}\` installations found. Set an override path in onboarding to point Cadencr at the binary.`}
+          label={
+            <>
+              No <strong>{provider.bin_name}</strong> installations found. Set an override path in
+              onboarding to point Cadence at the binary.
+            </>
+          }
         />
       ) : (
         <div className="rounded-md border border-border overflow-hidden">

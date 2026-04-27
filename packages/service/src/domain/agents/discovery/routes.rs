@@ -1,4 +1,4 @@
-//! HTTP endpoint that lists every discovered `claude` and `opencode` install,
+//! HTTP endpoint that lists every discovered provider CLI install,
 //! plus the currently-selected one and the persisted override (if any).
 //!
 //! Consumed by onboarding so the user can pick a binary explicitly when
@@ -65,7 +65,7 @@ pub struct ProviderDiscovery {
 
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct BinaryDiscoveryResponse {
-    /// Keyed by provider id (`"claude"`, `"opencode"`).
+    /// Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`).
     pub providers: HashMap<String, ProviderDiscovery>,
 }
 
@@ -79,25 +79,29 @@ pub async fn binary_discovery_handler(
 ) -> Result<Json<BinaryDiscoveryResponse>, AppError> {
     let claude_spec = claude_agent_sdk_rs::claude_discovery_spec();
     let opencode_spec = opencode_sdk_rs::opencode_discovery_spec();
+    let codex_spec = codex_app_server_sdk_rs::codex_discovery_spec();
 
-    // Read both overrides once (single async pass), then run both discoveries
-    // in parallel — they're independent and each spawns subprocesses we don't
-    // want to serialise. Overrides are pushed into the SDKs at startup; the
-    // values here are only used so the UI can echo them back.
-    let (claude_override, opencode_override) = read_overrides(&state.read_pool).await;
-    let (claude_candidates, opencode_candidates) = tokio::join!(
-        cli_discovery::discover_all(&claude_spec, claude_override.as_deref()),
-        cli_discovery::discover_all(&opencode_spec, opencode_override.as_deref()),
+    // Read overrides once, then run discoveries in parallel — they're
+    // independent and each spawns subprocesses we don't want to serialize.
+    let overrides = read_overrides(&state.read_pool).await;
+    let (claude_candidates, opencode_candidates, codex_candidates) = tokio::join!(
+        cli_discovery::discover_all(&claude_spec, overrides.claude.as_deref()),
+        cli_discovery::discover_all(&opencode_spec, overrides.opencode.as_deref()),
+        cli_discovery::discover_all(&codex_spec, overrides.codex.as_deref()),
     );
 
     let providers = HashMap::from([
         (
             "claude".to_string(),
-            build_provider_discovery(&claude_spec, claude_candidates, claude_override),
+            build_provider_discovery(&claude_spec, claude_candidates, overrides.claude),
         ),
         (
             "opencode".to_string(),
-            build_provider_discovery(&opencode_spec, opencode_candidates, opencode_override),
+            build_provider_discovery(&opencode_spec, opencode_candidates, overrides.opencode),
+        ),
+        (
+            "codex".to_string(),
+            build_provider_discovery(&codex_spec, codex_candidates, overrides.codex),
         ),
     ]);
 
@@ -173,5 +177,13 @@ mod tests {
         assert!(result.candidates.is_empty());
         assert!(result.selected.is_none());
         assert_eq!(result.override_path.as_deref(), Some("/some/override"));
+    }
+
+    #[test]
+    fn provider_discovery_can_render_codex_spec() {
+        let spec = codex_app_server_sdk_rs::codex_discovery_spec();
+        let result = build_provider_discovery(&spec, Vec::new(), None);
+        assert_eq!(result.bin_name, "codex");
+        assert!(result.candidates.is_empty());
     }
 }

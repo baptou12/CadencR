@@ -1,4 +1,5 @@
 import { Loader2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { toast } from "sonner";
 
 export function LoadingRow({ label }: { label: string }) {
@@ -9,7 +10,7 @@ export function LoadingRow({ label }: { label: string }) {
   );
 }
 
-export function ErrorRow({ label }: { label: string }) {
+export function ErrorRow({ label }: { label: ReactNode }) {
   return (
     <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
       {label}

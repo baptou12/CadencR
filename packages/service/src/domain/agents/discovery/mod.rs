@@ -4,7 +4,7 @@
 //! - At startup, pushes those paths into the SDK-level overrides so subsequent
 //!   spawns honor them.
 //! - Exposes `GET /api/agents/binary-discovery` so onboarding can render a
-//!   picker over every candidate `claude` and `opencode` install on disk.
+//!   picker over every candidate provider CLI install on disk.
 
 pub mod routes;
 
@@ -19,6 +19,14 @@ use super::adapter::RuntimeError;
 pub const CLAUDE_CLI_PATH_KEY: &str = "claude_cli_path";
 /// Global settings key for the user-selected `opencode` CLI path.
 pub const OPENCODE_CLI_PATH_KEY: &str = "opencode_cli_path";
+/// Global settings key for the user-selected `codex` CLI path.
+pub const CODEX_CLI_PATH_KEY: &str = "codex_cli_path";
+
+pub(crate) struct BinaryOverrides {
+    pub claude: Option<PathBuf>,
+    pub opencode: Option<PathBuf>,
+    pub codex: Option<PathBuf>,
+}
 
 /// Read both per-provider override paths from the global settings table and
 /// install them into the SDK-level overrides. Called once at app boot, before
@@ -28,25 +36,34 @@ pub const OPENCODE_CLI_PATH_KEY: &str = "opencode_cli_path";
 /// doesn't block startup — discovery still falls through to PATH walking +
 /// well-known dirs, exactly like the no-override case.
 pub async fn apply_binary_overrides_from_settings(read_pool: &SqlitePool) {
-    let (claude, opencode) = read_overrides(read_pool).await;
-    if let Some(path) = claude {
+    let overrides = read_overrides(read_pool).await;
+    if let Some(path) = overrides.claude {
         info!(path = %path.display(), "applying claude CLI override from settings");
         claude_agent_sdk_rs::set_binary_override(Some(path));
     }
-    if let Some(path) = opencode {
+    if let Some(path) = overrides.opencode {
         info!(path = %path.display(), "applying opencode CLI override from settings");
         opencode_sdk_rs::set_binary_override(Some(path));
+    }
+    if let Some(path) = overrides.codex {
+        info!(path = %path.display(), "applying codex CLI override from settings");
+        codex_app_server_sdk_rs::set_binary_override(Some(path));
     }
 }
 
 /// Single-pass read of both override settings. Used by both startup wiring and
 /// the discovery HTTP handler so we don't hit SQLite four times for two values.
-pub(crate) async fn read_overrides(read_pool: &SqlitePool) -> (Option<PathBuf>, Option<PathBuf>) {
-    let (claude, opencode) = tokio::join!(
+pub(crate) async fn read_overrides(read_pool: &SqlitePool) -> BinaryOverrides {
+    let (claude, opencode, codex) = tokio::join!(
         read_override_setting(read_pool, CLAUDE_CLI_PATH_KEY),
         read_override_setting(read_pool, OPENCODE_CLI_PATH_KEY),
+        read_override_setting(read_pool, CODEX_CLI_PATH_KEY),
     );
-    (claude, opencode)
+    BinaryOverrides {
+        claude,
+        opencode,
+        codex,
+    }
 }
 
 async fn read_override_setting(read_pool: &SqlitePool, key: &str) -> Option<PathBuf> {
@@ -111,14 +128,17 @@ mod tests {
         let pool = test_pool_with_settings().await;
         sqlx::query(
             "INSERT INTO settings (key, value) VALUES \
-             ('claude_cli_path', '/c/claude'), ('opencode_cli_path', '/o/opencode')",
+             ('claude_cli_path', '/c/claude'), \
+             ('opencode_cli_path', '/o/opencode'), \
+             ('codex_cli_path', '/x/codex')",
         )
         .execute(&pool)
         .await
         .unwrap();
-        let (claude, opencode) = read_overrides(&pool).await;
-        assert_eq!(claude, Some(PathBuf::from("/c/claude")));
-        assert_eq!(opencode, Some(PathBuf::from("/o/opencode")));
+        let overrides = read_overrides(&pool).await;
+        assert_eq!(overrides.claude, Some(PathBuf::from("/c/claude")));
+        assert_eq!(overrides.opencode, Some(PathBuf::from("/o/opencode")));
+        assert_eq!(overrides.codex, Some(PathBuf::from("/x/codex")));
     }
 
     #[test]
