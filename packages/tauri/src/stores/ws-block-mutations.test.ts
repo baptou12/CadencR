@@ -13,15 +13,31 @@ describe("parseTodosFromBlocks", () => {
         type: "tool_call",
         content: JSON.stringify({
           todos: [
-            { content: "Fix bug", status: "in_progress", activeForm: "Fixing bug" },
-            { content: "Write tests", status: "pending", activeForm: "Writing tests" },
+            {
+              content: "Fix bug",
+              status: "in_progress",
+              activeForm: "Fixing bug",
+            },
+            {
+              content: "Write tests",
+              status: "pending",
+              activeForm: "Writing tests",
+            },
           ],
         }),
         toolName: "TodoWrite",
         toolArgs: JSON.stringify({
           todos: [
-            { content: "Fix bug", status: "in_progress", activeForm: "Fixing bug" },
-            { content: "Write tests", status: "pending", activeForm: "Writing tests" },
+            {
+              content: "Fix bug",
+              status: "in_progress",
+              activeForm: "Fixing bug",
+            },
+            {
+              content: "Write tests",
+              status: "pending",
+              activeForm: "Writing tests",
+            },
           ],
         }),
       },
@@ -29,7 +45,11 @@ describe("parseTodosFromBlocks", () => {
     const result = parseTodosFromBlocks(blocks);
     expect(result).toEqual([
       { content: "Fix bug", status: "in_progress", activeForm: "Fixing bug" },
-      { content: "Write tests", status: "pending", activeForm: "Writing tests" },
+      {
+        content: "Write tests",
+        status: "pending",
+        activeForm: "Writing tests",
+      },
     ]);
   });
 
@@ -50,11 +70,23 @@ describe("parseTodosFromBlocks", () => {
             id: "child-1",
             type: "tool_call",
             content: JSON.stringify({
-              todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }],
+              todos: [
+                {
+                  content: "Task A",
+                  status: "completed",
+                  activeForm: "Doing A",
+                },
+              ],
             }),
             toolName: "TodoWrite",
             toolArgs: JSON.stringify({
-              todos: [{ content: "Task A", status: "completed", activeForm: "Doing A" }],
+              todos: [
+                {
+                  content: "Task A",
+                  status: "completed",
+                  activeForm: "Doing A",
+                },
+              ],
             }),
           },
         ],
@@ -84,7 +116,9 @@ describe("buildMessagePatch", () => {
       { id: "b1", type: "tool_call", content: "", toolName: "Write" },
     ];
     const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
+    const patch = buildMessagePatch(blocks, mutations, {
+      enterPlanModeRequested: false,
+    });
     expect(patch.hasFileChanges).toBe(true);
   });
 
@@ -93,7 +127,9 @@ describe("buildMessagePatch", () => {
       { id: "b1", type: "tool_call", content: "", toolName: "apply_patch" },
     ];
     const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
+    const patch = buildMessagePatch(blocks, mutations, {
+      enterPlanModeRequested: false,
+    });
     expect(patch.hasFileChanges).toBe(true);
   });
 
@@ -102,14 +138,18 @@ describe("buildMessagePatch", () => {
       { id: "b1", type: "tool_call", content: "", toolName: "Read" },
     ];
     const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
+    const patch = buildMessagePatch(blocks, mutations, {
+      enterPlanModeRequested: false,
+    });
     expect(patch.hasFileChanges).toBeUndefined();
   });
 
   it("detects enterPlanMode and sets permissionMode", () => {
     const blocks: AgentBlockData[] = [];
     const mutations: BlockMutation[] = [];
-    const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: true });
+    const patch = buildMessagePatch(blocks, mutations, {
+      enterPlanModeRequested: true,
+    });
     expect(patch.permissionMode).toBe("plan");
   });
 
@@ -127,16 +167,18 @@ describe("buildMessagePatch", () => {
       },
     ];
     const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, { enterPlanModeRequested: false });
+    const patch = buildMessagePatch(blocks, mutations, {
+      enterPlanModeRequested: false,
+    });
     expect(patch.todos).toEqual([{ content: "Do X", status: "pending", activeForm: "Doing X" }]);
   });
 });
 
 describe("applyMutations", () => {
-  it("recovers the latest valid json snapshot from concatenated tool updates", () => {
+  it("merges Bash output patches into the command args", () => {
     const streamState = createStreamingState();
     const previous = JSON.stringify({ command: "pwd" });
-    const latest = JSON.stringify({ command: "pwd", output: "/tmp/project\n" });
+    const latest = JSON.stringify({ output: "/tmp/project\n" });
     const existing: AgentBlockData[] = [
       {
         id: "bash-1",
@@ -153,7 +195,91 @@ describe("applyMutations", () => {
       [
         {
           action: "update",
-          block: { id: "bash-1", type: "tool_call", content: latest, toolName: "Bash" },
+          block: {
+            id: "bash-1",
+            type: "tool_call",
+            content: latest,
+            toolName: "Bash",
+          },
+        },
+      ],
+      streamState,
+    );
+
+    expect(JSON.parse(result[0].content)).toEqual({
+      command: "pwd",
+      output: "/tmp/project\n",
+    });
+    expect(result[0].toolArgs).toBe(result[0].content);
+  });
+
+  it("merges ApplyPatch object deltas without dropping patch_text", () => {
+    const streamState = createStreamingState();
+    const previous = JSON.stringify({
+      patch_text: "*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch",
+      status: "running",
+    });
+    const latest = JSON.stringify({ output: "Success", status: "completed" });
+    const existing: AgentBlockData[] = [
+      {
+        id: "patch-1",
+        type: "tool_call",
+        content: previous,
+        toolName: "ApplyPatch",
+        toolArgs: previous,
+        toolUseId: "tu-patch-1",
+      },
+    ];
+
+    const result = applyMutations(
+      existing,
+      [
+        {
+          action: "update",
+          block: {
+            id: "patch-1",
+            type: "tool_call",
+            content: latest,
+            toolName: "ApplyPatch",
+          },
+        },
+      ],
+      streamState,
+    );
+
+    expect(JSON.parse(result[0].content)).toEqual({
+      patch_text: "*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch",
+      output: "Success",
+      status: "completed",
+    });
+    expect(result[0].toolArgs).toBe(result[0].content);
+  });
+
+  it("recovers latest valid json snapshot for non-Bash concatenated updates", () => {
+    const streamState = createStreamingState();
+    const previous = JSON.stringify({ pattern: "old" });
+    const latest = JSON.stringify({ pattern: "new" });
+    const existing: AgentBlockData[] = [
+      {
+        id: "grep-1",
+        type: "tool_call",
+        content: previous,
+        toolName: "Grep",
+        toolArgs: previous,
+      },
+    ];
+
+    const result = applyMutations(
+      existing,
+      [
+        {
+          action: "update",
+          block: {
+            id: "grep-1",
+            type: "tool_call",
+            content: latest,
+            toolName: "Grep",
+          },
         },
       ],
       streamState,
@@ -165,7 +291,10 @@ describe("applyMutations", () => {
 
   it("does not loop forever when partial json starts with '{'", () => {
     const streamState = createStreamingState();
-    const validArgs = JSON.stringify({ description: "Find files", prompt: "search" });
+    const validArgs = JSON.stringify({
+      description: "Find files",
+      prompt: "search",
+    });
     const existing: AgentBlockData[] = [
       {
         id: "agent-1",

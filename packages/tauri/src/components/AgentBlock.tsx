@@ -13,6 +13,7 @@ import { parseToolCall, parseCadencrMcpTool } from "@/lib/tool-call-parser";
 import {
   extractBashOutput,
   extractInlineDiffPreview,
+  isStructuredBashPayload,
   isFileChangeTool,
   isToolCallRunning,
   normalizeToolName,
@@ -124,10 +125,11 @@ export const AgentBlock = memo(function AgentBlock({
         const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
         const summary = parseToolCall("Bash", block.toolArgs);
         const running = !result && isToolCallRunning(block.toolArgs);
+        const resultOutput = result ? bashResultOutput(result.content) : undefined;
         return (
           <BashBlock
             command={summary?.detail}
-            content={result?.content ?? extractBashOutput(block.toolArgs)}
+            content={resultOutput ?? extractBashOutput(block.toolArgs)}
             running={running}
             isError={result?.isError}
           />
@@ -143,7 +145,7 @@ export const AgentBlock = memo(function AgentBlock({
               oldContent={diff.oldContent}
               newContent={diff.newContent}
               basePath={basePath}
-              toolName={block.toolName}
+              toolName={normalizeToolName(block.toolName ?? "")}
             />
           );
         }
@@ -183,6 +185,10 @@ export const AgentBlock = memo(function AgentBlock({
       return null;
   }
 });
+
+function bashResultOutput(content: string): string | undefined {
+  return extractBashOutput(content) ?? (isStructuredBashPayload(content) ? undefined : content);
+}
 
 /** Render the final text output from an Agent/Task tool_result (JSON content blocks). */
 function AgentResultBlock({ content }: { content: string }) {

@@ -891,6 +891,58 @@ describe("ws-session-store", () => {
     expect(session.todos).toEqual([{ content: "Task 1", status: "completed", activeForm: "Done" }]);
   });
 
+  it("extracts todos from streamed TodoWrite initial input", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [
+          {
+            type: "stream_event",
+            session_id: "s1",
+            event: {
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "tool_use",
+                id: "tu-todo-initial",
+                name: "TodoWrite",
+                input: {
+                  todos: [
+                    {
+                      content: "Créer une todo de test",
+                      status: "in_progress",
+                      activeForm: "Créer une todo de test",
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.todos).toEqual([
+      {
+        content: "Créer une todo de test",
+        status: "in_progress",
+        activeForm: "Créer une todo de test",
+      },
+    ]);
+  });
+
   it("setPersistedState extracts todos from restored blocks", () => {
     useWsSessionStore.getState().connect("s1");
     const blocks = [
@@ -1099,6 +1151,22 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toEqual({ plan: "## My Plan" });
       expect(session.pendingRequestId).toBe("req-plan-1");
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
+    });
+
+    it("keeps plan approval paused when the provider sends turn_complete after the plan", async () => {
+      const { ws } = await setupWithInit();
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "ended",
+        payload: { reason: "turn_complete" },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPlanApproval).toEqual({ plan: "## My Plan" });
       expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
     });
 

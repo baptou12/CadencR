@@ -137,3 +137,62 @@ describe("processSdkMessage – system messages", () => {
     }
   });
 });
+
+describe("processSdkMessage – Bash stream events", () => {
+  it("keeps the initial Bash command available before output deltas arrive", () => {
+    const state = createStreamingState();
+    const result = processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "s1",
+        event: {
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: "cmd",
+            name: "Bash",
+            input: { command: "git status", status: "running" },
+          },
+        },
+      },
+      state,
+    );
+
+    expect(result.mutations).toHaveLength(1);
+    expect(JSON.parse(result.mutations[0].block.toolArgs ?? "{}")).toEqual({
+      command: "git status",
+      status: "running",
+    });
+  });
+
+  it("keeps initial ApplyPatch input for file changes", () => {
+    const state = createStreamingState();
+    const result = processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "s1",
+        event: {
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: "patch",
+            name: "ApplyPatch",
+            input: {
+              patch_text:
+                "*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch",
+            },
+          },
+        },
+      },
+      state,
+    );
+
+    expect(result.mutations).toHaveLength(1);
+    expect(result.mutations[0].block.toolName).toBe("ApplyPatch");
+    expect(JSON.parse(result.mutations[0].block.toolArgs ?? "{}")).toEqual({
+      patch_text: "*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch",
+    });
+  });
+});

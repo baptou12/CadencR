@@ -11,7 +11,7 @@ describe("buildResumeCommand", () => {
     });
     expect(result.supported).toBe(true);
     expect(result.command).toBe(
-      'cd "/home/user/project" && claude --resume 11111111-1111-4111-8111-111111111111',
+      'cd "/home/user/project" && claude --resume "11111111-1111-4111-8111-111111111111"',
     );
   });
 
@@ -21,7 +21,7 @@ describe("buildResumeCommand", () => {
       sessionId: "abc",
       cwd: undefined,
     });
-    expect(result.command).toBe("claude --resume abc");
+    expect(result.command).toBe('claude --resume "abc"');
     expect(result.supported).toBe(true);
   });
 
@@ -31,7 +31,16 @@ describe("buildResumeCommand", () => {
       sessionId: "abc",
       cwd: '/tmp/weird"dir',
     });
-    expect(result.command).toBe('cd "/tmp/weird\\"dir" && claude --resume abc');
+    expect(result.command).toBe('cd "/tmp/weird\\"dir" && claude --resume "abc"');
+  });
+
+  it("escapes shell metacharacters in resume ids", () => {
+    const result = buildResumeCommand({
+      providerId: PROVIDER_IDS.CODEX_CLI,
+      sessionId: 'abc"; echo $HOME `pwd`',
+      cwd: "/tmp",
+    });
+    expect(result.command).toBe('cd "/tmp" && codex resume "abc\\"; echo \\$HOME \\`pwd\\`"');
   });
 
   it("builds opencode command without --resume flag", () => {
@@ -44,14 +53,14 @@ describe("buildResumeCommand", () => {
     expect(result.command).toBe('cd "/home/user/project" && opencode');
   });
 
-  it("marks codex_cli as unsupported", () => {
+  it("builds codex resume command", () => {
     const result = buildResumeCommand({
       providerId: PROVIDER_IDS.CODEX_CLI,
       sessionId: "abc",
       cwd: "/tmp",
     });
-    expect(result.supported).toBe(false);
-    expect(result.command).toBe("");
+    expect(result.supported).toBe(true);
+    expect(result.command).toBe('cd "/tmp" && codex resume "abc"');
   });
 
   it("marks missing provider as unsupported", () => {

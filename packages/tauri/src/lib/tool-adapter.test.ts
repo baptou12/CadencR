@@ -5,6 +5,7 @@ import {
   isToolCallRunning,
   extractInlineDiffPreview,
   isFileChangeTool,
+  isStructuredBashPayload,
   normalizeToolName,
 } from "./tool-adapter";
 
@@ -30,16 +31,39 @@ describe("extractBashOutput", () => {
     );
   });
 
-  it("supports legacy persisted opencode output field", () => {
-    expect(
-      extractBashOutput(JSON.stringify({ command: "pwd", __opencode_output: "/tmp/old\n" })),
-    ).toBe("/tmp/old\n");
-  });
-
   it("extracts structured stdout output", () => {
     expect(extractBashOutput(JSON.stringify({ output: { stdout: "ok\n", stderr: "" } }))).toBe(
       "ok\n",
     );
+  });
+
+  it("extracts legacy persisted OpenCode output fields", () => {
+    expect(
+      extractBashOutput(
+        JSON.stringify({
+          command: "pnpm test",
+          __opencode_output: "legacy output\n",
+        }),
+      ),
+    ).toBe("legacy output\n");
+  });
+});
+
+describe("isStructuredBashPayload", () => {
+  it("detects Codex Bash payloads even when output is null", () => {
+    expect(
+      isStructuredBashPayload(
+        JSON.stringify({
+          command: "sed -n '1,160p' .zed/settings.json",
+          output: null,
+          status: "completed",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat plain tool result text as structured Bash payload", () => {
+    expect(isStructuredBashPayload("line1\nline2")).toBe(false);
   });
 });
 
@@ -68,6 +92,10 @@ describe("isToolCallRunning", () => {
 
   it("treats completed status as not running", () => {
     expect(isToolCallRunning(JSON.stringify({ status: "completed" }))).toBe(false);
+  });
+
+  it("reads legacy persisted OpenCode status fields", () => {
+    expect(isToolCallRunning(JSON.stringify({ __opencode_status: "completed" }))).toBe(false);
   });
 });
 
@@ -100,6 +128,22 @@ describe("extractInlineDiffPreview", () => {
       filePath: "/workspace/toto.txt",
       oldContent: "Hello Cadencr",
       newContent: "Hello Cadencr 2",
+    });
+  });
+
+  it("extracts update preview from canonical ApplyPatch args", () => {
+    expect(
+      extractInlineDiffPreview(
+        "ApplyPatch",
+        JSON.stringify({
+          patch_text:
+            "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-before\n+after\n*** End Patch",
+        }),
+      ),
+    ).toEqual({
+      filePath: "/workspace/toto.txt",
+      oldContent: "before",
+      newContent: "after",
     });
   });
 

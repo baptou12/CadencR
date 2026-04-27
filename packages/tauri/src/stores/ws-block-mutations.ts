@@ -163,6 +163,14 @@ export function applyMutations(
     }
   }
 
+  function mergeToolContent(existing: AgentBlockData, incoming: string, action: string): string {
+    if (shouldMergeObjectDeltas(existing.toolName) && action !== "replace") {
+      const merged = mergeJsonObjects(existing.toolArgs || existing.content, incoming);
+      if (merged) return merged;
+    }
+    return action === "replace" ? incoming : existing.content + incoming;
+  }
+
   const result = [...prevBlocks, ...rootAppends];
 
   for (const mut of rootUpdates) {
@@ -174,8 +182,7 @@ export function applyMutations(
     const idx = result.findIndex((b) => b.id === mut.block.id);
     if (idx !== -1) {
       const existing = { ...result[idx] };
-      existing.content =
-        mut.action === "replace" ? mut.block.content : existing.content + mut.block.content;
+      existing.content = mergeToolContent(existing, mut.block.content, mut.action);
       syncToolUseMap(existing);
       result[idx] = existing;
     } else {
@@ -184,8 +191,7 @@ export function applyMutations(
         const childIdx = parentBlock.childBlocks.findIndex((b) => b.id === mut.block.id);
         if (childIdx === -1) continue;
         const child = { ...parentBlock.childBlocks[childIdx] };
-        child.content =
-          mut.action === "replace" ? mut.block.content : child.content + mut.block.content;
+        child.content = mergeToolContent(child, mut.block.content, mut.action);
         syncToolUseMap(child);
         parentBlock.childBlocks[childIdx] = child;
         break;
@@ -194,4 +200,25 @@ export function applyMutations(
   }
 
   return result;
+}
+
+function mergeJsonObjects(baseJson: string, deltaJson: string): string | undefined {
+  const base = parseRecord(baseJson);
+  const delta = parseRecord(deltaJson);
+  if (!base || !delta) return undefined;
+  return JSON.stringify({ ...base, ...delta });
+}
+
+function shouldMergeObjectDeltas(toolName: string | undefined): boolean {
+  return toolName === "Bash" || isFileChangeTool(toolName);
+}
+
+function parseRecord(json: string): Record<string, unknown> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
 }

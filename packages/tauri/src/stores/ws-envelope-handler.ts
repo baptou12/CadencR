@@ -438,6 +438,9 @@ function handleUsageUpdate(ctx: StoreAccessors, sessionId: string, payload: unkn
 
 function handleTurnComplete(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const session = ctx.getSession(sessionId);
+  if (session.pendingPlanApproval != null) {
+    return;
+  }
   const state = session.streamingState;
   for (const stream of state.streams.values()) {
     if (!stream.parentToolUseId) {

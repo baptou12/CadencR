@@ -27,6 +27,10 @@ import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTa
 
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 
+// Claude Code handles `/compact` as a native slash prompt. OpenCode and Codex
+// expose compaction through Cadence's session.compact action.
+const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli"]);
+
 interface WsSessionSearch {
   cwd: string;
   featureId: number;
@@ -225,7 +229,7 @@ function WebSocketSessionPage() {
                 ws.clearSession();
                 return;
               }
-              if (text.trim() === "/compact" && activeProviderId === "opencode") {
+              if (text.trim() === "/compact" && COMPACT_ACTION_PROVIDERS.has(activeProviderId)) {
                 ws.compactSession();
                 return;
               }
