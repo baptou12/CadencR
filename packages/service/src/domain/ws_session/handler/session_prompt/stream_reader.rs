@@ -144,6 +144,7 @@ pub(crate) fn spawn_stream_reader(
                         capture_runtime_session_id(&runtime_event, &mut needs_session_id_capture)
                     {
                         runtime_session_id = Some(runtime_sid.clone());
+                        usage_state.set_root_session_id(&runtime_sid);
                         info!(db_session_id, runtime_session_id = %runtime_sid, "stream_reader: persisting runtime session_id to DB");
                         WsSessionPersistence::persist_runtime_session_id_static(
                             &write_pool,
@@ -168,7 +169,11 @@ pub(crate) fn spawn_stream_reader(
                     // Persist before forwarding (best-effort).
                     persistence.persist_runtime_event(&runtime_event).await;
 
-                    let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    // Sub-agent events carry their own token totals; writing them
+                    // to the parent's row would clobber the parent's totals.
+                    if !usage_state.is_subagent_event(&runtime_event) {
+                        let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    }
                     if usage_update.changed
                         && (usage_update.snapshot.input_tokens > 0
                             || usage_update.snapshot.output_tokens > 0)

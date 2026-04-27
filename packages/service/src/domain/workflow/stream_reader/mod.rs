@@ -154,6 +154,7 @@ pub fn spawn_workflow_stream_reader(
                     if let Some(runtime_sid) =
                         capture_runtime_session_id(&runtime_event, &mut needs_session_id_capture)
                     {
+                        usage_state.set_root_session_id(&runtime_sid);
                         debug!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "persisting runtime session_id to DB");
                         WsSessionPersistence::persist_runtime_session_id_only(
                             &write_pool,
@@ -216,7 +217,11 @@ pub fn spawn_workflow_stream_reader(
                     }
 
                     persistence.persist_runtime_event(&runtime_event).await;
-                    let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    // Sub-agent events carry their own token totals; writing them
+                    // to the parent's row would clobber the parent's totals.
+                    if !usage_state.is_subagent_event(&runtime_event) {
+                        let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
+                    }
                     if usage_update.changed
                         && (usage_update.snapshot.input_tokens > 0
                             || usage_update.snapshot.output_tokens > 0)

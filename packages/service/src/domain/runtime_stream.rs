@@ -91,6 +91,7 @@ pub(crate) struct RuntimeUsageUpdate {
 pub(crate) struct RuntimeUsageState {
     active_model: Option<String>,
     snapshot: RuntimeUsageSnapshot,
+    root_session_id: Option<String>,
 }
 
 impl RuntimeUsageState {
@@ -102,6 +103,33 @@ impl RuntimeUsageState {
                 output_tokens: 0,
                 context_window,
             },
+            root_session_id: None,
+        }
+    }
+
+    /// Records the runtime session id of the root agent.
+    ///
+    /// Once set, `apply_event` will ignore events tied to a different
+    /// runtime session (sub-agents spawned via the `Task` / `Agent` tool).
+    /// This prevents the `ContextUsageBar` from being polluted by
+    /// sub-agent token counts. Idempotent after the first set.
+    /// Callers pass the result of `capture_runtime_session_id`, which already
+    /// filters empty ids.
+    pub(crate) fn set_root_session_id(&mut self, session_id: &str) {
+        if self.root_session_id.is_none() {
+            self.root_session_id = Some(session_id.to_string());
+        }
+    }
+
+    /// Returns true if the event belongs to a sub-agent and should be
+    /// excluded from the root agent's usage snapshot and DB token row.
+    pub(crate) fn is_subagent_event(&self, runtime_event: &RuntimeEvent) -> bool {
+        if runtime_event.parent_tool_use_id().is_some() {
+            return true;
+        }
+        match (self.root_session_id.as_deref(), runtime_event.session_id()) {
+            (Some(root), Some(evt_sid)) if !evt_sid.is_empty() => root != evt_sid,
+            _ => false,
         }
     }
 
@@ -110,6 +138,14 @@ impl RuntimeUsageState {
         runtime_adapter: Option<&dyn AgentRuntimeAdapter>,
         runtime_event: &RuntimeEvent,
     ) -> RuntimeUsageUpdate {
+        if self.is_subagent_event(runtime_event) {
+            return RuntimeUsageUpdate {
+                snapshot: self.snapshot,
+                changed: false,
+                context_window_changed: false,
+            };
+        }
+
         let mut changed = false;
         let mut context_window_changed = false;
 
@@ -180,15 +216,59 @@ mod tests {
 
     use super::{
         capture_runtime_session_id, permission_request_payload, update_context_window,
-        workflow_permission_request_payload,
+        workflow_permission_request_payload, RuntimeUsageState,
     };
     use crate::domain::agents::adapter::{
-        RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
-        RuntimeInitEvent, RuntimePermissionDecision, RuntimePermissionOption,
-        RuntimePermissionRequest,
+        RuntimeAssistantMessage, RuntimeContentBlock, RuntimeEvent, RuntimeEventKind,
+        RuntimeEventMetadata, RuntimeInitEvent, RuntimePermissionDecision, RuntimePermissionOption,
+        RuntimePermissionRequest, RuntimeStreamEvent, RuntimeUsage,
     };
     use crate::domain::agents::claude_code::CLAUDE_CODE_ADAPTER;
     use crate::domain::workflow::engine::AgentSlot;
+
+    fn make_message_start(
+        session_id: &str,
+        input_tokens: u64,
+        parent_tool_use_id: Option<&str>,
+    ) -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some(session_id.into()),
+                usage: None,
+                context_window: None,
+                raw: json!({ "type": "stream_event" }),
+            },
+            RuntimeEventKind::StreamEvent {
+                event: RuntimeStreamEvent::MessageStart {
+                    model: Some("claude-sonnet-4-5".into()),
+                    input_tokens: Some(input_tokens),
+                },
+                parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
+            },
+        )
+    }
+
+    fn make_assistant_usage(
+        session_id: &str,
+        usage: RuntimeUsage,
+        parent_tool_use_id: Option<&str>,
+    ) -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some(session_id.into()),
+                usage: Some(usage),
+                context_window: None,
+                raw: json!({ "type": "usage_update" }),
+            },
+            RuntimeEventKind::AssistantMessage {
+                message: RuntimeAssistantMessage {
+                    model: None,
+                    content: vec![RuntimeContentBlock::Other],
+                },
+                parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
+            },
+        )
+    }
 
     #[test]
     fn permission_request_payload_preserves_options() {
@@ -361,6 +441,150 @@ mod tests {
             update_context_window(Some(&CLAUDE_CODE_ADAPTER), &event, Some("default")),
             Some(1_000_000)
         );
+    }
+
+    #[test]
+    fn apply_event_updates_snapshot_for_root_session() {
+        let mut state = RuntimeUsageState::new(None);
+        state.set_root_session_id("root-1");
+
+        let update = state.apply_event(None, &make_message_start("root-1", 1234, None));
+        assert!(update.changed);
+        assert_eq!(update.snapshot.input_tokens, 1234);
+
+        let update = state.apply_event(
+            None,
+            &make_assistant_usage(
+                "root-1",
+                RuntimeUsage {
+                    input_tokens: 5000,
+                    output_tokens: 800,
+                },
+                None,
+            ),
+        );
+        assert!(update.changed);
+        assert_eq!(update.snapshot.input_tokens, 5000);
+        assert_eq!(update.snapshot.output_tokens, 800);
+    }
+
+    #[test]
+    fn apply_event_ignores_subagent_events_with_parent_tool_use_id() {
+        let mut state = RuntimeUsageState::new(None);
+        state.set_root_session_id("root-1");
+
+        // Seed with root usage so we can detect leakage.
+        state.apply_event(
+            None,
+            &make_assistant_usage(
+                "root-1",
+                RuntimeUsage {
+                    input_tokens: 5000,
+                    output_tokens: 800,
+                },
+                None,
+            ),
+        );
+
+        // Sub-agent event tied to a parent tool_use_id — must be ignored.
+        let update = state.apply_event(
+            None,
+            &make_assistant_usage(
+                "root-1",
+                RuntimeUsage {
+                    input_tokens: 999,
+                    output_tokens: 111,
+                },
+                Some("toolu_abc"),
+            ),
+        );
+        assert!(!update.changed);
+        assert_eq!(update.snapshot.input_tokens, 5000);
+        assert_eq!(update.snapshot.output_tokens, 800);
+    }
+
+    #[test]
+    fn apply_event_ignores_events_from_other_runtime_sessions() {
+        let mut state = RuntimeUsageState::new(None);
+        state.set_root_session_id("root-1");
+
+        state.apply_event(
+            None,
+            &make_assistant_usage(
+                "root-1",
+                RuntimeUsage {
+                    input_tokens: 5000,
+                    output_tokens: 800,
+                },
+                None,
+            ),
+        );
+
+        // Sub-agent session event (different runtime session_id, no parent_tool_use_id
+        // surfaced on the metadata path) — must still be ignored because the
+        // session id doesn't match the captured root.
+        let update = state.apply_event(
+            None,
+            &make_assistant_usage(
+                "child-2",
+                RuntimeUsage {
+                    input_tokens: 222,
+                    output_tokens: 33,
+                },
+                None,
+            ),
+        );
+        assert!(!update.changed);
+        assert_eq!(update.snapshot.input_tokens, 5000);
+        assert_eq!(update.snapshot.output_tokens, 800);
+    }
+
+    #[test]
+    fn apply_event_accepts_all_events_before_root_is_known() {
+        // Before set_root_session_id is called, we accept events so the
+        // very first MessageStart (which is what triggers capture) still
+        // seeds the snapshot.
+        let mut state = RuntimeUsageState::new(None);
+        let update = state.apply_event(None, &make_message_start("root-1", 42, None));
+        assert!(update.changed);
+        assert_eq!(update.snapshot.input_tokens, 42);
+    }
+
+    #[test]
+    fn is_subagent_event_classifies_each_signal() {
+        let mut state = RuntimeUsageState::new(None);
+        state.set_root_session_id("root-1");
+
+        // Same session, no parent_tool_use_id → root event.
+        assert!(!state.is_subagent_event(&make_message_start("root-1", 1, None)));
+
+        // Same session but flagged with parent_tool_use_id → sub-agent.
+        assert!(state.is_subagent_event(&make_message_start("root-1", 1, Some("toolu_abc"),)));
+
+        // Different session id → sub-agent.
+        assert!(state.is_subagent_event(&make_message_start("child-2", 1, None)));
+    }
+
+    #[test]
+    fn set_root_session_id_is_idempotent() {
+        let mut state = RuntimeUsageState::new(None);
+        state.set_root_session_id("root-1");
+        // A second call with a different id must not override the root.
+        state.set_root_session_id("child-2");
+
+        let update = state.apply_event(
+            None,
+            &make_assistant_usage(
+                "child-2",
+                RuntimeUsage {
+                    input_tokens: 999,
+                    output_tokens: 111,
+                },
+                None,
+            ),
+        );
+        assert!(!update.changed);
+        assert_eq!(update.snapshot.input_tokens, 0);
     }
 
     #[test]
