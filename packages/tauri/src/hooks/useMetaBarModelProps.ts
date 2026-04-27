@@ -105,8 +105,7 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
     // Presence of this callback is the only thing useAgentSessionModelState
     // uses it for — it gates `canChangeProvider`.
     onProviderChange,
-    blocksLength: 0,
-    status: "idle",
+    hasConversation: false,
   });
 
   // Memoize so the spread into MetaBar doesn't create a new prop object per render.

@@ -214,8 +214,7 @@ export const AgentSession = memo(
       currentModelId,
       runtimeProvider,
       onProviderChange,
-      blocksLength: blocks.length,
-      status,
+      hasConversation: blocks.length > 0,
     });
     const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
     const planFeedbackDefault = useMemo(
@@ -223,7 +222,8 @@ export const AgentSession = memo(
       [blocks, pendingPlanApproval],
     );
 
-    const showWorktreeChip = !!onToggleWorktree && blocks.length === 0 && status === "idle";
+    // Same gate as `canChangeProvider` — see useAgentSessionModelState.
+    const showWorktreeChip = !!onToggleWorktree && blocks.length === 0;
     const showAutoScrollChip = !!shouldShowPromptBar;
     const hasMeta =
       showAutoScrollChip ||

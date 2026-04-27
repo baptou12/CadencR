@@ -9,8 +9,7 @@ interface UseAgentSessionModelStateParams {
   currentModelId?: string;
   runtimeProvider?: string;
   onProviderChange?: (providerId: string) => void;
-  blocksLength: number;
-  status: string;
+  hasConversation: boolean;
 }
 
 export function useAgentSessionModelState(params: UseAgentSessionModelStateParams) {
@@ -20,8 +19,7 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
     currentModelId,
     runtimeProvider,
     onProviderChange,
-    blocksLength,
-    status,
+    hasConversation,
   } = params;
 
   const providerOptions = useMemo(
@@ -82,7 +80,11 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
     currentModelId ??
     "Model";
 
-  const canChangeProvider = !!onProviderChange && status === "idle" && blocksLength === 0;
+  // Gate on conversation activity only. Backend-reported `status` races
+  // with REST hydration: a freshly-created agent_sessions row is inserted
+  // as 'paused' (session_bootstrap::find_or_create_session), so reading
+  // status === "idle" here would lock the picker on ~20-25% of new sessions.
+  const canChangeProvider = !!onProviderChange && !hasConversation;
   const supportedThinkingEfforts = supportedThinkingEffortLevels(
     visibleModels.find((model) => model.id === currentModelId),
   );
