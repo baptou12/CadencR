@@ -1,6 +1,7 @@
 ## FIX
 - [ ] [opencode] plan mode seems to lack of features from the server's output
-- [ ] [session] audit other session envelope handlers (usage_update, runtime_session_id) for consistent `stream_activity` dispatch so the loader never gets stuck when only those events arrive
+- [ ] [opencode] Build / plan mode
+- [ ] [claude] Auto-accept / plan / auto
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
@@ -8,6 +9,7 @@
 - [ ] [sidebar] show the diff numstats in the sidebar
 - [ ] [desktop] all running agents view
 - [ ] [agent] handle background agents
+- [ ] [agents] replay user message
 - [ ] [feature] Merging strategies
 - [ ] [agent] improve sub-agents to use the existing agent UI in ws-workflow + capture agent description + get more informations from the CLI (whole output) + agent done
 - [ ] [global] Rework command palette
