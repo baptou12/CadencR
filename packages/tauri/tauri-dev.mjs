@@ -44,6 +44,15 @@ const config = {
     devUrl: `http://127.0.0.1:${frontendPort}`,
     beforeDevCommand: "pnpm vite dev",
   },
+  bundle: {
+    icon: [
+      "icons/dev/32x32.png",
+      "icons/dev/128x128.png",
+      "icons/dev/128x128@2x.png",
+      "icons/dev/icon.icns",
+      "icons/dev/icon.ico",
+    ],
+  },
 };
 
 const child = spawn("pnpm", ["tauri", "dev", "-c", JSON.stringify(config)], {
