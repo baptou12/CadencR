@@ -67,9 +67,7 @@ impl ClaudeCodeAdapter {
     pub(super) async fn load_models(&self) -> Vec<ModelCatalogEntry> {
         let mut guard = self.probe_state.lock().await;
         if !guard.live {
-            let cwd = std::env::current_dir()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "/".to_string());
+            let cwd = std::env::temp_dir().to_string_lossy().into_owned();
             let probe_result = claude_agent_sdk_rs::supported_models(&cwd, None)
                 .await
                 .map(|models| {
