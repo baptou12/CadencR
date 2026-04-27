@@ -8,7 +8,8 @@ import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import type { PanelSize } from "react-resizable-panels";
+import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
+import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateFeature,
@@ -49,6 +50,20 @@ function RootLayout() {
     (collapsed: boolean) => sidebarCollapsed.setValue(collapsed ? "true" : "false"),
     [sidebarCollapsed],
   );
+  const sidebarPanelRef = useRef<PanelImperativeHandle>(null);
+
+  // The `sidebar_collapsed` setting is the single source of truth; this effect
+  // is the one-way pump that mirrors it onto the imperative panel. The
+  // identity-check makes it self-healing and idempotent — it no-ops whenever
+  // the panel already matches the setting.
+  useEffect(() => {
+    if (sidebarCollapsed.isLoading) return;
+    const panel = sidebarPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed() === isSidebarCollapsed) return;
+    if (isSidebarCollapsed) panel.collapse();
+    else panel.expand();
+  }, [sidebarCollapsed.isLoading, isSidebarCollapsed]);
 
   useEffect(() => {
     leftSidebarRef.current?.focus();
@@ -172,7 +187,10 @@ function RootLayout() {
 
   const appClose = useAppClose(queryClient);
 
-  // CMD+B -> toggle sidebar
+  // CMD+B -> toggle sidebar. We only flip the setting; the sync effect above
+  // drives the panel imperatively. Both panels stay mounted so the
+  // PanelGroup's panel count is stable (a hard requirement of
+  // react-resizable-panels' layout validator).
   useHotkeys(
     "meta+b",
     (e) => {
@@ -315,6 +333,9 @@ function RootLayout() {
 
   const handleLeftResize = useCallback(
     (panelSize: PanelSize) => {
+      // Skip transient values reported while the panel is collapsed/animating
+      // so we don't overwrite the persisted width with 0 or a tiny number.
+      if (panelSize.inPixels < 50) return;
       leftWidth.setValue(String(Math.round(panelSize.inPixels)));
     },
     [leftWidth],
@@ -328,36 +349,41 @@ function RootLayout() {
     >
       <div className="flex h-screen">
         <ResizablePanelGroup orientation="horizontal">
-          {!isSidebarCollapsed && (
-            <>
-              <ResizablePanel
-                defaultSize={defaultLeftSize}
-                minSize="200px"
-                maxSize="400px"
-                onResize={handleLeftResize}
-              >
-                <div
-                  ref={leftSidebarRef}
-                  data-focus-zone="left-sidebar"
-                  tabIndex={0}
-                  className="h-full outline-none"
-                  onFocus={(e) => {
-                    // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
-                    if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                      const firstItem = e.currentTarget.querySelector(
-                        "[data-nav-item]",
-                      ) as HTMLElement | null;
-                      if (firstItem) firstItem.focus();
-                    }
-                  }}
-                >
-                  <Sidebar />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle className="cursor-col-resize" />
-            </>
-          )}
-          <ResizablePanel>
+          <ResizablePanel
+            id="sidebar"
+            panelRef={sidebarPanelRef}
+            collapsible
+            collapsedSize={0}
+            defaultSize={defaultLeftSize}
+            minSize="200px"
+            maxSize="400px"
+            onResize={handleLeftResize}
+          >
+            <div
+              ref={leftSidebarRef}
+              data-focus-zone="left-sidebar"
+              tabIndex={0}
+              className="h-full outline-none"
+              onFocus={(e) => {
+                // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+                if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                  const firstItem = e.currentTarget.querySelector(
+                    "[data-nav-item]",
+                  ) as HTMLElement | null;
+                  if (firstItem) firstItem.focus();
+                }
+              }}
+            >
+              <Sidebar />
+            </div>
+          </ResizablePanel>
+          <ResizableHandle
+            className={cn(
+              "cursor-col-resize",
+              isSidebarCollapsed && "pointer-events-none opacity-0",
+            )}
+          />
+          <ResizablePanel id="main">
             <main
               data-focus-zone="main-content"
               tabIndex={0}
