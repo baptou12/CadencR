@@ -9,7 +9,11 @@ use tauri_plugin_shell::ShellExt;
 
 // Production always binds the bundled sidecar to a fixed local port; the env
 // knobs are intentionally dev-only and do not affect packaged builds.
-const SIDECAR_PORT: u16 = 5005;
+// Prod uses 5004 / 1419 so a dev instance (defaults 5005 / 1420 from .env)
+// can run alongside an installed prod build without port collisions.
+const SIDECAR_PORT: u16 = 5004;
+#[allow(dead_code)]
+const FRONTEND_PORT: u16 = 1419;
 const HEALTH_CHECK_RETRIES: u32 = 30;
 const HEALTH_CHECK_INTERVAL_MS: u64 = 200;
 const DEFAULT_DEV_API_BASE_URL: &str = "http://127.0.0.1:5005";
