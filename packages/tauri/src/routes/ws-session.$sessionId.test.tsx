@@ -155,6 +155,8 @@ vi.mock("@/api/generated", () => ({
 }));
 
 import { Route } from "./ws-session.$sessionId";
+import { AgentSession } from "@/components/agent-session";
+import { useWsSessionStore } from "@/stores/ws-session-store";
 
 function WsSessionPage() {
   const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
@@ -163,8 +165,14 @@ function WsSessionPage() {
   return <Component />;
 }
 
+function lastAgentSessionProps(): Record<string, unknown> {
+  const calls = vi.mocked(AgentSession).mock.calls;
+  return calls[calls.length - 1]?.[0] as unknown as Record<string, unknown>;
+}
+
 describe("WsSessionPage route", () => {
   beforeEach(() => {
+    vi.mocked(AgentSession).mockClear();
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
     mocks.mockUseSearch.mockReturnValue({ cwd: "/test/path", featureId: 35, projectId: 1 });
     mocks.mockActiveTab.mockReturnValue({ activeTab: "agent", setActiveTab: vi.fn() });
@@ -204,5 +212,33 @@ describe("WsSessionPage route", () => {
   it("does not render git tab when activeTab is not git", () => {
     render(<WsSessionPage />);
     expect(screen.queryByTestId("git-tab")).not.toBeInTheDocument();
+  });
+
+  it("forwards session todos to AgentSession when the agent tab is active", () => {
+    const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
+    vi.mocked(useWsSessionStore).mockImplementation((selector) =>
+      (selector as (s: unknown) => unknown)({
+        sessions: { "ws-feature-35": { todos } },
+        requestSlashCommands: vi.fn(),
+        retryWorktreeSetup: vi.fn(),
+      }),
+    );
+    mocks.mockActiveTab.mockReturnValue({ activeTab: "agent", setActiveTab: vi.fn() });
+    render(<WsSessionPage />);
+    expect(lastAgentSessionProps().todos).toEqual(todos);
+  });
+
+  it("passes null todos to AgentSession when a non-agent tab is active", () => {
+    const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
+    vi.mocked(useWsSessionStore).mockImplementation((selector) =>
+      (selector as (s: unknown) => unknown)({
+        sessions: { "ws-feature-35": { todos } },
+        requestSlashCommands: vi.fn(),
+        retryWorktreeSetup: vi.fn(),
+      }),
+    );
+    mocks.mockActiveTab.mockReturnValue({ activeTab: "editor", setActiveTab: vi.fn() });
+    render(<WsSessionPage />);
+    expect(lastAgentSessionProps().todos).toBeNull();
   });
 });

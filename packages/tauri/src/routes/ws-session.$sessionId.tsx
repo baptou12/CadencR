@@ -321,7 +321,9 @@ function WebSocketSessionPage() {
             runtimeSessionId={ws.runtimeSessionId || undefined}
             slashCommandsOverride={slashCommands}
             slashCommandsLoading={slashCommandsLoading}
-            todos={session?.todos ?? null}
+            // Only feed todos when the agent pane is visible — the popover is
+            // portaled to document.body so it would otherwise pop over hidden tabs.
+            todos={activeTab === "agent" ? (session?.todos ?? null) : null}
             hasMore={ws.hasMore}
             onLoadOlder={ws.loadOlderMessages}
             useWorktree={useWorktree}
