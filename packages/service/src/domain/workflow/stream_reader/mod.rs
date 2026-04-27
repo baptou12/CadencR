@@ -6,6 +6,7 @@
 
 mod cleanup;
 mod live_refresh;
+mod permissions;
 
 use std::sync::Arc;
 
@@ -19,10 +20,7 @@ use axum::extract::ws::Message;
 use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSessionHandle};
 use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::features::repository as repo;
-use crate::domain::runtime_stream::{
-    capture_runtime_session_id, persist_usage, workflow_permission_request_payload,
-    RuntimeUsageState,
-};
+use crate::domain::runtime_stream::{capture_runtime_session_id, persist_usage, RuntimeUsageState};
 use crate::domain::workflow::agent_errors::persist_and_send_agent_error;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -30,6 +28,7 @@ use crate::domain::ws_session::protocol::*;
 
 use cleanup::{build_stream_envelope, check_mcp_server_connected, post_stream_cleanup};
 use live_refresh::handle_live_refresh;
+use permissions::handle_adapter_permission_request;
 
 const PROVIDER_RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -116,56 +115,16 @@ pub fn spawn_workflow_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
-                        if let Some(kind) =
-                            crate::domain::workflow::permission_router::ApprovalKind::from_tool_name(
-                                &request.tool_name,
-                            )
-                        {
-                            // OpenCode's MCP tool calls don't flow through
-                            // `can_use_tool`; the `"ask"` rules we write in
-                            // `opencode/mcp_config.rs` land here as
-                            // `permission.asked`. Run the same approval-gate UI
-                            // and let the normal permission response deliver
-                            // the decision back to the runtime.
-                            let tool_use_id = request
-                                .tool_use_id
-                                .clone()
-                                .unwrap_or_else(|| request.request_id.clone());
-                            crate::domain::workflow::permission_router::
-                                emit_plan_approval_gate_events(
-                                    feature_id,
-                                    &slot,
-                                    db_session_id,
-                                    &tool_use_id,
-                                    &request.tool_input,
-                                    kind,
-                                    &sender,
-                                    &write_pool,
-                                )
-                                .await;
-                            WsSessionPersistence::broadcast_turn_state(
-                                &turn_state_tx,
-                                feature_id,
-                                "askUser",
-                            );
-                            continue;
-                        }
-
-                        let envelope = WsEnvelope::new(
-                            "workflow",
-                            "permission.request",
-                            to_value(workflow_permission_request_payload(
-                                feature_id,
-                                slot.clone(),
-                                request,
-                            )),
-                        );
-                        let _ = sender.send(Message::Text(String::from(envelope).into()));
-                        WsSessionPersistence::broadcast_turn_state(
-                            &turn_state_tx,
+                        handle_adapter_permission_request(
+                            request,
                             feature_id,
-                            "askUser",
-                        );
+                            &slot,
+                            db_session_id,
+                            &sender,
+                            &write_pool,
+                            &turn_state_tx,
+                        )
+                        .await;
                         continue;
                     }
 

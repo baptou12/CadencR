@@ -2,6 +2,8 @@ mod app;
 mod commands;
 pub(crate) mod mcp_spawn;
 mod session_compact;
+mod session_compact_opencode;
+mod session_compact_opencode_events;
 mod session_control;
 mod session_data;
 mod session_init;
@@ -934,7 +936,7 @@ mod tests {
         let app_state = make_test_app_state().await;
 
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider) VALUES (1, 'session', 'paused', 'codex_cli')"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider) VALUES (1, 'session', 'paused', 'not_a_provider')"
         )
         .execute(&app_state.write_pool)
         .await
@@ -1046,7 +1048,7 @@ mod tests {
             "provider.set",
             serde_json::json!({
                 "session_id": session_id,
-                "provider": "codex_cli",
+                "provider": "not_a_provider",
             }),
         );
         dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;

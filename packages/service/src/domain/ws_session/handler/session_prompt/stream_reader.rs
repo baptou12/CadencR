@@ -117,20 +117,42 @@ pub(crate) fn spawn_stream_reader(
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {
+                        let is_question = request.tool_name == "AskUserQuestion";
                         let payload: PermissionRequestPayload = permission_request_payload(request);
+                        let question_payload = if is_question {
+                            Some(serde_json::json!({
+                                "tool_name": payload.tool_name.clone(),
+                                "tool_input": payload.tool_input.clone(),
+                                "request_id": payload.request_id.clone(),
+                                "pattern": payload.pattern.clone(),
+                            }))
+                        } else {
+                            None
+                        };
                         // Persist + broadcast "askUser" together. The OpenCode
                         // stream path previously only broadcast, leaving the
                         // DB blank — any snapshot recovery silently dropped
                         // the gate. Now reconnect/lag resubscribe reads a
                         // consistent row.
-                        WsSessionPersistence::mark_awaiting_user_static(
-                            &write_pool,
-                            &turn_state_tx,
-                            db_session_id,
-                            feature_id,
-                            &PendingUserInput::Permission(&payload),
-                        )
-                        .await;
+                        if let Some(value) = question_payload.as_ref() {
+                            WsSessionPersistence::mark_awaiting_user_static(
+                                &write_pool,
+                                &turn_state_tx,
+                                db_session_id,
+                                feature_id,
+                                &PendingUserInput::Question(value),
+                            )
+                            .await;
+                        } else {
+                            WsSessionPersistence::mark_awaiting_user_static(
+                                &write_pool,
+                                &turn_state_tx,
+                                db_session_id,
+                                feature_id,
+                                &PendingUserInput::Permission(&payload),
+                            )
+                            .await;
+                        }
                         let envelope = WsEnvelope::new(
                             "session",
                             "permission.request",
@@ -194,11 +216,18 @@ pub(crate) fn spawn_stream_reader(
                     let envelope = if runtime_event.is_result() {
                         WsSessionPersistence::mark_completed_static(&write_pool, db_session_id)
                             .await;
-                        WsSessionPersistence::broadcast_turn_state(
-                            &turn_state_tx,
-                            feature_id,
-                            "none",
-                        );
+                        let has_pending_plan_approval =
+                            WsSessionPersistence::get_session_row(&write_pool, db_session_id)
+                                .await
+                                .and_then(|row| row.pending_plan_approval)
+                                .is_some();
+                        if !has_pending_plan_approval {
+                            WsSessionPersistence::broadcast_turn_state(
+                                &turn_state_tx,
+                                feature_id,
+                                "none",
+                            );
+                        }
                         WsEnvelope::new(
                             "session",
                             "ended",

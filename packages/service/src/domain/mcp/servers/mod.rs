@@ -1,3 +1,4 @@
+mod approval_elicitation;
 pub mod composable;
 pub mod plan;
 pub mod session;

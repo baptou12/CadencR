@@ -66,7 +66,7 @@ impl ServerHandler for ComposableServer {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
             let args = request
@@ -78,6 +78,16 @@ impl ServerHandler for ComposableServer {
                 return Ok(error_result(&e));
             }
             let name = request.name.clone();
+            if let Err(e) = super::approval_elicitation::maybe_elicit_tool_approval(
+                &context,
+                self.name,
+                name.as_ref(),
+                &args,
+            )
+            .await
+            {
+                return Ok(error_result(&e));
+            }
             let handler = self
                 .tools
                 .iter()

@@ -203,6 +203,14 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                             .and_then(|&li| all[li].tool_name.clone())
                     });
 
+                if let Some(tuid) = msg.tool_use_id.as_deref() {
+                    if let Some(&tool_idx) = tool_use_id_map.get(tuid) {
+                        if is_file_change_tool_name(all[tool_idx].tool_name.as_deref()) {
+                            merge_tool_result_patch(&mut all[tool_idx].content, &msg.content);
+                        }
+                    }
+                }
+
                 let new_idx = all.len();
                 all.push(MutableBlock {
                     id,
@@ -328,6 +336,35 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
         .iter()
         .map(|&idx| convert_block(idx, &all))
         .collect()
+}
+
+fn is_file_change_tool_name(tool_name: Option<&str>) -> bool {
+    matches!(
+        tool_name,
+        Some("Write" | "Edit" | "NotebookEdit" | "ApplyPatch" | "apply_patch")
+    )
+}
+
+fn merge_tool_result_patch(tool_call_content: &mut String, tool_result_content: &str) {
+    let Ok(result) = serde_json::from_str::<serde_json::Value>(tool_result_content) else {
+        return;
+    };
+    let Some(result_object) = result.as_object() else {
+        return;
+    };
+    if !result_object.contains_key("patch_text") {
+        return;
+    }
+    let mut base = serde_json::from_str::<serde_json::Value>(tool_call_content)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    for (key, value) in result_object {
+        base.entry(key.clone()).or_insert_with(|| value.clone());
+    }
+    if let Ok(content) = serde_json::to_string(&serde_json::Value::Object(base)) {
+        *tool_call_content = content;
+    }
 }
 
 // ---- Helpers ----
@@ -1081,6 +1118,39 @@ mod tests {
         assert_eq!(blocks[0].type_, "tool_call");
         assert_eq!(blocks[1].type_, "tool_result");
         assert_eq!(blocks[1].source_tool_name.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn test_build_blocks_recovers_file_change_patch_from_result() {
+        let msgs = vec![
+            make_message_full(
+                1,
+                1,
+                "tool_call",
+                r#"{"output":"Success"}"#,
+                Some("ApplyPatch"),
+                Some("patch-1"),
+                None,
+            ),
+            make_message_full(
+                2,
+                1,
+                "tool_result",
+                r#"{"patch_text":"*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch","status":"completed"}"#,
+                None,
+                Some("patch-1"),
+                None,
+            ),
+        ];
+
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks[0].type_, "tool_call");
+        let content: serde_json::Value = serde_json::from_str(&blocks[0].content).unwrap();
+        assert_eq!(content["output"], "Success");
+        assert_eq!(
+            content["patch_text"],
+            "*** Begin Patch\n*** Update File: toto.txt\n@@\n-old\n+new\n*** End Patch"
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ license.workspace = true
 axum = { version = "0.8", features = ["ws"] }
 claude-agent-sdk-rs = { path = "../claude-agent-sdk-rs" }
 cli-discovery = { path = "../cli-discovery" }
+codex-app-server-sdk-rs = { path = "../codex-app-server-sdk-rs" }
 opencode-sdk-rs = { path = "../opencode-sdk-rs" }
 tokio = { version = "1", features = ["full"] }
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio", "migrate"] }
@@ -26,9 +27,10 @@ rand = "0.8"
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
 async-trait = "0.1"
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
-rmcp = { version = "1", features = ["server", "transport-streamable-http-server", "transport-io"] }
+rmcp = { version = "1", features = ["server", "transport-streamable-http-server", "transport-io", "elicitation"] }
 dashmap = "6"
 libc = "0.2"
 portable-pty = "0.8"

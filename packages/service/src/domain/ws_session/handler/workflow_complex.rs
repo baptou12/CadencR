@@ -288,11 +288,16 @@ async fn handle_approval(
     } else {
         PermissionDecision::Deny
     };
+    let request_id =
+        approval_request_id(&engine, kind, &slot, feature_id, payload.request_id.clone())
+            .await
+            .unwrap_or_else(|| format!("approval_{kind}_{feature_id}"));
     let response = super::session_prompt::PermissionResponse {
-        request_id: format!("approval_{kind}_{feature_id}"),
+        request_id,
         decision,
         feedback: payload.feedback.clone(),
         updated_input: None,
+        is_approval_gate: true,
     };
 
     update_approval_status(&engine, kind, approved).await;
@@ -302,10 +307,7 @@ async fn handle_approval(
     // persistence). Batch by (feature_id, agent_type) rather than session_id
     // because the active handle may already have rotated by the time the
     // approval is routed. The column depends on `kind`: plan vs prd.
-    let pending_column = match kind {
-        "prd" => "pending_prd_approval",
-        _ => "pending_plan_approval",
-    };
+    let pending_column = approval_pending_column(kind);
     let clear_sql = format!(
         "UPDATE agent_sessions SET {pending_column} = NULL WHERE feature_id = ? AND agent_type = ?"
     );
@@ -360,6 +362,62 @@ async fn handle_approval(
         }),
     );
     let _ = sender.send(Message::Text(String::from(ack).into()));
+}
+
+async fn approval_request_id(
+    engine: &WorkflowEngine,
+    kind: &str,
+    slot: &crate::domain::workflow::engine::AgentSlot,
+    feature_id: i64,
+    payload_request_id: Option<String>,
+) -> Option<String> {
+    if payload_request_id
+        .as_deref()
+        .map_or(false, |value| !value.is_empty())
+    {
+        return payload_request_id;
+    }
+    let pending_column = approval_pending_column(kind);
+    let pending = if let Some(db_session_id) = engine.active_items().get(slot).map(|entry| *entry) {
+        let sql = format!("SELECT {pending_column} FROM agent_sessions WHERE id = ?");
+        sqlx::query_scalar::<_, Option<String>>(&sql)
+            .bind(db_session_id)
+            .fetch_optional(&engine.write_pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten()
+    } else {
+        let sql = format!(
+            "SELECT {pending_column} FROM agent_sessions \
+             WHERE feature_id = ? AND agent_type = ? \
+             ORDER BY id DESC LIMIT 1"
+        );
+        sqlx::query_scalar::<_, Option<String>>(&sql)
+            .bind(feature_id)
+            .bind(kind)
+            .fetch_optional(&engine.write_pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten()
+    };
+    pending
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get("request_id")
+                .and_then(serde_json::Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+}
+
+fn approval_pending_column(kind: &str) -> &'static str {
+    match kind {
+        "prd" => "pending_prd_approval",
+        _ => "pending_plan_approval",
+    }
 }
 
 /// After app restart, the agent is dead. Resume it via send_prompt so it

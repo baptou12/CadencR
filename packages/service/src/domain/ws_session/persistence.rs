@@ -29,6 +29,7 @@ pub struct SessionRow {
     pub status: String,
     pub pending_plan_approval: Option<String>,
     pub pending_permission: Option<String>,
+    pub pending_questions: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
     pub context_window: Option<i64>,
@@ -38,6 +39,7 @@ pub struct SessionRow {
 struct ToolInputBuffer {
     accumulated: String,
     replacement_candidate: Option<String>,
+    merge_object_deltas: bool,
 }
 
 pub struct WsSessionPersistence {

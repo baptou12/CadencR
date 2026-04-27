@@ -12,7 +12,8 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSessionHandle, RuntimeSpawnConfig,
+    RuntimePermissionDecision, RuntimePermissionResponse, RuntimePermissionResponseKind,
+    RuntimeSessionHandle, RuntimeSpawnConfig,
 };
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
@@ -196,13 +197,17 @@ pub(super) async fn handle_permission_respond(
         feedback: payload.feedback.clone(),
         updated_input: payload.updated_input.clone(),
     };
-    let respond_result = {
+    let (permission_kind, respond_result) = {
         let q = query.lock().await;
-        q.respond_permission(runtime_response).await
+        (
+            q.permission_response_kind(&payload.request_id),
+            q.respond_permission(runtime_response).await,
+        )
     };
+    let is_plan_approval = permission_kind == RuntimePermissionResponseKind::PlanApproval;
     match respond_result {
         Ok(()) => {
-            if matches!(payload.decision, PermissionDecision::Deny) {
+            if matches!(payload.decision, PermissionDecision::Deny) && !is_plan_approval {
                 WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id)
                     .await;
                 let ended = WsEnvelope::new(
@@ -226,10 +231,18 @@ pub(super) async fn handle_permission_respond(
                 db_session_id,
             )
             .await;
+            let next_turn = if is_plan_approval {
+                crate::domain::permission_bridge::turn_state_after_approval(
+                    payload.decision,
+                    Some(payload.feedback.as_deref().unwrap_or("Plan feedback")),
+                )
+            } else {
+                crate::domain::permission_bridge::turn_state_after_decision(payload.decision)
+            };
             WsSessionPersistence::broadcast_turn_state(
                 &app_state.turn_state_tx,
                 extracted.feature_id,
-                crate::domain::permission_bridge::turn_state_after_decision(payload.decision),
+                next_turn,
             );
             return;
         }
@@ -256,6 +269,7 @@ pub(super) async fn handle_permission_respond(
         decision: payload.decision,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
+        is_approval_gate: false,
     };
 
     if permission_tx.send(response).await.is_err() {

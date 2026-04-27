@@ -105,7 +105,7 @@ impl ServerHandler for SessionServer {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
             let args = request
@@ -195,6 +195,13 @@ impl ServerHandler for SessionServer {
                             .await
                     }
                     "show_plan" => {
+                        super::approval_elicitation::maybe_elicit_tool_approval(
+                            &context,
+                            "cadence-session",
+                            "show_plan",
+                            &args,
+                        )
+                        .await?;
                         let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
                         self.show_plan.call(plan_id).await
                     }

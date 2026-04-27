@@ -38,6 +38,7 @@ pub(super) async fn handle_permission_respond(
         decision: payload.decision,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
+        is_approval_gate: false,
     };
 
     match engine
