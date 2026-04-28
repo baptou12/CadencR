@@ -8,6 +8,7 @@ use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
 use crate::domain::editor::routes::editor_router;
+use crate::domain::feature_layouts::routes::feature_layouts_router;
 use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
 use crate::domain::projects::routes::projects_router;
@@ -32,6 +33,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(workspace_router())
         .merge(projects_router())
         .merge(features_router())
+        .merge(feature_layouts_router())
         .merge(diff_comments_router())
         .merge(sessions_router())
         .merge(terminal_router())

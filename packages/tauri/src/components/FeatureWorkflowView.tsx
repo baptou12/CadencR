@@ -1,13 +1,22 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { FeatureTabBar } from "@/components/FeatureTabBar";
-import type { FeatureTab } from "@/hooks/useActiveTab";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
+import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import type { FeatureTabs } from "@/components/feature-layout/types";
 import { AGENT_LABELS } from "@/components/agent-session";
 import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
-import { AlertTriangleIcon, CheckCircle2Icon, Loader2Icon, XIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  BotIcon,
+  CheckCircle2Icon,
+  CodeIcon,
+  GitCompareArrowsIcon,
+  Loader2Icon,
+  TerminalIcon,
+  XIcon,
+} from "lucide-react";
 import { AGENT_ICONS } from "@/components/agent-icons";
 import { Button } from "@/components/ui/button";
 import { QueueSidebar } from "@/components/QueueSidebar";
@@ -19,7 +28,12 @@ import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useTerminalStore } from "@/hooks/useTerminalState";
-import { useActiveTab } from "@/hooks/useActiveTab";
+import {
+  findLeafById,
+  selectFeatureLayout,
+  useFeatureLayoutStore,
+} from "@/stores/feature-layout-store";
+import { ROOT_LEAF_ID, type TabKind } from "@/stores/feature-layout-schema";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useWorkflowKeyboard } from "@/hooks/useWorkflowKeyboard";
 import {
@@ -181,30 +195,23 @@ export function FeatureWorkflowView({
     (e) => e.pendingQuestions && e.pendingQuestions.length > 0,
   ).length;
 
-  // Tab state
-  const { activeTab, setActiveTab } = useActiveTab(featureId);
-
-  useSaveLastOpenedFeature(projectId, featureId, activeTab);
+  // Tab state — sourced from the new layout store; the root pane's active tab
+  // doubles as "the visible tab" for `useSaveLastOpenedFeature`.
+  const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
+  const rootLeaf = findLeafById(layoutState.splitRoot, ROOT_LEAF_ID);
+  const rootActiveTabId: TabKind = rootLeaf?.activeTabId ?? "agent";
+  useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
-  const handleTabChange = useCallback(
-    (tab: FeatureTab) => {
-      if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
-        editorTabRef.current.requestLeave(() => setActiveTab(tab));
-      } else {
-        setActiveTab(tab);
-      }
-    },
-    [activeTab, setActiveTab],
-  );
+  const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
 
   const startReviewFixerFromGit = useCallback(
     (comments: string) => {
       // Auto-focus of newly-started agents is handled by `useWorkflowKeyboard`.
       backend.startReviewFixer(comments);
-      setActiveTab("agent");
+      setPaneActiveTab(featureId, ROOT_LEAF_ID, "agent");
     },
-    [backend, setActiveTab],
+    [backend, featureId, setPaneActiveTab],
   );
 
   // Git stats for tab bar badge
@@ -224,6 +231,240 @@ export function FeatureWorkflowView({
     [sendToTerminalStore, featureId],
   );
 
+  const agentTabContent = (
+    <div className="flex h-full min-h-0 overflow-hidden">
+      <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
+        {view === "loading" && (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
+
+        {view === "plan-input" && (
+          <div className="flex-1 flex items-center justify-center overflow-auto p-6">
+            <PlanInputView
+              featureId={featureId}
+              projectId={projectId}
+              onStartPlanning={(text, images) => {
+                descriptionRef.current = text;
+                setDescription(text);
+                backend.startPlan(text || prdData?.prd || "", images);
+              }}
+              onStartPrd={(text, images) => {
+                descriptionRef.current = text;
+                setDescription(text);
+                backend.startPrd(text || prdData?.prd || "", images);
+              }}
+              isStartingPlan={backend.isStartingPlan}
+              isStartingPrd={backend.isStartingPrd}
+            />
+          </div>
+        )}
+
+        {!backend.hasAnyAgentOutput &&
+          backend.sessionEntries.length === 0 &&
+          !backend.isStartingWorkflowSession &&
+          view === "agents-active" && (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+        {(backend.sessionEntries.length > 0 ||
+          actions.canStartBuild ||
+          actions.canStartRisk ||
+          actions.canStartReview ||
+          actions.canStartRetro) && (
+          <div
+            className={cn(
+              "flex-1 min-h-0 px-6 py-2",
+              maximizedAgent ? "flex flex-col overflow-hidden" : "overflow-y-auto space-y-2",
+            )}
+          >
+            <WorkflowAgentGrid
+              backend={backend}
+              featureId={featureId}
+              projectId={projectId}
+              openAgent={openAgent}
+              setOpenAgent={setOpenAgent}
+              maximizedAgent={maximizedAgent}
+              setMaximizedAgent={setMaximizedAgent}
+              setAgentRef={setAgentRef}
+              agentsWithQuestions={agentsWithQuestions}
+              contextUsageMap={contextUsageMap}
+              resolveModel={resolveModelForAgent}
+              resolveProvider={resolveProviderForAgent}
+              handleModelChange={handleModelChangeForAgent}
+              handleProviderChange={handleProviderChangeForAgent}
+              resolveModelThinkingEffort={resolveModelThinkingEffortForAgent}
+              setModelThinkingEffort={setModelThinkingEffortForAgent}
+              handleDeleteAgent={handleDeleteAgent}
+              onViewDiff={handleViewDiffForAgent}
+              slashCommands={slashCommands}
+              slashCommandsLoading={slashCommandsLoading}
+            />
+
+            {!maximizedAgent &&
+              actions.canStartPlan &&
+              backend.noAgentsRunning &&
+              !backend.planSession?.resumable && (
+                <div className="shrink-0 flex py-4">
+                  <Button
+                    size="lg"
+                    onClick={() => backend.startPlan(descriptionRef.current || prdData?.prd || "")}
+                    disabled={backend.isStartingPlan}
+                    className="gap-2"
+                  >
+                    {backend.isStartingPlan ? (
+                      <Loader2Icon className="size-4 animate-spin" />
+                    ) : (
+                      <AGENT_ICONS.plan className="size-4" />
+                    )}
+                    Generate Plan
+                  </Button>
+                </div>
+              )}
+
+            {!maximizedAgent && (
+              <div className="shrink-0">
+                <NextStepsBar
+                  show={
+                    backend.noAgentsRunning &&
+                    (actions.canStartBuild ||
+                      actions.canStartRisk ||
+                      actions.canStartReview ||
+                      actions.canStartWorkflowSession ||
+                      backend.canContinueBuild ||
+                      backend.executeStatus !== "running" ||
+                      actions.canStartRetro)
+                  }
+                  canStartBuild={actions.canStartBuild}
+                  canStartRisk={actions.canStartRisk}
+                  canStartReview={actions.canStartReview}
+                  executeStatus={backend.executeStatus}
+                  onStartBuilding={() => backend.startBuilding()}
+                  onStartRisk={() => backend.startRisk()}
+                  onStartReview={() => backend.startReview()}
+                  isStartingExecute={backend.isStartingExecute}
+                  isStartingRisk={backend.isStartingRisk}
+                  isStartingReview={backend.isStartingReview}
+                  canContinueBuild={backend.canContinueBuild}
+                  onContinueBuild={() => backend.continueWorkflow()}
+                  isContinuingBuild={backend.isContinuingBuild}
+                  nextStepNumber={backend.executeWaitingNextStep}
+                  canStartWorkflowSession={actions.canStartWorkflowSession}
+                  onStartWorkflowSession={(prompt, images) => {
+                    backend.startSession(
+                      prompt,
+                      images?.map((i: { base64: string }) => i.base64),
+                    );
+                  }}
+                  isStartingWorkflowSession={backend.isStartingWorkflowSession}
+                  noExecuteAgentRunning={backend.executeStatus !== "running"}
+                  projectId={projectId}
+                  featureId={featureId}
+                  featureType={feature?.type}
+                  canStartRefine={actions.canStartRefine}
+                  onStartRefinePlan={(description, images) => {
+                    backend.startRefine(
+                      description,
+                      images?.map((i: { base64: string }) => i.base64),
+                    );
+                  }}
+                  isStartingRefinePlan={backend.isStartingRefinePlan}
+                  openSessionPrompt={sessionPromptTrigger}
+                  canStartRetro={actions.canStartRetro}
+                  onStartRetro={() => backend.startRetro()}
+                  isStartingRetro={backend.isStartingRetro}
+                />
+              </div>
+            )}
+
+            {!maximizedAgent && view === "done" && (
+              <div className="shrink-0 flex items-center gap-3 pt-4">
+                <CheckCircle2Icon className="size-8 text-green-600" />
+                <div>
+                  <h2 className="text-lg font-semibold">Feature Complete</h2>
+                  <p className="text-sm text-muted-foreground">
+                    This feature has been reviewed and marked as done.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {backend.error && (
+          <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertTriangleIcon className="size-4 shrink-0" />
+            <span className="flex-1">{backend.error}</span>
+            <button
+              onClick={backend.clearError}
+              className="shrink-0 rounded p-0.5 hover:bg-destructive/20 transition-colors"
+              aria-label="Dismiss error"
+            >
+              <XIcon className="size-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      <QueueSidebar
+        queue={backend.queue ?? []}
+        featureId={featureId}
+        selectedItemId={backend.selectedItemId ?? null}
+        onSelectItem={backend.selectItem ?? (() => {})}
+        onRetryItem={backend.retryItem}
+        onSkipItem={backend.skipItem}
+      />
+    </div>
+  );
+
+  const tabs: FeatureTabs = {
+    agent: {
+      label: "Agent",
+      Icon: BotIcon,
+      shortcut: ["cmd", "shift", "A"],
+      content: agentTabContent,
+    },
+    terminal: {
+      label: "Terminal",
+      Icon: TerminalIcon,
+      shortcut: ["cmd", "shift", "T"],
+      content: (
+        <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} />
+      ),
+    },
+    git: {
+      label: "Git",
+      Icon: GitCompareArrowsIcon,
+      shortcut: ["cmd", "shift", "G"],
+      badge: workflowGitBadge(gitStats, backend.worktreeBranch ?? undefined),
+      content: (
+        <FeatureGitTab
+          featureId={featureId}
+          diffMode="branch"
+          onStartReviewFixer={startReviewFixerFromGit}
+        />
+      ),
+    },
+    editor: {
+      label: "Editor",
+      Icon: CodeIcon,
+      shortcut: ["cmd", "shift", "E"],
+      content: projectPath ? (
+        <Suspense fallback={null}>
+          <FeatureEditorTab
+            ref={editorTabRef}
+            featureId={featureId}
+            projectId={projectId}
+            projectPath={projectPath}
+          />
+        </Suspense>
+      ) : null,
+    },
+  };
+
   return (
     <CodeBlockActionsContext.Provider value={codeBlockActions}>
       <div className="relative flex h-full flex-col">
@@ -235,240 +476,11 @@ export function FeatureWorkflowView({
           wsWorktreeBranch={backend.worktreeBranch}
           wsWorktreeSetupOutput={backend.worktreeSetupOutput}
         />
-        <FeatureTabBar
-          activeTab={activeTab}
+        <FeatureLayoutShell
           featureId={featureId}
-          onTabChange={handleTabChange}
-          gitStats={gitStats}
-          gitBranch={backend.worktreeBranch}
+          tabs={tabs}
           onTerminalActivate={handleTerminalActivate}
         />
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          {/* Terminal tab — stays mounted to preserve PTY */}
-          <FeatureTerminalTab
-            ref={terminalTabRef}
-            featureId={featureId}
-            projectId={projectId}
-            hidden={activeTab !== "terminal"}
-          />
-
-          {/* Editor tab — stays mounted to preserve state */}
-          <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
-            {projectPath && (
-              <Suspense fallback={null}>
-                <FeatureEditorTab
-                  ref={editorTabRef}
-                  featureId={featureId}
-                  projectId={projectId}
-                  projectPath={projectPath}
-                />
-              </Suspense>
-            )}
-          </div>
-
-          {/* Git tab */}
-          {activeTab === "git" && (
-            <FeatureGitTab
-              featureId={featureId}
-              diffMode="branch"
-              onStartReviewFixer={startReviewFixerFromGit}
-            />
-          )}
-
-          {/* Agent tab */}
-          <div className={cn("h-full", activeTab !== "agent" && "hidden")}>
-            <div className="flex h-full min-h-0 overflow-hidden">
-              <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
-                {view === "loading" && (
-                  <div className="flex-1 flex items-center justify-center">
-                    <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-
-                {view === "plan-input" && (
-                  <div className="flex-1 flex items-center justify-center overflow-auto p-6">
-                    <PlanInputView
-                      featureId={featureId}
-                      projectId={projectId}
-                      onStartPlanning={(text, images) => {
-                        descriptionRef.current = text;
-                        setDescription(text);
-                        backend.startPlan(text || prdData?.prd || "", images);
-                      }}
-                      onStartPrd={(text, images) => {
-                        descriptionRef.current = text;
-                        setDescription(text);
-                        backend.startPrd(text || prdData?.prd || "", images);
-                      }}
-                      isStartingPlan={backend.isStartingPlan}
-                      isStartingPrd={backend.isStartingPrd}
-                    />
-                  </div>
-                )}
-
-                {!backend.hasAnyAgentOutput &&
-                  backend.sessionEntries.length === 0 &&
-                  !backend.isStartingWorkflowSession &&
-                  view === "agents-active" && (
-                    <div className="flex-1 flex items-center justify-center">
-                      <Loader2Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-                    </div>
-                  )}
-
-                {(backend.sessionEntries.length > 0 ||
-                  actions.canStartBuild ||
-                  actions.canStartRisk ||
-                  actions.canStartReview ||
-                  actions.canStartRetro) && (
-                  <div
-                    className={cn(
-                      "flex-1 min-h-0 px-6 py-2",
-                      maximizedAgent
-                        ? "flex flex-col overflow-hidden"
-                        : "overflow-y-auto space-y-2",
-                    )}
-                  >
-                    <WorkflowAgentGrid
-                      backend={backend}
-                      featureId={featureId}
-                      projectId={projectId}
-                      openAgent={openAgent}
-                      setOpenAgent={setOpenAgent}
-                      maximizedAgent={maximizedAgent}
-                      setMaximizedAgent={setMaximizedAgent}
-                      setAgentRef={setAgentRef}
-                      agentsWithQuestions={agentsWithQuestions}
-                      contextUsageMap={contextUsageMap}
-                      resolveModel={resolveModelForAgent}
-                      resolveProvider={resolveProviderForAgent}
-                      handleModelChange={handleModelChangeForAgent}
-                      handleProviderChange={handleProviderChangeForAgent}
-                      resolveModelThinkingEffort={resolveModelThinkingEffortForAgent}
-                      setModelThinkingEffort={setModelThinkingEffortForAgent}
-                      handleDeleteAgent={handleDeleteAgent}
-                      onViewDiff={handleViewDiffForAgent}
-                      slashCommands={slashCommands}
-                      slashCommandsLoading={slashCommandsLoading}
-                    />
-
-                    {!maximizedAgent &&
-                      actions.canStartPlan &&
-                      backend.noAgentsRunning &&
-                      !backend.planSession?.resumable && (
-                        <div className="shrink-0 flex py-4">
-                          <Button
-                            size="lg"
-                            onClick={() =>
-                              backend.startPlan(descriptionRef.current || prdData?.prd || "")
-                            }
-                            disabled={backend.isStartingPlan}
-                            className="gap-2"
-                          >
-                            {backend.isStartingPlan ? (
-                              <Loader2Icon className="size-4 animate-spin" />
-                            ) : (
-                              <AGENT_ICONS.plan className="size-4" />
-                            )}
-                            Generate Plan
-                          </Button>
-                        </div>
-                      )}
-
-                    {!maximizedAgent && (
-                      <div className="shrink-0">
-                        <NextStepsBar
-                          show={
-                            backend.noAgentsRunning &&
-                            (actions.canStartBuild ||
-                              actions.canStartRisk ||
-                              actions.canStartReview ||
-                              actions.canStartWorkflowSession ||
-                              backend.canContinueBuild ||
-                              backend.executeStatus !== "running" ||
-                              actions.canStartRetro)
-                          }
-                          canStartBuild={actions.canStartBuild}
-                          canStartRisk={actions.canStartRisk}
-                          canStartReview={actions.canStartReview}
-                          executeStatus={backend.executeStatus}
-                          onStartBuilding={() => backend.startBuilding()}
-                          onStartRisk={() => backend.startRisk()}
-                          onStartReview={() => backend.startReview()}
-                          isStartingExecute={backend.isStartingExecute}
-                          isStartingRisk={backend.isStartingRisk}
-                          isStartingReview={backend.isStartingReview}
-                          canContinueBuild={backend.canContinueBuild}
-                          onContinueBuild={() => backend.continueWorkflow()}
-                          isContinuingBuild={backend.isContinuingBuild}
-                          nextStepNumber={backend.executeWaitingNextStep}
-                          canStartWorkflowSession={actions.canStartWorkflowSession}
-                          onStartWorkflowSession={(prompt, images) => {
-                            backend.startSession(
-                              prompt,
-                              images?.map((i: { base64: string }) => i.base64),
-                            );
-                          }}
-                          isStartingWorkflowSession={backend.isStartingWorkflowSession}
-                          noExecuteAgentRunning={backend.executeStatus !== "running"}
-                          projectId={projectId}
-                          featureId={featureId}
-                          featureType={feature?.type}
-                          canStartRefine={actions.canStartRefine}
-                          onStartRefinePlan={(description, images) => {
-                            backend.startRefine(
-                              description,
-                              images?.map((i: { base64: string }) => i.base64),
-                            );
-                          }}
-                          isStartingRefinePlan={backend.isStartingRefinePlan}
-                          openSessionPrompt={sessionPromptTrigger}
-                          canStartRetro={actions.canStartRetro}
-                          onStartRetro={() => backend.startRetro()}
-                          isStartingRetro={backend.isStartingRetro}
-                        />
-                      </div>
-                    )}
-
-                    {!maximizedAgent && view === "done" && (
-                      <div className="shrink-0 flex items-center gap-3 pt-4">
-                        <CheckCircle2Icon className="size-8 text-green-600" />
-                        <div>
-                          <h2 className="text-lg font-semibold">Feature Complete</h2>
-                          <p className="text-sm text-muted-foreground">
-                            This feature has been reviewed and marked as done.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {backend.error && (
-                  <div className="shrink-0 mx-6 mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    <AlertTriangleIcon className="size-4 shrink-0" />
-                    <span className="flex-1">{backend.error}</span>
-                    <button
-                      onClick={backend.clearError}
-                      className="shrink-0 rounded p-0.5 hover:bg-destructive/20 transition-colors"
-                      aria-label="Dismiss error"
-                    >
-                      <XIcon className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <QueueSidebar
-                queue={backend.queue ?? []}
-                featureId={featureId}
-                selectedItemId={backend.selectedItemId ?? null}
-                onSelectItem={backend.selectItem ?? (() => {})}
-                onRetryItem={backend.retryItem}
-                onSkipItem={backend.skipItem}
-              />
-            </div>
-          </div>
-        </div>
 
         {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
         <DiffViewerModal
@@ -491,5 +503,22 @@ export function FeatureWorkflowView({
         />
       </div>
     </CodeBlockActionsContext.Provider>
+  );
+}
+
+function workflowGitBadge(
+  gitStats: { insertions: number; deletions: number } | null | undefined,
+  gitBranch: string | undefined,
+) {
+  return (
+    <>
+      {gitBranch && <span className="truncate max-w-[120px]">{gitBranch}</span>}
+      {gitStats && gitStats.insertions > 0 && (
+        <span className="text-green-500">+{gitStats.insertions}</span>
+      )}
+      {gitStats && gitStats.deletions > 0 && (
+        <span className="text-red-400">-{gitStats.deletions}</span>
+      )}
+    </>
   );
 }

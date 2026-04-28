@@ -75,7 +75,24 @@ export const AgentStream = memo(function AgentStream({
   return (
     <div className="space-y-1 p-3">
       {displayBlocks.map((block) => (
-        <div key={block.id}>
+        // `content-visibility: auto` instructs the browser to skip layout +
+        // paint work for any block that is currently outside the viewport,
+        // and pick it back up just before it scrolls into view. Without
+        // this, every drag-resize of the surrounding pane (sidebar, split
+        // handle) forces *every* block in the conversation to re-wrap text
+        // — for a long agent run that's hundreds of markdown / code blocks
+        // reflowing per pixel of drag, which is what made the resize feel
+        // sluggish at 5–10 fps.
+        //
+        // `contain-intrinsic-size: auto 120px` gives Chromium a placeholder
+        // height for unmeasured blocks (so the scrollbar doesn't jump on
+        // mount) and lets it remember the real measured size once a block
+        // has been rendered. 120 px ≈ the median block height; the exact
+        // number doesn't matter once the browser has measured the real one.
+        <div
+          key={block.id}
+          style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+        >
           {(block.type === "text" || block.type === "user_message") && block.createdAt && (
             <div
               className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}

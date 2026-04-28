@@ -1,21 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
 import { AgentSession, type AgentSessionHandle } from "@/components/agent-session";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { FeatureTabBar } from "@/components/FeatureTabBar";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
+import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import type { FeatureTabs } from "@/components/feature-layout/types";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { useAgentCatalog } from "@/api/agentRuntime";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useWsSessionStore } from "@/stores/ws-session-store";
-import { useActiveTab } from "@/hooks/useActiveTab";
+import {
+  useFeatureLayoutStore,
+  selectFeatureLayout,
+  findLeafById,
+  isTabVisible,
+} from "@/stores/feature-layout-store";
+import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
 import { useGetStats, useGetBranch, useGetFeatureSettings, useListProjects } from "@/api/generated";
 import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
-import { cn } from "@/lib/utils";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
@@ -48,8 +55,10 @@ function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
 
-  const { activeTab, setActiveTab } = useActiveTab(featureId);
-  useSaveLastOpenedFeature(projectId, featureId, activeTab);
+  const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
+  const rootLeaf = findLeafById(layoutState.splitRoot, ROOT_LEAF_ID);
+  const rootActiveTabId = rootLeaf?.activeTabId ?? "agent";
+  useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
@@ -93,15 +102,12 @@ function WebSocketSessionPage() {
   // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
 
-  const handleTabChange = useCallback(
-    (tab: import("@/hooks/useActiveTab").FeatureTab) => {
-      if (activeTab === "editor" && tab !== "editor" && editorTabRef.current) {
-        editorTabRef.current.requestLeave(() => setActiveTab(tab));
-      } else {
-        setActiveTab(tab);
-      }
+  const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
+  const setRootActive = useCallback(
+    (tab: import("@/stores/feature-layout-schema").TabKind) => {
+      setPaneActiveTab(featureId, ROOT_LEAF_ID, tab);
     },
-    [activeTab, setActiveTab],
+    [featureId, setPaneActiveTab],
   );
 
   const agentSessionRef = useRef<AgentSessionHandle>(null);
@@ -118,9 +124,9 @@ function WebSocketSessionPage() {
   const sendFromGitTab = useCallback(
     (message: string) => {
       sendPromptAndFocus(message);
-      setActiveTab("agent");
+      setRootActive("agent");
     },
-    [sendPromptAndFocus, setActiveTab],
+    [sendPromptAndFocus, setRootActive],
   );
   useHotkeys(
     "meta+g",
@@ -196,55 +202,16 @@ function WebSocketSessionPage() {
     }
   }, [session?.serverSessionId, effectiveCwd, sessionId, requestSlashCommands, activeProviderId]);
 
-  return (
-    <div className="flex h-full flex-col">
-      <FeatureTopBar
-        featureId={featureId}
-        projectId={projectId}
-        mode="session"
-        className="shrink-0"
-        wsWorktreeStatus={session?.worktreeStatus}
-        wsWorktreeBranch={session?.worktreeBranch}
-        wsWorktreeSetupOutput={session?.worktreeSetupOutput}
-        onRetryWorktreeSetup={handleRetryWorktreeSetup}
-      />
-      <FeatureTabBar
-        activeTab={activeTab}
-        featureId={featureId}
-        onTabChange={handleTabChange}
-        gitStats={gitStats}
-        gitBranch={gitBranch}
-      />
-      <div className="relative min-h-0 flex-1 overflow-hidden">
-        <FeatureTerminalTab
-          featureId={featureId}
-          projectId={projectId}
-          hidden={activeTab !== "terminal"}
-        />
+  const agentVisible = isTabVisible(layoutState, "agent");
+  const projectPathOrCwd = effectiveCwd ?? projectPath;
 
-        {/* Editor tab — stays mounted to preserve state */}
-        <div className={cn("h-full", activeTab !== "editor" && "hidden")}>
-          {(effectiveCwd ?? projectPath) && (
-            <Suspense fallback={null}>
-              <FeatureEditorTab
-                ref={editorTabRef}
-                featureId={featureId}
-                projectId={projectId}
-                projectPath={(effectiveCwd ?? projectPath) as string}
-              />
-            </Suspense>
-          )}
-        </div>
-
-        {activeTab === "git" && (
-          <FeatureGitTab
-            featureId={featureId}
-            diffMode="worktree"
-            onSendComments={sendFromGitTab}
-          />
-        )}
-
-        <div className={cn("h-full", activeTab !== "agent" && "hidden")}>
+  const tabs: FeatureTabs = useMemo(
+    () => ({
+      agent: {
+        label: "Agent",
+        Icon: BotIcon,
+        shortcut: ["cmd", "shift", "A"],
+        content: (
           <AgentSession
             ref={agentSessionRef}
             agentType="session"
@@ -262,8 +229,7 @@ function WebSocketSessionPage() {
                 ws.compactSession();
                 return;
               }
-              // Pass useWorktree only on first prompt (blocks empty)
-              const isFirstPrompt = (session?.blocks.length ?? 0) === 0;
+              const isFirstPrompt = (session?.blocks?.length ?? 0) === 0;
               ws.sendPrompt(text, images, isFirstPrompt && useWorktree ? true : undefined);
             }}
             onStop={ws.interrupt}
@@ -290,10 +256,6 @@ function WebSocketSessionPage() {
             onProviderChange={ws.setProvider}
             currentModelId={ws.currentModelId}
             onModelChange={(nextProviderId, modelId) => {
-              // Avoid sending a redundant WS frame when the user re-picks the
-              // same model (the picker still fires onSelect on identical
-              // selections). Effort resolution below still runs so a stale
-              // effort can recover on a same-model re-pick.
               if (modelId !== ws.currentModelId) {
                 ws.setModel(modelId);
               }
@@ -301,11 +263,6 @@ function WebSocketSessionPage() {
                 .find((provider) => provider.id === nextProviderId)
                 ?.models.find((model) => model.id === modelId);
               const nextLevels = supportedThinkingEffortLevels(nextModel);
-              // Pull the last-used effort for the model the user just switched
-              // to. We trust the providerId from the picker rather than
-              // `ws.currentProviderId` — the WS store hasn't yet acknowledged
-              // a sibling `setProvider` call, so reading it here would yield
-              // the *previous* provider and miss the per-model default.
               const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
               if (nextEffort) {
                 ws.setThinkingEffort(nextEffort);
@@ -321,17 +278,88 @@ function WebSocketSessionPage() {
             runtimeSessionId={ws.runtimeSessionId || undefined}
             slashCommandsOverride={slashCommands}
             slashCommandsLoading={slashCommandsLoading}
-            // Only feed todos when the agent pane is visible — the popover is
-            // portaled to document.body so it would otherwise pop over hidden tabs.
-            todos={activeTab === "agent" ? (session?.todos ?? null) : null}
+            // The todos popover is portaled to document.body so it would
+            // overlay other tabs if mounted while the agent is hidden in its
+            // pane. Gate by the layout-store's visibility selector.
+            todos={agentVisible ? (session?.todos ?? null) : null}
             hasMore={ws.hasMore}
             onLoadOlder={ws.loadOlderMessages}
             useWorktree={useWorktree}
             onToggleWorktree={() => setUseWorktree((v) => !v)}
             className="h-full"
           />
-        </div>
-      </div>
+        ),
+      },
+      terminal: {
+        label: "Terminal",
+        Icon: TerminalIcon,
+        shortcut: ["cmd", "shift", "T"],
+        content: <FeatureTerminalTab featureId={featureId} projectId={projectId} />,
+      },
+      git: {
+        label: "Git",
+        Icon: GitCompareArrowsIcon,
+        shortcut: ["cmd", "shift", "G"],
+        badge: gitBadge(gitStats, gitBranch),
+        content: (
+          <FeatureGitTab
+            featureId={featureId}
+            diffMode="worktree"
+            onSendComments={sendFromGitTab}
+          />
+        ),
+      },
+      editor: {
+        label: "Editor",
+        Icon: CodeIcon,
+        shortcut: ["cmd", "shift", "E"],
+        content: projectPathOrCwd ? (
+          <Suspense fallback={null}>
+            <FeatureEditorTab
+              ref={editorTabRef}
+              featureId={featureId}
+              projectId={projectId}
+              projectPath={projectPathOrCwd}
+            />
+          </Suspense>
+        ) : null,
+      },
+    }),
+    [
+      activeProviderId,
+      agentCatalog.data?.providers,
+      agentVisible,
+      featureId,
+      gitBranch,
+      gitStats,
+      projectId,
+      projectPathOrCwd,
+      resolveModelThinkingEffort,
+      sendFromGitTab,
+      session?.blocks?.length,
+      session?.todos,
+      sessionId,
+      useWorktree,
+      ws,
+      handleViewDiff,
+      slashCommands,
+      slashCommandsLoading,
+    ],
+  );
+
+  return (
+    <div className="flex h-full flex-col">
+      <FeatureTopBar
+        featureId={featureId}
+        projectId={projectId}
+        mode="session"
+        className="shrink-0"
+        wsWorktreeStatus={session?.worktreeStatus}
+        wsWorktreeBranch={session?.worktreeBranch}
+        wsWorktreeSetupOutput={session?.worktreeSetupOutput}
+        onRetryWorktreeSetup={handleRetryWorktreeSetup}
+      />
+      <FeatureLayoutShell featureId={featureId} tabs={tabs} />
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}
@@ -339,5 +367,22 @@ function WebSocketSessionPage() {
         onSendComments={sendPromptAndFocus}
       />
     </div>
+  );
+}
+
+function gitBadge(
+  gitStats: { insertions: number; deletions: number } | null | undefined,
+  gitBranch: string | null | undefined,
+) {
+  return (
+    <>
+      {gitBranch && <span className="truncate max-w-[120px]">{gitBranch}</span>}
+      {gitStats && gitStats.insertions > 0 && (
+        <span className="text-green-500">+{gitStats.insertions}</span>
+      )}
+      {gitStats && gitStats.deletions > 0 && (
+        <span className="text-red-400">-{gitStats.deletions}</span>
+      )}
+    </>
   );
 }

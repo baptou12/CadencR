@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalWebSocket } from "@/hooks/useTerminalWebSocket";
+import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
 
 interface XTermInstanceProps {
   featureId: number;
@@ -188,9 +189,9 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
 
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(webLinksAddon);
-      terminal.open(container);
 
-      // macOS-style navigation: Cmd+Arrow (line) and Option+Arrow (word)
+      // macOS-style navigation: Cmd+Arrow (line) and Option+Arrow (word).
+      // Safe to attach pre-`open()` — handler only fires once a textarea exists.
       terminal.attachCustomKeyEventHandler((event) => {
         if (event.type !== "keydown") return true;
         if (!ptyIdRef.current || exitedRef.current) return true;
@@ -212,31 +213,44 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       terminalRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
-      // Notify parent when this terminal gets focus (for active pane tracking)
-      const onFocusHandler = () => onTerminalFocusRef.current?.();
-      terminal.textarea?.addEventListener("focus", onFocusHandler);
-
-      // User input → WebSocket
-      const dataDisposable = terminal.onData((data: string) => {
-        if (ptyIdRef.current && !exitedRef.current) {
-          writeRef.current?.(data);
-        }
-      });
-
-      // Connect WebSocket only after the ResizeObserver fires with real dimensions.
-      // This avoids creating the PTY with wrong dimensions when the terminal panel
-      // is still transitioning from height:0 (CSS transition) at mount time.
+      // We defer `terminal.open(container)` until the container actually has
+      // pixel dimensions. xterm.js opened in a `display:none` parent
+      // initializes its renderer in a degraded 0×0 state and never recovers
+      // cleanly even after `fit()` — the textarea ends up unfocusable and
+      // the screen stays blank. With the new layout system, tab content is
+      // always mounted (even when its tab isn't the active one in its
+      // pane), so the container starts hidden whenever the user opens a
+      // session in another tab. The single ResizeObserver below is the one
+      // signal we need: when it sees a non-zero rect we can open xterm,
+      // wire up data + focus listeners, run a fit, and connect the WS — in
+      // that order.
+      let opened = false;
       let connected = false;
-      const resizeObserver = new ResizeObserver((entries) => {
-        if (!mountedRef.current || exitedRef.current) return;
-        // Skip when container is hidden (display:none) — fitting with 0 dimensions
-        // causes xterm.js to reflow the buffer and drop lines irreversibly.
-        const entry = entries[0];
-        if (entry && entry.contentRect.width === 0 && entry.contentRect.height === 0) return;
+      let dataDisposable: { dispose: () => void } | null = null;
+      let onFocusHandler: (() => void) | null = null;
+
+      const ensureOpen = (): boolean => {
+        if (opened) return true;
+        if (container.offsetWidth === 0 || container.offsetHeight === 0) return false;
+        terminal.open(container);
+        onFocusHandler = (): void => onTerminalFocusRef.current?.();
+        terminal.textarea?.addEventListener("focus", onFocusHandler);
+        dataDisposable = terminal.onData((data: string) => {
+          if (ptyIdRef.current && !exitedRef.current) {
+            writeRef.current?.(data);
+          }
+        });
+        opened = true;
+        return true;
+      };
+
+      const runFit = (): boolean => {
+        if (!mountedRef.current || exitedRef.current) return false;
+        if (!ensureOpen()) return false;
         try {
           fitAddon.fit();
         } catch {
-          return; // Container still has no size — wait for next callback
+          return false;
         }
         if (!connected) {
           connected = true;
@@ -245,14 +259,68 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
           const id = ptyIdRef.current;
           if (id) resizeRef.current?.(terminal.cols, terminal.rows);
         }
+        return true;
+      };
+
+      const resizeObserver = new ResizeObserver((entries) => {
+        if (!mountedRef.current || exitedRef.current) return;
+        // Skip when container is hidden (display:none) — fitting with 0 dimensions
+        // causes xterm.js to reflow the buffer and drop lines irreversibly.
+        const entry = entries[0];
+        if (entry && entry.contentRect.width === 0 && entry.contentRect.height === 0) return;
+        // Defer fit while the user is actively dragging a resize handle.
+        // `fitAddon.fit()` measures the cell metrics off the DOM and reflows
+        // xterm's buffer; running it per frame for every visible terminal pane
+        // during a drag is one of the dominant cascading-RO costs we want to
+        // avoid. We catch up with a single `fit()` once the drag ends. The
+        // very first fit (pre-`connected`) must still run so the PTY can
+        // boot at correct dimensions.
+        if (connected && isResizing()) return;
+        runFit();
       });
       resizeObserver.observe(container);
 
+      // Catch-up fit on resize-end so the terminal lands at the final size.
+      const unsubscribeResize = subscribeResize((active) => {
+        if (active) return;
+        runFit();
+      });
+
+      // Visibility signal. `ResizeObserver` is known to silently skip
+      // `display:none` → `display:block` transitions in some Chromium
+      // versions (crbug.com/899068) — the user clicks the Terminal tab,
+      // we flip our tab-mount's display, but no RO callback ever fires,
+      // so xterm never gets opened. `IntersectionObserver` is the right
+      // tool here: it fires reliably the moment the element enters the
+      // viewport, including when an ancestor flips from display:none.
+      const intersectionObserver = new IntersectionObserver((entries) => {
+        if (!mountedRef.current || exitedRef.current) return;
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        runFit();
+      });
+      intersectionObserver.observe(container);
+
+      // Belt-and-braces rAF retry: covers any layout edge case that
+      // neither RO nor IO catch (e.g. container parented but still 0×0
+      // because a flex parent hasn't laid out yet). Stops the moment
+      // xterm opens successfully.
+      let bootstrapRaf = 0;
+      const tryBootstrap = (): void => {
+        if (opened || !mountedRef.current || exitedRef.current) return;
+        if (runFit()) return;
+        bootstrapRaf = requestAnimationFrame(tryBootstrap);
+      };
+      bootstrapRaf = requestAnimationFrame(tryBootstrap);
+
       return () => {
         mountedRef.current = false;
+        cancelAnimationFrame(bootstrapRaf);
+        intersectionObserver.disconnect();
         resizeObserver.disconnect();
-        terminal.textarea?.removeEventListener("focus", onFocusHandler);
-        dataDisposable.dispose();
+        unsubscribeResize();
+        if (onFocusHandler) terminal.textarea?.removeEventListener("focus", onFocusHandler);
+        dataDisposable?.dispose();
 
         if (ptyIdRef.current && !exitedRef.current && shouldKillRef.current) {
           killRef.current?.();

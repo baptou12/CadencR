@@ -2,7 +2,7 @@
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
 - [ ] [claude] Auto-accept / plan / auto
-- [~] [sidebar] can break the application for invalid values
+- [ ] [opencode] unstable rarely, stops streaming
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters

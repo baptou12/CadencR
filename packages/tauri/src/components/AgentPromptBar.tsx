@@ -359,7 +359,11 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               mentionFiles={filesQuery.data}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
-              initialText={text || initialDraft || undefined}
+              // Only the first-render value matters: `LexicalComposer` ignores
+              // `initialConfig` changes after mount. `text` updates on every
+              // keystroke — passing it here used to trigger an unnecessary
+              // prop change on `<PromptEditor>` per character.
+              initialText={initialDraft || undefined}
             />
 
             <div className="flex shrink-0 items-center gap-1.5 self-end">

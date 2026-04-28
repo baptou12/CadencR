@@ -3,7 +3,11 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
-import { useActiveTab } from "@/hooks/useActiveTab";
+import {
+  isTabVisible,
+  selectFeatureLayout,
+  useFeatureLayoutStore,
+} from "@/stores/feature-layout-store";
 import { PanelLeft } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
@@ -45,8 +49,14 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
-    const { activeTab } = useActiveTab(featureId);
-    const isEditorActive = activeTab === "editor";
+    // The editor's hotkeys (cmd+P, cmd+shift+F, cmd+D, etc.) only fire while
+    // the editor tab is the visible tab of its pane. With the new layout,
+    // multiple panes can each show different tabs simultaneously, so we
+    // derive visibility from the layout store rather than a single
+    // "active tab" enum.
+    const isEditorActive = useFeatureLayoutStore((s) =>
+      isTabVisible(selectFeatureLayout(featureId)(s), "editor"),
+    );
     const [fileSearchOpen, setFileSearchOpen] = useState(false);
     const [contentSearchOpen, setContentSearchOpen] = useState(false);
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
