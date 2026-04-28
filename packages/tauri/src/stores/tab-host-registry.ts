@@ -13,20 +13,22 @@ import { create } from "zustand";
 
 interface TabHostRegistry {
   hosts: Record<string, HTMLElement>;
-  setHost(key: string, el: HTMLElement | null): void;
+  registerHost(key: string, el: HTMLElement): void;
+  unregisterHost(key: string, expectedCurrent: HTMLElement): void;
 }
 
 export const useTabHostRegistry = create<TabHostRegistry>((set) => ({
   hosts: {},
-  setHost: (key, el) =>
+  registerHost: (key, el) =>
     set((s) => {
-      if (el === null) {
-        if (!(key in s.hosts)) return s;
-        const next = { ...s.hosts };
-        delete next[key];
-        return { hosts: next };
-      }
       if (s.hosts[key] === el) return s;
       return { hosts: { ...s.hosts, [key]: el } };
+    }),
+  unregisterHost: (key, expectedCurrent) =>
+    set((s) => {
+      if (s.hosts[key] !== expectedCurrent) return s;
+      const next = { ...s.hosts };
+      delete next[key];
+      return { hosts: next };
     }),
 }));

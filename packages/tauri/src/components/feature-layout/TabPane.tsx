@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useRef, type ReactNode } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { XIcon } from "lucide-react";
@@ -28,25 +28,22 @@ interface TabPaneProps {
  *   - For the root pane, the LayoutMenu trailing the strip.
  */
 export function TabPane({ featureId, leaf, tabs }: TabPaneProps): ReactNode {
-  const setHost = useTabHostRegistry((s) => s.setHost);
+  const registerHost = useTabHostRegistry((s) => s.registerHost);
+  const unregisterHost = useTabHostRegistry((s) => s.unregisterHost);
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
   const dockTab = useFeatureLayoutStore((s) => s.dockTab);
   const setFocusedPane = useFeatureLayoutStore((s) => s.setFocusedPane);
   const focusedPaneId = useFeatureLayoutStore((s) => s.features[featureId]?.focusedPaneId);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement | null>(null);
   const setContentRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      contentRef.current = el;
-      setHost(leaf.id, el);
+    (el: HTMLDivElement | null): (() => void) | undefined => {
+      if (!el) return undefined;
+      registerHost(leaf.id, el);
+      return () => unregisterHost(leaf.id, el);
     },
-    [leaf.id, setHost],
+    [leaf.id, registerHost, unregisterHost],
   );
-  // Unregister on unmount so portals can't target a detached node.
-  useEffect(() => {
-    return () => setHost(leaf.id, null);
-  }, [leaf.id, setHost]);
 
   const isRoot = leaf.id === ROOT_LEAF_ID;
   const isFocused = focusedPaneId === leaf.id;
