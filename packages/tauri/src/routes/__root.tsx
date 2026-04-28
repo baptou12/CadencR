@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -331,15 +331,21 @@ function RootLayout() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  const handleLeftResize = useCallback(
-    (panelSize: PanelSize) => {
-      // Skip transient values reported while the panel is collapsed/animating
-      // so we don't overwrite the persisted width with 0 or a tiny number.
-      if (panelSize.inPixels < 50) return;
-      leftWidth.setValue(String(Math.round(panelSize.inPixels)));
-    },
-    [leftWidth],
-  );
+  // Persist the sidebar width once the user releases the resize handle
+  // (post-pointer-up). The previous version used `onResize` on the Panel,
+  // which fires *per pointer move* — and the library implements it inside a
+  // ResizeObserver callback that reads `offsetWidth` synchronously, forcing
+  // a full layout pass per pixel of drag. Even though our handler itself is
+  // cheap (it only resets a debounce timer), the library-side forced sync
+  // layout combined with text-reflow in heavy children (the agent stream)
+  // capped the drag at 5–10 fps. `onLayoutChanged` on the Group fires once
+  // when the user releases the pointer — same persistence behavior, none of
+  // the per-pixel cost.
+  const handleLayoutChanged = useCallback(() => {
+    const size = sidebarPanelRef.current?.getSize();
+    if (!size || size.inPixels < 50) return;
+    leftWidth.setValue(String(Math.round(size.inPixels)));
+  }, [leftWidth]);
 
   const defaultLeftSize = leftWidth.value ? `${leftWidth.value}px` : "256px";
 
@@ -348,7 +354,7 @@ function RootLayout() {
       value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}
     >
       <div className="flex h-screen">
-        <ResizablePanelGroup orientation="horizontal">
+        <ResizablePanelGroup orientation="horizontal" onLayoutChanged={handleLayoutChanged}>
           <ResizablePanel
             id="sidebar"
             panelRef={sidebarPanelRef}
@@ -357,7 +363,6 @@ function RootLayout() {
             defaultSize={defaultLeftSize}
             minSize="200px"
             maxSize="400px"
-            onResize={handleLeftResize}
           >
             <div
               ref={leftSidebarRef}

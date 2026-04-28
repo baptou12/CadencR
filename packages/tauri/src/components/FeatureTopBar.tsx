@@ -109,7 +109,7 @@ export function FeatureTopBar({
       <div
         onMouseDown={startDragging}
         onDoubleClick={toggleMaximize}
-        className={cn("flex items-center gap-3 border-b border-border px-6 py-3", className)}
+        className={cn("flex items-center gap-3 px-6 py-3", className)}
       >
         {sidebarCollapsed && (
           <>

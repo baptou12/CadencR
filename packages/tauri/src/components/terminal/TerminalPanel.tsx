@@ -84,7 +84,20 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     // Ensure slots exist for current leaves (called during render so portals have targets)
     const activeSlots = leaves.map((leaf) => ({ leaf, slot: getSlot(leaf.id) }));
 
-    // Remove slots for leaves that no longer exist
+    // Remove slots for leaves that no longer exist. Note: we deliberately do
+    // NOT have a separate `useEffect(() => return cleanup, [])` that empties
+    // `slotsRef` on unmount. Under React StrictMode (dev) such a cleanup runs
+    // mid-life (mount → cleanup → remount), wiping the Map. A subsequent
+    // re-render — e.g. when the WS sets `ptyId` via `setPtyId` — then walks
+    // an empty Map, creates a *fresh* slot for the same leaf, and React's
+    // `createPortal` unmounts xterm from the old slot and mounts it in the
+    // new one. The old, orphaned slot stays parented under the placeholder
+    // (re-appended by the `useLayoutEffect` re-run), so we end up with two
+    // sibling slots: an empty one (visible) and the live one (overflowed
+    // out of the parent's `overflow-hidden`, invisible). The result is a
+    // blank pane even though xterm is fully wired up. Slots are children
+    // of `placeholder`, so they're cleaned up automatically when this
+    // component unmounts and React removes the placeholder.
     useEffect(() => {
       const activeIds = new Set(leaves.map((l) => l.id));
       for (const [id, el] of slotsRef.current) {
@@ -94,14 +107,6 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         }
       }
     }, [leaves]);
-
-    // Clean up all slots on unmount
-    useEffect(() => {
-      return () => {
-        for (const el of slotsRef.current.values()) el.remove();
-        slotsRef.current.clear();
-      };
-    }, []);
 
     const setPaneRef = useCallback((paneId: string, handle: XTermInstanceHandle | null) => {
       if (handle) paneRefs.current.set(paneId, handle);

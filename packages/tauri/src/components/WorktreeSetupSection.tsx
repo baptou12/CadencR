@@ -162,7 +162,7 @@ export function WorktreeSetupSection({
   ];
 
   return (
-    <div className="flex flex-col border-b border-border bg-background">
+    <div className="flex flex-col bg-background">
       {/* Header — compact inline row */}
       <div
         className="flex cursor-pointer items-center gap-2 px-6 py-1.5 hover:bg-muted/70"

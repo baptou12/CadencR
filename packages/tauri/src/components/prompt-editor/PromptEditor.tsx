@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef } from "react";
 import { LexicalComposer } from "@lexical/react/LexicalComposer";
 import { PlainTextPlugin } from "@lexical/react/LexicalPlainTextPlugin";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -52,25 +52,24 @@ function EditorRefPlugin({
   return null;
 }
 
-function AutoResizePlugin() {
-  const [editor] = useLexicalComposerContext();
-
-  useEffect(() => {
-    const rootElement = editor.getRootElement();
-    if (!rootElement) return;
-
-    const resize = () => {
-      rootElement.style.height = "auto";
-      rootElement.style.height = `${rootElement.scrollHeight}px`;
-    };
-
-    const unregister = editor.registerUpdateListener(() => resize());
-    resize();
-    return unregister;
-  }, [editor]);
-
-  return null;
-}
+// NOTE: We intentionally do NOT ship a JS-driven autoresize plugin here.
+//
+// A `<div contenteditable="true">` grows to fit its content natively — unlike
+// `<textarea>`. The wrapper passes `max-h-* min-h-* overflow-y-auto` via
+// `className`, which gives the multi-line growth + cap + scroll behavior for
+// free.
+//
+// A previous version registered an update listener that did:
+//   el.style.height = "auto";
+//   el.style.height = `${el.scrollHeight}px`;
+// on every editor update. Reading `scrollHeight` forces the browser to do a
+// synchronous full-document layout pass. With one tab visible that's
+// borderline acceptable; with the splittable grid showing xterm + CodeMirror +
+// AgentStream + diff viewer simultaneously it triggered cascading
+// ResizeObserver callbacks (xterm refit, CodeMirror remeasure) on every
+// keystroke and produced visible per-character lag in the prompt. The
+// plugin's visual effect was already a no-op (max-height clamps the inline
+// height anyway), so dropping it was pure performance win.
 
 const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
   function PromptEditorInner(
@@ -148,7 +147,6 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         />
         <HistoryPlugin />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
-        <AutoResizePlugin />
         <MentionPlugin files={mentionFiles} />
         <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
         <KeyboardShortcutsPlugin
@@ -163,19 +161,30 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
 
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(
   function PromptEditor(props, ref) {
-    const initialConfig = {
-      namespace: "PromptEditor",
-      theme: { paragraph: "m-0 leading-[22px]" },
-      nodes: [MentionNode, SlashCommandNode],
-      onError(error: Error) {
-        toast.error(`Editor error: ${error.message}`);
-      },
-      editorState: props.initialText
-        ? () => {
-            initializeEditorText(props.initialText!);
-          }
-        : undefined,
-    };
+    // `LexicalComposer` only reads `initialConfig` once on mount, but a fresh
+    // object reference here would still re-create the closure (and the
+    // `editorState` factory) on every parent render. Freezing it on mount
+    // mirrors Lexical's semantics and keeps the composer's prop reference
+    // stable. Note: changing `initialText` after mount is intentionally a
+    // no-op — callers use `setText()` via the imperative handle to update the
+    // editor at runtime (e.g. draft restore, history navigation).
+    const initialTextRef = useRef(props.initialText);
+    const initialConfig = useMemo(
+      () => ({
+        namespace: "PromptEditor",
+        theme: { paragraph: "m-0 leading-[22px]" },
+        nodes: [MentionNode, SlashCommandNode],
+        onError(error: Error) {
+          toast.error(`Editor error: ${error.message}`);
+        },
+        editorState: initialTextRef.current
+          ? () => {
+              initializeEditorText(initialTextRef.current!);
+            }
+          : undefined,
+      }),
+      [],
+    );
 
     return (
       <LexicalComposer initialConfig={initialConfig}>

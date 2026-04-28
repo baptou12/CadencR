@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
+import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
 import type { AgentBlockData } from "../AgentBlock";
 
 const BOTTOM_EPSILON = 1;
@@ -151,13 +152,20 @@ export function useAgentSessionScroll({
   }, [blocks, scrollToBottom]);
 
   // Catch async content height changes (e.g. CodeMirror rendering after useEffect).
+  //
+  // During an active resize drag we *skip* this work entirely. The callback
+  // does forced-sync-layout reads (`scrollHeight`, `clientHeight`) and a
+  // `scrollTop` write; running it per frame across 4 split panes was the
+  // dominant bottleneck behind the choppy resize. We listen for
+  // resize-end via `subscribeResize` and run a single catch-up when the
+  // user releases the handle.
   useEffect(() => {
     const content = contentRef.current;
     const scrollEl = scrollContainerRef.current;
     if (!content || !scrollEl) return;
 
     let raf = 0;
-    const ro = new ResizeObserver(() => {
+    const flush = (): void => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
         if (autoScrollEnabledRef.current) {
@@ -165,11 +173,19 @@ export function useAgentSessionScroll({
         }
         loadOlderIfNeeded("bootstrap");
       });
+    };
+    const ro = new ResizeObserver(() => {
+      if (isResizing()) return;
+      flush();
     });
     ro.observe(content);
+    const unsubscribe = subscribeResize((active) => {
+      if (!active) flush();
+    });
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      unsubscribe();
     };
   }, [loadOlderIfNeeded]);
 

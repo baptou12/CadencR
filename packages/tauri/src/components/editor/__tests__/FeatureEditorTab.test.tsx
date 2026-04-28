@@ -22,8 +22,11 @@ vi.mock("@/hooks/useFileWatcher", () => ({
   useFileWatcher: (projectPath: string) => mockUseFileWatcher(projectPath),
 }));
 
-vi.mock("@/hooks/useActiveTab", () => ({
-  useActiveTab: vi.fn(() => ({ activeTab: "editor" })),
+vi.mock("@/stores/feature-layout-store", () => ({
+  // Test always considers the editor visible — exercises the hotkey paths.
+  useFeatureLayoutStore: vi.fn(() => true),
+  selectFeatureLayout: () => () => ({}),
+  isTabVisible: () => true,
 }));
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({

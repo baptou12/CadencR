@@ -2,6 +2,7 @@ pub mod agents;
 pub mod custom_actions;
 pub mod diff_comments;
 pub mod editor;
+pub mod feature_layouts;
 pub mod features;
 pub mod git;
 pub mod mcp;

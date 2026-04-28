@@ -240,6 +240,13 @@ export interface CreateDiffCommentRequest {
   side: string;
 }
 
+export interface CreateFeatureLayoutRequest {
+  /** JSON-serialized layout. Frontend owns the schema; backend only checks
+it parses as JSON to fail fast on obviously bad payloads. */
+  config: string;
+  name: string;
+}
+
 export type CreateFeatureRequestTitle = string | null;
 
 export type CreateFeatureRequestType = string | null;
@@ -458,6 +465,26 @@ export interface Feature {
 
 export interface FeatureAgentStateResponse {
   sessions: SessionState[];
+}
+
+/**
+ * A user-saved feature-page layout (tab grid configuration).
+
+`config` is an opaque JSON blob owned by the frontend (validated there via
+Zod). The backend never reads its shape — keeping the schema in one place
+avoids drift when we add new tab kinds or split modes.
+ */
+export interface FeatureLayout {
+  config: string;
+  created_at: string;
+  id: number;
+  is_default: boolean;
+  name: string;
+  updated_at: string;
+}
+
+export interface FeatureLayoutsSuccessResponse {
+  success: boolean;
 }
 
 export interface FeatureModelSettings {
@@ -1140,6 +1167,15 @@ export interface UpdateCustomActionRequest {
 
 export interface UpdateDiffCommentRequest {
   content: string;
+}
+
+export type UpdateFeatureLayoutRequestConfig = string | null;
+
+export type UpdateFeatureLayoutRequestName = string | null;
+
+export interface UpdateFeatureLayoutRequest {
+  config?: UpdateFeatureLayoutRequestConfig;
+  name?: UpdateFeatureLayoutRequestName;
 }
 
 export interface UpdateStatusRequest {
@@ -3039,6 +3075,321 @@ export const useWriteFile = <TError = ErrorType<unknown>, TContext = unknown>(op
   TContext
 > => {
   const mutationOptions = getWriteFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const listLayouts = (signal?: AbortSignal) => {
+  return customInstance<FeatureLayout[]>({ url: `/api/feature-layouts`, method: "GET", signal });
+};
+
+export const getListLayoutsQueryKey = () => {
+  return [`/api/feature-layouts`] as const;
+};
+
+export const getListLayoutsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLayouts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listLayouts>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListLayoutsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listLayouts>>> = ({ signal }) =>
+    listLayouts(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLayouts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLayoutsQueryResult = NonNullable<Awaited<ReturnType<typeof listLayouts>>>;
+export type ListLayoutsQueryError = ErrorType<unknown>;
+
+export function useListLayouts<
+  TData = Awaited<ReturnType<typeof listLayouts>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listLayouts>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLayoutsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const createLayout = (
+  createFeatureLayoutRequest: CreateFeatureLayoutRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<FeatureLayout>({
+    url: `/api/feature-layouts`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createFeatureLayoutRequest,
+    signal,
+  });
+};
+
+export const getCreateLayoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLayout>>,
+    TError,
+    { data: CreateFeatureLayoutRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createLayout>>,
+  TError,
+  { data: CreateFeatureLayoutRequest },
+  TContext
+> => {
+  const mutationKey = ["createLayout"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createLayout>>,
+    { data: CreateFeatureLayoutRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createLayout(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateLayoutMutationResult = NonNullable<Awaited<ReturnType<typeof createLayout>>>;
+export type CreateLayoutMutationBody = CreateFeatureLayoutRequest;
+export type CreateLayoutMutationError = ErrorType<unknown>;
+
+export const useCreateLayout = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createLayout>>,
+    TError,
+    { data: CreateFeatureLayoutRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createLayout>>,
+  TError,
+  { data: CreateFeatureLayoutRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateLayoutMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const updateLayout = (
+  id: number,
+  updateFeatureLayoutRequest: UpdateFeatureLayoutRequest,
+) => {
+  return customInstance<FeatureLayout>({
+    url: `/api/feature-layouts/${id}`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: updateFeatureLayoutRequest,
+  });
+};
+
+export const getUpdateLayoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLayout>>,
+    TError,
+    { id: number; data: UpdateFeatureLayoutRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateLayout>>,
+  TError,
+  { id: number; data: UpdateFeatureLayoutRequest },
+  TContext
+> => {
+  const mutationKey = ["updateLayout"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateLayout>>,
+    { id: number; data: UpdateFeatureLayoutRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateLayout(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateLayoutMutationResult = NonNullable<Awaited<ReturnType<typeof updateLayout>>>;
+export type UpdateLayoutMutationBody = UpdateFeatureLayoutRequest;
+export type UpdateLayoutMutationError = ErrorType<unknown>;
+
+export const useUpdateLayout = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateLayout>>,
+    TError,
+    { id: number; data: UpdateFeatureLayoutRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateLayout>>,
+  TError,
+  { id: number; data: UpdateFeatureLayoutRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateLayoutMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const deleteLayout = (id: number) => {
+  return customInstance<FeatureLayoutsSuccessResponse>({
+    url: `/api/feature-layouts/${id}`,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteLayoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLayout>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteLayout>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteLayout"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLayout>>, { id: number }> = (
+    props,
+  ) => {
+    const { id } = props ?? {};
+
+    return deleteLayout(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteLayoutMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLayout>>>;
+
+export type DeleteLayoutMutationError = ErrorType<unknown>;
+
+export const useDeleteLayout = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteLayout>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteLayout>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationOptions = getDeleteLayoutMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const setDefaultLayout = (id: number, signal?: AbortSignal) => {
+  return customInstance<FeatureLayout>({
+    url: `/api/feature-layouts/${id}/set-default`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getSetDefaultLayoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultLayout>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setDefaultLayout>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["setDefaultLayout"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setDefaultLayout>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return setDefaultLayout(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetDefaultLayoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setDefaultLayout>>
+>;
+
+export type SetDefaultLayoutMutationError = ErrorType<unknown>;
+
+export const useSetDefaultLayout = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setDefaultLayout>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setDefaultLayout>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationOptions = getSetDefaultLayoutMutationOptions(options);
 
   return useMutation(mutationOptions);
 };

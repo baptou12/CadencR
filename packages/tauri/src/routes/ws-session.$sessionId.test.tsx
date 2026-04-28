@@ -5,8 +5,9 @@ import React from "react";
 const mocks = vi.hoisted(() => {
   const mockUseParams = vi.fn(() => ({ sessionId: "ws-feature-35" }));
   const mockUseSearch = vi.fn(() => ({ cwd: "/test/path", featureId: 35, projectId: 1 }));
-  const mockActiveTab = vi.fn(() => ({ activeTab: "agent", setActiveTab: vi.fn() }));
-  return { mockUseParams, mockUseSearch, mockActiveTab };
+  // Default: agent tab is the visible/active root tab.
+  const mockAgentVisible = vi.fn(() => true);
+  return { mockUseParams, mockUseSearch, mockAgentVisible };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -32,28 +33,21 @@ vi.mock("@/components/FeatureTopBar", () => ({
   ),
 }));
 
-vi.mock("@/components/FeatureTabBar", () => ({
-  FeatureTabBar: ({
-    activeTab,
-    onTabChange,
-  }: {
-    activeTab: string;
-    onTabChange: (tab: string) => void;
-  }) => (
-    <div data-testid="feature-tab-bar">
-      <button onClick={() => onTabChange("agent")}>Agent</button>
-      <button onClick={() => onTabChange("editor")}>Editor</button>
-      <button onClick={() => onTabChange("terminal")}>Terminal</button>
-      <button onClick={() => onTabChange("git")}>Git</button>
-      <span data-testid="active-tab">{activeTab}</span>
+vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({
+  // Render every tab's content in a flat container so the test can assert
+  // each tab's body without driving DnD/portal infrastructure.
+  FeatureLayoutShell: ({ tabs }: { tabs: Record<string, { content: React.ReactNode }> }) => (
+    <div data-testid="feature-layout-shell">
+      <div data-testid="agent-pane">{tabs.agent.content}</div>
+      <div data-testid="terminal-pane">{tabs.terminal.content}</div>
+      <div data-testid="git-pane">{tabs.git.content}</div>
+      <div data-testid="editor-pane">{tabs.editor.content}</div>
     </div>
   ),
 }));
 
 vi.mock("@/components/FeatureTerminalTab", () => ({
-  FeatureTerminalTab: ({ hidden }: { hidden: boolean }) => (
-    <div data-testid="terminal-tab" className={hidden ? "hidden" : ""} />
-  ),
+  FeatureTerminalTab: () => <div data-testid="terminal-tab" />,
 }));
 
 vi.mock("@/components/FeatureGitTab", () => ({
@@ -110,8 +104,33 @@ vi.mock("@/stores/ws-session-store", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useActiveTab", () => ({
-  useActiveTab: mocks.mockActiveTab,
+vi.mock("@/stores/feature-layout-store", () => ({
+  useFeatureLayoutStore: vi.fn((selector) => {
+    if (typeof selector === "function") {
+      return selector({
+        features: {
+          35: {
+            version: 1,
+            splitRoot: {
+              type: "leaf",
+              id: "root",
+              tabIds: ["agent", "terminal", "git", "editor"],
+              activeTabId: mocks.mockAgentVisible() ? "agent" : "editor",
+            },
+            focusedPaneId: "root",
+            appliedLayoutId: null,
+          },
+        },
+        setPaneActiveTab: vi.fn(),
+      });
+    }
+    return undefined;
+  }),
+  selectFeatureLayout: () => (s: { features: Record<number, unknown> }) => s.features[35],
+  findLeafById: (root: { type: string; id?: string; activeTabId?: string }) =>
+    root.type === "leaf" ? root : null,
+  isTabVisible: (state: { splitRoot: { activeTabId: string } }, tab: string): boolean =>
+    state.splitRoot.activeTabId === tab,
 }));
 
 vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
@@ -175,46 +194,20 @@ describe("WsSessionPage route", () => {
     vi.mocked(AgentSession).mockClear();
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
     mocks.mockUseSearch.mockReturnValue({ cwd: "/test/path", featureId: 35, projectId: 1 });
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "agent", setActiveTab: vi.fn() });
+    mocks.mockAgentVisible.mockReturnValue(true);
   });
 
-  it("renders the agent tab content by default", () => {
+  it("mounts every tab body via the layout shell", async () => {
     render(<WsSessionPage />);
+    // All tabs are always mounted now — visibility is handled by the
+    // (mocked-out) layout shell. Editor is lazy-loaded so we await it.
     expect(screen.getByTestId("agent-session")).toBeInTheDocument();
-  });
-
-  it("editor panel wrapper is visible when activeTab is editor", () => {
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "editor", setActiveTab: vi.fn() });
-    const { container } = render(<WsSessionPage />);
-    // The editor wrapper div should have h-full but NOT hidden
-    const editorWrapper = container.querySelector(".h-full:not(.hidden)");
-    expect(editorWrapper).toBeInTheDocument();
-  });
-
-  it("editor panel wrapper is hidden when activeTab is agent", () => {
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "agent", setActiveTab: vi.fn() });
-    const { container } = render(<WsSessionPage />);
-    // Agent div is visible (h-full), editor div should be h-full hidden
-    const allHFull = container.querySelectorAll(".h-full");
-    const editorWrapper = Array.from(allHFull).find(
-      (el) =>
-        el.className === "h-full hidden" && !el.querySelector("[data-testid='agent-session']"),
-    );
-    expect(editorWrapper).toBeTruthy();
-  });
-
-  it("renders git tab when activeTab is git", () => {
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "git", setActiveTab: vi.fn() });
-    render(<WsSessionPage />);
+    expect(screen.getByTestId("terminal-tab")).toBeInTheDocument();
     expect(screen.getByTestId("git-tab")).toBeInTheDocument();
+    expect(await screen.findByTestId("editor-tab")).toBeInTheDocument();
   });
 
-  it("does not render git tab when activeTab is not git", () => {
-    render(<WsSessionPage />);
-    expect(screen.queryByTestId("git-tab")).not.toBeInTheDocument();
-  });
-
-  it("forwards session todos to AgentSession when the agent tab is active", () => {
+  it("forwards session todos to AgentSession when the agent tab is visible", () => {
     const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
     vi.mocked(useWsSessionStore).mockImplementation((selector) =>
       (selector as (s: unknown) => unknown)({
@@ -223,12 +216,12 @@ describe("WsSessionPage route", () => {
         retryWorktreeSetup: vi.fn(),
       }),
     );
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "agent", setActiveTab: vi.fn() });
+    mocks.mockAgentVisible.mockReturnValue(true);
     render(<WsSessionPage />);
     expect(lastAgentSessionProps().todos).toEqual(todos);
   });
 
-  it("passes null todos to AgentSession when a non-agent tab is active", () => {
+  it("passes null todos to AgentSession when the agent tab is hidden", () => {
     const todos = [{ content: "do x", status: "pending" as const, activeForm: "doing x" }];
     vi.mocked(useWsSessionStore).mockImplementation((selector) =>
       (selector as (s: unknown) => unknown)({
@@ -237,7 +230,7 @@ describe("WsSessionPage route", () => {
         retryWorktreeSetup: vi.fn(),
       }),
     );
-    mocks.mockActiveTab.mockReturnValue({ activeTab: "editor", setActiveTab: vi.fn() });
+    mocks.mockAgentVisible.mockReturnValue(false);
     render(<WsSessionPage />);
     expect(lastAgentSessionProps().todos).toBeNull();
   });

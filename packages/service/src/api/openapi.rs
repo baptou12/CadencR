@@ -11,6 +11,8 @@ use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
 use crate::domain::editor::routes as editor_routes;
+use crate::domain::feature_layouts::models as feature_layouts_models;
+use crate::domain::feature_layouts::routes as feature_layouts_routes;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
 use crate::domain::git::models;
@@ -101,6 +103,11 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_routes::list_runs_handler,
         custom_actions_routes::get_schedule_handler,
         custom_actions_routes::set_schedule_handler,
+        feature_layouts_routes::list_layouts_handler,
+        feature_layouts_routes::create_layout_handler,
+        feature_layouts_routes::update_layout_handler,
+        feature_layouts_routes::delete_layout_handler,
+        feature_layouts_routes::set_default_layout_handler,
         features_routes::get_feature_snapshot_handler,
         diff_comments_routes::list_diff_comments_handler,
         diff_comments_routes::create_diff_comment_handler,
@@ -226,6 +233,10 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_models::Scope,
         custom_actions_models::TriggeredBy,
         custom_actions_models::SuccessResponse,
+        feature_layouts_models::FeatureLayout,
+        feature_layouts_models::CreateFeatureLayoutRequest,
+        feature_layouts_models::UpdateFeatureLayoutRequest,
+        feature_layouts_models::SuccessResponse,
         diff_comments_models::DiffComment,
         diff_comments_models::CreateDiffCommentRequest,
         diff_comments_models::UpdateDiffCommentRequest,

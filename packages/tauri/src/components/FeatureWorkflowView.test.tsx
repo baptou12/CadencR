@@ -1,9 +1,56 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, act } from "@/test-utils";
+import type { ReactNode } from "react";
 import { FeatureWorkflowView } from "./FeatureWorkflowView";
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
+}));
+
+// The layout shell + DnD context are out-of-scope for this view's unit tests:
+// we render only the agent-pane content (which is what these tests actually
+// assert against). All tab bodies still get mounted, but inert.
+vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({
+  FeatureLayoutShell: ({ tabs }: { tabs: Record<string, { content: ReactNode }> }) =>
+    tabs.agent.content,
+}));
+
+vi.mock("@/components/FeatureTerminalTab", () => ({
+  FeatureTerminalTab: () => null,
+}));
+
+vi.mock("@/components/FeatureGitTab", () => ({
+  FeatureGitTab: () => null,
+}));
+
+vi.mock("@/components/editor/FeatureEditorTab", () => ({
+  default: () => null,
+}));
+
+vi.mock("@/stores/feature-layout-store", () => ({
+  useFeatureLayoutStore: vi.fn((selector) =>
+    typeof selector === "function"
+      ? selector({
+          features: {
+            1: {
+              version: 1,
+              splitRoot: {
+                type: "leaf",
+                id: "root",
+                tabIds: ["agent", "terminal", "git", "editor"],
+                activeTabId: "agent",
+              },
+              focusedPaneId: "root",
+              appliedLayoutId: null,
+            },
+          },
+          setPaneActiveTab: vi.fn(),
+        })
+      : undefined,
+  ),
+  selectFeatureLayout: () => (s: { features: Record<number, unknown> }) => s.features[1],
+  findLeafById: (root: { type: string }) => (root.type === "leaf" ? root : null),
+  isTabVisible: () => true,
 }));
 
 const mockInvalidate = vi.fn();

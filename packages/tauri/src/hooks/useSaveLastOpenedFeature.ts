@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useSetWorkspaceSetting } from "@/api/generated";
-import type { FeatureTab } from "./useActiveTab";
+import type { TabKind } from "@/stores/feature-layout-schema";
 
 /**
  * Persists the current projectId/featureId/activeTab as the last-opened feature,
@@ -9,7 +9,7 @@ import type { FeatureTab } from "./useActiveTab";
 export function useSaveLastOpenedFeature(
   projectId: number,
   featureId: number,
-  activeTab?: FeatureTab,
+  activeTab?: TabKind,
   skip = false,
 ) {
   const { mutate } = useSetWorkspaceSetting();
