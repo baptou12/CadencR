@@ -1599,6 +1599,48 @@ describe("ws-session-store", () => {
       expect(session.blocks.at(-1)?.type).toBe("user_message");
       expect(session.blocks.at(-1)?.content).toBe("/compact");
       expect(session.lifecycle).toEqual({ phase: "active" });
+      expect(session.pendingManualCompact).toBe(true);
+    });
+
+    it("compactSession ignores duplicate manual compact while one is pending", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      store.compactSession("s1");
+
+      const sent = ws.sent
+        .map((s) => JSON.parse(s))
+        .filter((message) => message.action === "compact");
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(sent).toHaveLength(1);
+      expect(session.blocks.filter((block) => block.type === "user_message")).toHaveLength(1);
+    });
+
+    it("compact.started keeps the manual compact lifecycle running", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      ws.simulateMessage({ domain: "session", action: "compact.started", payload: null });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.lifecycle).toEqual({ phase: "active" });
+      expect(session.pendingManualCompact).toBe(true);
     });
 
     it("compact.ok completes the compact lifecycle", async () => {
@@ -1617,6 +1659,7 @@ describe("ws-session-store", () => {
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.pendingManualCompact).toBe(false);
     });
 
     it("appends a compact_divider block for system.compact_boundary", async () => {
@@ -1651,6 +1694,95 @@ describe("ws-session-store", () => {
       expect(divider).toBeDefined();
       expect(divider?.content).toContain('"trigger":"auto"');
       expect(divider?.content).toContain('"pre_tokens":90000');
+    });
+
+    it("manual compact completes when the compact boundary arrives", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+              compact_metadata: { trigger: "manual", pre_tokens: 90000 },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.pendingManualCompact).toBe(false);
+    });
+
+    it("auto compact boundary does not complete a pending manual compact", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+              compact_metadata: { trigger: "auto", pre_tokens: 90000 },
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.lifecycle).toEqual({ phase: "active" });
+      expect(session.pendingManualCompact).toBe(true);
+    });
+
+    it("compact errors clear the pending manual compact flag", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        payload: { code: "SDK_ERROR", message: "compact failed" },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingManualCompact).toBe(false);
+      expect(session.lifecycle.phase).toBe("error");
     });
 
     it("sets contextUsage.wasCompacted when compact_boundary arrives", async () => {

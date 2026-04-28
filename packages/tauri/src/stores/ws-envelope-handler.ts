@@ -205,6 +205,7 @@ function handleSessionAction(
             type: "turn_ended",
             reason: "completed",
           }),
+          pendingManualCompact: false,
         }),
       );
       break;
@@ -275,12 +276,15 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
   const allMutations: BlockMutation[] = [];
   let enterPlanModeRequested = false;
   let compactBoundaryObserved = false;
+  let manualCompactBoundaryObserved = false;
   for (const rawBlock of p.blocks) {
     if (!isRecord(rawBlock)) continue;
     const result = processSdkMessage(rawBlock, state);
     allMutations.push(...result.mutations);
     enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
     compactBoundaryObserved ||= result.signals.compactBoundaryObserved;
+    manualCompactBoundaryObserved ||=
+      result.signals.compactBoundaryObserved && result.signals.compactBoundaryTrigger !== "auto";
   }
 
   if (allMutations.length === 0 && !compactBoundaryObserved) return;
@@ -307,7 +311,13 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
         };
   }
 
-  patch.lifecycle = transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
+  patch.lifecycle =
+    manualCompactBoundaryObserved && currentSession.pendingManualCompact
+      ? transitionTurn(currentSession.lifecycle, { type: "turn_ended", reason: "completed" })
+      : transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
+  if (manualCompactBoundaryObserved && currentSession.pendingManualCompact) {
+    patch.pendingManualCompact = false;
+  }
 
   ctx.set(updateSession(ctx.get(), sessionId, patch));
 }
@@ -377,6 +387,7 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
+        pendingManualCompact: false,
         blocks: [
           ...session.blocks,
           {
@@ -392,6 +403,7 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored" }),
+        pendingManualCompact: false,
       }),
     );
   }

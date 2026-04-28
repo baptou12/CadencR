@@ -4,7 +4,7 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::AppServerEvent;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
-use super::event_items::IndexState;
+use super::event_items::{item_type, IndexState};
 use super::event_system::{permission_request_event, request_key};
 use super::events::{notification_events, turn_id_from_started};
 use super::permissions::PendingCodexRequest;
@@ -74,9 +74,27 @@ async fn update_turn_state(
             *active_turn_id.write().await = Some(turn_id);
         }
     }
+    if method == "item/started" && is_context_compaction_item(params) {
+        if let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) {
+            *active_turn_id.write().await = Some(turn_id.to_string());
+        }
+    }
     if method == "turn/completed" {
         *active_turn_id.write().await = None;
     }
+    if method == "item/completed" && is_context_compaction_item(params) {
+        let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+            return;
+        };
+        let mut active_turn = active_turn_id.write().await;
+        if active_turn.as_deref() == Some(turn_id) {
+            *active_turn = None;
+        }
+    }
+}
+
+fn is_context_compaction_item(params: &serde_json::Value) -> bool {
+    item_type(params) == Some("contextCompaction")
 }
 
 async fn clear_resolved_request(
@@ -181,6 +199,59 @@ mod tests {
 
         update_turn_state("turn/completed", &json!({}), &active_turn_id).await;
         assert!(active_turn_id.read().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn context_compaction_item_updates_active_turn_state() {
+        let active_turn_id = Arc::new(RwLock::new(None));
+
+        update_turn_state(
+            "item/started",
+            &json!({
+                "turnId": "compact_turn",
+                "item": { "type": "contextCompaction", "id": "compact_1" }
+            }),
+            &active_turn_id,
+        )
+        .await;
+        assert_eq!(active_turn_id.read().await.as_deref(), Some("compact_turn"));
+
+        update_turn_state(
+            "item/completed",
+            &json!({
+                "turnId": "compact_turn",
+                "item": { "type": "contextCompaction", "id": "compact_1" }
+            }),
+            &active_turn_id,
+        )
+        .await;
+        assert!(active_turn_id.read().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn context_compaction_completion_keeps_unmatched_active_turn() {
+        let active_turn_id = Arc::new(RwLock::new(Some("regular_turn".to_string())));
+
+        update_turn_state(
+            "item/completed",
+            &json!({
+                "turnId": "compact_turn",
+                "item": { "type": "contextCompaction", "id": "compact_1" }
+            }),
+            &active_turn_id,
+        )
+        .await;
+        assert_eq!(active_turn_id.read().await.as_deref(), Some("regular_turn"));
+
+        update_turn_state(
+            "item/completed",
+            &json!({
+                "item": { "type": "contextCompaction", "id": "compact_1" }
+            }),
+            &active_turn_id,
+        )
+        .await;
+        assert_eq!(active_turn_id.read().await.as_deref(), Some("regular_turn"));
     }
 
     #[tokio::test]

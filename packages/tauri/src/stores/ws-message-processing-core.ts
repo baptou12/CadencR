@@ -22,6 +22,7 @@ export interface ParserSignals {
   enterPlanModeRequested: boolean;
   /** Set when a `system.compact_boundary` message arrives mid-stream. */
   compactBoundaryObserved: boolean;
+  compactBoundaryTrigger: string | null;
 }
 
 export interface MessageProcessingResult {
@@ -46,6 +47,7 @@ function createParserSignals(): ParserSignals {
   return {
     enterPlanModeRequested: false,
     compactBoundaryObserved: false,
+    compactBoundaryTrigger: null,
   };
 }
 
@@ -91,6 +93,7 @@ function processSystemMessage(
   signals.compactBoundaryObserved = true;
 
   const metadata = isRecord(msg.compact_metadata) ? msg.compact_metadata : undefined;
+  signals.compactBoundaryTrigger = typeof metadata?.trigger === "string" ? metadata.trigger : null;
   const content = metadata ? JSON.stringify(metadata) : "";
 
   state.counter += 1;

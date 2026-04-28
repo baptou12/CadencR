@@ -112,7 +112,7 @@ async fn handle_active_runtime_compact(
     let reply = WsEnvelope::reply(
         envelope_id,
         "session",
-        "compact.ok",
+        "compact.started",
         serde_json::Value::Null,
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));

@@ -16,6 +16,12 @@ fn item(params: &Value) -> Option<&Value> {
     params.get("item")
 }
 
+pub(super) fn item_type(params: &Value) -> Option<&str> {
+    item(params)
+        .and_then(|item| item.get("type"))
+        .and_then(Value::as_str)
+}
+
 fn item_id(item: &Value) -> String {
     item.get("id")
         .and_then(Value::as_str)
@@ -31,7 +37,7 @@ pub(super) fn item_events(
     let Some(item) = item(&params) else {
         return Vec::new();
     };
-    match item.get("type").and_then(Value::as_str) {
+    match item_type(&params) {
         Some("agentMessage") => text_item(params, completed, index_state),
         // Codex has emitted both casings while the plan item API is settling.
         Some("plan" | "Plan") => plan_item(params, completed, index_state),
@@ -52,7 +58,13 @@ pub(super) fn item_events(
             let name = collab_tool_name(item);
             tool_item(params, &name, collab_tool_input, completed, index_state)
         }
-        Some("contextCompaction") => vec![compact_event(params)],
+        Some("contextCompaction") => {
+            if completed {
+                vec![compact_event(params)]
+            } else {
+                Vec::new()
+            }
+        }
         _ => Vec::new(),
     }
 }

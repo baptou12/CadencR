@@ -334,6 +334,44 @@ mod tests {
     }
 
     #[test]
+    fn context_compaction_start_does_not_emit_divider() {
+        let events = map_events(
+            "item/started",
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "contextCompaction",
+                    "id": "compact_1"
+                }
+            }),
+        );
+
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn context_compaction_completion_emits_single_divider_with_metadata() {
+        let events = map_events(
+            "item/completed",
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "contextCompaction",
+                    "id": "compact_1",
+                    "trigger": "manual",
+                    "preTokens": 90_000
+                }
+            }),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert!(events[0].is_compact_boundary());
+        let metadata = events[0].compact_metadata().expect("compact metadata");
+        assert_eq!(metadata.trigger.as_deref(), Some("manual"));
+        assert_eq!(metadata.pre_tokens, Some(90_000));
+    }
+
+    #[test]
     fn null_mcp_error_is_successful_tool_result() {
         let events = map_events(
             "item/completed",

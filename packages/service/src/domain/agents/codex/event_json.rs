@@ -84,11 +84,16 @@ pub(super) fn compact_raw(session_id: &str, metadata: Value) -> Value {
 
 pub(super) fn compact_event(params: Value) -> RuntimeEvent {
     let sid = thread_id(&params).to_string();
-    let trigger = params
+    let item = params.get("item").unwrap_or(&Value::Null);
+    let trigger = item
         .get("trigger")
+        .or_else(|| params.get("trigger"))
         .and_then(Value::as_str)
         .map(ToOwned::to_owned);
-    let pre_tokens = params.get("preTokens").and_then(Value::as_u64);
+    let pre_tokens = item
+        .get("preTokens")
+        .or_else(|| params.get("preTokens"))
+        .and_then(Value::as_u64);
     let compact_metadata = RuntimeCompactMetadata {
         trigger,
         pre_tokens,
