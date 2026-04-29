@@ -4,6 +4,7 @@ pub(crate) mod mcp_spawn;
 mod session_compact;
 mod session_compact_opencode;
 mod session_compact_opencode_events;
+mod session_compact_opencode_poll;
 mod session_control;
 mod session_data;
 mod session_init;
@@ -84,6 +85,7 @@ pub struct SdkHandle {
     /// OpenCode uses this for manual compaction so it can reuse the same
     /// running server instead of probing/spawning on every compact request.
     pub(super) runtime_control_endpoint: Option<String>,
+    pub(super) manual_compact_running: Arc<AtomicBool>,
     /// Session-level cache of approved permission patterns.
     pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
@@ -1375,6 +1377,7 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
+            manual_compact_running: Arc::new(AtomicBool::new(false)),
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1407,6 +1410,7 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
+            manual_compact_running: Arc::new(AtomicBool::new(false)),
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,

@@ -117,3 +117,68 @@ async fn handle_active_runtime_compact(
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::{HashMap, HashSet};
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    use tokio::sync::Mutex;
+
+    use super::compaction_strategy;
+    use crate::domain::agents::adapter::{RuntimeCompactionStrategy, RuntimeSpawnConfig};
+    use crate::domain::ws_session::handler::{QueryState, SdkHandle, SdkSessions, SessionConfig};
+
+    fn handle_for_provider(provider: &str) -> SdkHandle {
+        SdkHandle {
+            state: QueryState::Pending(RuntimeSpawnConfig::default()),
+            feature_id: 1,
+            runtime_provider: provider.to_string(),
+            desired_model: None,
+            spawned_model: None,
+            desired_permission_mode: None,
+            spawned_permission_mode: None,
+            desired_thinking_effort: None,
+            spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
+            manual_compact_running: Arc::new(AtomicBool::new(false)),
+            session_cache: Arc::new(Mutex::new(HashSet::new())),
+            allowed_patterns: Arc::new(HashSet::new()),
+            resume_session_id: None,
+            config: SessionConfig {
+                cwd: PathBuf::new(),
+                canonical_cwd: PathBuf::new(),
+                permission_mode: None,
+                thinking_effort: None,
+                system_prompt: None,
+                env: None,
+            },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    #[tokio::test]
+    async fn compaction_strategy_dispatches_by_adapter() {
+        let sessions: SdkSessions = Arc::new(Mutex::new(HashMap::from([
+            (
+                1,
+                handle_for_provider(crate::domain::agents::codex::PROVIDER_ID),
+            ),
+            (
+                2,
+                handle_for_provider(crate::domain::agents::opencode::PROVIDER_ID),
+            ),
+        ])));
+
+        assert_eq!(
+            compaction_strategy(&sessions, 1).await.unwrap(),
+            RuntimeCompactionStrategy::LiveRuntime
+        );
+        assert_eq!(
+            compaction_strategy(&sessions, 2).await.unwrap(),
+            RuntimeCompactionStrategy::SummaryReplay
+        );
+    }
+}
