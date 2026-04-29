@@ -1,3 +1,4 @@
+pub mod agent_errors;
 pub mod agent_manager;
 pub mod agent_slot;
 pub mod engine;

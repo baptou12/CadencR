@@ -10,6 +10,11 @@ import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import { createStreamingState, processSdkMessage, applyMutations } from "@/stores/ws-session-store";
 import {
+  appendErrorBlock,
+  buildAgentStreamErrorBlock,
+  type AgentStreamErrorBlock,
+} from "./agent-stream-errors";
+import {
   type WorkflowState,
   type AgentSessionState,
   type AgentSlot,
@@ -106,6 +111,32 @@ export function processAgentStream(
   return { ...agent, blocks, ...(hasNewFileChange ? { hasFileChanges: true } : {}) };
 }
 
+function streamSlotKey(agents: Map<string, AgentSessionState>, slot: AgentSlot): string {
+  if (slot.type === "plan" || slot.type === "refine") return PLAN_KEY;
+  if (slot.type === "prd") return PRD_KEY;
+  return resolveSlotKey(agents, slot);
+}
+
+function handleAgentStreamError(
+  payload: Record<string, unknown>,
+  errorBlock: AgentStreamErrorBlock | null,
+  set: SetFn,
+): void {
+  if (!errorBlock) return;
+  const streamSlot = parseAgentSlot(payload);
+
+  set((state) => {
+    const slotKey = streamSlotKey(state.agents, streamSlot);
+    const agent =
+      state.agents.get(slotKey) ?? createAgentSession(errorBlock.sessionId, streamSlot.type);
+    const updated = appendErrorBlock(agent, errorBlock.block);
+    if (updated === agent) return {};
+    const agents = new Map(state.agents);
+    agents.set(slotKey, updated);
+    return { agents };
+  });
+}
+
 // -- Agent state routing helpers (unified) --
 
 /** Patch an agent in the agents Map. Returns a Zustand state patch. */
@@ -158,29 +189,25 @@ export type SetFn = (
 // -- Agent WS event handlers --
 
 export function handleAgentStream(payload: Record<string, unknown>, set: SetFn): void {
+  const errorBlock = buildAgentStreamErrorBlock(payload);
+  if (errorBlock) {
+    handleAgentStreamError(payload, errorBlock, set);
+    return;
+  }
+
   const streamSlot = parseAgentSlot(payload);
   const blocks = (payload.blocks ?? []) as Record<string, unknown>[];
   const singleMsg = payload.message as Record<string, unknown> | undefined;
   const msgs = blocks.length > 0 ? blocks : singleMsg ? [singleMsg] : [];
   if (msgs.length === 0) return;
 
-  if (streamSlot.type === "plan" || streamSlot.type === "prd" || streamSlot.type === "refine") {
-    const key = streamSlot.type === "prd" ? PRD_KEY : PLAN_KEY;
-    set((state) => {
-      let agent = state.agents.get(key) ?? createAgentSession(0, streamSlot.type);
-      for (const msg of msgs) {
-        agent = processAgentStream(agent, msg);
-      }
-      const agents = new Map(state.agents);
-      agents.set(key, agent);
-      return { agents };
-    });
-    return;
-  }
-
   set((state) => {
-    const slotKey = resolveSlotKey(state.agents, streamSlot);
-    const agent = state.agents.get(slotKey);
+    const slotKey = streamSlotKey(state.agents, streamSlot);
+    const agent =
+      state.agents.get(slotKey) ??
+      (streamSlot.type === "plan" || streamSlot.type === "prd" || streamSlot.type === "refine"
+        ? createAgentSession(0, streamSlot.type)
+        : null);
     if (!agent) return state;
     let updated = agent;
     for (const msg of msgs) {
