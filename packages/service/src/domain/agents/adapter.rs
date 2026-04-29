@@ -335,15 +335,15 @@ pub enum RuntimeStreamEvent {
         input_tokens: Option<u64>,
     },
     ContentBlockStart {
-        index: u32,
+        index: u64,
         block: RuntimeContentBlock,
     },
     ContentBlockDelta {
-        index: u32,
+        index: u64,
         delta: RuntimeContentDelta,
     },
     ContentBlockStop {
-        index: u32,
+        index: u64,
     },
     Other,
 }

@@ -136,8 +136,8 @@ pub(super) fn file_patch_updated_event(
 
 #[derive(Default)]
 pub(super) struct IndexState {
-    next: u32,
-    by_id: HashMap<String, u32>,
+    next: u64,
+    by_id: HashMap<String, u64>,
 }
 
 impl IndexState {
@@ -150,11 +150,11 @@ impl IndexState {
         self.by_id.contains_key(id)
     }
 
-    pub(super) fn index_for(&mut self, id: &str) -> u32 {
+    pub(super) fn index_for(&mut self, id: &str) -> u64 {
         if let Some(index) = self.by_id.get(id) {
             return *index;
         }
-        let index = self.next.saturating_add(1);
+        let index = self.next + 1;
         self.next = index;
         self.by_id.insert(id.to_string(), index);
         index
@@ -273,7 +273,7 @@ fn tool_item_with_input(
     vec![stream_start_event(&sid, index_state.index_for(&id), block)]
 }
 
-fn stream_start_event(session_id: &str, index: u32, block: RuntimeContentBlock) -> RuntimeEvent {
+fn stream_start_event(session_id: &str, index: u64, block: RuntimeContentBlock) -> RuntimeEvent {
     let event = RuntimeStreamEvent::ContentBlockStart { index, block };
     RuntimeEvent::new(
         metadata(session_id, stream_event_raw(session_id, None, &event)),

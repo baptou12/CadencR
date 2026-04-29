@@ -124,13 +124,11 @@ impl AgentRuntimeSession for CodexSession {
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
         let Some(source_rx) = self.event_rx.take() else {
             warn!("Codex take_message_rx called twice");
-            let (_tx, rx) = mpsc::channel(1);
-            return rx;
+            return error_receiver("Codex message stream was already taken");
         };
         let Some(local_rx) = self.local_rx.take() else {
             warn!("Codex local receiver missing");
-            let (_tx, rx) = mpsc::channel(1);
-            return rx;
+            return error_receiver("Codex local message stream is unavailable");
         };
 
         let (tx, rx) = mpsc::channel(256);
@@ -230,6 +228,12 @@ impl AgentRuntimeSession for CodexSession {
     fn pid(&self) -> Option<u32> {
         self.client.pid()
     }
+}
+
+fn error_receiver(message: &'static str) -> RuntimeMessageRx {
+    let (tx, rx) = mpsc::channel(1);
+    let _ = tx.try_send(Err(RuntimeError::new(message)));
+    rx
 }
 
 impl CodexSession {

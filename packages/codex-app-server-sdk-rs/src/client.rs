@@ -6,11 +6,11 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
-use tokio::process::{ChildStdin, Command};
+use tokio::process::Command;
 use tokio::sync::{broadcast, oneshot, Mutex};
-use tokio::task::JoinHandle;
 
-use crate::client_io::{spawn_reader, spawn_reaper, spawn_stderr_reader, PendingMap, ReaderState};
+use crate::client_io::{spawn_reader, spawn_reaper, spawn_stderr_reader, ReaderState};
+use crate::client_state::{Inner, PendingRequestGuard};
 use crate::discovery::resolved_codex_command;
 use crate::error::SdkError;
 use crate::parse::{parse_model, parse_thread_handle, parse_turn_handle};
@@ -32,44 +32,6 @@ pub struct AppServerSpawnOptions {
     pub client_info: AppServerClientInfo,
     pub request_timeout: Option<Duration>,
     pub max_line_bytes: Option<usize>,
-}
-
-struct Inner {
-    stdin: Mutex<ChildStdin>,
-    next_id: AtomicU64,
-    pid: Option<u32>,
-    pending: Arc<StdMutex<PendingMap>>,
-    events: broadcast::Sender<AppServerEvent>,
-    reader_task: Mutex<Option<JoinHandle<()>>>,
-    stderr_task: Mutex<Option<JoinHandle<()>>>,
-    reaper_task: Mutex<Option<JoinHandle<()>>>,
-    kill_tx: StdMutex<Option<oneshot::Sender<()>>>,
-    exit_sent: Arc<AtomicBool>,
-    client_info: AppServerClientInfo,
-    request_timeout: Duration,
-}
-
-struct PendingRequestGuard {
-    pending: Arc<StdMutex<PendingMap>>,
-    id: u64,
-}
-
-impl Drop for PendingRequestGuard {
-    fn drop(&mut self) {
-        if let Ok(mut pending) = self.pending.lock() {
-            pending.remove(&self.id);
-        }
-    }
-}
-
-impl Drop for Inner {
-    fn drop(&mut self) {
-        if let Ok(mut kill_tx) = self.kill_tx.lock() {
-            if let Some(tx) = kill_tx.take() {
-                let _ = tx.send(());
-            }
-        }
-    }
 }
 
 impl CodexAppServerClient {
@@ -109,9 +71,9 @@ impl CodexAppServerClient {
             pid,
             pending: Arc::clone(&pending),
             events,
-            reader_task: Mutex::new(None),
-            stderr_task: Mutex::new(None),
-            reaper_task: Mutex::new(None),
+            reader_task: StdMutex::new(None),
+            stderr_task: StdMutex::new(None),
+            reaper_task: StdMutex::new(None),
             kill_tx: StdMutex::new(Some(kill_tx)),
             exit_sent: Arc::clone(&exit_sent),
             client_info: options.client_info,
@@ -126,15 +88,27 @@ impl CodexAppServerClient {
             },
             stdout,
         );
-        *inner.reader_task.lock().await = Some(reader_task);
-        *inner.stderr_task.lock().await = Some(spawn_stderr_reader(stderr, max_line_bytes));
-        *inner.reaper_task.lock().await = Some(spawn_reaper(
-            child,
-            kill_rx,
-            pending,
-            inner.events.clone(),
-            exit_sent,
-        ));
+        inner
+            .reader_task
+            .lock()
+            .map_err(|_| SdkError::Protocol("reader task lock poisoned".to_string()))?
+            .replace(reader_task);
+        inner
+            .stderr_task
+            .lock()
+            .map_err(|_| SdkError::Protocol("stderr task lock poisoned".to_string()))?
+            .replace(spawn_stderr_reader(stderr, max_line_bytes));
+        inner
+            .reaper_task
+            .lock()
+            .map_err(|_| SdkError::Protocol("reaper task lock poisoned".to_string()))?
+            .replace(spawn_reaper(
+                child,
+                kill_rx,
+                pending,
+                inner.events.clone(),
+                exit_sent,
+            ));
         Ok(Self { inner })
     }
 
@@ -301,7 +275,7 @@ impl CodexAppServerClient {
         .await
     }
 
-    pub async fn request(&self, method: &str, params: Value) -> Result<Value, SdkError> {
+    async fn request(&self, method: &str, params: Value) -> Result<Value, SdkError> {
         self.request_with_timeout(method, params, self.inner.request_timeout)
             .await
     }
@@ -355,7 +329,13 @@ impl CodexAppServerClient {
                 let _ = tx.send(());
             }
         }
-        if let Some(reaper_task) = self.inner.reaper_task.lock().await.take() {
+        let reaper_task = self
+            .inner
+            .reaper_task
+            .lock()
+            .ok()
+            .and_then(|mut task| task.take());
+        if let Some(reaper_task) = reaper_task {
             if tokio::time::timeout(Duration::from_secs(2), reaper_task)
                 .await
                 .is_err()
@@ -363,10 +343,22 @@ impl CodexAppServerClient {
                 tracing::warn!("timed out waiting for codex app-server process to exit");
             }
         }
-        if let Some(reader_task) = self.inner.reader_task.lock().await.take() {
+        let reader_task = self
+            .inner
+            .reader_task
+            .lock()
+            .ok()
+            .and_then(|mut task| task.take());
+        if let Some(reader_task) = reader_task {
             let _ = tokio::time::timeout(Duration::from_secs(2), reader_task).await;
         }
-        if let Some(stderr_task) = self.inner.stderr_task.lock().await.take() {
+        let stderr_task = self
+            .inner
+            .stderr_task
+            .lock()
+            .ok()
+            .and_then(|mut task| task.take());
+        if let Some(stderr_task) = stderr_task {
             let _ = tokio::time::timeout(Duration::from_secs(2), stderr_task).await;
         }
     }

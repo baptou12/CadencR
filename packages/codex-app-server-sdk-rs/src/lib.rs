@@ -1,5 +1,6 @@
 pub mod client;
 mod client_io;
+mod client_state;
 pub mod discovery;
 pub mod error;
 mod parse;

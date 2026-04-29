@@ -9,6 +9,7 @@ mod events;
 mod input;
 mod mcp;
 mod model;
+mod permission_details;
 mod permissions;
 mod responses;
 mod session;

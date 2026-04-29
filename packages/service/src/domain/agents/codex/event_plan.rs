@@ -30,7 +30,7 @@ pub(super) fn plan_updated_event(params: Value, index_state: &mut IndexState) ->
     stream_start_event(&sid, index, block)
 }
 
-fn stream_start_event(session_id: &str, index: u32, block: RuntimeContentBlock) -> RuntimeEvent {
+fn stream_start_event(session_id: &str, index: u64, block: RuntimeContentBlock) -> RuntimeEvent {
     let event = RuntimeStreamEvent::ContentBlockStart { index, block };
     RuntimeEvent::new(
         metadata(session_id, stream_event_raw(session_id, None, &event)),
@@ -41,7 +41,7 @@ fn stream_start_event(session_id: &str, index: u32, block: RuntimeContentBlock) 
     )
 }
 
-fn stream_delta_event(session_id: &str, index: u32, todos: Value) -> RuntimeEvent {
+fn stream_delta_event(session_id: &str, index: u64, todos: Value) -> RuntimeEvent {
     let partial_json = serde_json::to_string(&serde_json::json!({ "todos": todos }))
         .unwrap_or_else(|_| "{}".to_string());
     let event = RuntimeStreamEvent::ContentBlockDelta {

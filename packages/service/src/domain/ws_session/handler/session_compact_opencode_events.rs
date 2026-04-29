@@ -113,7 +113,10 @@ fn summary_block_start(
             }),
         },
         RuntimeEventKind::StreamEvent {
-            event: RuntimeStreamEvent::ContentBlockStart { index, block },
+            event: RuntimeStreamEvent::ContentBlockStart {
+                index: u64::from(index),
+                block,
+            },
             parent_tool_use_id: None,
         },
     )
@@ -142,7 +145,10 @@ fn summary_block_delta(
             }),
         },
         RuntimeEventKind::StreamEvent {
-            event: RuntimeStreamEvent::ContentBlockDelta { index, delta },
+            event: RuntimeStreamEvent::ContentBlockDelta {
+                index: u64::from(index),
+                delta,
+            },
             parent_tool_use_id: None,
         },
     )
@@ -162,7 +168,9 @@ fn summary_block_stop(session_id: &str, index: u32) -> RuntimeEvent {
             }),
         },
         RuntimeEventKind::StreamEvent {
-            event: RuntimeStreamEvent::ContentBlockStop { index },
+            event: RuntimeStreamEvent::ContentBlockStop {
+                index: u64::from(index),
+            },
             parent_tool_use_id: None,
         },
     )

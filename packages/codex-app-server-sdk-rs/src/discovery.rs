@@ -8,6 +8,9 @@ use crate::error::SdkError;
 static BINARY_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 static RESOLVED: RwLock<Option<(Option<PathBuf>, PathBuf)>> = RwLock::new(None);
 
+#[cfg(test)]
+pub(crate) static TEST_DISCOVERY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Provider-neutral spec for finding the `codex` CLI binary.
 ///
 /// Exposed so the host app can render the same binary discovery details for
@@ -71,14 +74,16 @@ pub(crate) async fn resolved_codex_command() -> Result<PathBuf, SdkError> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
-    use super::{codex_discovery_spec, current_binary_override, set_binary_override};
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    use super::{
+        codex_discovery_spec, current_binary_override, set_binary_override, TEST_DISCOVERY_LOCK,
+    };
 
     fn test_lock() -> MutexGuard<'static, ()> {
-        TEST_LOCK.lock().expect("discovery test lock poisoned")
+        TEST_DISCOVERY_LOCK
+            .lock()
+            .expect("discovery test lock poisoned")
     }
 
     #[test]

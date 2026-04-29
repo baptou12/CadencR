@@ -82,7 +82,7 @@ pub fn message_start_event(
 
 pub fn stream_start_event(
     session_id: &str,
-    index: u32,
+    index: u64,
     block: RuntimeContentBlock,
     parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
@@ -107,7 +107,7 @@ pub fn stream_start_event(
 
 pub fn stream_delta_event(
     session_id: &str,
-    index: u32,
+    index: u64,
     delta: RuntimeContentDelta,
     parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
@@ -132,7 +132,7 @@ pub fn stream_delta_event(
 
 pub fn stream_stop_event(
     session_id: &str,
-    index: u32,
+    index: u64,
     parent_tool_use_id: Option<&str>,
 ) -> RuntimeEvent {
     let raw = serde_json::json!({

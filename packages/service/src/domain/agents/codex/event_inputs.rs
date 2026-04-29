@@ -58,11 +58,19 @@ pub(super) fn mcp_tool_name(item: &Value) -> String {
         .get("server")
         .and_then(Value::as_str)
         .unwrap_or("unknown");
-    let tool = item
-        .get("tool")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    format!("mcp__{server}__{tool}")
+    mcp_tool_name_from_parts(server, item.get("tool").and_then(Value::as_str), "unknown")
+}
+
+pub(super) fn mcp_tool_name_from_parts(
+    server: &str,
+    raw_tool_name: Option<&str>,
+    fallback: &str,
+) -> String {
+    match raw_tool_name {
+        Some(name) if name.starts_with("mcp__") => name.to_string(),
+        Some(name) if !name.is_empty() => format!("mcp__{server}__{name}"),
+        _ => format!("mcp__{server}__{fallback}"),
+    }
 }
 
 pub(super) fn dynamic_tool_name(item: &Value) -> String {

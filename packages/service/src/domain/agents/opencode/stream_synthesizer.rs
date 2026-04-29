@@ -11,11 +11,11 @@ use self::part_blocks::{
 use super::events::{stream_delta_event, stream_start_event, stream_stop_event};
 
 pub struct StreamSynthesizer {
-    next_index: u32,
-    part_index: HashMap<String, u32>,
+    next_index: u64,
+    part_index: HashMap<String, u64>,
     part_text: HashMap<String, String>,
     part_blocks: HashMap<String, PartBlock>,
-    open_indices: BTreeSet<u32>,
+    open_indices: BTreeSet<u64>,
     current_model: Option<String>,
 }
 
@@ -44,7 +44,7 @@ impl StreamSynthesizer {
         self.current_model = model;
     }
 
-    pub fn assign_index(&mut self, part_id: &str) -> u32 {
+    pub fn assign_index(&mut self, part_id: &str) -> u64 {
         if let Some(index) = self.part_index.get(part_id) {
             return *index;
         }
@@ -54,14 +54,14 @@ impl StreamSynthesizer {
         index
     }
 
-    pub fn ensure_index(&mut self, part_id: &str) -> (u32, bool) {
+    pub fn ensure_index(&mut self, part_id: &str) -> (u64, bool) {
         if let Some(index) = self.part_index.get(part_id) {
             return (*index, false);
         }
         (self.assign_index(part_id), true)
     }
 
-    pub fn mark_open(&mut self, index: u32) {
+    pub fn mark_open(&mut self, index: u64) {
         self.open_indices.insert(index);
     }
 
@@ -81,7 +81,7 @@ impl StreamSynthesizer {
         session_id: &str,
         parent_tool_use_id: Option<&str>,
     ) -> Vec<RuntimeEvent> {
-        let indices: Vec<u32> = self.open_indices.iter().copied().collect();
+        let indices: Vec<u64> = self.open_indices.iter().copied().collect();
         self.open_indices.clear();
         indices
             .into_iter()

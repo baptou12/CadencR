@@ -1,5 +1,6 @@
-use serde_json::{Map, Value};
+use serde_json::Value;
 
+use super::permission_details::permission_details;
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
@@ -30,133 +31,19 @@ pub(super) fn permission_request(
     params: &Value,
 ) -> RuntimePermissionRequest {
     let request_id = request_id_from_value(id);
-    let (tool_name, tool_input, description, supports_allow_future) = match method {
-        "item/commandExecution/requestApproval" => {
-            let is_network_request = params
-                .get("networkApprovalContext")
-                .is_some_and(|value| !value.is_null());
-            let input = command_permission_input(params);
-            (
-                if is_network_request {
-                    "NetworkAccess".to_string()
-                } else {
-                    "Bash".to_string()
-                },
-                input,
-                description(
-                    params,
-                    if is_network_request {
-                        "Approve network access"
-                    } else {
-                        "Approve command execution"
-                    },
-                ),
-                supports_accept_for_session(params),
-            )
-        }
-        "item/fileChange/requestApproval" => {
-            let input = serde_json::json!({
-                "patch_text": params.get("patch").cloned().unwrap_or(Value::Null),
-                "patch": params.get("patch").cloned().unwrap_or(Value::Null),
-                "changes": params.get("changes").cloned().unwrap_or(Value::Null),
-                "grantRoot": params.get("grantRoot").cloned().unwrap_or(Value::Null),
-                "reason": params.get("reason").cloned().unwrap_or(Value::Null),
-            });
-            (
-                "ApplyPatch".to_string(),
-                input,
-                description(params, "Approve file change"),
-                supports_accept_for_session(params),
-            )
-        }
-        "item/permissions/requestApproval" => {
-            let input = serde_json::json!({
-                "cwd": params.get("cwd").cloned().unwrap_or(Value::Null),
-                "reason": params.get("reason").cloned().unwrap_or(Value::Null),
-                "permissions": params.get("permissions").cloned().unwrap_or(Value::Null),
-            });
-            (
-                "RequestPermissions".to_string(),
-                input,
-                description(params, "Approve requested permissions"),
-                true,
-            )
-        }
-        "item/tool/requestUserInput" => (
-            "AskUserQuestion".to_string(),
-            params.clone(),
-            Some("Codex question".to_string()),
-            false,
-        ),
-        "mcpServer/elicitation/request" => {
-            let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
-            let server = params
-                .get("serverName")
-                .and_then(Value::as_str)
-                .unwrap_or("unknown");
-            let tool_name =
-                prefixed_mcp_tool_name(server, meta.get("tool_name").and_then(Value::as_str));
-            let tool_input = meta
-                .get("tool_input")
-                .cloned()
-                .unwrap_or_else(|| params.clone());
-            (
-                tool_name,
-                tool_input,
-                params
-                    .get("message")
-                    .and_then(Value::as_str)
-                    .map(ToOwned::to_owned),
-                false,
-            )
-        }
-        _ => (
-            method.to_string(),
-            params.clone(),
-            Some("Codex approval request".to_string()),
-            false,
-        ),
-    };
+    let details = permission_details(method, params);
 
-    let preview = extract_permission_preview(&tool_input);
+    let preview = extract_permission_preview(&details.tool_input);
     RuntimePermissionRequest {
         request_id,
         tool_use_id: item_id(params),
-        tool_name,
-        tool_input,
-        description,
+        tool_name: details.tool_name,
+        tool_input: details.tool_input,
+        description: details.description,
         pattern: None,
         preview,
-        options: permission_options(supports_allow_future),
+        options: permission_options(details.supports_allow_future),
     }
-}
-
-fn command_permission_input(params: &Value) -> Value {
-    let mut input = Map::new();
-    insert_param_or_null(&mut input, params, "approvalId");
-    insert_param_or_null(&mut input, params, "command");
-    insert_param_or_null(&mut input, params, "cwd");
-    insert_param_or_null(&mut input, params, "reason");
-    insert_param_or_null(&mut input, params, "commandActions");
-    insert_optional_param(&mut input, params, "additionalPermissions");
-    insert_optional_param(&mut input, params, "networkApprovalContext");
-    insert_optional_param(&mut input, params, "proposedExecpolicyAmendment");
-    insert_optional_param(&mut input, params, "proposedNetworkPolicyAmendments");
-    Value::Object(input)
-}
-
-fn insert_param_or_null(input: &mut Map<String, Value>, params: &Value, key: &str) {
-    input.insert(
-        key.to_string(),
-        params.get(key).cloned().unwrap_or(Value::Null),
-    );
-}
-
-fn insert_optional_param(input: &mut Map<String, Value>, params: &Value, key: &str) {
-    let Some(value) = params.get(key).filter(|value| !value.is_null()) else {
-        return;
-    };
-    input.insert(key.to_string(), value.clone());
 }
 
 fn item_id(params: &Value) -> Option<String> {
@@ -165,16 +52,6 @@ fn item_id(params: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .or_else(|| params.get("item_id").and_then(Value::as_str))
         .map(ToOwned::to_owned)
-}
-
-fn description(params: &Value, fallback: &str) -> Option<String> {
-    Some(
-        params
-            .get("reason")
-            .and_then(Value::as_str)
-            .unwrap_or(fallback)
-            .to_string(),
-    )
 }
 
 fn permission_options(supports_allow_future: bool) -> Vec<RuntimePermissionOption> {
@@ -252,14 +129,6 @@ pub(super) fn supports_accept_for_session(params: &Value) -> bool {
         return true;
     }
     has_available_decision(params, DECISION_ACCEPT_FOR_SESSION)
-}
-
-fn prefixed_mcp_tool_name(server: &str, raw_tool_name: Option<&str>) -> String {
-    match raw_tool_name {
-        Some(name) if name.starts_with("mcp__") => name.to_string(),
-        Some(name) if !name.is_empty() => format!("mcp__{server}__{name}"),
-        _ => format!("mcp__{server}__elicitation"),
-    }
 }
 
 pub(super) fn has_available_decision(params: &Value, expected: &str) -> bool {

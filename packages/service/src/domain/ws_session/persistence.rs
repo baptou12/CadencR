@@ -48,9 +48,9 @@ pub struct WsSessionPersistence {
     feature_id: i64,
     current_models: HashMap<String, String>,
     /// (runtime_session_id, block_index) -> partial JSON being accumulated
-    pending_tool_inputs: HashMap<(String, u32), ToolInputBuffer>,
+    pending_tool_inputs: HashMap<(String, u64), ToolInputBuffer>,
     /// (runtime_session_id, block_index) -> agent_messages.id for the tool_call row
-    pending_tool_row_ids: HashMap<(String, u32), i64>,
+    pending_tool_row_ids: HashMap<(String, u64), i64>,
     file_change_marked: bool,
 }
 
