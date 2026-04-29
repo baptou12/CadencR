@@ -2,12 +2,18 @@
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
 - [ ] [claude] Auto-accept / plan / auto
-- [~] [opencode] unstable rarely, stops streaming
-- [ ] [prompt] shows the popopver even when agent is not focused
-- [ ] [prompt] shows the model selection popover (kbd) after a model selection
+- [~] [prompt] shows the todo popopver even when agent is not focused
+- [ ] [agent] selecting text is broken with prompt focus
+- [ ] [db] change production database to ~/.cadencr
+- [ ] [editor] collapse should have a dedicated zone when collapsed
+- [ ] [editpr] some lines don't have the proper blame
+- [ ] [git] should update changes when update are done
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
+- [ ] [editor] right click in the sidebar
+- [ ] [editor] some important shortcuts are missing
+- [ ] [git] let user change to uncommited changes, and the target branch
 - [ ] [worktree] branch name and special icon in the sidebar
 - [ ] [sidebar] show the diff numstats in the sidebar
 - [ ] [desktop] all running agents view
