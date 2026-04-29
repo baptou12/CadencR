@@ -1,6 +1,8 @@
 use serde_json::{json, Value};
 
-use super::permissions::{available_decisions, DECISION_CANCEL, DECISION_DECLINE};
+use super::permissions::{
+    available_decisions, supports_accept_for_session, DECISION_CANCEL, DECISION_DECLINE,
+};
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
 
 pub(super) fn response_value(
@@ -19,7 +21,10 @@ pub(super) fn response_value(
 fn approval_response(params: &Value, response: &RuntimePermissionResponse) -> Value {
     let decision = match response.decision {
         RuntimePermissionDecision::AllowOnce => "accept",
-        RuntimePermissionDecision::AllowFuture => "acceptForSession",
+        RuntimePermissionDecision::AllowFuture if supports_accept_for_session(params) => {
+            "acceptForSession"
+        }
+        RuntimePermissionDecision::AllowFuture => "accept",
         RuntimePermissionDecision::Deny => deny_decision(params),
     };
     json!({ "decision": decision })
@@ -234,5 +239,23 @@ mod tests {
             &response,
         );
         assert_eq!(value, json!({ "decision": "cancel" }));
+    }
+
+    #[test]
+    fn allow_future_falls_back_to_accept_when_session_decision_is_unavailable() {
+        let response = RuntimePermissionResponse {
+            request_id: "approval".to_string(),
+            decision: RuntimePermissionDecision::AllowFuture,
+            feedback: None,
+            updated_input: None,
+        };
+
+        let value = response_value(
+            "item/commandExecution/requestApproval",
+            &json!({ "availableDecisions": ["accept", "decline"] }),
+            &response,
+        );
+
+        assert_eq!(value, json!({ "decision": "accept" }));
     }
 }

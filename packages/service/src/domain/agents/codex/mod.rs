@@ -157,6 +157,7 @@ fn app_server_spawn_options(env: Option<HashMap<String, String>>) -> AppServerSp
     AppServerSpawnOptions {
         env,
         enable_features: vec![DEFAULT_MODE_REQUEST_USER_INPUT_FEATURE.to_string()],
+        ..AppServerSpawnOptions::default()
     }
 }
 
@@ -265,12 +266,12 @@ impl AgentRuntimeAdapter for CodexAdapter {
             CodexAppServerClient::spawn_with_options(app_server_spawn_options(config.env.clone()))
                 .await?;
         client.initialize_with_timeout(PROBE_TIMEOUT).await?;
+        let event_rx = client.subscribe();
         let mcp_config =
             thread_config(config.mcp_servers.as_ref(), Some(RICH_MARKDOWN_INSTRUCTION));
         let mcp_server_names = mcp_server_names(&mcp_config);
         let thread_id = start_or_resume_thread(&client, &config, &mcp_config).await?;
         let mcp_servers = mcp_server_statuses(&client, &mcp_server_names).await;
-        let event_rx = client.subscribe();
         let session = CodexSession::new(
             client,
             thread_id,

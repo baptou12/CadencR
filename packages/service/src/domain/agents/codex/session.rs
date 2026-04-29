@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
 use serde_json::Value;
+use tempfile::TempPath;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::warn;
 
 use super::event_loop::spawn_event_loop;
-use super::event_system::{init_event, request_key};
-use super::input::{remove_temp_images, user_input_from_content};
+use super::event_system::init_event;
+use super::input::user_input_from_content;
 use super::permissions::PendingCodexRequest;
 use super::responses::response_value;
 use super::turn_start::turn_start_params;
@@ -33,7 +35,8 @@ pub(super) struct CodexSession {
     local_rx: Option<mpsc::UnboundedReceiver<Result<RuntimeEvent, RuntimeError>>>,
     local_tx: mpsc::UnboundedSender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
-    temp_paths: Arc<Mutex<Vec<PathBuf>>>,
+    temp_files: Arc<Mutex<Vec<TempPath>>>,
+    closing: Arc<AtomicBool>,
     mcp_servers: Vec<RuntimeMcpServerStatus>,
     context_window: Option<u64>,
 }
@@ -63,7 +66,8 @@ impl CodexSession {
             local_rx: Some(local_rx),
             local_tx,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
-            temp_paths: Arc::new(Mutex::new(Vec::new())),
+            temp_files: Arc::new(Mutex::new(Vec::new())),
+            closing: Arc::new(AtomicBool::new(false)),
             mcp_servers,
             context_window,
         }
@@ -102,8 +106,12 @@ impl CodexSession {
     }
 
     async fn convert_input(&self, content: Value) -> Result<Vec<Value>, RuntimeError> {
-        let mut paths = self.temp_paths.lock().await;
-        user_input_from_content(content, &mut paths)
+        let mut new_files = Vec::new();
+        let input = user_input_from_content(content, &mut new_files)?;
+        if !new_files.is_empty() {
+            self.temp_files.lock().await.extend(new_files);
+        }
+        Ok(input)
     }
 }
 
@@ -132,6 +140,7 @@ impl AgentRuntimeSession for CodexSession {
             Arc::clone(&self.pending_requests),
             Arc::clone(&self.active_turn_id),
             self.model.clone(),
+            Arc::clone(&self.closing),
         );
         spawn_local_forwarder(local_rx, tx);
         rx
@@ -174,13 +183,13 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn close(&mut self) {
+        self.closing.store(true, Ordering::SeqCst);
         let _ = with_timeout(
             "Codex thread/unsubscribe",
             self.client.thread_unsubscribe(&self.thread_id),
         )
         .await;
-        let paths = self.temp_paths.lock().await.clone();
-        remove_temp_images(&paths);
+        self.temp_files.lock().await.clear();
         self.client.shutdown().await;
     }
 
@@ -206,15 +215,11 @@ impl AgentRuntimeSession for CodexSession {
         if is_plan_approval_request_id(&response.request_id) {
             return self.respond_plan_approval(response).await;
         }
-        let pending = resolve_pending(&self.pending_requests, &response.request_id).await?;
+        let pending = take_pending(&self.pending_requests, &response.request_id).await?;
         let result = response_value(&pending.method, &pending.params, &response);
         self.client
             .respond_server_request(pending.id.clone(), result)
             .await?;
-        self.pending_requests
-            .lock()
-            .await
-            .remove(&request_key(&pending.id));
         Ok(())
     }
 
@@ -250,13 +255,12 @@ fn spawn_local_forwarder(
     });
 }
 
-async fn resolve_pending(
+async fn take_pending(
     pending_requests: &Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
     request_id: &str,
 ) -> Result<PendingCodexRequest, RuntimeError> {
-    let pending = pending_requests.lock().await;
-    if let Some(request) = pending.get(request_id) {
-        return Ok(request.clone());
+    if let Some(request) = pending_requests.lock().await.remove(request_id) {
+        return Ok(request);
     }
     Err(RuntimeError::new(
         "received permission response for unknown Codex request",
@@ -282,6 +286,7 @@ fn plan_approval_prompt(decision: RuntimePermissionDecision, feedback: Option<St
         }
         RuntimePermissionDecision::Deny => feedback
             .filter(|feedback| !feedback.trim().is_empty())
+            .map(|feedback| format!("User feedback on plan rejection:\n\n{feedback}"))
             .unwrap_or_else(|| "Plan rejected. Revise the plan.".to_string()),
     }
 }
@@ -297,7 +302,7 @@ mod tests {
     use super::super::permissions::PendingCodexRequest;
     use super::{
         is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt,
-        resolve_pending,
+        take_pending,
     };
     use crate::domain::agents::adapter::{
         RuntimePermissionDecision, RuntimePermissionResponseKind,
@@ -322,7 +327,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resolve_pending_requires_exact_request_id() {
+    async fn take_pending_requires_exact_request_id() {
         let pending = Arc::new(Mutex::new(HashMap::from([(
             "approval_1".to_string(),
             PendingCodexRequest {
@@ -332,10 +337,29 @@ mod tests {
             },
         )])));
 
-        let error = resolve_pending(&pending, "wrong_id")
+        let error = take_pending(&pending, "wrong_id")
             .await
             .expect_err("unknown id should fail");
         assert!(error.to_string().contains("unknown Codex request"));
+    }
+
+    #[tokio::test]
+    async fn take_pending_removes_request_atomically() {
+        let pending = Arc::new(Mutex::new(HashMap::from([(
+            "approval_1".to_string(),
+            PendingCodexRequest {
+                id: json!("approval_1"),
+                method: "item/commandExecution/requestApproval".to_string(),
+                params: json!({}),
+            },
+        )])));
+
+        let request = take_pending(&pending, "approval_1")
+            .await
+            .expect("pending request should resolve");
+        assert_eq!(request.method, "item/commandExecution/requestApproval");
+        assert!(pending.lock().await.is_empty());
+        assert!(take_pending(&pending, "approval_1").await.is_err());
     }
 
     #[test]
@@ -349,7 +373,7 @@ mod tests {
                 RuntimePermissionDecision::Deny,
                 Some("Please inspect package scripts first".to_string())
             ),
-            "Please inspect package scripts first"
+            "User feedback on plan rejection:\n\nPlease inspect package scripts first"
         );
         assert_eq!(
             plan_approval_prompt(RuntimePermissionDecision::Deny, Some("  ".to_string())),

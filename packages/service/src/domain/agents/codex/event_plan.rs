@@ -30,11 +30,6 @@ pub(super) fn plan_updated_event(params: Value, index_state: &mut IndexState) ->
     stream_start_event(&sid, index, block)
 }
 
-pub(super) fn plan_delta_events(params: Value) -> Vec<RuntimeEvent> {
-    let _ = params;
-    Vec::new()
-}
-
 fn stream_start_event(session_id: &str, index: u32, block: RuntimeContentBlock) -> RuntimeEvent {
     let event = RuntimeStreamEvent::ContentBlockStart { index, block };
     RuntimeEvent::new(

@@ -65,6 +65,31 @@ impl std::str::FromStr for AgentType {
     }
 }
 
+pub fn cadence_mcp_uses_approval_elicitation(server_name: &str) -> bool {
+    matches!(
+        cadence_agent_type_from_server_name(server_name),
+        Some(AgentType::Plan | AgentType::Prd | AgentType::Session)
+    )
+}
+
+pub fn cadence_mcp_tool_requires_approval_elicitation(tool_name: &str) -> bool {
+    matches!(tool_name, "show_plan" | "show_prd")
+}
+
+pub fn cadence_mcp_required_tools(server_name: &str) -> &'static [&'static str] {
+    match cadence_agent_type_from_server_name(server_name) {
+        Some(AgentType::Plan | AgentType::Session) => &["show_plan", "mark_agent_done"],
+        Some(AgentType::Prd) => &["show_prd", "mark_agent_done"],
+        Some(_) => &["mark_agent_done"],
+        None => &[],
+    }
+}
+
+fn cadence_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
+    let short_name = server_name.strip_prefix("cadence-")?;
+    short_name.parse().ok()
+}
+
 /// A type-erased MCP server wrapper that can hold any agent server type.
 /// Needed because `ServerHandler` is not dyn-compatible (requires `Self: Sized`).
 pub enum McpServer {

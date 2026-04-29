@@ -6,6 +6,9 @@ use serde_json::{json, Value};
 
 use super::with_timeout;
 use crate::domain::agents::adapter::{RuntimeMcpServerConfig, RuntimeMcpServerStatus};
+use crate::domain::mcp::servers::{
+    cadence_mcp_required_tools, cadence_mcp_uses_approval_elicitation,
+};
 
 pub(super) fn thread_config(
     mcp_servers: Option<&HashMap<String, RuntimeMcpServerConfig>>,
@@ -75,7 +78,7 @@ fn mcp_server_value(name: &str, config: RuntimeMcpServerConfig) -> Value {
     match config {
         RuntimeMcpServerConfig::Stdio { command, args, env } => {
             let mut env = env.unwrap_or_default();
-            if matches!(name, "cadence-plan" | "cadence-prd") {
+            if cadence_mcp_uses_approval_elicitation(name) {
                 env.insert(
                     "CADENCE_MCP_APPROVAL_MODE".to_string(),
                     "elicitation".to_string(),
@@ -178,12 +181,7 @@ fn tool_names(value: Option<&Value>) -> HashSet<String> {
 }
 
 fn required_tools(server_name: &str) -> &'static [&'static str] {
-    match server_name {
-        "cadence-plan" | "cadence-session" => &["show_plan", "mark_agent_done"],
-        "cadence-prd" => &["show_prd", "mark_agent_done"],
-        name if name.starts_with("cadence-") => &["mark_agent_done"],
-        _ => &[],
-    }
+    cadence_mcp_required_tools(server_name)
 }
 
 #[cfg(test)]

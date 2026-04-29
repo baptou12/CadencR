@@ -4,6 +4,8 @@ use rmcp::{
 };
 use serde_json::{json, Value};
 
+use super::cadence_mcp_tool_requires_approval_elicitation;
+
 pub async fn maybe_elicit_tool_approval(
     context: &RequestContext<RoleServer>,
     server_name: &str,
@@ -13,7 +15,7 @@ pub async fn maybe_elicit_tool_approval(
     if std::env::var("CADENCE_MCP_APPROVAL_MODE").ok().as_deref() != Some("elicitation") {
         return Ok(());
     }
-    if !matches!(tool_name, "show_plan" | "show_prd") {
+    if !cadence_mcp_tool_requires_approval_elicitation(tool_name) {
         return Ok(());
     }
 

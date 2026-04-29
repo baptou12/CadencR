@@ -5,7 +5,7 @@ use super::event_items::{
     IndexState,
 };
 use super::event_json::{compact_event, metadata, stream_event_raw, thread_id};
-use super::event_plan::{plan_delta_events, plan_updated_event};
+use super::event_plan::plan_updated_event;
 use super::event_usage::usage_event;
 use crate::domain::agents::adapter::{
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
@@ -23,7 +23,6 @@ pub fn notification_events(
         "thread/tokenUsage/updated" => vec![usage_event(params)],
         "thread/compacted" => vec![compact_event(params)],
         "turn/plan/updated" => vec![plan_updated_event(params, index_state)],
-        "item/plan/delta" => plan_delta_events(params),
         "item/commandExecution/outputDelta" | "command/exec/outputDelta" => {
             command_output_delta_event(params, index_state)
         }

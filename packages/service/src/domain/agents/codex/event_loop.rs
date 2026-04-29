@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use codex_app_server_sdk_rs::AppServerEvent;
@@ -16,6 +17,7 @@ pub(super) fn spawn_event_loop(
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
     active_turn_id: Arc<RwLock<Option<String>>>,
     model: Arc<RwLock<Option<String>>>,
+    closing: Arc<AtomicBool>,
 ) {
     tokio::spawn(async move {
         let mut command_outputs = HashMap::new();
@@ -23,6 +25,10 @@ pub(super) fn spawn_event_loop(
         loop {
             match source_rx.recv().await {
                 Ok(AppServerEvent::Notification { method, mut params }) => {
+                    if method == "turn/started" {
+                        index_state.reset();
+                        command_outputs.clear();
+                    }
                     update_turn_state(&method, &params, &active_turn_id).await;
                     clear_resolved_request(&method, &params, &pending_requests).await;
                     enrich_command_output(&method, &mut params, &mut command_outputs);
@@ -52,13 +58,33 @@ pub(super) fn spawn_event_loop(
                         return;
                     }
                 }
-                Ok(AppServerEvent::ProcessExited) | Err(broadcast::error::RecvError::Closed) => {
+                Ok(AppServerEvent::ProcessExited { status, signal }) => {
+                    if closing.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    tracing::warn!(?status, ?signal, "Codex app-server exited");
                     let _ = tx
                         .send(Err(RuntimeError::new("Codex app-server exited")))
                         .await;
                     return;
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Closed) => {
+                    if closing.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let _ = tx
+                        .send(Err(RuntimeError::new(
+                            "Codex app-server event stream closed",
+                        )))
+                        .await;
+                    return;
+                }
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(
+                        skipped,
+                        "Codex app-server event stream lagged; UI may miss deltas"
+                    );
+                }
             }
         }
     });

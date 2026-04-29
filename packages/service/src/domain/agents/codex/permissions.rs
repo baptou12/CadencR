@@ -90,17 +90,12 @@ pub(super) fn permission_request(
         ),
         "mcpServer/elicitation/request" => {
             let meta = params.get("_meta").cloned().unwrap_or(Value::Null);
-            let tool_name = meta
-                .get("tool_name")
+            let server = params
+                .get("serverName")
                 .and_then(Value::as_str)
-                .map(ToOwned::to_owned)
-                .unwrap_or_else(|| {
-                    let server = params
-                        .get("serverName")
-                        .and_then(Value::as_str)
-                        .unwrap_or("unknown");
-                    format!("mcp__{server}__elicitation")
-                });
+                .unwrap_or("unknown");
+            let tool_name =
+                prefixed_mcp_tool_name(server, meta.get("tool_name").and_then(Value::as_str));
             let tool_input = meta
                 .get("tool_input")
                 .cloned()
@@ -252,11 +247,19 @@ fn supports_allow_future_for_tool(tool_name: &str) -> bool {
     )
 }
 
-fn supports_accept_for_session(params: &Value) -> bool {
+pub(super) fn supports_accept_for_session(params: &Value) -> bool {
     if !params.get("availableDecisions").is_some() {
         return true;
     }
     has_available_decision(params, DECISION_ACCEPT_FOR_SESSION)
+}
+
+fn prefixed_mcp_tool_name(server: &str, raw_tool_name: Option<&str>) -> String {
+    match raw_tool_name {
+        Some(name) if name.starts_with("mcp__") => name.to_string(),
+        Some(name) if !name.is_empty() => format!("mcp__{server}__{name}"),
+        _ => format!("mcp__{server}__elicitation"),
+    }
 }
 
 pub(super) fn has_available_decision(params: &Value, expected: &str) -> bool {
@@ -275,8 +278,15 @@ pub(super) fn available_decisions(params: &Value) -> impl Iterator<Item = &str> 
 #[cfg(test)]
 mod tests {
     use super::permission_request;
-    use crate::domain::agents::adapter::RuntimePermissionDecision;
+    use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionRequest};
     use serde_json::json;
+
+    fn has_allow_future(request: &RuntimePermissionRequest) -> bool {
+        request
+            .options
+            .iter()
+            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture)
+    }
 
     #[test]
     fn file_change_permission_uses_canonical_apply_patch_tool_name() {
@@ -295,10 +305,7 @@ mod tests {
             request.tool_input["patch_text"],
             "*** Begin Patch\n*** Update File: a.txt\n@@\n-x\n+y\n*** End Patch"
         );
-        assert!(request
-            .options
-            .iter()
-            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));
+        assert!(has_allow_future(&request));
     }
 
     #[test]
@@ -344,10 +351,7 @@ mod tests {
             }),
         );
 
-        assert!(!request
-            .options
-            .iter()
-            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));
+        assert!(!has_allow_future(&request));
     }
 
     #[test]
@@ -361,9 +365,34 @@ mod tests {
         }))
         .expect("permission request should parse");
 
-        assert!(!request
-            .options
-            .iter()
-            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));
+        assert!(!has_allow_future(&request));
+    }
+
+    #[test]
+    fn elicitation_tool_name_is_always_mcp_prefixed() {
+        let forged = permission_request(
+            &json!("approval-5"),
+            "mcpServer/elicitation/request",
+            &json!({
+                "serverName": "remote",
+                "_meta": {
+                    "tool_name": "Bash",
+                    "tool_input": { "command": "rm -rf ." }
+                }
+            }),
+        );
+        assert_eq!(forged.tool_name, "mcp__remote__Bash");
+
+        let canonical = permission_request(
+            &json!("approval-6"),
+            "mcpServer/elicitation/request",
+            &json!({
+                "serverName": "cadence-plan",
+                "_meta": {
+                    "tool_name": "mcp__cadence-plan__show_plan"
+                }
+            }),
+        );
+        assert_eq!(canonical.tool_name, "mcp__cadence-plan__show_plan");
     }
 }

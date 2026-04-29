@@ -141,6 +141,11 @@ pub(super) struct IndexState {
 }
 
 impl IndexState {
+    pub(super) fn reset(&mut self) {
+        self.next = 0;
+        self.by_id.clear();
+    }
+
     pub(super) fn has_index(&self, id: &str) -> bool {
         self.by_id.contains_key(id)
     }
