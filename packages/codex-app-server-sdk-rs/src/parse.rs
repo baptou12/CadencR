@@ -94,4 +94,25 @@ mod tests {
         assert_eq!(thread.id, "thread_1");
         assert_eq!(turn.id, "turn_1");
     }
+
+    #[test]
+    fn parses_thread_id_fallback_and_model_label_fallback() {
+        let model = parse_model(&json!({
+            "id": "codex-mini",
+            "model": "Codex Mini"
+        }))
+        .expect("model");
+        let thread = parse_thread_handle(&json!({ "threadId": "thread_fallback" })).unwrap();
+
+        assert_eq!(model.label, "Codex Mini");
+        assert!(model.supported_efforts.is_empty());
+        assert_eq!(thread.id, "thread_fallback");
+    }
+
+    #[test]
+    fn parse_handles_reject_missing_ids() {
+        assert!(parse_thread_handle(&json!({ "thread": {} })).is_err());
+        assert!(parse_turn_handle(&json!({ "turn": {} })).is_err());
+        assert!(parse_turn_handle(&json!({})).is_err());
+    }
 }

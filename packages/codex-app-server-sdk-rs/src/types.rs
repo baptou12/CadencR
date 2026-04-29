@@ -7,6 +7,23 @@ use serde_json::Value;
 pub const CONTEXT_USAGE_BASELINE_TOKENS: u64 = 12_000;
 
 #[derive(Debug, Clone)]
+pub struct AppServerClientInfo {
+    pub name: String,
+    pub title: String,
+    pub version: String,
+}
+
+impl Default for AppServerClientInfo {
+    fn default() -> Self {
+        Self {
+            name: "cadence".into(),
+            title: "Cadence".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum AppServerEvent {
     Notification {
         method: String,
@@ -17,7 +34,10 @@ pub enum AppServerEvent {
         method: String,
         params: Value,
     },
-    ProcessExited,
+    ProcessExited {
+        status: Option<i32>,
+        signal: Option<i32>,
+    },
 }
 
 #[derive(Debug, Clone)]

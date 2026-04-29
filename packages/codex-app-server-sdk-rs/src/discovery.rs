@@ -71,8 +71,15 @@ pub(crate) async fn resolved_codex_command() -> Result<PathBuf, SdkError> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::{Mutex, MutexGuard};
 
     use super::{codex_discovery_spec, current_binary_override, set_binary_override};
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn test_lock() -> MutexGuard<'static, ()> {
+        TEST_LOCK.lock().expect("discovery test lock poisoned")
+    }
 
     #[test]
     fn codex_discovery_spec_uses_codex_binary() {
@@ -84,6 +91,7 @@ mod tests {
 
     #[test]
     fn binary_override_round_trips() {
+        let _guard = test_lock();
         let prior = current_binary_override();
         set_binary_override(Some(PathBuf::from("/custom/codex")));
         assert_eq!(
