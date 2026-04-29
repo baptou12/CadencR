@@ -289,7 +289,6 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
                 <ShortcutTooltip
                   label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
                   keys={["cmd", "T"]}
-                  showOnFocus
                 >
                   <button
                     type="button"

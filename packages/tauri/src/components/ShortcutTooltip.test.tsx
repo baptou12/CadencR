@@ -1,15 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, act } from "@/test-utils";
+import { describe, it, expect } from "vitest";
+import { render, screen, fireEvent } from "@/test-utils";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
 describe("ShortcutTooltip", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("renders children", () => {
     render(
       <ShortcutTooltip label="Test" keys={["cmd", "K"]}>
@@ -28,14 +21,13 @@ describe("ShortcutTooltip", () => {
     expect(screen.queryByText("Test")).not.toBeInTheDocument();
   });
 
-  it("shows tooltip after hover delay", () => {
+  it("shows tooltip on hover", () => {
     render(
       <ShortcutTooltip label="My label" keys={["cmd", "S"]}>
         <button>Btn</button>
       </ShortcutTooltip>,
     );
     fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
-    act(() => vi.advanceTimersByTime(400));
     expect(screen.getByText("My label")).toBeInTheDocument();
   });
 
@@ -47,7 +39,6 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    act(() => vi.advanceTimersByTime(400));
     expect(screen.getByText("My label")).toBeInTheDocument();
 
     fireEvent.mouseLeave(wrapper);
@@ -72,7 +63,6 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    act(() => vi.advanceTimersByTime(400));
 
     const tooltip =
       screen.getByText("Above").closest("div.pointer-events-none") ??
@@ -89,7 +79,6 @@ describe("ShortcutTooltip", () => {
     );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-    act(() => vi.advanceTimersByTime(400));
 
     const tooltip =
       screen.getByText("Below").closest("div.pointer-events-none") ??
