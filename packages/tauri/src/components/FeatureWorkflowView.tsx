@@ -30,6 +30,7 @@ import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import {
   findLeafById,
+  isTabVisible,
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
@@ -200,6 +201,7 @@ export function FeatureWorkflowView({
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
   const rootLeaf = findLeafById(layoutState.splitRoot, ROOT_LEAF_ID);
   const rootActiveTabId: TabKind = rootLeaf?.activeTabId ?? "agent";
+  const agentVisible = isTabVisible(layoutState, "agent");
   useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
@@ -285,6 +287,7 @@ export function FeatureWorkflowView({
               backend={backend}
               featureId={featureId}
               projectId={projectId}
+              agentVisible={agentVisible}
               openAgent={openAgent}
               setOpenAgent={setOpenAgent}
               maximizedAgent={maximizedAgent}

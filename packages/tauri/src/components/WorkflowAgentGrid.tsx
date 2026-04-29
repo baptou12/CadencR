@@ -5,11 +5,13 @@ import type { AgentType } from "@/types/agent-types";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 import { capitalize, cn } from "@/lib/utils";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
+import type { ReactElement, ReactNode } from "react";
 
 interface WorkflowAgentGridProps {
   backend: WorkflowBackend;
   featureId: number;
   projectId: number;
+  agentVisible: boolean;
   openAgent: string | null;
   setOpenAgent: React.Dispatch<React.SetStateAction<string | null>>;
   maximizedAgent: string | null;
@@ -40,6 +42,7 @@ export function WorkflowAgentGrid({
   backend,
   featureId,
   projectId,
+  agentVisible,
   openAgent,
   setOpenAgent,
   maximizedAgent,
@@ -57,8 +60,8 @@ export function WorkflowAgentGrid({
   onViewDiff,
   slashCommands,
   slashCommandsLoading,
-}: WorkflowAgentGridProps) {
-  const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean) => {
+}: WorkflowAgentGridProps): ReactElement {
+  const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean): ReactNode => {
     const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
     const providerId = resolveProvider(entry.agentType);
     const modelId = resolveModel(entry.agentType);
@@ -111,7 +114,7 @@ export function WorkflowAgentGrid({
         }
         hasFileChanges={entry.hasFileChanges}
         onViewDiff={() => onViewDiff(entry)}
-        todos={entry.todos}
+        todos={agentVisible ? entry.todos : null}
         currentProviderId={providerId}
         onProviderChange={(newProviderId) => handleProviderChange(entry.agentType, newProviderId)}
         currentModelId={modelId}

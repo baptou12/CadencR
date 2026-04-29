@@ -1,13 +1,14 @@
 ## FIX
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
+- [ ] [opencode] Not sync on command updates
 - [ ] [claude] Auto-accept / plan / auto
-- [~] [prompt] shows the todo popopver even when agent is not focused
 - [ ] [agent] selecting text is broken with prompt focus
 - [ ] [db] change production database to ~/.cadencr
 - [ ] [editor] collapse should have a dedicated zone when collapsed
 - [ ] [editpr] some lines don't have the proper blame
 - [ ] [git] should update changes when update are done
+- [ ] [git] Cannot see the file list properly when all files are collapsed
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
