@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { act, render, screen } from "@/test-utils";
 import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
+import { isResizing, popResize, pushResize } from "@/lib/resize-coordinator";
 
 // Mock AgentBlock to keep tests focused on AgentStream behavior
 vi.mock("./AgentBlock", async () => {
@@ -22,7 +23,19 @@ function makeBlock(
   return { id, type, content };
 }
 
+function getBlockWrapper(id: string): HTMLDivElement {
+  const wrapper = screen.getByTestId(`block-${id}`).parentElement;
+  if (!(wrapper instanceof HTMLDivElement)) {
+    throw new Error(`Block wrapper ${id} not found`);
+  }
+  return wrapper;
+}
+
 describe("AgentStream", () => {
+  afterEach(() => {
+    while (isResizing()) popResize();
+  });
+
   it("renders blocks", () => {
     render(<AgentStream blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]} />);
     expect(screen.getByTestId("block-1")).toBeInTheDocument();
@@ -104,5 +117,25 @@ describe("AgentStream", () => {
     expect(screen.getByTestId("block-1")).toHaveTextContent("Hello world");
     expect(screen.queryByTestId("block-2")).not.toBeInTheDocument();
     expect(screen.queryByTestId("block-3")).not.toBeInTheDocument();
+  });
+
+  it("does not use offscreen containment during normal scrolling", () => {
+    render(<AgentStream blocks={[makeBlock("1", "Stable scroll")]} />);
+    const wrapper = getBlockWrapper("1");
+    expect(wrapper.style.contentVisibility).toBe("");
+    expect(wrapper.style.containIntrinsicSize).toBe("");
+  });
+
+  it("uses offscreen containment only during active split resizing", () => {
+    render(<AgentStream blocks={[makeBlock("1", "Resize optimized")]} />);
+    const wrapper = getBlockWrapper("1");
+    expect(wrapper.style.contentVisibility).toBe("");
+
+    act(() => pushResize());
+    expect(wrapper.style.contentVisibility).toBe("auto");
+    expect(wrapper.style.containIntrinsicSize).toBe("auto 120px");
+
+    act(() => popResize());
+    expect(wrapper.style.contentVisibility).toBe("");
   });
 });

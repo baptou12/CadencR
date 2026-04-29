@@ -1,8 +1,14 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useSyncExternalStore, type CSSProperties } from "react";
 import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
 import { isFileChangeTool } from "@/lib/tool-adapter";
+import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
+
+const RESIZE_STREAM_CONTAINMENT_STYLE: CSSProperties = {
+  contentVisibility: "auto",
+  containIntrinsicSize: "auto 120px",
+};
 
 function formatTimestamp(iso: string): string {
   const date = parseUTCDateTime(iso);
@@ -61,6 +67,10 @@ function coalesceDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
   return merged;
 }
 
+function useResizeStreamContainment(): boolean {
+  return useSyncExternalStore(subscribeResize, isResizing, isResizing);
+}
+
 export const AgentStream = memo(function AgentStream({
   blocks,
   isStreaming,
@@ -69,30 +79,16 @@ export const AgentStream = memo(function AgentStream({
 }: AgentStreamProps) {
   const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
   const displayBlocks = useMemo(() => coalesceDisplayBlocks(rootBlocks), [rootBlocks]);
+  const useContainment = useResizeStreamContainment();
 
   const toolResultMap = useMemo(() => buildToolResultMap(blocks), [blocks]);
 
   return (
     <div className="space-y-1 p-3">
       {displayBlocks.map((block) => (
-        // `content-visibility: auto` instructs the browser to skip layout +
-        // paint work for any block that is currently outside the viewport,
-        // and pick it back up just before it scrolls into view. Without
-        // this, every drag-resize of the surrounding pane (sidebar, split
-        // handle) forces *every* block in the conversation to re-wrap text
-        // — for a long agent run that's hundreds of markdown / code blocks
-        // reflowing per pixel of drag, which is what made the resize feel
-        // sluggish at 5–10 fps.
-        //
-        // `contain-intrinsic-size: auto 120px` gives Chromium a placeholder
-        // height for unmeasured blocks (so the scrollbar doesn't jump on
-        // mount) and lets it remember the real measured size once a block
-        // has been rendered. 120 px ≈ the median block height; the exact
-        // number doesn't matter once the browser has measured the real one.
-        <div
-          key={block.id}
-          style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-        >
+        // During normal scroll, Chromium's placeholder heights from
+        // content-visibility can move the scroll position in split panes.
+        <div key={block.id} style={useContainment ? RESIZE_STREAM_CONTAINMENT_STYLE : undefined}>
           {(block.type === "text" || block.type === "user_message") && block.createdAt && (
             <div
               className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}
