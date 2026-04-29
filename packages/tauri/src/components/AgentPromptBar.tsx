@@ -11,6 +11,7 @@ import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { SplitSendActions } from "./SplitSendActions";
 import { PromptEditor } from "./prompt-editor/PromptEditor";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
+import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
@@ -51,7 +52,6 @@ interface AgentPromptBarProps {
   featureId?: number;
   projectId?: number;
   sessionId?: number;
-  /** WS store key (e.g. "ws-feature-123") for WS-based history and draft persistence. */
   wsSessionId?: string;
   initialDraft?: string | null;
   onToggleMaximize?: () => void;
@@ -111,7 +111,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     textRef.current = text;
     const disabledRef = useRef(disabled);
     disabledRef.current = disabled;
-    // Suppress resetNavigation when editor text changes from history navigation
     const navigatingHistoryRef = useRef(false);
     const hadSpecialStateRef = useRef(false);
     const shouldRestoreFocusRef = useRef(false);
@@ -122,7 +121,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       initialDraft: initialDraft ?? null,
     });
 
-    // When a draft is restored from DB after mount, set the editor text
     useEffect(() => {
       if (restoredDraft && !textRef.current) {
         setText(restoredDraft);
@@ -161,12 +159,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       focusInput: () => editorRef.current?.focus(),
     }));
 
-    // Per-agent UI reads per-agent state — see AgentSession.tsx for the rationale.
     const isRunning = status === "running";
     const isPaused = status === "paused";
     const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled;
-
-    // Collect images for send
     const getImages = useCallback(() => {
       return attachments.length > 0
         ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
@@ -184,7 +179,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       requestAnimationFrame(() => editorRef.current?.focus());
       clearAttachments();
     }, [attachments, onSend, clearAttachments, projectId, history, saveDraft, getImages]);
-
     const handleSplitAction = useCallback(
       (action: SplitSendAction) => {
         const trimmed = textRef.current.trim();
@@ -198,8 +192,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       },
       [attachments, clearAttachments, saveDraft, getImages],
     );
-
-    // Enter-to-send handler for Lexical
     const handleEnterSend = useCallback(() => {
       const trimmed = textRef.current.trim();
       const hasContent = trimmed.length > 0 || attachments.length > 0;
@@ -212,7 +204,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       return true;
     }, [attachments, splitSendActions, handleSplitAction, handleSend]);
 
-    // Editor text change → draft persistence
     const handleEditorChange = useCallback(
       (newText: string) => {
         setText(newText);
@@ -225,8 +216,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       },
       [saveDraft, history],
     );
-
-    // History navigation callbacks
     const handleArrowUp = useCallback(() => {
       if (!projectId || !wsSessionId) return null;
       const result = history.navigateUp(textRef.current);
@@ -240,6 +229,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       if (result !== null) navigatingHistoryRef.current = true;
       return result;
     }, [projectId, wsSessionId, history]);
+
+    const handlePromptSurfaceClick = useCallback(
+      (event: React.MouseEvent<HTMLDivElement>): void => {
+        if (!shouldFocusPromptFromSurfaceClick(event.target)) return;
+        editorRef.current?.focus();
+      },
+      [],
+    );
 
     useHotkeys(
       "meta+p",
@@ -342,7 +339,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
             />
           )}
 
-          <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55">
+          <div
+            className="flex items-center gap-1.5 rounded-lg bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
+            onClick={handlePromptSurfaceClick}
+          >
             <PromptEditor
               ref={editorRef}
               onChange={handleEditorChange}
@@ -359,10 +359,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               mentionFiles={filesQuery.data}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
-              // Only the first-render value matters: `LexicalComposer` ignores
-              // `initialConfig` changes after mount. `text` updates on every
-              // keystroke — passing it here used to trigger an unnecessary
-              // prop change on `<PromptEditor>` per character.
               initialText={initialDraft || undefined}
             />
 

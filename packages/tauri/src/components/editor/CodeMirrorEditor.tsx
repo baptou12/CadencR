@@ -15,6 +15,7 @@ interface CodeMirrorEditorProps {
   projectId: number;
   paneId: string;
   featureId: number;
+  onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
 const AUTO_SAVE_DELAY_MS = 1500;
@@ -50,6 +51,7 @@ export default function CodeMirrorEditor({
   projectId,
   paneId,
   featureId,
+  onEditorViewChange,
 }: CodeMirrorEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -162,6 +164,13 @@ export default function CodeMirrorEditor({
     }
   }, [featureId, paneId, filePath, setDirty, saveQuiet]);
 
+  const handleEditorViewChange = useCallback(
+    (view: EditorView | null): void => {
+      onEditorViewChange?.(paneId, view);
+    },
+    [onEditorViewChange, paneId],
+  );
+
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
   // Hot-swap blame extension when data or setting changes
@@ -253,6 +262,7 @@ export default function CodeMirrorEditor({
         onSave={handleSave}
         extraExtensions={[cursorExtension, blameCompartment.current.of([])]}
         editorViewRef={viewRef}
+        onEditorViewChange={handleEditorViewChange}
         className="flex-1 overflow-auto"
       />
       <StatusBar

@@ -11,7 +11,6 @@ import {
   Minimize2Icon,
 } from "lucide-react";
 import { SlidingText } from "./SlidingText";
-import type { AgentPromptBarHandle } from "../AgentPromptBar";
 
 interface BadgeConfig {
   label: string;
@@ -34,7 +33,6 @@ export interface CollapsibleHeaderProps {
   onDelete?: () => void;
   maximized?: boolean;
   onToggleMaximize?: () => void;
-  promptBarRef: RefObject<AgentPromptBarHandle | null>;
 }
 
 export function CollapsibleHeader({
@@ -52,7 +50,6 @@ export function CollapsibleHeader({
   onDelete,
   maximized,
   onToggleMaximize,
-  promptBarRef,
 }: CollapsibleHeaderProps) {
   return (
     <div
@@ -128,7 +125,6 @@ export function CollapsibleHeader({
             onClick={(e) => {
               e.stopPropagation();
               onToggleMaximize();
-              requestAnimationFrame(() => promptBarRef.current?.focusInput());
             }}
             title={maximized ? "Minimize" : "Maximize"}
           >

@@ -1,9 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { type AgentSessionHandle } from "@/components/agent-session";
+import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
+
+interface WorkflowKeyboardOptions {
+  agentLetterFocusEnabled?: boolean;
+}
 
 /**
  * Manages all keyboard shortcuts and agent focus navigation for the workflow view.
@@ -14,6 +19,7 @@ export function useWorkflowKeyboard(
   openAgent: string | null,
   setOpenAgent: React.Dispatch<React.SetStateAction<string | null>>,
   onViewDiff: (entry: FeatureSession) => void,
+  options: WorkflowKeyboardOptions = {},
 ) {
   const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
 
@@ -21,6 +27,16 @@ export function useWorkflowKeyboard(
     if (handle) agentRefs.current.set(index, handle);
     else agentRefs.current.delete(index);
   }, []);
+
+  const getFocusedEntry = useCallback((): FeatureSession | null => {
+    let el: HTMLElement | null = document.activeElement as HTMLElement | null;
+    while (el) {
+      const attr = el.getAttribute("data-agent-container");
+      if (attr != null) return backend.sessionEntries[Number(attr)] ?? null;
+      el = el.parentElement;
+    }
+    return null;
+  }, [backend.sessionEntries]);
 
   const moveFocus = useCallback(
     (direction: "up" | "down") => {
@@ -48,6 +64,28 @@ export function useWorkflowKeyboard(
     },
     [backend.sessionEntries],
   );
+
+  const focusAgentFromLetter = useCallback((): void => {
+    const focusedEntry = getFocusedEntry();
+    let index = focusedEntry ? backend.sessionEntries.indexOf(focusedEntry) : -1;
+    if (index < 0 && openAgent) {
+      index = backend.sessionEntries.findIndex(
+        (e) => `${e.agentType}-${e.sessionDbId}` === openAgent,
+      );
+    }
+    if (index < 0) {
+      index = backend.sessionEntries.findIndex(
+        (e) => e.status === "running" || e.status === "paused",
+      );
+    }
+    if (index < 0) index = 0;
+    agentRefs.current.get(index)?.focusActiveInput();
+  }, [backend.sessionEntries, getFocusedEntry, openAgent]);
+
+  useAgentLetterFocus({
+    enabled: options.agentLetterFocusEnabled ?? false,
+    onFocus: focusAgentFromLetter,
+  });
 
   useHotkeys(
     "meta+alt+down",
@@ -182,16 +220,6 @@ export function useWorkflowKeyboard(
       }
     }
     prevRunningAgentsRef.current = currentRunning;
-  }, [backend.sessionEntries]);
-
-  const getFocusedEntry = useCallback((): FeatureSession | null => {
-    let el: HTMLElement | null = document.activeElement as HTMLElement | null;
-    while (el) {
-      const attr = el.getAttribute("data-agent-container");
-      if (attr != null) return backend.sessionEntries[Number(attr)] ?? null;
-      el = el.parentElement;
-    }
-    return null;
   }, [backend.sessionEntries]);
 
   useHotkeys(

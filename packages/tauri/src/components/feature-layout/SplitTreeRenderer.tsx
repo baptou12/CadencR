@@ -5,9 +5,9 @@ import type { LayoutNode } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore, type SplitPath } from "@/stores/feature-layout-store";
 
 import { TabPane } from "./TabPane";
-import type { FeatureTabs } from "./types";
+import type { FeatureTabActivationHandlers, FeatureTabs } from "./types";
 
-interface SplitTreeRendererProps {
+interface SplitTreeRendererProps extends FeatureTabActivationHandlers {
   featureId: number;
   node: LayoutNode;
   /** Path from the root split node to the current `node`, in terms of child indices (0 / 1). */
@@ -25,11 +25,21 @@ export function SplitTreeRenderer({
   node,
   path,
   tabs,
+  onTerminalActivate,
+  onEditorActivate,
 }: SplitTreeRendererProps): ReactNode {
   const setSplitSizes = useFeatureLayoutStore((s) => s.setSplitSizes);
 
   if (node.type === "leaf") {
-    return <TabPane featureId={featureId} leaf={node} tabs={tabs} />;
+    return (
+      <TabPane
+        featureId={featureId}
+        leaf={node}
+        tabs={tabs}
+        onTerminalActivate={onTerminalActivate}
+        onEditorActivate={onEditorActivate}
+      />
+    );
   }
 
   const pathKey = path.join("-");
@@ -56,7 +66,14 @@ export function SplitTreeRenderer({
       className="h-full"
     >
       <ResizablePanel id={idA} defaultSize={defaultA} minSize={10}>
-        <SplitTreeRenderer featureId={featureId} node={a} path={[...path, 0]} tabs={tabs} />
+        <SplitTreeRenderer
+          featureId={featureId}
+          node={a}
+          path={[...path, 0]}
+          tabs={tabs}
+          onTerminalActivate={onTerminalActivate}
+          onEditorActivate={onEditorActivate}
+        />
       </ResizablePanel>
       {/* Transparent handle: the floating-block padding around each pane
           provides the visual gap, so the handle just needs to stay grabbable
@@ -64,7 +81,14 @@ export function SplitTreeRenderer({
           gray divider line. */}
       <ResizableHandle className="bg-transparent" />
       <ResizablePanel id={idB} defaultSize={defaultB} minSize={10}>
-        <SplitTreeRenderer featureId={featureId} node={b} path={[...path, 1]} tabs={tabs} />
+        <SplitTreeRenderer
+          featureId={featureId}
+          node={b}
+          path={[...path, 1]}
+          tabs={tabs}
+          onTerminalActivate={onTerminalActivate}
+          onEditorActivate={onEditorActivate}
+        />
       </ResizablePanel>
     </ResizablePanelGroup>
   );

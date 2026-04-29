@@ -30,6 +30,7 @@ interface BaseCodeMirrorEditorProps {
   className?: string;
   /** Escape hatch for direct EditorView access */
   editorViewRef?: React.MutableRefObject<EditorView | null>;
+  onEditorViewChange?: (view: EditorView | null) => void;
 }
 
 export default function BaseCodeMirrorEditor({
@@ -42,6 +43,7 @@ export default function BaseCodeMirrorEditor({
   extraExtensions,
   className = "h-full overflow-auto",
   editorViewRef,
+  onEditorViewChange,
 }: BaseCodeMirrorEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -124,12 +126,14 @@ export default function BaseCodeMirrorEditor({
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
     if (editorViewRef) editorViewRef.current = view;
+    onEditorViewChange?.(view);
     view.focus();
 
     return () => {
       view.destroy();
       viewRef.current = null;
       if (editorViewRef) editorViewRef.current = null;
+      onEditorViewChange?.(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

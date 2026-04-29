@@ -10,9 +10,9 @@ import { useTabHostRegistry } from "@/stores/tab-host-registry";
 import { cn } from "@/lib/utils";
 
 import { LayoutMenu } from "./LayoutMenu";
-import type { DragSource, FeatureTabs } from "./types";
+import type { DragSource, FeatureTabActivationHandlers, FeatureTabs } from "./types";
 
-interface TabPaneProps {
+interface TabPaneProps extends FeatureTabActivationHandlers {
   featureId: number;
   leaf: LayoutLeaf;
   tabs: FeatureTabs;
@@ -27,7 +27,13 @@ interface TabPaneProps {
  *     drag is active. Each zone is a `useDroppable` with edge metadata.
  *   - For the root pane, the LayoutMenu trailing the strip.
  */
-export function TabPane({ featureId, leaf, tabs }: TabPaneProps): ReactNode {
+export function TabPane({
+  featureId,
+  leaf,
+  tabs,
+  onTerminalActivate,
+  onEditorActivate,
+}: TabPaneProps): ReactNode {
   const registerHost = useTabHostRegistry((s) => s.registerHost);
   const unregisterHost = useTabHostRegistry((s) => s.unregisterHost);
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
@@ -47,6 +53,35 @@ export function TabPane({ featureId, leaf, tabs }: TabPaneProps): ReactNode {
 
   const isRoot = leaf.id === ROOT_LEAF_ID;
   const isFocused = focusedPaneId === leaf.id;
+  const activatedTabRef = useRef<TabKind | null>(null);
+
+  const notifyTabActivation = useCallback(
+    (tab: TabKind): void => {
+      if (tab === "terminal") onTerminalActivate?.();
+      if (tab === "editor") onEditorActivate?.();
+    },
+    [onEditorActivate, onTerminalActivate],
+  );
+
+  const activateTab = useCallback(
+    (tab: TabKind): void => {
+      if (activatedTabRef.current === tab) return;
+      activatedTabRef.current = tab;
+      queueMicrotask(() => {
+        if (activatedTabRef.current === tab) activatedTabRef.current = null;
+      });
+      if (leaf.activeTabId !== tab) setPaneActiveTab(featureId, leaf.id, tab);
+      notifyTabActivation(tab);
+    },
+    [featureId, leaf.activeTabId, leaf.id, notifyTabActivation, setPaneActiveTab],
+  );
+
+  const handleTabChange = useCallback(
+    (value: string): void => {
+      activateTab(value as TabKind);
+    },
+    [activateTab],
+  );
 
   // Non-root panes are presented as "floating blocks": a small inset padding
   // separates them from the resize handles + viewport edges, plus rounded
@@ -75,7 +110,7 @@ export function TabPane({ featureId, leaf, tabs }: TabPaneProps): ReactNode {
         <PaneTabStrip paneId={leaf.id}>
           <Tabs
             value={leaf.activeTabId ?? ""}
-            onValueChange={(value) => setPaneActiveTab(featureId, leaf.id, value as TabKind)}
+            onValueChange={handleTabChange}
             className="flex min-w-0 flex-1"
           >
             <TabsList className="flex-1 overflow-x-auto border-b-0">
@@ -92,6 +127,7 @@ export function TabPane({ featureId, leaf, tabs }: TabPaneProps): ReactNode {
                   tab={tab}
                   tabs={tabs}
                   isRootPane={isRoot}
+                  onActivate={() => activateTab(tab)}
                   onClose={() => {
                     if (isRoot) return;
                     dockTab(featureId, tab);
@@ -125,6 +161,7 @@ interface DraggableTabTriggerProps {
   tab: TabKind;
   tabs: FeatureTabs;
   isRootPane: boolean;
+  onActivate: () => void;
   onClose: () => void;
 }
 
@@ -133,6 +170,7 @@ function DraggableTabTrigger({
   tab,
   tabs,
   isRootPane,
+  onActivate,
   onClose,
 }: DraggableTabTriggerProps): ReactNode {
   const def = tabs[tab];
@@ -151,6 +189,7 @@ function DraggableTabTrigger({
       }}
       {...attributes}
       {...listeners}
+      onClick={onActivate}
       className="group cursor-grab active:cursor-grabbing"
     >
       <def.Icon className="size-4 shrink-0" />

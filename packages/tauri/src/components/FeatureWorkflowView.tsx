@@ -4,6 +4,7 @@ import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabs } from "@/components/feature-layout/types";
 import { AGENT_LABELS } from "@/components/agent-session";
 import { WorkflowAgentGrid } from "@/components/WorkflowAgentGrid";
@@ -172,12 +173,6 @@ export function FeatureWorkflowView({
     [diffOriginAgent, backend],
   );
 
-  const {
-    agentRefs: _agentRefs,
-    setAgentRef,
-    sessionPromptTrigger,
-  } = useWorkflowKeyboard(backend, openAgent, setOpenAgent, handleViewDiffForAgent);
-
   const view = backend.view;
   const actions = backend.actions;
 
@@ -202,6 +197,18 @@ export function FeatureWorkflowView({
   const rootLeaf = findLeafById(layoutState.splitRoot, ROOT_LEAF_ID);
   const rootActiveTabId: TabKind = rootLeaf?.activeTabId ?? "agent";
   const agentVisible = isTabVisible(layoutState, "agent");
+  const focusedLeaf = layoutState.focusedPaneId
+    ? findLeafById(layoutState.splitRoot, layoutState.focusedPaneId)
+    : null;
+  const {
+    agentRefs: _agentRefs,
+    setAgentRef,
+    sessionPromptTrigger,
+  } = useWorkflowKeyboard(backend, openAgent, setOpenAgent, handleViewDiffForAgent, {
+    agentLetterFocusEnabled: focusedLeaf
+      ? focusedLeaf.activeTabId === "agent"
+      : rootActiveTabId === "agent",
+  });
   useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
 
@@ -227,6 +234,9 @@ export function FeatureWorkflowView({
   const terminalTabRef = useRef<FeatureTerminalTabHandle>(null);
   const handleTerminalActivate = useCallback(() => {
     requestAnimationFrame(() => terminalTabRef.current?.activate());
+  }, []);
+  const handleEditorActivate = useCallback(() => {
+    requestAnimationFrame(() => editorTabRef.current?.focusActiveEditor());
   }, []);
   const codeBlockActions = useMemo<CodeBlockActions>(
     () => ({ sendToTerminal: (cmd) => sendToTerminalStore(featureId, cmd) }),
@@ -442,7 +452,7 @@ export function FeatureWorkflowView({
       label: "Git",
       Icon: GitCompareArrowsIcon,
       shortcut: ["cmd", "shift", "G"],
-      badge: workflowGitBadge(gitStats, backend.worktreeBranch ?? undefined),
+      badge: <GitBadge gitStats={gitStats} gitBranch={backend.worktreeBranch} />,
       content: (
         <FeatureGitTab
           featureId={featureId}
@@ -483,6 +493,7 @@ export function FeatureWorkflowView({
           featureId={featureId}
           tabs={tabs}
           onTerminalActivate={handleTerminalActivate}
+          onEditorActivate={handleEditorActivate}
         />
 
         {/* Per-agent diff modal (CMD+D) — separate from Git tab */}
@@ -506,22 +517,5 @@ export function FeatureWorkflowView({
         />
       </div>
     </CodeBlockActionsContext.Provider>
-  );
-}
-
-function workflowGitBadge(
-  gitStats: { insertions: number; deletions: number } | null | undefined,
-  gitBranch: string | undefined,
-) {
-  return (
-    <>
-      {gitBranch && <span className="truncate max-w-[120px]">{gitBranch}</span>}
-      {gitStats && gitStats.insertions > 0 && (
-        <span className="text-green-500">+{gitStats.insertions}</span>
-      )}
-      {gitStats && gitStats.deletions > 0 && (
-        <span className="text-red-400">-{gitStats.deletions}</span>
-      )}
-    </>
   );
 }

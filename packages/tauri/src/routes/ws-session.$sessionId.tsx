@@ -5,11 +5,13 @@ import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-re
 import { AgentSession, type AgentSessionHandle } from "@/components/agent-session";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
-import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
+import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabs } from "@/components/feature-layout/types";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
+import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { useAgentCatalog } from "@/api/agentRuntime";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
@@ -60,6 +62,7 @@ function WebSocketSessionPage() {
   const rootActiveTabId = rootLeaf?.activeTabId ?? "agent";
   useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
+  const terminalTabRef = useRef<FeatureTerminalTabHandle>(null);
   const projectsQuery = useListProjects();
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
   const { data: gitStats } = useGetStats(
@@ -111,8 +114,24 @@ function WebSocketSessionPage() {
   );
 
   const agentSessionRef = useRef<AgentSessionHandle>(null);
+  const focusedLeaf = layoutState.focusedPaneId
+    ? findLeafById(layoutState.splitRoot, layoutState.focusedPaneId)
+    : null;
+  const focusAgentFromLetter = useCallback((): void => {
+    agentSessionRef.current?.focusActiveInput();
+  }, []);
+  useAgentLetterFocus({
+    enabled: focusedLeaf ? focusedLeaf.activeTabId === "agent" : rootActiveTabId === "agent",
+    onFocus: focusAgentFromLetter,
+  });
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const handleViewDiff = useCallback(() => setInlineDiffOpen(true), []);
+  const handleTerminalActivate = useCallback((): void => {
+    requestAnimationFrame(() => terminalTabRef.current?.activate());
+  }, []);
+  const handleEditorActivate = useCallback((): void => {
+    requestAnimationFrame(() => editorTabRef.current?.focusActiveEditor());
+  }, []);
 
   const sendPromptAndFocus = useCallback(
     (message: string) => {
@@ -294,13 +313,15 @@ function WebSocketSessionPage() {
         label: "Terminal",
         Icon: TerminalIcon,
         shortcut: ["cmd", "shift", "T"],
-        content: <FeatureTerminalTab featureId={featureId} projectId={projectId} />,
+        content: (
+          <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} />
+        ),
       },
       git: {
         label: "Git",
         Icon: GitCompareArrowsIcon,
         shortcut: ["cmd", "shift", "G"],
-        badge: gitBadge(gitStats, gitBranch),
+        badge: <GitBadge gitStats={gitStats} gitBranch={gitBranch} />,
         content: (
           <FeatureGitTab
             featureId={featureId}
@@ -342,6 +363,8 @@ function WebSocketSessionPage() {
       useWorktree,
       ws,
       handleViewDiff,
+      handleEditorActivate,
+      handleTerminalActivate,
       slashCommands,
       slashCommandsLoading,
     ],
@@ -359,7 +382,12 @@ function WebSocketSessionPage() {
         wsWorktreeSetupOutput={session?.worktreeSetupOutput}
         onRetryWorktreeSetup={handleRetryWorktreeSetup}
       />
-      <FeatureLayoutShell featureId={featureId} tabs={tabs} />
+      <FeatureLayoutShell
+        featureId={featureId}
+        tabs={tabs}
+        onTerminalActivate={handleTerminalActivate}
+        onEditorActivate={handleEditorActivate}
+      />
       <DiffViewerModal
         featureId={featureId}
         open={inlineDiffOpen}
@@ -367,22 +395,5 @@ function WebSocketSessionPage() {
         onSendComments={sendPromptAndFocus}
       />
     </div>
-  );
-}
-
-function gitBadge(
-  gitStats: { insertions: number; deletions: number } | null | undefined,
-  gitBranch: string | null | undefined,
-) {
-  return (
-    <>
-      {gitBranch && <span className="truncate max-w-[120px]">{gitBranch}</span>}
-      {gitStats && gitStats.insertions > 0 && (
-        <span className="text-green-500">+{gitStats.insertions}</span>
-      )}
-      {gitStats && gitStats.deletions > 0 && (
-        <span className="text-red-400">-{gitStats.deletions}</span>
-      )}
-    </>
   );
 }

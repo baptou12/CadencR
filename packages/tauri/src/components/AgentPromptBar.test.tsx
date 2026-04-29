@@ -1,6 +1,6 @@
-import { forwardRef, useImperativeHandle, useState, type ForwardedRef } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen } from "@/test-utils";
+import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 
@@ -86,11 +86,12 @@ vi.mock("./prompt-editor/PromptEditor", () => {
     }>,
   ) {
     const [value, setValue] = useState(initialText ?? "");
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     useImperativeHandle(
       ref,
       () => ({
-        focus: () => undefined,
+        focus: () => textareaRef.current?.focus(),
         clear: () => {
           setValue("");
           onChange?.("");
@@ -106,6 +107,7 @@ vi.mock("./prompt-editor/PromptEditor", () => {
 
     return (
       <textarea
+        ref={textareaRef}
         value={value}
         onChange={(event) => {
           setValue(event.target.value);
@@ -151,6 +153,28 @@ describe("AgentPromptBar", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
     const sendButton = screen.getByLabelText("Send message");
     expect(sendButton).toBeDisabled();
+  });
+
+  it("focuses the input when clicking the gray prompt surface", () => {
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    const textbox = screen.getByRole("textbox");
+    const surface = textbox.parentElement;
+    expect(surface).toBeInstanceOf(HTMLElement);
+    fireEvent.click(surface!);
+    expect(document.activeElement).toBe(textbox);
+  });
+
+  it("does not focus the input when clicking prompt controls", () => {
+    render(
+      <div>
+        <button data-testid="outside">Outside</button>
+        <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />
+      </div>,
+    );
+    const textbox = screen.getByRole("textbox");
+    screen.getByTestId("outside").focus();
+    fireEvent.click(screen.getByLabelText("Attach images"));
+    expect(document.activeElement).not.toBe(textbox);
   });
 
   it("does not call onSend when text is empty and Enter pressed", async () => {

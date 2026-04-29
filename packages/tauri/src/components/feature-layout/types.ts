@@ -24,6 +24,11 @@ export interface FeatureTabDef {
 
 export type FeatureTabs = Record<TabKind, FeatureTabDef>;
 
+export interface FeatureTabActivationHandlers {
+  onTerminalActivate?: () => void;
+  onEditorActivate?: () => void;
+}
+
 export type DragSource = { kind: "pane"; paneId: string; tab: TabKind };
 
 export type DropTarget =

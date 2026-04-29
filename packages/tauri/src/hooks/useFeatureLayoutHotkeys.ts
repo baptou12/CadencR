@@ -7,11 +7,9 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 import type { TabKind } from "@/stores/feature-layout-schema";
+import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
 
-interface FeatureLayoutHotkeysOptions {
-  /** Called *after* a successful activate of the terminal tab. */
-  onTerminalActivate?: () => void;
-}
+type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers;
 
 const HOTKEY_OPTIONS = { enableOnFormTags: true, enableOnContentEditable: true } as const;
 
@@ -29,17 +27,18 @@ export function useFeatureLayoutHotkeys(
   options: FeatureLayoutHotkeysOptions = {},
 ): void {
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
-  const { onTerminalActivate } = options;
+  const { onTerminalActivate, onEditorActivate } = options;
 
   const activate = useCallback(
     (tab: TabKind) => {
       const state = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
       const leaf = findPaneContaining(state.splitRoot, tab);
       if (!leaf) return;
-      setPaneActiveTab(featureId, leaf.id, tab);
+      if (leaf.activeTabId !== tab) setPaneActiveTab(featureId, leaf.id, tab);
       if (tab === "terminal") onTerminalActivate?.();
+      if (tab === "editor") onEditorActivate?.();
     },
-    [featureId, setPaneActiveTab, onTerminalActivate],
+    [featureId, setPaneActiveTab, onTerminalActivate, onEditorActivate],
   );
 
   useHotkeys(

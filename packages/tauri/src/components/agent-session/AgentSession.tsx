@@ -182,28 +182,6 @@ export const AgentSession = memo(
       else setInternalOpen((prev) => !prev);
     };
 
-    // Click anywhere in the agent surface refocuses the prompt — power users
-    // don't want to chase the input after scrolling, scanning blocks, or
-    // toggling something. We skip interactive widgets (buttons, popover
-    // triggers, inputs, contenteditable, role=button/menuitem/option/textbox)
-    // so we don't steal focus from a dropdown that just opened, an inline
-    // input the user clicked into, or a permission/question control. The
-    // underlying click on a "block" still fires natively because we don't
-    // call preventDefault/stopPropagation — onClick runs after the click has
-    // already dispatched to the target.
-    const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>): void => {
-      const target = e.target as HTMLElement | null;
-      if (!target) return;
-      if (
-        target.closest(
-          'button, a, input, textarea, select, label, [contenteditable="true"], [role="button"], [role="menuitem"], [role="option"], [role="textbox"], [role="combobox"], [role="tab"]',
-        )
-      ) {
-        return;
-      }
-      promptBarRef.current?.focusInput();
-    };
-
     const handleCollapse = () => {
       handleToggle();
       requestAnimationFrame(() => headerRef.current?.focus());
@@ -373,11 +351,7 @@ export const AgentSession = memo(
     // ==== Full-screen mode ====
     if (!collapsible) {
       return (
-        <div
-          ref={containerRef}
-          onClick={handleContainerClick}
-          className={cn("flex h-full flex-col", className)}
-        >
+        <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
           <div
             ref={scrollContainerRef}
             className={cn("flex-1 overflow-auto px-4 pt-4 pb-8", isIdle && "flex")}
@@ -399,7 +373,6 @@ export const AgentSession = memo(
     return (
       <div
         ref={containerRef}
-        onClick={handleContainerClick}
         className={cn(
           "flex flex-col rounded-lg border border-border bg-background",
           isOpen && maximized && "flex-1 min-h-0",
@@ -424,7 +397,6 @@ export const AgentSession = memo(
           onDelete={onDelete}
           maximized={maximized}
           onToggleMaximize={onToggleMaximize}
-          promptBarRef={promptBarRef}
         />
 
         {isOpen && (

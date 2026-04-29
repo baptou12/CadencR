@@ -8,14 +8,12 @@ import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-lay
 import { DragChip } from "./DragChip";
 import { SplitTreeRenderer } from "./SplitTreeRenderer";
 import { TabContentRegistry } from "./TabContentRegistry";
-import type { DragSource, FeatureTabs } from "./types";
+import type { DragSource, FeatureTabActivationHandlers, FeatureTabs } from "./types";
 import { useFeatureDnd } from "./useFeatureDnd";
 
-interface FeatureLayoutShellProps {
+interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
   featureId: number;
   tabs: FeatureTabs;
-  /** Optional callback when the terminal tab is activated via hotkey. */
-  onTerminalActivate?: () => void;
 }
 
 /**
@@ -30,9 +28,10 @@ export function FeatureLayoutShell({
   featureId,
   tabs,
   onTerminalActivate,
+  onEditorActivate,
 }: FeatureLayoutShellProps): ReactNode {
   useFeatureLayoutHydration(featureId);
-  useFeatureLayoutHotkeys(featureId, { onTerminalActivate });
+  useFeatureLayoutHotkeys(featureId, { onTerminalActivate, onEditorActivate });
 
   const splitRoot = useFeatureLayoutStore((s) => selectFeatureLayout(featureId)(s).splitRoot);
 
@@ -53,7 +52,14 @@ export function FeatureLayoutShell({
     >
       <TabContentRegistry featureId={featureId} tabs={tabs} />
       <div className="relative h-full min-h-0 flex-1 overflow-hidden">
-        <SplitTreeRenderer featureId={featureId} node={splitRoot} path={[]} tabs={tabs} />
+        <SplitTreeRenderer
+          featureId={featureId}
+          node={splitRoot}
+          path={[]}
+          tabs={tabs}
+          onTerminalActivate={onTerminalActivate}
+          onEditorActivate={onEditorActivate}
+        />
       </div>
       <DragOverlay dropAnimation={null}>
         {activeSource ? <DragChip tab={activeSource.tab} tabs={tabs} /> : null}

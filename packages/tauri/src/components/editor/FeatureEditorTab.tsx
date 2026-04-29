@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import type { EditorView } from "@codemirror/view";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
@@ -37,6 +38,7 @@ interface FeatureEditorTabProps {
 export interface FeatureEditorTabHandle {
   /** Call before leaving the editor tab. Calls `proceed` if allowed. */
   requestLeave: (proceed: () => void) => void;
+  focusActiveEditor: () => void;
 }
 
 const SIDEBAR_MIN_SIZE = "120px";
@@ -66,8 +68,18 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     const settingKey = `editor_sidebar_visible_${featureId}`;
     const { value: persistedVisible, setValue: persistVisible } = useDebouncedSetting(settingKey);
     const hasInitializedRef = useRef(false);
+    const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
 
     useFileWatcher(projectPath);
+
+    const handleEditorViewChange = useCallback((paneId: string, view: EditorView | null): void => {
+      if (view) editorViewsRef.current.set(paneId, view);
+      else editorViewsRef.current.delete(paneId);
+    }, []);
+
+    const focusActiveEditor = useCallback((): void => {
+      editorViewsRef.current.get(activePaneId)?.focus();
+    }, [activePaneId]);
 
     /** Collect all dirty tabs across all panes */
     const getDirtyTabs = useCallback(() => {
@@ -89,8 +101,9 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             setLeaveDialogOpen(true);
           }
         },
+        focusActiveEditor,
       }),
-      [getDirtyTabs],
+      [focusActiveEditor, getDirtyTabs],
     );
 
     async function handleSaveAllAndSwitch() {
@@ -267,7 +280,12 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel>
-              <EditorSplitTree node={splitTree} featureId={featureId} projectId={projectId} />
+              <EditorSplitTree
+                node={splitTree}
+                featureId={featureId}
+                projectId={projectId}
+                onEditorViewChange={handleEditorViewChange}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
@@ -281,7 +299,12 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             >
               <PanelLeft className="w-4 h-4" />
             </button>
-            <EditorSplitTree node={splitTree} featureId={featureId} projectId={projectId} />
+            <EditorSplitTree
+              node={splitTree}
+              featureId={featureId}
+              projectId={projectId}
+              onEditorViewChange={handleEditorViewChange}
+            />
           </div>
         )}
       </div>

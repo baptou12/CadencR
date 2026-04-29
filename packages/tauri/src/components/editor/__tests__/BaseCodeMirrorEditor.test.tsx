@@ -103,6 +103,15 @@ describe("BaseCodeMirrorEditor", () => {
     expect(ref.current).toBeNull();
   });
 
+  it("notifies when EditorView mounts and unmounts", () => {
+    const onEditorViewChange = vi.fn();
+    const { unmount } = render(<BaseCodeMirrorEditor onEditorViewChange={onEditorViewChange} />);
+
+    expect(onEditorViewChange).toHaveBeenCalledWith(expect.objectContaining({ focus: mockFocus }));
+    unmount();
+    expect(onEditorViewChange).toHaveBeenLastCalledWith(null);
+  });
+
   it("dispatches reconfigure when vimMode changes", () => {
     const { rerender } = render(<BaseCodeMirrorEditor vimMode={false} />);
     mockDispatch.mockClear();

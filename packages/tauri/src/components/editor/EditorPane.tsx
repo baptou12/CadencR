@@ -1,3 +1,4 @@
+import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import EditorSubTabs from "./EditorSubTabs";
@@ -9,9 +10,16 @@ interface EditorPaneProps {
   paneId: string;
   projectId: number;
   isActive?: boolean;
+  onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
-export default function EditorPane({ featureId, paneId, projectId, isActive }: EditorPaneProps) {
+export default function EditorPane({
+  featureId,
+  paneId,
+  projectId,
+  isActive,
+  onEditorViewChange,
+}: EditorPaneProps) {
   const activeFilePath = useEditorStore(
     (s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null,
   );
@@ -44,6 +52,7 @@ export default function EditorPane({ featureId, paneId, projectId, isActive }: E
               projectId={projectId}
               paneId={paneId}
               featureId={featureId}
+              onEditorViewChange={onEditorViewChange}
             />
           </Suspense>
         ) : (
