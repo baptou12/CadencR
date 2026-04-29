@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use rmcp::{
     model::{CreateElicitationRequestParams, ElicitationAction, ElicitationSchema, Meta},
     service::{RequestContext, RoleServer},
@@ -12,10 +14,10 @@ pub async fn maybe_elicit_tool_approval(
     tool_name: &str,
     tool_input: &Value,
 ) -> Result<(), String> {
-    if std::env::var("CADENCE_MCP_APPROVAL_MODE").ok().as_deref() != Some("elicitation") {
+    if !approval_elicitation_enabled() {
         return Ok(());
     }
-    if !cadence_mcp_tool_requires_approval_elicitation(tool_name) {
+    if !cadence_mcp_tool_requires_approval_elicitation(server_name, tool_name) {
         return Ok(());
     }
 
@@ -37,6 +39,13 @@ pub async fn maybe_elicit_tool_approval(
         ElicitationAction::Decline => Err(format!("{tool_name} was denied by the user")),
         ElicitationAction::Cancel => Err(format!("{tool_name} approval was cancelled")),
     }
+}
+
+fn approval_elicitation_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("CADENCE_MCP_APPROVAL_MODE").ok().as_deref() == Some("elicitation")
+    })
 }
 
 fn meta(server_name: &str, tool_name: &str, tool_input: &Value) -> Meta {

@@ -28,11 +28,7 @@ use crate::domain::mcp::tools::{
     update_plan::UpdatePlanTool,
 };
 
-use super::{
-    server_info, tool_create_phase, tool_finalize_plan, tool_list_phases, tool_mark_agent_done,
-    tool_read_phase, tool_read_plan, tool_remove_phase, tool_show_plan, tool_update_phase,
-    tool_update_plan,
-};
+use super::{server_info, tool_catalog::tool_definitions_for_agent, AgentType};
 
 pub struct PlanServer {
     ctx: Arc<McpContext>,
@@ -78,18 +74,7 @@ impl ServerHandler for PlanServer {
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
         std::future::ready(Ok(ListToolsResult {
             meta: None,
-            tools: vec![
-                tool_read_plan(),
-                tool_list_phases(),
-                tool_read_phase(),
-                tool_create_phase(),
-                tool_update_phase(),
-                tool_remove_phase(),
-                tool_update_plan(),
-                tool_show_plan(),
-                tool_finalize_plan(),
-                tool_mark_agent_done(),
-            ],
+            tools: tool_definitions_for_agent(AgentType::Plan),
             next_cursor: None,
         }))
     }

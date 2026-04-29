@@ -155,7 +155,7 @@ impl McpServerHealth {
         if self.auth_ok
             && required_tools(&self.name)
                 .iter()
-                .all(|tool| self.tools.contains(*tool))
+                .all(|tool| self.tools.contains(tool))
         {
             "connected".to_string()
         } else {
@@ -180,7 +180,7 @@ fn tool_names(value: Option<&Value>) -> HashSet<String> {
     }
 }
 
-fn required_tools(server_name: &str) -> &'static [&'static str] {
+fn required_tools(server_name: &str) -> Vec<String> {
     cadence_mcp_required_tools(server_name)
 }
 
