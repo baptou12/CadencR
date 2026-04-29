@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { CheckIcon, MoreHorizontalIcon, StarIcon } from "lucide-react";
+import { CheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -72,7 +72,7 @@ export function LayoutMenu({ featureId }: LayoutMenuProps): ReactNode {
             aria-label="Layout options"
             disabled={isLoading}
           >
-            <MoreHorizontalIcon className="size-4" />
+            <LayoutTemplateIcon className="size-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
