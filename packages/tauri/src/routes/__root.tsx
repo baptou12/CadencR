@@ -384,7 +384,7 @@ function RootLayout() {
           </ResizablePanel>
           <ResizableHandle
             className={cn(
-              "cursor-col-resize",
+              "cursor-col-resize bg-border",
               isSidebarCollapsed && "pointer-events-none opacity-0",
             )}
           />
