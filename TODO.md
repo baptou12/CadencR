@@ -3,12 +3,17 @@
 - [ ] [opencode] Build / plan mode
 - [ ] [opencode] Not sync on command updates
 - [ ] [claude] Auto-accept / plan / auto
-- [ ] [agent] selecting text is broken with prompt focus
+- [~] [agent] selecting text is broken with prompt focus
 - [ ] [db] change production database to ~/.cadencr
 - [ ] [editor] collapse should have a dedicated zone when collapsed
 - [ ] [editpr] some lines don't have the proper blame
 - [ ] [git] should update changes when update are done
+- [ ] [git] commit name goes too far
+- [ ] [git] sidebar should be collapsable + persisance
 - [ ] [git] Cannot see the file list properly when all files are collapsed
+- [ ] [global] opening a conversation is slow
+- [ ] [global] long conversation feels slow
+- [ ] [global] archive / delete don't focus the right option
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
@@ -22,6 +27,7 @@
 - [ ] [agents] replay user message
 - [ ] [feature] Merging strategies
 - [ ] [agent] improve sub-agents to use the existing agent UI in ws-workflow + capture agent description + get more informations from the CLI (whole output) + agent done
+- [ ] [agent] steered messages (waiting for harness to add the message to the conversation before adding it)
 - [ ] [global] Rework command palette
 - [ ] [global] free pane
 - [ ] [global] Theming
