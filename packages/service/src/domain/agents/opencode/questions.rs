@@ -46,50 +46,14 @@ pub fn extract_question_answers(
     updated_input: Option<&Value>,
     feedback: Option<&str>,
 ) -> Vec<Vec<String>> {
-    let Some(input) = updated_input else {
-        return vec![vec![feedback.unwrap_or("Approved").to_string()]];
-    };
-    let Some(answers) = input.get("answers") else {
-        return vec![vec![feedback.unwrap_or("Approved").to_string()]];
-    };
-
-    if let Some(answer_groups) = answers.as_array() {
-        return answer_groups
-            .iter()
-            .map(|group| match group {
-                Value::Array(values) => values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<String>>(),
-                Value::String(value) => vec![value.to_string()],
-                _ => Vec::new(),
-            })
-            .collect();
-    }
-
-    answers
-        .as_object()
-        .map(|entries| {
-            let mut indexed = entries
-                .iter()
-                .filter_map(|(key, value)| {
-                    let index = key.parse::<usize>().ok()?;
-                    let answer_group = match value {
-                        Value::String(answer) => vec![answer.to_string()],
-                        Value::Array(values) => values
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(ToOwned::to_owned)
-                            .collect::<Vec<String>>(),
-                        _ => Vec::new(),
-                    };
-                    Some((index, answer_group))
-                })
-                .collect::<Vec<(usize, Vec<String>)>>();
-            indexed.sort_by_key(|(index, _)| *index);
-            indexed.into_iter().map(|(_, group)| group).collect()
-        })
+    // Delegate to the shared extractor so OpenCode and the ws_session
+    // persistence path stay in lockstep (both must understand legacy `[]`,
+    // legacy `{ "0": ... }`, and the canonical `{ [questionText]: string }`
+    // shape from `AskUserQuestionOutput`). If extraction fails or yields no
+    // real content, fall back to the user's feedback (or "Approved").
+    updated_input
+        .and_then(crate::domain::ws_session::question_answers::extract_answer_lists)
+        .filter(|lists| lists.iter().any(|group| !group.is_empty()))
         .unwrap_or_else(|| vec![vec![feedback.unwrap_or("Approved").to_string()]])
 }
 
@@ -161,5 +125,35 @@ mod tests {
         );
 
         assert_eq!(answers, vec![vec!["Legacy answer".to_string()]]);
+    }
+
+    #[test]
+    fn extract_question_answers_handles_question_text_keyed_map() {
+        // OpenCode must accept the canonical `AskUserQuestionOutput` shape
+        // produced by the frontend (question text → comma-separated answer).
+        let answers = extract_question_answers(
+            Some(&json!({
+                "questions": [
+                    { "question": "First?" },
+                    { "question": "Second?" }
+                ],
+                "answers": {
+                    "First?": "Alpha",
+                    "Second?": "Beta, Gamma"
+                }
+            })),
+            None,
+        );
+
+        assert_eq!(
+            answers,
+            vec![vec!["Alpha".to_string()], vec!["Beta, Gamma".to_string()],]
+        );
+    }
+
+    #[test]
+    fn extract_question_answers_falls_back_when_payload_is_empty() {
+        let answers = extract_question_answers(None, Some("Manual reply"));
+        assert_eq!(answers, vec![vec!["Manual reply".to_string()]]);
     }
 }

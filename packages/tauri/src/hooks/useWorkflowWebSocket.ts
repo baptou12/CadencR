@@ -10,6 +10,7 @@ import { type WorkflowState, slotKeyToAgentSlot } from "@/types/workflow";
 
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
+import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
 
 function buildSlashCommandsKey(cwd: string, provider?: string): string {
   return `${provider ?? ""}::${cwd}`;
@@ -251,7 +252,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       const agent = state.agents.get(slotKey);
       if (!agent) return;
 
-      const updatedInput = { ...agent.pendingQuestionToolInput, answers: response };
+      const updatedInput = buildAskUserQuestionUpdatedInput(
+        agent.pendingQuestionToolInput,
+        response,
+      );
       send("permission.respond", {
         agent_slot: slotKeyToAgentSlot(slotKey),
         request_id: agent.pendingQuestionRequestId,

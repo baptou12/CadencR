@@ -46,6 +46,7 @@ import {
   updateSession,
 } from "./ws-session-types";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
+import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 
@@ -289,10 +290,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const session = getSession(sessionId);
       sendRaw(
         sessionId,
-        createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
-          ...session.pendingQuestionToolInput,
-          answers: response,
-        }),
+        createPermissionRespond(
+          session.serverSessionId,
+          session.pendingRequestId,
+          "allow_once",
+          buildAskUserQuestionUpdatedInput(session.pendingQuestionToolInput, response),
+        ),
       );
 
       const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);

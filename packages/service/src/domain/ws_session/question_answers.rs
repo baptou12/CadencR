@@ -20,6 +20,28 @@ pub fn extract_answer_lists(updated_input: &Value) -> Option<Vec<Vec<String>>> {
     }
 
     let object = answers.as_object()?;
+
+    // Canonical SDK shape (`AskUserQuestionOutput`): keys are the question
+    // texts, values are the (comma-separated) answer strings. We preserve
+    // question order by walking `extract_question_labels` first.
+    let labels = extract_question_labels(updated_input);
+    if labels.iter().any(|label| object.contains_key(label)) {
+        let by_text = labels
+            .iter()
+            .map(|label| match object.get(label) {
+                Some(Value::String(answer)) => vec![answer.to_string()],
+                Some(Value::Array(values)) => values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<String>>(),
+                _ => Vec::new(),
+            })
+            .collect::<Vec<Vec<String>>>();
+        return Some(by_text);
+    }
+
+    // Legacy shape (pre-`AskUserQuestionOutput`): integer-keyed object map.
     let mut indexed = object
         .iter()
         .filter_map(|(key, value)| {
@@ -139,6 +161,30 @@ mod tests {
         assert_eq!(
             extract_answer_lists(&updated_input),
             Some(vec![vec!["Legacy answer".to_string()]])
+        );
+    }
+
+    #[test]
+    fn extracts_question_text_keyed_answers() {
+        // Canonical Anthropic SDK shape: answers is a map keyed by question
+        // text (multi-select values are comma-separated strings).
+        let updated_input = json!({
+            "questions": [
+                { "question": "First?" },
+                { "question": "Second?" }
+            ],
+            "answers": {
+                "First?": "Alpha",
+                "Second?": "Beta, Gamma"
+            }
+        });
+
+        assert_eq!(
+            extract_answer_lists(&updated_input),
+            Some(vec![
+                vec!["Alpha".to_string()],
+                vec!["Beta, Gamma".to_string()],
+            ])
         );
     }
 
