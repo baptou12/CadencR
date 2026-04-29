@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use axum::extract::ws::Message;
 use tracing::{error, info};
@@ -794,6 +795,7 @@ pub(super) async fn handle_interrupt(
             }
         }
         QueryState::Pending(_) => {
+            handle.manual_compact_cancel.store(true, Ordering::SeqCst);
             send_error(sender, &envelope.id, "INVALID_STATE", "Session not active");
         }
     }

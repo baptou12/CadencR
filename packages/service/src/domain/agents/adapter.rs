@@ -459,6 +459,9 @@ pub trait AgentRuntimeSession: Send + Sync {
     fn context_window(&self) -> Option<u64> {
         None
     }
+    fn runtime_control_endpoint(&self) -> Option<String> {
+        None
+    }
     async fn session_id(&self) -> Option<String>;
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
     async fn interrupt(&self) -> Result<(), RuntimeError>;

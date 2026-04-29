@@ -337,10 +337,12 @@ pub(super) async fn handle_init(
         spawned_permission_mode: None,
         desired_thinking_effort,
         spawned_thinking_effort: None,
+        runtime_control_endpoint: None,
         resume_session_id: resume_session_id.clone(),
         config,
         session_cache,
         allowed_patterns,
+        manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     sdk_sessions.lock().await.insert(db_session_id, handle);

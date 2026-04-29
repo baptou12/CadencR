@@ -1729,6 +1729,38 @@ describe("ws-session-store", () => {
       expect(session.pendingManualCompact).toBe(false);
     });
 
+    it("manual compact completes for compact boundaries without trigger metadata", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "srv-1" },
+      });
+
+      store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "system",
+              subtype: "compact_boundary",
+              uuid: "cb1",
+              session_id: "srv-1",
+            },
+          ],
+        },
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.pendingManualCompact).toBe(false);
+    });
+
     it("auto compact boundary does not complete a pending manual compact", async () => {
       const store = useWsSessionStore.getState();
       store.connect("s1");

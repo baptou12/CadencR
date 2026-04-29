@@ -14,6 +14,7 @@ mod workflow_interact;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -79,6 +80,10 @@ pub struct SdkHandle {
     pub(super) desired_thinking_effort: Option<String>,
     /// Thinking effort the runtime was last spawned with.
     pub(super) spawned_thinking_effort: Option<String>,
+    /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
+    /// OpenCode uses this for manual compaction so it can reuse the same
+    /// running server instead of probing/spawning on every compact request.
+    pub(super) runtime_control_endpoint: Option<String>,
     /// Session-level cache of approved permission patterns.
     pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
@@ -88,6 +93,7 @@ pub struct SdkHandle {
     pub(super) resume_session_id: Option<String>,
     /// Config for respawning with --resume after model/mode change.
     pub(super) config: SessionConfig,
+    pub(super) manual_compact_cancel: Arc<AtomicBool>,
 }
 
 pub(super) type SdkSessions = Arc<Mutex<HashMap<i64, SdkHandle>>>;
@@ -1368,6 +1374,7 @@ mod tests {
             spawned_permission_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1379,6 +1386,7 @@ mod tests {
                 system_prompt: None,
                 env: None,
             },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1398,6 +1406,7 @@ mod tests {
             spawned_permission_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1409,6 +1418,7 @@ mod tests {
                 system_prompt: None,
                 env: None,
             },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 

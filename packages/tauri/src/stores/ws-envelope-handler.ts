@@ -283,6 +283,8 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
     allMutations.push(...result.mutations);
     enterPlanModeRequested ||= result.signals.enterPlanModeRequested;
     compactBoundaryObserved ||= result.signals.compactBoundaryObserved;
+    // Older persisted/runtime boundaries may not include metadata. Treat that
+    // shape as manual so an in-flight explicit `/compact` can complete.
     manualCompactBoundaryObserved ||=
       result.signals.compactBoundaryObserved && result.signals.compactBoundaryTrigger !== "auto";
   }

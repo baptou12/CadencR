@@ -300,6 +300,7 @@ pub(crate) async fn handle_prompt_send(
                     WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id)
                         .await;
                     let provider_context_window = runtime_session.context_window();
+                    let runtime_control_endpoint = runtime_session.runtime_control_endpoint();
                     if let Some(cw) = provider_context_window {
                         WsSessionPersistence::update_context_window(
                             &app_state.write_pool,
@@ -373,10 +374,14 @@ pub(crate) async fn handle_prompt_send(
                             spawned_permission_mode: spawned_pm,
                             desired_thinking_effort: spawned_effort.clone(),
                             spawned_thinking_effort: spawned_effort,
+                            runtime_control_endpoint,
                             resume_session_id: None,
                             config,
                             session_cache,
                             allowed_patterns,
+                            manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(
+                                false,
+                            )),
                         },
                     );
                 }

@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::extract::ws::Message;
@@ -15,13 +17,16 @@ use crate::domain::agents::adapter::{
 use crate::domain::agents::opencode::parse_model_ref;
 
 const COMPACT_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const COMPACT_POLL_TIMEOUT: Duration = Duration::from_secs(15);
+const COMPACT_POLL_MAX_INTERVAL: Duration = Duration::from_secs(2);
+const COMPACT_POLL_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct CompactTarget {
     feature_id: i64,
     runtime_session_id: String,
     directory: String,
     model_ref: opencode_sdk_rs::ModelRef,
+    runtime_control_endpoint: Option<String>,
+    cancel: Arc<AtomicBool>,
 }
 
 struct CompactError {
@@ -55,13 +60,17 @@ async fn run_opencode_compact(
         let handle = sessions
             .get(&db_session_id)
             .ok_or_else(|| compact_error("SESSION_NOT_FOUND", "Session not found"))?;
+        handle.manual_compact_cancel.store(false, Ordering::SeqCst);
         resolve_compact_target(handle, session_row)
             .map_err(|message| compact_error("INVALID_STATE", message))?
     };
 
-    let client = opencode_sdk_rs::OpenCodeClient::init()
-        .await
-        .map_err(sdk_error)?;
+    let client = match target.runtime_control_endpoint.as_deref() {
+        Some(base_url) => opencode_sdk_rs::OpenCodeClient::with_base_url(base_url),
+        None => opencode_sdk_rs::OpenCodeClient::init()
+            .await
+            .map_err(sdk_error)?,
+    };
 
     let existing_messages = client
         .list_messages(&target.runtime_session_id)
@@ -82,9 +91,15 @@ async fn run_opencode_compact(
         .await
         .map_err(sdk_error)?;
 
-    let messages = await_compaction_messages(&client, &target.runtime_session_id, &existing_ids)
-        .await
-        .map_err(|message| compact_error("SDK_ERROR", message))?;
+    let messages = await_compaction_messages(
+        sender,
+        &client,
+        &target.runtime_session_id,
+        &existing_ids,
+        &target.cancel,
+    )
+    .await
+    .map_err(|message| compact_error("SDK_ERROR", message))?;
 
     persist_and_forward_compaction(
         app_state,
@@ -146,16 +161,27 @@ fn resolve_compact_target(
         runtime_session_id,
         directory: handle.config.cwd.to_string_lossy().to_string(),
         model_ref,
+        runtime_control_endpoint: handle.runtime_control_endpoint.clone(),
+        cancel: Arc::clone(&handle.manual_compact_cancel),
     })
 }
 
 async fn await_compaction_messages(
+    sender: &WsSender,
     client: &opencode_sdk_rs::OpenCodeClient,
     runtime_session_id: &str,
     existing_ids: &HashSet<String>,
+    cancel: &AtomicBool,
 ) -> Result<Vec<opencode_sdk_rs::Message>, String> {
     let started = Instant::now();
+    let mut poll_interval = COMPACT_POLL_INTERVAL;
     loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err("OpenCode compaction was interrupted".to_string());
+        }
+        if sender.is_closed() {
+            return Err("OpenCode compaction cancelled because the websocket closed".to_string());
+        }
         let messages = client
             .list_messages(runtime_session_id)
             .await
@@ -172,7 +198,8 @@ async fn await_compaction_messages(
         if started.elapsed() >= COMPACT_POLL_TIMEOUT {
             return Err("OpenCode did not return a compaction summary in time".to_string());
         }
-        tokio::time::sleep(COMPACT_POLL_INTERVAL).await;
+        tokio::time::sleep(poll_interval).await;
+        poll_interval = (poll_interval + COMPACT_POLL_INTERVAL).min(COMPACT_POLL_MAX_INTERVAL);
     }
 }
 

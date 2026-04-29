@@ -50,6 +50,18 @@ function provider(binName: string): ProviderDiscovery {
 }
 
 describe("ProvidersTab", () => {
+  it("renders only the active provider details", async () => {
+    const { user } = render(<ProvidersTab />);
+
+    expect(screen.getByText("Profiles")).toBeInTheDocument();
+    expect(screen.queryByText("codex app-server")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: /Codex CLI/i }));
+
+    expect(screen.getByText("codex app-server")).toBeInTheDocument();
+    expect(screen.queryByText("Profiles")).not.toBeInTheDocument();
+  });
+
   it("shows Codex CLI binary discovery details", async () => {
     const { user } = render(<ProvidersTab />);
 
