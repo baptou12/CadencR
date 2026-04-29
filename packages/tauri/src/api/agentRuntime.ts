@@ -16,7 +16,8 @@ export interface RuntimeModelOption {
 export interface RuntimeProviderOption {
   id: string;
   label: string;
-  status: "available" | "coming_soon";
+  status: "available" | "unavailable" | "coming_soon";
+  status_message?: string;
   models: RuntimeModelOption[];
   default_model: string | null;
 }

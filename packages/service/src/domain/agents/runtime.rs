@@ -20,6 +20,7 @@ pub const DEFAULT_PROVIDER: &str = "claude_code";
 #[serde(rename_all = "snake_case")]
 pub enum ProviderStatus {
     Available,
+    Unavailable,
     ComingSoon,
 }
 
@@ -64,6 +65,8 @@ pub struct ProviderCatalogEntry {
     pub id: String,
     pub label: String,
     pub status: ProviderStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_message: Option<String>,
     pub models: Vec<ModelCatalogEntry>,
     pub default_model: Option<String>,
 }

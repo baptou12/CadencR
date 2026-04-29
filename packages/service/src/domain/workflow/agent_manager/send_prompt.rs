@@ -59,8 +59,7 @@ impl AgentManager {
             // `mark_agent_resumed_static`; this is the direct-to-runtime
             // counterpart (OpenCode per-tool perms, AskUserQuestion answers,
             // and plan/PRD approvals all land here).
-            let is_approval_gate = response.request_id.starts_with("approval_");
-            let next_turn = if is_approval_gate {
+            let next_turn = if response.is_approval_gate {
                 crate::domain::permission_bridge::turn_state_after_approval(
                     response.decision,
                     response.feedback.as_deref(),

@@ -166,6 +166,10 @@ impl AgentRuntimeSession for OpenCodeSession {
         self.context_window
     }
 
+    fn runtime_control_endpoint(&self) -> Option<String> {
+        Some(self.client.base_url().to_string())
+    }
+
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
         let Some(source_rx) = self.event_rx.take() else {
             warn!("take_message_rx called twice — returning dead channel");

@@ -232,6 +232,19 @@ describe("AgentBlock", () => {
       render(<AgentBlock block={makeBlock({ type: "compact_divider", content: "" })} />);
       expect(screen.getByText("Compacted")).toBeInTheDocument();
     });
+
+    it("renders Codex compact metadata details", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "compact_divider",
+            content: JSON.stringify({ trigger: "manual", pre_tokens: 40123 }),
+          })}
+        />,
+      );
+      expect(screen.getByText("Compacted")).toBeInTheDocument();
+      expect(screen.getByText("manual · 40,123 tokens")).toBeInTheDocument();
+    });
   });
 
   describe("clear_divider block", () => {
@@ -312,6 +325,77 @@ describe("AgentBlock", () => {
       );
       expect(screen.getByText("ls")).toBeInTheDocument();
       expect(screen.getByText(/line1/)).toBeInTheDocument();
+    });
+
+    it("extracts Bash output from structured Codex tool results", () => {
+      const toolUseId = "tu-codex";
+      const resultMap = new Map([
+        [
+          toolUseId,
+          makeBlock({
+            type: "tool_result",
+            content: JSON.stringify({
+              command: "printf hi",
+              output: "hi\n",
+              status: "completed",
+            }),
+            sourceToolName: "Bash",
+            toolUseId,
+          }),
+        ],
+      ]);
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({ command: "printf hi" }),
+            toolUseId,
+          })}
+          toolResultMap={resultMap}
+        />,
+      );
+      expect(screen.getByText("printf hi")).toBeInTheDocument();
+      expect(screen.getByText("hi")).toBeInTheDocument();
+      expect(screen.queryByText(/"command"/)).not.toBeInTheDocument();
+    });
+
+    it("does not render structured Bash JSON when Codex output is null", () => {
+      const toolUseId = "tu-empty-codex";
+      const resultMap = new Map([
+        [
+          toolUseId,
+          makeBlock({
+            type: "tool_result",
+            content: JSON.stringify({
+              command: "sed -n '1,160p' .zed/settings.json",
+              cwd: "/tmp/project",
+              exitCode: 0,
+              output: null,
+              status: "completed",
+            }),
+            sourceToolName: "Bash",
+            toolUseId,
+          }),
+        ],
+      ]);
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "tool_call",
+            toolName: "Bash",
+            toolArgs: JSON.stringify({
+              command: "sed -n '1,160p' .zed/settings.json",
+              status: "completed",
+            }),
+            toolUseId,
+          })}
+          toolResultMap={resultMap}
+        />,
+      );
+      expect(screen.getByText("sed -n '1,160p' .zed/settings.json")).toBeInTheDocument();
+      expect(screen.getByText("No output")).toBeInTheDocument();
+      expect(screen.queryByText(/"output":null/)).not.toBeInTheDocument();
     });
 
     it("returns null for Edit tool_result (inlined into tool_call)", () => {

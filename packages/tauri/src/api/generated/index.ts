@@ -146,12 +146,12 @@ export interface AgentSessionSummary {
 }
 
 /**
- * Keyed by provider id (`"claude"`, `"opencode"`).
+ * Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`).
  */
 export type BinaryDiscoveryResponseProviders = { [key: string]: ProviderDiscovery };
 
 export interface BinaryDiscoveryResponse {
-  /** Keyed by provider id (`"claude"`, `"opencode"`). */
+  /** Keyed by discovery id (`"claude"`, `"opencode"`, `"codex"`). */
   providers: BinaryDiscoveryResponseProviders;
 }
 
@@ -875,12 +875,15 @@ export interface ProjectsSuccessResponse {
 
 export type ProviderCatalogEntryDefaultModel = string | null;
 
+export type ProviderCatalogEntryStatusMessage = string | null;
+
 export interface ProviderCatalogEntry {
   default_model?: ProviderCatalogEntryDefaultModel;
   id: string;
   label: string;
   models: ModelCatalogEntry[];
   status: ProviderStatus;
+  status_message?: ProviderCatalogEntryStatusMessage;
 }
 
 /**
@@ -916,6 +919,7 @@ export type ProviderStatus = (typeof ProviderStatus)[keyof typeof ProviderStatus
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const ProviderStatus = {
   available: "available",
+  unavailable: "unavailable",
   coming_soon: "coming_soon",
 } as const;
 

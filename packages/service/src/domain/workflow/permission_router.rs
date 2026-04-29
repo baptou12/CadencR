@@ -160,6 +160,7 @@ impl WorkflowPermissionBridge {
             &self.slot,
             self.db_session_id,
             &request.tool_use_id,
+            Some(&request.tool_use_id),
             &request.input,
             kind,
             &self.sender,
@@ -302,6 +303,7 @@ pub async fn emit_plan_approval_gate_events(
     slot: &AgentSlot,
     db_session_id: i64,
     tool_use_id: &str,
+    request_id: Option<&str>,
     tool_input: &serde_json::Value,
     kind: ApprovalKind,
     sender: &WsSender,
@@ -336,7 +338,7 @@ pub async fn emit_plan_approval_gate_events(
     };
 
     if let Some(ref plan_md) = content {
-        persist_pending_approval(pool, db_session_id, kind, tool_input, plan_md).await;
+        persist_pending_approval(pool, db_session_id, kind, tool_input, plan_md, request_id).await;
         attach_plan_to_tool_call(pool, db_session_id, tool_use_id, plan_md).await;
     }
 
@@ -355,9 +357,13 @@ async fn persist_pending_approval(
     kind: ApprovalKind,
     tool_input: &serde_json::Value,
     plan_md: &str,
+    request_id: Option<&str>,
 ) {
     let mut enriched = tool_input.clone();
     enriched["plan"] = serde_json::Value::String(plan_md.to_string());
+    if let Some(request_id) = request_id {
+        enriched["request_id"] = serde_json::Value::String(request_id.to_string());
+    }
     let input = match kind {
         ApprovalKind::Plan => PendingUserInput::PlanApproval(&enriched),
         ApprovalKind::Prd => PendingUserInput::PrdApproval(&enriched),

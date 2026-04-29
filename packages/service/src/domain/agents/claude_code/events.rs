@@ -63,12 +63,12 @@ fn map_stream_event(event: &claude_agent_sdk_rs::StreamEventData) -> RuntimeStre
             index,
             content_block,
         } => RuntimeStreamEvent::ContentBlockStart {
-            index: *index,
+            index: u64::from(*index),
             block: map_content_block(content_block),
         },
         claude_agent_sdk_rs::StreamEventData::ContentBlockDelta { index, delta } => {
             RuntimeStreamEvent::ContentBlockDelta {
-                index: *index,
+                index: u64::from(*index),
                 delta: match delta {
                     claude_agent_sdk_rs::types::ContentDelta::TextDelta { text } => {
                         RuntimeContentDelta::Text { text: text.clone() }
@@ -87,7 +87,9 @@ fn map_stream_event(event: &claude_agent_sdk_rs::StreamEventData) -> RuntimeStre
             }
         }
         claude_agent_sdk_rs::StreamEventData::ContentBlockStop { index } => {
-            RuntimeStreamEvent::ContentBlockStop { index: *index }
+            RuntimeStreamEvent::ContentBlockStop {
+                index: u64::from(*index),
+            }
         }
         _ => RuntimeStreamEvent::Other,
     }

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use serde_json::Value;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
@@ -29,6 +30,35 @@ fn resume_session_id_for_provider(
     }
     let adapter = runtime_adapter(provider_id)?;
     adapter.resolve_resume_session_id(runtime_session_id)
+}
+
+fn pending_question_payload(value: &str) -> Option<PermissionRequestPayload> {
+    if let Ok(payload) = serde_json::from_str::<PermissionRequestPayload>(value) {
+        return Some(payload);
+    }
+    let raw = serde_json::from_str::<Value>(value).ok()?;
+    Some(PermissionRequestPayload {
+        request_id: raw.get("request_id").and_then(Value::as_str)?.to_string(),
+        tool_name: raw
+            .get("tool_name")
+            .and_then(Value::as_str)
+            .unwrap_or("AskUserQuestion")
+            .to_string(),
+        tool_input: raw.get("tool_input").cloned().unwrap_or(Value::Null),
+        description: raw
+            .get("description")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        pattern: raw
+            .get("pattern")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        preview: raw
+            .get("preview")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        options: Vec::new(),
+    })
 }
 
 /// Handle session.init: DB-driven session creation.
@@ -307,10 +337,13 @@ pub(super) async fn handle_init(
         spawned_permission_mode: None,
         desired_thinking_effort,
         spawned_thinking_effort: None,
+        runtime_control_endpoint: None,
+        manual_compact_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         resume_session_id: resume_session_id.clone(),
         config,
         session_cache,
         allowed_patterns,
+        manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     sdk_sessions.lock().await.insert(db_session_id, handle);
@@ -395,6 +428,27 @@ pub(super) async fn handle_init(
             );
             return;
         }
+
+        if let Some(payload) = row
+            .pending_questions
+            .as_deref()
+            .and_then(pending_question_payload)
+        {
+            let envelope = super::super::protocol::WsEnvelope::new(
+                "session",
+                "permission.request",
+                serde_json::to_value(payload).unwrap(),
+            );
+            let _ = sender.send(axum::extract::ws::Message::Text(
+                String::from(envelope).into(),
+            ));
+            WsSessionPersistence::broadcast_turn_state(
+                &app_state.turn_state_tx,
+                feature_id,
+                "askUser",
+            );
+            return;
+        }
     }
 
     // Clear every stale pending_* gate. The preceding branches returned
@@ -411,8 +465,9 @@ pub(super) async fn handle_init(
 
 #[cfg(test)]
 mod tests {
-    use super::resume_session_id_for_provider;
+    use super::{pending_question_payload, resume_session_id_for_provider};
     use crate::domain::agents::runtime::DEFAULT_PROVIDER;
+    use serde_json::json;
 
     #[test]
     fn resume_session_for_claude_rejects_non_uuid() {
@@ -442,5 +497,39 @@ mod tests {
         let mismatched =
             resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
         assert_eq!(mismatched, None);
+    }
+
+    #[test]
+    fn pending_question_payload_accepts_reduced_shape() {
+        let stored = json!({
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "question": "Proceed?" },
+            "request_id": "req_1",
+            "pattern": null
+        })
+        .to_string();
+
+        let payload = pending_question_payload(&stored).expect("payload");
+        assert_eq!(payload.request_id, "req_1");
+        assert_eq!(payload.tool_name, "AskUserQuestion");
+        assert_eq!(payload.tool_input["question"], "Proceed?");
+    }
+
+    #[test]
+    fn pending_question_payload_accepts_legacy_full_shape() {
+        let stored = json!({
+            "request_id": "req_2",
+            "tool_name": "AskUserQuestion",
+            "tool_input": { "question": "Continue?" },
+            "description": "Codex question",
+            "pattern": null,
+            "preview": null,
+            "options": []
+        })
+        .to_string();
+
+        let payload = pending_question_payload(&stored).expect("payload");
+        assert_eq!(payload.request_id, "req_2");
+        assert_eq!(payload.description.as_deref(), Some("Codex question"));
     }
 }

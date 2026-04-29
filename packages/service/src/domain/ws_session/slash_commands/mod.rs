@@ -4,9 +4,8 @@ use std::collections::HashSet;
 
 use tracing::{debug, warn};
 
-use crate::domain::agents::claude_code;
-
-const OPENCODE_PROVIDER_ID: &str = "opencode";
+use crate::domain::agents::adapter::RuntimeSlashCommandDiscovery;
+use crate::domain::agents::runtime_adapter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommand {
@@ -20,19 +19,24 @@ pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCom
 
     merge_commands(&mut commands, &mut seen, builtin_commands(provider));
 
-    match opencode_commands(cwd).await {
-        Ok(native_commands) => {
-            merge_commands(&mut commands, &mut seen, native_commands);
-            merge_commands(
-                &mut commands,
-                &mut seen,
-                local::collect_local_skill_commands(cwd),
-            );
-        }
-        Err(error) => {
-            warn!(cwd, error = %error, "failed to load commands from OpenCode; falling back to local discovery");
+    match slash_discovery(provider) {
+        RuntimeSlashCommandDiscovery::LocalFilesystem => {
             merge_commands(&mut commands, &mut seen, local::collect_local_commands(cwd));
         }
+        RuntimeSlashCommandDiscovery::RuntimeNative => match opencode_commands(cwd).await {
+            Ok(native_commands) => {
+                merge_commands(&mut commands, &mut seen, native_commands);
+                merge_commands(
+                    &mut commands,
+                    &mut seen,
+                    local::collect_local_skill_commands(cwd),
+                );
+            }
+            Err(error) => {
+                warn!(cwd, error = %error, "failed to load commands from OpenCode; falling back to local discovery");
+                merge_commands(&mut commands, &mut seen, local::collect_local_commands(cwd));
+            }
+        },
     }
     commands
 }
@@ -41,17 +45,28 @@ pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCom
 /// filesystem scanning. Kept isolated per provider to avoid spreading
 /// provider-specific branching through the generic resolver.
 fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
-    match provider {
-        Some(p) if p == claude_code::PROVIDER_ID || p == OPENCODE_PROVIDER_ID => {
-            vec![SlashCommand {
-                name: "compact".to_string(),
-                description: Some(
-                    "Compact the conversation, freeing context while keeping a summary".to_string(),
-                ),
-            }]
-        }
-        _ => Vec::new(),
+    let Some(provider) = provider else {
+        return Vec::new();
+    };
+    let Some(adapter) = runtime_adapter(provider) else {
+        return Vec::new();
+    };
+    if adapter.supports_builtin_compact_command() {
+        return vec![SlashCommand {
+            name: "compact".to_string(),
+            description: Some(
+                "Compact the conversation, freeing context while keeping a summary".to_string(),
+            ),
+        }];
     }
+    Vec::new()
+}
+
+fn slash_discovery(provider: Option<&str>) -> RuntimeSlashCommandDiscovery {
+    provider
+        .and_then(runtime_adapter)
+        .map(|adapter| adapter.slash_command_discovery())
+        .unwrap_or(RuntimeSlashCommandDiscovery::LocalFilesystem)
 }
 
 async fn opencode_commands(cwd: &str) -> Result<Vec<SlashCommand>, opencode_sdk_rs::SdkError> {
@@ -88,7 +103,11 @@ mod tests {
 
     #[test]
     fn builtin_commands_injects_compact_for_supported_providers() {
-        for provider in [super::claude_code::PROVIDER_ID, super::OPENCODE_PROVIDER_ID] {
+        for provider in [
+            crate::domain::agents::claude_code::PROVIDER_ID,
+            crate::domain::agents::opencode::PROVIDER_ID,
+            crate::domain::agents::codex::PROVIDER_ID,
+        ] {
             let commands = builtin_commands(Some(provider));
             assert!(commands.iter().any(|command| command.name == "compact"));
         }

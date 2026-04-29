@@ -30,11 +30,7 @@ use crate::domain::mcp::tools::{
     update_plan::UpdatePlanTool,
 };
 
-use super::{
-    server_info, tool_create_phase, tool_finalize_plan, tool_list_phases, tool_mark_agent_done,
-    tool_mark_phase_done, tool_read_phase, tool_read_plan, tool_read_prd, tool_remove_phase,
-    tool_show_plan, tool_update_phase, tool_update_plan,
-};
+use super::{server_info, tool_catalog::tool_definitions_for_agent, AgentType};
 
 pub struct SessionServer {
     ctx: Arc<McpContext>,
@@ -84,20 +80,7 @@ impl ServerHandler for SessionServer {
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
         std::future::ready(Ok(ListToolsResult {
             meta: None,
-            tools: vec![
-                tool_read_plan(),
-                tool_list_phases(),
-                tool_read_phase(),
-                tool_read_prd(),
-                tool_create_phase(),
-                tool_update_phase(),
-                tool_remove_phase(),
-                tool_update_plan(),
-                tool_show_plan(),
-                tool_finalize_plan(),
-                tool_mark_agent_done(),
-                tool_mark_phase_done(),
-            ],
+            tools: tool_definitions_for_agent(AgentType::Session),
             next_cursor: None,
         }))
     }
@@ -105,7 +88,7 @@ impl ServerHandler for SessionServer {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
             let args = request
@@ -195,6 +178,13 @@ impl ServerHandler for SessionServer {
                             .await
                     }
                     "show_plan" => {
+                        super::approval_elicitation::maybe_elicit_tool_approval(
+                            &context,
+                            "cadence-session",
+                            "show_plan",
+                            &args,
+                        )
+                        .await?;
                         let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
                         self.show_plan.call(plan_id).await
                     }

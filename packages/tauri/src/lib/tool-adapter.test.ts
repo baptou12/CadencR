@@ -5,6 +5,7 @@ import {
   isToolCallRunning,
   extractInlineDiffPreview,
   isFileChangeTool,
+  isStructuredBashPayload,
   normalizeToolName,
 } from "./tool-adapter";
 
@@ -24,22 +25,58 @@ describe("isFileChangeTool", () => {
 });
 
 describe("extractBashOutput", () => {
+  it("extracts Codex command output from structured Bash payloads", () => {
+    expect(
+      extractBashOutput(
+        JSON.stringify({
+          command: "/bin/zsh -lc 'ls -l package.json'",
+          cwd: "/repo",
+          output: "-rw-r--r-- package.json\n",
+          status: "completed",
+        }),
+      ),
+    ).toBe("-rw-r--r-- package.json\n");
+  });
+
   it("extracts generic output field", () => {
     expect(extractBashOutput(JSON.stringify({ command: "pwd", output: "/tmp/project\n" }))).toBe(
       "/tmp/project\n",
     );
   });
 
-  it("supports legacy persisted opencode output field", () => {
-    expect(
-      extractBashOutput(JSON.stringify({ command: "pwd", __opencode_output: "/tmp/old\n" })),
-    ).toBe("/tmp/old\n");
-  });
-
   it("extracts structured stdout output", () => {
     expect(extractBashOutput(JSON.stringify({ output: { stdout: "ok\n", stderr: "" } }))).toBe(
       "ok\n",
     );
+  });
+
+  it("extracts legacy persisted OpenCode output fields", () => {
+    expect(
+      extractBashOutput(
+        JSON.stringify({
+          command: "pnpm test",
+          __opencode_output: "legacy output\n",
+        }),
+      ),
+    ).toBe("legacy output\n");
+  });
+});
+
+describe("isStructuredBashPayload", () => {
+  it("detects Codex Bash payloads even when output is null", () => {
+    expect(
+      isStructuredBashPayload(
+        JSON.stringify({
+          command: "sed -n '1,160p' .zed/settings.json",
+          output: null,
+          status: "completed",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat plain tool result text as structured Bash payload", () => {
+    expect(isStructuredBashPayload("line1\nline2")).toBe(false);
   });
 });
 
@@ -69,9 +106,28 @@ describe("isToolCallRunning", () => {
   it("treats completed status as not running", () => {
     expect(isToolCallRunning(JSON.stringify({ status: "completed" }))).toBe(false);
   });
+
+  it("reads legacy persisted OpenCode status fields", () => {
+    expect(isToolCallRunning(JSON.stringify({ __opencode_status: "completed" }))).toBe(false);
+  });
 });
 
 describe("extractInlineDiffPreview", () => {
+  it("extracts Codex ApplyPatch previews from patch fields", () => {
+    expect(
+      extractInlineDiffPreview(
+        "ApplyPatch",
+        JSON.stringify({
+          patch_text: "*** Begin Patch\n*** Add File: src/codex.txt\n+hello codex\n*** End Patch\n",
+        }),
+      ),
+    ).toEqual({
+      filePath: "src/codex.txt",
+      oldContent: "",
+      newContent: "hello codex",
+    });
+  });
+
   it("extracts patch preview from apply_patch args", () => {
     expect(
       extractInlineDiffPreview(
@@ -100,6 +156,22 @@ describe("extractInlineDiffPreview", () => {
       filePath: "/workspace/toto.txt",
       oldContent: "Hello Cadencr",
       newContent: "Hello Cadencr 2",
+    });
+  });
+
+  it("extracts update preview from canonical ApplyPatch args", () => {
+    expect(
+      extractInlineDiffPreview(
+        "ApplyPatch",
+        JSON.stringify({
+          patch_text:
+            "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-before\n+after\n*** End Patch",
+        }),
+      ),
+    ).toEqual({
+      filePath: "/workspace/toto.txt",
+      oldContent: "before",
+      newContent: "after",
     });
   });
 

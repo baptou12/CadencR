@@ -8,6 +8,8 @@ export interface ModelSelectorRowProvider {
   id: string;
   label: string;
   disabled: boolean;
+  status: "available" | "unavailable" | "coming_soon";
+  statusMessage?: string;
   models: RuntimeModelOption[];
 }
 

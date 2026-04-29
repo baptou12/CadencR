@@ -23,7 +23,12 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
       <>
         <BinaryDiscoverySection
           discoveryKey="claude"
-          description="Every `claude` install Cadencr found on disk. The selected one is what gets spawned. To override, set a path during onboarding."
+          description={
+            <>
+              Every <strong>claude</strong> install Cadence found on disk. The selected one is what
+              gets spawned. To override, set a path during onboarding.
+            </>
+          }
         />
         <ProfilesSection />
         <CustomModelsSection />
@@ -35,7 +40,27 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
     render: () => (
       <BinaryDiscoverySection
         discoveryKey="opencode"
-        description="Every `opencode` install Cadencr found on disk. Override via onboarding or the legacy `CADENCR_OPENCODE_BIN` env var."
+        description={
+          <>
+            Every <strong>opencode</strong> install Cadence found on disk. Override via onboarding
+            or the legacy <strong>CADENCE_OPENCODE_BIN</strong> env var.
+          </>
+        }
+      />
+    ),
+  },
+  {
+    id: PROVIDER_IDS.CODEX_CLI,
+    render: () => (
+      <BinaryDiscoverySection
+        discoveryKey="codex"
+        description={
+          <>
+            Every <strong>codex</strong> install Cadence found on disk. The selected one is used to
+            start <strong>codex app-server</strong>; override via onboarding or the{" "}
+            <strong>codex_cli_path</strong> workspace setting.
+          </>
+        }
       />
     ),
   },

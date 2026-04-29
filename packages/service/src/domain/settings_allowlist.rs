@@ -76,6 +76,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Onboarding-set CLI binary paths (consumed by `apply_binary_overrides_from_settings`).
     "claude_cli_path",
     "opencode_cli_path",
+    "codex_cli_path",
     // Last-session restoration
     "lastOpenedFeature",
     // UI chrome

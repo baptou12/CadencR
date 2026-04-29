@@ -49,6 +49,7 @@ export interface SessionEntry {
   permissionMode: PermissionMode;
   currentThinkingEffort?: string;
   pendingPlanApproval: PendingPlanApproval | null;
+  pendingManualCompact: boolean;
   currentProviderId: string;
   currentModelId: string;
   runtimeProvider: string;
@@ -91,6 +92,7 @@ export function createSessionEntry(): SessionEntry {
     permissionMode: "acceptEdits",
     currentThinkingEffort: undefined,
     pendingPlanApproval: null,
+    pendingManualCompact: false,
     currentProviderId: DEFAULT_PROVIDER,
     currentModelId: FALLBACK_MODEL_ID,
     runtimeProvider: DEFAULT_PROVIDER,

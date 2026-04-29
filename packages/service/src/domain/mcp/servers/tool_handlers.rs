@@ -21,12 +21,14 @@ use crate::domain::mcp::tools::{
 };
 
 use super::composable::{ToolHandlerFn, ToolRegistration};
-use super::{
+use super::tool_catalog::{
     tool_create_phase, tool_create_prd, tool_edit_prd, tool_finalize_phases,
     tool_list_conversations, tool_list_phases, tool_mark_agent_done, tool_mark_phase_done,
     tool_read_conversation, tool_read_phase, tool_read_plan, tool_read_prd, tool_remove_phase,
     tool_show_prd, tool_update_phase,
 };
+use super::tool_specs::{tool_keys_for_agent, ToolKey};
+use super::AgentType;
 
 fn handler(
     f: impl Fn(
@@ -277,5 +279,38 @@ pub fn show_prd(ctx: &Arc<McpContext>) -> ToolRegistration {
             let t = ShowPrdTool::new(ctx.clone());
             Box::pin(async move { t.call().await })
         }),
+    }
+}
+
+pub fn registrations_for_agent(
+    agent_type: AgentType,
+    ctx: &Arc<McpContext>,
+) -> Vec<ToolRegistration> {
+    tool_keys_for_agent(agent_type)
+        .into_iter()
+        .map(|key| registration_for_key(key, ctx))
+        .collect()
+}
+
+fn registration_for_key(key: ToolKey, ctx: &Arc<McpContext>) -> ToolRegistration {
+    match key {
+        ToolKey::ReadPlan => read_plan(ctx),
+        ToolKey::ListPhases => list_phases(ctx),
+        ToolKey::ReadPhase => read_phase(ctx),
+        ToolKey::CreatePhase => create_phase(ctx),
+        ToolKey::UpdatePhase => update_phase(ctx),
+        ToolKey::RemovePhase => remove_phase(ctx),
+        ToolKey::MarkAgentDone => mark_agent_done(ctx),
+        ToolKey::MarkPhaseDone => mark_phase_done(ctx),
+        ToolKey::ReadPrd => read_prd(ctx),
+        ToolKey::CreatePrd => create_prd(ctx),
+        ToolKey::EditPrd => edit_prd(ctx),
+        ToolKey::ShowPrd => show_prd(ctx),
+        ToolKey::FinalizePhases => finalize_phases(ctx),
+        ToolKey::ListConversations => list_conversations(ctx),
+        ToolKey::ReadConversation => read_conversation(ctx),
+        ToolKey::UpdatePlan | ToolKey::ShowPlan | ToolKey::FinalizePlan => {
+            unreachable!("plan-only tool registrations are implemented by PlanServer/SessionServer")
+        }
     }
 }

@@ -58,6 +58,7 @@ pub struct PermissionResponse {
     pub(crate) decision: PermissionDecision,
     pub(crate) feedback: Option<String>,
     pub(crate) updated_input: Option<serde_json::Value>,
+    pub(crate) is_approval_gate: bool,
 }
 
 pub(super) struct WsBridgeCanUseTool {

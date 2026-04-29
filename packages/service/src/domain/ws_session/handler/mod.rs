@@ -2,6 +2,9 @@ mod app;
 mod commands;
 pub(crate) mod mcp_spawn;
 mod session_compact;
+mod session_compact_opencode;
+mod session_compact_opencode_events;
+mod session_compact_opencode_poll;
 mod session_control;
 mod session_data;
 mod session_init;
@@ -12,6 +15,7 @@ mod workflow_interact;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -77,6 +81,11 @@ pub struct SdkHandle {
     pub(super) desired_thinking_effort: Option<String>,
     /// Thinking effort the runtime was last spawned with.
     pub(super) spawned_thinking_effort: Option<String>,
+    /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
+    /// OpenCode uses this for manual compaction so it can reuse the same
+    /// running server instead of probing/spawning on every compact request.
+    pub(super) runtime_control_endpoint: Option<String>,
+    pub(super) manual_compact_running: Arc<AtomicBool>,
     /// Session-level cache of approved permission patterns.
     pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
     /// Pre-loaded allowed patterns from settings files.
@@ -86,6 +95,7 @@ pub struct SdkHandle {
     pub(super) resume_session_id: Option<String>,
     /// Config for respawning with --resume after model/mode change.
     pub(super) config: SessionConfig,
+    pub(super) manual_compact_cancel: Arc<AtomicBool>,
 }
 
 pub(super) type SdkSessions = Arc<Mutex<HashMap<i64, SdkHandle>>>;
@@ -934,7 +944,7 @@ mod tests {
         let app_state = make_test_app_state().await;
 
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider) VALUES (1, 'session', 'paused', 'codex_cli')"
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider) VALUES (1, 'session', 'paused', 'not_a_provider')"
         )
         .execute(&app_state.write_pool)
         .await
@@ -1046,7 +1056,7 @@ mod tests {
             "provider.set",
             serde_json::json!({
                 "session_id": session_id,
-                "provider": "codex_cli",
+                "provider": "not_a_provider",
             }),
         );
         dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
@@ -1366,6 +1376,8 @@ mod tests {
             spawned_permission_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
+            manual_compact_running: Arc::new(AtomicBool::new(false)),
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1377,6 +1389,7 @@ mod tests {
                 system_prompt: None,
                 env: None,
             },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1396,6 +1409,8 @@ mod tests {
             spawned_permission_mode: None,
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
+            manual_compact_running: Arc::new(AtomicBool::new(false)),
             session_cache: Arc::new(Mutex::new(HashSet::new())),
             allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
@@ -1407,6 +1422,7 @@ mod tests {
                 system_prompt: None,
                 env: None,
             },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 

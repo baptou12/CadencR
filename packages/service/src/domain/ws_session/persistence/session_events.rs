@@ -141,25 +141,26 @@ impl WsSessionPersistence {
                         let row_id = r.last_insert_rowid();
                         let key = (runtime_key.clone(), *index);
                         self.pending_tool_row_ids.insert(key.clone(), row_id);
-                        // Buffer starts empty so that streaming `partial_json`
-                        // fragments can be concatenated into a valid object
-                        // directly. Seeding the buffer with `serde_json::to_string(input)`
-                        // (typically `"{}"`) poisoned the concat path: `"{}" + fragment`
-                        // is never valid JSON, and the `replacement_candidate` fallback
-                        // only activates when a fragment starts with `{`, leaving the
-                        // accumulator stuck at `"{}"` for the whole stream.
+                        let merge_object_deltas = should_merge_tool_object_deltas(name);
+                        // Most tool streams send JSON fragments, so their
+                        // buffer starts empty. Bash and file-change deltas are
+                        // full object patches (`{"output": "..."}`), so seed
+                        // their buffers with the initial object and merge.
                         self.pending_tool_inputs.insert(
                             key,
                             ToolInputBuffer {
-                                accumulated: String::new(),
+                                accumulated: if merge_object_deltas {
+                                    content.clone()
+                                } else {
+                                    String::new()
+                                },
                                 replacement_candidate: None,
+                                merge_object_deltas,
                             },
                         );
                     }
 
-                    if !self.file_change_marked
-                        && (name == "Write" || name == "Edit" || name == "NotebookEdit")
-                    {
+                    if !self.file_change_marked && is_file_change_tool_name(name) {
                         self.mark_has_file_changes(session_id).await;
                     }
                 }
@@ -291,6 +292,12 @@ impl WsSessionPersistence {
 
 impl ToolInputBuffer {
     fn apply_delta(&mut self, partial_json: &str) -> Option<serde_json::Value> {
+        if self.merge_object_deltas {
+            if let Some(parsed) = self.apply_object_delta(partial_json) {
+                return Some(parsed);
+            }
+        }
+
         let appended = format!("{}{partial_json}", self.accumulated);
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&appended) {
             self.accumulated = appended;
@@ -310,10 +317,41 @@ impl ToolInputBuffer {
 
         None
     }
+
+    fn apply_object_delta(&mut self, partial_json: &str) -> Option<serde_json::Value> {
+        let delta = serde_json::from_str::<serde_json::Value>(partial_json).ok()?;
+        let delta_object = delta.as_object()?;
+        let mut base = if self.accumulated.is_empty() {
+            serde_json::Map::new()
+        } else {
+            serde_json::from_str::<serde_json::Value>(&self.accumulated)
+                .ok()?
+                .as_object()
+                .cloned()?
+        };
+        for (key, value) in delta_object {
+            base.insert(key.clone(), value.clone());
+        }
+        let parsed = serde_json::Value::Object(base);
+        self.accumulated = serde_json::to_string(&parsed).ok()?;
+        self.replacement_candidate = None;
+        Some(parsed)
+    }
 }
 
 fn runtime_stream_key(runtime_session_id: Option<&str>) -> String {
     runtime_session_id.unwrap_or_default().to_string()
+}
+
+fn should_merge_tool_object_deltas(tool_name: &str) -> bool {
+    tool_name == "Bash" || is_file_change_tool_name(tool_name)
+}
+
+fn is_file_change_tool_name(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "Write" | "Edit" | "NotebookEdit" | "ApplyPatch" | "apply_patch"
+    )
 }
 
 /// Serialize a compaction metadata payload into the `content` column of the
@@ -582,6 +620,59 @@ mod session_events_tests {
             serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("content"))
                 .expect("valid json"),
             serde_json::json!({ "nested": { "key": "value" } })
+        );
+    }
+
+    #[tokio::test]
+    async fn bash_output_deltas_preserve_command_input() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::ToolUse {
+                        id: "cmd".to_string(),
+                        name: "Bash".to_string(),
+                        input: serde_json::json!({
+                            "command": "printf hi",
+                            "status": "running"
+                        }),
+                    },
+                },
+            ))
+            .await;
+        persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::InputJson {
+                        partial_json: serde_json::json!({ "output": "hi" }).to_string(),
+                    },
+                },
+            ))
+            .await;
+
+        let row = sqlx::query(
+            "SELECT content FROM agent_messages WHERE session_id = 1 AND tool_use_id = 'cmd'",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("fetch bash row");
+
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&row.get::<String, _>("content"))
+                .expect("valid json"),
+            serde_json::json!({
+                "command": "printf hi",
+                "status": "running",
+                "output": "hi"
+            })
         );
     }
 

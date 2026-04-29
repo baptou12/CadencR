@@ -8,6 +8,8 @@ export interface InlineDiffPreview {
 }
 
 const FILE_CHANGE_TOOLS = new Set(["Write", "Edit", "NotebookEdit", "ApplyPatch"]);
+const LEGACY_OPENCODE_OUTPUT_KEYS = ["__opencode_output", "__opencode_stdout"] as const;
+const LEGACY_OPENCODE_STATUS_KEY = "__opencode_status";
 
 export function normalizeToolName(toolName: string): string {
   if (isApplyPatchToolName(toolName)) return "ApplyPatch";
@@ -22,23 +24,39 @@ export function isFileChangeTool(toolName: string | undefined): boolean {
 export function extractBashOutput(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
-  // OpenCode keeps tool output/status under __opencode_* for some tool events.
-  // We read both canonical and legacy keys so persisted history and live stream match.
-  const output = args.output ?? args.__opencode_output;
+  const output = args.output;
   if (typeof output === "string") return output;
   if (output && typeof output === "object") {
     const structured = output as Record<string, unknown>;
     if (typeof structured.stdout === "string") return structured.stdout;
     if (typeof structured.output === "string") return structured.output;
   }
+  for (const key of LEGACY_OPENCODE_OUTPUT_KEYS) {
+    const legacyOutput = args[key];
+    if (typeof legacyOutput === "string") return legacyOutput;
+  }
   return undefined;
+}
+
+export function isStructuredBashPayload(toolArgs?: string): boolean {
+  const args = parseToolArgsObject(toolArgs);
+  if (!args) return false;
+  return (
+    "command" in args ||
+    "cwd" in args ||
+    "exitCode" in args ||
+    "status" in args ||
+    "output" in args ||
+    LEGACY_OPENCODE_OUTPUT_KEYS.some((key) => key in args) ||
+    LEGACY_OPENCODE_STATUS_KEY in args
+  );
 }
 
 export function extractTaskOutput(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
 
-  const output = args.output ?? args.__opencode_output;
+  const output = args.output;
   const text =
     typeof output === "string"
       ? output
@@ -56,7 +74,7 @@ export function extractTaskOutput(toolArgs?: string): string | undefined {
 export function extractToolStatus(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
-  const status = args.status ?? args.__opencode_status;
+  const status = args.status ?? args[LEGACY_OPENCODE_STATUS_KEY];
   return typeof status === "string" ? status.toLowerCase() : undefined;
 }
 
@@ -87,7 +105,7 @@ export function extractInlineDiffPreview(
   toolName: string,
   toolArgs?: string,
 ): InlineDiffPreview | null {
-  if (normalizeToolName(toolName) === "ApplyPatch") {
+  if (isApplyPatchToolName(toolName)) {
     // The tolerant extractor already does a fast `JSON.parse` first and falls
     // back to a streaming-friendly scanner — calling `parseToolArgsObject`
     // here would just parse the same bytes a second time on every render.

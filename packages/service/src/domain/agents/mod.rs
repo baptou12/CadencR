@@ -1,9 +1,11 @@
 pub mod adapter;
 pub mod claude_code;
+pub mod codex;
 pub mod discovery;
 pub mod model_refs;
 pub mod opencode;
 pub mod providers;
+pub mod response_style;
 pub mod runtime;
 
 pub use discovery::apply_binary_overrides_from_settings;

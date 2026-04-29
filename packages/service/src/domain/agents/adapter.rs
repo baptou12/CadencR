@@ -134,6 +134,17 @@ impl From<opencode_sdk_rs::SdkError> for RuntimeError {
     }
 }
 
+impl From<codex_app_server_sdk_rs::SdkError> for RuntimeError {
+    fn from(value: codex_app_server_sdk_rs::SdkError) -> Self {
+        match value {
+            codex_app_server_sdk_rs::SdkError::CliNotFound { searched } => {
+                Self::cli_not_found("codex", searched)
+            }
+            other => Self::Generic(other.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePermissionDecision {
     AllowOnce,
@@ -147,6 +158,25 @@ pub struct RuntimePermissionResponse {
     pub decision: RuntimePermissionDecision,
     pub feedback: Option<String>,
     pub updated_input: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimePermissionResponseKind {
+    Normal,
+    ContinueOnDeny,
+    PlanApproval,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeSlashCommandDiscovery {
+    LocalFilesystem,
+    RuntimeNative,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeCompactionStrategy {
+    LiveRuntime,
+    SummaryReplay,
 }
 
 #[derive(Debug, Clone)]
@@ -305,15 +335,15 @@ pub enum RuntimeStreamEvent {
         input_tokens: Option<u64>,
     },
     ContentBlockStart {
-        index: u32,
+        index: u64,
         block: RuntimeContentBlock,
     },
     ContentBlockDelta {
-        index: u32,
+        index: u64,
         delta: RuntimeContentDelta,
     },
     ContentBlockStop {
-        index: u32,
+        index: u64,
     },
     Other,
 }
@@ -429,9 +459,17 @@ pub trait AgentRuntimeSession: Send + Sync {
     fn context_window(&self) -> Option<u64> {
         None
     }
+    fn runtime_control_endpoint(&self) -> Option<String> {
+        None
+    }
     async fn session_id(&self) -> Option<String>;
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
     async fn interrupt(&self) -> Result<(), RuntimeError>;
+    async fn compact(&self) -> Result<(), RuntimeError> {
+        Err(RuntimeError::new(
+            "compaction is not supported by this runtime",
+        ))
+    }
     async fn close(&mut self);
     async fn set_model(&self, model: &str) -> Result<(), RuntimeError>;
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError>;
@@ -448,6 +486,9 @@ pub trait AgentRuntimeSession: Send + Sync {
         Err(RuntimeError::new(
             "permission responses are not supported by this runtime",
         ))
+    }
+    fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
+        RuntimePermissionResponseKind::Normal
     }
     fn pid(&self) -> Option<u32>;
 }
@@ -531,6 +572,18 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
 
+    fn slash_command_discovery(&self) -> RuntimeSlashCommandDiscovery {
+        RuntimeSlashCommandDiscovery::LocalFilesystem
+    }
+
+    fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
+        None
+    }
+
+    fn supports_builtin_compact_command(&self) -> bool {
+        self.compaction_strategy().is_some()
+    }
+
     async fn session_finished(&self, _runtime_session_id: &str) -> bool {
         false
     }
@@ -605,6 +658,7 @@ mod tests {
                 id: "dummy".to_string(),
                 label: "Dummy".to_string(),
                 status: crate::domain::agents::runtime::ProviderStatus::Available,
+                status_message: None,
                 models: vec![],
                 default_model: None,
             }

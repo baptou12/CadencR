@@ -3,6 +3,7 @@ members = [
     "packages/service",
     "packages/claude-agent-sdk-rs",
     "packages/cli-discovery",
+    "packages/codex-app-server-sdk-rs",
     "packages/opencode-sdk-rs",
     "packages/loc",
     "packages/tauri/src-tauri",

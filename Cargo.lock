@@ -435,10 +435,12 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "clap 4.6.0",
  "claude-agent-sdk-rs",
  "cli-discovery",
+ "codex-app-server-sdk-rs",
  "dashmap 6.1.0",
  "dirs 6.0.0",
  "dotenvy",
@@ -716,6 +718,19 @@ dependencies = [
  "once_cell",
  "regex-lite",
  "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "codex-app-server-sdk-rs"
+version = "0.1.0"
+dependencies = [
+ "cli-discovery",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
 ]
@@ -4610,6 +4625,7 @@ dependencies = [
  "tokio-util",
  "tower-service",
  "tracing",
+ "url",
  "uuid",
 ]
 

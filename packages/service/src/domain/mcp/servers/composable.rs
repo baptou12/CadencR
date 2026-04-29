@@ -31,15 +31,15 @@ pub struct ToolRegistration {
 /// Implements `ServerHandler` generically -- `list_tools` returns the registered
 /// tools and `call_tool` dispatches by name.
 pub struct ComposableServer {
-    name: &'static str,
+    name: String,
     tools: Vec<ToolRegistration>,
     feature_id: i64,
 }
 
 impl ComposableServer {
-    pub fn new(name: &'static str, tools: Vec<ToolRegistration>, feature_id: i64) -> Self {
+    pub fn new(name: impl Into<String>, tools: Vec<ToolRegistration>, feature_id: i64) -> Self {
         Self {
-            name,
+            name: name.into(),
             tools,
             feature_id,
         }
@@ -48,7 +48,7 @@ impl ComposableServer {
 
 impl ServerHandler for ComposableServer {
     fn get_info(&self) -> ServerInfo {
-        server_info(self.name)
+        server_info(&self.name)
     }
 
     fn list_tools(
@@ -66,7 +66,7 @@ impl ServerHandler for ComposableServer {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
             let args = request
@@ -78,6 +78,16 @@ impl ServerHandler for ComposableServer {
                 return Ok(error_result(&e));
             }
             let name = request.name.clone();
+            if let Err(e) = super::approval_elicitation::maybe_elicit_tool_approval(
+                &context,
+                &self.name,
+                name.as_ref(),
+                &args,
+            )
+            .await
+            {
+                return Ok(error_result(&e));
+            }
             let handler = self
                 .tools
                 .iter()

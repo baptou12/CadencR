@@ -187,6 +187,7 @@ async fn test_respond_permission_no_channel() {
         decision: PermissionDecision::AllowOnce,
         feedback: None,
         updated_input: None,
+        is_approval_gate: false,
     };
     let result = engine
         .respond_permission(AgentSlot::QueueItem(999), response)
@@ -210,6 +211,7 @@ async fn test_respond_permission_with_channel() {
         decision: PermissionDecision::AllowOnce,
         feedback: None,
         updated_input: None,
+        is_approval_gate: false,
     };
     let result = engine
         .respond_permission(AgentSlot::QueueItem(42), response)

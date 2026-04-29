@@ -1,4 +1,3 @@
-mod codex_cli;
 pub(crate) mod opencode;
 
 use sqlx::SqlitePool;
@@ -8,8 +7,15 @@ use super::runtime::{AgentCatalogResponse, ModelCatalogEntry, DEFAULT_PROVIDER};
 
 /// All registered runtime adapters. Add new providers here.
 static ADAPTERS: &[(&str, &dyn AgentRuntimeAdapter)] = &[
-    ("claude_code", &super::claude_code::CLAUDE_CODE_ADAPTER),
-    ("opencode", &super::opencode::OPENCODE_ADAPTER),
+    (
+        super::claude_code::PROVIDER_ID,
+        &super::claude_code::CLAUDE_CODE_ADAPTER,
+    ),
+    (super::codex::PROVIDER_ID, &super::codex::CODEX_ADAPTER),
+    (
+        super::opencode::PROVIDER_ID,
+        &super::opencode::OPENCODE_ADAPTER,
+    ),
 ];
 
 pub fn runtime_adapter(provider_id: &str) -> Option<&'static dyn AgentRuntimeAdapter> {
@@ -62,16 +68,16 @@ fn merge_extra_models(
 }
 
 pub async fn provider_catalog_live(read_pool: &SqlitePool) -> AgentCatalogResponse {
-    let mut providers = Vec::with_capacity(ADAPTERS.len() + 1);
-    for (_, adapter) in ADAPTERS {
+    let providers = futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
         let mut entry = adapter.catalog_entry_live().await;
         let extra = adapter.extra_models(read_pool).await;
         if !extra.is_empty() {
             entry.models = merge_extra_models(entry.models, extra);
         }
-        providers.push(entry);
-    }
-    providers.push(codex_cli::catalog_entry());
+        entry
+    }))
+    .await;
+
     AgentCatalogResponse {
         default_provider: DEFAULT_PROVIDER.to_string(),
         providers,
@@ -81,10 +87,6 @@ pub async fn provider_catalog_live(read_pool: &SqlitePool) -> AgentCatalogRespon
 pub async fn provider_default_model(provider_id: &str) -> Option<String> {
     if let Some(adapter) = runtime_adapter(provider_id) {
         return adapter.default_model_id().await;
-    }
-
-    if provider_id == "codex_cli" {
-        return codex_cli::catalog_entry().default_model;
     }
 
     None
@@ -131,10 +133,10 @@ mod tests {
     }
 
     #[test]
-    fn runtime_adapter_registry_has_claude_and_opencode() {
+    fn runtime_adapter_registry_has_claude_opencode_and_codex() {
         assert!(runtime_adapter("claude_code").is_some());
         assert!(runtime_adapter("opencode").is_some());
-        assert!(runtime_adapter("codex_cli").is_none());
+        assert!(runtime_adapter("codex_cli").is_some());
         assert!(runtime_adapter("unknown").is_none());
     }
 
@@ -145,7 +147,13 @@ mod tests {
     }
 
     #[test]
-    fn adapter_for_model_returns_none_for_plain_models() {
+    fn adapter_for_model_routes_bare_gpt_models_to_codex() {
+        let (id, _) = adapter_for_model("gpt-5.4").expect("should find codex adapter");
+        assert_eq!(id, "codex_cli");
+    }
+
+    #[test]
+    fn adapter_for_model_returns_none_for_plain_claude_models() {
         assert!(adapter_for_model("claude-opus-4-6").is_none());
     }
 
