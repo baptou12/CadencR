@@ -10,7 +10,7 @@ import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, indentOnInput } from "@codemirror/language";
 import { vim } from "@replit/codemirror-vim";
-import { cadenceEditorTheme } from "./editor-theme";
+import { cadencrEditorTheme } from "./editor-theme";
 
 interface BaseCodeMirrorEditorProps {
   /** Initial document content (only used on mount) */
@@ -116,7 +116,7 @@ export default function BaseCodeMirrorEditor({
       vimCompartment.current.of(vimMode ? vim() : []),
       readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
       languageCompartment.current.of(language ?? []),
-      ...cadenceEditorTheme,
+      ...cadencrEditorTheme,
       ...(extraExtensions ?? []),
     ];
 

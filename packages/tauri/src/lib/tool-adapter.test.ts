@@ -93,13 +93,13 @@ describe("extractInlineDiffPreview", () => {
         "ApplyPatch",
         JSON.stringify({
           patch_text:
-            "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
+            "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadencr\n+Hello Cadencr 2\n*** End Patch",
         }),
       ),
     ).toEqual({
       filePath: "/workspace/toto.txt",
-      oldContent: "Hello Cadence",
-      newContent: "Hello Cadence 2",
+      oldContent: "Hello Cadencr",
+      newContent: "Hello Cadencr 2",
     });
   });
 

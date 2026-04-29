@@ -469,7 +469,7 @@ mod tests {
         let mut options = Options::default();
         let mut env = HashMap::new();
         env.insert(
-            "CADENCE_TEST_PROFILE".to_string(),
+            "CADENCR_TEST_PROFILE".to_string(),
             "bedrock-demo".to_string(),
         );
         options.env = Some(env);
@@ -493,7 +493,7 @@ mod tests {
         let mut buf = String::new();
         stdout.read_to_string(&mut buf).await.expect("read stdout");
         assert!(
-            buf.contains("CADENCE_TEST_PROFILE=bedrock-demo"),
+            buf.contains("CADENCR_TEST_PROFILE=bedrock-demo"),
             "expected profile env var in child process; got: {buf}"
         );
     }

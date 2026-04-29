@@ -11,7 +11,7 @@ What are you trying to do today, and why is the current workflow painful?
 
 ## Proposed solution
 
-What would you like Cadence to do? A rough sketch is fine — a mockup or user flow is even better.
+What would you like Cadencr to do? A rough sketch is fine — a mockup or user flow is even better.
 
 ## Alternatives considered
 

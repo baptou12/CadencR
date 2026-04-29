@@ -9,17 +9,17 @@
       "dependsOn": ["^build"],
       "cache": false
     },
-    "@cadence/service#dev": {
+    "@cadencr/service#dev": {
       "cache": false,
       "persistent": true
     },
-    "@cadence/desktop#dev": {
-      "dependsOn": ["^build", "@cadence/service#build:debug"],
+    "@cadencr/desktop#dev": {
+      "dependsOn": ["^build", "@cadencr/service#build:debug"],
       "cache": false,
       "persistent": true
     },
-    "@cadence/desktop#build": {
-      "dependsOn": ["^build", "@cadence/service#build"],
+    "@cadencr/desktop#build": {
+      "dependsOn": ["^build", "@cadencr/service#build"],
       "outputs": ["src-tauri/target/**"],
       "cache": false
     },

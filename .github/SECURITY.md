@@ -6,7 +6,7 @@
 
 The preferred channel is **GitHub's private vulnerability reporting**:
 
-→ **[Report a vulnerability](https://github.com/rle-mino/cadence/security/advisories/new)**
+→ **[Report a vulnerability](https://github.com/rle-mino/cadencr/security/advisories/new)**
 
 That flow creates a private draft advisory where the maintainer and the reporter can work on the fix together, assign a CVE, and publish coordinated disclosure when a patched release is out.
 
@@ -21,7 +21,7 @@ Expect an acknowledgement within a few days.
 
 ## Scope
 
-Cadence is a local-first desktop app. The most relevant attack surfaces are:
+Cadencr is a local-first desktop app. The most relevant attack surfaces are:
 
 - The local Rust service (HTTP + WebSocket) and its auth-token handling.
 - The Tauri shell and any filesystem / IPC boundary it exposes.

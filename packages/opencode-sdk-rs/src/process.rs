@@ -42,7 +42,7 @@ static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new
 
 /// Set (or clear, with `None`) the override path for the `opencode` binary.
 ///
-/// Wins over `CADENCE_OPENCODE_BIN` and discovery. The host app should call
+/// Wins over `CADENCR_OPENCODE_BIN` and discovery. The host app should call
 /// this once at startup with the user's persisted setting.
 pub fn set_binary_override(path: Option<PathBuf>) {
     if let Ok(mut guard) = BINARY_OVERRIDE.write() {
@@ -251,7 +251,7 @@ async fn wait_for_matching_health(
 
 /// Resolve the `opencode` binary path with the documented precedence:
 /// 1. Settings-backed override (set by the host app via `set_binary_override`).
-/// 2. Legacy `CADENCE_OPENCODE_BIN` env var (kept for backwards compat).
+/// 2. Legacy `CADENCR_OPENCODE_BIN` env var (kept for backwards compat).
 /// 3. Multi-install discovery via `cli_discovery::discover_all` — picks
 ///    the highest semver across `$PATH`, login-shell PATH, and well-known
 ///    install dirs.
@@ -265,7 +265,7 @@ async fn resolved_opencode_command() -> Result<ResolvedOpenCodeCommand, SdkError
     }
 
     if let Some(command) = legacy_env_opencode_command() {
-        info!(command = %command.display(), "using CADENCE_OPENCODE_BIN");
+        info!(command = %command.display(), "using CADENCR_OPENCODE_BIN");
         return resolved_single_command(command).await;
     }
 
@@ -305,7 +305,7 @@ async fn resolved_single_command(path: PathBuf) -> Result<ResolvedOpenCodeComman
 }
 
 fn legacy_env_opencode_command() -> Option<PathBuf> {
-    std::env::var_os("CADENCE_OPENCODE_BIN")
+    std::env::var_os("CADENCR_OPENCODE_BIN")
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
 }

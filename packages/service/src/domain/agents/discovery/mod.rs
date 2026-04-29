@@ -77,7 +77,7 @@ pub fn cli_not_found_message(error: &RuntimeError) -> Option<String> {
         format!("\nSearched: {dirs}")
     };
     Some(format!(
-        "Could not find the `{provider}` CLI binary. Open Settings → Binary Path to point Cadence at your install.{suffix}"
+        "Could not find the `{provider}` CLI binary. Open Settings → Binary Path to point Cadencr at your install.{suffix}"
     ))
 }
 

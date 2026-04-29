@@ -13,7 +13,7 @@ const SPARSE_DIFF_CHARACTER_THRESHOLD = 20_000;
 
 const SPARSE_DIFF_CONFIG: DiffConfig = { scanLimit: 20_000 };
 
-export function getCadenceDiffConfig(
+export function getCadencrDiffConfig(
   oldContent: string,
   newContent: string,
 ): DiffConfig | undefined {

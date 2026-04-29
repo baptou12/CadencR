@@ -10,7 +10,7 @@ use crate::app_state::AppState;
 
 /// Non-CORS-safelisted header name, so any cross-origin `fetch` must trigger
 /// a preflight — which our CORS layer denies.
-pub const AUTH_HEADER: &str = "x-cadence-token";
+pub const AUTH_HEADER: &str = "x-cadencr-token";
 
 pub async fn auth_middleware(
     State(state): State<AppState>,

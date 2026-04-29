@@ -125,7 +125,7 @@ export function ProjectFeatures({
       });
     }
     requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+      window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
     });
   };
 

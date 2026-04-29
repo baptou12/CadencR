@@ -395,7 +395,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadence-desktop"
+name = "cadencr-desktop"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
@@ -416,7 +416,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadence-loc"
+name = "cadencr-loc"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -428,7 +428,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadence-service"
+name = "cadencr-service"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -104,12 +104,12 @@ describe("focusZoneByDirection", () => {
     expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("terminal");
   });
 
-  it("dispatches cadence:focus-prompt when focusing main-content", () => {
+  it("dispatches cadencr:focus-prompt when focusing main-content", () => {
     createZones("left-sidebar", "main-content");
     const sidebar = document.querySelector('[data-focus-zone="left-sidebar"]') as HTMLElement;
     sidebar.focus();
     const handler = vi.fn();
-    window.addEventListener("cadence:focus-prompt", handler);
+    window.addEventListener("cadencr:focus-prompt", handler);
     focusZoneByDirection("right");
     // Event dispatched via requestAnimationFrame — flush it
     vi.useFakeTimers();
@@ -117,6 +117,6 @@ describe("focusZoneByDirection", () => {
     vi.useRealTimers();
     // Note: jsdom doesn't run rAF callbacks, so we verify the zone was focused
     expect(document.activeElement?.getAttribute("data-focus-zone")).toBe("main-content");
-    window.removeEventListener("cadence:focus-prompt", handler);
+    window.removeEventListener("cadencr:focus-prompt", handler);
   });
 });

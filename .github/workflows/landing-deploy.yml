@@ -27,8 +27,8 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile --filter "@cadence/landing..."
-      - run: pnpm --filter @cadence/landing build
+      - run: pnpm install --frozen-lockfile --filter "@cadencr/landing..."
+      - run: pnpm --filter @cadencr/landing build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: packages/landing/dist

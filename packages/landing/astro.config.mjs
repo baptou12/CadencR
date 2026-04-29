@@ -6,7 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 // TUNABLE: custom domain -> site: "https://<domain>", base: "/", add public/CNAME
 export default defineConfig({
   site: "https://rle-mino.github.io",
-  base: "/cadence/",
+  base: "/cadencr/",
   trailingSlash: "ignore",
   integrations: [mdx(), sitemap()],
   vite: { plugins: [tailwindcss()] },

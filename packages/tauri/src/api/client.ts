@@ -83,7 +83,7 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
   const token = getAuthTokenSync();
   if (token) {
-    config.headers.set("X-Cadence-Token", token);
+    config.headers.set("X-Cadencr-Token", token);
   }
   return config;
 });

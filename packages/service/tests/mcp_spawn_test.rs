@@ -2,29 +2,29 @@ use std::collections::HashMap;
 
 use claude_agent_sdk_rs::mcp::McpServerConfig;
 
-use cadence_service::domain::mcp::servers::{mcp_server_name, AgentType};
+use cadencr_service::domain::mcp::servers::{mcp_server_name, AgentType};
 
 /// Verify mcp_server_name returns correct names for all agent types.
 #[test]
 fn test_mcp_server_name_all_types() {
-    assert_eq!(mcp_server_name(AgentType::Plan), "cadence-plan");
-    assert_eq!(mcp_server_name(AgentType::Prd), "cadence-prd");
-    assert_eq!(mcp_server_name(AgentType::Execute), "cadence-execute");
-    assert_eq!(mcp_server_name(AgentType::Qa), "cadence-qa");
-    assert_eq!(mcp_server_name(AgentType::Review), "cadence-review");
-    assert_eq!(mcp_server_name(AgentType::Risk), "cadence-risk");
-    assert_eq!(mcp_server_name(AgentType::Retro), "cadence-retro");
-    assert_eq!(mcp_server_name(AgentType::Session), "cadence-session");
+    assert_eq!(mcp_server_name(AgentType::Plan), "cadencr-plan");
+    assert_eq!(mcp_server_name(AgentType::Prd), "cadencr-prd");
+    assert_eq!(mcp_server_name(AgentType::Execute), "cadencr-execute");
+    assert_eq!(mcp_server_name(AgentType::Qa), "cadencr-qa");
+    assert_eq!(mcp_server_name(AgentType::Review), "cadencr-review");
+    assert_eq!(mcp_server_name(AgentType::Risk), "cadencr-risk");
+    assert_eq!(mcp_server_name(AgentType::Retro), "cadencr-retro");
+    assert_eq!(mcp_server_name(AgentType::Session), "cadencr-session");
 }
 
 /// Verify the MCP config JSON that gets passed to Claude CLI via --mcp-config
-/// has the correct structure: {"mcpServers": {"cadence-<type>": {type: "stdio", ...}}}
+/// has the correct structure: {"mcpServers": {"cadencr-<type>": {type: "stdio", ...}}}
 #[test]
 fn test_mcp_config_serializes_correctly_for_cli() {
     // Build a config manually (same as build_mcp_server_config but without env dependency)
-    let server_name = "cadence-plan";
+    let server_name = "cadencr-plan";
     let config = McpServerConfig::Stdio {
-        command: "/usr/bin/cadence-service".to_string(),
+        command: "/usr/bin/cadencr-service".to_string(),
         args: Some(vec![
             "--db-path".to_string(),
             "/tmp/test.db".to_string(),
@@ -33,7 +33,7 @@ fn test_mcp_config_serializes_correctly_for_cli() {
             "plan".to_string(),
         ]),
         env: Some(HashMap::from([(
-            "CADENCE_DB_PATH".to_string(),
+            "CADENCR_DB_PATH".to_string(),
             "/tmp/test.db".to_string(),
         )])),
     };
@@ -53,13 +53,13 @@ fn test_mcp_config_serializes_correctly_for_cli() {
     );
 
     let mcp_servers = parsed.get("mcpServers").unwrap();
-    let plan_server = mcp_servers.get("cadence-plan").unwrap();
+    let plan_server = mcp_servers.get("cadencr-plan").unwrap();
 
     // Must be stdio type
     assert_eq!(plan_server.get("type").unwrap(), "stdio");
     assert_eq!(
         plan_server.get("command").unwrap(),
-        "/usr/bin/cadence-service"
+        "/usr/bin/cadencr-service"
     );
 
     // Args must include mcp-serve subcommand
@@ -73,7 +73,7 @@ fn test_mcp_config_serializes_correctly_for_cli() {
 
 /// Verify that the MCP stdio server responds to initialize + tools/list.
 ///
-/// This is a full integration test that spawns the cadence-service binary in
+/// This is a full integration test that spawns the cadencr-service binary in
 /// mcp-serve mode and verifies the handshake and tool listing works end-to-end.
 #[tokio::test]
 async fn test_mcp_stdio_server_responds_to_tools_list() {
@@ -175,11 +175,11 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         .unwrap() // deps/
         .parent()
         .unwrap() // debug/
-        .join("cadence-service");
+        .join("cadencr-service");
 
     if !binary.exists() {
         eprintln!(
-            "Skipping test: cadence-service binary not found at {:?}",
+            "Skipping test: cadencr-service binary not found at {:?}",
             binary
         );
         return;
@@ -200,7 +200,7 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("failed to spawn cadence-service");
+        .expect("failed to spawn cadencr-service");
 
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -216,7 +216,7 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     let init_resp: serde_json::Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], "cadence-plan");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "cadencr-plan");
     assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
 
     // Send initialized notification

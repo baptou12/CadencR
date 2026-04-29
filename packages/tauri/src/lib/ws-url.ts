@@ -14,5 +14,5 @@ export function getTerminalWsUrl(): string {
  */
 export function getWsProtocols(): string[] {
   const token = getAuthTokenSync();
-  return token ? [`cadence-token.${token}`] : [];
+  return token ? [`cadencr-token.${token}`] : [];
 }

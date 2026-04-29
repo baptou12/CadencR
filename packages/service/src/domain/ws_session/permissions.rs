@@ -439,13 +439,13 @@ pub fn resolve_permission(
 
     // Auto-allow only our own (feature-pinned) MCP servers; third-party
     // servers go through the normal consent flow.
-    if tool_name.starts_with("mcp__cadence-") {
+    if tool_name.starts_with("mcp__cadencr-") {
         return ResolvedPermission::Allow;
     }
     if tool_name.starts_with("mcp__") {
         return ResolvedPermission::NeedsPrompt {
             description: format!(
-                "Third-party MCP tool `{tool_name}` wants to run. Cadence can't \
+                "Third-party MCP tool `{tool_name}` wants to run. Cadencr can't \
                  audit its behavior — approve only if you trust the configured \
                  MCP server."
             ),
@@ -632,15 +632,15 @@ mod tests {
     }
 
     #[test]
-    fn cadence_mcp_tools_auto_allow() {
+    fn cadencr_mcp_tools_auto_allow() {
         let worktree = PathBuf::from("/project");
         let cache = HashSet::new();
 
         for name in [
-            "mcp__cadence-plan__read_plan",
-            "mcp__cadence-execute__mark_phase_done",
-            "mcp__cadence-session__create_phase",
-            "mcp__cadence-review__read_phase",
+            "mcp__cadencr-plan__read_plan",
+            "mcp__cadencr-execute__mark_phase_done",
+            "mcp__cadencr-session__create_phase",
+            "mcp__cadencr-review__read_phase",
         ] {
             assert_eq!(
                 resolve_permission(name, &serde_json::json!({}), &worktree, &cache),

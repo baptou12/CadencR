@@ -192,8 +192,8 @@ function WebSocketSessionPage() {
 
   useEffect(() => {
     const handler = () => agentSessionRef.current?.focusPromptBar();
-    window.addEventListener("cadence:focus-prompt", handler);
-    return () => window.removeEventListener("cadence:focus-prompt", handler);
+    window.addEventListener("cadencr:focus-prompt", handler);
+    return () => window.removeEventListener("cadencr:focus-prompt", handler);
   }, []);
 
   useEffect(() => {

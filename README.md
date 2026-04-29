@@ -1,15 +1,15 @@
-# Cadence
+# Cadencr
 
 **A desktop IDE for AI coding agents — a unified workspace for Claude Code, OpenCode, and more.**
 
-Cadence replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, planned phases, visual diffs, and orchestration across multiple agents running in parallel.
+Cadencr replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, planned phases, visual diffs, and orchestration across multiple agents running in parallel.
 
-- **Website:** [rle-mino.github.io/cadence](https://rle-mino.github.io/cadence/)
+- **Website:** [rle-mino.github.io/cadencr](https://rle-mino.github.io/cadencr/)
 - **License:** Apache-2.0
 
 ---
 
-## Why Cadence?
+## Why Cadencr?
 
 - **Readable diffs** — Visual diff viewer with inline commenting, not raw terminal output.
 - **Parallel agents** — Run multiple Claude Code or OpenCode sessions on the same project without stepping on each other.
@@ -22,7 +22,7 @@ Cadence replaces the terminal-based workflow of local coding agents with a struc
 
 **Binaries are not yet published.** Until the first release, build from source — see [Build from source](#build-from-source) below.
 
-When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/rle-mino/cadence/releases).
+When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/rle-mino/cadencr/releases).
 
 ---
 
@@ -30,7 +30,7 @@ When releases land, installers for macOS, Linux, and Windows will be available u
 
 ### Prerequisites
 
-- **Node.js 22.x** — managed via [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), or [asdf](https://asdf-vm.com/). Cadence pins `22` in `.nvmrc`, `.node-version`, and `package.json` engines; `engine-strict=true` makes install fail on a mismatched Node.
+- **Node.js 22.x** — managed via [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), or [asdf](https://asdf-vm.com/). Cadencr pins `22` in `.nvmrc`, `.node-version`, and `package.json` engines; `engine-strict=true` makes install fail on a mismatched Node.
 - **pnpm** (`npm i -g pnpm`) — `npm` and `yarn` are not supported.
 - **Rust toolchain** — install via [rustup](https://rustup.rs).
 - **Tauri system dependencies** — follow the [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) for your OS (WebView2 on Windows, `libwebkit2gtk-4.1` on Linux, Xcode CLT on macOS).
@@ -39,8 +39,8 @@ When releases land, installers for macOS, Linux, and Windows will be available u
 
 ```bash
 # 1. Clone
-git clone https://github.com/rle-mino/cadence.git
-cd cadence
+git clone https://github.com/rle-mino/cadencr.git
+cd cadencr
 
 # 2. Install
 pnpm install
@@ -50,7 +50,7 @@ cp packages/service/.env.example packages/service/.env
 cp packages/tauri/.env.example   packages/tauri/.env
 ```
 
-Edit both `.env` files so the shared values match: any random string for `CADENCE_AUTH_TOKEN` / `VITE_API_TOKEN` (they must be identical), frontend port aligned on both sides (default `1420`), and `VITE_API_URL` pointing at the service port (default `http://127.0.0.1:5005`).
+Edit both `.env` files so the shared values match: any random string for `CADENCR_AUTH_TOKEN` / `VITE_API_TOKEN` (they must be identical), frontend port aligned on both sides (default `1420`), and `VITE_API_URL` pointing at the service port (default `http://127.0.0.1:5005`).
 
 ### Run
 
@@ -78,7 +78,7 @@ packages/
 
 - **Frontend ↔ Backend** — HTTP (Axios) for requests, WebSocket (Zustand store) for live agent streams.
 - **Backend ↔ CLIs** — Provider-specific SDKs stream and control local agent processes.
-- **Production** — Tauri spawns the compiled `cadence-service` binary as a sidecar.
+- **Production** — Tauri spawns the compiled `cadencr-service` binary as a sidecar.
 
 ---
 
@@ -86,7 +86,7 @@ packages/
 
 Contributions welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development setup, commit convention, and pull request process. Please also read the [Code of Conduct](./.github/CODE_OF_CONDUCT.md).
 
-To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/rle-mino/cadence/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
+To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/rle-mino/cadencr/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
 
 ---
 

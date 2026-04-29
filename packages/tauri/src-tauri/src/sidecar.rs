@@ -107,29 +107,29 @@ pub struct SpawnResult {
 pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
     let db_dir = dirs::data_dir()
         .ok_or_else(|| "Failed to get data dir".to_string())?
-        .join("cadence");
+        .join("cadencr");
 
     std::fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
 
-    let db_path = db_dir.join("cadence.db");
+    let db_path = db_dir.join("cadencr.db");
     let port = SIDECAR_PORT;
     let base_url = format!("http://127.0.0.1:{port}");
     let auth_token = generate_auth_token();
 
     let (mut rx, child) = app
         .shell()
-        .sidecar("cadence-service")
+        .sidecar("cadencr-service")
         .map_err(|e| format!("Failed to create sidecar command: {e}"))?
         .args([
             "--db-path",
-            db_path.to_str().unwrap_or("cadence.db"),
+            db_path.to_str().unwrap_or("cadencr.db"),
             "--port",
             &port.to_string(),
             "--auth-token",
             &auth_token,
         ])
         // Also as env so the token isn't visible in `ps` argv.
-        .env("CADENCE_AUTH_TOKEN", &auth_token)
+        .env("CADENCR_AUTH_TOKEN", &auth_token)
         .spawn()
         .map_err(|e| format!("Failed to spawn sidecar: {e}"))?;
 
@@ -141,13 +141,13 @@ pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
-                    log::info!("[cadence-service] {}", String::from_utf8_lossy(&line));
+                    log::info!("[cadencr-service] {}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Stderr(line) => {
-                    log::warn!("[cadence-service] {}", String::from_utf8_lossy(&line));
+                    log::warn!("[cadencr-service] {}", String::from_utf8_lossy(&line));
                 }
                 CommandEvent::Terminated(status) => {
-                    log::info!("[cadence-service] terminated: {status:?}");
+                    log::info!("[cadencr-service] terminated: {status:?}");
                     exited_signal.store(true, Ordering::SeqCst);
                     break;
                 }
@@ -179,24 +179,24 @@ pub async fn wait_for_healthy(
     for i in 0..HEALTH_CHECK_RETRIES {
         if exited.load(Ordering::SeqCst) {
             return Err(format!(
-                "cadence-service exited before passing health check (is {base_url} already in use?)"
+                "cadencr-service exited before passing health check (is {base_url} already in use?)"
             ));
         }
 
         let mut req = client.get(&url);
         if let Some(tok) = auth_token {
-            req = req.header("x-cadence-token", tok);
+            req = req.header("x-cadencr-token", tok);
         }
         match req.send().await {
             Ok(resp) if resp.status().is_success() => match resp.json::<HealthBody>().await {
-                Ok(body) if body.service == "cadence" => {
+                Ok(body) if body.service == "cadencr" => {
                     log::info!("Health check passed after {i} retries");
                     return Ok(());
                 }
                 Ok(body) => {
                     return Err(format!(
                         "Health check responder identified itself as '{}', \
-                             not 'cadence'. Refusing to connect.",
+                             not 'cadencr'. Refusing to connect.",
                         body.service
                     ));
                 }
@@ -231,7 +231,7 @@ pub fn stop_sidecar(state: &SidecarState) {
     };
 
     if let Some(child) = guard.take() {
-        log::info!("Stopping cadence-service...");
+        log::info!("Stopping cadencr-service...");
         if let Err(e) = child.kill() {
             log::error!("Failed to kill sidecar: {e}");
             return;

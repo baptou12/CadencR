@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Chunk } from "@codemirror/merge";
 import { Text } from "@codemirror/state";
-import { getCadenceDiffConfig } from "./diff-config";
+import { getCadencrDiffConfig } from "./diff-config";
 
 function toText(content: string): Text {
   return Text.of(content.split(/\r?\n/));
@@ -33,22 +33,22 @@ function buildLargeSparseDiffFixture(): { oldContent: string; newContent: string
   };
 }
 
-describe("getCadenceDiffConfig", () => {
+describe("getCadencrDiffConfig", () => {
   it("keeps the default diff config for small files", () => {
-    expect(getCadenceDiffConfig("small", "small diff")).toBeUndefined();
+    expect(getCadencrDiffConfig("small", "small diff")).toBeUndefined();
   });
 
   it("avoids collapsing large sparse diffs into one giant chunk", () => {
     const { oldContent, newContent } = buildLargeSparseDiffFixture();
     const oldText = toText(oldContent);
     const newText = toText(newContent);
-    const cadenceDiffConfig = getCadenceDiffConfig(oldContent, newContent);
+    const cadencrDiffConfig = getCadencrDiffConfig(oldContent, newContent);
 
     const defaultChunks = Chunk.build(oldText, newText, { scanLimit: 500 });
-    const cadenceChunks = Chunk.build(oldText, newText, cadenceDiffConfig);
+    const cadencrChunks = Chunk.build(oldText, newText, cadencrDiffConfig);
 
-    expect(cadenceDiffConfig).toEqual({ scanLimit: 20_000 });
+    expect(cadencrDiffConfig).toEqual({ scanLimit: 20_000 });
     expect(defaultChunks).toHaveLength(1);
-    expect(cadenceChunks).toHaveLength(5);
+    expect(cadencrChunks).toHaveLength(5);
   });
 });

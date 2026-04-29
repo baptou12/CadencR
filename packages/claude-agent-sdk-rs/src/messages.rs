@@ -73,7 +73,7 @@ pub enum StreamEventData {
 pub enum SystemMessage {
     /// Session initialisation — carries session_id, model, tools, MCP servers.
     ///
-    /// Cadence captures `session_id` from this for resume workflows.
+    /// Cadencr captures `session_id` from this for resume workflows.
     #[serde(rename = "init")]
     Init {
         uuid: String,
@@ -100,7 +100,7 @@ pub enum SystemMessage {
 
     /// Marks a context compaction boundary.
     ///
-    /// Cadence sets `was_compacted = true` when this is received.
+    /// Cadencr sets `was_compacted = true` when this is received.
     #[serde(rename = "compact_boundary")]
     CompactBoundary {
         uuid: String,
@@ -126,7 +126,7 @@ impl SystemMessage {
 /// The CLI emits a `modelUsage` object keyed by the fully-qualified model
 /// identifier (e.g. `"claude-opus-4-7[1m]"`), with per-turn token counts and
 /// — critically — the authoritative `contextWindow` for that model. This is
-/// the source of truth for Cadence's context-window tracking: no parsing of
+/// the source of truth for Cadencr's context-window tracking: no parsing of
 /// description strings, no alias-prefix guessing.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -173,7 +173,7 @@ pub struct AssistantMessageBody {
 ///
 /// ## Turn management
 ///
-/// | Variant | Cadence meaning |
+/// | Variant | Cadencr meaning |
 /// |---------|-----------------|
 /// | `StreamEvent` | Claude's turn — process content deltas in real-time |
 /// | `Result` | Turn complete — session agents broadcast `turn_complete`; non-session agents close |
@@ -843,7 +843,7 @@ impl SdkMessage {
 
     /// Returns `true` if this is a `compact_boundary` system message.
     ///
-    /// Cadence sets the `was_compacted` flag on the session when this is received.
+    /// Cadencr sets the `was_compacted` flag on the session when this is received.
     pub fn is_compaction(&self) -> bool {
         matches!(
             self,

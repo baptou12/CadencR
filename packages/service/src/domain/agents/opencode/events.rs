@@ -317,7 +317,7 @@ pub fn message_part_to_runtime_block(part: &opencode_sdk_rs::MessagePart) -> Run
             id, name, input, ..
         } => RuntimeContentBlock::ToolUse {
             id: id.clone(),
-            name: super::tool_names::canonical_cadence_tool_name(name),
+            name: super::tool_names::canonical_cadencr_tool_name(name),
             input: input.clone(),
         },
         _ => RuntimeContentBlock::Other,
@@ -368,7 +368,7 @@ fn message_part_to_json(part: &opencode_sdk_rs::MessagePart) -> Value {
             serde_json::json!({
                 "type": "tool_use",
                 "id": id,
-                "name": super::tool_names::canonical_cadence_tool_name(name),
+                "name": super::tool_names::canonical_cadencr_tool_name(name),
                 "input": input,
             })
         }

@@ -68,7 +68,7 @@ impl PlanServer {
 
 impl ServerHandler for PlanServer {
     fn get_info(&self) -> ServerInfo {
-        server_info("cadence-plan")
+        server_info("cadencr-plan")
     }
 
     fn list_tools(

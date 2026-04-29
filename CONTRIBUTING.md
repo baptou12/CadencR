@@ -1,6 +1,6 @@
-# Contributing to Cadence
+# Contributing to Cadencr
 
-Thanks for your interest in improving Cadence! This guide covers coding conventions, commit style, and the pull request process.
+Thanks for your interest in improving Cadencr! This guide covers coding conventions, commit style, and the pull request process.
 
 By participating, you agree to the [Code of Conduct](./.github/CODE_OF_CONDUCT.md). Security issues follow a separate private flow — see [SECURITY.md](./.github/SECURITY.md).
 
@@ -24,8 +24,8 @@ pnpm run format:check
 Run a task for a single package:
 
 ```bash
-pnpm --filter @cadence/desktop <script>
-pnpm --filter @cadence/service <script>
+pnpm --filter @cadencr/desktop <script>
+pnpm --filter @cadencr/service <script>
 ```
 
 ---
@@ -78,4 +78,4 @@ For a bugfix, include a test that fails without the fix. For a feature, include 
 ## Notes
 
 - `.env` files under `packages/*/` are local-only and must never be committed. They are covered by `.gitignore`.
-- Questions? Open a [discussion](https://github.com/rle-mino/cadence/discussions) or a draft issue.
+- Questions? Open a [discussion](https://github.com/rle-mino/cadencr/discussions) or a draft issue.

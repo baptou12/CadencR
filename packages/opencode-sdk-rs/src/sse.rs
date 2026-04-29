@@ -42,7 +42,7 @@ impl SseStream {
 }
 
 pub struct SseDispatcher {
-    // Use unbounded fan-out channels so a slow Cadence consumer cannot block
+    // Use unbounded fan-out channels so a slow Cadencr consumer cannot block
     // the shared OpenCode SSE reader and freeze every later event in the turn.
     subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::UnboundedSender<SseEvent>>>>>,
     permission_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<SseEvent>>>>,

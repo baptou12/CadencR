@@ -29,7 +29,7 @@ export function focusZoneByDirection(direction: "left" | "right"): void {
       nextEl.focus();
       if (ZONE_ORDER[next] === "main-content") {
         requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+          window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
         });
       }
       return;

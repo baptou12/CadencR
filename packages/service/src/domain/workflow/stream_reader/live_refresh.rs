@@ -218,7 +218,7 @@ mod tests {
         assert!(is_completion_tool("mark_phase_complete"));
         assert!(is_completion_tool("request_approval"));
         assert!(is_completion_tool(
-            "mcp__cadence_workflow__mark_phase_complete"
+            "mcp__cadencr_workflow__mark_phase_complete"
         ));
         assert!(!is_completion_tool("create_artifact"));
         assert!(!is_completion_tool("read_project_context"));
@@ -233,7 +233,7 @@ mod tests {
         let mut pending_feature_update = None;
         let mut pending_queue_update = false;
         handle_tool_use_name(
-            "mcp__cadence-plan__mark_agent_done",
+            "mcp__cadencr-plan__mark_agent_done",
             &mut agent_done_called,
             &mut pending_feature_update,
             &mut pending_queue_update,
@@ -247,7 +247,7 @@ mod tests {
         let mut pending_feature_update = None;
         let mut pending_queue_update = false;
         handle_tool_use_name(
-            "mcp__cadence-plan__create_phase",
+            "mcp__cadencr-plan__create_phase",
             &mut agent_done_called,
             &mut pending_feature_update,
             &mut pending_queue_update,

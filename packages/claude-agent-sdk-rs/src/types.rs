@@ -3,7 +3,7 @@ use serde_json::Value;
 
 /// Token usage for context window tracking.
 ///
-/// Cadence tracks cumulative input (including cache tokens) and output tokens
+/// Cadencr tracks cumulative input (including cache tokens) and output tokens
 /// per agent session to monitor context window consumption.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Usage {
@@ -51,7 +51,7 @@ pub enum ContentBlock {
 
 /// A streaming content delta. Tagged by the `type` field.
 ///
-/// These are the **critical path** for real-time UI streaming — Cadence processes
+/// These are the **critical path** for real-time UI streaming — Cadencr processes
 /// these events via `stream_event` messages (content_block_delta).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

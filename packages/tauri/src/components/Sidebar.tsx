@@ -96,7 +96,7 @@ export function Sidebar() {
           params: { projectId, featureId: id },
         });
         requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent("cadence:focus-prompt"));
+          window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
         });
       } else if (type === "project" && id) {
         // Toggle expand by clicking the project button
@@ -114,14 +114,14 @@ export function Sidebar() {
         onDoubleClick={toggleMaximize}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <img src={logoSvg} alt="Cadence" className="size-11 mr-2 shrink-0 -translate-y-px" />
+          <img src={logoSvg} alt="Cadencr" className="size-11 mr-2 shrink-0 -translate-y-px" />
           <span
             className="text-2xl font-bold uppercase tracking-widest leading-none"
             style={{
               fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
             }}
           >
-            Cadence
+            Cadencr
           </span>
           {import.meta.env.DEV ? (
             <span className="ml-2 self-start mt-2 text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">

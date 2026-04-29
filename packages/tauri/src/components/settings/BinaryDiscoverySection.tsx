@@ -58,7 +58,7 @@ function ProviderCard({ provider }: { provider: ProviderDiscovery }) {
 
       {candidates.length === 0 ? (
         <ErrorRow
-          label={`No \`${provider.bin_name}\` installations found. Set an override path in onboarding to point Cadence at the binary.`}
+          label={`No \`${provider.bin_name}\` installations found. Set an override path in onboarding to point Cadencr at the binary.`}
         />
       ) : (
         <div className="rounded-md border border-border overflow-hidden">
@@ -98,7 +98,7 @@ function SummaryRow({
             {selected.version ? ` (v${selected.version})` : " (version unknown)"}
           </code>
         ) : (
-          <span className="text-destructive">none — Cadence cannot spawn this provider</span>
+          <span className="text-destructive">none — Cadencr cannot spawn this provider</span>
         )}
       </div>
       <div>

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon } from "lucide-react";
-import type { CadenceMcpTool } from "@/lib/tool-call-parser";
+import type { CadencrMcpTool } from "@/lib/tool-call-parser";
 
 function formatJson(str: string): string {
   try {
@@ -11,8 +11,8 @@ function formatJson(str: string): string {
   }
 }
 
-/** Full-size Cadence MCP tool call block with primary purple color scheme and server badge. */
-export function CadenceMcpBlock({ mcp, args }: { mcp: CadenceMcpTool; args?: string }) {
+/** Full-size Cadencr MCP tool call block with primary purple color scheme and server badge. */
+export function CadencrMcpBlock({ mcp, args }: { mcp: CadencrMcpTool; args?: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (

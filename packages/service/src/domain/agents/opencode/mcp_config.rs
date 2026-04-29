@@ -1,5 +1,5 @@
 //! Materialize a per-worktree `opencode.json` so the shared OpenCode server
-//! picks up Cadence's MCP servers for this feature.
+//! picks up Cadencr's MCP servers for this feature.
 //!
 //! OpenCode loads MCP servers from `opencode.json` files discovered by
 //! walking up from the request's directory to the git root. Unlike the
@@ -21,7 +21,7 @@ use crate::domain::agents::adapter::RuntimeMcpServerConfig;
 
 const CONFIG_FILE: &str = "opencode.json";
 
-/// Cadence tools that gate on user approval. OpenCode evaluates these against
+/// Cadencr tools that gate on user approval. OpenCode evaluates these against
 /// the permission map in `opencode.json` and emits `permission.asked` when the
 /// rule is `"ask"` — see `emit_plan_approval_gate_events` in
 /// `workflow::permission_router` for the corresponding intercept.
@@ -93,10 +93,10 @@ fn merge_mcp_entries(
 /// keys must be seen **after** that catch-all when OpenCode reads the file.
 /// We rely on `serde_json::Map` (backed by `BTreeMap`) serializing keys in
 /// alphabetical order: `"*"` (0x2A) and every built-in OpenCode category
-/// (`bash`, `edit`, `glob`, ...) sort before any `cadence-<server>_` key, so
+/// (`bash`, `edit`, `glob`, ...) sort before any `cadencr-<server>_` key, so
 /// our exact-match rules naturally land last among matching entries. This
 /// fails only if a user introduces a catch-all with a key that sorts after
-/// `cadence-*` — in practice implausible, and an explicit
+/// `cadencr-*` — in practice implausible, and an explicit
 /// later-sorting exact rule on the same key is their stated intent anyway.
 fn merge_permission_rules<'a>(
     root_obj: &mut Map<String, Value>,
@@ -204,9 +204,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let mut servers = HashMap::new();
         servers.insert(
-            "cadence-plan".to_string(),
+            "cadencr-plan".to_string(),
             stdio(
-                "/bin/cadence",
+                "/bin/cadencr",
                 &["mcp-serve", "--feature-id", "7"],
                 &[("X", "1")],
             ),
@@ -226,16 +226,16 @@ mod tests {
             written,
             json!({
                 "mcp": {
-                    "cadence-plan": {
+                    "cadencr-plan": {
                         "type": "local",
-                        "command": ["/bin/cadence", "mcp-serve", "--feature-id", "7"],
+                        "command": ["/bin/cadencr", "mcp-serve", "--feature-id", "7"],
                         "enabled": true,
                         "environment": { "X": "1" }
                     }
                 },
                 "permission": {
-                    "cadence-plan_show_plan": "ask",
-                    "cadence-plan_show_prd": "ask"
+                    "cadencr-plan_show_plan": "ask",
+                    "cadencr-plan_show_prd": "ask"
                 }
             })
         );
@@ -256,7 +256,7 @@ mod tests {
         .unwrap();
 
         let mut servers = HashMap::new();
-        servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
+        servers.insert("cadencr-plan".to_string(), stdio("/bin/cadencr", &[], &[]));
         ensure_worktree_opencode_config(dir.path(), &servers)
             .await
             .unwrap();
@@ -266,16 +266,16 @@ mod tests {
         assert_eq!(written["permission"]["bash"], json!("ask"));
         assert_eq!(written["permission"]["edit"], json!("allow"));
         assert_eq!(
-            written["permission"]["cadence-plan_show_plan"],
+            written["permission"]["cadencr-plan_show_plan"],
             json!("ask")
         );
-        assert_eq!(written["permission"]["cadence-plan_show_prd"], json!("ask"));
+        assert_eq!(written["permission"]["cadencr-plan_show_prd"], json!("ask"));
     }
 
     #[tokio::test]
-    async fn serialized_keys_place_cadence_rules_after_catchall() {
+    async fn serialized_keys_place_cadencr_rules_after_catchall() {
         // Matters for OpenCode's `findLast` evaluator: a `"*": "allow"` entry
-        // must be seen before our `"cadence-*_show_plan": "ask"` so our rule
+        // must be seen before our `"cadencr-*_show_plan": "ask"` so our rule
         // wins. Verify the alphabetical serialization we rely on.
         let dir = tempdir().unwrap();
         let path = dir.path().join("opencode.json");
@@ -287,7 +287,7 @@ mod tests {
         .unwrap();
 
         let mut servers = HashMap::new();
-        servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
+        servers.insert("cadencr-plan".to_string(), stdio("/bin/cadencr", &[], &[]));
         ensure_worktree_opencode_config(dir.path(), &servers)
             .await
             .unwrap();
@@ -295,11 +295,11 @@ mod tests {
         let serialized = String::from_utf8(tokio::fs::read(&path).await.unwrap()).unwrap();
         let catchall_pos = serialized.find("\"*\"").expect("catch-all key present");
         let show_plan_pos = serialized
-            .find("\"cadence-plan_show_plan\"")
+            .find("\"cadencr-plan_show_plan\"")
             .expect("show_plan key present");
         assert!(
             catchall_pos < show_plan_pos,
-            "expected \"*\" to appear before \"cadence-plan_show_plan\" for findLast to pick our rule; file was:\n{serialized}"
+            "expected \"*\" to appear before \"cadencr-plan_show_plan\" for findLast to pick our rule; file was:\n{serialized}"
         );
     }
 
@@ -322,8 +322,8 @@ mod tests {
 
         let mut servers = HashMap::new();
         servers.insert(
-            "cadence-session".to_string(),
-            stdio("/bin/cadence", &["mcp-serve"], &[]),
+            "cadencr-session".to_string(),
+            stdio("/bin/cadencr", &["mcp-serve"], &[]),
         );
         ensure_worktree_opencode_config(dir.path(), &servers)
             .await
@@ -337,8 +337,8 @@ mod tests {
             json!({ "type": "local", "command": ["true"] })
         );
         assert_eq!(
-            written["mcp"]["cadence-session"],
-            json!({ "type": "local", "command": ["/bin/cadence", "mcp-serve"], "enabled": true })
+            written["mcp"]["cadencr-session"],
+            json!({ "type": "local", "command": ["/bin/cadencr", "mcp-serve"], "enabled": true })
         );
     }
 
@@ -346,7 +346,7 @@ mod tests {
     async fn is_idempotent_when_entry_matches() {
         let dir = tempdir().unwrap();
         let mut servers = HashMap::new();
-        servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
+        servers.insert("cadencr-plan".to_string(), stdio("/bin/cadencr", &[], &[]));
 
         ensure_worktree_opencode_config(dir.path(), &servers)
             .await
@@ -382,7 +382,7 @@ mod tests {
             .unwrap();
 
         let mut servers = HashMap::new();
-        servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
+        servers.insert("cadencr-plan".to_string(), stdio("/bin/cadencr", &[], &[]));
         let err = ensure_worktree_opencode_config(dir.path(), &servers)
             .await
             .unwrap_err();
@@ -398,7 +398,7 @@ mod tests {
             .unwrap();
 
         let mut servers = HashMap::new();
-        servers.insert("cadence-plan".to_string(), stdio("/bin/cadence", &[], &[]));
+        servers.insert("cadencr-plan".to_string(), stdio("/bin/cadencr", &[], &[]));
         let err = ensure_worktree_opencode_config(dir.path(), &servers)
             .await
             .unwrap_err();

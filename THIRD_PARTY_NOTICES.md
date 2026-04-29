@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Cadence itself is released under the Apache License 2.0 (see [`LICENSE`](./LICENSE)). This file lists the third-party software and brand assets Cadence builds on, and the licenses under which they are used.
+Cadencr itself is released under the Apache License 2.0 (see [`LICENSE`](./LICENSE)). This file lists the third-party software and brand assets Cadencr builds on, and the licenses under which they are used.
 
 This is a curated, human-maintained summary focused on frameworks users see or interact with. It is not exhaustive — for the full transitive dependency tree, see `pnpm-lock.yaml`, `Cargo.lock`, and each package's upstream repository.
 
@@ -22,7 +22,7 @@ This is a curated, human-maintained summary focused on frameworks users see or i
 | xterm.js — terminal | https://xtermjs.org | MIT |
 | Astro — landing site | https://astro.build | MIT |
 
-Cadence also uses component patterns from **shadcn/ui** (https://ui.shadcn.com, MIT), which is vendored as source rather than installed as a dependency.
+Cadencr also uses component patterns from **shadcn/ui** (https://ui.shadcn.com, MIT), which is vendored as source rather than installed as a dependency.
 
 ## Backend service (Rust)
 
@@ -60,7 +60,7 @@ Cadence also uses component patterns from **shadcn/ui** (https://ui.shadcn.com, 
 
 ## Bundled brand assets
 
-Cadence bundles third-party logos to identify the coding agents and tools it integrates with. These marks are the property of their respective owners. Their inclusion in the UI is a reference to the corresponding product — it is not a claim of ownership, affiliation, partnership, or endorsement.
+Cadencr bundles third-party logos to identify the coding agents and tools it integrates with. These marks are the property of their respective owners. Their inclusion in the UI is a reference to the corresponding product — it is not a claim of ownership, affiliation, partnership, or endorsement.
 
 Files under `packages/tauri/assets/providers/`:
 
@@ -74,6 +74,6 @@ Files under `packages/tauri/assets/`:
 
 If you own one of these marks and want the asset removed or replaced, please open an issue or email **raphael.leminor@gmail.com** and it will be addressed promptly.
 
-## Cadence-original assets
+## Cadencr-original assets
 
-The Cadence name, the Cadence logo (`packages/tauri/assets/cadence-logo3.png`, `cadence-logo3.svg`, `icon.icns`, `icon.ico`, `icon.png`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.
+The Cadencr name, the Cadencr logo (`packages/tauri/assets/cadencr-logo3.png`, `cadencr-logo3.svg`, `icon.icns`, `icon.ico`, `icon.png`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.

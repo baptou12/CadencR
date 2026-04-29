@@ -76,7 +76,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
 
     fn spawn_startup_warmup(&self) {
         if !crate::domain::agents::providers::opencode::should_warmup_on_start() {
-            tracing::info!("opencode startup warmup disabled by CADENCE_OPENCODE_WARMUP_ON_START");
+            tracing::info!("opencode startup warmup disabled by CADENCR_OPENCODE_WARMUP_ON_START");
             return;
         }
         tokio::spawn(async {

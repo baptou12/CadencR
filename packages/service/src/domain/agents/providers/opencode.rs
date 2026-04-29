@@ -217,7 +217,7 @@ fn parse_warmup_flag(raw: Option<&str>) -> bool {
 
 pub(crate) fn should_warmup_on_start() -> bool {
     parse_warmup_flag(
-        std::env::var("CADENCE_OPENCODE_WARMUP_ON_START")
+        std::env::var("CADENCR_OPENCODE_WARMUP_ON_START")
             .ok()
             .as_deref(),
     )

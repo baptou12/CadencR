@@ -1,3 +1,3 @@
 fn main() {
-    cadence_desktop_lib::run()
+    cadencr_desktop_lib::run()
 }

@@ -1,6 +1,6 @@
-//! Emits the OpenAPI 3 spec for the cadence service to disk.
+//! Emits the OpenAPI 3 spec for the cadencr service to disk.
 //!
-//! Used by `pnpm --filter @cadence/desktop generate:api` to feed orval. The
+//! Used by `pnpm --filter @cadencr/desktop generate:api` to feed orval. The
 //! output file is intentionally gitignored — the source of truth is the Rust
 //! `utoipa` annotations, and the generated TypeScript client is what gets
 //! committed.
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let spec = cadence_service::api::openapi::api_doc();
+    let spec = cadencr_service::api::openapi::api_doc();
     let json = match serde_json::to_string_pretty(&spec) {
         Ok(s) => s,
         Err(err) => {

@@ -7,7 +7,7 @@ pub fn unauthorized() -> Response {
     let mut resp = (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
-        HeaderValue::from_static("Cadence-Token"),
+        HeaderValue::from_static("Cadencr-Token"),
     );
     resp
 }

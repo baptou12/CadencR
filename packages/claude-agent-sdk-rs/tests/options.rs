@@ -157,7 +157,7 @@ fn to_cli_args_always_includes_output_format() {
 
 #[test]
 fn to_cli_args_always_forces_summarized_thinking_display() {
-    // Opus 4.7 disables thinking display by default; Cadence surfaces thinking
+    // Opus 4.7 disables thinking display by default; Cadencr surfaces thinking
     // summaries in the UI, so `--thinking-display summarized` must always be
     // passed regardless of model or other options.
     let opts = Options::default();
@@ -292,9 +292,9 @@ fn mcp_stdio_type_tag_in_json() {
 fn to_cli_args_wraps_mcp_servers_in_mcp_servers_key() {
     let mut servers = HashMap::new();
     servers.insert(
-        "cadence-plan".to_string(),
+        "cadencr-plan".to_string(),
         McpServerConfig::Stdio {
-            command: "/usr/bin/cadence-service".to_string(),
+            command: "/usr/bin/cadencr-service".to_string(),
             args: Some(vec![
                 "mcp-serve".to_string(),
                 "--agent-type".to_string(),
@@ -319,9 +319,9 @@ fn to_cli_args_wraps_mcp_servers_in_mcp_servers_key() {
         parsed.get("mcpServers").is_some(),
         "config must have mcpServers wrapper key"
     );
-    let inner = &parsed["mcpServers"]["cadence-plan"];
+    let inner = &parsed["mcpServers"]["cadencr-plan"];
     assert_eq!(inner["type"], "stdio");
-    assert_eq!(inner["command"], "/usr/bin/cadence-service");
+    assert_eq!(inner["command"], "/usr/bin/cadencr-service");
 }
 
 #[test]

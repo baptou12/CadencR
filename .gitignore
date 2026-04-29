@@ -16,7 +16,7 @@ target/
 # Per-clone local environment and repo-local dev state. Never commit.
 **/.env
 **/.env.local
-.cadence/
+.cadencr/
 
 # Local agent permissions and personal machine paths
 .claude/settings.local.json

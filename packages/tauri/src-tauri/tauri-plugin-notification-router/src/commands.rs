@@ -46,7 +46,7 @@ pub fn send_notification(
         build_and_set_user_info(&content, feature_id, project_id, &route_type);
 
         let request_id = NSString::from_str(&format!(
-            "cadence-{}-{}-{}",
+            "cadencr-{}-{}-{}",
             feature_id,
             project_id,
             std::time::SystemTime::now()

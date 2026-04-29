@@ -123,12 +123,12 @@ export function FeatureTopBar({
               >
                 <PanelLeft className="size-4" />
               </Button>
-              <img src={logoSvg} alt="Cadence" className="size-9 shrink-0 -translate-y-px" />
+              <img src={logoSvg} alt="Cadencr" className="size-9 shrink-0 -translate-y-px" />
               <span
                 className="text-xl font-bold uppercase tracking-widest leading-none"
                 style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}
               >
-                Cadence
+                Cadencr
               </span>
               {import.meta.env.DEV ? (
                 <span className="ml-1 self-start text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">

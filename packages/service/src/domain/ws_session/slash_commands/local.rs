@@ -285,7 +285,7 @@ mod tests {
         fs::create_dir_all(&nested_skills).unwrap();
         fs::write(
             nested_skills.join("SKILL.md"),
-            "---\nname: db\ndescription: Query Cadence DB\n---\n",
+            "---\nname: db\ndescription: Query Cadencr DB\n---\n",
         )
         .unwrap();
 

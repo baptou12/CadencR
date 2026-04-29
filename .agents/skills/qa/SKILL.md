@@ -1,7 +1,7 @@
 ---
 name: qa
 description: >
-  QA test a running feature in the Cadence app using browser automation. Use this skill whenever the user asks
+  QA test a running feature in the Cadencr app using browser automation. Use this skill whenever the user asks
   to "test", "QA", "smoke test", "check if it works", "verify the feature", "try it in the browser", or
   wants to validate that something they just built actually works in the real app. Also trigger when the user
   says "run QA", "does it look right", or "let me see it working". If a feature was just implemented and the
@@ -12,15 +12,15 @@ allowed-tools: Bash(*), mcp__chrome-devtools__*
 
 # QA Testing
 
-Test Cadence features by running the app in a browser and verifying behavior interactively.
+Test Cadencr features by running the app in a browser and verifying behavior interactively.
 
 The argument (`$ARGUMENTS`) describes the feature to test. If empty, infer the feature from the current session context (recent file changes, active branch, conversation history).
 
 ## Step 1: Ensure Dev Servers Are Running
 
-The Cadence stack has two servers:
+The Cadencr stack has two servers:
 - **Frontend** (Vite): `http://127.0.0.1:$VITE_FRONTEND_PORT`
-- **Backend** (Rust service): `http://127.0.0.1:$CADENCE_RUST_PORT/api/health`
+- **Backend** (Rust service): `http://127.0.0.1:$CADENCR_RUST_PORT/api/health`
 
 Check if they're already up and healthy:
 
@@ -32,14 +32,14 @@ set -a
 set +a
 
 FRONTEND_PORT="${VITE_FRONTEND_PORT:-1420}"
-API_PORT="${CADENCE_RUST_PORT:-5005}"
+API_PORT="${CADENCR_RUST_PORT:-5005}"
 FRONTEND_URL="http://127.0.0.1:$FRONTEND_PORT"
 API_HEALTH_URL="http://127.0.0.1:$API_PORT/api/health"
 
 # Clear stale QA-run markers before checking server health
-export CADENCE_QA_RUN_DIR="/tmp/cadence-qa"
-mkdir -p "$CADENCE_QA_RUN_DIR"
-rm -f "$CADENCE_QA_RUN_DIR/dev.pid" "$CADENCE_QA_RUN_DIR/dev.pgid"
+export CADENCR_QA_RUN_DIR="/tmp/cadencr-qa"
+mkdir -p "$CADENCR_QA_RUN_DIR"
+rm -f "$CADENCR_QA_RUN_DIR/dev.pid" "$CADENCR_QA_RUN_DIR/dev.pgid"
 
 # Health-check both servers (2-second timeout each)
 curl -sf --max-time 2 "$API_HEALTH_URL" && echo "API: ok" || echo "API: down"
@@ -53,13 +53,13 @@ curl -sf --max-time 2 "$FRONTEND_URL" && echo "Frontend: ok" || echo "Frontend: 
 ```bash
 # Start the full stack from the project root and capture logs for later inspection
 sh -c 'repo_root=$(git rev-parse --show-toplevel) && cd "$repo_root" && exec pnpm dev' \
-  >"$CADENCE_QA_RUN_DIR/dev.log" 2>&1 &
+  >"$CADENCR_QA_RUN_DIR/dev.log" 2>&1 &
 DEV_PID=$!
 DEV_PGID=$(ps -o pgid= -p "$DEV_PID" | tr -d ' ')
-printf '%s\n' "$DEV_PID" > "$CADENCE_QA_RUN_DIR/dev.pid"
-printf '%s\n' "$DEV_PGID" > "$CADENCE_QA_RUN_DIR/dev.pgid"
+printf '%s\n' "$DEV_PID" > "$CADENCR_QA_RUN_DIR/dev.pid"
+printf '%s\n' "$DEV_PGID" > "$CADENCR_QA_RUN_DIR/dev.pgid"
 echo "QA started dev stack: pid=$DEV_PID pgid=$DEV_PGID"
-echo "QA dev log: $CADENCE_QA_RUN_DIR/dev.log"
+echo "QA dev log: $CADENCR_QA_RUN_DIR/dev.log"
 ```
 
 Then poll until both servers respond (timeout after 60 seconds):
@@ -78,7 +78,7 @@ If servers don't come up within 60 seconds, report the failure and stop.
 If startup fails, inspect the captured log before continuing:
 
 ```bash
-tail -n 200 /tmp/cadence-qa/dev.log
+tail -n 200 /tmp/cadencr-qa/dev.log
 ```
 
 ## Step 2: Plan Test Procedures
@@ -141,7 +141,7 @@ cmux browser console list
 If the app behaved unexpectedly during startup or while testing, inspect the dev log too:
 
 ```bash
-tail -n 200 /tmp/cadence-qa/dev.log
+tail -n 200 /tmp/cadencr-qa/dev.log
 ```
 
 ### React controlled inputs
@@ -166,7 +166,7 @@ cmux browser surface:ID eval --script "document.querySelector('YOUR_SELECTOR').b
 
 ### Tips
 
-- Cadence uses **hash routing** (`/#/...`), so URLs look like `$FRONTEND_URL/#/projects/1/features`
+- Cadencr uses **hash routing** (`/#/...`), so URLs look like `$FRONTEND_URL/#/projects/1/features`
 - All `cmux browser` commands need the surface ID: `cmux browser surface:ID <command>`
 - Use `snapshot --compact` for a quick overview, full `snapshot` when you need element details
 - Use `--snapshot-after` on interaction commands (click, goto, fill) to see the result immediately
@@ -202,8 +202,8 @@ If Step 1 found both servers already healthy, do **not** stop them.
 If this QA run started the stack, stop that tracked process group at the end, even on failure:
 
 ```bash
-if [ -f /tmp/cadence-qa/dev.pgid ]; then
-  DEV_PGID=$(cat /tmp/cadence-qa/dev.pgid)
+if [ -f /tmp/cadencr-qa/dev.pgid ]; then
+  DEV_PGID=$(cat /tmp/cadencr-qa/dev.pgid)
   kill -TERM -- "-$DEV_PGID" 2>/dev/null || true
   sleep 2
   kill -KILL -- "-$DEV_PGID" 2>/dev/null || true

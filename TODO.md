@@ -2,7 +2,9 @@
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
 - [ ] [claude] Auto-accept / plan / auto
-- [ ] [opencode] unstable rarely, stops streaming
+- [~] [opencode] unstable rarely, stops streaming
+- [ ] [prompt] shows the popopver even when agent is not focused
+- [ ] [prompt] shows the model selection popover (kbd) after a model selection
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters

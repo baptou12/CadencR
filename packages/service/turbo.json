@@ -12,7 +12,7 @@
         "$TURBO_ROOT$/Cargo.lock"
       ],
       "outputs": [
-        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadence-service-*"
+        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadencr-service-*"
       ]
     },
     "build:debug": {
@@ -25,7 +25,7 @@
         "$TURBO_ROOT$/Cargo.lock"
       ],
       "outputs": [
-        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadence-service-*"
+        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadencr-service-*"
       ]
     }
   }

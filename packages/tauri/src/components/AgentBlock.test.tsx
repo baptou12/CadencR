@@ -185,7 +185,7 @@ describe("AgentBlock", () => {
             toolName: "ApplyPatch",
             toolArgs: JSON.stringify({
               patch_text:
-                "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadence\n+Hello Cadence 2\n*** End Patch",
+                "*** Begin Patch\n*** Update File: /workspace/toto.txt\n@@\n-Hello Cadencr\n+Hello Cadencr 2\n*** End Patch",
             }),
           })}
         />,

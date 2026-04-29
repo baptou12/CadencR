@@ -5,7 +5,7 @@ use axum::{
 
 use super::response::{forbidden, unauthorized};
 
-const WS_TOKEN_PREFIX: &str = "cadence-token.";
+const WS_TOKEN_PREFIX: &str = "cadencr-token.";
 
 /// CORS doesn't apply to WebSockets; this is the only gate against drive-by
 /// upgrades. Non-browser clients may omit `Origin` — they still must present
@@ -109,20 +109,20 @@ mod tests {
 
     #[test]
     fn token_accepts_matching_subprotocol() {
-        let h = make_headers(&[("sec-websocket-protocol", "cadence-token.secret")]);
+        let h = make_headers(&[("sec-websocket-protocol", "cadencr-token.secret")]);
         let picked = validate_ws_token(&h, "secret").unwrap();
-        assert_eq!(picked, "cadence-token.secret");
+        assert_eq!(picked, "cadencr-token.secret");
     }
 
     #[test]
     fn token_accepts_comma_list_with_match() {
         let h = make_headers(&[(
             "sec-websocket-protocol",
-            "other-proto, cadence-token.secret",
+            "other-proto, cadencr-token.secret",
         )]);
         assert_eq!(
             validate_ws_token(&h, "secret").unwrap(),
-            "cadence-token.secret"
+            "cadencr-token.secret"
         );
     }
 
@@ -130,17 +130,17 @@ mod tests {
     fn token_accepts_repeated_header() {
         let h = make_headers(&[
             ("sec-websocket-protocol", "other-proto"),
-            ("sec-websocket-protocol", "cadence-token.secret"),
+            ("sec-websocket-protocol", "cadencr-token.secret"),
         ]);
         assert_eq!(
             validate_ws_token(&h, "secret").unwrap(),
-            "cadence-token.secret"
+            "cadencr-token.secret"
         );
     }
 
     #[test]
     fn token_rejects_wrong_value() {
-        let h = make_headers(&[("sec-websocket-protocol", "cadence-token.wrong")]);
+        let h = make_headers(&[("sec-websocket-protocol", "cadencr-token.wrong")]);
         let err = validate_ws_token(&h, "secret").unwrap_err();
         assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
     }

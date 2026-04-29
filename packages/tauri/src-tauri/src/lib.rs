@@ -240,12 +240,12 @@ pub fn run() {
             // Custom menu that omits CMD+W (Close Window) so the frontend controls it
             let app_menu = Submenu::with_items(
                 handle,
-                "Cadence",
+                "Cadencr",
                 true,
                 &[
                     &PredefinedMenuItem::about(
                         handle,
-                        Some("About Cadence"),
+                        Some("About Cadencr"),
                         Some(AboutMetadataBuilder::new().build()),
                     )?,
                     &PredefinedMenuItem::separator(handle)?,
@@ -323,7 +323,7 @@ pub fn run() {
             })
             .map_err(|e| Box::new(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
-            log::info!("cadence-service is healthy at {base_url}");
+            log::info!("cadencr-service is healthy at {base_url}");
 
             Ok(())
         })

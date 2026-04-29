@@ -297,7 +297,7 @@ async fn persist_and_forward_compaction(
 }
 
 /// Handle session.compact: trigger an OpenCode compaction and replay the
-/// resulting divider + summary into Cadence's conversation history.
+/// resulting divider + summary into Cadencr's conversation history.
 pub(super) async fn handle_compact(
     envelope: WsEnvelope,
     sender: &WsSender,

@@ -1,16 +1,16 @@
-# @cadence/landing
+# @cadencr/landing
 
-Static marketing site for Cadence, built with Astro + MDX + Tailwind v4 and deployed to GitHub Pages.
+Static marketing site for Cadencr, built with Astro + MDX + Tailwind v4 and deployed to GitHub Pages.
 
 ## Scripts
 
 ```bash
-pnpm --filter @cadence/landing dev       # http://localhost:4321/cadence/
-pnpm --filter @cadence/landing build     # outputs to dist/
-pnpm --filter @cadence/landing preview   # serve dist/ locally
-pnpm --filter @cadence/landing ts-check
-pnpm --filter @cadence/landing lint
-pnpm --filter @cadence/landing format:check
+pnpm --filter @cadencr/landing dev       # http://localhost:4321/cadencr/
+pnpm --filter @cadencr/landing build     # outputs to dist/
+pnpm --filter @cadencr/landing preview   # serve dist/ locally
+pnpm --filter @cadencr/landing ts-check
+pnpm --filter @cadencr/landing lint
+pnpm --filter @cadencr/landing format:check
 ```
 
 ## Structure

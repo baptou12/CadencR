@@ -448,7 +448,7 @@ function RootLayout() {
         <ConfirmDialog
           open={appClose.showConfirm}
           onOpenChange={appClose.setShowConfirm}
-          title="Quit Cadence?"
+          title="Quit Cadencr?"
           description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
           confirmText="Quit"
           variant="destructive"

@@ -136,7 +136,7 @@ async fn run_shell(command: &str, cwd: &str) -> RawRunOutcome {
     };
     if timed_out {
         stderr.push_str(&format!(
-            "\n[cadence] Command timed out after {} seconds and was killed.",
+            "\n[cadencr] Command timed out after {} seconds and was killed.",
             RUN_TIMEOUT.as_secs()
         ));
     }

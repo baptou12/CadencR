@@ -140,7 +140,7 @@ mod tests {
     async fn run_git_safe_accepts_benign_positional() {
         // Validation runs before spawn; we only care that validation itself
         // passes. Use a non-existent cwd so git fails fast after validation.
-        let cwd = temp_dir().join("cadence-no-such-dir-git-safe");
+        let cwd = temp_dir().join("cadencr-no-such-dir-git-safe");
         let err = run_git_safe(&["log"], &[], &["foo/bar.txt"], &cwd)
             .await
             .unwrap_err();

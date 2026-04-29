@@ -630,7 +630,7 @@ pub async fn get_worktree_info(
 }
 
 /// Create a git worktree with a new branch.
-/// Places the worktree at ~/.cadence/<project_name>/<safe_branch>.
+/// Places the worktree at ~/.cadencr/<project_name>/<safe_branch>.
 pub async fn create_worktree(
     repo_path: &Path,
     branch_name: &str,
@@ -656,7 +656,7 @@ pub async fn create_worktree(
     let safe_branch = branch_name.replace('/', "-");
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Internal("Cannot determine home directory".into()))?;
-    let worktree_path = home.join(".cadence").join(project_name).join(&safe_branch);
+    let worktree_path = home.join(".cadencr").join(project_name).join(&safe_branch);
     let worktree_str = worktree_path.to_string_lossy().to_string();
 
     // Check if directory already exists

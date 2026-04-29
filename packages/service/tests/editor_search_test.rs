@@ -1,7 +1,7 @@
 use std::fs;
 use tempfile::TempDir;
 
-use cadence_service::domain::editor::service;
+use cadencr_service::domain::editor::service;
 
 fn setup_test_dir() -> TempDir {
     let dir = TempDir::new().unwrap();

@@ -1,24 +1,24 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "cadence-service", about = "Cadence Rust backend service")]
+#[command(name = "cadencr-service", about = "Cadencr Rust backend service")]
 pub struct Config {
     /// Path to the SQLite database file
-    #[arg(long, global = true, env = "CADENCE_DB_PATH")]
+    #[arg(long, global = true, env = "CADENCR_DB_PATH")]
     pub db_path: Option<String>,
 
-    /// Port to listen on (overridable via CADENCE_RUST_PORT env var)
-    #[arg(long, default_value = "5005", env = "CADENCE_RUST_PORT")]
+    /// Port to listen on (overridable via CADENCR_RUST_PORT env var)
+    #[arg(long, default_value = "5005", env = "CADENCR_RUST_PORT")]
     pub port: u16,
 
     /// Frontend dev server port used for local-origin allowlists.
-    #[arg(long, default_value = "1420", env = "CADENCE_FRONTEND_PORT")]
+    #[arg(long, default_value = "1420", env = "CADENCR_FRONTEND_PORT")]
     pub frontend_port: u16,
 
     /// Per-launch bearer token. Required when running the HTTP server; unused
     /// in `mcp-serve` mode. The Tauri shell mints one at launch; dev runs read
     /// it from `packages/service/.env`.
-    #[arg(long, env = "CADENCE_AUTH_TOKEN", hide_env_values = true)]
+    #[arg(long, env = "CADENCR_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 
     #[command(subcommand)]

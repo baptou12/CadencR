@@ -59,7 +59,7 @@ vi.mock("@replit/codemirror-vim", () => ({
 }));
 
 vi.mock("../editor-theme", () => ({
-  cadenceEditorTheme: [],
+  cadencrEditorTheme: [],
 }));
 
 beforeEach(() => {

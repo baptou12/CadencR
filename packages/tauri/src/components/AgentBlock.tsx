@@ -9,7 +9,7 @@ import {
   CopyIcon,
   CheckIcon,
 } from "lucide-react";
-import { parseToolCall, parseCadenceMcpTool } from "@/lib/tool-call-parser";
+import { parseToolCall, parseCadencrMcpTool } from "@/lib/tool-call-parser";
 import {
   extractBashOutput,
   extractInlineDiffPreview,
@@ -17,7 +17,7 @@ import {
   isToolCallRunning,
   normalizeToolName,
 } from "@/lib/tool-adapter";
-import { CadenceMcpBlock } from "@/components/CadenceMcpBlock";
+import { CadencrMcpBlock } from "@/components/CadencrMcpBlock";
 import { Markdown } from "@/components/Markdown";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
@@ -271,8 +271,8 @@ function ToolCallBlock({
 }) {
   const [expanded, setExpanded] = useState(false);
   const canonicalName = normalizeToolName(name);
-  const cadenceMcp = parseCadenceMcpTool(canonicalName, args);
-  if (cadenceMcp) return <CadenceMcpBlock mcp={cadenceMcp} args={args} />;
+  const cadencrMcp = parseCadencrMcpTool(canonicalName, args);
+  if (cadencrMcp) return <CadencrMcpBlock mcp={cadencrMcp} args={args} />;
 
   const summary = parseToolCall(canonicalName, args);
   const detail =

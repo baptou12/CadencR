@@ -98,7 +98,7 @@ mod tests {
             "type": "opencode_permission_request",
             "request_id": "per_1",
             "call_id": "call_1",
-            "tool_name": "cadence-plan_show_plan",
+            "tool_name": "cadencr-plan_show_plan",
             "tool_input": {},
         }))
         .unwrap();

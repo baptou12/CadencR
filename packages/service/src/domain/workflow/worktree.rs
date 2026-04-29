@@ -27,12 +27,12 @@ fn send_envelope(ws_sender: &WsSender, domain: &str, action: &str, payload: serd
     let _ = ws_sender.send(Message::Text(String::from(envelope).into()));
 }
 
-/// Build `~/.cadence/{project_name}/{safe_branch}` and verify the canonical
-/// result stays under the canonical `~/.cadence`. Creates the parent dir if
+/// Build `~/.cadencr/{project_name}/{safe_branch}` and verify the canonical
+/// result stays under the canonical `~/.cadencr`. Creates the parent dir if
 /// it does not exist; the leaf is the worktree dir that `git worktree add`
 /// will create itself.
 async fn build_contained_worktree_path(
-    cadence_root: &Path,
+    cadencr_root: &Path,
     project_name: &str,
     safe_branch: &str,
 ) -> Result<PathBuf, String> {
@@ -51,7 +51,7 @@ async fn build_contained_worktree_path(
         ));
     }
 
-    let parent = cadence_root.join(project_name);
+    let parent = cadencr_root.join(project_name);
     tokio::fs::create_dir_all(&parent)
         .await
         .map_err(|e| format!("Failed to create parent dir: {e}"))?;
@@ -59,12 +59,12 @@ async fn build_contained_worktree_path(
     let canon_parent = parent
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize parent dir: {e}"))?;
-    let canon_root = cadence_root
+    let canon_root = cadencr_root
         .canonicalize()
-        .map_err(|e| format!("Failed to canonicalize ~/.cadence: {e}"))?;
+        .map_err(|e| format!("Failed to canonicalize ~/.cadencr: {e}"))?;
     if !canon_parent.starts_with(&canon_root) {
         return Err(format!(
-            "Resolved worktree parent escapes ~/.cadence: {}",
+            "Resolved worktree parent escapes ~/.cadencr: {}",
             canon_parent.display()
         ));
     }
@@ -170,12 +170,12 @@ pub async fn ensure_worktree(
     };
 
     // 5. Compute worktree path — parent must be created first so we can
-    //    canonicalize it and confirm the final path stays under ~/.cadence.
+    //    canonicalize it and confirm the final path stays under ~/.cadencr.
     let home = dirs::home_dir().ok_or("Could not determine home directory")?;
-    let cadence_root = home.join(".cadence");
+    let cadencr_root = home.join(".cadencr");
     let safe_branch = branch.replace('/', "-");
     let worktree_path =
-        build_contained_worktree_path(&cadence_root, &project_name, &safe_branch).await?;
+        build_contained_worktree_path(&cadencr_root, &project_name, &safe_branch).await?;
     let path_str = worktree_path.to_string_lossy().to_string();
 
     // 6. Send worktree.creating
@@ -621,10 +621,10 @@ mod tests {
         let project_name = "my-project";
 
         let home = dirs::home_dir().expect("home dir");
-        let expected = home.join(".cadence").join(project_name).join(&safe_branch);
+        let expected = home.join(".cadencr").join(project_name).join(&safe_branch);
 
         // Verify structure
-        assert!(expected.to_string_lossy().contains(".cadence"));
+        assert!(expected.to_string_lossy().contains(".cadencr"));
         assert!(expected.to_string_lossy().contains(project_name));
         assert!(expected
             .to_string_lossy()
@@ -638,7 +638,7 @@ mod tests {
         assert_eq!(safe_branch, "fix-some-nested-branch-ff00");
 
         let home = dirs::home_dir().expect("home dir");
-        let path = home.join(".cadence").join("proj").join(&safe_branch);
+        let path = home.join(".cadencr").join("proj").join(&safe_branch);
         // The final component should have no slashes
         let file_name = path.file_name().unwrap().to_string_lossy();
         assert!(!file_name.contains('/'));
@@ -646,7 +646,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_contained_worktree_rejects_parent_in_project_name() {
-        let tmp = std::env::temp_dir().join("cadence-b4-1");
+        let tmp = std::env::temp_dir().join("cadencr-b4-1");
         let _ = tokio::fs::remove_dir_all(&tmp).await;
         tokio::fs::create_dir_all(&tmp).await.unwrap();
         let err = build_contained_worktree_path(&tmp, "../escape", "branch")
@@ -658,7 +658,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_contained_worktree_rejects_slash_in_project_name() {
-        let tmp = std::env::temp_dir().join("cadence-b4-2");
+        let tmp = std::env::temp_dir().join("cadencr-b4-2");
         let _ = tokio::fs::remove_dir_all(&tmp).await;
         tokio::fs::create_dir_all(&tmp).await.unwrap();
         let err = build_contained_worktree_path(&tmp, "a/b", "branch")
@@ -670,7 +670,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_contained_worktree_accepts_safe_inputs() {
-        let tmp = std::env::temp_dir().join("cadence-b4-3");
+        let tmp = std::env::temp_dir().join("cadencr-b4-3");
         let _ = tokio::fs::remove_dir_all(&tmp).await;
         tokio::fs::create_dir_all(&tmp).await.unwrap();
         let result = build_contained_worktree_path(&tmp, "proj", "feat-branch")

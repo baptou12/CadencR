@@ -201,7 +201,7 @@ mod tests {
     #[test]
     fn validate_rejects_file_path() {
         let dir = std::env::temp_dir();
-        let file = dir.join("cadence-project-validate-test-file");
+        let file = dir.join("cadencr-project-validate-test-file");
         std::fs::write(&file, b"x").unwrap();
         let err = validate_new_project("ok", file.to_str().unwrap()).unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");

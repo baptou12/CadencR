@@ -16,8 +16,8 @@ interface ToolSummary {
   detail?: string;
 }
 
-/** Parsed Cadence MCP tool name */
-export interface CadenceMcpTool {
+/** Parsed Cadencr MCP tool name */
+export interface CadencrMcpTool {
   /** Server name without prefix, e.g. "prd", "plan", "execute" */
   server: string;
   /** Raw tool name, e.g. "create_phase", "show_prd" */
@@ -28,10 +28,10 @@ export interface CadenceMcpTool {
   detail?: string;
 }
 
-const CADENCE_MCP_PREFIX = "mcp__cadence-";
+const CADENCR_MCP_PREFIX = "mcp__cadencr-";
 
-/** Human-readable labels for known Cadence MCP tools. Falls back to title-casing the tool name. */
-const cadenceToolLabels: Record<string, string> = {
+/** Human-readable labels for known Cadencr MCP tools. Falls back to title-casing the tool name. */
+const cadencrToolLabels: Record<string, string> = {
   read_plan: "Reading plan",
   create_phase: "Creating phase",
   update_phase: "Updating phase",
@@ -63,8 +63,8 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-/** Extract a meaningful detail string from Cadence MCP tool args. */
-function cadenceDetail(tool: string, args: Record<string, unknown>): string | undefined {
+/** Extract a meaningful detail string from Cadencr MCP tool args. */
+function cadencrDetail(tool: string, args: Record<string, unknown>): string | undefined {
   const title = nonEmptyString(args.title);
   if (title) return title;
   const summary = nonEmptyString(args.summary);
@@ -90,15 +90,15 @@ function snakeToLabel(name: string): string {
 }
 
 /**
- * Try to parse a tool name as a Cadence MCP tool (mcp__cadence-<server>__<tool>).
+ * Try to parse a tool name as a Cadencr MCP tool (mcp__cadencr-<server>__<tool>).
  * Returns undefined if the tool name doesn't match.
  */
-export function parseCadenceMcpTool(
+export function parseCadencrMcpTool(
   toolName: string,
   toolArgs?: string,
-): CadenceMcpTool | undefined {
-  if (!toolName.startsWith(CADENCE_MCP_PREFIX)) return undefined;
-  const rest = toolName.slice(CADENCE_MCP_PREFIX.length);
+): CadencrMcpTool | undefined {
+  if (!toolName.startsWith(CADENCR_MCP_PREFIX)) return undefined;
+  const rest = toolName.slice(CADENCR_MCP_PREFIX.length);
   const sep = rest.indexOf("__");
   if (sep === -1) return undefined;
 
@@ -110,8 +110,8 @@ export function parseCadenceMcpTool(
   return {
     server,
     tool,
-    label: cadenceToolLabels[tool] ?? snakeToLabel(tool),
-    detail: cadenceDetail(tool, args),
+    label: cadencrToolLabels[tool] ?? snakeToLabel(tool),
+    detail: cadencrDetail(tool, args),
   };
 }
 
@@ -221,12 +221,12 @@ export function parseToolCall(toolName: string, toolArgs?: string): ToolSummary 
  */
 export function getToolActivityLabel(toolName: string, toolArgs?: string): string {
   const canonicalToolName = normalizeToolName(toolName);
-  const cadence = parseCadenceMcpTool(canonicalToolName, toolArgs);
-  if (cadence) {
-    const prefix = `[${cadence.server}]`;
-    return cadence.detail
-      ? `${prefix} ${cadence.label}: ${cadence.detail}`
-      : `${prefix} ${cadence.label}`;
+  const cadencr = parseCadencrMcpTool(canonicalToolName, toolArgs);
+  if (cadencr) {
+    const prefix = `[${cadencr.server}]`;
+    return cadencr.detail
+      ? `${prefix} ${cadencr.label}: ${cadencr.detail}`
+      : `${prefix} ${cadencr.label}`;
   }
   const summary = parseToolCall(canonicalToolName, toolArgs);
   if (!summary) return `Running ${canonicalToolName}`;

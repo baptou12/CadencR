@@ -42,7 +42,7 @@ function countLineChanges(
 
 /**
  * Compact inline diff block for displaying file changes during agent execution.
- * Uses CodeMirror in read-only unified mode with the Cadence theme.
+ * Uses CodeMirror in read-only unified mode with the Cadencr theme.
  */
 export function InlineDiffBlock({
   filePath,

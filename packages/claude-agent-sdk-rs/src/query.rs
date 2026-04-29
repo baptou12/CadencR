@@ -21,7 +21,7 @@ use crate::transport::{find_cli, CliProcess};
 
 /// Represents whose "turn" it is in the agent conversation.
 ///
-/// This is critical for Cadence's UI to know what to show:
+/// This is critical for Cadencr's UI to know what to show:
 /// - `AgentWorking` → show streaming output / spinner
 /// - `TurnComplete` → show input box (session) or final result (non-session)
 /// - `WaitingForPermission` → show approval UI

@@ -2,11 +2,11 @@
 
 ## Overview
 
-Add OpenCode as a fully functional provider in Cadence, on par with Claude Code. OpenCode runs as a headless HTTP+SSE server (`opencode serve`), so unlike Claude Code (stdio JSON streams), integration is network-based. We'll create a new Rust SDK crate (`opencode-sdk-rs`) that wraps OpenCode's HTTP/SSE API and implements the same `AgentRuntimeAdapter` / `AgentRuntimeSession` traits.
+Add OpenCode as a fully functional provider in Cadencr, on par with Claude Code. OpenCode runs as a headless HTTP+SSE server (`opencode serve`), so unlike Claude Code (stdio JSON streams), integration is network-based. We'll create a new Rust SDK crate (`opencode-sdk-rs`) that wraps OpenCode's HTTP/SSE API and implements the same `AgentRuntimeAdapter` / `AgentRuntimeSession` traits.
 
-**Key architectural insight:** A single `opencode serve` instance handles multiple sessions across multiple directories. Directory scoping is per-request (via `x-opencode-directory` header or `?directory=` query param). Model and agent are per-prompt, not per-server. This means Cadence runs **one shared OpenCode server** — no port management or multi-process complexity.
+**Key architectural insight:** A single `opencode serve` instance handles multiple sessions across multiple directories. Directory scoping is per-request (via `x-opencode-directory` header or `?directory=` query param). Model and agent are per-prompt, not per-server. This means Cadencr runs **one shared OpenCode server** — no port management or multi-process complexity.
 
-**Scope boundaries:** Authentication and OpenCode configuration (API keys, LLM providers) are the user's responsibility. Cadence assumes OpenCode is installed, configured, and the user has already provided their API keys. We reuse existing sessions and don't touch auth.
+**Scope boundaries:** Authentication and OpenCode configuration (API keys, LLM providers) are the user's responsibility. Cadencr assumes OpenCode is installed, configured, and the user has already provided their API keys. We reuse existing sessions and don't touch auth.
 
 ---
 
@@ -220,7 +220,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 /// Singleton manager for the shared `opencode serve` process.
-/// Cadence spawns one server and all sessions share it.
+/// Cadencr spawns one server and all sessions share it.
 pub struct OpenCodeServer {
     child: tokio::process::Child,
     port: u16,
@@ -246,7 +246,7 @@ impl OpenCodeServer {
 
     pub fn pid(&self) -> u32;
 
-    /// Kill the server. Called on Cadence app shutdown.
+    /// Kill the server. Called on Cadencr app shutdown.
     pub async fn shutdown() -> Result<(), SdkError>;
 }
 ```
@@ -256,7 +256,7 @@ impl OpenCodeServer {
 2. Spawns `opencode serve` (tries port 4096, falls back to ephemeral)
 3. Parses actual port from stdout/health-check
 4. All subsequent sessions reuse the same port
-5. On Cadence shutdown → `OpenCodeServer::shutdown()` kills the process
+5. On Cadencr shutdown → `OpenCodeServer::shutdown()` kills the process
 
 **Port discovery:** OpenCode's `serve` command prints the listening URL to stdout. Parse it. Alternatively, try `GET http://localhost:4096/global/health` first — if it responds, reuse the existing server (user may have started it manually).
 
@@ -514,24 +514,24 @@ If streaming part events are missed (reconnect, race condition), the `message.cr
 
 | Aspect | Claude Code | OpenCode |
 |--------|-------------|----------|
-| Permission check | Cadence server resolves via `CanUseTool` callback (in-process, sync, blocking) | OpenCode server resolves internally; emits `permission.created` SSE event when user input needed |
-| Approval flow | Claude CLI blocks on stdin, Cadence's `CanUseTool` intercepts and routes to WS | OpenCode blocks internally, waiting for `POST /permission/:id/reply` |
-| Pattern caching | Cadence manages `session_cache` + `settings.local.json` | OpenCode has its own `GrantPersistant` (session-scoped) |
+| Permission check | Cadencr server resolves via `CanUseTool` callback (in-process, sync, blocking) | OpenCode server resolves internally; emits `permission.created` SSE event when user input needed |
+| Approval flow | Claude CLI blocks on stdin, Cadencr's `CanUseTool` intercepts and routes to WS | OpenCode blocks internally, waiting for `POST /permission/:id/reply` |
+| Pattern caching | Cadencr manages `session_cache` + `settings.local.json` | OpenCode has its own `GrantPersistant` (session-scoped) |
 
-### 4.2 Cadence's Permission Bridge with OpenCode
+### 4.2 Cadencr's Permission Bridge with OpenCode
 
-**Strategy: Proxy OpenCode's permission requests through Cadence's existing permission UI.**
+**Strategy: Proxy OpenCode's permission requests through Cadencr's existing permission UI.**
 
 1. SSE consumer sees `permission.created` event
-2. Convert to Cadence's `PermissionRequestPayload` and send via WS to frontend
+2. Convert to Cadencr's `PermissionRequestPayload` and send via WS to frontend
 3. Frontend shows the same permission dialog as Claude Code sessions
 4. User responds (AllowOnce / AllowFuture / Deny)
-5. Cadence calls `client.reply_permission(request_id, allow, message)`
+5. Cadencr calls `client.reply_permission(request_id, allow, message)`
 6. OpenCode unblocks and continues
 
-**Key difference: no `CanUseTool` trait.** Since OpenCode resolves permissions server-side and only asks when needed, Cadence doesn't need to implement `CanUseTool`. The `RuntimeSpawnConfig.can_use_tool` field is `None` for OpenCode sessions. Instead, the SSE consumer task handles permission events directly.
+**Key difference: no `CanUseTool` trait.** Since OpenCode resolves permissions server-side and only asks when needed, Cadencr doesn't need to implement `CanUseTool`. The `RuntimeSpawnConfig.can_use_tool` field is `None` for OpenCode sessions. Instead, the SSE consumer task handles permission events directly.
 
-**Session cache + patterns:** Cadence can optionally auto-reply to OpenCode permission requests using its own `session_cache` and `allowed_patterns`, without showing UI. This provides consistent behavior across providers:
+**Session cache + patterns:** Cadencr can optionally auto-reply to OpenCode permission requests using its own `session_cache` and `allowed_patterns`, without showing UI. This provides consistent behavior across providers:
 
 ```
 SSE permission.created →
@@ -542,12 +542,12 @@ SSE permission.created →
 
 ### 4.3 `AskUserQuestion` Mapping
 
-OpenCode's `question.created` maps to Cadence's `AskUserQuestion` tool:
+OpenCode's `question.created` maps to Cadencr's `AskUserQuestion` tool:
 
 1. SSE consumer sees `question.created`
 2. Send as `PermissionRequestPayload` with `tool_name: "AskUserQuestion"` (already a `FRONTEND_PROMPT_TOOLS` entry)
 3. User answers in the permission dialog
-4. Cadence calls `client.reply_question(request_id, answer)` or `client.reject_question(request_id)`
+4. Cadencr calls `client.reply_question(request_id, answer)` or `client.reject_question(request_id)`
 
 ---
 
@@ -557,13 +557,13 @@ OpenCode's `question.created` maps to Cadence's `AskUserQuestion` tool:
 
 OpenCode has a dedicated "plan" agent that is read-only by default (`edit` and `bash` tools default to `ask`). The agent is selected **per-prompt** via the `agent` field. No session recreation needed to switch agents.
 
-### 5.2 Mapping to Cadence's Plan Mode
+### 5.2 Mapping to Cadencr's Plan Mode
 
-Cadence's plan mode flow:
+Cadencr's plan mode flow:
 1. `RuntimePermissionMode::Plan` → agent enters plan-only mode
-2. Agent calls `EnterPlanMode` tool → Cadence persists `permission_mode = 'plan'`
-3. Agent produces plan, calls `ExitPlanMode` with plan JSON → Cadence persists `pending_plan_approval`, sends to frontend
-4. User approves/requests changes → Cadence unblocks agent
+2. Agent calls `EnterPlanMode` tool → Cadencr persists `permission_mode = 'plan'`
+3. Agent produces plan, calls `ExitPlanMode` with plan JSON → Cadencr persists `pending_plan_approval`, sends to frontend
+4. User approves/requests changes → Cadencr unblocks agent
 
 **For OpenCode — use the "plan" agent + system prompt:**
 
@@ -574,10 +574,10 @@ Cadence's plan mode flow:
 **Plan detection and approval flow:**
 1. Plan prompt sent with `agent: "plan"` + system prompt
 2. Session goes idle (agent finished planning) → `session.updated` (status=idle)
-3. Cadence extracts the plan from the last assistant message
+3. Cadencr extracts the plan from the last assistant message
 4. Persists `pending_plan_approval` and sends `permission.request` WS event to frontend
-5. User approves → Cadence sends follow-up prompt with `agent: "build"`: "Execute the plan above"
-6. User requests changes → Cadence sends feedback with `agent: "plan"`: "Revise the plan: <feedback>"
+5. User approves → Cadencr sends follow-up prompt with `agent: "build"`: "Execute the plan above"
+6. User requests changes → Cadencr sends feedback with `agent: "plan"`: "Revise the plan: <feedback>"
 
 ### 5.3 Plan Persistence and Approval
 
@@ -591,9 +591,9 @@ Cadence's plan mode flow:
 
 ### 6.1 Session ID Mapping
 
-| Cadence Field | OpenCode Equivalent |
+| Cadencr Field | OpenCode Equivalent |
 |---------------|---------------------|
-| `agent_sessions.id` | Cadence's internal DB ID (unchanged) |
+| `agent_sessions.id` | Cadencr's internal DB ID (unchanged) |
 | `agent_sessions.runtime_session_id` | OpenCode session ID (UUID) |
 | `agent_sessions.claude_session_id` | Also stores OpenCode session ID (for resume) |
 | `agent_sessions.runtime_provider` | `"opencode"` |
@@ -621,7 +621,7 @@ The existing `reconnect.rs` logic queries `agent_sessions WHERE status IN ('paus
 
 ### 6.4 Message Persistence
 
-Cadence persists messages independently in its own DB. The SSE consumer writes:
+Cadencr persists messages independently in its own DB. The SSE consumer writes:
 - User messages (from `message.created` with role=user)
 - Assistant messages (from `message.created` with role=assistant)
 - Tool calls and results (from part events)
@@ -736,7 +736,7 @@ For OpenCode workflow agents:
 
 ### Phase 3: Permission Bridge
 
-1. Wire permission.created SSE events → Cadence's `PermissionRequestPayload` → frontend WS
+1. Wire permission.created SSE events → Cadencr's `PermissionRequestPayload` → frontend WS
 2. Wire question.created → `AskUserQuestion` flow
 3. Add `session_cache` / `allowed_patterns` auto-reply for OpenCode permissions
 4. Test: approve, deny, allow-future
@@ -771,7 +771,7 @@ For OpenCode workflow agents:
 | # | Question | Impact | Mitigation |
 |---|----------|--------|------------|
 | 1 | SSE event format for streaming text deltas — incremental or cumulative? | Correct delta computation | SDK handles both via `compute_delta`; verify empirically |
-| 2 | OpenCode model string format — how to map Cadence's flat model ID to `{ providerID, modelID }` | Model switching | Define a convention: `"anthropic/claude-sonnet-4-20250514"` → split on `/` |
+| 2 | OpenCode model string format — how to map Cadencr's flat model ID to `{ providerID, modelID }` | Model switching | Define a convention: `"anthropic/claude-sonnet-4-20250514"` → split on `/` |
 | 3 | SSE reconnect behavior — does OpenCode replay missed events? | Streaming reliability | Use `message.created` fallback for complete messages; accept possible gaps in part-level streaming |
 | 4 | Child session events — how to correlate with parent tool_use_id | Subagent nesting | Track `session.created` with `parent_id`, correlate with last tool call in parent session |
 

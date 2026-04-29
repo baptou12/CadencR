@@ -139,14 +139,14 @@ describe("FeatureTopBar", () => {
 
   it("does not show logo when sidebar is expanded", () => {
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.queryByText("Cadence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Cadencr")).not.toBeInTheDocument();
   });
 
   it("shows logo and app name when sidebar is collapsed", () => {
     mockSidebarCollapsed = true;
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.getByText("Cadence")).toBeInTheDocument();
-    expect(screen.getByAltText("Cadence")).toBeInTheDocument();
+    expect(screen.getByText("Cadencr")).toBeInTheDocument();
+    expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
   });
 
   it("shows expand button when sidebar is collapsed", () => {

@@ -3,7 +3,7 @@ import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import type { Extension } from "@codemirror/state";
 
-// Cadence uses Dracula palette variables defined in index.css
+// Cadencr uses Dracula palette variables defined in index.css
 // We map them to hex values here since CM6 themes can't use CSS vars directly.
 const PALETTE = {
   bg: "#1e2030", // slightly darker than drac-bg for editor
@@ -25,7 +25,7 @@ const PALETTE = {
   selectionBg: "#44475a",
 };
 
-const cadenceTheme = EditorView.theme(
+const cadencrTheme = EditorView.theme(
   {
     "&": {
       color: PALETTE.fg,
@@ -71,7 +71,7 @@ const cadenceTheme = EditorView.theme(
   { dark: true },
 );
 
-const cadenceHighlightStyle = HighlightStyle.define([
+const cadencrHighlightStyle = HighlightStyle.define([
   { tag: t.keyword, color: PALETTE.pink },
   { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: PALETTE.fg },
   { tag: [t.function(t.variableName), t.labelName], color: PALETTE.green },
@@ -105,7 +105,7 @@ const cadenceHighlightStyle = HighlightStyle.define([
   { tag: t.invalid, color: PALETTE.red },
 ]);
 
-const cadenceDiffTheme = EditorView.theme(
+const cadencrDiffTheme = EditorView.theme(
   {
     // Unified merge view: deleted lines shown above current text
     ".cm-mergeView & .cm-deletedChunk": {
@@ -151,13 +151,13 @@ const cadenceDiffTheme = EditorView.theme(
 
 export const DIFF_PALETTE = PALETTE;
 
-export const cadenceEditorTheme: Extension[] = [
-  cadenceTheme,
-  syntaxHighlighting(cadenceHighlightStyle),
+export const cadencrEditorTheme: Extension[] = [
+  cadencrTheme,
+  syntaxHighlighting(cadencrHighlightStyle),
 ];
 
-export const cadenceDiffExtensions: Extension[] = [
-  cadenceTheme,
-  syntaxHighlighting(cadenceHighlightStyle),
-  cadenceDiffTheme,
+export const cadencrDiffExtensions: Extension[] = [
+  cadencrTheme,
+  syntaxHighlighting(cadencrHighlightStyle),
+  cadencrDiffTheme,
 ];

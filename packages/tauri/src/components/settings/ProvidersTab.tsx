@@ -23,7 +23,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
       <>
         <BinaryDiscoverySection
           discoveryKey="claude"
-          description="Every `claude` install Cadence found on disk. The selected one is what gets spawned. To override, set a path during onboarding."
+          description="Every `claude` install Cadencr found on disk. The selected one is what gets spawned. To override, set a path during onboarding."
         />
         <ProfilesSection />
         <CustomModelsSection />
@@ -35,7 +35,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
     render: () => (
       <BinaryDiscoverySection
         discoveryKey="opencode"
-        description="Every `opencode` install Cadence found on disk. Override via onboarding or the legacy `CADENCE_OPENCODE_BIN` env var."
+        description="Every `opencode` install Cadencr found on disk. Override via onboarding or the legacy `CADENCR_OPENCODE_BIN` env var."
       />
     ),
   },

@@ -8,7 +8,7 @@ import { defineConfig } from "orval";
  * `pnpm generate:api` from `packages/tauri`.
  */
 export default defineConfig({
-  cadence: {
+  cadencr: {
     input: {
       target: "../service/openapi.json",
       override: {

@@ -84,12 +84,12 @@ describe("Sidebar", () => {
 
   it("renders the app name", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Cadence")).toBeInTheDocument();
+    expect(screen.getByText("Cadencr")).toBeInTheDocument();
   });
 
   it("renders the logo", () => {
     render(<Sidebar />);
-    expect(screen.getByAltText("Cadence")).toBeInTheDocument();
+    expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
   });
 
   it("renders settings link", () => {
@@ -124,7 +124,7 @@ describe("Sidebar", () => {
 
   it("renders without crashing on any route", () => {
     render(<Sidebar />);
-    expect(screen.getByText("Cadence")).toBeInTheDocument();
+    expect(screen.getByText("Cadencr")).toBeInTheDocument();
   });
 
   it("renders on ws-session route with search params", () => {
@@ -133,6 +133,6 @@ describe("Sidebar", () => {
       search: { projectId: 1, featureId: 3 },
     };
     render(<Sidebar />);
-    expect(screen.getByText("Cadence")).toBeInTheDocument();
+    expect(screen.getByText("Cadencr")).toBeInTheDocument();
   });
 });

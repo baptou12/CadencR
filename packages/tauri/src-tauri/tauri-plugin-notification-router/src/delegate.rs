@@ -19,7 +19,7 @@ pub static APP_HANDLE: Mutex<Option<AppHandle<Wry>>> = Mutex::new(None);
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]
-    #[name = "CadenceNotificationDelegate"]
+    #[name = "CadencrNotificationDelegate"]
     pub struct NotificationDelegate;
 
     unsafe impl NSObjectProtocol for NotificationDelegate {}

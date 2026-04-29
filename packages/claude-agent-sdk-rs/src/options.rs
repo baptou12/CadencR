@@ -28,7 +28,7 @@ pub struct Options {
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     /// Settings sources (default: ["user", "project", "local"]).
     pub setting_sources: Vec<String>,
-    /// Always `true` — Cadence always uses streaming partial messages.
+    /// Always `true` — Cadencr always uses streaming partial messages.
     /// Hardcoded in `to_cli_args` via `--output-format stream-json`.
     pub include_partial_messages: bool,
     /// Language / locale override passed to the CLI.
@@ -95,7 +95,7 @@ impl Options {
         // Include partial streaming events (content_block_delta) for real-time UI.
         args.push("--include-partial-messages".to_string());
         // Force summarized thinking output. Opus 4.7 disables thinking display by
-        // default, but Cadence surfaces thinking summaries in the UI, so we
+        // default, but Cadencr surfaces thinking summaries in the UI, so we
         // enforce `summarized` regardless of the model's default.
         args.push("--thinking-display".to_string());
         args.push("summarized".to_string());

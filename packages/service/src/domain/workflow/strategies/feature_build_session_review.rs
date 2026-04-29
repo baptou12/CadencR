@@ -154,7 +154,7 @@ pub async fn build_enriched_review_prompt(
          Review the implementation of feature \"{feature_title}\" against the specification above. \
          Ask yourself: \"If I had to build this from the spec, how should the code look?\" Then compare with the actual changes.\n\n\
          Start by running `git diff` and `git diff --cached` to see all changes. Review each change carefully and produce a detailed review report.\n\n\
-         You have MCP tools available (prefixed with mcp__cadence-review__) to create fix phases if changes are needed. \
+         You have MCP tools available (prefixed with mcp__cadencr-review__) to create fix phases if changes are needed. \
          Follow the completion instructions in your system prompt to finalize your review."
     ));
 

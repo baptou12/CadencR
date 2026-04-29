@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Cadence is a small open-source project. The rules here are short and practical, and they apply to every project space — issues, pull requests, discussions, commit messages, and any other channel tied to the repository.
+Cadencr is a small open-source project. The rules here are short and practical, and they apply to every project space — issues, pull requests, discussions, commit messages, and any other channel tied to the repository.
 
 ## What we expect
 

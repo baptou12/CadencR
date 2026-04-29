@@ -302,7 +302,7 @@ impl AgentManager {
             None
         };
 
-        // Build system prompt with CWD hint + MCP instructions. Every Cadence
+        // Build system prompt with CWD hint + MCP instructions. Every Cadencr
         // MCP tool call requires `feature_id` in its args — this is the only
         // thing that keeps tool calls correctly scoped under runtimes like
         // OpenCode that share one MCP subprocess across every feature.
@@ -314,14 +314,14 @@ impl AgentManager {
         let mcp_suffix = if include_mcp_instructions {
             format!(
                 "\n\n## MCP Tools\n\n\
-                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadence MCP tool call (e.g. create_phase, update_plan, mark_agent_done). \
+                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadencr MCP tool call (e.g. create_phase, update_plan, mark_agent_done). \
                  This identifies which feature you are working on and is required for every call.\n\n\
                  `plan_id` is auto-resolved from the feature when omitted — just leave it out."
             )
         } else {
             format!(
                 "\n\n## MCP Tools\n\n\
-                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadence MCP tool call. This is required for every Cadence MCP tool."
+                 You MUST pass `feature_id: {feature_id}` as an argument to every Cadencr MCP tool call. This is required for every Cadencr MCP tool."
             )
         };
         let full_system_prompt = match system_prompt {

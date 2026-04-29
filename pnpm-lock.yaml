@@ -69,7 +69,7 @@ importers:
 
   packages/service:
     dependencies:
-      '@cadence/claude-agent-sdk-rs':
+      '@cadencr/claude-agent-sdk-rs':
         specifier: workspace:*
         version: link:../claude-agent-sdk-rs
 

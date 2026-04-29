@@ -74,7 +74,7 @@ impl SessionServer {
 
 impl ServerHandler for SessionServer {
     fn get_info(&self) -> ServerInfo {
-        server_info("cadence-session")
+        server_info("cadencr-session")
     }
 
     fn list_tools(

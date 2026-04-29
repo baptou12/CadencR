@@ -17,9 +17,9 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err) => {
-  console.error("Cadence bootstrap failed:", err);
+  console.error("Cadencr bootstrap failed:", err);
   const root = document.getElementById("root");
   if (root) {
-    root.textContent = `Failed to start Cadence: ${err instanceof Error ? err.message : String(err)}`;
+    root.textContent = `Failed to start Cadencr: ${err instanceof Error ? err.message : String(err)}`;
   }
 });

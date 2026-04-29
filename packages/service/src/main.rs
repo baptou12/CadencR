@@ -19,10 +19,10 @@ use shared::db;
 const SERVICE_DOTENV_DISPLAY_PATH: &str = "packages/service/.env";
 const SERVICE_DOTENV_EXAMPLE_PATH: &str = "packages/service/.env.example";
 const REQUIRED_DEV_ENV_KEYS: [&str; 4] = [
-    "CADENCE_DB_PATH",
-    "CADENCE_RUST_PORT",
-    "CADENCE_FRONTEND_PORT",
-    "CADENCE_AUTH_TOKEN",
+    "CADENCR_DB_PATH",
+    "CADENCR_RUST_PORT",
+    "CADENCR_FRONTEND_PORT",
+    "CADENCR_AUTH_TOKEN",
 ];
 
 #[tokio::main]
@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
             let db_path = config
                 .db_path
                 .clone()
-                .expect("--db-path or CADENCE_DB_PATH env var required for mcp-serve");
+                .expect("--db-path or CADENCR_DB_PATH env var required for mcp-serve");
 
             domain::mcp::stdio::run_mcp_stdio(&db_path, agent_type, *feature_id).await?;
         }
@@ -58,10 +58,10 @@ async fn main() -> anyhow::Result<()> {
             let db_path = config
                 .db_path
                 .clone()
-                .expect("--db-path or CADENCE_DB_PATH env var required");
+                .expect("--db-path or CADENCR_DB_PATH env var required");
 
             // Set env var so MCP subprocesses inherit it
-            std::env::set_var("CADENCE_DB_PATH", &db_path);
+            std::env::set_var("CADENCR_DB_PATH", &db_path);
 
             let write_pool = db::create_write_pool(&db_path).await?;
             shared::migrate::run_migrations(&write_pool).await?;
@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
 
             let auth_token = config.auth_token.ok_or_else(|| {
                 anyhow::anyhow!(
-                    "CADENCE_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
+                    "CADENCR_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
                      var. Dev runs: set it in `packages/service/.env`. \
                      Production runs: the Tauri shell generates one per launch and passes it \
                      as a CLI flag."
@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
-            info!("Cadence service listening on {addr}");
+            info!("Cadencr service listening on {addr}");
 
             let listener = tokio::net::TcpListener::bind(&addr).await?;
             axum::serve(listener, app)
@@ -238,7 +238,7 @@ mod tests {
         clear_env(&REQUIRED_DEV_ENV_KEYS);
         fs::write(
             &env_path,
-            "CADENCE_DB_PATH=./cadence.local.db\nCADENCE_RUST_PORT=5005\nCADENCE_AUTH_TOKEN=\n",
+            "CADENCR_DB_PATH=./cadencr.local.db\nCADENCR_RUST_PORT=5005\nCADENCR_AUTH_TOKEN=\n",
         )
         .unwrap();
         load_optional_package_dotenv(&manifest_dir).unwrap();
@@ -247,8 +247,8 @@ mod tests {
             .unwrap_err();
 
         let message = error.to_string();
-        assert!(message.contains("CADENCE_FRONTEND_PORT"));
-        assert!(message.contains("CADENCE_AUTH_TOKEN"));
+        assert!(message.contains("CADENCR_FRONTEND_PORT"));
+        assert!(message.contains("CADENCR_AUTH_TOKEN"));
         clear_env(&REQUIRED_DEV_ENV_KEYS);
     }
 }
@@ -286,7 +286,7 @@ fn build_cors_layer(frontend_port: u16) -> CorsLayer {
 /// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.
 fn init_tracing(to_stderr: bool) {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "cadence_service=info".into());
+        .unwrap_or_else(|_| "cadencr_service=info".into());
 
     if to_stderr {
         tracing_subscriber::fmt()

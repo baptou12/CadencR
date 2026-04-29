@@ -1,8 +1,8 @@
 {
-  "name": "@cadence/loc",
+  "name": "@cadencr/loc",
   "private": true,
   "version": "0.1.0",
-  "description": "Lines-of-code counter for the Cadence monorepo.",
+  "description": "Lines-of-code counter for the Cadencr monorepo.",
   "license": "Apache-2.0",
   "scripts": {
     "format": "cargo fmt",

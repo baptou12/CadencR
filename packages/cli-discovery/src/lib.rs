@@ -1,7 +1,7 @@
 //! Provider-neutral CLI binary discovery.
 //!
 //! Both the Claude and OpenCode SDKs need to find their CLI binary on disk.
-//! On macOS in particular, when Cadence is launched from Finder/Dock/Spotlight
+//! On macOS in particular, when Cadencr is launched from Finder/Dock/Spotlight
 //! the inherited PATH is just `/etc/paths` + `/etc/paths.d/*` and never sources
 //! the user's `~/.zshrc` / `~/.bash_profile` — so well-known dirs like
 //! `/opt/homebrew/bin`, `~/.bun/bin`, `~/.nvm/.../bin` etc. are invisible.

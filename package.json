@@ -1,5 +1,5 @@
 {
-  "name": "cadence",
+  "name": "cadencr",
   "private": true,
   "description": "A desktop IDE for AI coding agents — unified workspace for Claude Code, OpenCode, and more.",
   "license": "Apache-2.0",
@@ -12,8 +12,8 @@
     "lint": "turbo run lint",
     "format": "turbo run format",
     "format:check": "turbo run format:check",
-    "start": "turbo run dev --filter=@cadence/desktop",
-    "build": "turbo run build --filter=@cadence/desktop",
+    "start": "turbo run dev --filter=@cadencr/desktop",
+    "build": "turbo run build --filter=@cadencr/desktop",
     "prepare": "husky",
     "loc": "cargo run --manifest-path packages/loc/Cargo.toml --release --"
   },

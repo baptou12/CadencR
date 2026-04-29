@@ -1,16 +1,16 @@
 {
-  "name": "@cadence/service",
+  "name": "@cadencr/service",
   "private": true,
   "version": "0.1.0",
-  "description": "Cadence Rust backend service — HTTP/WebSocket API powering the desktop app.",
+  "description": "Cadencr Rust backend service — HTTP/WebSocket API powering the desktop app.",
   "license": "Apache-2.0",
   "dependencies": {
-    "@cadence/claude-agent-sdk-rs": "workspace:*"
+    "@cadencr/claude-agent-sdk-rs": "workspace:*"
   },
   "scripts": {
-    "build": "cargo build --release && cp ../../target/release/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
-    "build:debug": "cargo build && cp ../../target/debug/cadence-service ../tauri/src-tauri/binaries/cadence-service-$(rustc -vV | sed -n 's/host: //p')",
-    "dev": "cargo watch -w src -w .env -x 'run --bin cadence-service'",
+    "build": "cargo build --release && cp ../../target/release/cadencr-service ../tauri/src-tauri/binaries/cadencr-service-$(rustc -vV | sed -n 's/host: //p')",
+    "build:debug": "cargo build && cp ../../target/debug/cadencr-service ../tauri/src-tauri/binaries/cadencr-service-$(rustc -vV | sed -n 's/host: //p')",
+    "dev": "cargo watch -w src -w .env -x 'run --bin cadencr-service'",
     "test": "cargo test",
     "lint": "cargo check",
     "format": "cargo fmt",

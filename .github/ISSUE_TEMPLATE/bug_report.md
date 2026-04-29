@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something in Cadence is broken or misbehaving
+about: Something in Cadencr is broken or misbehaving
 title: "[bug] "
 labels: ["bug"]
 ---
@@ -24,7 +24,7 @@ If the bug involves a specific agent (Claude Code, OpenCode, ...), include the p
 ## Environment
 
 - OS and version:
-- Cadence version / commit SHA:
+- Cadencr version / commit SHA:
 - For build or agent-CLI issues, also include: Node version (`node -v`), Rust version (`rustc -V`), and the relevant agent CLI version.
 
 ## Logs

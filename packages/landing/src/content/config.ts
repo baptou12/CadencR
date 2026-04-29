@@ -6,7 +6,7 @@ const news = defineCollection({
     title: z.string(),
     date: z.date(),
     summary: z.string(),
-    author: z.string().default("Cadence"),
+    author: z.string().default("Cadencr"),
     tags: z.array(z.string()).default([]),
   }),
 });

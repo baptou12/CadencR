@@ -2,8 +2,8 @@ import { useEffect, useRef } from "react";
 import { EditorView, lineNumbers, drawSelection } from "@codemirror/view";
 import { EditorState, type Extension } from "@codemirror/state";
 import { MergeView, unifiedMergeView } from "@codemirror/merge";
-import { cadenceDiffExtensions } from "./editor-theme";
-import { getCadenceDiffConfig } from "./diff-config";
+import { cadencrDiffExtensions } from "./editor-theme";
+import { getCadencrDiffConfig } from "./diff-config";
 import { getLanguageExtension } from "./language-extensions";
 
 interface ReadOnlyDiffViewProps {
@@ -27,7 +27,7 @@ function baseExtensions(filePath: string, extra?: Extension[]): Extension[] {
     EditorView.editable.of(false),
     lineNumbers(),
     drawSelection(),
-    ...cadenceDiffExtensions,
+    ...cadencrDiffExtensions,
     ...(lang ? [lang] : []),
     ...(extra ?? []),
   ];
@@ -61,7 +61,7 @@ export function ReadOnlyDiffView({
 
     const container = containerRef.current;
     const extensions = baseExtensions(filePath, extraExtensions);
-    const diffConfig = getCadenceDiffConfig(oldContent, newContent);
+    const diffConfig = getCadencrDiffConfig(oldContent, newContent);
     const mergeOptions = {
       highlightChanges: true,
       gutter: true,

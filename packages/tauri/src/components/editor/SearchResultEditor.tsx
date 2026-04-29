@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { EditorView, lineNumbers, Decoration, type DecorationSet } from "@codemirror/view";
 import { EditorState, StateField, type Extension, RangeSetBuilder } from "@codemirror/state";
-import { cadenceEditorTheme } from "./editor-theme";
+import { cadencrEditorTheme } from "./editor-theme";
 import { getLanguageExtension } from "./language-extensions";
 import type { ContentMatch } from "@/api/generated";
 
@@ -44,7 +44,7 @@ export default function SearchResultEditor({
       EditorView.editable.of(false),
       customLineNumbers,
       highlightField,
-      ...cadenceEditorTheme,
+      ...cadencrEditorTheme,
       compactTheme,
       ...(langExt ? [langExt] : []),
     ];

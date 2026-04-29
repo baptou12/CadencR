@@ -244,7 +244,7 @@ pub enum RuntimeEventKind {
 
 /// Provider-neutral metadata captured from a compaction boundary event.
 ///
-/// Cadence persists this alongside the `compact_divider` block so the UI can
+/// Cadencr persists this alongside the `compact_divider` block so the UI can
 /// surface why the compaction happened and how many tokens were freed.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct RuntimeCompactMetadata {

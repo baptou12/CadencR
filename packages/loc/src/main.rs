@@ -10,7 +10,7 @@ use tokei::{Config, Languages};
 
 /// Show the evolution of lines of code over time, day by day, as ASCII bar charts.
 #[derive(Parser)]
-#[command(name = "cadence-loc")]
+#[command(name = "cadencr-loc")]
 struct Cli {
     /// Start date (YYYY-MM-DD). Defaults to the first commit.
     #[arg(long)]
@@ -127,7 +127,7 @@ fn collect_daily_commits(
 }
 
 fn create_worktree(repo_path: &Path) -> Result<PathBuf> {
-    let worktree_path = std::env::temp_dir().join(format!("cadence-loc-{}", std::process::id()));
+    let worktree_path = std::env::temp_dir().join(format!("cadencr-loc-{}", std::process::id()));
     let status = Command::new("git")
         .args([
             "worktree",

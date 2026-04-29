@@ -121,7 +121,7 @@ export function listenForNotificationClicks(
             params: { projectId: String(project_id), featureId: String(feature_id) },
           });
     void nav.then(() => {
-      setTimeout(() => window.dispatchEvent(new CustomEvent("cadence:focus-prompt")), 100);
+      setTimeout(() => window.dispatchEvent(new CustomEvent("cadencr:focus-prompt")), 100);
     });
   });
   return () => {

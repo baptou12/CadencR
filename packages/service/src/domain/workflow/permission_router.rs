@@ -133,9 +133,9 @@ pub enum ApprovalKind {
 }
 
 impl ApprovalKind {
-    /// Match on canonical MCP tool names (`mcp__cadence-plan__show_plan`, etc.).
+    /// Match on canonical MCP tool names (`mcp__cadencr-plan__show_plan`, etc.).
     /// Substring match covers both Claude Code's canonical form and OpenCode's
-    /// sanitized form (`cadence-plan_show_plan`).
+    /// sanitized form (`cadencr-plan_show_plan`).
     pub fn from_tool_name(name: &str) -> Option<Self> {
         if name.contains("show_plan") {
             Some(Self::Plan)

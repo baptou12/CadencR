@@ -37,7 +37,7 @@ impl AgentType {
     ];
 
     /// Short identifier used in `opencode.json` permission keys and DB rows
-    /// (the suffix after `cadence-` in `mcp_server_name`).
+    /// (the suffix after `cadencr-` in `mcp_server_name`).
     pub fn short_name(self) -> &'static str {
         match self {
             Self::Plan => "plan",
@@ -80,7 +80,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
         AgentType::Plan => McpServer::Plan(PlanServer::new(ctx)),
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
         AgentType::Prd => McpServer::Composable(ComposableServer::new(
-            "cadence-prd",
+            "cadencr-prd",
             vec![
                 th::create_prd(&ctx),
                 th::edit_prd(&ctx),
@@ -90,7 +90,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
             ctx.feature_id,
         )),
         AgentType::Execute => McpServer::Composable(ComposableServer::new(
-            "cadence-execute",
+            "cadencr-execute",
             vec![
                 th::read_plan(&ctx),
                 th::list_phases(&ctx),
@@ -101,7 +101,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
             ctx.feature_id,
         )),
         AgentType::Review => McpServer::Composable(ComposableServer::new(
-            "cadence-review",
+            "cadencr-review",
             vec![
                 th::read_plan(&ctx),
                 th::list_phases(&ctx),
@@ -115,7 +115,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
             ctx.feature_id,
         )),
         AgentType::Risk => McpServer::Composable(ComposableServer::new(
-            "cadence-risk",
+            "cadencr-risk",
             vec![
                 th::read_plan(&ctx),
                 th::list_phases(&ctx),
@@ -129,7 +129,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
             ctx.feature_id,
         )),
         AgentType::Qa => McpServer::Composable(ComposableServer::new(
-            "cadence-qa",
+            "cadencr-qa",
             vec![
                 th::read_plan(&ctx),
                 th::list_phases(&ctx),
@@ -144,7 +144,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
             ctx.feature_id,
         )),
         AgentType::Retro => McpServer::Composable(ComposableServer::new(
-            "cadence-retro",
+            "cadencr-retro",
             vec![
                 th::read_plan(&ctx),
                 th::list_phases(&ctx),
@@ -161,7 +161,7 @@ pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServ
 
 /// Returns the MCP server name string for the given agent type.
 pub fn mcp_server_name(agent_type: AgentType) -> String {
-    format!("cadence-{}", agent_type.short_name())
+    format!("cadencr-{}", agent_type.short_name())
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -172,10 +172,10 @@ fn server_info(name: &str) -> ServerInfo {
 }
 
 const FEATURE_ID_DESCRIPTION: &str =
-    "The feature this call operates on. Required on every Cadence MCP tool call — agents must pass the feature_id from their system prompt.";
+    "The feature this call operates on. Required on every Cadencr MCP tool call — agents must pass the feature_id from their system prompt.";
 
 /// Inject `feature_id` into a schema's `properties` and `required` arrays.
-/// Every Cadence MCP tool needs it because the subprocess is feature-agnostic
+/// Every Cadencr MCP tool needs it because the subprocess is feature-agnostic
 /// (see `context.rs::CURRENT_FEATURE_ID`).
 fn inject_feature_id(mut schema: serde_json::Value) -> serde_json::Value {
     let obj = schema.as_object_mut().expect("schema must be an object");

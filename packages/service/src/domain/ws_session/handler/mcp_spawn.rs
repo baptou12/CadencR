@@ -18,14 +18,14 @@ pub fn build_mcp_server_config(
 ) -> HashMap<String, RuntimeMcpServerConfig> {
     let server_name = mcp_server_name(agent_type);
     let binary_path = env::current_exe()
-        .unwrap_or_else(|_| "cadence-service".into())
+        .unwrap_or_else(|_| "cadencr-service".into())
         .to_string_lossy()
         .to_string();
 
-    let db_path = env::var("CADENCE_DB_PATH").ok();
+    let db_path = env::var("CADENCR_DB_PATH").ok();
     let env_vars = db_path
         .as_ref()
-        .map(|path| HashMap::from([("CADENCE_DB_PATH".to_string(), path.clone())]));
+        .map(|path| HashMap::from([("CADENCR_DB_PATH".to_string(), path.clone())]));
 
     // Always pass --db-path explicitly so the subprocess doesn't rely solely
     // on inheriting the environment variable.

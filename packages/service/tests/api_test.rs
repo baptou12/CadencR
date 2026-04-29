@@ -7,9 +7,9 @@ use sqlx::SqlitePool;
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 
-use cadence_service::api;
-use cadence_service::api::middleware::AUTH_HEADER;
-use cadence_service::app_state::AppState;
+use cadencr_service::api;
+use cadencr_service::api::middleware::AUTH_HEADER;
+use cadencr_service::app_state::AppState;
 
 const TEST_AUTH_TOKEN: &str = "test-token";
 
@@ -196,18 +196,18 @@ async fn start_test_server() -> TestServer {
         write_pool: pool,
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
-        turn_state_tx: cadence_service::app_state::TurnStateBroadcaster::new(
+        turn_state_tx: cadencr_service::app_state::TurnStateBroadcaster::new(
             turn_state_tx,
             std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         ),
-        pty_manager: cadence_service::domain::terminal::service::PtyManager::new(),
+        pty_manager: cadencr_service::domain::terminal::service::PtyManager::new(),
         file_change_tx,
-        file_watcher: cadence_service::domain::editor::watcher::new_shared(),
+        file_watcher: cadencr_service::domain::editor::watcher::new_shared(),
         auth_token: TEST_AUTH_TOKEN.to_string(),
         frontend_port: 1420,
         port,
         custom_action_scheduler:
-            cadence_service::domain::custom_actions::scheduler::CustomActionScheduler::new(),
+            cadencr_service::domain::custom_actions::scheduler::CustomActionScheduler::new(),
     };
 
     let app = api::build_router(state).layer(tower_http::cors::CorsLayer::permissive());

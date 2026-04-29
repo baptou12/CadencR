@@ -776,7 +776,7 @@ mod tests {
         // Simulate what handle_permission_respond does for AskUserQuestion
         let updated_input = serde_json::json!({
             "question": "What is the project name?",
-            "answers": [["Cadence"]]
+            "answers": [["Cadencr"]]
         });
         let answer_text =
             crate::domain::ws_session::question_answers::format_answers_plain_text(&updated_input)
@@ -793,7 +793,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(role, "user");
-        assert_eq!(content, "What is the project name?\nAnswer: Cadence");
+        assert_eq!(content, "What is the project name?\nAnswer: Cadencr");
         assert_eq!(msg_type, "user_message");
     }
 
