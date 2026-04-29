@@ -263,7 +263,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     tool_name: None,
                     tool_use_id: None,
                     parent_tool_use_id: msg.parent_tool_use_id.clone(),
-                    is_error: None,
+                    is_error: Some(true),
                     source_tool_name: None,
                     created_at: None,
                     model: None,
@@ -1168,6 +1168,17 @@ mod tests {
         assert_eq!(blocks[0].type_, "text");
         assert_eq!(blocks[1].type_, "user_message");
         assert_eq!(blocks[2].type_, "text");
+    }
+
+    #[test]
+    fn test_build_blocks_error_message_is_flagged() {
+        let msgs = vec![make_message(1, 1, "error", "OpenCode stream failed")];
+        let blocks = build_blocks(&msgs);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].type_, "text");
+        assert_eq!(blocks[0].content, "Error: OpenCode stream failed");
+        assert_eq!(blocks[0].is_error, Some(true));
     }
 
     #[test]

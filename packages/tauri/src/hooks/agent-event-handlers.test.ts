@@ -4,8 +4,8 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { insertAgentSession, createAgentSession } from "./agent-event-handlers";
-import type { AgentSessionState } from "@/types/workflow";
+import { insertAgentSession, createAgentSession, handleAgentStream } from "./agent-event-handlers";
+import type { AgentSessionState, WorkflowState } from "@/types/workflow";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 vi.mock("@/stores/ws-session-store", () => ({
@@ -14,11 +14,13 @@ vi.mock("@/stores/ws-session-store", () => ({
     activeThinkingIndex: null,
     toolCalls: new Map(),
   }),
-  processSdkMessage: () => [],
+  processSdkMessage: () => ({ mutations: [] }),
   applyMutations: () => [],
 }));
 
-function makeState(entries: [string, Partial<AgentSessionState>][] = []) {
+function makeState(entries: [string, Partial<AgentSessionState>][] = []): {
+  agents: Map<string, AgentSessionState>;
+} {
   const agents = new Map<string, AgentSessionState>();
   for (const [key, partial] of entries) {
     agents.set(key, { ...createAgentSession(0), ...partial });
@@ -73,5 +75,89 @@ describe("insertAgentSession", () => {
     expect(result.agents).not.toBe(state.agents);
     expect(state.agents.size).toBe(0);
     expect(result.agents.size).toBe(1);
+  });
+});
+
+describe("handleAgentStream", () => {
+  it("adds workflow stream errors as visible agent blocks", () => {
+    let state = makeState([["qi:7", { sessionId: 7, agentType: "execute" }]]) as WorkflowState;
+    const set = (
+      partial: Partial<WorkflowState> | ((current: WorkflowState) => Partial<WorkflowState>),
+    ): void => {
+      const patch = typeof partial === "function" ? partial(state) : partial;
+      state = { ...state, ...patch };
+    };
+
+    handleAgentStream(
+      {
+        agent_slot: { type: "queue_item", id: 7 },
+        session_id: 7,
+        type: "error",
+        error: "OpenCode stream failed",
+      },
+      set,
+    );
+
+    const agent = state.agents.get("qi:7");
+    expect(agent?.status).toBe("error");
+    expect(agent?.blocks).toHaveLength(1);
+    expect(agent?.blocks[0]).toMatchObject({
+      type: "text",
+      content: "Error: OpenCode stream failed",
+      isError: true,
+    });
+  });
+
+  it("does not duplicate the same workflow stream error", () => {
+    const existingError: AgentBlockData = {
+      id: "existing-error",
+      type: "text",
+      content: "Error: OpenCode stream failed",
+      isError: true,
+    };
+    let state = makeState([
+      ["qi:7", { sessionId: 7, agentType: "execute", status: "running", blocks: [existingError] }],
+    ]) as WorkflowState;
+    const set = (
+      partial: Partial<WorkflowState> | ((current: WorkflowState) => Partial<WorkflowState>),
+    ): void => {
+      const patch = typeof partial === "function" ? partial(state) : partial;
+      state = { ...state, ...patch };
+    };
+
+    handleAgentStream(
+      {
+        agent_slot: { type: "queue_item", id: 7 },
+        session_id: 7,
+        type: "error",
+        error: "OpenCode stream failed",
+      },
+      set,
+    );
+
+    const agent = state.agents.get("qi:7");
+    expect(agent?.status).toBe("error");
+    expect(agent?.blocks).toEqual([existingError]);
+  });
+
+  it("ignores malformed workflow stream errors without a session id", () => {
+    let state = makeState() as WorkflowState;
+    const set = (
+      partial: Partial<WorkflowState> | ((current: WorkflowState) => Partial<WorkflowState>),
+    ): void => {
+      const patch = typeof partial === "function" ? partial(state) : partial;
+      state = { ...state, ...patch };
+    };
+
+    handleAgentStream(
+      {
+        agent_slot: { type: "queue_item", id: 7 },
+        type: "error",
+        error: "OpenCode stream failed",
+      },
+      set,
+    );
+
+    expect(state.agents.size).toBe(0);
   });
 });

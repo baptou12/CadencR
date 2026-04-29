@@ -16,6 +16,7 @@ use super::super::{parse_session_id, send_error, QueryState, SdkHandle, SdkSessi
 use super::bridge::{
     build_content_value, build_persist_content, PermissionResponse, WsBridgeCanUseTool,
 };
+use super::errors::persist_pause_and_send_session_error;
 use super::stream_reader::spawn_stream_reader;
 
 /// Handle session.prompt.send: send prompt to runtime or spawn new query.
@@ -242,12 +243,19 @@ pub(crate) async fn handle_prompt_send(
             let adapter = match runtime_adapter(&provider_id) {
                 Some(adapter) => adapter,
                 None => {
-                    send_error(
+                    let message =
+                        format!("No runtime adapter registered for provider '{provider_id}'");
+                    persist_pause_and_send_session_error(
+                        &write_pool,
+                        &app_state.turn_state_tx,
                         sender,
                         &envelope.id,
+                        feature_id,
+                        db_session_id,
                         "UNSUPPORTED_PROVIDER",
-                        &format!("No runtime adapter registered for provider '{provider_id}'"),
-                    );
+                        &message,
+                    )
+                    .await;
                     return;
                 }
             };
@@ -373,8 +381,19 @@ pub(crate) async fn handle_prompt_send(
                     );
                 }
                 Err(e) => {
-                    error!(db_session_id, error = %e, "runtime query spawn failed");
-                    send_error(sender, &envelope.id, "SDK_SPAWN_ERROR", &e.to_string());
+                    let message = e.to_string();
+                    error!(db_session_id, error = %message, "runtime query spawn failed");
+                    persist_pause_and_send_session_error(
+                        &write_pool,
+                        &app_state.turn_state_tx,
+                        sender,
+                        &envelope.id,
+                        feature_id,
+                        db_session_id,
+                        "SDK_SPAWN_ERROR",
+                        &message,
+                    )
+                    .await;
                 }
             }
         }
@@ -407,9 +426,22 @@ pub(crate) async fn handle_prompt_send(
             let q = query.lock().await;
             info!(db_session_id, "follow-up prompt");
             let content = build_content_value(&payload.text, &payload.images);
-            if let Err(e) = q.stream_input(content).await {
-                error!(db_session_id, error = %e, "stream_input failed");
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
+            let stream_result = q.stream_input(content).await;
+            drop(q);
+            if let Err(e) = stream_result {
+                let message = e.to_string();
+                error!(db_session_id, error = %message, "stream_input failed");
+                persist_pause_and_send_session_error(
+                    &app_state.write_pool,
+                    &app_state.turn_state_tx,
+                    sender,
+                    &envelope.id,
+                    handle.feature_id,
+                    db_session_id,
+                    "SDK_ERROR",
+                    &message,
+                )
+                .await;
             }
         }
     }

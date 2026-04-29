@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use axum::extract::ws::Message;
 use dashmap::DashMap;
 use sqlx::SqlitePool;
 use tracing::{debug, error, info, warn};
 
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSessionHandle};
 use crate::domain::features::repository as repo;
+use crate::domain::workflow::agent_errors::persist_and_send_agent_error;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
@@ -37,17 +37,7 @@ pub async fn check_mcp_server_connected(
         );
         error!(slot = %slot, %err, "MCP server not connected");
         WsSessionPersistence::mark_paused_static(write_pool, db_session_id).await;
-        let err_env = WsEnvelope::new(
-            "workflow",
-            "agent_stream",
-            to_value(WorkflowAgentStreamErrorPayload {
-                agent_slot: slot.clone(),
-                session_id: db_session_id,
-                msg_type: "error".into(),
-                error: err,
-            }),
-        );
-        let _ = sender.send(Message::Text(String::from(err_env).into()));
+        persist_and_send_agent_error(write_pool, sender, slot, db_session_id, &err).await;
         if let Some(query_handle) = queries.get(slot) {
             let q = query_handle.value().lock().await;
             let _ = q.interrupt().await;

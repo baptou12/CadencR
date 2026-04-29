@@ -231,7 +231,15 @@ pub(crate) fn spawn_stream_reader(
                     }
                 }
                 Some(Err(e)) => {
-                    error!(db_session_id, error = %e, "SDK stream error");
+                    let message = e.to_string();
+                    error!(db_session_id, error = %message, "SDK stream error");
+                    WsSessionPersistence::persist_error_message_static(
+                        &write_pool,
+                        db_session_id,
+                        &message,
+                        None,
+                    )
+                    .await;
                     WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
                     WsSessionPersistence::broadcast_turn_state(&turn_state_tx, feature_id, "none");
                     let err_env = WsEnvelope::new(
@@ -239,7 +247,7 @@ pub(crate) fn spawn_stream_reader(
                         "error",
                         serde_json::to_value(SessionErrorPayload {
                             code: "SDK_ERROR".into(),
-                            message: e.to_string(),
+                            message,
                         })
                         .unwrap(),
                     );

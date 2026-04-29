@@ -11,22 +11,27 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use sqlx::SqlitePool;
+use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
 
 use axum::extract::ws::Message;
 
 use crate::domain::agents::adapter::{RuntimeMessageRx, RuntimeSessionHandle};
+use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::features::repository as repo;
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, persist_usage, workflow_permission_request_payload,
     RuntimeUsageState,
 };
+use crate::domain::workflow::agent_errors::persist_and_send_agent_error;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 
 use cleanup::{build_stream_envelope, check_mcp_server_connected, post_stream_cleanup};
 use live_refresh::handle_live_refresh;
+
+const PROVIDER_RECONCILE_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Spawn a background task that reads agent stream messages and forwards them
 /// via the workflow domain, then triggers engine callbacks on completion/error.
@@ -57,7 +62,7 @@ pub fn spawn_workflow_stream_reader(
                 .filter(|cw| *cw > 0);
 
         debug!(slot = %slot, db_session_id, "workflow stream reader started");
-        let runtime_adapter = crate::domain::agents::runtime_adapter(&runtime_provider);
+        let runtime_adapter = runtime_adapter(&runtime_provider);
 
         let phase_slug: Option<String> = if let AgentSlot::QueueItem(item_id) = &slot {
             repo::get_queue_item(&write_pool, *item_id)
@@ -79,19 +84,32 @@ pub fn spawn_workflow_stream_reader(
         let mut error_msg: Option<String> = None;
         let mut ws_detached = false;
         let mut needs_session_id_capture = true;
+        let mut runtime_session_id: Option<String> = None;
         let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut pending_feature_update: Option<Vec<&'static str>> = None;
         let mut pending_queue_update = false;
 
         loop {
-            // Block until the next runtime event. We intentionally do NOT
+            // Wait for the next runtime event. We intentionally do NOT
             // interrupt the agent when the WS sender detaches — the agent
             // keeps streaming so navigating away (or a brief disconnect)
             // doesn't pause the turn. `WsSender::send` drops messages
             // silently while detached, and `persist_runtime_event` writes
             // every event to `agent_messages` so REST + WS replay restores
             // the transcript on reconnect.
-            let msg = message_rx.recv().await;
+            let msg = if let Some(runtime_sid) = runtime_session_id.as_deref() {
+                match tokio::time::timeout(PROVIDER_RECONCILE_INTERVAL, message_rx.recv()).await {
+                    Ok(msg) => msg,
+                    Err(_) => {
+                        if runtime_session_finished(&runtime_provider, runtime_sid).await {
+                            break;
+                        }
+                        continue;
+                    }
+                }
+            } else {
+                message_rx.recv().await
+            };
 
             match msg {
                 Some(Ok(runtime_event)) => {
@@ -154,6 +172,7 @@ pub fn spawn_workflow_stream_reader(
                     if let Some(runtime_sid) =
                         capture_runtime_session_id(&runtime_event, &mut needs_session_id_capture)
                     {
+                        runtime_session_id = Some(runtime_sid.clone());
                         usage_state.set_root_session_id(&runtime_sid);
                         debug!(slot = %slot, db_session_id, runtime_session_id = %runtime_sid, "persisting runtime session_id to DB");
                         WsSessionPersistence::persist_runtime_session_id_only(
@@ -306,8 +325,16 @@ pub fn spawn_workflow_stream_reader(
                 None => {
                     if !completed_ok {
                         warn!(slot = %slot, "workflow runtime stream closed unexpectedly without result");
-                        error_msg =
-                            Some("Agent stream closed unexpectedly without result".to_string());
+                        let message = "Agent stream closed unexpectedly without result".to_string();
+                        persist_and_send_agent_error(
+                            &write_pool,
+                            &sender,
+                            &slot,
+                            db_session_id,
+                            &message,
+                        )
+                        .await;
+                        error_msg = Some(message);
                     }
                     break;
                 }
@@ -394,18 +421,9 @@ async fn handle_stream_error(
     sender: &WsSender,
     write_pool: &SqlitePool,
 ) -> String {
-    error!(slot = %slot, error = %e, "workflow runtime stream error");
+    let message = e.to_string();
+    error!(slot = %slot, error = %message, "workflow runtime stream error");
     WsSessionPersistence::mark_paused_static(write_pool, db_session_id).await;
-    let err_env = WsEnvelope::new(
-        "workflow",
-        "agent_stream",
-        to_value(WorkflowAgentStreamErrorPayload {
-            agent_slot: slot.clone(),
-            session_id: db_session_id,
-            msg_type: "error".into(),
-            error: e.to_string(),
-        }),
-    );
-    let _ = sender.send(Message::Text(String::from(err_env).into()));
-    e.to_string()
+    persist_and_send_agent_error(write_pool, sender, slot, db_session_id, &message).await;
+    message
 }

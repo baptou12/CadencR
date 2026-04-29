@@ -16,6 +16,7 @@ use crate::domain::agents::runtime_adapter;
 use crate::domain::features::models::QueueItem;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
+use crate::domain::workflow::agent_errors::persist_and_send_agent_error;
 use crate::domain::workflow::engine::{
     send_feature_updated_envelope, to_value, AgentSlot, WsSender,
 };
@@ -229,14 +230,23 @@ impl AgentManager {
                 Ok(db_session_id)
             }
             Err(e) => {
-                error!(feature_id = self.feature_id, agent_type = agent_type_str, error = %e, "failed to spawn pre-queue agent");
+                let message = format!("Runtime spawn failed for {agent_type_str}: {e}");
+                error!(feature_id = self.feature_id, agent_type = agent_type_str, error = %message, "failed to spawn pre-queue agent");
+                persist_and_send_agent_error(
+                    &self.write_pool,
+                    &self.ws_sender,
+                    &slot,
+                    db_session_id,
+                    &message,
+                )
+                .await;
                 WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
                     "none",
                 );
-                Err(format!("Runtime spawn failed for {agent_type_str}: {e}"))
+                Err(message)
             }
         }
     }
@@ -392,22 +402,26 @@ impl AgentManager {
                 Ok(())
             }
             Err(e) => {
-                error!(item_id, error = %e, "failed to spawn agent for queue item");
-                // Clean up DB state: mark session as error, reset queue item
-                WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
-                let _ = repo::mark_item_error(
+                let message = format!("Runtime spawn failed: {e}");
+                error!(item_id, error = %message, "failed to spawn agent for queue item");
+                persist_and_send_agent_error(
                     &self.write_pool,
-                    item_id,
-                    Some(&format!("Runtime spawn failed: {e}")),
+                    &self.ws_sender,
+                    &slot,
+                    db_session_id,
+                    &message,
                 )
                 .await;
+                // Clean up DB state: mark session as error, reset queue item
+                WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
+                let _ = repo::mark_item_error(&self.write_pool, item_id, Some(&message)).await;
                 self.send_item_update(item_id).await;
                 WsSessionPersistence::broadcast_turn_state(
                     &self.turn_state_tx,
                     self.feature_id,
                     "none",
                 );
-                Err(format!("Runtime spawn failed: {e}"))
+                Err(message)
             }
         }
     }

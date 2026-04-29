@@ -1,4 +1,5 @@
 mod bridge;
+mod errors;
 mod prompt_send;
 mod stream_reader;
 
