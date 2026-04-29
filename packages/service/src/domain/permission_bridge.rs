@@ -12,7 +12,9 @@ use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 use tracing::{debug, error};
 
-use crate::domain::agents::adapter::{RuntimeToolPermissionRequest, RuntimeToolPermissionResult};
+use crate::domain::agents::adapter::{
+    RuntimePermissionResponseKind, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+};
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::permissions::{self, ResolvedPermission};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -298,9 +300,43 @@ pub fn turn_state_after_approval(
     }
 }
 
+pub fn turn_state_after_runtime_permission(
+    kind: RuntimePermissionResponseKind,
+    decision: PermissionDecision,
+    feedback: Option<&str>,
+) -> &'static str {
+    match kind {
+        RuntimePermissionResponseKind::PlanApproval => {
+            turn_state_after_approval(decision, feedback)
+        }
+        RuntimePermissionResponseKind::ContinueOnDeny
+            if matches!(decision, PermissionDecision::Deny) =>
+        {
+            "agent"
+        }
+        RuntimePermissionResponseKind::ContinueOnDeny | RuntimePermissionResponseKind::Normal => {
+            turn_state_after_decision(decision)
+        }
+    }
+}
+
+pub fn runtime_permission_denial_completes_session(
+    kind: RuntimePermissionResponseKind,
+    decision: PermissionDecision,
+    feedback: Option<&str>,
+) -> bool {
+    matches!(decision, PermissionDecision::Deny)
+        && !matches!(kind, RuntimePermissionResponseKind::PlanApproval)
+        && turn_state_after_runtime_permission(kind, decision, feedback) == "none"
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{turn_state_after_approval, turn_state_after_decision};
+    use super::{
+        runtime_permission_denial_completes_session, turn_state_after_approval,
+        turn_state_after_decision, turn_state_after_runtime_permission,
+    };
+    use crate::domain::agents::adapter::RuntimePermissionResponseKind;
     use crate::domain::ws_session::protocol::PermissionDecision;
 
     #[test]
@@ -354,6 +390,32 @@ mod tests {
             turn_state_after_approval(PermissionDecision::AllowFuture, Some("extra note")),
             "agent",
         );
+    }
+
+    #[test]
+    fn runtime_permission_continue_on_deny_hands_turn_back_to_agent() {
+        assert_eq!(
+            turn_state_after_runtime_permission(
+                RuntimePermissionResponseKind::ContinueOnDeny,
+                PermissionDecision::Deny,
+                None,
+            ),
+            "agent"
+        );
+    }
+
+    #[test]
+    fn runtime_permission_completion_uses_central_turn_state_policy() {
+        assert!(runtime_permission_denial_completes_session(
+            RuntimePermissionResponseKind::Normal,
+            PermissionDecision::Deny,
+            None,
+        ));
+        assert!(!runtime_permission_denial_completes_session(
+            RuntimePermissionResponseKind::ContinueOnDeny,
+            PermissionDecision::Deny,
+            None,
+        ));
     }
 }
 

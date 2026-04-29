@@ -163,6 +163,7 @@ pub struct RuntimePermissionResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePermissionResponseKind {
     Normal,
+    ContinueOnDeny,
     PlanApproval,
 }
 

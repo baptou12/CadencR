@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::permissions::{available_decisions, DECISION_CANCEL, DECISION_DECLINE};
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
 
 pub(super) fn response_value(
@@ -11,17 +12,35 @@ pub(super) fn response_value(
         "mcpServer/elicitation/request" => elicitation_response(response),
         "item/tool/requestUserInput" => user_input_response(params, response),
         "item/permissions/requestApproval" => permissions_response(params, response),
-        _ => approval_response(response),
+        _ => approval_response(params, response),
     }
 }
 
-fn approval_response(response: &RuntimePermissionResponse) -> Value {
+fn approval_response(params: &Value, response: &RuntimePermissionResponse) -> Value {
     let decision = match response.decision {
         RuntimePermissionDecision::AllowOnce => "accept",
         RuntimePermissionDecision::AllowFuture => "acceptForSession",
-        RuntimePermissionDecision::Deny => "decline",
+        RuntimePermissionDecision::Deny => deny_decision(params),
     };
     json!({ "decision": decision })
+}
+
+fn deny_decision(params: &Value) -> &'static str {
+    if !params.get("availableDecisions").is_some() {
+        return "decline";
+    }
+    let mut has_cancel = false;
+    for decision in available_decisions(params) {
+        if decision == DECISION_DECLINE {
+            return "decline";
+        }
+        has_cancel |= decision == DECISION_CANCEL;
+    }
+    if has_cancel {
+        "cancel"
+    } else {
+        "decline"
+    }
 }
 
 fn elicitation_response(response: &RuntimePermissionResponse) -> Value {
@@ -181,5 +200,39 @@ mod tests {
             value,
             json!({ "permissions": { "write": true }, "scope": "session" })
         );
+    }
+
+    #[test]
+    fn command_deny_declines_without_cancelling_turn() {
+        let response = RuntimePermissionResponse {
+            request_id: "command".to_string(),
+            decision: RuntimePermissionDecision::Deny,
+            feedback: Some("Skip it".to_string()),
+            updated_input: None,
+        };
+
+        let value = response_value(
+            "item/commandExecution/requestApproval",
+            &Value::Null,
+            &response,
+        );
+        assert_eq!(value, json!({ "decision": "decline" }));
+    }
+
+    #[test]
+    fn command_deny_uses_cancel_only_when_decline_is_unavailable() {
+        let response = RuntimePermissionResponse {
+            request_id: "command".to_string(),
+            decision: RuntimePermissionDecision::Deny,
+            feedback: None,
+            updated_input: None,
+        };
+
+        let value = response_value(
+            "item/commandExecution/requestApproval",
+            &json!({ "availableDecisions": ["accept", "cancel"] }),
+            &response,
+        );
+        assert_eq!(value, json!({ "decision": "cancel" }));
     }
 }

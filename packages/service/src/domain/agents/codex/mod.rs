@@ -31,6 +31,7 @@ use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimeSpawnConfig,
 };
+use super::response_style::{rich_markdown_system_prompt, RICH_MARKDOWN_INSTRUCTION};
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct CodexAdapter;
@@ -218,9 +219,8 @@ fn base_thread_params(config: &RuntimeSpawnConfig) -> Value {
     if let Some(model) = config.model.as_ref() {
         params["model"] = Value::String(model.clone());
     }
-    if let Some(system_prompt) = config.system_prompt.as_ref() {
-        params["baseInstructions"] = Value::String(system_prompt.clone());
-    }
+    params["baseInstructions"] =
+        Value::String(rich_markdown_system_prompt(config.system_prompt.as_deref()));
     params
 }
 
@@ -265,7 +265,8 @@ impl AgentRuntimeAdapter for CodexAdapter {
             CodexAppServerClient::spawn_with_options(app_server_spawn_options(config.env.clone()))
                 .await?;
         client.initialize_with_timeout(PROBE_TIMEOUT).await?;
-        let mcp_config = thread_config(config.mcp_servers.as_ref());
+        let mcp_config =
+            thread_config(config.mcp_servers.as_ref(), Some(RICH_MARKDOWN_INSTRUCTION));
         let mcp_server_names = mcp_server_names(&mcp_config);
         let thread_id = start_or_resume_thread(&client, &config, &mcp_config).await?;
         let mcp_servers = mcp_server_statuses(&client, &mcp_server_names).await;
@@ -289,13 +290,15 @@ impl AgentRuntimeAdapter for CodexAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::app_server_spawn_options;
-    use super::thread_resume_params;
-    use super::CodexAdapter;
+    use super::{app_server_spawn_options, thread_config, thread_resume_params, CodexAdapter};
     use crate::domain::agents::adapter::{
         AgentRuntimeAdapter, RuntimePermissionMode, RuntimeSpawnConfig,
     };
+    use crate::domain::agents::response_style::{
+        rich_markdown_system_prompt, RICH_MARKDOWN_INSTRUCTION,
+    };
     use serde_json::json;
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]
@@ -326,18 +329,44 @@ mod tests {
         let params = thread_resume_params(
             "thread-1",
             &config,
-            &json!({ "mcp_servers": { "cadence-plan": { "command": "svc" } } }),
+            &thread_config(
+                Some(&HashMap::from([(
+                    "cadence-plan".to_string(),
+                    crate::domain::agents::adapter::RuntimeMcpServerConfig::Stdio {
+                        command: "svc".to_string(),
+                        args: None,
+                        env: None,
+                    },
+                )])),
+                Some(RICH_MARKDOWN_INSTRUCTION),
+            ),
         );
 
         assert_eq!(params["threadId"], json!("thread-1"));
         assert_eq!(params["cwd"], json!("/tmp/project"));
         assert_eq!(params["model"], json!("gpt-5.5"));
-        assert_eq!(params["baseInstructions"], json!("Be useful"));
+        assert!(params["baseInstructions"]
+            .as_str()
+            .expect("base instructions")
+            .starts_with(RICH_MARKDOWN_INSTRUCTION));
+        assert!(params["baseInstructions"]
+            .as_str()
+            .expect("base instructions")
+            .ends_with("Be useful"));
+        assert_eq!(
+            params["config"]["developer_instructions"],
+            json!(RICH_MARKDOWN_INSTRUCTION)
+        );
         assert_eq!(
             params["config"]["mcp_servers"]["cadence-plan"]["command"],
             json!("svc")
         );
         assert!(params.get("approvalPolicy").is_some());
         assert!(params.get("sandbox").is_some());
+    }
+
+    #[test]
+    fn base_thread_params_uses_markdown_instruction_without_base_prompt() {
+        assert_eq!(rich_markdown_system_prompt(None), RICH_MARKDOWN_INSTRUCTION);
     }
 }

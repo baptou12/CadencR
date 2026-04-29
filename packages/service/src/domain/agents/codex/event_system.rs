@@ -4,6 +4,7 @@ use super::event_json::{metadata, thread_id};
 use super::permissions::{permission_request, request_id_from_value};
 use crate::domain::agents::adapter::{
     RuntimeEvent, RuntimeEventKind, RuntimeInitEvent, RuntimeMcpServerStatus,
+    RuntimePermissionDecision,
 };
 
 pub fn init_event(
@@ -35,6 +36,10 @@ pub fn init_event(
 
 pub fn permission_request_event(id: &Value, method: &str, params: &Value) -> RuntimeEvent {
     let request = permission_request(id, method, params);
+    let supports_allow_future = request
+        .options
+        .iter()
+        .any(|option| option.decision == RuntimePermissionDecision::AllowFuture);
     RuntimeEvent::new(
         metadata(
             thread_id(params),
@@ -46,6 +51,7 @@ pub fn permission_request_event(id: &Value, method: &str, params: &Value) -> Run
                 "tool_input": request.tool_input,
                 "description": request.description,
                 "preview": request.preview,
+                "supports_allow_future": supports_allow_future,
             }),
         ),
         RuntimeEventKind::Other,

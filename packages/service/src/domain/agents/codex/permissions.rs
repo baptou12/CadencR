@@ -1,9 +1,13 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
 use crate::domain::permission_bridge::extract_permission_preview;
+
+pub(super) const DECISION_ACCEPT_FOR_SESSION: &str = "acceptForSession";
+pub(super) const DECISION_CANCEL: &str = "cancel";
+pub(super) const DECISION_DECLINE: &str = "decline";
 
 #[derive(Debug, Clone)]
 pub(super) struct PendingCodexRequest {
@@ -28,17 +32,26 @@ pub(super) fn permission_request(
     let request_id = request_id_from_value(id);
     let (tool_name, tool_input, description, supports_allow_future) = match method {
         "item/commandExecution/requestApproval" => {
-            let input = serde_json::json!({
-                "command": params.get("command").cloned().unwrap_or(Value::Null),
-                "cwd": params.get("cwd").cloned().unwrap_or(Value::Null),
-                "reason": params.get("reason").cloned().unwrap_or(Value::Null),
-                "commandActions": params.get("commandActions").cloned().unwrap_or(Value::Null),
-            });
+            let is_network_request = params
+                .get("networkApprovalContext")
+                .is_some_and(|value| !value.is_null());
+            let input = command_permission_input(params);
             (
-                "Bash".to_string(),
+                if is_network_request {
+                    "NetworkAccess".to_string()
+                } else {
+                    "Bash".to_string()
+                },
                 input,
-                description(params, "Approve command execution"),
-                true,
+                description(
+                    params,
+                    if is_network_request {
+                        "Approve network access"
+                    } else {
+                        "Approve command execution"
+                    },
+                ),
+                supports_accept_for_session(params),
             )
         }
         "item/fileChange/requestApproval" => {
@@ -53,7 +66,7 @@ pub(super) fn permission_request(
                 "ApplyPatch".to_string(),
                 input,
                 description(params, "Approve file change"),
-                true,
+                supports_accept_for_session(params),
             )
         }
         "item/permissions/requestApproval" => {
@@ -123,6 +136,34 @@ pub(super) fn permission_request(
     }
 }
 
+fn command_permission_input(params: &Value) -> Value {
+    let mut input = Map::new();
+    insert_param_or_null(&mut input, params, "approvalId");
+    insert_param_or_null(&mut input, params, "command");
+    insert_param_or_null(&mut input, params, "cwd");
+    insert_param_or_null(&mut input, params, "reason");
+    insert_param_or_null(&mut input, params, "commandActions");
+    insert_optional_param(&mut input, params, "additionalPermissions");
+    insert_optional_param(&mut input, params, "networkApprovalContext");
+    insert_optional_param(&mut input, params, "proposedExecpolicyAmendment");
+    insert_optional_param(&mut input, params, "proposedNetworkPolicyAmendments");
+    Value::Object(input)
+}
+
+fn insert_param_or_null(input: &mut Map<String, Value>, params: &Value, key: &str) {
+    input.insert(
+        key.to_string(),
+        params.get(key).cloned().unwrap_or(Value::Null),
+    );
+}
+
+fn insert_optional_param(input: &mut Map<String, Value>, params: &Value, key: &str) {
+    let Some(value) = params.get(key).filter(|value| !value.is_null()) else {
+        return;
+    };
+    input.insert(key.to_string(), value.clone());
+}
+
 fn item_id(params: &Value) -> Option<String> {
     params
         .get("itemId")
@@ -179,6 +220,10 @@ pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionR
         .and_then(Value::as_str)
         .unwrap_or("CodexRequest")
         .to_string();
+    let supports_allow_future = raw
+        .get("supports_allow_future")
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| supports_allow_future_for_tool(&tool_name));
     Some(RuntimePermissionRequest {
         request_id: request_id.clone(),
         tool_use_id: raw
@@ -196,19 +241,35 @@ pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionR
             .get("preview")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
-        options: permission_options_for_tool(&tool_name),
+        options: permission_options(supports_allow_future),
     })
-}
-
-fn permission_options_for_tool(tool_name: &str) -> Vec<RuntimePermissionOption> {
-    permission_options(supports_allow_future_for_tool(tool_name))
 }
 
 fn supports_allow_future_for_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
-        "Bash" | "ApplyPatch" | "apply_patch" | "RequestPermissions"
+        "Bash" | "NetworkAccess" | "ApplyPatch" | "apply_patch" | "RequestPermissions"
     )
+}
+
+fn supports_accept_for_session(params: &Value) -> bool {
+    if !params.get("availableDecisions").is_some() {
+        return true;
+    }
+    has_available_decision(params, DECISION_ACCEPT_FOR_SESSION)
+}
+
+pub(super) fn has_available_decision(params: &Value, expected: &str) -> bool {
+    available_decisions(params).any(|decision| decision == expected)
+}
+
+pub(super) fn available_decisions(params: &Value) -> impl Iterator<Item = &str> {
+    params
+        .get("availableDecisions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
 }
 
 #[cfg(test)]
@@ -235,6 +296,72 @@ mod tests {
             "*** Begin Patch\n*** Update File: a.txt\n@@\n-x\n+y\n*** End Patch"
         );
         assert!(request
+            .options
+            .iter()
+            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));
+    }
+
+    #[test]
+    fn command_permission_preserves_network_context() {
+        let request = permission_request(
+            &json!("approval-2"),
+            "item/commandExecution/requestApproval",
+            &json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "itemId": "cmd",
+                "command": null,
+                "reason": "Allow access to api.example.com",
+                "networkApprovalContext": { "host": "api.example.com" },
+                "proposedNetworkPolicyAmendments": [
+                    { "action": "allow", "host": "api.example.com" }
+                ]
+            }),
+        );
+
+        assert_eq!(request.tool_name, "NetworkAccess");
+        assert_eq!(
+            request.tool_input["networkApprovalContext"],
+            json!({ "host": "api.example.com" })
+        );
+        assert_eq!(
+            request.tool_input["proposedNetworkPolicyAmendments"],
+            json!([{ "action": "allow", "host": "api.example.com" }])
+        );
+    }
+
+    #[test]
+    fn command_permission_respects_available_decisions() {
+        let request = permission_request(
+            &json!("approval-3"),
+            "item/commandExecution/requestApproval",
+            &json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "itemId": "cmd",
+                "command": "git status",
+                "availableDecisions": ["accept", "decline"]
+            }),
+        );
+
+        assert!(!request
+            .options
+            .iter()
+            .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));
+    }
+
+    #[test]
+    fn reparsed_permission_preserves_missing_allow_future_support() {
+        let request = super::parse_permission_request(&json!({
+            "type": "codex_permission_request",
+            "request_id": "approval-4",
+            "tool_name": "Bash",
+            "tool_input": { "command": "git status" },
+            "supports_allow_future": false
+        }))
+        .expect("permission request should parse");
+
+        assert!(!request
             .options
             .iter()
             .any(|option| option.decision == RuntimePermissionDecision::AllowFuture));

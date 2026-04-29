@@ -25,23 +25,15 @@ use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimeSlashCommandDiscovery, RuntimeSpawnConfig,
 };
+use super::response_style::rich_markdown_system_prompt;
 
 pub struct OpenCodeAdapter;
 
 pub static OPENCODE_ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
 pub const PROVIDER_ID: &str = "opencode";
 
-const RICH_MARKDOWN_INSTRUCTION: &str = "Format every non-trivial response using rich GitHub-flavored Markdown. Use real headings, lists, tables, and fenced code blocks when they improve readability. Do not use bold-only pseudo-headings as a substitute for headings. For example:\n\n## Summary\n- Item one\n- Item two\n\n```ts\nconst ok = true;\n```";
-
 fn decorate_system_prompt(system_prompt: Option<&str>) -> Option<String> {
-    let base = system_prompt
-        .map(str::trim)
-        .filter(|prompt| !prompt.is_empty());
-
-    Some(match base {
-        Some(prompt) => format!("{RICH_MARKDOWN_INSTRUCTION}\n\n{prompt}"),
-        None => RICH_MARKDOWN_INSTRUCTION.to_string(),
-    })
+    Some(rich_markdown_system_prompt(system_prompt))
 }
 
 #[async_trait]
@@ -181,11 +173,9 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
 
-    use super::{
-        decorate_system_prompt, session::OpenCodeSession, OpenCodeAdapter,
-        RICH_MARKDOWN_INSTRUCTION,
-    };
+    use super::{decorate_system_prompt, session::OpenCodeSession, OpenCodeAdapter};
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, AgentRuntimeSession};
+    use crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION;
 
     #[test]
     fn adapter_parses_opencode_permission_request() {

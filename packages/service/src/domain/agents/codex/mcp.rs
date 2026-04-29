@@ -9,16 +9,34 @@ use crate::domain::agents::adapter::{RuntimeMcpServerConfig, RuntimeMcpServerSta
 
 pub(super) fn thread_config(
     mcp_servers: Option<&HashMap<String, RuntimeMcpServerConfig>>,
+    developer_instructions: Option<&str>,
 ) -> Value {
-    let Some(servers) = mcp_servers else {
-        return Value::Null;
-    };
-    let mut mcp_servers = serde_json::Map::new();
-    for (name, config) in servers {
-        let value = mcp_server_value(name, config.clone());
-        mcp_servers.insert(name.clone(), value);
+    let mut config = serde_json::Map::new();
+    if let Some(instructions) = developer_instructions
+        .map(str::trim)
+        .filter(|instructions| !instructions.is_empty())
+    {
+        config.insert(
+            "developer_instructions".to_string(),
+            Value::String(instructions.to_string()),
+        );
     }
-    json!({ "mcp_servers": Value::Object(mcp_servers) })
+    if let Some(servers) = mcp_servers.filter(|servers| !servers.is_empty()) {
+        let mut values = serde_json::Map::new();
+        for (name, server_config) in servers {
+            values.insert(name.clone(), mcp_server_value(name, server_config.clone()));
+        }
+        config.insert("mcp_servers".to_string(), Value::Object(values));
+    }
+    config_or_null(config)
+}
+
+fn config_or_null(config: serde_json::Map<String, Value>) -> Value {
+    if config.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(config)
+    }
 }
 
 pub(super) fn mcp_server_names(config: &Value) -> Vec<String> {
@@ -170,9 +188,10 @@ fn required_tools(server_name: &str) -> &'static [&'static str] {
 
 #[cfg(test)]
 mod tests {
-    use super::{mcp_server_value, parse_mcp_server_statuses};
+    use super::{mcp_server_value, parse_mcp_server_statuses, thread_config};
     use crate::domain::agents::adapter::RuntimeMcpServerConfig;
     use serde_json::json;
+    use std::collections::HashMap;
 
     #[test]
     fn mcp_statuses_do_not_assume_missing_servers_are_connected() {
@@ -192,6 +211,35 @@ mod tests {
         );
         assert_eq!(statuses[0].status, "connected");
         assert_eq!(statuses[1].status, "unavailable");
+    }
+
+    #[test]
+    fn thread_config_injects_developer_instructions_without_mcp_servers() {
+        let config = thread_config(None, Some("Use Markdown"));
+
+        assert_eq!(config["developer_instructions"], json!("Use Markdown"));
+        assert!(config.get("mcp_servers").is_none());
+    }
+
+    #[test]
+    fn thread_config_merges_developer_instructions_with_mcp_servers() {
+        let mut servers = HashMap::new();
+        servers.insert(
+            "cadence-plan".to_string(),
+            RuntimeMcpServerConfig::Stdio {
+                command: "svc".to_string(),
+                args: None,
+                env: None,
+            },
+        );
+
+        let config = thread_config(Some(&servers), Some("Use Markdown"));
+
+        assert_eq!(config["developer_instructions"], json!("Use Markdown"));
+        assert_eq!(
+            config["mcp_servers"]["cadence-plan"]["command"],
+            json!("svc")
+        );
     }
 
     #[test]

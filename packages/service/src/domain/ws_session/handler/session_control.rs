@@ -207,7 +207,21 @@ pub(super) async fn handle_permission_respond(
     let is_plan_approval = permission_kind == RuntimePermissionResponseKind::PlanApproval;
     match respond_result {
         Ok(()) => {
-            if matches!(payload.decision, PermissionDecision::Deny) && !is_plan_approval {
+            let turn_feedback = if is_plan_approval {
+                Some(payload.feedback.as_deref().unwrap_or("Plan feedback"))
+            } else {
+                payload.feedback.as_deref()
+            };
+            let next_turn = crate::domain::permission_bridge::turn_state_after_runtime_permission(
+                permission_kind,
+                payload.decision.clone(),
+                turn_feedback,
+            );
+            if crate::domain::permission_bridge::runtime_permission_denial_completes_session(
+                permission_kind,
+                payload.decision.clone(),
+                turn_feedback,
+            ) {
                 WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id)
                     .await;
                 let ended = WsEnvelope::new(
@@ -231,14 +245,6 @@ pub(super) async fn handle_permission_respond(
                 db_session_id,
             )
             .await;
-            let next_turn = if is_plan_approval {
-                crate::domain::permission_bridge::turn_state_after_approval(
-                    payload.decision,
-                    Some(payload.feedback.as_deref().unwrap_or("Plan feedback")),
-                )
-            } else {
-                crate::domain::permission_bridge::turn_state_after_decision(payload.decision)
-            };
             WsSessionPersistence::broadcast_turn_state(
                 &app_state.turn_state_tx,
                 extracted.feature_id,

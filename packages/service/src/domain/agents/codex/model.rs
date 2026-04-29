@@ -12,15 +12,7 @@ pub fn approval_policy(mode: Option<&RuntimePermissionMode>) -> serde_json::Valu
         Some(RuntimePermissionMode::BypassPermissions) | Some(RuntimePermissionMode::DontAsk) => {
             serde_json::Value::String("never".to_string())
         }
-        _ => serde_json::json!({
-            "granular": {
-                "sandbox_approval": true,
-                "rules": true,
-                "skill_approval": true,
-                "request_permissions": true,
-                "mcp_elicitations": true
-            }
-        }),
+        _ => serde_json::Value::String("on-request".to_string()),
     }
 }
 
@@ -51,7 +43,7 @@ pub fn sandbox_policy(
             "type": "workspaceWrite",
             "writableRoots": [cwd.to_string_lossy().to_string()],
             "readOnlyAccess": { "type": "fullAccess" },
-            "networkAccess": true,
+            "networkAccess": false,
             "excludeTmpdirEnvVar": false,
             "excludeSlashTmp": false
         }),
@@ -60,8 +52,25 @@ pub fn sandbox_policy(
 
 #[cfg(test)]
 mod tests {
-    use super::{sandbox_policy, RuntimePermissionMode};
+    use super::{approval_policy, sandbox_policy, RuntimePermissionMode};
     use std::path::Path;
+
+    #[test]
+    fn approval_policy_uses_interactive_on_request_for_codex_escalations() {
+        assert_eq!(approval_policy(None), serde_json::json!("on-request"));
+        assert_eq!(
+            approval_policy(Some(&RuntimePermissionMode::AcceptEdits)),
+            serde_json::json!("on-request")
+        );
+        assert_eq!(
+            approval_policy(Some(&RuntimePermissionMode::Plan)),
+            serde_json::json!("on-request")
+        );
+        assert_eq!(
+            approval_policy(Some(&RuntimePermissionMode::BypassPermissions)),
+            serde_json::json!("never")
+        );
+    }
 
     #[test]
     fn read_only_policy_matches_codex_schema() {
@@ -77,7 +86,7 @@ mod tests {
         assert_eq!(policy["type"], "workspaceWrite");
         assert_eq!(policy["writableRoots"][0], "/tmp/app");
         assert_eq!(policy["readOnlyAccess"]["type"], "fullAccess");
-        assert_eq!(policy["networkAccess"], true);
+        assert_eq!(policy["networkAccess"], false);
         assert_eq!(policy["excludeTmpdirEnvVar"], false);
         assert_eq!(policy["excludeSlashTmp"], false);
     }

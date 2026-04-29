@@ -219,11 +219,7 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     fn permission_response_kind(&self, request_id: &str) -> RuntimePermissionResponseKind {
-        if is_plan_approval_request_id(request_id) {
-            RuntimePermissionResponseKind::PlanApproval
-        } else {
-            RuntimePermissionResponseKind::Normal
-        }
+        permission_kind_for_request_id(request_id)
     }
 
     fn pid(&self) -> Option<u32> {
@@ -271,6 +267,14 @@ fn is_plan_approval_request_id(request_id: &str) -> bool {
     request_id.starts_with("codex_plan_approval_")
 }
 
+fn permission_kind_for_request_id(request_id: &str) -> RuntimePermissionResponseKind {
+    if is_plan_approval_request_id(request_id) {
+        RuntimePermissionResponseKind::PlanApproval
+    } else {
+        RuntimePermissionResponseKind::ContinueOnDeny
+    }
+}
+
 fn plan_approval_prompt(decision: RuntimePermissionDecision, feedback: Option<String>) -> String {
     match decision {
         RuntimePermissionDecision::AllowOnce | RuntimePermissionDecision::AllowFuture => {
@@ -291,13 +295,30 @@ mod tests {
     use tokio::sync::Mutex;
 
     use super::super::permissions::PendingCodexRequest;
-    use super::{is_plan_approval_request_id, plan_approval_prompt, resolve_pending};
-    use crate::domain::agents::adapter::RuntimePermissionDecision;
+    use super::{
+        is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt,
+        resolve_pending,
+    };
+    use crate::domain::agents::adapter::{
+        RuntimePermissionDecision, RuntimePermissionResponseKind,
+    };
 
     #[test]
     fn identifies_synthetic_plan_approval_requests() {
         assert!(is_plan_approval_request_id("codex_plan_approval_plan_1"));
         assert!(!is_plan_approval_request_id("approval_1"));
+    }
+
+    #[test]
+    fn codex_permission_denials_keep_turn_running() {
+        assert_eq!(
+            permission_kind_for_request_id("approval_1"),
+            RuntimePermissionResponseKind::ContinueOnDeny
+        );
+        assert_eq!(
+            permission_kind_for_request_id("codex_plan_approval_plan_1"),
+            RuntimePermissionResponseKind::PlanApproval
+        );
     }
 
     #[tokio::test]
