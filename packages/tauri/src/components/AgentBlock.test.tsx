@@ -232,6 +232,19 @@ describe("AgentBlock", () => {
       render(<AgentBlock block={makeBlock({ type: "compact_divider", content: "" })} />);
       expect(screen.getByText("Compacted")).toBeInTheDocument();
     });
+
+    it("renders Codex compact metadata details", () => {
+      render(
+        <AgentBlock
+          block={makeBlock({
+            type: "compact_divider",
+            content: JSON.stringify({ trigger: "manual", pre_tokens: 40123 }),
+          })}
+        />,
+      );
+      expect(screen.getByText("Compacted")).toBeInTheDocument();
+      expect(screen.getByText("manual · 40,123 tokens")).toBeInTheDocument();
+    });
   });
 
   describe("clear_divider block", () => {

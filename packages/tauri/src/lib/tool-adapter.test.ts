@@ -25,6 +25,19 @@ describe("isFileChangeTool", () => {
 });
 
 describe("extractBashOutput", () => {
+  it("extracts Codex command output from structured Bash payloads", () => {
+    expect(
+      extractBashOutput(
+        JSON.stringify({
+          command: "/bin/zsh -lc 'ls -l package.json'",
+          cwd: "/repo",
+          output: "-rw-r--r-- package.json\n",
+          status: "completed",
+        }),
+      ),
+    ).toBe("-rw-r--r-- package.json\n");
+  });
+
   it("extracts generic output field", () => {
     expect(extractBashOutput(JSON.stringify({ command: "pwd", output: "/tmp/project\n" }))).toBe(
       "/tmp/project\n",
@@ -100,6 +113,21 @@ describe("isToolCallRunning", () => {
 });
 
 describe("extractInlineDiffPreview", () => {
+  it("extracts Codex ApplyPatch previews from patch fields", () => {
+    expect(
+      extractInlineDiffPreview(
+        "ApplyPatch",
+        JSON.stringify({
+          patch_text: "*** Begin Patch\n*** Add File: src/codex.txt\n+hello codex\n*** End Patch\n",
+        }),
+      ),
+    ).toEqual({
+      filePath: "src/codex.txt",
+      oldContent: "",
+      newContent: "hello codex",
+    });
+  });
+
   it("extracts patch preview from apply_patch args", () => {
     expect(
       extractInlineDiffPreview(
