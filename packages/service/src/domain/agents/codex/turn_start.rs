@@ -13,6 +13,8 @@ pub(super) fn turn_start_params(
     model: Option<String>,
     effort: Option<String>,
 ) -> Value {
+    let collaboration_mode =
+        collaboration_mode(permission_mode, model.as_deref(), effort.as_deref());
     let mut params = json!({
         "threadId": thread_id,
         "input": input,
@@ -27,9 +29,7 @@ pub(super) fn turn_start_params(
     if let Some(effort) = effort {
         params["effort"] = Value::String(effort);
     }
-    if let Some(collaboration_mode) =
-        collaboration_mode(permission_mode, params.get("model"), params.get("effort"))
-    {
+    if let Some(collaboration_mode) = collaboration_mode {
         params["collaborationMode"] = collaboration_mode;
     }
     params
@@ -37,20 +37,22 @@ pub(super) fn turn_start_params(
 
 fn collaboration_mode(
     permission_mode: Option<&RuntimePermissionMode>,
-    model: Option<&Value>,
-    effort: Option<&Value>,
+    model: Option<&str>,
+    effort: Option<&str>,
 ) -> Option<Value> {
-    if !matches!(permission_mode, Some(RuntimePermissionMode::Plan)) {
-        return None;
-    }
-    let model = model.and_then(Value::as_str)?;
-    // Codex's protocol names the conversation mode `collaborationMode`;
-    // Cadence's `Plan` permission mode maps to Codex's built-in `plan` mode.
+    let model = model?;
+    // Codex persists collaboration mode on the server thread, so send the
+    // default mode explicitly when Cadencr leaves plan mode.
+    let mode = if matches!(permission_mode, Some(RuntimePermissionMode::Plan)) {
+        "plan"
+    } else {
+        "default"
+    };
     Some(json!({
-        "mode": "plan",
+        "mode": mode,
         "settings": {
             "model": model,
-            "reasoning_effort": effort.and_then(Value::as_str),
+            "reasoning_effort": effort,
             "developer_instructions": null
         }
     }))
@@ -109,5 +111,24 @@ mod tests {
         );
 
         assert!(params.get("collaborationMode").is_none());
+    }
+
+    #[test]
+    fn turn_start_resets_codex_collaboration_mode_after_plan_mode() {
+        let params = turn_start_params(
+            "thread",
+            vec![serde_json::json!({ "type": "text", "text": "approved" })],
+            Path::new("/tmp/app"),
+            Some(&crate::domain::agents::adapter::RuntimePermissionMode::AcceptEdits),
+            Some("gpt-5.5".to_string()),
+            Some("high".to_string()),
+        );
+
+        assert_eq!(params["collaborationMode"]["mode"], "default");
+        assert_eq!(params["collaborationMode"]["settings"]["model"], "gpt-5.5");
+        assert_eq!(
+            params["collaborationMode"]["settings"]["reasoning_effort"],
+            "high"
+        );
     }
 }
