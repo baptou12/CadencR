@@ -68,12 +68,19 @@ interface PermissionOptionButtonProps {
   onClick: (index: number) => void;
 }
 
+/** Decisions that get a keyboard shortcut badge. Other decisions render no badge. */
+const DECISION_SHORTCUT_KEYS: Partial<Record<PermissionDecisionValue, string[]>> = {
+  allow_once: ["cmd", "Y"],
+  deny: ["cmd", "N"],
+};
+
 function PermissionOptionButton({
   option,
   index,
   highlighted,
   onClick,
 }: PermissionOptionButtonProps) {
+  const shortcutKeys = DECISION_SHORTCUT_KEYS[option.decision];
   return (
     <button
       type="button"
@@ -85,7 +92,7 @@ function PermissionOptionButton({
       onClick={() => onClick(index)}
     >
       <span className="text-sm font-medium text-foreground">
-        <KbdShortcut keys={[String(index + 1)]} variant="square" />
+        {shortcutKeys && <KbdShortcut keys={shortcutKeys} variant="square" />}
         {option.label}
       </span>
       <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
@@ -122,38 +129,40 @@ function DenyFeedbackInput({ feedback, onChange, onSubmit }: DenyFeedbackInputPr
 
 interface PermissionHotkeysArgs {
   disableShortcuts: boolean | undefined;
+  options: PermissionOption[];
   onTrigger: (index: number) => void;
 }
 
-function usePermissionHotkeys({ disableShortcuts, onTrigger }: PermissionHotkeysArgs): void {
+function usePermissionHotkeys({
+  disableShortcuts,
+  options,
+  onTrigger,
+}: PermissionHotkeysArgs): void {
+  const allowOnceIndex = options.findIndex((o) => o.decision === "allow_once");
+  const denyIndex = options.findIndex((o) => o.decision === "deny");
+
+  // cmd+Y → approve (allow_once)
   useHotkeys(
-    "meta+1",
+    "meta+y",
     (e) => {
+      if (allowOnceIndex < 0) return;
       e.preventDefault();
-      onTrigger(0);
+      onTrigger(allowOnceIndex);
     },
     { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
-    [onTrigger],
+    [onTrigger, allowOnceIndex],
   );
 
+  // cmd+N → reject (deny)
   useHotkeys(
-    "meta+2",
+    "meta+n",
     (e) => {
+      if (denyIndex < 0) return;
       e.preventDefault();
-      onTrigger(1);
+      onTrigger(denyIndex);
     },
     { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
-    [onTrigger],
-  );
-
-  useHotkeys(
-    "meta+3",
-    (e) => {
-      e.preventDefault();
-      onTrigger(2);
-    },
-    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
-    [onTrigger],
+    [onTrigger, denyIndex],
   );
 }
 
@@ -226,7 +235,7 @@ export function ToolPermissionPrompt({
     [flashHighlight, handleOption],
   );
 
-  usePermissionHotkeys({ disableShortcuts, onTrigger: handleHotkey });
+  usePermissionHotkeys({ disableShortcuts, options, onTrigger: handleHotkey });
 
   return (
     <div className="border-t border-amber-500/30 bg-[#181A25] px-3 py-2">

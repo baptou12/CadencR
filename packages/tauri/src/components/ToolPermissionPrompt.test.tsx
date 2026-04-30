@@ -1,7 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
+import { useHotkeys } from "react-hotkeys-hook";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import type { PendingPermission } from "./ToolPermissionPrompt";
+
+vi.mock("react-hotkeys-hook", async () => {
+  const actual = await vi.importActual<typeof import("react-hotkeys-hook")>("react-hotkeys-hook");
+  return {
+    ...actual,
+    useHotkeys: vi.fn(),
+  };
+});
+
+const mockedUseHotkeys = vi.mocked(useHotkeys);
 
 const permission: PendingPermission = {
   toolName: "Bash",
@@ -26,6 +37,10 @@ const permission: PendingPermission = {
 };
 
 describe("ToolPermissionPrompt", () => {
+  beforeEach(() => {
+    mockedUseHotkeys.mockClear();
+  });
+
   it("renders tool name", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
     expect(screen.getByText("Bash")).toBeInTheDocument();
@@ -135,5 +150,58 @@ describe("ToolPermissionPrompt", () => {
       />,
     );
     expect(screen.getByText("/etc/hosts")).toBeInTheDocument();
+  });
+
+  it("registers meta+y and meta+n hotkeys (no cmd+digit)", () => {
+    render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
+    const hotkeyStrings = mockedUseHotkeys.mock.calls.map((call) => call[0]);
+    expect(hotkeyStrings).toContain("meta+y");
+    expect(hotkeyStrings).toContain("meta+n");
+    // cmd+digit shortcuts must be gone — they're reserved for the sidebar.
+    expect(hotkeyStrings.some((s) => /^meta\+\d$/.test(String(s)))).toBe(false);
+  });
+
+  it("invoking meta+y handler approves with allow_once", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
+      const yCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+y")!;
+      const handler = yCall[1] as (e: { preventDefault: () => void }) => void;
+      handler({ preventDefault: vi.fn() });
+      vi.runAllTimers();
+      expect(onDecision).toHaveBeenCalledWith("allow_once");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("invoking meta+n handler triggers deny flow", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
+      const nCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+n")!;
+      const handler = nCall[1] as (e: { preventDefault: () => void }) => void;
+      handler({ preventDefault: vi.fn() });
+      vi.runAllTimers();
+      expect(onDecision).toHaveBeenCalledWith("deny", undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders cmd+Y badge on Allow once and cmd+N on Deny, no badge on others", () => {
+    render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
+    const allowOnceBtn = screen.getByText("Allow once").closest("button")!;
+    const alwaysAllowBtn = screen.getByText("Always allow").closest("button")!;
+    const denyBtn = screen.getByText("Deny").closest("button")!;
+
+    expect(allowOnceBtn.querySelector("kbd")).not.toBeNull();
+    expect(allowOnceBtn.textContent).toContain("Y");
+    expect(denyBtn.querySelector("kbd")).not.toBeNull();
+    expect(denyBtn.textContent).toContain("N");
+    // "Always allow" (allow_future) gets no shortcut badge
+    expect(alwaysAllowBtn.querySelector("kbd")).toBeNull();
   });
 });

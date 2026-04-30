@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
+import { useHotkeys } from "react-hotkeys-hook";
 import { AgentQuestionDrawer, parseAskUserQuestions } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
+
+const mockedUseHotkeys = vi.mocked(useHotkeys);
 
 const simpleQuestion: AgentQuestion = {
   question: "What is your name?",
@@ -28,6 +31,7 @@ describe("AgentQuestionDrawer", () => {
 
   beforeEach(() => {
     onSubmit.mockClear();
+    mockedUseHotkeys.mockClear();
   });
 
   it("does not render when closed", () => {
@@ -119,6 +123,27 @@ describe("AgentQuestionDrawer", () => {
     const alphaBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Alpha"))!;
     await user.click(alphaBtn);
     expect(screen.getByText(/┌───┐/)).toBeInTheDocument();
+  });
+
+  it("registers digit hotkeys (no cmd) and meta+o for Other", () => {
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    const hotkeyStrings = mockedUseHotkeys.mock.calls.map((call) => call[0]);
+    // Digit hotkeys without modifier
+    expect(hotkeyStrings).toContain("1,2,3,4,5,6,7,8,9");
+    // cmd+O for Other
+    expect(hotkeyStrings).toContain("meta+o");
+    // No cmd+digit hotkeys remain (those are reserved for the sidebar)
+    expect(hotkeyStrings.some((s) => /meta\+\d/.test(String(s)))).toBe(false);
+  });
+
+  it("blurs the option button after click so Enter can validate", async () => {
+    const user = userEvent.setup();
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    const redBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Red"))!;
+    await user.click(redBtn);
+    // After clicking an option, the button must not retain focus — otherwise pressing
+    // Enter would re-trigger its onClick (toggling) instead of validating the form.
+    expect(document.activeElement).not.toBe(redBtn);
   });
 });
 

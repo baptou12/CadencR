@@ -266,31 +266,38 @@ export function AgentQuestionDrawer({
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
 
-  // CMD+1 through CMD+9 to select/toggle option by index (last = "Other...")
-  const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other"
+  // 1 through 9 to select/toggle option by index. cmd+O toggles "Other..."
+  const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
   useHotkeys(
-    "meta+1,meta+2,meta+3,meta+4,meta+5,meta+6,meta+7,meta+8,meta+9",
+    "1,2,3,4,5,6,7,8,9",
     (e) => {
       if (!open || !currentQuestion?.options) return;
-      e.preventDefault();
       const digit = Number(e.key);
-      // digit matching otherShortcutIndex + 1 toggles "Other..."
-      if (digit === otherShortcutIndex + 1) {
-        handleOtherToggle();
-        flashHighlight(otherShortcutIndex);
-        return;
-      }
       if (digit < 1 || digit > currentQuestion.options.length) return;
+      e.preventDefault();
       const option = currentQuestion.options[digit - 1];
       handleOptionToggle(option.label);
       flashHighlight(digit - 1);
+    },
+    // Default (no enableOnFormTags) — pressing "1" while typing in the free-text input
+    // must insert the character, not select an option.
+    { enabled: open && !disableShortcuts },
+    [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
+  );
+
+  useHotkeys(
+    "meta+o",
+    (e) => {
+      if (!open || !currentQuestion?.options) return;
+      e.preventDefault();
+      handleOtherToggle();
+      flashHighlight(otherShortcutIndex);
     },
     { enabled: open && !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [
       open,
       disableShortcuts,
       currentQuestion,
-      handleOptionToggle,
       handleOtherToggle,
       flashHighlight,
       otherShortcutIndex,
@@ -412,7 +419,12 @@ export function AgentQuestionDrawer({
                   : "border-border bg-muted/40 hover:bg-muted/50",
                 highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
               )}
-              onClick={() => handleOptionToggle(option.label)}
+              onClick={(e) => {
+                handleOptionToggle(option.label);
+                // Blur so subsequent Enter is handled by the global hotkey (validate)
+                // rather than re-triggering this button's click (which would re-toggle).
+                e.currentTarget.blur();
+              }}
             >
               <span className="text-sm font-medium text-foreground">
                 <KbdShortcut keys={[String(optIdx + 1)]} variant="square" />
@@ -436,10 +448,13 @@ export function AgentQuestionDrawer({
               highlightedIndex === currentQuestion.options!.length &&
                 "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
             )}
-            onClick={handleOtherToggle}
+            onClick={(e) => {
+              handleOtherToggle();
+              e.currentTarget.blur();
+            }}
           >
             <span className="text-sm font-medium text-foreground">
-              <KbdShortcut keys={[String(currentQuestion.options!.length + 1)]} variant="square" />
+              <KbdShortcut keys={["cmd", "O"]} variant="square" />
               Other...
             </span>
           </button>

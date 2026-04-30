@@ -97,23 +97,6 @@ function RootLayout() {
     void invalidateByUrlPrefix(queryClient, "/api/features");
   }, [queryClient]);
 
-  const createFeatureMutation = useCreateFeature({
-    mutation: {
-      onSuccess: (result) => {
-        invalidateFeatures();
-        if (activeProjectId != null) {
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(activeProjectId),
-              featureId: String(result.id),
-            },
-          });
-        }
-      },
-    },
-  });
-
   const createSessionMutation = useCreateFeature({
     mutation: {
       onSuccess: (session) => {
@@ -262,19 +245,6 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       focusZoneByDirection("right");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // CMD+N -> create new feature directly
-  useHotkeys(
-    "meta+n",
-    (e) => {
-      e.preventDefault();
-      if (activeProjectId == null) return;
-      createFeatureMutation.mutate({
-        data: { project_id: activeProjectId, title: "Untitled Feature" },
-      });
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
