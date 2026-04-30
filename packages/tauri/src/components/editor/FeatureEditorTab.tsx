@@ -44,6 +44,7 @@ export interface FeatureEditorTabHandle {
 const SIDEBAR_MIN_SIZE = "120px";
 const SIDEBAR_DEFAULT_SIZE = "220px";
 const SIDEBAR_MAX_SIZE = "500px";
+const EDITOR_SIDEBAR_COLLAPSED_SETTING = "editor_sidebar_collapsed";
 
 const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(
   function FeatureEditorTab({ featureId, projectId, projectPath }, ref) {
@@ -65,8 +66,10 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
     const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
     const [isSavingAll, setIsSavingAll] = useState(false);
 
-    const settingKey = `editor_sidebar_visible_${featureId}`;
-    const { value: persistedVisible, setValue: persistVisible } = useDebouncedSetting(settingKey);
+    const { value: persistedCollapsed, setValue: persistCollapsed } = useDebouncedSetting(
+      EDITOR_SIDEBAR_COLLAPSED_SETTING,
+      0,
+    );
     const hasInitializedRef = useRef(false);
     const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
 
@@ -205,19 +208,19 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
       initFeature();
     }, [initFeature]);
 
-    // Sync persisted sidebar visibility on first load only
+    // Sync persisted workspace-level sidebar collapse state on first load only.
     useEffect(() => {
-      if (hasInitializedRef.current || persistedVisible === null) return;
+      if (hasInitializedRef.current || persistedCollapsed === null) return;
       hasInitializedRef.current = true;
-      const shouldBeVisible = persistedVisible === "true";
+      const shouldBeVisible = persistedCollapsed !== "true";
       if (shouldBeVisible !== sidebarVisible) {
         toggleSidebar();
       }
-    }, [persistedVisible, sidebarVisible, toggleSidebar]);
+    }, [persistedCollapsed, sidebarVisible, toggleSidebar]);
 
-    function handleToggleSidebar() {
+    function handleToggleSidebar(): void {
       toggleSidebar();
-      persistVisible(String(!sidebarVisible));
+      persistCollapsed(String(sidebarVisible));
     }
 
     const dirtyCount = getDirtyTabs().length;
@@ -289,22 +292,26 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          <div className="relative flex flex-col h-full w-full">
-            <button
-              type="button"
-              title="Show sidebar"
-              aria-label="Show file tree sidebar"
-              className="absolute top-2 left-2 z-10 rounded p-1 hover:bg-accent transition-colors text-muted-foreground"
-              onClick={handleToggleSidebar}
-            >
-              <PanelLeft className="w-4 h-4" />
-            </button>
-            <EditorSplitTree
-              node={splitTree}
-              featureId={featureId}
-              projectId={projectId}
-              onEditorViewChange={handleEditorViewChange}
-            />
+          <div className="flex h-full w-full">
+            <div className="flex w-9 shrink-0 justify-center border-r border-border bg-card pt-2">
+              <button
+                type="button"
+                title="Show sidebar"
+                aria-label="Show file tree sidebar"
+                className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                onClick={handleToggleSidebar}
+              >
+                <PanelLeft className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="min-w-0 flex-1">
+              <EditorSplitTree
+                node={splitTree}
+                featureId={featureId}
+                projectId={projectId}
+                onEditorViewChange={handleEditorViewChange}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -324,7 +331,7 @@ function SidebarHeader({ onToggle }: { onToggle: () => void }) {
         type="button"
         title="Collapse sidebar"
         aria-label="Collapse file tree sidebar"
-        className="rounded p-0.5 hover:bg-accent transition-colors text-muted-foreground"
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         onClick={onToggle}
       >
         <PanelLeft className="w-3.5 h-3.5" />

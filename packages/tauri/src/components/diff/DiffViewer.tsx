@@ -1,5 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { PanelLeft } from "lucide-react";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import { DiffFileBlock } from "./DiffFileBlock";
 import { DiffFileHeader } from "./DiffFileHeader";
@@ -14,6 +16,8 @@ interface DiffViewerProps {
   targetBranch?: string;
 }
 
+const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
+
 export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
   const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
@@ -24,6 +28,13 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     lineNumber: number;
   } | null>(null);
   const diffAreaRef = useRef<HTMLDivElement>(null);
+  const {
+    value: persistedFileListCollapsed,
+    setValue: persistFileListCollapsed,
+    isLoading: isFileListCollapseLoading,
+  } = useDebouncedSetting(GIT_SIDEBAR_COLLAPSED_SETTING, 0);
+  const isFileListCollapsed = persistedFileListCollapsed === "true";
+  const showFileListRail = isFileListCollapseLoading || isFileListCollapsed;
 
   const data = useDiffData(featureId, mode, targetBranch);
 
@@ -123,27 +134,23 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     setCollapsedFiles,
   });
 
-  const changedFileEntries: ChangedFileEntry[] = useMemo(
-    () =>
-      data.fileMeta.map(({ section, displayName, additions, deletions }) => {
-        const status =
-          section.oldFileName === "/dev/null"
-            ? "A"
-            : section.newFileName === "/dev/null"
-              ? "D"
-              : "M";
-        return { file: displayName, status, additions, deletions };
-      }),
-    [data.fileMeta],
-  );
+  const changedFileEntries: ChangedFileEntry[] = useMemo(() => {
+    if (showFileListRail) return [];
+    return data.fileMeta.map(({ section, displayName, additions, deletions }) => {
+      const status =
+        section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
+      return { file: displayName, status, additions, deletions };
+    });
+  }, [data.fileMeta, showFileListRail]);
 
   const expandedFiles = useMemo(() => {
+    if (showFileListRail) return new Set<string>();
     const set = new Set<string>();
     for (const e of changedFileEntries) {
       if (!collapsedFiles.has(e.file)) set.add(e.file);
     }
     return set;
-  }, [changedFileEntries, collapsedFiles]);
+  }, [changedFileEntries, collapsedFiles, showFileListRail]);
 
   const handleSelectFile = useCallback((filePath: string) => {
     setSelectedFile(filePath);
@@ -157,6 +164,13 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       el?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }, []);
+
+  const setFileListCollapsed = useCallback(
+    (collapsed: boolean): void => {
+      persistFileListCollapsed(String(collapsed));
+    },
+    [persistFileListCollapsed],
+  );
 
   if (data.isLoading) {
     return (
@@ -173,6 +187,72 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       </div>
     );
   }
+
+  const diffContent = (
+    <div ref={diffAreaRef} className="h-full overflow-y-auto">
+      {data.fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
+        const isCollapsed = collapsedFiles.has(displayName);
+        const isFileViewed = data.viewedFilesSet.has(displayName);
+        const currentBlobSha = data.blobShas[displayName] ?? "";
+        const isFocused = fileIndex === focusedFileIndex;
+
+        return (
+          <div key={displayName} data-file={displayName} className="border-b border-border">
+            <DiffFileHeader
+              displayName={displayName}
+              additions={additions}
+              deletions={deletions}
+              isCollapsed={isCollapsed}
+              isFocused={isFocused}
+              isFileViewed={isFileViewed}
+              showViewedCheckbox={!data.selectedCommit}
+              onToggle={() => toggleFile(displayName)}
+              onMarkViewed={() => {
+                data.markViewed.mutate({
+                  featureId,
+                  data: {
+                    feature_id: featureId,
+                    file_path: displayName,
+                    blob_sha: currentBlobSha,
+                  },
+                });
+                setCollapsedFiles((prev) => new Set([...prev, displayName]));
+              }}
+              onUnmarkViewed={() =>
+                data.unmarkViewed.mutate({
+                  featureId,
+                  params: { file_path: displayName },
+                })
+              }
+            />
+            <DiffFileBlock
+              section={section}
+              featureId={featureId}
+              mode={mode}
+              targetBranch={targetBranch}
+              commitSha={data.selectedCommit ?? undefined}
+              diffMode={diffMode}
+              displayName={displayName}
+              isCollapsed={isCollapsed}
+              forceRender={selectedFile === displayName}
+              additions={additions}
+              deletions={deletions}
+              commentLines={commentLinesByFile.get(displayName)}
+              activeWidget={
+                activeCommentWidget?.filePath === displayName
+                  ? { lineNumber: activeCommentWidget.lineNumber }
+                  : null
+              }
+              commentCallbacks={stableCallbacks}
+              onAddComment={(lineNumber) =>
+                setActiveCommentWidget({ filePath: displayName, lineNumber })
+              }
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -202,89 +282,46 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         })()}
 
       {/* Diff area + file tree */}
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-        <ResizablePanel defaultSize={25} minSize={1} maxSize="300px" className="overflow-hidden">
-          <DiffFileTree
-            files={changedFileEntries}
-            expandedFiles={expandedFiles}
-            selectedFile={selectedFile}
-            viewedFiles={data.viewedFilesSet}
-            onToggleExpand={toggleFile}
-            onSelectFile={handleSelectFile}
-            commits={data.commits}
-            selectedCommit={data.selectedCommit}
-            onSelectCommit={data.setSelectedCommit}
-            isOnBaseBranch={data.isOnBaseBranch}
-            onLoadMoreCommits={() => data.setCommitLimit((l) => l + 20)}
-          />
-        </ResizablePanel>
-        <ResizableHandle className="bg-accent" />
-        <ResizablePanel defaultSize={75} className="overflow-hidden">
-          <div ref={diffAreaRef} className="h-full overflow-y-auto">
-            {data.fileMeta.map(({ section, displayName, additions, deletions }, fileIndex) => {
-              const isCollapsed = collapsedFiles.has(displayName);
-              const isFileViewed = data.viewedFilesSet.has(displayName);
-              const currentBlobSha = data.blobShas[displayName] ?? "";
-              const isFocused = fileIndex === focusedFileIndex;
-
-              return (
-                <div key={displayName} data-file={displayName} className="border-b border-border">
-                  <DiffFileHeader
-                    displayName={displayName}
-                    additions={additions}
-                    deletions={deletions}
-                    isCollapsed={isCollapsed}
-                    isFocused={isFocused}
-                    isFileViewed={isFileViewed}
-                    showViewedCheckbox={!data.selectedCommit}
-                    onToggle={() => toggleFile(displayName)}
-                    onMarkViewed={() => {
-                      data.markViewed.mutate({
-                        featureId,
-                        data: {
-                          feature_id: featureId,
-                          file_path: displayName,
-                          blob_sha: currentBlobSha,
-                        },
-                      });
-                      setCollapsedFiles((prev) => new Set([...prev, displayName]));
-                    }}
-                    onUnmarkViewed={() =>
-                      data.unmarkViewed.mutate({
-                        featureId,
-                        params: { file_path: displayName },
-                      })
-                    }
-                  />
-                  <DiffFileBlock
-                    section={section}
-                    featureId={featureId}
-                    mode={mode}
-                    targetBranch={targetBranch}
-                    commitSha={data.selectedCommit ?? undefined}
-                    diffMode={diffMode}
-                    displayName={displayName}
-                    isCollapsed={isCollapsed}
-                    forceRender={selectedFile === displayName}
-                    additions={additions}
-                    deletions={deletions}
-                    commentLines={commentLinesByFile.get(displayName)}
-                    activeWidget={
-                      activeCommentWidget?.filePath === displayName
-                        ? { lineNumber: activeCommentWidget.lineNumber }
-                        : null
-                    }
-                    commentCallbacks={stableCallbacks}
-                    onAddComment={(lineNumber) =>
-                      setActiveCommentWidget({ filePath: displayName, lineNumber })
-                    }
-                  />
-                </div>
-              );
-            })}
+      {showFileListRail ? (
+        <div className="flex min-h-0 flex-1">
+          <div className="flex w-9 shrink-0 justify-center border-r border-border bg-card pt-2">
+            <button
+              type="button"
+              title="Expand file list"
+              aria-label="Expand Git file list"
+              className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              disabled={isFileListCollapseLoading}
+              onClick={() => setFileListCollapsed(false)}
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
           </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          <div className="min-w-0 flex-1 overflow-hidden">{diffContent}</div>
+        </div>
+      ) : (
+        <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+          <ResizablePanel defaultSize={25} minSize={1} maxSize="300px" className="overflow-hidden">
+            <DiffFileTree
+              files={changedFileEntries}
+              expandedFiles={expandedFiles}
+              selectedFile={selectedFile}
+              viewedFiles={data.viewedFilesSet}
+              onToggleExpand={toggleFile}
+              onSelectFile={handleSelectFile}
+              commits={data.commits}
+              selectedCommit={data.selectedCommit}
+              onSelectCommit={data.setSelectedCommit}
+              isOnBaseBranch={data.isOnBaseBranch}
+              onLoadMoreCommits={() => data.setCommitLimit((l) => l + 20)}
+              onCollapse={() => setFileListCollapsed(true)}
+            />
+          </ResizablePanel>
+          <ResizableHandle className="bg-accent" />
+          <ResizablePanel defaultSize={75} className="overflow-hidden">
+            {diffContent}
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      )}
 
       {/* Bottom bar */}
       <div className="flex items-center gap-3 border-t border-border px-4 py-1.5 text-[10px] text-muted-foreground">

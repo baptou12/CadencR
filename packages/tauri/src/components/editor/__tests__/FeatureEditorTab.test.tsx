@@ -8,7 +8,16 @@ const mockSplitEditorPane = vi.fn();
 const mockNavigatePane = vi.fn();
 const mockInitFeature = vi.fn();
 const mockToggleSidebar = vi.fn();
-const mockPersistVisible = vi.fn();
+const mockPersistCollapsed = vi.fn();
+const mockUseDebouncedSetting = vi.fn<
+  (
+    key: string,
+    debounceMs?: number,
+  ) => {
+    value: string | null;
+    setValue: typeof mockPersistCollapsed;
+  }
+>(() => ({ value: null, setValue: mockPersistCollapsed }));
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
@@ -30,7 +39,8 @@ vi.mock("@/stores/feature-layout-store", () => ({
 }));
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({
-  useDebouncedSetting: vi.fn(() => ({ value: null, setValue: mockPersistVisible })),
+  useDebouncedSetting: (key: string, debounceMs?: number) =>
+    mockUseDebouncedSetting(key, debounceMs),
 }));
 
 vi.mock("@/hooks/useEditorState", () => ({
@@ -107,7 +117,9 @@ describe("FeatureEditorTab", () => {
     mockNavigatePane.mockReset();
     mockInitFeature.mockReset();
     mockToggleSidebar.mockReset();
-    mockPersistVisible.mockReset();
+    mockPersistCollapsed.mockReset();
+    mockUseDebouncedSetting.mockReset();
+    mockUseDebouncedSetting.mockReturnValue({ value: null, setValue: mockPersistCollapsed });
   });
 
   it("subscribes to file changes even when the file tree sidebar is hidden", () => {
@@ -116,5 +128,30 @@ describe("FeatureEditorTab", () => {
     expect(mockUseFileWatcher).toHaveBeenCalledWith("/project");
     expect(screen.queryByTestId("file-tree")).not.toBeInTheDocument();
     expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
+  });
+
+  it("uses a workspace-level collapse setting", () => {
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    expect(mockUseDebouncedSetting).toHaveBeenCalledWith("editor_sidebar_collapsed", 0);
+  });
+
+  it("reserves a rail for the expand button when the sidebar is collapsed", () => {
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    const expandButton = screen.getByRole("button", { name: "Show file tree sidebar" });
+    expect(expandButton.parentElement).toHaveClass("w-9");
+    expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
+  });
+
+  it("persists the collapsed state when expanding from the rail", async () => {
+    const { user } = render(
+      <FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Show file tree sidebar" }));
+
+    expect(mockToggleSidebar).toHaveBeenCalled();
+    expect(mockPersistCollapsed).toHaveBeenCalledWith("false");
   });
 });

@@ -1,5 +1,14 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { Search, ChevronDown, ChevronRight, Plus, Minus, GitCommit, Circle } from "lucide-react";
+import {
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Minus,
+  GitCommit,
+  Circle,
+  PanelLeft,
+} from "lucide-react";
 import { CopyButton } from "./CopyButton";
 
 function AutoScrollText({ text, className }: { text: string; className?: string }) {
@@ -173,6 +182,7 @@ interface DiffFileTreeProps {
   onSelectCommit: (sha: string | null) => void;
   isOnBaseBranch?: boolean;
   onLoadMoreCommits?: () => void;
+  onCollapse?: () => void;
 }
 
 export function DiffFileTree({
@@ -187,6 +197,7 @@ export function DiffFileTree({
   onSelectCommit,
   isOnBaseBranch = true,
   onLoadMoreCommits,
+  onCollapse,
 }: DiffFileTreeProps) {
   const [filter, setFilter] = useState("");
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
@@ -285,15 +296,28 @@ export function DiffFileTree({
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Search filter */}
-      <div className="relative border-b border-border px-2 py-1.5">
-        <Search className="absolute left-3.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Filter files..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="w-full bg-transparent py-1 pl-6 pr-2 text-xs text-foreground placeholder-[#6272a4] outline-none"
-        />
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search className="absolute left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Filter files..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-full bg-transparent py-1 pl-6 pr-2 text-xs text-foreground placeholder-[#6272a4] outline-none"
+          />
+        </div>
+        {onCollapse && (
+          <button
+            type="button"
+            title="Collapse file list"
+            aria-label="Collapse Git file list"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            onClick={onCollapse}
+          >
+            <PanelLeft className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       {/* File tree */}
