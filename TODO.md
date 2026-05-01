@@ -3,8 +3,9 @@
 - [ ] [opencode] Build / plan mode
 - [ ] [opencode] Not sync on command updates
 - [ ] [claude] Auto-accept / plan / auto
+- [ ] [codex] read / grep tools not shown ?
+- [ ] [codex] sub-agents not visible
 - [ ] [db] change production database to ~/.cadencr
-- [ ] [git] should update changes when update are done
 - [ ] [git] Cannot see the file list properly (first item) when all files are collapsed
 - [ ] [global / codex?] agent statuses are wrong in the sidebar but not in the conversation ?
 - [~] [global] opening a conversation is slow
