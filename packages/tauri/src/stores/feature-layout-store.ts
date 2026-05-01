@@ -196,7 +196,7 @@ function update(
     const next = fn(current);
     // No-op: the action computed an identical state. Skip the features-map
     // rebuild so consumers subscribed via selectors don't rerender.
-    if (next === current) return {};
+    if (next === current) return s;
     return { features: { ...s.features, [featureId]: next } };
   });
 }
@@ -300,6 +300,24 @@ export function selectFeatureLayout(featureId: number) {
 /** Pane id that hosts the given tab, or `null` if the tab isn't placed yet. */
 export function findHostFor(state: FeatureLayoutState, tab: TabKind): string | null {
   return findPaneContaining(state.splitRoot, tab)?.id ?? null;
+}
+
+/** Pane whose active tab should be treated as globally focused. */
+export function getFocusedLeaf(state: FeatureLayoutState): LayoutLeaf | null {
+  const focusedLeaf = state.focusedPaneId
+    ? findLeafById(state.splitRoot, state.focusedPaneId)
+    : null;
+  return (
+    focusedLeaf ??
+    findLeafById(state.splitRoot, ROOT_LEAF_ID) ??
+    getLeaves(state.splitRoot)[0] ??
+    null
+  );
+}
+
+/** The single globally focused tab, falling back to the root pane's active tab. */
+export function getFocusedTab(state: FeatureLayoutState): TabKind | null {
+  return getFocusedLeaf(state)?.activeTabId ?? null;
 }
 
 /** Whether the given tab is currently visible (it's the host pane's active tab). */

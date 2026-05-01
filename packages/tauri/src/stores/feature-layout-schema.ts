@@ -158,8 +158,12 @@ function parseLayoutNode(value: unknown): LayoutNode | null {
 }
 
 function containsRootLeaf(node: LayoutNode): boolean {
-  if (node.type === "leaf") return node.id === ROOT_LEAF_ID;
-  return containsRootLeaf(node.children[0]) || containsRootLeaf(node.children[1]);
+  return containsLeaf(node, ROOT_LEAF_ID);
+}
+
+function containsLeaf(node: LayoutNode, leafId: string): boolean {
+  if (node.type === "leaf") return node.id === leafId;
+  return containsLeaf(node.children[0], leafId) || containsLeaf(node.children[1], leafId);
 }
 
 /**
@@ -183,13 +187,17 @@ export function parseLayoutState(input: unknown): FeatureLayoutState | null {
   if (splitRoot === null) return null;
   if (!containsRootLeaf(splitRoot)) return null;
 
-  const focusedPaneId =
+  const rawFocusedPaneId =
     value.focusedPaneId === null
       ? null
       : typeof value.focusedPaneId === "string"
         ? value.focusedPaneId
         : undefined;
-  if (focusedPaneId === undefined) return null;
+  if (rawFocusedPaneId === undefined) return null;
+  const focusedPaneId =
+    rawFocusedPaneId !== null && containsLeaf(splitRoot, rawFocusedPaneId)
+      ? rawFocusedPaneId
+      : null;
 
   const appliedLayoutId =
     value.appliedLayoutId === null
@@ -211,7 +219,17 @@ export function serializeLayoutState(state: FeatureLayoutState): string {
   return JSON.stringify(state);
 }
 
-/** Serialize only the persistent shape (without focus, which is ephemeral). */
+/** Serialize the per-feature current layout, preserving the focused pane. */
+export function serializeCurrentLayoutState(state: FeatureLayoutState): string {
+  return JSON.stringify({
+    version: 1,
+    splitRoot: state.splitRoot,
+    focusedPaneId: state.focusedPaneId,
+    appliedLayoutId: null,
+  });
+}
+
+/** Serialize a reusable layout template, without feature-specific focus. */
 export function serializeLayoutForSave(state: FeatureLayoutState): string {
   return JSON.stringify({
     version: 1,

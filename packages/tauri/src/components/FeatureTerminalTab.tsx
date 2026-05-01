@@ -10,6 +10,12 @@ import {
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useGetFeatureSettings, useListProjects } from "@/api/generated";
+import {
+  getFocusedTab,
+  isTabVisible,
+  selectFeatureLayout,
+  useFeatureLayoutStore,
+} from "@/stores/feature-layout-store";
 
 interface FeatureTerminalTabProps {
   featureId: number;
@@ -29,6 +35,12 @@ export const FeatureTerminalTab = memo(
   ) {
     const terminalRef = useRef<TerminalPanelHandle>(null);
     const terminalState = useTerminalState(featureId);
+    const isTerminalVisible = useFeatureLayoutStore((s) =>
+      isTabVisible(selectFeatureLayout(featureId)(s), "terminal"),
+    );
+    const isTerminalFocused = useFeatureLayoutStore(
+      (s) => getFocusedTab(selectFeatureLayout(featureId)(s)) === "terminal",
+    );
 
     // Compute the cwd a freshly-spawned terminal *would* end up in, given the
     // current feature settings: the worktree if one was created, otherwise the
@@ -54,7 +66,7 @@ export const FeatureTerminalTab = memo(
     // `addPane()` twice. The second `addPane` lands on a non-null root and
     // *splits* it, leaving the user with a phantom 2-pane terminal before
     // they touch anything. Reading fresh state keeps activation idempotent.
-    const activate = useCallback(() => {
+    const ensureTerminalOpen = useCallback((): void => {
       const store = useTerminalStore.getState();
       const fresh = store.getFeature(featureId);
       if (!fresh.root) {
@@ -63,16 +75,26 @@ export const FeatureTerminalTab = memo(
       if (!fresh.isOpen) {
         store.togglePanel(featureId);
       }
-      requestAnimationFrame(() => terminalRef.current?.focusActivePane());
     }, [featureId]);
+
+    const activate = useCallback((): void => {
+      ensureTerminalOpen();
+      requestAnimationFrame(() => terminalRef.current?.focusActivePane());
+    }, [ensureTerminalOpen]);
 
     useImperativeHandle(ref, () => ({ activate }), [activate]);
 
-    // Auto-create a pane and open if none exist when tab becomes visible
+    // Auto-create a pane and open if none exist when the terminal tab is visible,
+    // but only move real DOM focus there when this pane is the focused one.
     useEffect(() => {
-      if (hidden) return;
+      if (hidden || !isTerminalVisible) return;
+      ensureTerminalOpen();
+    }, [hidden, ensureTerminalOpen, isTerminalVisible]);
+
+    useEffect(() => {
+      if (hidden || !isTerminalFocused) return;
       activate();
-    }, [hidden, activate]);
+    }, [hidden, activate, isTerminalFocused]);
 
     return (
       <div className={hidden ? "hidden" : "h-full"}>

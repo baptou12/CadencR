@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getGetFeatureSettingsQueryKey, useSetFeatureSetting } from "@/api/generated";
-import { LAYOUT_STATE_KEY, serializeLayoutForSave } from "@/stores/feature-layout-schema";
+import { LAYOUT_STATE_KEY, serializeCurrentLayoutState } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 const PERSIST_DEBOUNCE_MS = 500;
@@ -19,7 +19,7 @@ export function useFeatureLayoutPersistence(featureId: number): void {
   const { mutate } = useSetFeatureSetting();
   const serializedLayout = useFeatureLayoutStore((s) => {
     const state = s.features[featureId];
-    return state ? serializeLayoutForSave(state) : null;
+    return state ? serializeCurrentLayoutState(state) : null;
   });
   const lastSeenRef = useRef<string | null>(null);
   const lastScheduledRef = useRef<string | null>(null);

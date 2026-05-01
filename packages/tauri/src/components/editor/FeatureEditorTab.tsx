@@ -13,7 +13,7 @@ import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
 import {
-  isTabVisible,
+  getFocusedTab,
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
@@ -64,12 +64,10 @@ const FeatureEditorTab = memo(
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
     // The editor's hotkeys (cmd+P, cmd+shift+F, cmd+D, etc.) only fire while
-    // the editor tab is the visible tab of its pane. With the new layout,
-    // multiple panes can each show different tabs simultaneously, so we
-    // derive visibility from the layout store rather than a single
-    // "active tab" enum.
-    const isEditorActive = useFeatureLayoutStore((s) =>
-      isTabVisible(selectFeatureLayout(featureId)(s), "editor"),
+    // the editor tab is the globally focused feature tab. With split panes,
+    // the editor can be visible next to the agent without owning keyboard focus.
+    const isEditorFocused = useFeatureLayoutStore(
+      (s) => getFocusedTab(selectFeatureLayout(featureId)(s)) === "editor",
     );
     const [fileSearchOpen, setFileSearchOpen] = useState(false);
     const [contentSearchOpen, setContentSearchOpen] = useState(false);
@@ -82,18 +80,33 @@ const FeatureEditorTab = memo(
       0,
     );
     const hasInitializedRef = useRef(false);
+    const rootRef = useRef<HTMLDivElement>(null);
     const editorViewsRef = useRef<Map<string, EditorView>>(new Map());
 
     useFileWatcher(projectPath);
 
-    const handleEditorViewChange = useCallback((paneId: string, view: EditorView | null): void => {
-      if (view) editorViewsRef.current.set(paneId, view);
-      else editorViewsRef.current.delete(paneId);
-    }, []);
-
     const focusActiveEditor = useCallback((): void => {
       editorViewsRef.current.get(activePaneId)?.focus();
     }, [activePaneId]);
+
+    const shouldRestoreEditorFocus = useCallback((): boolean => {
+      const active = document.activeElement;
+      return !(active instanceof HTMLElement && rootRef.current?.contains(active));
+    }, []);
+
+    const handleEditorViewChange = useCallback(
+      (paneId: string, view: EditorView | null): void => {
+        if (view) {
+          editorViewsRef.current.set(paneId, view);
+          if (isEditorFocused && paneId === activePaneId && shouldRestoreEditorFocus()) {
+            requestAnimationFrame(() => view.focus());
+          }
+        } else {
+          editorViewsRef.current.delete(paneId);
+        }
+      },
+      [activePaneId, isEditorFocused, shouldRestoreEditorFocus],
+    );
 
     /** Collect all dirty tabs across all panes */
     const getDirtyTabs = useCallback(() => {
@@ -153,7 +166,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         setFileSearchOpen(true);
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
 
     useGlobalShortcut(
@@ -162,7 +175,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         setContentSearchOpen(true);
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
 
     // Split pane shortcuts — only active when editor tab is selected
@@ -172,7 +185,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         splitEditorPane(featureId, activePaneId, "vertical");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
     useHotkeys(
       "meta+shift+d",
@@ -180,7 +193,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         splitEditorPane(featureId, activePaneId, "horizontal");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
     useHotkeys(
       "meta+alt+left",
@@ -188,7 +201,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         navigatePane(featureId, "left");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
     useHotkeys(
       "meta+alt+right",
@@ -196,7 +209,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         navigatePane(featureId, "right");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
     useHotkeys(
       "meta+alt+up",
@@ -204,7 +217,7 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         navigatePane(featureId, "up");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
     useHotkeys(
       "meta+alt+down",
@@ -212,12 +225,18 @@ const FeatureEditorTab = memo(
         e.preventDefault();
         navigatePane(featureId, "down");
       },
-      { enabled: isEditorActive },
+      { enabled: isEditorFocused },
     );
 
     useEffect(() => {
       initFeature();
     }, [initFeature]);
+
+    useEffect(() => {
+      if (!isEditorFocused || !shouldRestoreEditorFocus()) return undefined;
+      const frame = requestAnimationFrame(focusActiveEditor);
+      return () => cancelAnimationFrame(frame);
+    }, [focusActiveEditor, isEditorFocused, shouldRestoreEditorFocus]);
 
     // Sync persisted workspace-level sidebar collapse state on first load only.
     useEffect(() => {
@@ -237,7 +256,7 @@ const FeatureEditorTab = memo(
     const dirtyCount = getDirtyTabs().length;
 
     return (
-      <div className="flex h-full">
+      <div ref={rootRef} className="flex h-full">
         <FileSearchDialog
           projectId={projectId}
           featureId={featureId}

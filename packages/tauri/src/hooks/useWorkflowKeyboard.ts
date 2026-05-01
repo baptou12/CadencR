@@ -22,6 +22,7 @@ export function useWorkflowKeyboard(
   options: WorkflowKeyboardOptions = {},
 ) {
   const agentRefs = useRef<Map<number, AgentSessionHandle>>(new Map());
+  const agentFocusEnabled = options.agentLetterFocusEnabled ?? false;
 
   const setAgentRef = useCallback((index: number, handle: AgentSessionHandle | null) => {
     if (handle) agentRefs.current.set(index, handle);
@@ -83,7 +84,7 @@ export function useWorkflowKeyboard(
   }, [backend.sessionEntries, getFocusedEntry, openAgent]);
 
   useAgentLetterFocus({
-    enabled: options.agentLetterFocusEnabled ?? false,
+    enabled: agentFocusEnabled,
     onFocus: focusAgentFromLetter,
   });
 
@@ -197,10 +198,11 @@ export function useWorkflowKeyboard(
   // Auto-focus first agent on mount
   const didAutoFocusRef = useRef(false);
   useEffect(() => {
-    if (didAutoFocusRef.current || backend.sessionEntries.length === 0) return;
+    if (!agentFocusEnabled || didAutoFocusRef.current || backend.sessionEntries.length === 0)
+      return;
     didAutoFocusRef.current = true;
     requestAnimationFrame(() => agentRefs.current.get(0)?.focusPromptBar());
-  }, [backend.sessionEntries.length]);
+  }, [agentFocusEnabled, backend.sessionEntries.length]);
 
   // Auto-focus newly started agents
   const prevRunningAgentsRef = useRef<Set<string>>(new Set());
@@ -211,7 +213,7 @@ export function useWorkflowKeyboard(
         .map((e) => `${e.agentType}-${e.sessionDbId}`),
     );
     for (const key of currentRunning) {
-      if (!prevRunningAgentsRef.current.has(key)) {
+      if (agentFocusEnabled && !prevRunningAgentsRef.current.has(key)) {
         const index = backend.sessionEntries.findIndex(
           (e) => `${e.agentType}-${e.sessionDbId}` === key,
         );
@@ -220,7 +222,7 @@ export function useWorkflowKeyboard(
       }
     }
     prevRunningAgentsRef.current = currentRunning;
-  }, [backend.sessionEntries]);
+  }, [agentFocusEnabled, backend.sessionEntries]);
 
   useHotkeys(
     "meta+g",
