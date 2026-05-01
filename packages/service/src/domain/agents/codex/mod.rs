@@ -3,6 +3,8 @@ mod event_items;
 mod event_json;
 mod event_loop;
 mod event_plan;
+mod event_raw;
+mod event_state;
 mod event_system;
 mod event_usage;
 mod events;

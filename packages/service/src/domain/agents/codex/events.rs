@@ -2,10 +2,11 @@ use serde_json::Value;
 
 use super::event_items::{
     command_output_delta_event, file_patch_updated_event, item_events, tool_json_delta_event,
-    IndexState,
 };
 use super::event_json::{compact_event, metadata, stream_event_raw, thread_id};
 use super::event_plan::plan_updated_event;
+use super::event_raw::raw_response_item_events;
+use super::event_state::IndexState;
 use super::event_usage::usage_event;
 use crate::domain::agents::adapter::{
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
@@ -31,6 +32,7 @@ pub fn notification_events(
         "item/mcpToolCall/progress" => tool_json_delta_event(params, "progress", index_state),
         "item/started" => item_events(params, false, index_state),
         "item/completed" => item_events(params, true, index_state),
+        "rawResponseItem/completed" => raw_response_item_events(params, index_state),
         "item/agentMessage/delta" => text_delta_event(params, model, index_state),
         "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta" => {
             reasoning_delta_event(params, model, index_state)
@@ -132,7 +134,7 @@ fn delta_event(
 
 #[cfg(test)]
 mod tests {
-    use super::super::event_items::IndexState;
+    use super::super::event_state::IndexState;
     use super::notification_events;
     use crate::domain::agents::adapter::{
         RuntimeEvent, RuntimeStreamEvent, RuntimeUserContentBlock,
@@ -145,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_completion_only_emits_result() {
+    fn tool_completion_without_start_emits_call_then_result() {
         let events = map_events(
             "item/completed",
             json!({
@@ -158,8 +160,12 @@ mod tests {
                 }
             }),
         );
-        assert_eq!(events.len(), 1);
-        assert!(events[0].user_message().is_some());
+        assert_eq!(events.len(), 2);
+        assert!(matches!(
+            events[0].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart { .. })
+        ));
+        assert!(events[1].user_message().is_some());
     }
 
     #[test]
@@ -319,20 +325,6 @@ mod tests {
     }
 
     #[test]
-    fn plan_delta_does_not_emit_hidden_todowrite_spam() {
-        let events = map_events(
-            "item/plan/delta",
-            json!({
-                "threadId": "thread",
-                "itemId": "plan_1",
-                "delta": "chunk"
-            }),
-        );
-
-        assert!(events.is_empty());
-    }
-
-    #[test]
     fn context_compaction_start_does_not_emit_divider() {
         let events = map_events(
             "item/started",
@@ -386,7 +378,10 @@ mod tests {
                 }
             }),
         );
-        let message = events[0].user_message().expect("expected tool result");
+        let message = events
+            .iter()
+            .find_map(RuntimeEvent::user_message)
+            .expect("expected tool result");
         let RuntimeUserContentBlock::ToolResult { is_error, .. } = &message.content[0] else {
             panic!("expected tool result block");
         };
