@@ -56,6 +56,14 @@ describe("ProjectSettingsDialog", () => {
     expect(screen.getByText("Worktree Setup Commands")).toBeInTheDocument();
   });
 
+  it("renders setup worktree commands as a shell editor", () => {
+    render(
+      <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Shell")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/pnpm install/i)).toHaveClass("font-mono");
+  });
+
   it("renders agent autonomy selector", () => {
     render(
       <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,

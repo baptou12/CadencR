@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { ModelSelector } from "./ModelSelector";
 import { WorktreeList } from "./WorktreeList";
+import { ShellTerminalFrame } from "./ShellTerminalFrame";
 import { DEFAULT_PROJECT_COLOR } from "@/lib/project-colors";
 
 export function ProjectSettingsDialog({
@@ -132,21 +133,23 @@ export function ProjectSettingsDialog({
 
             <div className="space-y-1">
               <span className="text-xs font-medium">Worktree Setup Commands</span>
-              <Textarea
-                placeholder={
-                  "e.g. pnpm install\ncp packages/service/.env.example packages/service/.env"
-                }
-                rows={3}
-                value={setupWorktree}
-                onChange={(e) => setSetupWorktree(e.target.value)}
-                onBlur={() =>
-                  setSettingMutation.mutate({
-                    id: projectId,
-                    data: { key: "setup_worktree", value: setupWorktree },
-                  })
-                }
-                className="text-sm"
-              />
+              <ShellTerminalFrame subtitle="one command per line" bodyClassName="p-0">
+                <Textarea
+                  placeholder={
+                    "pnpm install\ncp packages/service/.env.example packages/service/.env"
+                  }
+                  rows={4}
+                  value={setupWorktree}
+                  onChange={(e) => setSetupWorktree(e.target.value)}
+                  onBlur={() =>
+                    setSettingMutation.mutate({
+                      id: projectId,
+                      data: { key: "setup_worktree", value: setupWorktree },
+                    })
+                  }
+                  className="min-h-24 resize-y rounded-none border-0 bg-zinc-950 font-mono text-xs leading-relaxed text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:ring-offset-0"
+                />
+              </ShellTerminalFrame>
               <p className="text-xs text-muted-foreground">
                 Shell commands to run after creating a worktree (one per line)
               </p>

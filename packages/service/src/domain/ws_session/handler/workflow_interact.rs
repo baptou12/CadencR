@@ -361,16 +361,6 @@ pub(super) async fn handle_retry_worktree_setup(
         return;
     };
 
-    let _ = worktree::set_setting(
-        &app_state.write_pool,
-        feature_id,
-        "worktree_setup_step",
-        "setup",
-    )
-    .await;
-    let _ =
-        worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_log", "").await;
-
     let read_pool = app_state.read_pool.clone();
     let write_pool = app_state.write_pool.clone();
     let ws = crate::domain::workflow::engine::WsSender::new(sender.clone());

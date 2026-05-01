@@ -13,6 +13,7 @@ import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/CopyButton";
+import { ShellTerminalFrame } from "@/components/ShellTerminalFrame";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "naming" | "named" | "creating" | "created" | "setup" | "done" | "error";
@@ -47,12 +48,19 @@ function LogOutput({ log }: { log: string }) {
     }
   }, [log]);
   return (
-    <pre
-      ref={ref}
-      className="mt-1 max-h-40 overflow-auto rounded bg-zinc-900 px-2 py-1.5 text-xs font-mono text-zinc-100 whitespace-pre-wrap"
+    <ShellTerminalFrame
+      title="Setup"
+      subtitle="worktree commands"
+      className="mt-1"
+      bodyClassName="p-0"
     >
-      {log}
-    </pre>
+      <pre
+        ref={ref}
+        className="max-h-40 overflow-auto px-3 py-2 text-xs font-mono leading-relaxed text-zinc-100 whitespace-pre-wrap"
+      >
+        {log}
+      </pre>
+    </ShellTerminalFrame>
   );
 }
 
@@ -89,6 +97,7 @@ export function WorktreeSetupSection({
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
+  wsWorktreeError,
   onRetrySetup,
 }: {
   featureId: number;
@@ -97,6 +106,7 @@ export function WorktreeSetupSection({
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
+  wsWorktreeError?: string | null;
   /** Override retry handler (used by ws-session). Falls back to workflow store. */
   onRetrySetup?: () => void;
 }) {
@@ -120,14 +130,36 @@ export function WorktreeSetupSection({
     ? (wsWorktreeSetupOutput ?? []).join("\n")
     : (settings?.worktree_setup_log ?? "");
   const branch = useWsMode ? (wsWorktreeBranch ?? "") : (settings?.worktree_branch ?? "");
+  const setupError = useWsMode ? (wsWorktreeError ?? "") : (settings?.worktree_setup_error ?? "");
 
   const isDone = step === "done";
   const isError = step === "error";
   const isRunning = !!step && !isDone && !isError;
 
-  // Collapse by default when done; expand while running or on error
+  // Collapse by default when done or when revisiting a previous error. Open
+  // only for active work, or when this mounted section observes a new failure.
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
-  const isOpen = userToggle ?? (isRunning || isError);
+  const previousStepRef = useRef<SetupStep | null>(null);
+  const didObserveStepRef = useRef(false);
+  useEffect(() => {
+    setUserToggle(null);
+    previousStepRef.current = null;
+    didObserveStepRef.current = false;
+  }, [featureId, useWsMode]);
+  useEffect(() => {
+    if (!step) return;
+    const previousStep = previousStepRef.current;
+    previousStepRef.current = step;
+    if (!didObserveStepRef.current) {
+      didObserveStepRef.current = true;
+      return;
+    }
+    if (previousStep === step) return;
+    if (step === "setup" || step === "error") {
+      setUserToggle(true);
+    }
+  }, [step]);
+  const isOpen = userToggle ?? isRunning;
 
   // Don't render if setup hasn't started
   if (!step) return null;
@@ -243,16 +275,22 @@ export function WorktreeSetupSection({
           ))}
 
           {isError && (
-            <div className="pt-0.5">
+            <div className="flex min-w-0 items-center gap-2 pt-0.5">
               <Button
                 variant="outline"
                 size="sm"
+                type="button"
                 className="h-6 gap-1.5 text-xs"
                 onClick={retryWorktreeSetup}
               >
                 <RefreshCwIcon className="size-3" />
                 Retry
               </Button>
+              {setupError && (
+                <p className="min-w-0 truncate text-xs text-red-400" title={setupError}>
+                  {setupError}
+                </p>
+              )}
             </div>
           )}
         </div>

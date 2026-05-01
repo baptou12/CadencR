@@ -43,6 +43,7 @@ interface FeatureTopBarProps {
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
+  wsWorktreeError?: string | null;
   onRetryWorktreeSetup?: () => void;
 }
 
@@ -54,6 +55,7 @@ export function FeatureTopBar({
   wsWorktreeStatus,
   wsWorktreeBranch,
   wsWorktreeSetupOutput,
+  wsWorktreeError,
   onRetryWorktreeSetup,
 }: FeatureTopBarProps) {
   const isSession = mode === "session";
@@ -251,6 +253,7 @@ export function FeatureTopBar({
         wsWorktreeStatus={wsWorktreeStatus}
         wsWorktreeBranch={wsWorktreeBranch}
         wsWorktreeSetupOutput={wsWorktreeSetupOutput}
+        wsWorktreeError={wsWorktreeError}
         onRetrySetup={onRetryWorktreeSetup}
       />
     </>

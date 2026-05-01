@@ -24,6 +24,7 @@ import {
 } from "@/lib/ws-envelope";
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
+import { parseErrorPayload } from "./ws-envelope-payload";
 import {
   applyApprovePlan,
   applyPersistedState,
@@ -238,14 +239,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     initSession(sessionId: string, config: SessionConfig) {
+      const sessionPatch: Partial<SessionEntry> = {};
+      if (config.featureId) {
+        sessionPatch.featureId = config.featureId;
+      }
       if (config.provider) {
-        set(updateSession(get(), sessionId, { currentProviderId: config.provider }));
+        sessionPatch.currentProviderId = config.provider;
       }
       if (config.model) {
-        set(updateSession(get(), sessionId, { currentModelId: config.model }));
+        sessionPatch.currentModelId = config.model;
       }
       if (config.thinkingEffort) {
-        set(updateSession(get(), sessionId, { currentThinkingEffort: config.thinkingEffort }));
+        sessionPatch.currentThinkingEffort = config.thinkingEffort;
+      }
+      if (Object.keys(sessionPatch).length > 0) {
+        set(updateSession(get(), sessionId, sessionPatch));
       }
       sendRaw(sessionId, createSessionInit(config));
     },
@@ -403,13 +411,32 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     retryWorktreeSetup(sessionId: string) {
       const session = getSession(sessionId);
-      sendRaw(
-        sessionId,
-        createEnvelope("session", "retry_worktree_setup", {
-          session_id: session.serverSessionId,
-          feature_id: session.featureId,
-        }),
-      );
+      const featureId = session.featureId;
+      if (!featureId) {
+        set(
+          updateSession(get(), sessionId, {
+            worktreeStatus: "setup_error",
+            worktreeError: "feature_id is required",
+          }),
+        );
+        return;
+      }
+      const envelope = createEnvelope("session", "retry_worktree_setup", {
+        session_id: session.serverSessionId,
+        feature_id: featureId,
+      });
+      void get()
+        .sendRequest(sessionId, envelope)
+        .then((payload) => {
+          const errorMessage = parseErrorPayload(payload)?.message;
+          if (!errorMessage) return;
+          set(
+            updateSession(get(), sessionId, {
+              worktreeStatus: "setup_error",
+              worktreeError: errorMessage,
+            }),
+          );
+        });
     },
 
     requestSlashCommands(sessionId: string, cwd: string, provider?: string) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { render, screen, waitFor } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 
 const { mockGetSettings, mockRetryWorktreeSetup } = vi.hoisted(() => ({
@@ -66,6 +66,66 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("error")).toBeInTheDocument();
   });
 
+  it("keeps a persisted setup error collapsed on mount", () => {
+    mockGetSettings.mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "setup_error",
+        worktree_setup_log: "fnm: command not found",
+        worktree_setup_error: "Setup failed",
+        worktree_branch: "feature/my-branch",
+      }),
+    });
+    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    expect(screen.getByText("error")).toBeInTheDocument();
+    expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+    expect(screen.queryByText("fnm: command not found")).not.toBeInTheDocument();
+  });
+
+  it("keeps a persisted setup error collapsed after settings load", () => {
+    mockGetSettings.mockReturnValueOnce({ data: null }).mockReturnValue({
+      data: settingsArray({
+        worktree_setup_step: "setup_error",
+        worktree_setup_log: "fnm: command not found",
+        worktree_setup_error: "Setup failed",
+        worktree_branch: "feature/my-branch",
+      }),
+    });
+    const { rerender } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
+
+    rerender(<WorktreeSetupSection featureId={1} projectId={1} />);
+
+    expect(screen.getByText("error")).toBeInTheDocument();
+    expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+    expect(screen.queryByText("fnm: command not found")).not.toBeInTheDocument();
+  });
+
+  it("opens when a mounted worktree setup transitions to error", async () => {
+    const { rerender } = render(
+      <WorktreeSetupSection
+        featureId={1}
+        projectId={1}
+        wsWorktreeStatus="ready"
+        wsWorktreeBranch="feat/test"
+        wsWorktreeSetupOutput={[]}
+      />,
+    );
+    expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+
+    rerender(
+      <WorktreeSetupSection
+        featureId={1}
+        projectId={1}
+        wsWorktreeStatus="setup_error"
+        wsWorktreeBranch="feat/test"
+        wsWorktreeSetupOutput={["pnpm install failed"]}
+        wsWorktreeError="Command `pnpm install` exited with status 1"
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Run setup commands")).toBeInTheDocument());
+    expect(screen.getByText("Command `pnpm install` exited with status 1")).toBeInTheDocument();
+  });
+
   it("renders setup log with terminal styling in ws mode", async () => {
     const { user } = render(
       <WorktreeSetupSection
@@ -80,7 +140,8 @@ describe("WorktreeSetupSection", () => {
     const logEl = screen.getByText(
       (_, el) => el?.tagName === "PRE" && el.textContent === "installing deps\nall done",
     );
-    expect(logEl.className).toContain("bg-zinc-900");
+    expect(screen.getByText("Setup")).toBeInTheDocument();
+    expect(screen.getByText("worktree commands")).toBeInTheDocument();
     expect(logEl.className).toContain("text-zinc-100");
   });
 
@@ -142,7 +203,7 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("error")).toBeInTheDocument();
   });
 
-  it("shows error on 'Run setup commands' step when setup fails", () => {
+  it("shows error on 'Run setup commands' step when expanded after setup fails", async () => {
     mockGetSettings.mockReturnValue({
       data: settingsArray({
         worktree_setup_step: "setup_error",
@@ -150,7 +211,8 @@ describe("WorktreeSetupSection", () => {
         worktree_branch: "feature/my-branch",
       }),
     });
-    render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    const { user } = render(<WorktreeSetupSection featureId={1} projectId={1} />);
+    await user.click(screen.getByText("Worktree Setup"));
     // Error should show on step 3, not step 2
     const steps = screen.getAllByText(/Define name|Create worktree|Run setup commands/);
     expect(steps).toHaveLength(3);

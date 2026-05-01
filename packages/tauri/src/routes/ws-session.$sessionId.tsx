@@ -385,6 +385,7 @@ function WebSocketSessionPage() {
         wsWorktreeStatus={session?.worktreeStatus}
         wsWorktreeBranch={session?.worktreeBranch}
         wsWorktreeSetupOutput={session?.worktreeSetupOutput}
+        wsWorktreeError={session?.worktreeError}
         onRetryWorktreeSetup={handleRetryWorktreeSetup}
       />
       <FeatureLayoutShell

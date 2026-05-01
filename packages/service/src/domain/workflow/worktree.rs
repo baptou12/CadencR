@@ -257,6 +257,7 @@ async fn report_setup_error(
     error: &str,
 ) {
     let _ = set_setting(write_pool, feature_id, "worktree_setup_step", "setup_error").await;
+    let _ = set_setting(write_pool, feature_id, "worktree_setup_error", error).await;
     let log = log_lines.lock().await.join("\n");
     let _ = set_setting(write_pool, feature_id, "worktree_setup_log", &log).await;
     send_envelope(
@@ -279,17 +280,7 @@ pub async fn run_setup_commands(
     worktree_path: PathBuf,
     ws_sender: WsSender,
 ) {
-    // 1. Send setup_running
-    send_envelope(
-        &ws_sender,
-        "workflow",
-        "worktree.setup_running",
-        serde_json::json!({
-            "feature_id": feature_id,
-        }),
-    );
-
-    // 2. Query setup commands
+    // 1. Query setup commands
     let commands_str = match sqlx::query_as::<_, (String,)>(
         "SELECT value FROM project_settings WHERE project_id = \
          (SELECT project_id FROM features WHERE id = ?) AND key = 'setup_worktree'",
@@ -302,6 +293,8 @@ pub async fn run_setup_commands(
         Ok(_) => {
             // No setup commands
             let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
+            let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
+            let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", "").await;
             send_envelope(
                 &ws_sender,
                 "workflow",
@@ -321,6 +314,7 @@ pub async fn run_setup_commands(
                 "setup_error",
             )
             .await;
+            let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", &error).await;
             send_envelope(
                 &ws_sender,
                 "workflow",
@@ -333,6 +327,26 @@ pub async fn run_setup_commands(
             return;
         }
     };
+
+    let _ = set_setting(
+        &write_pool,
+        feature_id,
+        "worktree_setup_step",
+        "setup_running",
+    )
+    .await;
+    let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
+    let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", "").await;
+
+    // 2. Send setup_running
+    send_envelope(
+        &ws_sender,
+        "workflow",
+        "worktree.setup_running",
+        serde_json::json!({
+            "feature_id": feature_id,
+        }),
+    );
 
     // 4. Parse and run each command, accumulating output log
     let commands: Vec<&str> = commands_str
@@ -449,6 +463,7 @@ pub async fn run_setup_commands(
     let log = log_lines.lock().await.join("\n");
     let _ = set_setting(&write_pool, feature_id, "worktree_setup_log", &log).await;
     let _ = set_setting(&write_pool, feature_id, "worktree_setup_step", "ready").await;
+    let _ = set_setting(&write_pool, feature_id, "worktree_setup_error", "").await;
     send_envelope(
         &ws_sender,
         "workflow",

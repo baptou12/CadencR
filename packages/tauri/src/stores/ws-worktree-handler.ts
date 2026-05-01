@@ -38,7 +38,13 @@ export function handleWorktreeEvent(
       );
       break;
     case "worktree.setup_running":
-      ctx.set(updateSession(ctx.get(), sessionId, { worktreeStatus: "setup_running" }));
+      ctx.set(
+        updateSession(ctx.get(), sessionId, {
+          worktreeStatus: "setup_running",
+          worktreeError: null,
+          worktreeSetupOutput: [],
+        }),
+      );
       break;
     case "worktree.setup_output": {
       const session = ctx.getSession(sessionId);
@@ -52,15 +58,22 @@ export function handleWorktreeEvent(
       break;
     }
     case "worktree.ready":
-      ctx.set(updateSession(ctx.get(), sessionId, { worktreeStatus: "ready" }));
+      ctx.set(
+        updateSession(ctx.get(), sessionId, { worktreeStatus: "ready", worktreeError: null }),
+      );
       break;
-    case "worktree.setup_error":
+    case "worktree.setup_error": {
+      const session = ctx.getSession(sessionId);
+      const output = payloadString("output");
+      const shouldHydrateOutput = output != null && session.worktreeSetupOutput.length === 0;
       ctx.set(
         updateSession(ctx.get(), sessionId, {
           worktreeStatus: "setup_error",
           worktreeError: payloadString("error") ?? payloadString("message"),
+          ...(shouldHydrateOutput ? { worktreeSetupOutput: output.split("\n") } : {}),
         }),
       );
       break;
+    }
   }
 }

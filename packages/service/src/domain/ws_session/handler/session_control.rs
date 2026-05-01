@@ -1082,16 +1082,15 @@ pub(super) async fn handle_retry_worktree_setup(
             }
         };
 
-    // Reset setup step
-    let _ = worktree::set_setting(
-        &app_state.write_pool,
-        feature_id,
-        "worktree_setup_step",
-        "setup",
-    )
-    .await;
-    let _ =
-        worktree::set_setting(&app_state.write_pool, feature_id, "worktree_setup_log", "").await;
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "retry_worktree_setup.ok",
+        serde_json::json!({
+            "feature_id": feature_id,
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
 
     let rp = app_state.read_pool.clone();
     let wp = app_state.write_pool.clone();

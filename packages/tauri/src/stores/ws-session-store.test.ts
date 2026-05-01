@@ -1557,7 +1557,7 @@ describe("ws-session-store", () => {
       expect(session.worktreeError).toBe("pnpm install failed");
     });
 
-    it("retryWorktreeSetup sends envelope without optimistic update", async () => {
+    it("retryWorktreeSetup sends feature-scoped envelope without optimistic update", async () => {
       useWsSessionStore.getState().connect("s1");
       await tick();
       const ws = getWs();
@@ -1568,6 +1568,7 @@ describe("ws-session-store", () => {
         payload: { session_id: "db-1" },
       });
       const store = useWsSessionStore.getState();
+      store.initSession("s1", { featureId: 42 });
       store.retryWorktreeSetup("s1");
       // Should NOT optimistically set status
       expect(useWsSessionStore.getState().sessions["s1"].worktreeStatus).toBe("idle");
@@ -1575,7 +1576,45 @@ describe("ws-session-store", () => {
       const sent = ws.sent.map((s) => JSON.parse(s));
       const retryMsg = sent.find((m) => m.action === "retry_worktree_setup");
       expect(retryMsg).toBeDefined();
-      expect(retryMsg.payload.feature_id).toBeNull();
+      expect(retryMsg.payload.feature_id).toBe(42);
+      ws.simulateMessage({
+        domain: "session",
+        action: "retry_worktree_setup.ok",
+        ref: retryMsg.id,
+        payload: { feature_id: 42 },
+      });
+    });
+
+    it("shows retry request errors inline instead of adding conversation blocks", async () => {
+      useWsSessionStore.getState().connect("s1");
+      await tick();
+      const ws = getWs();
+      ws.simulateMessage({
+        domain: "session",
+        action: "initialized",
+        payload: { session_id: "db-1" },
+      });
+
+      useWsSessionStore.getState().initSession("s1", { featureId: 42 });
+      useWsSessionStore.getState().retryWorktreeSetup("s1");
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const retryMsg = sent.find((m) => m.action === "retry_worktree_setup");
+      ws.simulateMessage({
+        domain: "session",
+        action: "error",
+        ref: retryMsg.id,
+        payload: { code: "NO_WORKTREE", message: "No worktree found for this feature" },
+      });
+      await Promise.resolve();
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.worktreeStatus).toBe("setup_error");
+      expect(session.worktreeError).toBe("No worktree found for this feature");
+      expect(
+        session.blocks.some(
+          (block) => block.content === "Error: No worktree found for this feature",
+        ),
+      ).toBe(false);
     });
   });
 
