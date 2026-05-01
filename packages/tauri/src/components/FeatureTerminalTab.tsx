@@ -1,4 +1,4 @@
-import { useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
+import { memo, useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 
@@ -13,8 +13,11 @@ export interface FeatureTerminalTabHandle {
   activate: () => void;
 }
 
-export const FeatureTerminalTab = forwardRef<FeatureTerminalTabHandle, FeatureTerminalTabProps>(
-  function FeatureTerminalTab({ featureId, projectId, hidden }, ref) {
+export const FeatureTerminalTab = memo(
+  forwardRef<FeatureTerminalTabHandle, FeatureTerminalTabProps>(function FeatureTerminalTab(
+    { featureId, projectId, hidden },
+    ref,
+  ) {
     const terminalRef = useRef<TerminalPanelHandle>(null);
     const terminalState = useTerminalState(featureId);
 
@@ -57,5 +60,5 @@ export const FeatureTerminalTab = forwardRef<FeatureTerminalTabHandle, FeatureTe
         />
       </div>
     );
-  },
+  }),
 );

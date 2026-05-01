@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import type { EditorView } from "@codemirror/view";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
@@ -46,8 +54,11 @@ const SIDEBAR_DEFAULT_SIZE = "220px";
 const SIDEBAR_MAX_SIZE = "500px";
 const EDITOR_SIDEBAR_COLLAPSED_SETTING = "editor_sidebar_collapsed";
 
-const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(
-  function FeatureEditorTab({ featureId, projectId, projectPath }, ref) {
+const FeatureEditorTab = memo(
+  forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(function FeatureEditorTab(
+    { featureId, projectId, projectPath },
+    ref,
+  ) {
     const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
       useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
@@ -316,7 +327,7 @@ const FeatureEditorTab = forwardRef<FeatureEditorTabHandle, FeatureEditorTabProp
         )}
       </div>
     );
-  },
+  }),
 );
 
 export default FeatureEditorTab;

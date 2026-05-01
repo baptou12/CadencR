@@ -3,14 +3,19 @@ import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import { createLowlight, all } from "lowlight";
+import { createLowlight, common } from "lowlight";
+import ini from "highlight.js/lib/languages/ini";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
 import { cn } from "@/lib/utils";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import "./dracula-highlight.css";
 
-const lowlight = createLowlight(all);
+// `common` ships ~35 grammars vs. `all`'s ~155; unregistered languages fall
+// back to plain text via `cachedHighlight`'s catch.
+const lowlight = createLowlight(common);
+// TOML uses highlight.js's `ini` grammar.
+lowlight.register("toml", ini);
 
 /** Cache for syntax-highlighted JSX to avoid re-highlighting identical code blocks. */
 const highlightCache = new Map<string, React.ReactNode>();
