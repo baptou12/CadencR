@@ -42,6 +42,20 @@ interface AgentStreamProps {
   isLoadingOlder?: boolean;
 }
 
+/**
+ * Blinking cursor shown while the agent is streaming. Extracted + memoised
+ * so the `Virtuoso` `Footer` slot and the empty-state inline branch share a
+ * single element ref; rebuilding `<Virtuoso>`'s `components` object would
+ * otherwise create a fresh footer function on every parent re-render.
+ */
+const StreamingCursor = memo(function StreamingCursor() {
+  return (
+    <div className="flex items-center px-3 py-2 text-xs text-muted-foreground">
+      <span className="animate-pulse">█</span>
+    </div>
+  );
+});
+
 function isHiddenByRenderer(block: AgentBlockData): boolean {
   if (block.type === "thinking") return !block.content.trim();
   if (block.type !== "tool_result") return false;
@@ -148,11 +162,7 @@ export const AgentStream = memo(function AgentStream({
           </div>
         ) : null,
       Footer: (): React.ReactElement | null =>
-        isStreaming && showStreamingIndicator ? (
-          <div className="flex items-center px-3 py-2 text-xs text-muted-foreground">
-            <span className="animate-pulse">█</span>
-          </div>
-        ) : null,
+        isStreaming && showStreamingIndicator ? <StreamingCursor /> : null,
     }),
     [isLoadingOlder, isStreaming, showStreamingIndicator],
   );
@@ -161,13 +171,7 @@ export const AgentStream = memo(function AgentStream({
   // the streaming cursor inline so users see the agent is still working.
   if (displayBlocks.length === 0) {
     return (
-      <div className="p-3">
-        {isStreaming && showStreamingIndicator && (
-          <div className="flex items-center py-2 text-xs text-muted-foreground">
-            <span className="animate-pulse">█</span>
-          </div>
-        )}
-      </div>
+      <div className="p-3">{isStreaming && showStreamingIndicator && <StreamingCursor />}</div>
     );
   }
 
