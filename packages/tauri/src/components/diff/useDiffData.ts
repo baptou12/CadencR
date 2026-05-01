@@ -28,6 +28,14 @@ import type { CommitEntry } from "./DiffFileTree";
  * the caller might be holding — so a late response from a previous
  * commit/branch/mode cannot poison the cache for the current view.
  *
+ * For files whose content is byte-identical to what's already cached, we skip
+ * the `setQueryData` call entirely. React Query notifies subscribers on every
+ * `setQueryData` regardless of value equality (its `structuralSharing` only
+ * applies to query-function results), so writing identical content would
+ * needlessly re-render the corresponding `DiffFileBlock` and remount its
+ * CodeMirror editor. Skipping the write keeps unchanged files inert when
+ * a single file in the diff actually changes.
+ *
  * Exposed for unit testing: this is the surface that the original race bug
  * lived on, and it must stay verifiable without standing up a full hook.
  */
@@ -37,25 +45,36 @@ export function seedBatchFileContentCache(
   params: GetFileContentBatchBody,
 ): void {
   for (const item of items) {
-    client.setQueryData(
-      getGetFileContentQueryKey({
-        feature_id: params.feature_id,
-        file_path: item.file_path,
-        mode: params.mode,
-        // Batch body uses `string | null`; query params use `string | undefined` —
-        // coerce so the seeded key matches what `useGetFileContent` computes.
-        target_branch: params.target_branch ?? undefined,
-        commit_sha: params.commit_sha ?? undefined,
-      }),
-      {
-        old_content: item.old_content,
-        new_content: item.new_content,
-        old_size: item.old_size,
-        new_size: item.new_size,
-        is_binary: item.is_binary,
-        is_large: item.is_large,
-      } as FileContent,
-    );
+    const queryKey = getGetFileContentQueryKey({
+      feature_id: params.feature_id,
+      file_path: item.file_path,
+      mode: params.mode,
+      // Batch body uses `string | null`; query params use `string | undefined` —
+      // coerce so the seeded key matches what `useGetFileContent` computes.
+      target_branch: params.target_branch ?? undefined,
+      commit_sha: params.commit_sha ?? undefined,
+    });
+    const next: FileContent = {
+      old_content: item.old_content,
+      new_content: item.new_content,
+      old_size: item.old_size,
+      new_size: item.new_size,
+      is_binary: item.is_binary,
+      is_large: item.is_large,
+    };
+    const existing = client.getQueryData<FileContent>(queryKey);
+    if (
+      existing &&
+      existing.old_content === next.old_content &&
+      existing.new_content === next.new_content &&
+      existing.old_size === next.old_size &&
+      existing.new_size === next.new_size &&
+      existing.is_binary === next.is_binary &&
+      existing.is_large === next.is_large
+    ) {
+      continue;
+    }
+    client.setQueryData(queryKey, next);
   }
 }
 

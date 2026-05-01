@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { QueryClient } from "@tanstack/react-query";
 import { seedBatchFileContentCache } from "./useDiffData";
-import type { FileContentBatchItem, GetFileContentBatchBody } from "@/api/generated";
+import type { FileContent, FileContentBatchItem, GetFileContentBatchBody } from "@/api/generated";
 
 function makeBatchItem(file_path: string, suffix: string): FileContentBatchItem {
   return {
@@ -26,8 +26,11 @@ function makeBody(overrides: Partial<GetFileContentBatchBody> = {}): GetFileCont
   };
 }
 
-function fakeClient(): QueryClient {
-  return { setQueryData: vi.fn() } as unknown as QueryClient;
+function fakeClient(existing?: FileContent): QueryClient {
+  return {
+    setQueryData: vi.fn(),
+    getQueryData: vi.fn().mockReturnValue(existing),
+  } as unknown as QueryClient;
 }
 
 /**
@@ -84,5 +87,50 @@ describe("seedBatchFileContentCache", () => {
     const calls = (client.setQueryData as ReturnType<typeof vi.fn>).mock.calls;
     expect(calls[0][1]).toMatchObject({ old_content: "old-1" });
     expect(calls[1][1]).toMatchObject({ old_content: "old-2" });
+  });
+
+  /**
+   * Live-update perf: when the WS-triggered batch refetch returns content
+   * identical to what's already cached, skip the `setQueryData` write so
+   * React Query doesn't notify subscribers — `DiffFileBlock`'s `React.memo`
+   * keeps the same `fileContent` reference and CodeMirror doesn't re-render
+   * for files whose hunks didn't actually change.
+   */
+  it("skips setQueryData when the cached entry already matches the batch item", () => {
+    const item = makeBatchItem("a.ts", "1");
+    const existing: FileContent = {
+      old_content: item.old_content,
+      new_content: item.new_content,
+      old_size: item.old_size,
+      new_size: item.new_size,
+      is_binary: item.is_binary,
+      is_large: item.is_large,
+    };
+    const client = fakeClient(existing);
+
+    seedBatchFileContentCache(client, [item], makeBody());
+
+    expect(client.setQueryData).not.toHaveBeenCalled();
+    expect(client.getQueryData).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes when at least one field differs from the cached entry", () => {
+    const item = makeBatchItem("a.ts", "1");
+    // Same key but stale `new_content` — must trigger a write.
+    const stale: FileContent = {
+      old_content: item.old_content,
+      new_content: "stale-new",
+      old_size: item.old_size,
+      new_size: item.new_size,
+      is_binary: item.is_binary,
+      is_large: item.is_large,
+    };
+    const client = fakeClient(stale);
+
+    seedBatchFileContentCache(client, [item], makeBody());
+
+    expect(client.setQueryData).toHaveBeenCalledTimes(1);
+    const value = (client.setQueryData as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(value).toMatchObject({ new_content: "new-1" });
   });
 });

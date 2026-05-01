@@ -461,7 +461,7 @@ describe("notifications from turn state", () => {
 });
 
 describe("editor.file_tree.changed", () => {
-  it("invalidates editor + git-stats caches in a single predicate walk", () => {
+  it("invalidates editor + git-stats + git-diff caches in a single predicate walk", () => {
     useAppWsStore.getState().connect();
     const ws = getWs();
 
@@ -471,8 +471,9 @@ describe("editor.file_tree.changed", () => {
       payload: { project_path: "/project" },
     });
 
-    // Single predicate-based call covering all three URL prefixes — replaces
-    // the prior three separate cache walks.
+    // Single predicate-based call covering all four URL prefixes — refreshing
+    // `/api/git/diff` cascades through `useDiffData` so file-content stays
+    // live alongside numstats.
     expect(mockInvalidateQueries).toHaveBeenCalledTimes(1);
     const arg = mockInvalidateQueries.mock.calls[0]?.[0] as {
       predicate?: (q: { queryKey: readonly unknown[] }) => boolean;
@@ -481,6 +482,7 @@ describe("editor.file_tree.changed", () => {
     expect(arg.predicate?.({ queryKey: ["/api/editor/tree"] })).toBe(true);
     expect(arg.predicate?.({ queryKey: ["/api/editor/search", { project_id: 1 }] })).toBe(true);
     expect(arg.predicate?.({ queryKey: ["/api/git/stats"] })).toBe(true);
+    expect(arg.predicate?.({ queryKey: ["/api/git/diff", { feature_id: 7 }] })).toBe(true);
     expect(arg.predicate?.({ queryKey: ["/api/features"] })).toBe(false);
   });
 });
