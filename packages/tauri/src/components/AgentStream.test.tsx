@@ -1,8 +1,37 @@
-import { afterEach, describe, it, expect, vi } from "vitest";
-import { act, render, screen } from "@/test-utils";
+import type { ReactNode } from "react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen } from "@/test-utils";
 import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
-import { isResizing, popResize, pushResize } from "@/lib/resize-coordinator";
+
+// Mock Virtuoso so JSDOM tests render all items synchronously without
+// requiring layout/IntersectionObserver. We don't need true virtualization
+// here — just that the data is flushed through `itemContent` and that
+// Header/Footer slots are honoured.
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+    components,
+  }: {
+    data: AgentBlockData[];
+    itemContent: (index: number, block: AgentBlockData) => ReactNode;
+    components?: {
+      Header?: () => ReactNode;
+      Footer?: () => ReactNode;
+    };
+  }) => (
+    <div data-testid="virtuoso">
+      {components?.Header ? <components.Header /> : null}
+      {data.map((item, i) => (
+        <div key={item.id} data-testid={`virtuoso-item-${item.id}`}>
+          {itemContent(i, item)}
+        </div>
+      ))}
+      {components?.Footer ? <components.Footer /> : null}
+    </div>
+  ),
+}));
 
 // Mock AgentBlock to keep tests focused on AgentStream behavior
 vi.mock("./AgentBlock", async () => {
@@ -23,19 +52,7 @@ function makeBlock(
   return { id, type, content };
 }
 
-function getBlockWrapper(id: string): HTMLDivElement {
-  const wrapper = screen.getByTestId(`block-${id}`).parentElement;
-  if (!(wrapper instanceof HTMLDivElement)) {
-    throw new Error(`Block wrapper ${id} not found`);
-  }
-  return wrapper;
-}
-
 describe("AgentStream", () => {
-  afterEach(() => {
-    while (isResizing()) popResize();
-  });
-
   it("renders blocks", () => {
     render(<AgentStream blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]} />);
     expect(screen.getByTestId("block-1")).toBeInTheDocument();
@@ -119,23 +136,8 @@ describe("AgentStream", () => {
     expect(screen.queryByTestId("block-3")).not.toBeInTheDocument();
   });
 
-  it("does not use offscreen containment during normal scrolling", () => {
-    render(<AgentStream blocks={[makeBlock("1", "Stable scroll")]} />);
-    const wrapper = getBlockWrapper("1");
-    expect(wrapper.style.contentVisibility).toBe("");
-    expect(wrapper.style.containIntrinsicSize).toBe("");
-  });
-
-  it("uses offscreen containment only during active split resizing", () => {
-    render(<AgentStream blocks={[makeBlock("1", "Resize optimized")]} />);
-    const wrapper = getBlockWrapper("1");
-    expect(wrapper.style.contentVisibility).toBe("");
-
-    act(() => pushResize());
-    expect(wrapper.style.contentVisibility).toBe("auto");
-    expect(wrapper.style.containIntrinsicSize).toBe("auto 120px");
-
-    act(() => popResize());
-    expect(wrapper.style.contentVisibility).toBe("");
+  it("renders the loading-older spinner via Virtuoso Header when isLoadingOlder is true", () => {
+    const { container } = render(<AgentStream blocks={[makeBlock("1", "Hello")]} isLoadingOlder />);
+    expect(container.querySelector(".animate-spin")).toBeInTheDocument();
   });
 });

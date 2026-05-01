@@ -121,13 +121,14 @@ export const AgentSession = memo(
     const isOpen = isControlled ? controlledOpen : internalOpen;
 
     const {
-      scrollContainerRef,
-      contentRef,
+      virtuosoRef,
+      firstItemIndex,
+      handleAtBottomChange,
+      handleStartReached,
       autoScrollEnabled,
       isLoadingOlder,
       setAutoScrollEnabled,
     } = useAgentSessionScroll({
-      isOpen,
       blocks,
       hasMore,
       onLoadOlder,
@@ -274,28 +275,20 @@ export const AgentSession = memo(
       />
     ) : null;
 
-    const streamContent = (
-      <>
-        {isIdle && (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">{emptyStateMessage}</p>
-          </div>
-        )}
-        {isLoadingOlder && (
-          <div className="flex justify-center py-2">
-            <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        {blocks.length > 0 && (
-          <AgentStream
-            blocks={blocks}
-            isStreaming={isStreaming}
-            showStreamingIndicator={shouldShowStreamingIndicator}
-            basePath={projectPath}
-          />
-        )}
-      </>
-    );
+    const streamContent =
+      blocks.length > 0 ? (
+        <AgentStream
+          blocks={blocks}
+          isStreaming={isStreaming}
+          showStreamingIndicator={shouldShowStreamingIndicator}
+          basePath={projectPath}
+          virtuosoRef={virtuosoRef}
+          firstItemIndex={firstItemIndex}
+          onAtBottomChange={handleAtBottomChange}
+          onStartReached={handleStartReached}
+          isLoadingOlder={isLoadingOlder}
+        />
+      ) : null;
 
     const promptBar = shouldShowPromptBar ? (
       <AgentPromptBar
@@ -354,18 +347,13 @@ export const AgentSession = memo(
     if (!collapsible) {
       return (
         <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
-          <div
-            ref={scrollContainerRef}
-            className={cn("flex-1 overflow-auto px-4 pt-4 pb-8", isIdle && "flex")}
-            style={{ overflowAnchor: "none" }}
-          >
-            <div
-              ref={contentRef}
-              className={cn(isIdle && "flex min-h-full flex-1 items-center justify-center")}
-            >
-              {streamContent}
+          {isIdle ? (
+            <div className="flex flex-1 items-center justify-center px-4 pt-4 pb-8">
+              <p className="text-sm text-muted-foreground">{emptyStateMessage}</p>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 min-h-0 px-4 pt-4 pb-8">{streamContent}</div>
+          )}
           {bottomSection}
         </div>
       );
@@ -403,33 +391,15 @@ export const AgentSession = memo(
 
         {isOpen && (
           <>
-            <div
-              ref={scrollContainerRef}
-              className="flex-1 min-h-0 border-t border-border/30 overflow-y-auto pb-6"
-              style={{ overflowAnchor: "none" }}
-            >
-              <div ref={contentRef}>
-                {blocks.length === 0 && status === "idle" ? (
-                  <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-                    {emptyStateMessage}
-                  </div>
-                ) : (
-                  <>
-                    {isLoadingOlder && (
-                      <div className="flex justify-center py-2">
-                        <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
-                      </div>
-                    )}
-                    <AgentStream
-                      blocks={blocks}
-                      isStreaming={isStreaming}
-                      showStreamingIndicator={shouldShowStreamingIndicator}
-                      basePath={projectPath}
-                    />
-                  </>
-                )}
+            {blocks.length === 0 && status === "idle" ? (
+              <div className="flex flex-1 items-center justify-center border-t border-border/30 p-6 text-sm text-muted-foreground">
+                {emptyStateMessage}
               </div>
-            </div>
+            ) : (
+              <div className="flex-1 min-h-0 border-t border-border/30 px-3 pb-6">
+                {streamContent}
+              </div>
+            )}
 
             <div className="shrink-0">
               {!hasMeta && (

@@ -1,82 +1,53 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
-import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
+import type { VirtuosoHandle } from "react-virtuoso";
 import type { AgentBlockData } from "../AgentBlock";
 
-const BOTTOM_EPSILON = 1;
-const LOAD_OLDER_THRESHOLD = 800;
+/**
+ * Initial value for `firstItemIndex`. Virtuoso uses item indices to track
+ * scroll position; when older history is prepended we *decrement* this so
+ * existing items keep their conceptual indices. Starting from a large value
+ * gives plenty of headroom for prepends.
+ */
+const PREPEND_START_INDEX = 1_000_000;
 
 interface UseAgentSessionScrollOptions {
-  isOpen: boolean;
   blocks: AgentBlockData[];
   hasMore?: boolean;
   onLoadOlder?: () => Promise<void>;
 }
 
 interface UseAgentSessionScrollResult {
-  scrollContainerRef: RefObject<HTMLDivElement | null>;
-  contentRef: RefObject<HTMLDivElement | null>;
+  /** Pass to `<AgentStream virtuosoRef={...} />`. Used by `setAutoScrollEnabled` to scroll to the bottom imperatively. */
+  virtuosoRef: RefObject<VirtuosoHandle | null>;
+  /** Pass to `<AgentStream firstItemIndex={...} />`. Decrements when older items are prepended so the user's scroll position is preserved. */
+  firstItemIndex: number;
+  /** Pass to `<AgentStream onAtBottomChange={...} />`. Tracks the auto-scroll state based on Virtuoso's bottom detection. */
+  handleAtBottomChange: (atBottom: boolean) => void;
+  /** Pass to `<AgentStream onStartReached={...} />`. Triggers older-history loading when the user scrolls near the top. */
+  handleStartReached: () => void;
   autoScrollEnabled: boolean;
   isLoadingOlder: boolean;
   setAutoScrollEnabled: (enabled: boolean) => void;
 }
 
-function getBottomScrollTop(el: HTMLDivElement): number {
-  return Math.max(0, el.scrollHeight - el.clientHeight);
-}
-
 export function useAgentSessionScroll({
-  isOpen,
   blocks,
   hasMore,
   onLoadOlder,
 }: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const loadingOlderRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [firstItemIndex, setFirstItemIndex] = useState(PREPEND_START_INDEX);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
-  const programmaticScrollTopRef = useRef<number | null>(null);
-  const previousScrollTopRef = useRef(0);
+  const blocksLengthRef = useRef(blocks.length);
   const isMountedRef = useRef(true);
 
-  const setOlderLoading = useCallback((loading: boolean): void => {
-    if (!isMountedRef.current) return;
-    setIsLoadingOlder(loading);
-  }, []);
-
-  const loadOlderIfNeeded = useCallback(
-    (reason: "scroll" | "bootstrap"): void => {
-      const el = scrollContainerRef.current;
-      if (!el || !hasMore || !onLoadOlder || loadingOlderRef.current) {
-        return;
-      }
-      if (reason === "scroll" && el.scrollTop >= LOAD_OLDER_THRESHOLD) return;
-      if (reason === "bootstrap" && el.scrollHeight > el.clientHeight) return;
-
-      loadingOlderRef.current = true;
-      setOlderLoading(true);
-      const prevHeight = el.scrollHeight;
-
-      void onLoadOlder()
-        .then(() => {
-          requestAnimationFrame(() => {
-            if (!isMountedRef.current) return;
-            el.scrollTop += el.scrollHeight - prevHeight;
-            previousScrollTopRef.current = el.scrollTop;
-            loadingOlderRef.current = false;
-            setOlderLoading(false);
-          });
-        })
-        .catch(() => {
-          loadingOlderRef.current = false;
-          setOlderLoading(false);
-          toast.error("Failed to load older messages");
-        });
-    },
-    [hasMore, onLoadOlder, setOlderLoading],
-  );
+  useLayoutEffect(() => {
+    blocksLengthRef.current = blocks.length;
+  }, [blocks.length]);
 
   useEffect(
     () => () => {
@@ -85,113 +56,64 @@ export function useAgentSessionScroll({
     [],
   );
 
-  const scrollToBottom = useCallback((): void => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    const bottomScrollTop = getBottomScrollTop(el);
-    programmaticScrollTopRef.current = bottomScrollTop;
-    el.scrollTop = bottomScrollTop;
-    previousScrollTopRef.current = el.scrollTop;
+  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
+    autoScrollEnabledRef.current = enabled;
+    setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
+    if (enabled) {
+      virtuosoRef.current?.scrollToIndex({
+        index: "LAST",
+        align: "end",
+        behavior: "auto",
+      });
+    }
   }, []);
 
-  const setAutoScrollEnabled = useCallback(
-    (enabled: boolean): void => {
-      autoScrollEnabledRef.current = enabled;
-      setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
-      if (enabled) {
-        scrollToBottom();
-      }
-    },
-    [scrollToBottom],
-  );
-
-  // Single scroll handler: autoscroll detection + load-older trigger.
-  useEffect(() => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    previousScrollTopRef.current = el.scrollTop;
-
-    const onScroll = (): void => {
-      const scrollTop = el.scrollTop;
-      const distanceFromBottom = el.scrollHeight - scrollTop - el.clientHeight;
-      const atBottom = distanceFromBottom <= BOTTOM_EPSILON;
-
-      if (
-        programmaticScrollTopRef.current !== null &&
-        Math.abs(scrollTop - programmaticScrollTopRef.current) <= BOTTOM_EPSILON
-      ) {
-        programmaticScrollTopRef.current = null;
-        previousScrollTopRef.current = scrollTop;
-        return;
-      }
-
-      programmaticScrollTopRef.current = null;
-
+  const handleAtBottomChange = useCallback(
+    (atBottom: boolean): void => {
       if (atBottom) {
-        setAutoScrollEnabled(true);
-      } else if (autoScrollEnabledRef.current && scrollTop < previousScrollTopRef.current) {
+        if (!autoScrollEnabledRef.current) setAutoScrollEnabled(true);
+      } else if (autoScrollEnabledRef.current) {
         setAutoScrollEnabled(false);
       }
+    },
+    [setAutoScrollEnabled],
+  );
 
-      previousScrollTopRef.current = scrollTop;
+  const handleStartReached = useCallback((): void => {
+    if (!hasMore || !onLoadOlder || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    const before = blocksLengthRef.current;
 
-      loadOlderIfNeeded("scroll");
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-
-    loadOlderIfNeeded("bootstrap");
-
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [isOpen, loadOlderIfNeeded, setAutoScrollEnabled]);
-
-  // Scroll to bottom on new content when autoscroll is active.
-  useLayoutEffect(() => {
-    if (autoScrollEnabledRef.current) {
-      scrollToBottom();
-    }
-  }, [blocks, scrollToBottom]);
-
-  // Catch async content height changes (e.g. CodeMirror rendering after useEffect).
-  //
-  // During an active resize drag we *skip* this work entirely. The callback
-  // does forced-sync-layout reads (`scrollHeight`, `clientHeight`) and a
-  // `scrollTop` write; running it per frame across 4 split panes was the
-  // dominant bottleneck behind the choppy resize. We listen for
-  // resize-end via `subscribeResize` and run a single catch-up when the
-  // user releases the handle.
-  useEffect(() => {
-    const content = contentRef.current;
-    const scrollEl = scrollContainerRef.current;
-    if (!content || !scrollEl) return;
-
-    let raf = 0;
-    const flush = (): void => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        if (autoScrollEnabledRef.current) {
-          scrollEl.scrollTop = getBottomScrollTop(scrollEl);
-        }
-        loadOlderIfNeeded("bootstrap");
+    void onLoadOlder()
+      .then(() => {
+        if (!isMountedRef.current) return;
+        // Wait one frame so React commits the new blocks prop and our
+        // `blocksLengthRef` (updated via useLayoutEffect) reflects the
+        // appended count.
+        requestAnimationFrame(() => {
+          if (!isMountedRef.current) return;
+          const delta = blocksLengthRef.current - before;
+          if (delta > 0) {
+            setFirstItemIndex((idx) => idx - delta);
+          }
+          loadingOlderRef.current = false;
+          setIsLoadingOlder(false);
+        });
+      })
+      .catch(() => {
+        if (!isMountedRef.current) return;
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+        toast.error("Failed to load older messages");
       });
-    };
-    const ro = new ResizeObserver(() => {
-      if (isResizing()) return;
-      flush();
-    });
-    ro.observe(content);
-    const unsubscribe = subscribeResize((active) => {
-      if (!active) flush();
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      unsubscribe();
-    };
-  }, [loadOlderIfNeeded]);
+  }, [hasMore, onLoadOlder]);
 
   return {
-    scrollContainerRef,
-    contentRef,
+    virtuosoRef,
+    firstItemIndex,
+    handleAtBottomChange,
+    handleStartReached,
     autoScrollEnabled,
     isLoadingOlder,
     setAutoScrollEnabled,
