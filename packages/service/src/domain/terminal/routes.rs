@@ -12,7 +12,7 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
-use super::cwd::resolve_cwd;
+use super::cwd::resolve_pty_cwd;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::service::PtyHandle;
 use crate::api::middleware::{validate_ws_origin, validate_ws_token};
@@ -28,6 +28,8 @@ pub struct TerminalWsParams {
     pub pty_id: Option<String>,
     pub cols: Option<u16>,
     pub rows: Option<u16>,
+    /// See [`super::cwd::resolve_pty_cwd`] for semantics.
+    pub cwd: Option<String>,
 }
 
 pub fn terminal_router() -> Router<AppState> {
@@ -60,7 +62,16 @@ async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: 
     } else if let (Some(feature_id), Some(project_id)) = (params.feature_id, params.project_id) {
         let cols = params.cols.unwrap_or(80);
         let rows = params.rows.unwrap_or(24);
-        handle_new_pty(socket, feature_id, project_id, cols, rows, &state).await;
+        handle_new_pty(
+            socket,
+            feature_id,
+            project_id,
+            cols,
+            rows,
+            params.cwd.as_deref(),
+            &state,
+        )
+        .await;
     } else {
         send_error(
             socket,
@@ -78,7 +89,12 @@ async fn handle_reconnect(
     match pty_manager.get_scrollback(pty_id) {
         Some((alive, scrollback)) => {
             let (mut ws_sink, ws_stream) = socket.split();
-            let msg = ServerMessage::Reconnected { scrollback, alive };
+            let cwd = pty_manager.get_cwd(pty_id);
+            let msg = ServerMessage::Reconnected {
+                scrollback,
+                alive,
+                cwd,
+            };
             if send_msg(&mut ws_sink, &msg).await.is_err() {
                 return;
             }
@@ -109,9 +125,10 @@ async fn handle_new_pty(
     project_id: i64,
     cols: u16,
     rows: u16,
+    requested_cwd: Option<&str>,
     state: &AppState,
 ) {
-    let cwd = match resolve_cwd(&state.read_pool, feature_id, project_id).await {
+    let cwd = match resolve_pty_cwd(&state.read_pool, feature_id, project_id, requested_cwd).await {
         Ok(cwd) => cwd,
         Err(e) => {
             send_error(socket, &format!("Failed to resolve CWD: {e}")).await;
@@ -132,6 +149,7 @@ async fn handle_new_pty(
     let (mut ws_sink, ws_stream) = socket.split();
     let ready_msg = ServerMessage::Ready {
         pty_id: pty_id.clone(),
+        cwd: cwd.clone(),
     };
     if send_msg(&mut ws_sink, &ready_msg).await.is_err() {
         return;

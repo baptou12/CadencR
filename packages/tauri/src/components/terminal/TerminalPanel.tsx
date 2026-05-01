@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
+import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 import {
   type TerminalPanelState,
   type SplitOrientation,
@@ -34,6 +35,8 @@ interface TerminalPanelProps {
   state: TerminalPanelState;
   splitPane: (leafId: string | undefined, orientation: SplitOrientation) => void;
   removePane: (paneId: string) => void;
+  /** Working directory the feature currently expects (worktree path or project root). */
+  expectedCwd: string | null;
 }
 
 const ICON_BTN =
@@ -49,8 +52,12 @@ export interface TerminalPanelHandle {
 
 function createSlotElement(id: string): HTMLDivElement {
   const el = document.createElement("div");
+  // Slot sits inside a flex-column placeholder alongside the optional cwd
+  // warning banner. `flex: 1` lets xterm fill the remaining space; the explicit
+  // min-height: 0 prevents overflow when the warning is present.
+  el.style.flex = "1 1 0";
+  el.style.minHeight = "0";
   el.style.width = "100%";
-  el.style.height = "100%";
   el.setAttribute("data-pane-slot", id);
   return el;
 }
@@ -60,12 +67,15 @@ function createSlotElement(id: string): HTMLDivElement {
 // ---------------------------------------------------------------------------
 
 export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(
-  function TerminalPanel({ featureId, projectId, state, splitPane, removePane }, ref) {
+  function TerminalPanel({ featureId, projectId, state, splitPane, removePane, expectedCwd }, ref) {
     const { isMinimized, root } = state;
     const leaves = useMemo(() => (root ? getLeaves(root) : []), [root]);
     const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
     const [activePaneId, setActivePaneId] = useState<string | null>(null);
     const setPtyId = useTerminalStore((s) => s.setPtyId);
+    const setPaneCwd = useTerminalStore((s) => s.setPaneCwd);
+    const dismissCwdWarning = useTerminalStore((s) => s.dismissCwdWarning);
+    const replaceLeafWithFresh = useTerminalStore((s) => s.replaceLeafWithFresh);
     const clearInitialCommand = useTerminalStore((s) => s.clearInitialCommand);
 
     // Persistent slot DOM elements — one per leaf, never recreated
@@ -179,56 +189,27 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [splitPane, resolvedActivePaneId],
     );
 
-    useHotkeys(
-      "meta+alt+left",
-      (e) => {
-        if (getActiveFocusZone() !== "terminal") return;
-        e.preventDefault();
+    const navigatePane = useCallback(
+      (direction: "left" | "right" | "up" | "down") => {
         if (!root || !resolvedActivePaneId) return;
-        const target = findAdjacentLeaf(root, resolvedActivePaneId, "left");
+        const target = findAdjacentLeaf(root, resolvedActivePaneId, direction);
         if (target) focusPane(target);
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
       [root, resolvedActivePaneId, focusPane],
     );
 
     useHotkeys(
-      "meta+alt+right",
-      (e) => {
+      ["meta+alt+left", "meta+alt+right", "meta+alt+up", "meta+alt+down"],
+      (e, handler) => {
         if (getActiveFocusZone() !== "terminal") return;
         e.preventDefault();
-        if (!root || !resolvedActivePaneId) return;
-        const target = findAdjacentLeaf(root, resolvedActivePaneId, "right");
-        if (target) focusPane(target);
+        const dir = handler.keys?.[0];
+        if (dir === "left" || dir === "right" || dir === "up" || dir === "down") {
+          navigatePane(dir);
+        }
       },
       { enableOnFormTags: true, enableOnContentEditable: true },
-      [root, resolvedActivePaneId, focusPane],
-    );
-
-    useHotkeys(
-      "meta+alt+up",
-      (e) => {
-        if (getActiveFocusZone() !== "terminal") return;
-        e.preventDefault();
-        if (!root || !resolvedActivePaneId) return;
-        const target = findAdjacentLeaf(root, resolvedActivePaneId, "up");
-        if (target) focusPane(target);
-      },
-      { enableOnFormTags: true, enableOnContentEditable: true },
-      [root, resolvedActivePaneId, focusPane],
-    );
-
-    useHotkeys(
-      "meta+alt+down",
-      (e) => {
-        if (getActiveFocusZone() !== "terminal") return;
-        e.preventDefault();
-        if (!root || !resolvedActivePaneId) return;
-        const target = findAdjacentLeaf(root, resolvedActivePaneId, "down");
-        if (target) focusPane(target);
-      },
-      { enableOnFormTags: true, enableOnContentEditable: true },
-      [root, resolvedActivePaneId, focusPane],
+      [navigatePane],
     );
 
     // Use ref for leaves so closePane stays stable
@@ -257,19 +238,40 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [closePane],
     );
 
+    // Mark the old PTY for kill, then swap the leaf in-place so React
+    // unmounts the stale XTermInstance and mounts a fresh one — which spawns
+    // a new PTY at the feature's current expected cwd.
+    const restartPane = useCallback(
+      (paneId: string) => {
+        paneRefs.current.get(paneId)?.markForKill();
+        replaceLeafWithFresh(featureId, paneId);
+      },
+      [replaceLeafWithFresh, featureId],
+    );
+
+    const dismissPaneWarning = useCallback(
+      (paneId: string) => dismissCwdWarning(featureId, paneId),
+      [dismissCwdWarning, featureId],
+    );
+
+    const registerPlaceholder = useCallback((id: string, el: HTMLDivElement | null) => {
+      if (el) placeholderRefs.current.set(id, el);
+      else placeholderRefs.current.delete(id);
+    }, []);
+
     // -- Tree layout (empty placeholders — no XTermInstances) --
 
     const renderTreeNode = useCallback(
       (node: SplitNode): React.ReactNode => {
         if (node.type === "leaf") {
           return (
-            <div
-              ref={(el) => {
-                if (el) placeholderRefs.current.set(node.id, el);
-                else placeholderRefs.current.delete(node.id);
-              }}
-              className="h-full w-full"
-              onClick={() => focusPane(node.id)}
+            <PaneSlotPlaceholder
+              leaf={node}
+              expectedCwd={expectedCwd}
+              registerPlaceholder={registerPlaceholder}
+              onFocus={focusPane}
+              onRestart={restartPane}
+              onDismiss={dismissPaneWarning}
             />
           );
         }
@@ -289,7 +291,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
           </ResizablePanelGroup>
         );
       },
-      [focusPane],
+      [focusPane, expectedCwd, registerPlaceholder, restartPane, dismissPaneWarning],
     );
 
     // Move persistent slots into placeholders before paint
@@ -363,9 +365,13 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               featureId={featureId}
               projectId={projectId}
               existingPtyId={leaf.ptyId}
+              requestedCwd={expectedCwd ?? undefined}
               initialCommand={leaf.initialCommand}
               onInitialCommandConsumed={() => clearInitialCommand(featureId, leaf.id)}
-              onPtyReady={(ptyId) => setPtyId(featureId, leaf.id, ptyId)}
+              onPtyReady={(ptyId, cwd) => {
+                setPtyId(featureId, leaf.id, ptyId);
+                if (cwd) setPaneCwd(featureId, leaf.id, cwd);
+              }}
               onExit={(ptyId) => handlePaneExit(ptyId, leaf.id)}
               onTerminalFocus={() => setActivePane(leaf.id)}
             />,

@@ -13,6 +13,7 @@ interface TerminalMessageData {
 interface TerminalMessageReady {
   type: "ready";
   pty_id: string;
+  cwd: string;
 }
 
 interface TerminalMessageExit {
@@ -24,6 +25,7 @@ interface TerminalMessageReconnected {
   type: "reconnected";
   scrollback: string;
   alive: boolean;
+  cwd: string | null;
 }
 
 interface TerminalMessageError {
@@ -42,10 +44,18 @@ export interface UseTerminalWebSocketOptions {
   featureId?: number;
   projectId?: number;
   ptyId?: string;
+  /**
+   * Explicit cwd to spawn the PTY in. The backend validates it against the
+   * feature's worktree/project path and uses it verbatim when valid; otherwise
+   * it falls back to its own DB lookup. Lets the UI pin a fresh PTY to the
+   * directory it just observed (e.g. on "Restart here") without depending on
+   * a second snapshot read.
+   */
+  requestedCwd?: string;
   onData: (data: string) => void;
   onExit: (code: number) => void;
-  onReady: (ptyId: string) => void;
-  onReconnected: (scrollback: string, alive: boolean) => void;
+  onReady: (ptyId: string, cwd: string) => void;
+  onReconnected: (scrollback: string, alive: boolean, cwd: string | null) => void;
   onError: (message: string) => void;
 }
 
@@ -68,6 +78,7 @@ function buildWsUrl(options: UseTerminalWebSocketOptions, cols?: number, rows?: 
     if (options.projectId != null) params.set("project_id", String(options.projectId));
     if (cols != null) params.set("cols", String(cols));
     if (rows != null) params.set("rows", String(rows));
+    if (options.requestedCwd) params.set("cwd", options.requestedCwd);
   }
 
   return `${getTerminalWsUrl()}?${params.toString()}`;
@@ -105,13 +116,13 @@ export function useTerminalWebSocket(
               cb.onData(msg.data);
               break;
             case "ready":
-              cb.onReady(msg.pty_id);
+              cb.onReady(msg.pty_id, msg.cwd);
               break;
             case "exit":
               cb.onExit(msg.code);
               break;
             case "reconnected":
-              cb.onReconnected(msg.scrollback, msg.alive);
+              cb.onReconnected(msg.scrollback, msg.alive, msg.cwd);
               break;
             case "error":
               cb.onError(msg.message);

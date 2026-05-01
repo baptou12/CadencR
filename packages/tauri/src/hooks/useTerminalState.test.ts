@@ -148,6 +148,66 @@ describe("useTerminalState", () => {
     }
   });
 
+  it("setPtyId is a no-op when the value is unchanged", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().setPtyId(1, paneId, "pty-1"));
+    const before = useTerminalStore.getState().features[1];
+    act(() => useTerminalStore.getState().setPtyId(1, paneId, "pty-1"));
+    const after = useTerminalStore.getState().features[1];
+    expect(after).toBe(before);
+  });
+
+  it("setPaneCwd records the cwd on the leaf", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().setPaneCwd(1, paneId, "/work/wt"));
+    const root = useTerminalStore.getState().features[1].root;
+    expect(root?.type).toBe("leaf");
+    if (root?.type === "leaf") {
+      expect(root.cwd).toBe("/work/wt");
+    }
+  });
+
+  it("dismissCwdWarning sticks across cwd updates so a dismissed warning stays dismissed", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => useTerminalStore.getState().setPaneCwd(1, paneId, "/old"));
+    act(() => useTerminalStore.getState().dismissCwdWarning(1, paneId));
+    // Re-emit the same cwd (e.g. on reconnect) — the dismissal should not be reset.
+    act(() => useTerminalStore.getState().setPaneCwd(1, paneId, "/old"));
+    const root = useTerminalStore.getState().features[1].root;
+    expect(root?.type).toBe("leaf");
+    if (root?.type === "leaf") {
+      expect(root.cwdWarningDismissed).toBe(true);
+    }
+  });
+
+  it("replaceLeafWithFresh swaps the leaf id and clears its PTY metadata", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const paneId = result.current.panes[0].id;
+    act(() => {
+      const store = useTerminalStore.getState();
+      store.setPtyId(1, paneId, "pty-1");
+      store.setPaneCwd(1, paneId, "/old");
+      store.dismissCwdWarning(1, paneId);
+    });
+    act(() => useTerminalStore.getState().replaceLeafWithFresh(1, paneId));
+    const newPaneId = result.current.panes[0].id;
+    expect(newPaneId).not.toBe(paneId);
+    const root = result.current.root;
+    expect(root?.type).toBe("leaf");
+    if (root?.type === "leaf") {
+      expect(root.ptyId).toBeUndefined();
+      expect(root.cwd).toBeUndefined();
+      expect(root.cwdWarningDismissed).toBeUndefined();
+    }
+  });
+
   // Helper to build leaf nodes for navigation tests
   const leaf = (id: string): TerminalLeaf => ({ type: "leaf", id });
 

@@ -158,12 +158,12 @@ describe("useTerminalWebSocket", () => {
     expect(onData).toHaveBeenCalledWith("hello");
   });
 
-  it("dispatches ready messages to onReady callback", () => {
+  it("dispatches ready messages to onReady callback with cwd", () => {
     const onReady = vi.fn();
     renderAndConnect({ onReady });
     act(() => lastWs().simulateOpen());
-    act(() => lastWs().simulateMessage({ type: "ready", pty_id: "pty-1" }));
-    expect(onReady).toHaveBeenCalledWith("pty-1");
+    act(() => lastWs().simulateMessage({ type: "ready", pty_id: "pty-1", cwd: "/work/project" }));
+    expect(onReady).toHaveBeenCalledWith("pty-1", "/work/project");
   });
 
   it("dispatches exit messages to onExit callback", () => {
@@ -174,14 +174,34 @@ describe("useTerminalWebSocket", () => {
     expect(onExit).toHaveBeenCalledWith(0);
   });
 
-  it("dispatches reconnected messages to onReconnected callback", () => {
+  it("dispatches reconnected messages to onReconnected callback with cwd", () => {
     const onReconnected = vi.fn();
     renderAndConnect({ onReconnected });
     act(() => lastWs().simulateOpen());
     act(() =>
-      lastWs().simulateMessage({ type: "reconnected", scrollback: "old data", alive: true }),
+      lastWs().simulateMessage({
+        type: "reconnected",
+        scrollback: "old data",
+        alive: true,
+        cwd: "/work/project",
+      }),
     );
-    expect(onReconnected).toHaveBeenCalledWith("old data", true);
+    expect(onReconnected).toHaveBeenCalledWith("old data", true, "/work/project");
+  });
+
+  it("propagates a null cwd from reconnected when the backend handle is gone", () => {
+    const onReconnected = vi.fn();
+    renderAndConnect({ onReconnected });
+    act(() => lastWs().simulateOpen());
+    act(() =>
+      lastWs().simulateMessage({
+        type: "reconnected",
+        scrollback: "",
+        alive: false,
+        cwd: null,
+      }),
+    );
+    expect(onReconnected).toHaveBeenCalledWith("", false, null);
   });
 
   it("dispatches error messages to onError callback", () => {

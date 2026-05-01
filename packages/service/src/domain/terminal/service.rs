@@ -48,6 +48,10 @@ pub struct PtyHandle {
     pub killer: Arc<Mutex<Box<dyn ChildKiller + Send + Sync>>>,
     /// Broadcast channel for PTY output data. WebSocket connections subscribe to this.
     pub data_tx: broadcast::Sender<String>,
+    /// Working directory the PTY was spawned in. Reported back to the client so
+    /// it can detect when the terminal is running outside the feature's current
+    /// worktree.
+    pub cwd: String,
 }
 
 /// Manages all PTY sessions. Stored in AppState.
@@ -107,6 +111,7 @@ impl PtyManager {
             alive: Arc::new(alive_tx),
             killer: Arc::new(Mutex::new(killer)),
             data_tx: data_tx.clone(),
+            cwd: cwd.to_string(),
         });
 
         self.terminals.insert(pty_id.clone(), Arc::clone(&handle));
@@ -212,8 +217,47 @@ impl PtyManager {
             .contents();
         Some((alive, scrollback))
     }
+
+    /// Returns the working directory the PTY was spawned in, or None if the
+    /// handle no longer exists.
+    pub fn get_cwd(&self, pty_id: &str) -> Option<String> {
+        self.terminals.get(pty_id).map(|h| h.cwd.clone())
+    }
 }
 
 fn detect_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_existing_dir() -> String {
+        std::env::temp_dir().to_string_lossy().into_owned()
+    }
+
+    #[tokio::test]
+    async fn create_pty_records_cwd_on_handle() {
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (pty_id, handle) = manager
+            .create_pty(&cwd, 80, 24)
+            .expect("PTY should spawn in temp dir");
+
+        assert_eq!(handle.cwd, cwd, "handle should expose spawned cwd");
+        assert_eq!(
+            manager.get_cwd(&pty_id),
+            Some(cwd),
+            "manager lookup should return the same cwd",
+        );
+
+        let _ = manager.kill_pty(&pty_id);
+    }
+
+    #[tokio::test]
+    async fn get_cwd_returns_none_for_unknown_pty() {
+        let manager = PtyManager::new();
+        assert_eq!(manager.get_cwd("does-not-exist"), None);
+    }
 }

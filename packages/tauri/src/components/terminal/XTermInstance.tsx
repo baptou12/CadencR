@@ -11,10 +11,16 @@ interface XTermInstanceProps {
   projectId: number;
   /** Existing PTY ID to reconnect to (from zustand store) */
   existingPtyId?: string;
+  /** Working directory hint forwarded to the backend on a fresh PTY request. */
+  requestedCwd?: string;
   /** Called when the PTY process exits (e.g. Ctrl+D) */
   onExit?: (ptyId: string) => void;
-  /** Called after a PTY is created or reconnected — parent stores the ptyId */
-  onPtyReady?: (ptyId: string) => void;
+  /**
+   * Called after a PTY is created or reconnected — parent stores the ptyId
+   * and (when known) the working directory the PTY was spawned in. `cwd` is
+   * null on reconnect when the backend handle has been garbage-collected.
+   */
+  onPtyReady?: (ptyId: string, cwd: string | null) => void;
   /** If true, kill the PTY when unmounting (explicit close). Default: false (detach only). */
   killOnUnmount?: boolean;
   /** Command to write to the PTY after creation (does NOT press Enter — command includes \n if needed) */
@@ -40,6 +46,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       featureId,
       projectId,
       existingPtyId,
+      requestedCwd,
       onExit,
       onPtyReady,
       killOnUnmount = false,
@@ -96,14 +103,14 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     }, []);
 
     const onWsReady = useCallback(
-      (ptyId: string) => {
+      (ptyId: string, cwd: string) => {
         if (!mountedRef.current) {
           // Unmounted before ready — kill via ws
           killRef.current?.();
           return;
         }
         ptyIdRef.current = ptyId;
-        onPtyReady?.(ptyId);
+        onPtyReady?.(ptyId, cwd);
         // Write initial command if provided
         const cmd = initialCommandRef.current;
         if (cmd) {
@@ -132,7 +139,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     );
 
     const onWsReconnected = useCallback(
-      (scrollback: string, alive: boolean) => {
+      (scrollback: string, alive: boolean, cwd: string | null) => {
         if (!mountedRef.current) return;
         if (!alive) {
           exitedRef.current = true;
@@ -141,6 +148,8 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
           if (id) onExit?.(id);
           return;
         }
+        const id = ptyIdRef.current;
+        if (id) onPtyReady?.(id, cwd);
         if (scrollback) terminalRef.current?.write(scrollback);
         // Sync size after reconnect
         try {
@@ -165,6 +174,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       featureId: existingPtyId ? undefined : featureId,
       projectId: existingPtyId ? undefined : projectId,
       ptyId: existingPtyId,
+      requestedCwd,
       onData: onWsData,
       onReady: onWsReady,
       onExit: onWsExit,

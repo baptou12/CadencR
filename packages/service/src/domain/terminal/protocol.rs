@@ -13,11 +13,27 @@ pub enum ClientMessage {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
-    Data { data: String },
-    Exit { code: i32 },
-    Ready { pty_id: String },
-    Reconnected { scrollback: String, alive: bool },
-    Error { message: String },
+    Data {
+        data: String,
+    },
+    Exit {
+        code: i32,
+    },
+    Ready {
+        pty_id: String,
+        /// Working directory the PTY was spawned in. The frontend uses this to
+        /// detect terminals running outside the feature's current worktree.
+        cwd: String,
+    },
+    Reconnected {
+        scrollback: String,
+        alive: bool,
+        /// Original cwd of the PTY (None if the PTY handle is gone).
+        cwd: Option<String>,
+    },
+    Error {
+        message: String,
+    },
 }
 
 impl ServerMessage {

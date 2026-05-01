@@ -1,6 +1,15 @@
-import { memo, useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from "react";
+import {
+  memo,
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  useCallback,
+  useMemo,
+} from "react";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
+import { useGetFeatureSettings, useListProjects } from "@/api/generated";
 
 interface FeatureTerminalTabProps {
   featureId: number;
@@ -20,6 +29,23 @@ export const FeatureTerminalTab = memo(
   ) {
     const terminalRef = useRef<TerminalPanelHandle>(null);
     const terminalState = useTerminalState(featureId);
+
+    // Compute the cwd a freshly-spawned terminal *would* end up in, given the
+    // current feature settings: the worktree if one was created, otherwise the
+    // project root. The `feature.updated` WS event invalidates feature
+    // settings after a worktree is created, so this stays reactive without
+    // any extra wiring.
+    const { data: featureSettingsData } = useGetFeatureSettings(featureId);
+    const worktreePath = useMemo(
+      () => featureSettingsData?.find((s) => s.key === "worktree_path")?.value ?? null,
+      [featureSettingsData],
+    );
+    const projectsQuery = useListProjects();
+    const projectPath = useMemo(
+      () => projectsQuery.data?.find((p) => p.id === projectId)?.path ?? null,
+      [projectsQuery.data, projectId],
+    );
+    const expectedCwd = worktreePath ?? projectPath;
 
     // Reads fresh state from the store on every call instead of a captured
     // closure. This matters under React StrictMode (and any double-invoke
@@ -57,6 +83,7 @@ export const FeatureTerminalTab = memo(
           state={terminalState}
           splitPane={terminalState.splitPane}
           removePane={terminalState.removePane}
+          expectedCwd={expectedCwd}
         />
       </div>
     );
