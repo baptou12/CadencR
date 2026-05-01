@@ -5,7 +5,11 @@ import { XIcon } from "lucide-react";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROOT_LEAF_ID, type LayoutLeaf, type TabKind } from "@/stores/feature-layout-schema";
-import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
+import {
+  getFocusedLeaf,
+  selectFeatureLayout,
+  useFeatureLayoutStore,
+} from "@/stores/feature-layout-store";
 import { useTabHostRegistry } from "@/stores/tab-host-registry";
 import { cn } from "@/lib/utils";
 
@@ -39,16 +43,28 @@ export function TabPane({
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
   const dockTab = useFeatureLayoutStore((s) => s.dockTab);
   const setFocusedPane = useFeatureLayoutStore((s) => s.setFocusedPane);
-  const focusedPaneId = useFeatureLayoutStore((s) => s.features[featureId]?.focusedPaneId);
+  const focusedPaneId = useFeatureLayoutStore(
+    (s) => getFocusedLeaf(selectFeatureLayout(featureId)(s))?.id ?? ROOT_LEAF_ID,
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const markPaneFocused = useCallback((): void => {
+    setFocusedPane(featureId, leaf.id);
+  }, [featureId, leaf.id, setFocusedPane]);
+
   const setContentRef = useCallback(
     (el: HTMLDivElement | null): (() => void) | undefined => {
       if (!el) return undefined;
       registerHost(leaf.id, el);
-      return () => unregisterHost(leaf.id, el);
+      el.addEventListener("pointerdown", markPaneFocused, { capture: true });
+      el.addEventListener("focusin", markPaneFocused, { capture: true });
+      return () => {
+        el.removeEventListener("pointerdown", markPaneFocused, { capture: true });
+        el.removeEventListener("focusin", markPaneFocused, { capture: true });
+        unregisterHost(leaf.id, el);
+      };
     },
-    [leaf.id, registerHost, unregisterHost],
+    [leaf.id, markPaneFocused, registerHost, unregisterHost],
   );
 
   const isRoot = leaf.id === ROOT_LEAF_ID;
@@ -105,7 +121,8 @@ export function TabPane({
           "relative flex h-full w-full flex-col bg-background outline-none",
           !isRoot && "overflow-hidden rounded-lg border border-border shadow-md",
         )}
-        onMouseDown={() => setFocusedPane(featureId, leaf.id)}
+        onPointerDownCapture={markPaneFocused}
+        onFocusCapture={markPaneFocused}
       >
         <PaneTabStrip paneId={leaf.id}>
           <Tabs
@@ -127,6 +144,7 @@ export function TabPane({
                   tab={tab}
                   tabs={tabs}
                   isRootPane={isRoot}
+                  isFocusedPane={isFocused}
                   onActivate={() => activateTab(tab)}
                   onClose={() => {
                     if (isRoot) return;
@@ -161,6 +179,7 @@ interface DraggableTabTriggerProps {
   tab: TabKind;
   tabs: FeatureTabs;
   isRootPane: boolean;
+  isFocusedPane: boolean;
   onActivate: () => void;
   onClose: () => void;
 }
@@ -170,6 +189,7 @@ function DraggableTabTrigger({
   tab,
   tabs,
   isRootPane,
+  isFocusedPane,
   onActivate,
   onClose,
 }: DraggableTabTriggerProps): ReactNode {
@@ -190,7 +210,10 @@ function DraggableTabTrigger({
       {...attributes}
       {...listeners}
       onClick={onActivate}
-      className="group cursor-grab active:cursor-grabbing"
+      className={cn(
+        "group cursor-grab active:cursor-grabbing",
+        !isFocusedPane && "data-[state=active]:after:bg-transparent",
+      )}
     >
       <def.Icon className="size-4 shrink-0" />
       <span>{def.label}</span>

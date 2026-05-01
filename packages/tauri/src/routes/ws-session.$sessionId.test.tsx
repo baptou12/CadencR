@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
+import { waitFor } from "@testing-library/react";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
@@ -7,7 +8,17 @@ const mocks = vi.hoisted(() => {
   const mockUseSearch = vi.fn(() => ({ cwd: "/test/path", featureId: 35, projectId: 1 }));
   // Default: agent tab is the visible/active root tab.
   const mockAgentVisible = vi.fn(() => true);
-  return { mockUseParams, mockUseSearch, mockAgentVisible };
+  const mockSplitEditorFocused = vi.fn(() => false);
+  const mockFocusPromptBar = vi.fn();
+  const mockFocusActiveInput = vi.fn();
+  return {
+    mockUseParams,
+    mockUseSearch,
+    mockAgentVisible,
+    mockSplitEditorFocused,
+    mockFocusPromptBar,
+    mockFocusActiveInput,
+  };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -55,7 +66,18 @@ vi.mock("@/components/FeatureGitTab", () => ({
 }));
 
 vi.mock("@/components/agent-session", () => ({
-  AgentSession: vi.fn(() => <div data-testid="agent-session" />),
+  AgentSession: vi.fn((props: { ref?: unknown }) => {
+    const React = require("react") as typeof import("react");
+    React.useImperativeHandle(
+      props.ref as React.Ref<{ focusPromptBar: () => void; focusActiveInput: () => void }>,
+      () => ({
+        focusPromptBar: mocks.mockFocusPromptBar,
+        focusActiveInput: mocks.mockFocusActiveInput,
+      }),
+      [],
+    );
+    return <div data-testid="agent-session" />;
+  }),
 }));
 
 vi.mock("@/components/editor/FeatureEditorTab", () => ({
@@ -104,34 +126,75 @@ vi.mock("@/stores/ws-session-store", () => ({
   ),
 }));
 
-vi.mock("@/stores/feature-layout-store", () => ({
-  useFeatureLayoutStore: vi.fn((selector) => {
-    if (typeof selector === "function") {
-      return selector({
-        features: {
-          35: {
-            version: 1,
-            splitRoot: {
-              type: "leaf",
-              id: "root",
-              tabIds: ["agent", "terminal", "git", "editor"],
-              activeTabId: mocks.mockAgentVisible() ? "agent" : "editor",
-            },
-            focusedPaneId: "root",
-            appliedLayoutId: null,
+vi.mock("@/stores/feature-layout-store", () => {
+  interface MockLeaf {
+    type: "leaf";
+    id: string;
+    tabIds: string[];
+    activeTabId: string;
+  }
+
+  interface MockSplit {
+    type: "split";
+    children: [MockNode, MockNode];
+  }
+
+  type MockNode = MockLeaf | MockSplit;
+  interface MockLayout {
+    splitRoot: MockNode;
+    focusedPaneId: string;
+  }
+
+  const findLeafById = (node: MockNode, id: string): MockLeaf | null => {
+    if (node.type === "leaf") return node.id === id ? node : null;
+    return findLeafById(node.children[0], id) ?? findLeafById(node.children[1], id);
+  };
+  const findPaneContaining = (node: MockNode, tab: string): MockLeaf | null => {
+    if (node.type === "leaf") return node.tabIds.includes(tab) ? node : null;
+    return findPaneContaining(node.children[0], tab) ?? findPaneContaining(node.children[1], tab);
+  };
+  const makeLayout = (): MockLayout =>
+    mocks.mockSplitEditorFocused()
+      ? {
+          splitRoot: {
+            type: "split",
+            children: [
+              { type: "leaf", id: "root", tabIds: ["agent"], activeTabId: "agent" },
+              { type: "leaf", id: "editor-pane", tabIds: ["editor"], activeTabId: "editor" },
+            ],
           },
-        },
-        setPaneActiveTab: vi.fn(),
-      });
-    }
-    return undefined;
-  }),
-  selectFeatureLayout: () => (s: { features: Record<number, unknown> }) => s.features[35],
-  findLeafById: (root: { type: string; id?: string; activeTabId?: string }) =>
-    root.type === "leaf" ? root : null,
-  isTabVisible: (state: { splitRoot: { activeTabId: string } }, tab: string): boolean =>
-    state.splitRoot.activeTabId === tab,
-}));
+          focusedPaneId: "editor-pane",
+        }
+      : {
+          splitRoot: {
+            type: "leaf",
+            id: "root",
+            tabIds: ["agent", "terminal", "git", "editor"],
+            activeTabId: mocks.mockAgentVisible() ? "agent" : "editor",
+          },
+          focusedPaneId: "root",
+        };
+
+  return {
+    useFeatureLayoutStore: vi.fn((selector) => {
+      if (typeof selector === "function") {
+        return selector({
+          features: {
+            35: { version: 1, ...makeLayout(), appliedLayoutId: null },
+          },
+          setPaneActiveTab: vi.fn(),
+        });
+      }
+      return undefined;
+    }),
+    selectFeatureLayout: () => (s: { features: Record<number, unknown> }) => s.features[35],
+    findLeafById,
+    getFocusedTab: (state: MockLayout): string | null =>
+      findLeafById(state.splitRoot, state.focusedPaneId)?.activeTabId ?? null,
+    isTabVisible: (state: MockLayout, tab: string): boolean =>
+      findPaneContaining(state.splitRoot, tab)?.activeTabId === tab,
+  };
+});
 
 vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
   useSaveLastOpenedFeature: vi.fn(),
@@ -192,9 +255,12 @@ function lastAgentSessionProps(): Record<string, unknown> {
 describe("WsSessionPage route", () => {
   beforeEach(() => {
     vi.mocked(AgentSession).mockClear();
+    mocks.mockFocusPromptBar.mockClear();
+    mocks.mockFocusActiveInput.mockClear();
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
     mocks.mockUseSearch.mockReturnValue({ cwd: "/test/path", featureId: 35, projectId: 1 });
     mocks.mockAgentVisible.mockReturnValue(true);
+    mocks.mockSplitEditorFocused.mockReturnValue(false);
   });
 
   it("mounts every tab body via the layout shell", async () => {
@@ -217,6 +283,7 @@ describe("WsSessionPage route", () => {
       }),
     );
     mocks.mockAgentVisible.mockReturnValue(true);
+    mocks.mockSplitEditorFocused.mockReturnValue(false);
     render(<WsSessionPage />);
     expect(lastAgentSessionProps().todos).toEqual(todos);
   });
@@ -233,5 +300,20 @@ describe("WsSessionPage route", () => {
     mocks.mockAgentVisible.mockReturnValue(false);
     render(<WsSessionPage />);
     expect(lastAgentSessionProps().todos).toBeNull();
+  });
+
+  it("focuses the agent prompt on mount only when the agent tab owns focus", async () => {
+    render(<WsSessionPage />);
+
+    await waitFor(() => expect(mocks.mockFocusPromptBar).toHaveBeenCalled());
+  });
+
+  it("does not steal focus back to the agent prompt when the editor tab owns focus", async () => {
+    mocks.mockSplitEditorFocused.mockReturnValue(true);
+
+    render(<WsSessionPage />);
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+
+    expect(mocks.mockFocusPromptBar).not.toHaveBeenCalled();
   });
 });

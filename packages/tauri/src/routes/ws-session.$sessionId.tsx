@@ -19,7 +19,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import {
   useFeatureLayoutStore,
   selectFeatureLayout,
-  findLeafById,
+  getFocusedTab,
   isTabVisible,
 } from "@/stores/feature-layout-store";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
@@ -29,8 +29,6 @@ import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTa
 
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
 
-// Claude Code handles `/compact` as a native slash prompt. OpenCode and Codex
-// expose compaction through Cadence's session.compact action.
 const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli"]);
 
 interface WsSessionSearch {
@@ -62,9 +60,8 @@ function WebSocketSessionPage() {
   const { cwd, featureId, projectId } = Route.useSearch();
 
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
-  const rootLeaf = findLeafById(layoutState.splitRoot, ROOT_LEAF_ID);
-  const rootActiveTabId = rootLeaf?.activeTabId ?? "agent";
-  useSaveLastOpenedFeature(projectId, featureId, rootActiveTabId);
+  const focusedTabId = getFocusedTab(layoutState) ?? "agent";
+  useSaveLastOpenedFeature(projectId, featureId, focusedTabId);
   const editorTabRef = useRef<FeatureEditorTabHandle>(null);
   const terminalTabRef = useRef<FeatureTerminalTabHandle>(null);
   const projectsQuery = useListProjects();
@@ -96,9 +93,6 @@ function WebSocketSessionPage() {
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
-  // Per-model default for the picked session model. The backend persists the
-  // conversation's own override on `agent_sessions.thinking_effort` and only
-  // falls back to this default when the row hasn't been ancored yet.
   const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);
   const activeSessionModel = agentCatalog.data?.providers
     .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
@@ -106,7 +100,6 @@ function WebSocketSessionPage() {
   const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
   const activeProviderId = ws.runtimeProvider || ws.currentProviderId || resolvedProviderId;
 
-  // Use worktree path as effective cwd once available (live WS → DB settings → project cwd)
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
 
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
@@ -118,14 +111,11 @@ function WebSocketSessionPage() {
   );
 
   const agentSessionRef = useRef<AgentSessionHandle>(null);
-  const focusedLeaf = layoutState.focusedPaneId
-    ? findLeafById(layoutState.splitRoot, layoutState.focusedPaneId)
-    : null;
   const focusAgentFromLetter = useCallback((): void => {
     agentSessionRef.current?.focusActiveInput();
   }, []);
   useAgentLetterFocus({
-    enabled: focusedLeaf ? focusedLeaf.activeTabId === "agent" : rootActiveTabId === "agent",
+    enabled: focusedTabId === "agent",
     onFocus: focusAgentFromLetter,
   });
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
@@ -208,10 +198,12 @@ function WebSocketSessionPage() {
   ]);
 
   useEffect(() => {
-    requestAnimationFrame(() => {
+    if (focusedTabId !== "agent") return undefined;
+    const frame = requestAnimationFrame(() => {
       agentSessionRef.current?.focusPromptBar();
     });
-  }, [sessionId]);
+    return () => cancelAnimationFrame(frame);
+  }, [focusedTabId, sessionId]);
 
   useEffect(() => {
     const handler = () => agentSessionRef.current?.focusPromptBar();
@@ -301,9 +293,6 @@ function WebSocketSessionPage() {
             runtimeSessionId={ws.runtimeSessionId || undefined}
             slashCommandsOverride={slashCommands}
             slashCommandsLoading={slashCommandsLoading}
-            // The todos popover is portaled to document.body so it would
-            // overlay other tabs if mounted while the agent is hidden in its
-            // pane. Gate by the layout-store's visibility selector.
             todos={agentVisible ? (session?.todos ?? null) : null}
             agentTabActive={agentVisible}
             hasMore={ws.hasMore}

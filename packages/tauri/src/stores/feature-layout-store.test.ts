@@ -3,6 +3,7 @@ import {
   findHostFor,
   findLeafById,
   findPaneContaining,
+  getFocusedTab,
   getLeaves,
   isTabVisible,
   selectFeatureLayout,
@@ -179,6 +180,18 @@ describe("feature-layout-store", () => {
     expect(after).not.toBe(before);
     expect(after.focusedPaneId).toBe(ROOT_LEAF_ID);
     expect(after.splitRoot).toBe(before.splitRoot);
+    expect(newLeaf.id).not.toBe(ROOT_LEAF_ID);
+  });
+
+  it("getFocusedTab returns the active tab from the focused pane", () => {
+    const store = useFeatureLayoutStore.getState();
+    store.splitTabAt(FEATURE, "terminal", ROOT_LEAF_ID, "right");
+    const newLeaf = getLeaves(getState().splitRoot).find((l) => l.id !== ROOT_LEAF_ID)!;
+
+    expect(getFocusedTab(getState())).toBe("terminal");
+
+    store.setPaneActiveTab(FEATURE, ROOT_LEAF_ID, "agent");
+    expect(getFocusedTab(getState())).toBe("agent");
     expect(newLeaf.id).not.toBe(ROOT_LEAF_ID);
   });
 });

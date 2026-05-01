@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   flatLayoutState,
   parseLayoutState,
+  serializeCurrentLayoutState,
+  serializeLayoutForSave,
   serializeLayoutState,
   type FeatureLayoutState,
 } from "./feature-layout-schema";
@@ -46,6 +48,20 @@ describe("parseLayoutState", () => {
     const fromJson = parseLayoutState(JSON.stringify(state));
     expect(fromObj).toEqual(state);
     expect(fromJson).toEqual(state);
+  });
+
+  it("preserves focus for current layouts but strips it from reusable templates", () => {
+    const state = { ...flatLayoutState(), focusedPaneId: "root", appliedLayoutId: 99 };
+
+    expect(parseLayoutState(serializeCurrentLayoutState(state))?.focusedPaneId).toBe("root");
+    expect(parseLayoutState(serializeLayoutForSave(state))?.focusedPaneId).toBeNull();
+    expect(parseLayoutState(serializeCurrentLayoutState(state))?.appliedLayoutId).toBeNull();
+  });
+
+  it("sanitizes stale focused pane ids", () => {
+    const parsed = parseLayoutState({ ...flatLayoutState(), focusedPaneId: "missing-pane" });
+
+    expect(parsed?.focusedPaneId).toBeNull();
   });
 
   it("rejects unknown version", () => {

@@ -8,6 +8,7 @@ import { useFeatureLayoutPersistence } from "./useFeatureLayoutPersistence";
 import {
   LAYOUT_STATE_KEY,
   ROOT_LEAF_ID,
+  parseLayoutState,
   serializeLayoutState,
   type FeatureLayoutState,
 } from "@/stores/feature-layout-schema";
@@ -170,5 +171,49 @@ describe("feature layout hydration and persistence", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("persists focused pane changes for the current feature layout", () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const splitLayout: FeatureLayoutState = {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          {
+            type: "leaf",
+            id: ROOT_LEAF_ID,
+            tabIds: ["agent", "git", "editor"],
+            activeTabId: "agent",
+          },
+          {
+            type: "leaf",
+            id: "terminal-pane",
+            tabIds: ["terminal"],
+            activeTabId: "terminal",
+          },
+        ],
+      },
+      focusedPaneId: ROOT_LEAF_ID,
+      appliedLayoutId: null,
+    };
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, splitLayout);
+
+    renderHook(() => useFeatureLayoutPersistence(FEATURE_ID), {
+      wrapper: makeWrapper(queryClient),
+    });
+
+    act(() => {
+      useFeatureLayoutStore.getState().setFocusedPane(FEATURE_ID, "terminal-pane");
+    });
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    const firstCall = mocks.mutate.mock.calls[0]?.[0];
+    expect(firstCall?.data.key).toBe(LAYOUT_STATE_KEY);
+    const parsed = parseLayoutState(firstCall?.data.value);
+    expect(parsed?.focusedPaneId).toBe("terminal-pane");
   });
 });

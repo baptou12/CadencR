@@ -1,12 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { render, screen } from "@/test-utils";
+import { waitFor } from "@testing-library/react";
 import FeatureEditorTab from "../FeatureEditorTab";
 
 const mockUseFileWatcher = vi.fn();
 const mockSplitEditorPane = vi.fn();
 const mockNavigatePane = vi.fn();
 const mockInitFeature = vi.fn();
+const mockEditorFocus = vi.fn();
 const mockToggleSidebar = vi.fn();
 const mockPersistCollapsed = vi.fn();
 const mockUseDebouncedSetting = vi.fn<
@@ -32,10 +34,10 @@ vi.mock("@/hooks/useFileWatcher", () => ({
 }));
 
 vi.mock("@/stores/feature-layout-store", () => ({
-  // Test always considers the editor visible — exercises the hotkey paths.
+  // Test always considers the editor focused — exercises hotkeys and focus restore.
   useFeatureLayoutStore: vi.fn(() => true),
   selectFeatureLayout: () => () => ({}),
-  isTabVisible: () => true,
+  getFocusedTab: () => "editor",
 }));
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({
@@ -74,7 +76,17 @@ vi.mock("../FileTree", () => ({
 }));
 
 vi.mock("../EditorSplitTree", () => ({
-  default: () => <div data-testid="editor-split-tree" />,
+  default: ({
+    onEditorViewChange,
+  }: {
+    onEditorViewChange?: (paneId: string, view: { focus: () => void } | null) => void;
+  }) => {
+    useEffect(() => {
+      onEditorViewChange?.("pane-1", { focus: mockEditorFocus });
+      return () => onEditorViewChange?.("pane-1", null);
+    }, [onEditorViewChange]);
+    return <div data-testid="editor-split-tree" />;
+  },
 }));
 
 vi.mock("../FileSearchDialog", () => ({
@@ -116,6 +128,7 @@ describe("FeatureEditorTab", () => {
     mockSplitEditorPane.mockReset();
     mockNavigatePane.mockReset();
     mockInitFeature.mockReset();
+    mockEditorFocus.mockReset();
     mockToggleSidebar.mockReset();
     mockPersistCollapsed.mockReset();
     mockUseDebouncedSetting.mockReset();
@@ -153,5 +166,11 @@ describe("FeatureEditorTab", () => {
 
     expect(mockToggleSidebar).toHaveBeenCalled();
     expect(mockPersistCollapsed).toHaveBeenCalledWith("false");
+  });
+
+  it("restores DOM focus to the active editor when the editor tab owns feature focus", async () => {
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    await waitFor(() => expect(mockEditorFocus).toHaveBeenCalled());
   });
 });

@@ -34,7 +34,7 @@ export function useFeatureLayoutHotkeys(
       const state = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
       const leaf = findPaneContaining(state.splitRoot, tab);
       if (!leaf) return;
-      if (leaf.activeTabId !== tab) setPaneActiveTab(featureId, leaf.id, tab);
+      setPaneActiveTab(featureId, leaf.id, tab);
       if (tab === "terminal") onTerminalActivate?.();
       if (tab === "editor") onEditorActivate?.();
     },

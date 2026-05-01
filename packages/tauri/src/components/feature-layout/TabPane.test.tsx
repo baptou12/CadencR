@@ -91,4 +91,113 @@ describe("TabPane", () => {
 
     expect(onTerminalActivate).toHaveBeenCalledOnce();
   });
+
+  it("only leaves the active underline visible in the focused pane", () => {
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { ...leaf, activeTabId: "terminal" },
+          { type: "leaf", id: "other", tabIds: ["git"], activeTabId: "git" },
+        ],
+      },
+      focusedPaneId: "other",
+      appliedLayoutId: null,
+    });
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={{ ...leaf, activeTabId: "terminal" }} tabs={tabs} />
+      </DndContext>,
+    );
+
+    const terminalTab = screen.getByText("Terminal").closest("button");
+    if (!(terminalTab instanceof HTMLElement)) throw new Error("Terminal tab was not rendered");
+    expect(terminalTab).toHaveClass("data-[state=active]:after:bg-transparent");
+  });
+
+  it("marks the pane focused when clicking an already-active tab", () => {
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { ...leaf, activeTabId: "terminal" },
+          { type: "leaf", id: "other", tabIds: ["git"], activeTabId: "git" },
+        ],
+      },
+      focusedPaneId: "other",
+      appliedLayoutId: null,
+    });
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={{ ...leaf, activeTabId: "terminal" }} tabs={tabs} />
+      </DndContext>,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /terminal/i }));
+
+    expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
+
+  it("marks the pane focused when clicking inside tab content", () => {
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { ...leaf, activeTabId: "terminal" },
+          { type: "leaf", id: "other", tabIds: ["git"], activeTabId: "git" },
+        ],
+      },
+      focusedPaneId: "other",
+      appliedLayoutId: null,
+    });
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={{ ...leaf, activeTabId: "terminal" }} tabs={tabs} />
+      </DndContext>,
+    );
+
+    const host = useTabHostRegistry.getState().hosts[ROOT_LEAF_ID];
+    const contentChild = document.createElement("button");
+    contentChild.addEventListener("pointerdown", (event) => event.stopPropagation());
+    host.appendChild(contentChild);
+
+    fireEvent.pointerDown(contentChild);
+
+    expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
+
+  it("marks the pane focused when focus moves inside tab content", () => {
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { ...leaf, activeTabId: "terminal" },
+          { type: "leaf", id: "other", tabIds: ["git"], activeTabId: "git" },
+        ],
+      },
+      focusedPaneId: "other",
+      appliedLayoutId: null,
+    });
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={{ ...leaf, activeTabId: "terminal" }} tabs={tabs} />
+      </DndContext>,
+    );
+
+    const host = useTabHostRegistry.getState().hosts[ROOT_LEAF_ID];
+    const contentChild = document.createElement("button");
+    host.appendChild(contentChild);
+
+    fireEvent.focusIn(contentChild);
+
+    expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
 });
