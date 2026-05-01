@@ -127,7 +127,7 @@ export const AgentSession = memo(
       handleStartReached,
       autoScrollEnabled,
       isLoadingOlder,
-      setAutoScrollEnabled,
+      scrollToBottom,
     } = useAgentSessionScroll({
       blocks,
       hasMore,
@@ -242,7 +242,7 @@ export const AgentSession = memo(
         ref={metaBarRef}
         showAutoScrollChip={showAutoScrollChip}
         autoScrollEnabled={autoScrollEnabled}
-        onToggleAutoScroll={() => setAutoScrollEnabled(!autoScrollEnabled)}
+        onToggleAutoScroll={scrollToBottom}
         permissionMode={permissionMode}
         onPermissionModeToggle={onPermissionModeToggle}
         showWorktreeChip={showWorktreeChip}

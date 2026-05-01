@@ -115,8 +115,12 @@ export const AgentStream = memo(function AgentStream({
     [],
   );
 
+  // "auto" (instant) — never "smooth". Smooth-scroll animations during fast
+  // streaming lose the race against new tokens: the animation isn't done
+  // when the next token lands, Virtuoso emits atBottomStateChange(false),
+  // and follow-mode is permanently knocked off mid-turn.
   const followOutput = useCallback(
-    (isAtBottom: boolean): "smooth" | false => (isAtBottom ? "smooth" : false),
+    (isAtBottom: boolean): "auto" | false => (isAtBottom ? "auto" : false),
     [],
   );
 
