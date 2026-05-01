@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
@@ -22,7 +22,7 @@ interface FeatureGitTabProps {
   onStartReviewFixer?: (message: string) => void;
 }
 
-export function FeatureGitTab({
+export const FeatureGitTab = memo(function FeatureGitTab({
   featureId,
   diffMode = "worktree",
   onSendComments,
@@ -65,4 +65,4 @@ export function FeatureGitTab({
       )}
     </div>
   );
-}
+});
