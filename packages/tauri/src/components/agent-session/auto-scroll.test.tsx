@@ -134,7 +134,7 @@ describe("AgentSession auto-scroll", () => {
     scrollToIndexMock.mockClear();
   });
 
-  it("shows the auto-scroll chip and lets the user toggle it", async () => {
+  it("shows the auto-scroll chip and scrolls to bottom on click", async () => {
     const user = userEvent.setup();
     render(
       <AgentSession
@@ -149,36 +149,15 @@ describe("AgentSession auto-scroll", () => {
     const button = getAutoScrollButton();
     expect(button).toHaveAttribute("aria-pressed", "true");
 
-    // Toggle off
+    // The chip is a "scroll to bottom" button — clicking it always asks
+    // Virtuoso to scroll to the last item. The pressed state then mirrors
+    // whatever atBottom Virtuoso reports.
     await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "false");
-
-    // Toggle back on → should request a scroll-to-bottom via Virtuoso
-    await user.click(button);
-    expect(button).toHaveAttribute("aria-pressed", "true");
     expect(scrollToIndexMock).toHaveBeenCalledWith({
       index: "LAST",
       align: "end",
       behavior: "auto",
     });
-  });
-
-  it("re-enables auto-scroll when the user manually reaches the bottom", () => {
-    render(
-      <AgentSession
-        agentType="session"
-        blocks={[makeBlock("1", "Hello")]}
-        status="running"
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
-
-    fireAtBottomChange(false);
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
-
-    fireAtBottomChange(true);
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
   it("disables auto-scroll when the user scrolls away from the bottom", () => {
@@ -195,6 +174,24 @@ describe("AgentSession auto-scroll", () => {
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
     fireAtBottomChange(false);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("re-enables auto-scroll when the user reaches the bottom again", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    fireAtBottomChange(false);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+
+    fireAtBottomChange(true);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
   it("does not re-enable auto-scroll when the prompt is focused", async () => {

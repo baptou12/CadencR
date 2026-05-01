@@ -18,17 +18,26 @@ interface UseAgentSessionScrollOptions {
 }
 
 interface UseAgentSessionScrollResult {
-  /** Pass to `<AgentStream virtuosoRef={...} />`. Used by `setAutoScrollEnabled` to scroll to the bottom imperatively. */
+  /** Pass to `<AgentStream virtuosoRef={...} />`. Used by `scrollToBottom` to scroll to the bottom imperatively. */
   virtuosoRef: RefObject<VirtuosoHandle | null>;
   /** Pass to `<AgentStream firstItemIndex={...} />`. Decrements when older items are prepended so the user's scroll position is preserved. */
   firstItemIndex: number;
-  /** Pass to `<AgentStream onAtBottomChange={...} />`. Tracks the auto-scroll state based on Virtuoso's bottom detection. */
+  /**
+   * Pass to `<AgentStream onAtBottomChange={...} />`. The auto-scroll state
+   * is just a mirror of Virtuoso's "at bottom" — no extra book-keeping.
+   */
   handleAtBottomChange: (atBottom: boolean) => void;
   /** Pass to `<AgentStream onStartReached={...} />`. Triggers older-history loading when the user scrolls near the top. */
   handleStartReached: () => void;
+  /** True when we're at the bottom and Virtuoso is following new output. */
   autoScrollEnabled: boolean;
   isLoadingOlder: boolean;
-  setAutoScrollEnabled: (enabled: boolean) => void;
+  /**
+   * Wire to the auto-scroll chip's onClick. Scrolls the list to the last
+   * item; the resulting `atBottomStateChange(true)` flips `autoScrollEnabled`
+   * back on. This is the only way to re-enable follow-mode from the UI.
+   */
+  scrollToBottom: () => void;
 }
 
 export function useAgentSessionScroll({
@@ -38,10 +47,9 @@ export function useAgentSessionScroll({
 }: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const loadingOlderRef = useRef(false);
-  const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [firstItemIndex, setFirstItemIndex] = useState(PREPEND_START_INDEX);
-  const autoScrollEnabledRef = useRef(autoScrollEnabled);
   const blocksLengthRef = useRef(blocks.length);
   const isMountedRef = useRef(true);
 
@@ -56,28 +64,13 @@ export function useAgentSessionScroll({
     [],
   );
 
-  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
-    autoScrollEnabledRef.current = enabled;
-    setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
-    if (enabled) {
-      virtuosoRef.current?.scrollToIndex({
-        index: "LAST",
-        align: "end",
-        behavior: "auto",
-      });
-    }
+  const scrollToBottom = useCallback((): void => {
+    virtuosoRef.current?.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
   }, []);
-
-  const handleAtBottomChange = useCallback(
-    (atBottom: boolean): void => {
-      if (atBottom) {
-        if (!autoScrollEnabledRef.current) setAutoScrollEnabled(true);
-      } else if (autoScrollEnabledRef.current) {
-        setAutoScrollEnabled(false);
-      }
-    },
-    [setAutoScrollEnabled],
-  );
 
   const handleStartReached = useCallback((): void => {
     if (!hasMore || !onLoadOlder || loadingOlderRef.current) return;
@@ -112,10 +105,11 @@ export function useAgentSessionScroll({
   return {
     virtuosoRef,
     firstItemIndex,
-    handleAtBottomChange,
+    // The auto-scroll state *is* `atBottom` — the handler is just the setter.
+    handleAtBottomChange: setAutoScrollEnabled,
     handleStartReached,
     autoScrollEnabled,
     isLoadingOlder,
-    setAutoScrollEnabled,
+    scrollToBottom,
   };
 }
