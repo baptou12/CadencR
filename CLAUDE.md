@@ -2,33 +2,49 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Cadencr is a desktop IDE that wraps multiple AI coding agents (Claude Code, OpenCode, Codex) behind a unified workspace.
+
 ## Monorepo Structure
 
-This is a pnpm workspaces + Turborepo monorepo. The desktop app lives in `packages/tauri/` (Tauri v2 + React frontend).
+pnpm workspaces + Turborepo. TypeScript frontend, Rust backend, and several Rust SDKs.
 
-- Run tasks via turbo from root: `pnpm turbo run <task>` (for example `pnpm turbo run lint`, `pnpm turbo run test`)
-- Or target the desktop package directly: `pnpm --filter @cadencr/desktop <task>`
-- Dev server: `pnpm dev` or `pnpm start` from root. Frontend/service ports are configured via `packages/tauri/.env` and `packages/service/.env` and default to `1420` / `5005`.
+| Package | Stack | Purpose |
+|---|---|---|
+| `packages/tauri/` | Tauri v2 + React | Desktop shell and frontend (`@cadencr/desktop`) |
+| `packages/service/` | Rust (axum, utoipa) | Backend API server; runs as Tauri sidecar in prod |
+| `packages/claude-agent-sdk-rs/` | Rust | SDK for Claude Code agents |
+| `packages/codex-app-server-sdk-rs/` | Rust | SDK for Codex agents |
+| `packages/opencode-sdk-rs/` | Rust | SDK for OpenCode agents |
+| `packages/cli-discovery/` | Rust | Detects locally installed agent CLIs |
+| `packages/loc/` | Rust | Internal LOC counter tool (`pnpm loc`) |
+| `packages/landing/` | Next.js | Marketing site, docs, roadmap |
+
+## Agent Providers
+
+Cadencr is provider-neutral by design. Each supported agent (Claude Code, OpenCode, Codex) has its own Rust SDK in `packages/*-sdk-rs/` that handles transport/protocol details only. Provider-specific business logic lives in adapters inside `packages/service/`; shared frontend and backend code consumes provider-neutral types and catalog data — never branch on provider identity in generic code.
+
+## Workflow
+
+Requires `pnpm` and Node `>=22.0.0 <23.0.0`.
+
+```bash
+pnpm dev                                  # frontend + service via Turborepo (alias: pnpm start)
+pnpm build                                # build the desktop app
+pnpm test                                 # vitest (frontend) + cargo test (Rust)
+pnpm lint                                 # oxlint
+pnpm format                               # oxfmt + cargo fmt
+pnpm --filter @cadencr/desktop ts-check   # TypeScript type-check
+pnpm --filter @cadencr/desktop knip       # unused-export detection
+```
+
+Target a single package: `pnpm --filter @cadencr/desktop <task>`. Frontend/service ports are configured via `packages/tauri/.env` and `packages/service/.env` (defaults `1420` / `5005`).
 
 ## Architecture
 
-The app uses Tauri v2 as the desktop shell with a React frontend. The backend is a Rust API server in `packages/service/` spawned as a sidecar in production. In dev, `pnpm dev` from the repo root runs the service alongside the desktop app via Turborepo. The frontend communicates with the backend via HTTP (Axios) and WebSocket (Zustand store). Folder selection uses `@tauri-apps/plugin-dialog`.
+Tauri v2 desktop shell with a React frontend. The backend is the Rust API server in `packages/service/`, spawned as a sidecar in production; in dev `pnpm dev` runs it alongside the frontend via Turborepo. Frontend ↔ backend communication is HTTP (Axios) for requests and WebSocket (Zustand store) for streaming updates. Folder selection uses `@tauri-apps/plugin-dialog`.
 
-Frontend path alias: `@` -> `packages/tauri/src/` (for example `import { foo } from "@/lib/foo"`).
+Frontend path alias: `@` → `packages/tauri/src/` (for example `import { foo } from "@/lib/foo"`).
 
-## Critical Constraints
+## Project-specific workflows
 
-- Use `pnpm` instead of `npm` or `yarn`
-- Lint with `pnpm run lint` (oxlint via turbo)
-- Test with `pnpm test` (vitest via turbo)
-- Never use `any`; use `unknown` plus narrowing when needed
-- Keep TypeScript explicit. All functions, parameters, and return values must have explicit types. Prefer interfaces for object shapes and use Zod schemas for runtime validation at boundaries.
-- Never swallow errors silently; surface them to the user
-- Keep implementations simple and reusable; prefer extracting shared logic over duplication
-- Search for existing code before writing new code. Reuse helpers, hooks, utilities, and components instead of duplicating logic.
-- Avoid unnecessary re-renders, redundant network calls, and heavy main-thread work
-- After changing the Rust API surface (utoipa attributes / new handlers): run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/tauri/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/tauri/orval.transformer.cjs`.
-- In Rust source files, keep unit tests inline with the module they cover using `#[cfg(test)]`; do not create dedicated sibling `tests.rs` files for module unit tests
-- Do not spread provider-specific logic through shared frontend/backend codepaths; SDKs handle provider communication, adapters unify provider business logic, and shared code should stay provider-neutral
-- No file longer than 400 lines; refactor before crossing the limit
-- No function longer than 100 lines; split long functions before finishing
+**Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/tauri/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/tauri/orval.transformer.cjs`.
