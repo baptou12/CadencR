@@ -2381,4 +2381,58 @@ describe("useWebSocketSession", () => {
     expect(r2.current.blocks.length).toBe(1);
     expect(r2.current.blocks[0].content).toBe("hello");
   });
+
+  it("action references are stable across same-session updates", async () => {
+    const { result } = renderHook(() => useWebSocketSession("stable-id"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const before = {
+      sendPrompt: result.current.sendPrompt,
+      interrupt: result.current.interrupt,
+      destroy: result.current.destroy,
+      setPermissionMode: result.current.setPermissionMode,
+      approvePlan: result.current.approvePlan,
+      loadOlderMessages: result.current.loadOlderMessages,
+    };
+
+    // Streaming a chunk mutates this session's slice, which would otherwise
+    // rebuild the hook's return object. Action wrappers must remain identical
+    // because consumers list them in `useCallback`/`useMemo` deps.
+    act(() => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "message",
+        payload: {
+          blocks: [
+            {
+              type: "stream_event",
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text" },
+              },
+            },
+            {
+              type: "stream_event",
+              event: {
+                type: "content_block_delta",
+                index: 0,
+                delta: { type: "text_delta", text: "hello" },
+              },
+            },
+          ],
+        },
+      });
+    });
+
+    expect(result.current.blocks.length).toBe(1);
+    expect(result.current.sendPrompt).toBe(before.sendPrompt);
+    expect(result.current.interrupt).toBe(before.interrupt);
+    expect(result.current.destroy).toBe(before.destroy);
+    expect(result.current.setPermissionMode).toBe(before.setPermissionMode);
+    expect(result.current.approvePlan).toBe(before.approvePlan);
+    expect(result.current.loadOlderMessages).toBe(before.loadOlderMessages);
+  });
 });

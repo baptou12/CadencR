@@ -5,7 +5,7 @@
  * navigating away and back does NOT create a new connection.
  */
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { useGetFeatureAgentState } from "@/api/generated";
@@ -82,14 +82,14 @@ export function useWebSocketSession(
   sessionId: string,
   featureId?: number,
 ): UseWebSocketSessionReturn {
-  const store = useWsSessionStore();
-  const session = store.sessions[sessionId];
+  // Subscribe to this session's slice only — chunks on other sessions don't
+  // re-render the hook.
+  const session = useWsSessionStore((s) => s.sessions[sessionId]);
 
-  // Connect on mount — no-op if already connected
   useEffect(() => {
-    store.connect(sessionId);
-    // Intentionally NOT disconnecting on unmount — connections are cached.
-  }, [sessionId, store]);
+    useWsSessionStore.getState().connect(sessionId);
+    // Connections are cached; no disconnect on unmount.
+  }, [sessionId]);
 
   // Load persisted state from DB when featureId is provided.
   const persistedLoaded = session?.persistedLoaded ?? false;
@@ -102,6 +102,7 @@ export function useWebSocketSession(
 
   useEffect(() => {
     if (persistedLoaded || !featureId || !agentStateQuery.data) return;
+    const store = useWsSessionStore.getState();
     const sessions = agentStateQuery.data.sessions;
     if (sessions.length === 0) {
       store.markPersistedLoaded(sessionId);
@@ -142,54 +143,64 @@ export function useWebSocketSession(
       contextUsage: persistedContextUsage,
       hasFileChanges: lastSession.hasFileChanges,
     });
-  }, [featureId, agentStateQuery.data, persistedLoaded, sessionId, store]);
+  }, [featureId, agentStateQuery.data, persistedLoaded, sessionId]);
 
-  return {
-    blocks: session?.blocks ?? [],
-    lifecycle: session?.lifecycle ?? createIdleTurnLifecycle(),
-    status: lifecycleToStatus(session?.lifecycle ?? createIdleTurnLifecycle()),
-    isConnected: session?.isConnected ?? false,
-    sessionId,
-    hasMore: session?.hasMore ?? false,
-    loadOlderMessages: () => store.loadOlderMessages(sessionId),
-    pendingPermission: session?.pendingPermission ?? null,
-    pendingRequestId: session?.pendingRequestId ?? "",
-    pendingQuestions: session?.pendingQuestions ?? [],
-    permissionMode: session?.permissionMode ?? "acceptEdits",
-    pendingPlanApproval: session?.pendingPlanApproval ?? null,
-    contextUsage: session?.contextUsage ?? null,
-    currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
-    currentModelId: session?.currentModelId ?? FALLBACK_MODEL_ID,
-    currentThinkingEffort: session?.currentThinkingEffort,
-    runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
-    runtimeSessionId: session?.runtimeSessionId ?? "",
-    hasFileChanges: session?.hasFileChanges ?? false,
+  // Action wrappers depend only on sessionId — stable across same-session
+  // chunks so consumers can list `ws.sendPrompt` etc. in deps without churn.
+  const actions = useMemo(() => {
+    const s = useWsSessionStore.getState();
+    return {
+      loadOlderMessages: (): Promise<void> => s.loadOlderMessages(sessionId),
+      sendPrompt: (
+        text: string,
+        images?: Array<{ base64: string; mimeType: string }>,
+        useWorktree?: boolean,
+      ): void => s.sendPrompt(sessionId, text, images, useWorktree),
+      respondToPermission: (
+        requestId: string,
+        decision: PermissionDecisionValue,
+        feedback?: string,
+      ): void => s.respondToPermission(sessionId, requestId, decision, feedback),
+      respondToQuestion: (response: AgentQuestionAnswers): void =>
+        s.respondToQuestion(sessionId, response),
+      interrupt: (): void => s.interrupt(sessionId),
+      destroy: (): void => s.destroy(sessionId),
+      clearSession: (): void => s.clearSession(sessionId),
+      compactSession: (): void => s.compactSession(sessionId),
+      initSession: (config: SessionConfig): void => s.initSession(sessionId, config),
+      setProvider: (providerId: string): void => s.setProvider(sessionId, providerId),
+      setModel: (modelId: string): void => s.setModel(sessionId, modelId),
+      setThinkingEffort: (thinkingEffort?: string): void =>
+        s.setThinkingEffort(sessionId, thinkingEffort),
+      setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
+      approvePlan: (): void => s.approvePlan(sessionId),
+      requestPlanChanges: (feedback: string): void => s.requestPlanChanges(sessionId, feedback),
+    };
+  }, [sessionId]);
 
-    sendPrompt: (
-      text: string,
-      images?: Array<{ base64: string; mimeType: string }>,
-      useWorktree?: boolean,
-    ) => store.sendPrompt(sessionId, text, images, useWorktree),
-    respondToPermission: (
-      requestId: string,
-      decision: PermissionDecisionValue,
-      feedback?: string,
-    ) => {
-      store.respondToPermission(sessionId, requestId, decision, feedback);
-    },
-    respondToQuestion: (response: AgentQuestionAnswers) =>
-      store.respondToQuestion(sessionId, response),
-    interrupt: () => store.interrupt(sessionId),
-    destroy: () => store.destroy(sessionId),
-    clearSession: () => store.clearSession(sessionId),
-    compactSession: () => store.compactSession(sessionId),
-    initSession: (config: SessionConfig) => store.initSession(sessionId, config),
-    setProvider: (providerId: string) => store.setProvider(sessionId, providerId),
-    setModel: (modelId: string) => store.setModel(sessionId, modelId),
-    setThinkingEffort: (thinkingEffort?: string) =>
-      store.setThinkingEffort(sessionId, thinkingEffort),
-    setPermissionMode: (mode: PermissionMode) => store.setPermissionMode(sessionId, mode),
-    approvePlan: () => store.approvePlan(sessionId),
-    requestPlanChanges: (feedback: string) => store.requestPlanChanges(sessionId, feedback),
-  };
+  // Snapshot fields refresh per session change (incl. token chunks).
+  return useMemo<UseWebSocketSessionReturn>(() => {
+    const lifecycle = session?.lifecycle ?? createIdleTurnLifecycle();
+    return {
+      blocks: session?.blocks ?? [],
+      lifecycle,
+      status: lifecycleToStatus(lifecycle),
+      isConnected: session?.isConnected ?? false,
+      sessionId,
+      hasMore: session?.hasMore ?? false,
+      pendingPermission: session?.pendingPermission ?? null,
+      pendingRequestId: session?.pendingRequestId ?? "",
+      pendingQuestions: session?.pendingQuestions ?? [],
+      permissionMode: session?.permissionMode ?? "acceptEdits",
+      pendingPlanApproval: session?.pendingPlanApproval ?? null,
+      contextUsage: session?.contextUsage ?? null,
+      currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,
+      currentModelId: session?.currentModelId ?? FALLBACK_MODEL_ID,
+      currentThinkingEffort: session?.currentThinkingEffort,
+      runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
+      runtimeSessionId: session?.runtimeSessionId ?? "",
+      hasFileChanges: session?.hasFileChanges ?? false,
+      ...actions,
+    };
+  }, [session, sessionId, actions]);
 }
