@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
@@ -33,14 +33,19 @@ vi.mock("react-virtuoso", () => ({
   ),
 }));
 
+// Per-block render counts captured by the AgentBlock mock. Tests that care
+// about the memoisation of `AgentStreamItem` read this map after re-rendering.
+const blockRenderCounts = new Map<string, number>();
+
 // Mock AgentBlock to keep tests focused on AgentStream behavior
 vi.mock("./AgentBlock", async () => {
   const actual = await vi.importActual<typeof import("./AgentBlock")>("./AgentBlock");
   return {
     ...actual,
-    AgentBlock: ({ block }: { block: AgentBlockData }) => (
-      <div data-testid={`block-${block.id}`}>{block.content}</div>
-    ),
+    AgentBlock: ({ block }: { block: AgentBlockData }) => {
+      blockRenderCounts.set(block.id, (blockRenderCounts.get(block.id) ?? 0) + 1);
+      return <div data-testid={`block-${block.id}`}>{block.content}</div>;
+    },
   };
 });
 
@@ -53,6 +58,10 @@ function makeBlock(
 }
 
 describe("AgentStream", () => {
+  beforeEach(() => {
+    blockRenderCounts.clear();
+  });
+
   it("renders blocks", () => {
     render(<AgentStream blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]} />);
     expect(screen.getByTestId("block-1")).toBeInTheDocument();
@@ -139,5 +148,30 @@ describe("AgentStream", () => {
   it("renders the loading-older spinner via Virtuoso Header when isLoadingOlder is true", () => {
     const { container } = render(<AgentStream blocks={[makeBlock("1", "Hello")]} isLoadingOlder />);
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  it("does not re-render unchanged AgentStreamItem blocks during streaming", () => {
+    const block1 = makeBlock("1", "First");
+    const block2 = makeBlock("2", "Second");
+    const block3 = makeBlock("3", "Third");
+
+    const { rerender } = render(<AgentStream blocks={[block1, block2, block3]} isStreaming />);
+
+    // Each block rendered once on mount.
+    expect(blockRenderCounts.get("1")).toBe(1);
+    expect(blockRenderCounts.get("2")).toBe(1);
+    expect(blockRenderCounts.get("3")).toBe(1);
+
+    // Simulate a streaming chunk: only block 3 grows. Blocks 1 and 2 keep
+    // their original references so their AgentStreamItem props are stable.
+    const block3Updated: AgentBlockData = { ...block3, content: "Third — more" };
+    rerender(<AgentStream blocks={[block1, block2, block3Updated]} isStreaming />);
+
+    // Only block 3 should have re-rendered. The memoised AgentStreamItem
+    // bails out for blocks 1 and 2 because their props (block reference,
+    // toolResultMap, isStreaming, basePath) are all stable.
+    expect(blockRenderCounts.get("1")).toBe(1);
+    expect(blockRenderCounts.get("2")).toBe(1);
+    expect(blockRenderCounts.get("3")).toBe(2);
   });
 });
