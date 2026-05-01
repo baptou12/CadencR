@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { applyMutations, parseTodosFromBlocks, buildMessagePatch } from "./ws-block-mutations";
+import {
+  applyMutations,
+  blocksPatchWithDerived,
+  parseTodosFromBlocks,
+  buildMessagePatch,
+  rebuildDerivedAgentStreamState,
+} from "./ws-block-mutations";
 import { createStreamingState } from "./ws-message-processing";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { BlockMutation } from "./ws-message-processing";
@@ -289,6 +295,70 @@ describe("applyMutations", () => {
     expect(result[0].toolArgs).toBe(latest);
   });
 
+  it("maintains rootBlocks and toolResultMap when a root block is appended", () => {
+    const streamState = createStreamingState();
+    const rootBlock: AgentBlockData = { id: "r1", type: "text", content: "hello" };
+    applyMutations([], [{ action: "append", block: rootBlock }], streamState);
+    expect(streamState.rootBlocks).toEqual([rootBlock]);
+    expect(streamState.rootBlockPosById.get("r1")).toBe(0);
+
+    const resultBlock: AgentBlockData = {
+      id: "r2",
+      type: "tool_result",
+      content: "ok",
+      toolUseId: "tu-1",
+    };
+    applyMutations([rootBlock], [{ action: "append", block: resultBlock }], streamState);
+    expect(streamState.rootBlocks).toEqual([rootBlock, resultBlock]);
+    expect(streamState.toolResultMap.get("tu-1")).toBe(resultBlock);
+  });
+
+  it("does not push child appends into rootBlocks but bumps the parent ref", () => {
+    const streamState = createStreamingState();
+    const parent: AgentBlockData = {
+      id: "p1",
+      type: "tool_call",
+      content: "{}",
+      toolName: "Agent",
+      toolUseId: "tu-parent",
+      childBlocks: [],
+    };
+    streamState.toolUseIdToBlock.set("tu-parent", parent);
+    applyMutations([], [{ action: "append", block: parent }], streamState);
+    expect(streamState.rootBlocks).toHaveLength(1);
+    const initialParentRef = streamState.rootBlocks[0];
+    expect(initialParentRef.id).toBe("p1");
+
+    const child: AgentBlockData = {
+      id: "c1",
+      type: "text",
+      content: "child text",
+      parentToolUseId: "tu-parent",
+    };
+    applyMutations([parent], [{ action: "append", block: child }], streamState);
+    // Child must NOT appear at root level.
+    expect(streamState.rootBlocks).toHaveLength(1);
+    expect(streamState.rootBlocks[0].id).toBe("p1");
+    // Parent ref must have been swapped (replace_parent).
+    expect(streamState.rootBlocks[0]).not.toBe(initialParentRef);
+  });
+
+  it("swaps the rootBlocks ref when a root block content is updated", () => {
+    const streamState = createStreamingState();
+    const root: AgentBlockData = { id: "t1", type: "text", content: "hi " };
+    applyMutations([], [{ action: "append", block: root }], streamState);
+    const initialRef = streamState.rootBlocks[0];
+
+    const result = applyMutations(
+      [root],
+      [{ action: "update", block: { id: "t1", type: "text", content: "world" } }],
+      streamState,
+    );
+    expect(result[0].content).toBe("hi world");
+    expect(streamState.rootBlocks[0]).not.toBe(initialRef);
+    expect(streamState.rootBlocks[0].content).toBe("hi world");
+  });
+
   it("does not loop forever when partial json starts with '{'", () => {
     const streamState = createStreamingState();
     const validArgs = JSON.stringify({
@@ -323,5 +393,37 @@ describe("applyMutations", () => {
 
     expect(result[0].toolArgs).toBe(validArgs);
     expect(result[0].content).toBe('{"description": "Fi');
+  });
+});
+
+describe("rebuildDerivedAgentStreamState", () => {
+  it("filters out children and indexes tool_result blocks by toolUseId", () => {
+    const streamState = createStreamingState();
+    const blocks: AgentBlockData[] = [
+      { id: "a", type: "text", content: "hi" },
+      { id: "b", type: "text", content: "child", parentToolUseId: "tu-x" },
+      { id: "c", type: "tool_result", content: "ok", toolUseId: "tu-x" },
+    ];
+    rebuildDerivedAgentStreamState(streamState, blocks);
+    expect(streamState.rootBlocks.map((b) => b.id)).toEqual(["a", "c"]);
+    expect(streamState.toolResultMap.get("tu-x")?.id).toBe("c");
+    expect(streamState.rootBlockPosById.get("a")).toBe(0);
+    expect(streamState.rootBlockPosById.get("c")).toBe(1);
+  });
+});
+
+describe("blocksPatchWithDerived", () => {
+  it("returns fresh refs for blocks, rootBlocks, and toolResultMap", () => {
+    const streamState = createStreamingState();
+    const blocks: AgentBlockData[] = [
+      { id: "a", type: "text", content: "hi" },
+      { id: "b", type: "tool_result", content: "ok", toolUseId: "tu-1" },
+    ];
+    const patch = blocksPatchWithDerived(streamState, blocks);
+    expect(patch.blocks).toBe(blocks);
+    expect(patch.rootBlocks).not.toBe(streamState.rootBlocks);
+    expect(patch.rootBlocks.map((b) => b.id)).toEqual(["a", "b"]);
+    expect(patch.toolResultMap).not.toBe(streamState.toolResultMap);
+    expect(patch.toolResultMap.get("tu-1")?.id).toBe("b");
   });
 });

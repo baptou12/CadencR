@@ -246,6 +246,8 @@ function WebSocketSessionPage() {
           projectId={projectId}
           wsSessionId={sessionId}
           blocks={ws.blocks}
+          rootBlocks={ws.rootBlocks}
+          toolResultMap={ws.toolResultMap}
           status={ws.status}
           onSend={(text, images) => {
             if (text.trim() === "/clear") {

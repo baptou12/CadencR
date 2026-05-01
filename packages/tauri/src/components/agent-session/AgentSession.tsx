@@ -37,6 +37,8 @@ export const AgentSession = memo(
     const {
       agentType,
       blocks,
+      rootBlocks,
+      toolResultMap,
       status,
       onSend,
       onStop,
@@ -279,6 +281,8 @@ export const AgentSession = memo(
       blocks.length > 0 ? (
         <AgentStream
           blocks={blocks}
+          rootBlocks={rootBlocks}
+          toolResultMap={toolResultMap}
           isStreaming={isStreaming}
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}

@@ -25,6 +25,7 @@ import {
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import {
   type BlockMutation,
+  blocksPatchWithDerived,
   createStreamingState,
   isRecord,
   processSdkMessage,
@@ -292,14 +293,15 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
   if (allMutations.length === 0 && !compactBoundaryObserved) return;
 
   const currentSession = ctx.getSession(sessionId);
-  const patch: Partial<SessionEntry> =
-    allMutations.length > 0
-      ? buildMessagePatch(
-          applyMutations(currentSession.blocks, allMutations, state),
-          allMutations,
-          { enterPlanModeRequested },
-        )
-      : {};
+  const patch: Partial<SessionEntry> = {};
+  if (allMutations.length > 0) {
+    const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
+    Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
+    // applyMutations maintains the derived state on `streamState` in O(1) per
+    // mutation; snapshot fresh refs so React detects the change.
+    patch.rootBlocks = state.rootBlocks.slice();
+    patch.toolResultMap = new Map(state.toolResultMap);
+  }
 
   if (compactBoundaryObserved) {
     const existing = currentSession.contextUsage;
@@ -339,7 +341,9 @@ function handlePermissionRequest(ctx: StoreAccessors, sessionId: string, payload
     );
     ctx.set(
       updateSession(current, sessionId, {
-        ...(updatedBlocks ? { blocks: updatedBlocks } : {}),
+        ...(updatedBlocks && session
+          ? blocksPatchWithDerived(session.streamingState, updatedBlocks)
+          : {}),
         pendingRequestId: p.request_id,
         pendingPlanApproval: p.tool_input ?? {},
         lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
@@ -386,19 +390,20 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
   const state = session.streamingState;
   if (p?.message) {
     state.counter += 1;
+    const blocks = [
+      ...session.blocks,
+      {
+        id: `ws-err-${state.counter}`,
+        type: "text" as const,
+        content: `Error: ${p.message}`,
+        isError: true,
+      },
+    ];
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
         pendingManualCompact: false,
-        blocks: [
-          ...session.blocks,
-          {
-            id: `ws-err-${state.counter}`,
-            type: "text",
-            content: `Error: ${p.message}`,
-            isError: true,
-          },
-        ],
+        ...blocksPatchWithDerived(state, blocks),
       }),
     );
   } else {
@@ -415,14 +420,18 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
   const session = ctx.get().sessions[sessionId];
   const existingBlocks = session?.blocks ?? [];
   const previousSessionId = parseClearedPayload(payload)?.previous_session_id ?? "";
+  const clearedBlocks = [
+    ...existingBlocks,
+    { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
+  ];
+  // Reset streamingState (clear divider drops all in-flight streams) and
+  // re-prime the derived rootBlocks/toolResultMap from the new blocks list.
+  const freshState = createStreamingState();
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      blocks: [
-        ...existingBlocks,
-        { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
-      ],
+      ...blocksPatchWithDerived(freshState, clearedBlocks),
       lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
-      streamingState: createStreamingState(),
+      streamingState: freshState,
       pendingPermission: null,
       pendingRequestId: "",
       pendingQuestions: [],

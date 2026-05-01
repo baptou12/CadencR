@@ -42,6 +42,18 @@ export interface SessionEntry {
   lifecycle: TurnLifecycle;
   streamingState: StreamingState;
   blocks: AgentBlockData[];
+  /**
+   * Pre-filtered subset of `blocks` excluding subagent children. Maintained
+   * incrementally inside `applyMutations` so that AgentStream consumers do
+   * not re-derive it from `blocks` on every streamed chunk.
+   */
+  rootBlocks: AgentBlockData[];
+  /**
+   * Map from a tool_call's `toolUseId` to its `tool_result` block. Maintained
+   * incrementally so AgentBlock can inline tool results without scanning the
+   * whole conversation per render.
+   */
+  toolResultMap: Map<string, AgentBlockData>;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
   pendingQuestions: AgentQuestion[];
@@ -85,6 +97,8 @@ export function createSessionEntry(): SessionEntry {
     lifecycle: createIdleTurnLifecycle(),
     streamingState: createStreamingState(),
     blocks: [],
+    rootBlocks: [],
+    toolResultMap: new Map(),
     pendingPermission: null,
     pendingRequestId: "",
     pendingQuestions: [],

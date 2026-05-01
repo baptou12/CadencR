@@ -30,6 +30,13 @@ import {
 
 interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
+  /** Pre-filtered subset of `blocks` excluding subagent children, maintained
+   *  incrementally by the store so AgentStream avoids re-deriving it on
+   *  every chunk. */
+  rootBlocks: AgentBlockData[];
+  /** Map from a tool_call's `toolUseId` to its `tool_result` block, also
+   *  maintained incrementally by the store. */
+  toolResultMap: Map<string, AgentBlockData>;
   lifecycle: TurnLifecycle;
   status: AgentStatus;
   isConnected: boolean;
@@ -183,6 +190,8 @@ export function useWebSocketSession(
     const lifecycle = session?.lifecycle ?? createIdleTurnLifecycle();
     return {
       blocks: session?.blocks ?? [],
+      rootBlocks: session?.rootBlocks ?? [],
+      toolResultMap: session?.toolResultMap ?? new Map(),
       lifecycle,
       status: lifecycleToStatus(lifecycle),
       isConnected: session?.isConnected ?? false,

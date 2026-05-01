@@ -51,10 +51,12 @@ import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 
+import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
 export {
   type StreamingState,
   type BlockMutation,
+  blocksPatchWithDerived,
   createStreamingState,
   processSdkMessage,
   applyMutations,
@@ -127,6 +129,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
                 isError: true,
               }
             : undefined;
+          const closedBlocks = errorBlock
+            ? [...(session?.blocks ?? []), errorBlock]
+            : (session?.blocks ?? []);
+          const closedDerived = errorBlock
+            ? blocksPatchWithDerived(
+                session?.streamingState ?? createStreamingState(),
+                closedBlocks,
+              )
+            : { blocks: closedBlocks };
           set(
             updateSession(get(), sessionId, {
               conn: null,
@@ -136,7 +147,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
                 type: "connection_lost",
               }),
-              blocks: errorBlock ? [...(session?.blocks ?? []), errorBlock] : session?.blocks,
+              ...closedDerived,
             }),
           );
           scheduleReconnect(sessionId, () => get().connect(sessionId));
@@ -176,18 +187,21 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             console.error("[ws-session] handleEnvelope error:", err);
             const session = getSession(sessionId);
             session.streamingState.counter += 1;
+            const blocks = [
+              ...session.blocks,
+              {
+                id: `ws-err-${session.streamingState.counter}`,
+                type: "text" as const,
+                content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
+                isError: true,
+              },
+            ];
             set(
-              updateSession(get(), sessionId, {
-                blocks: [
-                  ...session.blocks,
-                  {
-                    id: `ws-err-${session.streamingState.counter}`,
-                    type: "text" as const,
-                    content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
-                    isError: true,
-                  },
-                ],
-              }),
+              updateSession(
+                get(),
+                sessionId,
+                blocksPatchWithDerived(session.streamingState, blocks),
+              ),
             );
           }
         },
@@ -308,18 +322,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
       const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);
       session.streamingState.counter += 1;
+      const nextBlocks = [
+        ...session.blocks,
+        {
+          id: `ws-user-${session.streamingState.counter}`,
+          type: "user_message" as const,
+          content: formatted,
+          isError: false,
+          createdAt: new Date().toISOString(),
+        },
+      ];
       set(
         updateSession(get(), sessionId, {
-          blocks: [
-            ...session.blocks,
-            {
-              id: `ws-user-${session.streamingState.counter}`,
-              type: "user_message" as const,
-              content: formatted,
-              isError: false,
-              createdAt: new Date().toISOString(),
-            },
-          ],
+          ...blocksPatchWithDerived(session.streamingState, nextBlocks),
           pendingQuestions: [],
           pendingQuestionToolInput: {},
           pendingRequestId: "",

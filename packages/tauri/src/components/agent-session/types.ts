@@ -14,6 +14,18 @@ export interface AgentSessionProps {
   agentType: AgentType;
   /** The blocks (stream output) to render */
   blocks: AgentBlockData[];
+  /**
+   * Pre-filtered subset of `blocks` excluding subagent children. When the
+   * caller already maintains this incrementally (e.g. the WS session store),
+   * forward it so AgentStream skips the per-render filter scan. Optional —
+   * AgentStream falls back to filtering `blocks` itself when omitted.
+   */
+  rootBlocks?: AgentBlockData[];
+  /**
+   * Map from a tool_call's `toolUseId` to its `tool_result` block. Same
+   * incremental-vs-fallback contract as `rootBlocks`.
+   */
+  toolResultMap?: Map<string, AgentBlockData>;
   /** Current status of the agent */
   status: AgentStatus;
   /** Called when the user sends a message via the prompt bar */

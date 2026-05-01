@@ -16,7 +16,13 @@ export type {
 } from "./ws-message-processing-core";
 
 // Re-export block mutation helpers for existing consumers
-export { applyMutations, buildMessagePatch, parseTodosFromBlocks } from "./ws-block-mutations";
+export {
+  applyMutations,
+  blocksPatchWithDerived,
+  buildMessagePatch,
+  parseTodosFromBlocks,
+  rebuildDerivedAgentStreamState,
+} from "./ws-block-mutations";
 export type { MessagePatch, ParsedTodo } from "./ws-block-mutations";
 
 // ---------------------------------------------------------------------------

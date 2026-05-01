@@ -112,6 +112,7 @@ export function applyMutations(
         }
       }
       rootAppends.push(mut.block);
+      recordRootAppend(streamState, mut.block);
     } else {
       rootUpdates.push(mut);
     }
@@ -126,80 +127,153 @@ export function applyMutations(
     }
   }
 
-  function latestValidJsonSnapshot(content: string): string | undefined {
-    try {
-      JSON.parse(content);
-      return content;
-    } catch {
-      // Fall through to recover the last full JSON object from concatenated snapshots.
-    }
-
-    for (let index = content.lastIndexOf("{"); index >= 0; ) {
-      const candidate = content.slice(index);
-      try {
-        JSON.parse(candidate);
-        return candidate;
-      } catch {
-        // Keep scanning backward.
-      }
-      const nextSearchStart = index - 1;
-      index = nextSearchStart >= 0 ? content.lastIndexOf("{", nextSearchStart) : -1;
-    }
-    return undefined;
-  }
-
-  function syncToolUseMap(block: AgentBlockData): void {
-    if (block.type !== "tool_call") return;
-    const latest = latestValidJsonSnapshot(block.content);
-    if (latest) {
-      block.toolArgs = latest;
-      if (block.toolUseId) {
-        const canonical = streamState.toolUseIdToBlock.get(block.toolUseId);
-        if (canonical && canonical !== block) {
-          canonical.toolArgs = block.toolArgs;
-          canonical.content = block.content;
-        }
-      }
-    }
-  }
-
-  function mergeToolContent(existing: AgentBlockData, incoming: string, action: string): string {
-    if (shouldMergeObjectDeltas(existing.toolName) && action !== "replace") {
-      const merged = mergeJsonObjects(existing.toolArgs || existing.content, incoming);
-      if (merged) return merged;
-    }
-    return action === "replace" ? incoming : existing.content + incoming;
-  }
-
   const result = [...prevBlocks, ...rootAppends];
 
   for (const mut of rootUpdates) {
     if ((mut.action as string) === "replace_parent") {
       const idx = result.findIndex((b) => b.toolUseId === mut.block.toolUseId);
-      if (idx !== -1) result[idx] = mut.block;
+      if (idx !== -1) {
+        result[idx] = mut.block;
+        recordRootRefChange(streamState, mut.block.id, mut.block);
+      }
       continue;
     }
     const idx = result.findIndex((b) => b.id === mut.block.id);
     if (idx !== -1) {
       const existing = { ...result[idx] };
       existing.content = mergeToolContent(existing, mut.block.content, mut.action);
-      syncToolUseMap(existing);
+      syncToolUseMap(streamState, existing);
       result[idx] = existing;
+      recordRootRefChange(streamState, existing.id, existing);
     } else {
-      for (const parentBlock of streamState.toolUseIdToBlock.values()) {
-        if (!parentBlock.childBlocks) continue;
-        const childIdx = parentBlock.childBlocks.findIndex((b) => b.id === mut.block.id);
-        if (childIdx === -1) continue;
-        const child = { ...parentBlock.childBlocks[childIdx] };
-        child.content = mergeToolContent(child, mut.block.content, mut.action);
-        syncToolUseMap(child);
-        parentBlock.childBlocks[childIdx] = child;
-        break;
-      }
+      applyChildUpdate(streamState, mut);
     }
   }
 
   return result;
+}
+
+/**
+ * Rebuild `streamState.rootBlocks`, `rootBlockPosById`, and `toolResultMap`
+ * from a complete blocks array. Used when persisted state is loaded from the
+ * DB so the incremental updates inside `applyMutations` start from a
+ * consistent baseline.
+ */
+export function rebuildDerivedAgentStreamState(
+  streamState: StreamingState,
+  blocks: AgentBlockData[],
+): void {
+  streamState.rootBlocks = [];
+  streamState.rootBlockPosById = new Map();
+  streamState.toolResultMap = new Map();
+  for (const block of blocks) {
+    if (!block.parentToolUseId) {
+      streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
+      streamState.rootBlocks.push(block);
+    }
+    if (block.type === "tool_result" && block.toolUseId) {
+      streamState.toolResultMap.set(block.toolUseId, block);
+    }
+  }
+}
+
+/**
+ * Build a patch object that pairs a fresh `blocks` array with the derived
+ * `rootBlocks` and `toolResultMap` so consumers don't have to remember to
+ * recompute them at every blocks-mutation site outside the streaming path.
+ *
+ * Internally rebuilds the derived state on `streamState` (O(N)). Hot streaming
+ * goes through `applyMutations`, which maintains the same fields in O(1) per
+ * mutation; this helper is for the cold paths (persisted load, plan
+ * approval, error blocks) where O(N) is fine because they are not per-chunk.
+ */
+export function blocksPatchWithDerived(
+  streamState: StreamingState,
+  blocks: AgentBlockData[],
+): {
+  blocks: AgentBlockData[];
+  rootBlocks: AgentBlockData[];
+  toolResultMap: Map<string, AgentBlockData>;
+} {
+  rebuildDerivedAgentStreamState(streamState, blocks);
+  return {
+    blocks,
+    rootBlocks: streamState.rootBlocks.slice(),
+    toolResultMap: new Map(streamState.toolResultMap),
+  };
+}
+
+function recordRootAppend(streamState: StreamingState, block: AgentBlockData): void {
+  streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
+  streamState.rootBlocks.push(block);
+  if (block.type === "tool_result" && block.toolUseId) {
+    streamState.toolResultMap.set(block.toolUseId, block);
+  }
+}
+
+function recordRootRefChange(
+  streamState: StreamingState,
+  blockId: string,
+  newRef: AgentBlockData,
+): void {
+  const idx = streamState.rootBlockPosById.get(blockId);
+  if (idx !== undefined) streamState.rootBlocks[idx] = newRef;
+}
+
+function applyChildUpdate(streamState: StreamingState, mut: BlockMutation): void {
+  for (const parentBlock of streamState.toolUseIdToBlock.values()) {
+    if (!parentBlock.childBlocks) continue;
+    const childIdx = parentBlock.childBlocks.findIndex((b) => b.id === mut.block.id);
+    if (childIdx === -1) continue;
+    const child = { ...parentBlock.childBlocks[childIdx] };
+    child.content = mergeToolContent(child, mut.block.content, mut.action);
+    syncToolUseMap(streamState, child);
+    parentBlock.childBlocks[childIdx] = child;
+    break;
+  }
+}
+
+function latestValidJsonSnapshot(content: string): string | undefined {
+  try {
+    JSON.parse(content);
+    return content;
+  } catch {
+    // Fall through to recover the last full JSON object from concatenated snapshots.
+  }
+
+  for (let index = content.lastIndexOf("{"); index >= 0; ) {
+    const candidate = content.slice(index);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Keep scanning backward.
+    }
+    const nextSearchStart = index - 1;
+    index = nextSearchStart >= 0 ? content.lastIndexOf("{", nextSearchStart) : -1;
+  }
+  return undefined;
+}
+
+function syncToolUseMap(streamState: StreamingState, block: AgentBlockData): void {
+  if (block.type !== "tool_call") return;
+  const latest = latestValidJsonSnapshot(block.content);
+  if (!latest) return;
+  block.toolArgs = latest;
+  if (!block.toolUseId) return;
+  const canonical = streamState.toolUseIdToBlock.get(block.toolUseId);
+  if (canonical && canonical !== block) {
+    canonical.toolArgs = block.toolArgs;
+    canonical.content = block.content;
+  }
+}
+
+function mergeToolContent(existing: AgentBlockData, incoming: string, action: string): string {
+  if (shouldMergeObjectDeltas(existing.toolName) && action !== "replace") {
+    const merged = mergeJsonObjects(existing.toolArgs || existing.content, incoming);
+    if (merged) return merged;
+  }
+  return action === "replace" ? incoming : existing.content + incoming;
 }
 
 function mergeJsonObjects(baseJson: string, deltaJson: string): string | undefined {

@@ -7,6 +7,20 @@ import { isFileChangeTool } from "@/lib/tool-adapter";
 
 interface AgentStreamProps {
   blocks: AgentBlockData[];
+  /**
+   * Pre-filtered subset of `blocks` excluding subagent children. When
+   * provided, AgentStream uses it directly instead of recomputing the filter
+   * on every render — the WS store maintains it incrementally. When omitted
+   * (e.g. workflow agents that don't go through ws-session-store yet), the
+   * stream falls back to filtering `blocks` itself.
+   */
+  rootBlocks?: AgentBlockData[];
+  /**
+   * Map from a tool_call's `toolUseId` to its `tool_result` block. Same
+   * deal: provided by the WS store incrementally, falls back to a derived
+   * map when omitted.
+   */
+  toolResultMap?: Map<string, AgentBlockData>;
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
   showStreamingIndicator?: boolean;
@@ -72,6 +86,8 @@ function coalesceDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
 
 export const AgentStream = memo(function AgentStream({
   blocks,
+  rootBlocks: rootBlocksProp,
+  toolResultMap: toolResultMapProp,
   isStreaming,
   showStreamingIndicator = true,
   basePath,
@@ -81,22 +97,25 @@ export const AgentStream = memo(function AgentStream({
   onStartReached,
   isLoadingOlder = false,
 }: AgentStreamProps) {
-  const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
+  // Prefer the store-maintained derivatives when present so we don't re-scan
+  // the full conversation on every chunk. Fall back to local computation for
+  // legacy callers (workflow agents) that haven't been wired through yet.
+  const rootBlocks = useMemo(
+    () => rootBlocksProp ?? blocks.filter((b) => !b.parentToolUseId),
+    [rootBlocksProp, blocks],
+  );
   const displayBlocks = useMemo(() => coalesceDisplayBlocks(rootBlocks), [rootBlocks]);
-  // The tool-result map only changes when a new `tool_result` block lands;
-  // text-deltas produce a new `blocks` reference every token but never add
-  // one. Memoising on the count keeps the map (and downstream `itemContent`)
-  // reference-stable across deltas so memoised items in the viewport actually
-  // bail out of re-render during streaming.
-  const toolResultCount = useMemo(
-    () => blocks.reduce((n, b) => n + (b.type === "tool_result" ? 1 : 0), 0),
-    [blocks],
+  const fallbackToolResultCount = useMemo(
+    () =>
+      toolResultMapProp ? 0 : blocks.reduce((n, b) => n + (b.type === "tool_result" ? 1 : 0), 0),
+    [blocks, toolResultMapProp],
   );
-  const toolResultMap = useMemo(
-    () => buildToolResultMap(blocks),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: rebuild only on tool_result count change (see comment above)
-    [toolResultCount],
+  const fallbackToolResultMap = useMemo(
+    () => (toolResultMapProp ? new Map<string, AgentBlockData>() : buildToolResultMap(blocks)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: rebuild only on tool_result count change for the fallback path
+    [fallbackToolResultCount, toolResultMapProp],
   );
+  const toolResultMap = toolResultMapProp ?? fallbackToolResultMap;
 
   const itemContent = useCallback(
     (_index: number, block: AgentBlockData) => (
