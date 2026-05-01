@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Search,
   ChevronDown,
@@ -10,67 +10,10 @@ import {
   PanelLeft,
 } from "lucide-react";
 import { CopyButton } from "./CopyButton";
+import { AutoScrollText, CommitItemHoverCard, formatRelativeDate } from "./DiffFileTreeHelpers";
 
-function AutoScrollText({ text, className }: { text: string; className?: string }) {
-  const wrapperRef = useRef<HTMLDivElement>(null);
-  const textRef = useRef<HTMLSpanElement>(null);
-  const [overflows, setOverflows] = useState(false);
-
-  useEffect(() => {
-    const wrapper = wrapperRef.current;
-    const textEl = textRef.current;
-    if (!wrapper || !textEl) return;
-    const overflow = textEl.scrollWidth - wrapper.clientWidth;
-    if (overflow > 0) {
-      textEl.style.setProperty("--scroll-distance", `-${overflow}px`);
-      setOverflows(true);
-    } else {
-      textEl.style.removeProperty("--scroll-distance");
-      setOverflows(false);
-    }
-  }, [text]);
-
-  return (
-    <div
-      ref={wrapperRef}
-      className={`auto-scroll-wrapper min-w-0 flex-1 overflow-hidden ${className ?? ""}`}
-    >
-      <span ref={textRef} className="auto-scroll-text" data-overflows={overflows}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
-function formatRelativeDate(dateStr: string): string {
-  const now = Date.now();
-  // Git dates like "2026-04-08 22:27:55 +0200" need the space before tz replaced with "T" or parsed as-is.
-  // Replace the space between date and time with "T" for ISO compat, and remove space before tz offset.
-  const normalized = dateStr.replace(
-    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) ([+-]\d{4})$/,
-    "$1T$2$3",
-  );
-  const then = new Date(normalized).getTime();
-  if (Number.isNaN(then)) return dateStr;
-  const diffSec = Math.floor((now - then) / 1000);
-  if (diffSec < 60) return "just now";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHrs = Math.floor(diffMin / 60);
-  if (diffHrs < 24) return `${diffHrs}h ago`;
-  const diffDays = Math.floor(diffHrs / 24);
-  if (diffDays < 30) return `${diffDays}d ago`;
-  const diffMonths = Math.floor(diffDays / 30);
-  return `${diffMonths}mo ago`;
-}
-
-export interface ChangedFileEntry {
-  file: string;
-  status: string;
-  oldFile?: string;
-  additions: number;
-  deletions: number;
-}
+export type { ChangedFileEntry, CommitEntry } from "./DiffFileTreeHelpers";
+import type { ChangedFileEntry, CommitEntry } from "./DiffFileTreeHelpers";
 
 interface TreeNode {
   name: string;
@@ -158,16 +101,6 @@ function matchesFilter(node: TreeNode, filter: string): boolean {
     return node.path.toLowerCase().includes(lf);
   }
   return node.children.some((c) => matchesFilter(c, lf));
-}
-
-export interface CommitEntry {
-  sha: string;
-  shortSha: string;
-  message: string;
-  body: string;
-  author: string;
-  date: string;
-  isPushed: boolean;
 }
 
 interface DiffFileTreeProps {
@@ -352,31 +285,33 @@ export function DiffFileTree({
             {(isOnBaseBranch ? commits : commits.toReversed()).map((commit) => {
               const relDate = formatRelativeDate(commit.date);
               return (
-                <button
-                  key={commit.sha}
-                  className={`flex w-full items-start gap-1.5 px-3 py-0.5 text-left text-xs hover:bg-accent ${
-                    selectedCommit === commit.sha ? "bg-accent" : ""
-                  }`}
-                  onClick={() => onSelectCommit(selectedCommit === commit.sha ? null : commit.sha)}
-                  title={`${commit.shortSha} ${commit.message}\n${commit.author} - ${commit.date}`}
-                >
-                  <Circle
-                    className={`mt-0.5 h-2.5 w-2.5 shrink-0 ${
-                      commit.isPushed
-                        ? "fill-[#50fa7b] text-[#50fa7b]"
-                        : "fill-[#ffb86c] text-[#ffb86c]"
+                <CommitItemHoverCard key={commit.sha} commit={commit}>
+                  <button
+                    className={`flex w-full items-start gap-1.5 px-3 py-0.5 text-left text-xs hover:bg-accent ${
+                      selectedCommit === commit.sha ? "bg-accent" : ""
                     }`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="shrink-0 font-mono text-primary">{commit.shortSha}</span>
-                      <AutoScrollText text={commit.message} className="text-foreground" />
+                    onClick={() =>
+                      onSelectCommit(selectedCommit === commit.sha ? null : commit.sha)
+                    }
+                  >
+                    <Circle
+                      className={`mt-0.5 h-2.5 w-2.5 shrink-0 ${
+                        commit.isPushed
+                          ? "fill-[#50fa7b] text-[#50fa7b]"
+                          : "fill-[#ffb86c] text-[#ffb86c]"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="shrink-0 font-mono text-primary">{commit.shortSha}</span>
+                        <AutoScrollText text={commit.message} className="text-foreground" />
+                      </div>
+                      <div className="text-[10px] leading-tight text-muted-foreground">
+                        {commit.author} · {relDate}
+                      </div>
                     </div>
-                    <div className="text-[10px] leading-tight text-muted-foreground">
-                      {commit.author} · {relDate}
-                    </div>
-                  </div>
-                </button>
+                  </button>
+                </CommitItemHoverCard>
               );
             })}
             {/* Load more button (only on base branch where we paginate) */}
