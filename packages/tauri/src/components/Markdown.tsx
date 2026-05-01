@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ReactElement } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,6 +20,36 @@ lowlight.register("toml", ini);
 /** Cache for syntax-highlighted JSX to avoid re-highlighting identical code blocks. */
 const highlightCache = new Map<string, React.ReactNode>();
 const HIGHLIGHT_CACHE_MAX = 200;
+
+/**
+ * Cache for the rendered ReactMarkdown element, keyed on the markdown
+ * content plus the presence of a `sendToTerminal` action (which changes the
+ * components mapping). Stable entries are reused across mounts so that
+ * scrolling a long conversation through Virtuoso preserves element
+ * identity, letting downstream `React.memo`'d trees bail out on repeat
+ * renders.
+ *
+ * The cache is opt-in via the `cacheKey` prop on `Markdown`: callers set it
+ * for stable blocks (e.g. older messages) and leave it `undefined` for the
+ * actively streaming block so partial states do not pollute the cache.
+ */
+const markdownTreeCache = new Map<string, ReactElement>();
+const MARKDOWN_CACHE_MAX = 200;
+
+function evictOldestMarkdownEntry(): void {
+  const firstKey = markdownTreeCache.keys().next().value;
+  if (firstKey !== undefined) markdownTreeCache.delete(firstKey);
+}
+
+/** Test helpers — not exported from the package barrel. */
+export const __markdownCacheTestHelpers = {
+  size: (): number => markdownTreeCache.size,
+  clear: (): void => {
+    markdownTreeCache.clear();
+  },
+  has: (content: string, sendToTerminal: boolean): boolean =>
+    markdownTreeCache.has(`${sendToTerminal ? "1" : "0"}\0${content}`),
+};
 
 function cachedHighlight(lang: string, code: string): React.ReactNode {
   const key = `${lang}\0${code}`;
@@ -142,21 +172,44 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
 interface MarkdownProps {
   content: string;
   className?: string;
+  /**
+   * When set, the rendered ReactMarkdown tree is cached at module level so
+   * repeated mounts (e.g. Virtuoso recycling items as the user scrolls) skip
+   * the parse + AST walk. Leave `undefined` for the actively streaming block
+   * so partial-content states are not cached.
+   */
+  cacheKey?: string;
 }
 
 function preprocessContent(raw: string): string {
   return raw.replace(/---PLAN_START---|---PLAN_END---/g, "\n---\n");
 }
 
-export const Markdown = memo(function Markdown({ content, className }: MarkdownProps) {
+export const Markdown = memo(function Markdown({ content, className, cacheKey }: MarkdownProps) {
   const { sendToTerminal } = useCodeBlockActions();
   const components = useMemo(() => buildComponents(sendToTerminal), [sendToTerminal]);
 
-  return (
-    <div className={cn("text-sm leading-relaxed text-foreground", className)}>
+  const tree = useMemo<ReactElement>(() => {
+    const build = (): ReactElement => (
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {preprocessContent(content)}
       </ReactMarkdown>
-    </div>
-  );
+    );
+    if (cacheKey === undefined) return build();
+    const key = `${sendToTerminal ? "1" : "0"}\0${content}`;
+    const cached = markdownTreeCache.get(key);
+    if (cached !== undefined) {
+      // Refresh recency by re-inserting (Map preserves insertion order, so
+      // the freshly-set entry becomes the newest for LRU eviction).
+      markdownTreeCache.delete(key);
+      markdownTreeCache.set(key, cached);
+      return cached;
+    }
+    const fresh = build();
+    if (markdownTreeCache.size >= MARKDOWN_CACHE_MAX) evictOldestMarkdownEntry();
+    markdownTreeCache.set(key, fresh);
+    return fresh;
+  }, [cacheKey, content, components, sendToTerminal]);
+
+  return <div className={cn("text-sm leading-relaxed text-foreground", className)}>{tree}</div>;
 });
