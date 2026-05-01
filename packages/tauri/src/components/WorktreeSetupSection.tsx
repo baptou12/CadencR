@@ -136,8 +136,8 @@ export function WorktreeSetupSection({
   const isError = step === "error";
   const isRunning = !!step && !isDone && !isError;
 
-  // Collapse by default when done or when revisiting a previous error. Open
-  // only for active work, or when this mounted section observes a new failure.
+  // Force open during setup/error; auto-collapse 5s after a fresh "done";
+  // pre-existing "done" on mount stays collapsed (skipped via didObserveStepRef).
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
   const previousStepRef = useRef<SetupStep | null>(null);
   const didObserveStepRef = useRef(false);
@@ -157,6 +157,10 @@ export function WorktreeSetupSection({
     if (previousStep === step) return;
     if (step === "setup" || step === "error") {
       setUserToggle(true);
+    }
+    if (step === "done" && previousStep !== "done") {
+      const timer = setTimeout(() => setUserToggle(false), 5000);
+      return () => clearTimeout(timer);
     }
   }, [step]);
   const isOpen = userToggle ?? isRunning;

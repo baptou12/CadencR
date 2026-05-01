@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, waitFor } from "@/test-utils";
+import { act, render, screen, waitFor } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 
 const { mockGetSettings, mockRetryWorktreeSetup } = vi.hoisted(() => ({
@@ -97,6 +97,132 @@ describe("WorktreeSetupSection", () => {
     expect(screen.getByText("error")).toBeInTheDocument();
     expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
     expect(screen.queryByText("fnm: command not found")).not.toBeInTheDocument();
+  });
+
+  it("auto-closes 5 seconds after setup transitions to done in this session", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Mount at "created" so the first observation is recorded; the
+      // subsequent created → setup transition flips userToggle=true (auto-open),
+      // and only the timer should re-close the section.
+      const { rerender } = render(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="created"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={[]}
+        />,
+      );
+
+      rerender(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="setup_running"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={["installing"]}
+        />,
+      );
+      // Auto-opens on the created → setup transition
+      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+
+      rerender(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="ready"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={["installing", "done"]}
+        />,
+      );
+      // Still open just after completion (userToggle was true from auto-open)
+      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      // Collapsed after the 5s delay
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not auto-close on error completion", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const { rerender } = render(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="created"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={[]}
+        />,
+      );
+
+      rerender(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="setup_running"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={["installing"]}
+        />,
+      );
+      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+
+      rerender(
+        <WorktreeSetupSection
+          featureId={1}
+          projectId={1}
+          wsWorktreeStatus="setup_error"
+          wsWorktreeBranch="feat/test"
+          wsWorktreeSetupOutput={["installing", "boom"]}
+          wsWorktreeError="Setup failed"
+        />,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+
+      // Stays open on error so the user can read the failure
+      expect(screen.getByText("Run setup commands")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not auto-close when remounting on a 'done' state (old conversation)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Mount fresh with step already 'done' — simulates revisiting an old conversation.
+      // The default behavior keeps the section collapsed; we must not toggle anything
+      // that would change after 5s.
+      mockGetSettings.mockReturnValue({
+        data: settingsArray({
+          worktree_setup_step: "done",
+          worktree_setup_log: "",
+          worktree_setup_error: "",
+          worktree_branch: "feature/test",
+        }),
+      });
+      render(<WorktreeSetupSection featureId={1} projectId={1} />);
+      // Collapsed at mount
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      // Still collapsed — no spurious open/close cycle
+      expect(screen.queryByText("Run setup commands")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens when a mounted worktree setup transitions to error", async () => {
