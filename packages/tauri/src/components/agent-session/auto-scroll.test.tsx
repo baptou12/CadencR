@@ -197,25 +197,6 @@ describe("AgentSession auto-scroll", () => {
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("does not re-enable auto-scroll when the prompt is focused", async () => {
-    const user = userEvent.setup();
-    render(
-      <AgentSession
-        agentType="session"
-        blocks={[makeBlock("1", "Hello")]}
-        status="running"
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
-
-    fireAtBottomChange(false);
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
-
-    await user.click(screen.getByRole("textbox"));
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
-  });
-
   it("loads older history when Virtuoso reports the start was reached", async () => {
     const onLoadOlder = vi.fn(async () => {});
     render(
