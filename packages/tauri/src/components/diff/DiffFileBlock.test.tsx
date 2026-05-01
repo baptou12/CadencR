@@ -15,6 +15,7 @@ interface MockFileContent {
 const mocks = vi.hoisted(() => ({
   refetch: vi.fn(),
   useGetFileContentMock: vi.fn(),
+  readOnlyDiffViewMock: vi.fn((_props: unknown) => <div data-testid="diff-view" />),
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -22,7 +23,7 @@ vi.mock("@/api/generated", () => ({
 }));
 
 vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
-  ReadOnlyDiffView: () => <div data-testid="diff-view" />,
+  ReadOnlyDiffView: (props: unknown) => mocks.readOnlyDiffViewMock(props),
 }));
 
 function mockContent(data: MockFileContent | undefined, isFetching = false): void {
@@ -73,6 +74,7 @@ const binaryFile: MockFileContent = {
 beforeEach(() => {
   mocks.useGetFileContentMock.mockReset();
   mocks.refetch.mockReset();
+  mocks.readOnlyDiffViewMock.mockClear();
   mockContent(undefined);
 });
 
@@ -126,6 +128,46 @@ describe("DiffFileBlock", () => {
     fireEvent.click(getByText("Display diff"));
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(await findByTestId("diff-view")).toBeInTheDocument();
+  });
+
+  it("memoizes on structurally-equal section so unchanged files don't re-render CodeMirror", () => {
+    // Live-update perf: when the WS-triggered diff refetch returns the same
+    // hunks for this file but a fresh `section` object reference (because
+    // `parseUnifiedDiff` always builds new objects), `React.memo` must bail
+    // out — otherwise CodeMirror re-mounts on every keystroke from the agent.
+    // Counts compared as deltas to stay robust under React 18 StrictMode's
+    // double-invoke on initial mount.
+    mockContent(smallText);
+    const { rerender } = render(<DiffFileBlock {...baseProps} isCollapsed={false} forceRender />);
+    const initialCalls = mocks.readOnlyDiffViewMock.mock.calls.length;
+    expect(initialCalls).toBeGreaterThan(0);
+
+    // Same hunk content, brand-new object identity (the parseUnifiedDiff path).
+    const sectionWithSameHunks = {
+      oldFileName: "src/foo.ts",
+      newFileName: "src/foo.ts",
+      hunks: ["@@ -1 +1 @@"],
+    };
+    rerender(
+      <DiffFileBlock
+        {...baseProps}
+        section={sectionWithSameHunks}
+        isCollapsed={false}
+        forceRender
+      />,
+    );
+    expect(mocks.readOnlyDiffViewMock.mock.calls.length).toBe(initialCalls);
+
+    // Now flip the hunks — the memo MUST re-render so the new diff shows.
+    rerender(
+      <DiffFileBlock
+        {...baseProps}
+        section={{ ...sectionWithSameHunks, hunks: ["@@ -1 +1 @@\n-old\n+changed"] }}
+        isCollapsed={false}
+        forceRender
+      />,
+    );
+    expect(mocks.readOnlyDiffViewMock.mock.calls.length).toBeGreaterThan(initialCalls);
   });
 
   it("opting in on a large file shows a loader, then refetches and renders the diff", async () => {

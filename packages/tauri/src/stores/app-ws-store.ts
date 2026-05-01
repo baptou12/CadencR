@@ -214,11 +214,15 @@ export const useAppWsStore = create<AppWsState>((set, get) => {
 
   function handleEnvelope(domain: string, action: string, payload: Record<string, unknown>): void {
     if (domain === "editor" && action === "file_tree.changed") {
-      // Fold the editor + git-stats invalidations into a single cache walk.
+      // Fold the editor + git-stats + git-diff invalidations into a single
+      // cache walk. Refetching `/api/git/diff` cascades through `useDiffData`
+      // (new rawDiff -> new fileSections -> batch file content fetch -> seeded
+      // per-file cache), so the diff content stays live alongside numstats.
       void invalidateByUrlPrefix(queryClient, [
         "/api/editor/tree",
         "/api/editor/search",
         "/api/git/stats",
+        "/api/git/diff",
       ]);
       return;
     }

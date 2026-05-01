@@ -7,7 +7,7 @@ import { DiffFileBlock } from "./DiffFileBlock";
 import { DiffFileHeader } from "./DiffFileHeader";
 import { useDiffData } from "./useDiffData";
 import { useDiffKeyboard } from "./useDiffKeyboard";
-import type { CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
+import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { DiffComment } from "./DiffCommentWidget";
 
 interface DiffViewerProps {
@@ -59,6 +59,22 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     data,
   });
   callbacksRef.current = { activeWidget: activeCommentWidget, data };
+
+  // Single stable callback shared by every `DiffFileBlock`. The block calls
+  // it with its own filePath, so we don't need a per-file Map (which would
+  // leak entries across feature/branch switches).
+  const handleAddComment = useCallback(
+    (filePath: string, lineNumber: number) => setActiveCommentWidget({ filePath, lineNumber }),
+    [],
+  );
+
+  // Memoize the active widget object so the file currently holding it gets a
+  // stable reference. Every other file is passed `null` (primitive — always
+  // equal), so `DiffFileBlock`'s `React.memo` bails out for them.
+  const memoizedActiveWidget = useMemo<ActiveWidget | null>(
+    () => (activeCommentWidget ? { lineNumber: activeCommentWidget.lineNumber } : null),
+    [activeCommentWidget],
+  );
 
   const stableCallbacks = useMemo<CommentCallbacks>(
     () => ({
@@ -239,14 +255,10 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
               deletions={deletions}
               commentLines={commentLinesByFile.get(displayName)}
               activeWidget={
-                activeCommentWidget?.filePath === displayName
-                  ? { lineNumber: activeCommentWidget.lineNumber }
-                  : null
+                activeCommentWidget?.filePath === displayName ? memoizedActiveWidget : null
               }
               commentCallbacks={stableCallbacks}
-              onAddComment={(lineNumber) =>
-                setActiveCommentWidget({ filePath: displayName, lineNumber })
-              }
+              onAddComment={handleAddComment}
             />
           </div>
         );

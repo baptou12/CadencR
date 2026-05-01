@@ -1,4 +1,5 @@
 import {
+  memo,
   useState,
   useEffect,
   useRef,
@@ -51,20 +52,27 @@ function useDeferredFlip(active: boolean, pending: boolean, flip: () => void): v
  * Returns a stable extensions array suitable for `extraExtensions`.
  */
 function useCommentLayer(
+  filePath: string,
   commentLines: CommentLineData[] | undefined,
   activeWidget: ActiveWidget | null | undefined,
   commentCallbacks: CommentCallbacks | undefined,
-  onAddComment: ((lineNumber: number) => void) | undefined,
+  onAddComment: ((filePath: string, lineNumber: number) => void) | undefined,
   editorViewRef: MutableRefObject<EditorView | null>,
 ): Extension[] {
   const onAddCommentRef = useRef(onAddComment);
   onAddCommentRef.current = onAddComment;
+  const filePathRef = useRef(filePath);
+  filePathRef.current = filePath;
 
   const extensions = useMemo((): Extension[] => {
     const exts: Extension[] = [];
     if (commentCallbacks) {
       exts.push(...commentExtensions());
-      exts.push(...commentGutter((lineNumber) => onAddCommentRef.current?.(lineNumber)));
+      exts.push(
+        ...commentGutter((lineNumber) =>
+          onAddCommentRef.current?.(filePathRef.current, lineNumber),
+        ),
+      );
     }
     return exts;
     // commentCallbacks is a stable reference from DiffViewer
@@ -125,11 +133,14 @@ export interface DiffFileBlockProps {
   activeWidget?: ActiveWidget | null;
   /** Callbacks for comment CRUD */
   commentCallbacks?: CommentCallbacks;
-  /** Called when user clicks "+" gutter to add a comment */
-  onAddComment?: (lineNumber: number) => void;
+  /**
+   * Called when user clicks "+" gutter to add a comment. Receives `filePath`
+   * so a single stable parent callback can be shared across every block.
+   */
+  onAddComment?: (filePath: string, lineNumber: number) => void;
 }
 
-export function DiffFileBlock({
+function DiffFileBlockImpl({
   section,
   featureId,
   mode,
@@ -198,6 +209,7 @@ export function DiffFileBlock({
   const sizeBytes = fileContent ? Math.max(fileContent.old_size, fileContent.new_size) : 0;
 
   const extensions = useCommentLayer(
+    filePath,
     commentLines,
     activeWidget,
     commentCallbacks,
@@ -304,3 +316,26 @@ function renderBody(args: RenderBodyArgs): ReactElement | null {
     />
   );
 }
+
+/**
+ * `section` is rebuilt fresh by `parseUnifiedDiff` on every diff refetch, so
+ * the default shallow compare can't bail out. Compare hunk content directly;
+ * every other prop falls through to a normal `Object.is` shallow compare so
+ * adding a new prop later can't silently bypass the memo.
+ */
+function arePropsEqual(prev: DiffFileBlockProps, next: DiffFileBlockProps): boolean {
+  for (const key of Object.keys(next) as (keyof DiffFileBlockProps)[]) {
+    if (key === "section") continue;
+    if (!Object.is(prev[key], next[key])) return false;
+  }
+  const a = prev.section;
+  const b = next.section;
+  return (
+    a.oldFileName === b.oldFileName &&
+    a.newFileName === b.newFileName &&
+    a.hunks.length === b.hunks.length &&
+    a.hunks.every((h, i) => h === b.hunks[i])
+  );
+}
+
+export const DiffFileBlock = memo(DiffFileBlockImpl, arePropsEqual);
