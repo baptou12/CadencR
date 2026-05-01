@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use serde_json::Value;
 
 use super::event_inputs::{
@@ -7,6 +5,7 @@ use super::event_inputs::{
     file_input, mcp_input, mcp_tool_name, patch_from_changes,
 };
 use super::event_json::{compact_event, metadata, stream_event_raw, thread_id, user_raw};
+use super::event_state::IndexState;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
     RuntimeUserContentBlock, RuntimeUserMessage,
@@ -134,33 +133,6 @@ pub(super) fn file_patch_updated_event(
     input_json_delta_event(params, &item_id, partial_json, index_state)
 }
 
-#[derive(Default)]
-pub(super) struct IndexState {
-    next: u64,
-    by_id: HashMap<String, u64>,
-}
-
-impl IndexState {
-    pub(super) fn reset(&mut self) {
-        self.next = 0;
-        self.by_id.clear();
-    }
-
-    pub(super) fn has_index(&self, id: &str) -> bool {
-        self.by_id.contains_key(id)
-    }
-
-    pub(super) fn index_for(&mut self, id: &str) -> u64 {
-        if let Some(index) = self.by_id.get(id) {
-            return *index;
-        }
-        let index = self.next + 1;
-        self.next = index;
-        self.by_id.insert(id.to_string(), index);
-        index
-    }
-}
-
 fn text_item(params: Value, completed: bool, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
     content_item(
         params,
@@ -260,9 +232,30 @@ fn tool_item_with_input(
     let Some(item) = item(&params) else {
         return Vec::new();
     };
-    let id = item_id(item);
+    let item_id = item_id(item);
+    let id = index_state.canonical_id(&item_id);
     if completed {
-        return vec![tool_result_event(&params, id, input)];
+        let mut events = Vec::new();
+        if !index_state.has_index(&item_id) {
+            let sid = thread_id(&params).to_string();
+            let block = RuntimeContentBlock::ToolUse {
+                id: id.clone(),
+                name: name.to_string(),
+                input: input.clone(),
+            };
+            events.push(stream_start_event(
+                &sid,
+                index_state.index_for(&item_id),
+                block,
+            ));
+        }
+        if index_state.record_result(&id) {
+            events.push(tool_result_event(&params, id, input));
+        }
+        return events;
+    }
+    if index_state.has_index(&item_id) {
+        return Vec::new();
     }
     let sid = thread_id(&params).to_string();
     let block = RuntimeContentBlock::ToolUse {
@@ -270,10 +263,18 @@ fn tool_item_with_input(
         name: name.to_string(),
         input,
     };
-    vec![stream_start_event(&sid, index_state.index_for(&id), block)]
+    vec![stream_start_event(
+        &sid,
+        index_state.index_for(&item_id),
+        block,
+    )]
 }
 
-fn stream_start_event(session_id: &str, index: u64, block: RuntimeContentBlock) -> RuntimeEvent {
+pub(super) fn stream_start_event(
+    session_id: &str,
+    index: u64,
+    block: RuntimeContentBlock,
+) -> RuntimeEvent {
     let event = RuntimeStreamEvent::ContentBlockStart { index, block };
     RuntimeEvent::new(
         metadata(session_id, stream_event_raw(session_id, None, &event)),
@@ -303,8 +304,17 @@ fn plan_permission_request_event(session_id: &str, request_id: &str, input: Valu
 }
 
 fn tool_result_event(params: &Value, id: String, input: Value) -> RuntimeEvent {
-    let sid = thread_id(params).to_string();
     let is_error = input.get("error").is_some_and(|error| !error.is_null());
+    tool_result_event_with_error(params, id, input, is_error)
+}
+
+pub(super) fn tool_result_event_with_error(
+    params: &Value,
+    id: String,
+    content: Value,
+    is_error: bool,
+) -> RuntimeEvent {
+    let sid = thread_id(params).to_string();
     RuntimeEvent::new(
         metadata(
             &sid,
@@ -315,7 +325,7 @@ fn tool_result_event(params: &Value, id: String, input: Value) -> RuntimeEvent {
                     "type": "tool_result",
                     "tool_use_id": id,
                     "is_error": is_error,
-                    "content": input,
+                    "content": content,
                 })],
             ),
         ),
@@ -324,7 +334,7 @@ fn tool_result_event(params: &Value, id: String, input: Value) -> RuntimeEvent {
                 content: vec![RuntimeUserContentBlock::ToolResult {
                     tool_use_id: Some(id),
                     is_error,
-                    content: input,
+                    content,
                 }],
             },
             parent_tool_use_id: None,

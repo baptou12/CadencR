@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use super::event_inputs::plan_todos;
-use super::event_items::IndexState;
 use super::event_json::{metadata, stream_event_raw, thread_id};
+use super::event_state::IndexState;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
 };
@@ -61,8 +61,9 @@ fn stream_delta_event(session_id: &str, index: u64, todos: Value) -> RuntimeEven
 mod tests {
     use serde_json::json;
 
-    use super::{plan_updated_event, IndexState};
+    use super::plan_updated_event;
     use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeStreamEvent};
+    use crate::domain::agents::codex::event_state::IndexState;
 
     #[test]
     fn repeated_plan_updates_reuse_block_index_with_delta() {

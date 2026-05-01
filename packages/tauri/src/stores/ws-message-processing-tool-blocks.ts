@@ -39,8 +39,20 @@ function initialToolInput(toolName: string, input: unknown, includeInput: boolea
   return JSON.stringify(input);
 }
 
+const INITIAL_INPUT_TOOLS = new Set([
+  "Bash",
+  "TodoWrite",
+  "Read",
+  "Glob",
+  "Grep",
+  "WebSearch",
+  "WebFetch",
+  "Skill",
+  "ToolSearch",
+]);
+
 function shouldKeepInitialToolInput(toolName: string): boolean {
-  return toolName === "Bash" || toolName === "TodoWrite" || isFileChangeTool(toolName);
+  return INITIAL_INPUT_TOOLS.has(toolName) || isFileChangeTool(toolName);
 }
 
 function isNonEmptyRecord(value: unknown): value is Record<string, unknown> {

@@ -166,6 +166,35 @@ describe("processSdkMessage – Bash stream events", () => {
     });
   });
 
+  it.each([
+    ["Read", { file_path: "packages/service/src/main.rs" }],
+    ["Grep", { pattern: "rawResponseItem", path: "packages/service/src" }],
+    ["Glob", { pattern: "**/*.rs" }],
+  ])("keeps initial %s input for generic Codex tools", (toolName, input) => {
+    const state = createStreamingState();
+    const result = processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "s1",
+        event: {
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: toolName,
+            name: toolName,
+            input,
+          },
+        },
+      },
+      state,
+    );
+
+    expect(result.mutations).toHaveLength(1);
+    expect(result.mutations[0].block.toolName).toBe(toolName);
+    expect(JSON.parse(result.mutations[0].block.toolArgs ?? "{}")).toEqual(input);
+  });
+
   it("keeps initial ApplyPatch input for file changes", () => {
     const state = createStreamingState();
     const result = processSdkMessage(

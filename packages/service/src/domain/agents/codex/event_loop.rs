@@ -5,7 +5,8 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::AppServerEvent;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
-use super::event_items::{item_type, IndexState};
+use super::event_items::item_type;
+use super::event_state::IndexState;
 use super::event_system::{permission_request_event, request_key};
 use super::events::{notification_events, turn_id_from_started};
 use super::permissions::PendingCodexRequest;
