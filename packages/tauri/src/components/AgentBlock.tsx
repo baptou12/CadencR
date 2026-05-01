@@ -97,14 +97,19 @@ export const AgentBlock = memo(function AgentBlock({
   basePath,
   toolResultMap,
 }: AgentBlockProps) {
+  // Skip the Markdown cache for the actively streaming block so partial
+  // states do not pollute the LRU. All other blocks (older history, idle
+  // sessions) are stable and benefit from the cache when Virtuoso recycles
+  // them in and out of the viewport.
+  const markdownCacheKey = isStreaming ? undefined : block.id;
   switch (block.type) {
     case "text":
       return block.isError ? (
         <div className="text-red-400 text-sm">
-          <TextBlock content={block.content} />
+          <TextBlock content={block.content} cacheKey={markdownCacheKey} />
         </div>
       ) : (
-        <TextBlock content={block.content} />
+        <TextBlock content={block.content} cacheKey={markdownCacheKey} />
       );
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
@@ -174,7 +179,7 @@ export const AgentBlock = memo(function AgentBlock({
       return null;
     }
     case "thinking":
-      return <ThinkingBlock content={block.content} />;
+      return <ThinkingBlock content={block.content} cacheKey={markdownCacheKey} />;
     case "user_message":
       return <UserMessageBlock content={block.content} />;
     case "compact_divider":
@@ -207,7 +212,13 @@ function AgentResultBlock({ content }: { content: string }) {
   return <TextBlock content={text} />;
 }
 
-const TextBlock = memo(function TextBlock({ content }: { content: string }) {
+const TextBlock = memo(function TextBlock({
+  content,
+  cacheKey,
+}: {
+  content: string;
+  cacheKey?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -218,7 +229,7 @@ const TextBlock = memo(function TextBlock({ content }: { content: string }) {
 
   return (
     <div className="group/textblock">
-      <Markdown content={content} />
+      <Markdown content={content} cacheKey={cacheKey} />
       <div className="opacity-0 group-hover/textblock:opacity-100 transition-colors">
         <button
           type="button"
@@ -380,7 +391,13 @@ const BashBlock = memo(function BashBlock({
   );
 });
 
-const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string }) {
+const ThinkingBlock = memo(function ThinkingBlock({
+  content,
+  cacheKey,
+}: {
+  content: string;
+  cacheKey?: string;
+}) {
   const [expanded, setExpanded] = useState(true);
   if (!content.trim()) return null;
 
@@ -402,7 +419,11 @@ const ThinkingBlock = memo(function ThinkingBlock({ content }: { content: string
       </button>
       {expanded && (
         <div className="border-t border-border px-3 py-2">
-          <Markdown content={content} className="text-xs text-muted-foreground" />
+          <Markdown
+            content={content}
+            cacheKey={cacheKey}
+            className="text-xs text-muted-foreground"
+          />
         </div>
       )}
     </div>

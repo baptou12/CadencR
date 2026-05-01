@@ -1,7 +1,11 @@
 import { createModeSet, createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
-import { injectPlanIntoBlocks, parseTodosFromBlocks } from "./ws-message-processing";
+import {
+  blocksPatchWithDerived,
+  injectPlanIntoBlocks,
+  parseTodosFromBlocks,
+} from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import {
   markLastPlanBlock,
@@ -47,6 +51,8 @@ export function applyApprovePlan(
     },
   ];
 
+  const blocksPatch = blocksPatchWithDerived(session.streamingState, updatedBlocks);
+
   if (session.pendingRequestId) {
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
     sendRaw(sessionId, createModeSet(session.serverSessionId, "acceptEdits"));
@@ -65,7 +71,7 @@ export function applyApprovePlan(
         pendingRequestId: "",
         pendingPlanApproval: null,
         permissionMode: "acceptEdits",
-        blocks: updatedBlocks,
+        ...blocksPatch,
         lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),
       }),
     );
@@ -84,7 +90,7 @@ export function applyApprovePlan(
     updateSession(ctx.get(), sessionId, {
       permissionMode: "acceptEdits",
       pendingPlanApproval: null,
-      blocks: updatedBlocks,
+      ...blocksPatch,
       lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),
     }),
   );
@@ -113,6 +119,8 @@ export function applyPlanChangesRequest(
       ]
     : blocksWithStatus;
 
+  const blocksPatch = blocksPatchWithDerived(session.streamingState, blocksWithFeedback);
+
   if (session.pendingRequestId) {
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
     sendRaw(
@@ -135,7 +143,7 @@ export function applyPlanChangesRequest(
       updateSession(ctx.get(), sessionId, {
         pendingRequestId: "",
         pendingPlanApproval: null,
-        blocks: blocksWithFeedback,
+        ...blocksPatch,
         lifecycle: transitionTurn(session.lifecycle, { type: "plan_changes_requested" }),
       }),
     );
@@ -146,7 +154,7 @@ export function applyPlanChangesRequest(
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       pendingPlanApproval: null,
-      blocks: blocksWithFeedback,
+      ...blocksPatch,
       lifecycle: transitionTurn(session.lifecycle, { type: "plan_changes_requested" }),
     }),
   );
@@ -218,11 +226,12 @@ export function applyPersistedState(
 
   const enrichedBlocks = injectPlanIntoBlocks(blocks, pendingPlanApproval);
   const todos = parseTodosFromBlocks(enrichedBlocks);
+  const session = ctx.getSession(sessionId);
 
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...sessionMetaWithRequestId,
-      blocks: enrichedBlocks,
+      ...blocksPatchWithDerived(session.streamingState, enrichedBlocks),
       lifecycle:
         pendingPlanApproval != null
           ? transitionTurn(lifecycle, { type: "plan_approval_requested" })
@@ -232,11 +241,16 @@ export function applyPersistedState(
   );
 }
 
-/** Load older messages for a session from the server. */
+/**
+ * Load older messages for a session from the server. Returns the number of
+ * blocks that were prepended so callers (Virtuoso scroll preservation) can
+ * decrement `firstItemIndex` synchronously without resorting to refs +
+ * `requestAnimationFrame` to read the new array length back from React.
+ */
 export async function loadOlderSessionMessages(
   ctx: StoreAccessors,
   sessionId: string,
-): Promise<void> {
+): Promise<number> {
   const session = ctx.get().sessions[sessionId];
   if (
     !session ||
@@ -245,7 +259,7 @@ export async function loadOlderSessionMessages(
     !session.featureId ||
     !session.sessionDbId
   )
-    return;
+    return 0;
 
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
   const data = await getFeatureAgentState(session.featureId, {
@@ -256,19 +270,21 @@ export async function loadOlderSessionMessages(
   const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
   if (!serverSession) {
     ctx.set(updateSession(ctx.get(), sessionId, { hasMore: false }));
-    return;
+    return 0;
   }
 
   const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
   const currentSession = ctx.get().sessions[sessionId];
-  if (!currentSession) return;
+  if (!currentSession) return 0;
+  const mergedBlocks = [...olderBlocks, ...currentSession.blocks];
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      blocks: [...olderBlocks, ...currentSession.blocks],
+      ...blocksPatchWithDerived(currentSession.streamingState, mergedBlocks),
       hasMore: serverSession.hasMore ?? false,
       oldestMessageId: serverSession.oldestMessageId ?? null,
     }),
   );
+  return olderBlocks.length;
 }
 
 /** Format question answers into a user-visible markdown string. */

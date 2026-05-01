@@ -3,6 +3,7 @@ import type { WsEnvelope } from "@/lib/ws-envelope";
 import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
+import { blocksPatchWithDerived } from "./ws-block-mutations";
 
 export function buildSlashCommandsKey(cwd: string, provider?: string): string {
   return `${provider ?? ""}::${cwd}`;
@@ -11,19 +12,20 @@ export function buildSlashCommandsKey(cwd: string, provider?: string): string {
 export function appendLocalUserMessage(
   session: SessionEntry,
   content: string,
-): Pick<SessionEntry, "blocks" | "lifecycle"> {
+): Pick<SessionEntry, "blocks" | "rootBlocks" | "toolResultMap" | "lifecycle"> {
   session.streamingState.counter += 1;
+  const blocks = [
+    ...session.blocks,
+    {
+      id: `ws-user-${session.streamingState.counter}`,
+      type: "user_message" as const,
+      content,
+      isError: false,
+      createdAt: new Date().toISOString(),
+    },
+  ];
   return {
-    blocks: [
-      ...session.blocks,
-      {
-        id: `ws-user-${session.streamingState.counter}`,
-        type: "user_message" as const,
-        content,
-        isError: false,
-        createdAt: new Date().toISOString(),
-      },
-    ],
+    ...blocksPatchWithDerived(session.streamingState, blocks),
     lifecycle: transitionTurn(session.lifecycle, { type: "prompt_sent" }),
   };
 }

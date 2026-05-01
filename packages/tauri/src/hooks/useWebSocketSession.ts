@@ -30,6 +30,13 @@ import {
 
 interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
+  /** Pre-filtered subset of `blocks` excluding subagent children, maintained
+   *  incrementally by the store so AgentStream avoids re-deriving it on
+   *  every chunk. */
+  rootBlocks: AgentBlockData[];
+  /** Map from a tool_call's `toolUseId` to its `tool_result` block, also
+   *  maintained incrementally by the store. */
+  toolResultMap: Map<string, AgentBlockData>;
   lifecycle: TurnLifecycle;
   status: AgentStatus;
   isConnected: boolean;
@@ -39,7 +46,8 @@ interface UseWebSocketSessionReturn {
   pendingQuestions: AgentQuestion[];
   respondToQuestion: (response: AgentQuestionAnswers) => void;
   hasMore: boolean;
-  loadOlderMessages: () => Promise<void>;
+  /** Resolves with the number of older blocks that were prepended. */
+  loadOlderMessages: () => Promise<number>;
 
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
@@ -150,7 +158,7 @@ export function useWebSocketSession(
   const actions = useMemo(() => {
     const s = useWsSessionStore.getState();
     return {
-      loadOlderMessages: (): Promise<void> => s.loadOlderMessages(sessionId),
+      loadOlderMessages: (): Promise<number> => s.loadOlderMessages(sessionId),
       sendPrompt: (
         text: string,
         images?: Array<{ base64: string; mimeType: string }>,
@@ -183,6 +191,8 @@ export function useWebSocketSession(
     const lifecycle = session?.lifecycle ?? createIdleTurnLifecycle();
     return {
       blocks: session?.blocks ?? [],
+      rootBlocks: session?.rootBlocks ?? [],
+      toolResultMap: session?.toolResultMap ?? new Map(),
       lifecycle,
       status: lifecycleToStatus(lifecycle),
       isConnected: session?.isConnected ?? false,

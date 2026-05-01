@@ -220,148 +220,163 @@ function WebSocketSessionPage() {
   const agentVisible = isTabVisible(layoutState, "agent");
   const projectPathOrCwd = effectiveCwd ?? projectPath;
 
-  const tabs: FeatureTabs = useMemo(
+  // Per-tab memos with narrow deps so chunk-driven re-renders of the agent
+  // tab do not invalidate the terminal/git/editor tabs (and vice versa). The
+  // agent tab still rebuilds whenever `ws` changes (i.e. on every chunk),
+  // which is unavoidable: it consumes most of `ws`. The other three tabs are
+  // immune.
+  const agentTab = useMemo(
     () => ({
-      agent: {
-        label: "Agent",
-        Icon: BotIcon,
-        shortcut: ["cmd", "shift", "A"],
-        content: (
-          <AgentSession
-            ref={agentSessionRef}
-            agentType="session"
-            featureId={featureId}
-            projectId={projectId}
-            wsSessionId={sessionId}
-            blocks={ws.blocks}
-            status={ws.status}
-            onSend={(text, images) => {
-              if (text.trim() === "/clear") {
-                ws.clearSession();
-                return;
-              }
-              if (text.trim() === "/compact" && COMPACT_ACTION_PROVIDERS.has(activeProviderId)) {
-                ws.compactSession();
-                return;
-              }
-              const isFirstPrompt = (session?.blocks?.length ?? 0) === 0;
-              ws.sendPrompt(text, images, isFirstPrompt && useWorktree ? true : undefined);
-            }}
-            onStop={ws.interrupt}
-            pendingPermission={ws.pendingPermission}
-            onPermissionDecision={(decision, feedback) => {
-              ws.respondToPermission(ws.pendingRequestId, decision, feedback);
-            }}
-            pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
-            onAnswerSubmit={ws.respondToQuestion}
-            permissionMode={ws.permissionMode}
-            onPermissionModeToggle={() => {
-              const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
-              ws.setPermissionMode(next);
-            }}
-            pendingPlanApproval={ws.pendingPlanApproval}
-            onPlanApprove={ws.approvePlan}
-            onPlanRequestChanges={ws.requestPlanChanges}
-            onPlanReject={() => {
-              ws.requestPlanChanges("");
-              ws.interrupt();
-            }}
-            contextUsage={ws.contextUsage}
-            currentProviderId={ws.currentProviderId}
-            onProviderChange={ws.setProvider}
-            currentModelId={ws.currentModelId}
-            onModelChange={(nextProviderId, modelId) => {
-              if (modelId !== ws.currentModelId) {
-                ws.setModel(modelId);
-              }
-              const nextModel = agentCatalog.data?.providers
-                .find((provider) => provider.id === nextProviderId)
-                ?.models.find((model) => model.id === modelId);
-              const nextLevels = supportedThinkingEffortLevels(nextModel);
-              const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
-              if (nextEffort) {
-                ws.setThinkingEffort(nextEffort);
-              } else if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
-                ws.setThinkingEffort(undefined);
-              }
-            }}
-            currentThinkingEffort={ws.currentThinkingEffort}
-            onThinkingEffortChange={ws.setThinkingEffort}
-            hasFileChanges={ws.hasFileChanges}
-            onViewDiff={handleViewDiff}
-            runtimeProvider={ws.runtimeProvider}
-            runtimeSessionId={ws.runtimeSessionId || undefined}
-            slashCommandsOverride={slashCommands}
-            slashCommandsLoading={slashCommandsLoading}
-            todos={agentVisible ? (session?.todos ?? null) : null}
-            agentTabActive={agentVisible}
-            hasMore={ws.hasMore}
-            onLoadOlder={ws.loadOlderMessages}
-            useWorktree={useWorktree}
-            onToggleWorktree={() => setUseWorktree((v) => !v)}
-            className="h-full"
-          />
-        ),
-      },
-      terminal: {
-        label: "Terminal",
-        Icon: TerminalIcon,
-        shortcut: ["cmd", "shift", "T"],
-        content: (
-          <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} />
-        ),
-      },
-      git: {
-        label: "Git",
-        Icon: GitCompareArrowsIcon,
-        shortcut: ["cmd", "shift", "G"],
-        badge: <GitBadge gitStats={gitStats} gitBranch={gitBranch} />,
-        content: (
-          <FeatureGitTab
-            featureId={featureId}
-            diffMode="worktree"
-            onSendComments={sendFromGitTab}
-          />
-        ),
-      },
-      editor: {
-        label: "Editor",
-        Icon: CodeIcon,
-        shortcut: ["cmd", "shift", "E"],
-        content: projectPathOrCwd ? (
-          <Suspense fallback={null}>
-            <FeatureEditorTab
-              ref={editorTabRef}
-              featureId={featureId}
-              projectId={projectId}
-              projectPath={projectPathOrCwd}
-            />
-          </Suspense>
-        ) : null,
-      },
+      label: "Agent",
+      Icon: BotIcon,
+      shortcut: ["cmd", "shift", "A"],
+      content: (
+        <AgentSession
+          ref={agentSessionRef}
+          agentType="session"
+          featureId={featureId}
+          projectId={projectId}
+          wsSessionId={sessionId}
+          blocks={ws.blocks}
+          rootBlocks={ws.rootBlocks}
+          toolResultMap={ws.toolResultMap}
+          status={ws.status}
+          onSend={(text, images) => {
+            if (text.trim() === "/clear") {
+              ws.clearSession();
+              return;
+            }
+            if (text.trim() === "/compact" && COMPACT_ACTION_PROVIDERS.has(activeProviderId)) {
+              ws.compactSession();
+              return;
+            }
+            const isFirstPrompt = (session?.blocks?.length ?? 0) === 0;
+            ws.sendPrompt(text, images, isFirstPrompt && useWorktree ? true : undefined);
+          }}
+          onStop={ws.interrupt}
+          pendingPermission={ws.pendingPermission}
+          onPermissionDecision={(decision, feedback) => {
+            ws.respondToPermission(ws.pendingRequestId, decision, feedback);
+          }}
+          pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
+          onAnswerSubmit={ws.respondToQuestion}
+          permissionMode={ws.permissionMode}
+          onPermissionModeToggle={() => {
+            const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
+            ws.setPermissionMode(next);
+          }}
+          pendingPlanApproval={ws.pendingPlanApproval}
+          onPlanApprove={ws.approvePlan}
+          onPlanRequestChanges={ws.requestPlanChanges}
+          onPlanReject={() => {
+            ws.requestPlanChanges("");
+            ws.interrupt();
+          }}
+          contextUsage={ws.contextUsage}
+          currentProviderId={ws.currentProviderId}
+          onProviderChange={ws.setProvider}
+          currentModelId={ws.currentModelId}
+          onModelChange={(nextProviderId, modelId) => {
+            if (modelId !== ws.currentModelId) {
+              ws.setModel(modelId);
+            }
+            const nextModel = agentCatalog.data?.providers
+              .find((provider) => provider.id === nextProviderId)
+              ?.models.find((model) => model.id === modelId);
+            const nextLevels = supportedThinkingEffortLevels(nextModel);
+            const nextEffort = resolveModelThinkingEffort(nextProviderId, modelId);
+            if (nextEffort) {
+              ws.setThinkingEffort(nextEffort);
+            } else if (!nextLevels.includes(ws.currentThinkingEffort as never)) {
+              ws.setThinkingEffort(undefined);
+            }
+          }}
+          currentThinkingEffort={ws.currentThinkingEffort}
+          onThinkingEffortChange={ws.setThinkingEffort}
+          hasFileChanges={ws.hasFileChanges}
+          onViewDiff={handleViewDiff}
+          runtimeProvider={ws.runtimeProvider}
+          runtimeSessionId={ws.runtimeSessionId || undefined}
+          slashCommandsOverride={slashCommands}
+          slashCommandsLoading={slashCommandsLoading}
+          // The todos popover is portaled to document.body so it would
+          // overlay other tabs if mounted while the agent is hidden in its
+          // pane. Gate by the layout-store's visibility selector.
+          todos={agentVisible ? (session?.todos ?? null) : null}
+          agentTabActive={agentVisible}
+          hasMore={ws.hasMore}
+          onLoadOlder={ws.loadOlderMessages}
+          useWorktree={useWorktree}
+          onToggleWorktree={() => setUseWorktree((v) => !v)}
+          className="h-full"
+        />
+      ),
     }),
     [
       activeProviderId,
       agentCatalog.data?.providers,
       agentVisible,
       featureId,
-      gitBranch,
-      gitStats,
+      handleViewDiff,
       projectId,
-      projectPathOrCwd,
       resolveModelThinkingEffort,
-      sendFromGitTab,
       session?.blocks?.length,
       session?.todos,
       sessionId,
-      useWorktree,
-      ws,
-      handleViewDiff,
-      handleEditorActivate,
-      handleTerminalActivate,
       slashCommands,
       slashCommandsLoading,
+      useWorktree,
+      ws,
     ],
+  );
+
+  const terminalTab = useMemo(
+    () => ({
+      label: "Terminal",
+      Icon: TerminalIcon,
+      shortcut: ["cmd", "shift", "T"],
+      content: (
+        <FeatureTerminalTab ref={terminalTabRef} featureId={featureId} projectId={projectId} />
+      ),
+    }),
+    [featureId, projectId],
+  );
+
+  const gitTab = useMemo(
+    () => ({
+      label: "Git",
+      Icon: GitCompareArrowsIcon,
+      shortcut: ["cmd", "shift", "G"],
+      badge: <GitBadge gitStats={gitStats} gitBranch={gitBranch} />,
+      content: (
+        <FeatureGitTab featureId={featureId} diffMode="worktree" onSendComments={sendFromGitTab} />
+      ),
+    }),
+    [featureId, gitBranch, gitStats, sendFromGitTab],
+  );
+
+  const editorTab = useMemo(
+    () => ({
+      label: "Editor",
+      Icon: CodeIcon,
+      shortcut: ["cmd", "shift", "E"],
+      content: projectPathOrCwd ? (
+        <Suspense fallback={null}>
+          <FeatureEditorTab
+            ref={editorTabRef}
+            featureId={featureId}
+            projectId={projectId}
+            projectPath={projectPathOrCwd}
+          />
+        </Suspense>
+      ) : null,
+    }),
+    [featureId, projectId, projectPathOrCwd],
+  );
+
+  const tabs: FeatureTabs = useMemo(
+    () => ({ agent: agentTab, terminal: terminalTab, git: gitTab, editor: editorTab }),
+    [agentTab, terminalTab, gitTab, editorTab],
   );
 
   return (

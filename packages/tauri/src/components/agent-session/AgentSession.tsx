@@ -37,6 +37,8 @@ export const AgentSession = memo(
     const {
       agentType,
       blocks,
+      rootBlocks,
+      toolResultMap,
       status,
       onSend,
       onStop,
@@ -129,7 +131,6 @@ export const AgentSession = memo(
       isLoadingOlder,
       scrollToBottom,
     } = useAgentSessionScroll({
-      blocks,
       hasMore,
       onLoadOlder,
     });
@@ -219,9 +220,16 @@ export const AgentSession = memo(
       hasConversation: blocks.length > 0,
     });
     const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
+    // Hot-path short-circuit: `pendingPlanApproval` is null in the common
+    // case, so we don't want `getLatestUserPromptText(blocks)` (an O(N)
+    // reverse scan) to recompute on every streamed chunk just because
+    // `blocks` changed. Gate the deps on whether plan approval is pending —
+    // when it isn't, `blocks` drops out of the dep list entirely.
+    const blocksForPlanFeedback = pendingPlanApproval ? blocks : null;
     const planFeedbackDefault = useMemo(
-      () => (pendingPlanApproval ? getLatestUserPromptText(blocks) : ""),
-      [blocks, pendingPlanApproval],
+      () => (pendingPlanApproval && blocksForPlanFeedback ? getLatestUserPromptText(blocks) : ""),
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: skip recompute when no plan approval is pending
+      [blocksForPlanFeedback, pendingPlanApproval],
     );
 
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
@@ -279,6 +287,8 @@ export const AgentSession = memo(
       blocks.length > 0 ? (
         <AgentStream
           blocks={blocks}
+          rootBlocks={rootBlocks}
+          toolResultMap={toolResultMap}
           isStreaming={isStreaming}
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}

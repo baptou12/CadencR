@@ -14,6 +14,18 @@ export interface AgentSessionProps {
   agentType: AgentType;
   /** The blocks (stream output) to render */
   blocks: AgentBlockData[];
+  /**
+   * Pre-filtered subset of `blocks` excluding subagent children. When the
+   * caller already maintains this incrementally (e.g. the WS session store),
+   * forward it so AgentStream skips the per-render filter scan. Optional —
+   * AgentStream falls back to filtering `blocks` itself when omitted.
+   */
+  rootBlocks?: AgentBlockData[];
+  /**
+   * Map from a tool_call's `toolUseId` to its `tool_result` block. Same
+   * incremental-vs-fallback contract as `rootBlocks`.
+   */
+  toolResultMap?: Map<string, AgentBlockData>;
   /** Current status of the agent */
   status: AgentStatus;
   /** Called when the user sends a message via the prompt bar */
@@ -125,8 +137,13 @@ export interface AgentSessionProps {
   slashCommandsLoading?: boolean;
   /** Whether older messages exist beyond current window */
   hasMore?: boolean;
-  /** Called when user scrolls to top and older messages should be loaded */
-  onLoadOlder?: () => Promise<void>;
+  /**
+   * Called when user scrolls to top and older messages should be loaded.
+   * Resolves with the number of blocks that were prepended (or `void` for
+   * legacy callers that haven't migrated). The agent-session scroll hook
+   * uses this to preserve Virtuoso's `firstItemIndex` synchronously.
+   */
+  onLoadOlder?: () => Promise<number | void>;
   /** Whether "use worktree" is toggled on (shown as chip before first message) */
   useWorktree?: boolean;
   /** Called when user toggles the "use worktree" chip */

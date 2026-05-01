@@ -16,6 +16,17 @@ export interface StreamingState {
   streams: Map<StreamSessionId, StreamContext>;
   toolUseIdToBlock: Map<string, AgentBlockData>;
   counter: number;
+  /**
+   * Live mirror of the root-level (non-child) blocks. Maintained in sync with
+   * the conversation by `applyMutations` so consumers can read the
+   * already-filtered list in O(1) instead of scanning the full block array on
+   * every streamed chunk.
+   */
+  rootBlocks: AgentBlockData[];
+  /** Index from `block.id` to its position in `rootBlocks`. */
+  rootBlockPosById: Map<string, number>;
+  /** Map from a tool_call's `toolUseId` to its matching `tool_result` block. */
+  toolResultMap: Map<string, AgentBlockData>;
 }
 
 export interface ParserSignals {
@@ -40,6 +51,9 @@ export function createStreamingState(): StreamingState {
     streams: new Map(),
     toolUseIdToBlock: new Map(),
     counter: 0,
+    rootBlocks: [],
+    rootBlockPosById: new Map(),
+    toolResultMap: new Map(),
   };
 }
 
