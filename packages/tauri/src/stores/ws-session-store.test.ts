@@ -3,6 +3,11 @@ import { FALLBACK_MODEL_ID } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
 import { lifecycleToStatus } from "./ws-turn-lifecycle";
+import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
+
+vi.mock("@/lib/worktreeQueries", () => ({
+  invalidateWorktreeQueries: vi.fn(),
+}));
 
 // --- Mock WebSocket ---
 
@@ -59,6 +64,7 @@ beforeEach(() => {
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("window", { ...globalThis.window });
   vi.spyOn(console, "info").mockImplementation(() => undefined);
+  vi.mocked(invalidateWorktreeQueries).mockClear();
 });
 
 afterEach(() => {
@@ -1502,6 +1508,7 @@ describe("ws-session-store", () => {
       expect(session.worktreeStatus).toBe("creating");
       expect(session.worktreeBranch).toBe("feature/test-abc");
       expect(session.worktreePath).toBe("/tmp/wt");
+      expect(invalidateWorktreeQueries).not.toHaveBeenCalled();
     });
 
     it("handles worktree.created event", async () => {
@@ -1515,6 +1522,7 @@ describe("ws-session-store", () => {
       });
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.worktreeStatus).toBe("created");
+      expect(invalidateWorktreeQueries).toHaveBeenCalledTimes(1);
     });
 
     it("handles worktree.setup_output appending lines", async () => {
