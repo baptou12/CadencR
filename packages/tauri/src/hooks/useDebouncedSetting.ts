@@ -1,9 +1,11 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetWorkspaceSetting,
   useSetWorkspaceSetting,
   getGetWorkspaceSettingQueryKey,
+  type SettingValueResponse,
 } from "../api/generated";
 
 /**
@@ -16,25 +18,53 @@ export function useDebouncedSetting(key: string, debounceMs = 300, { immediateCa
   const queryClient = useQueryClient();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
   const setValue = useCallback(
     (value: string) => {
+      const queryKey = getGetWorkspaceSettingQueryKey(key);
+      const previousValue = queryClient.getQueryData<SettingValueResponse>(queryKey);
+
       // Update cache immediately so UI responds instantly (skip for continuous
       // updates like drag-resize where re-renders disrupt the interaction)
       if (immediateCache) {
-        queryClient.setQueryData(getGetWorkspaceSettingQueryKey(key), { value });
+        queryClient.setQueryData(queryKey, { value });
       }
 
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => {
+
+      const persistValue = (): void => {
         mutation.mutate(
           { key, data: { value } },
           {
             onSuccess: () => {
-              void queryClient.invalidateQueries({ queryKey: getGetWorkspaceSettingQueryKey(key) });
+              if (!immediateCache) queryClient.setQueryData(queryKey, { value });
+            },
+            onError: (err: unknown) => {
+              if (immediateCache) {
+                if (previousValue === undefined) {
+                  void queryClient.invalidateQueries({ queryKey });
+                } else {
+                  queryClient.setQueryData(queryKey, previousValue);
+                }
+              }
+              const message = err instanceof Error ? err.message : "Unknown error";
+              toast.error(`Could not save setting "${key}": ${message}`);
             },
           },
         );
-      }, debounceMs);
+      };
+
+      if (debounceMs <= 0) {
+        persistValue();
+        return;
+      }
+
+      timerRef.current = setTimeout(persistValue, debounceMs);
     },
     [key, debounceMs, immediateCache, mutation, queryClient],
   );

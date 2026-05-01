@@ -23,6 +23,7 @@ export type TabKind = "agent" | "terminal" | "git" | "editor";
 export const ALL_TAB_KINDS: readonly TabKind[] = ["agent", "terminal", "git", "editor"] as const;
 
 export const ROOT_LEAF_ID = "root";
+export const LAYOUT_STATE_KEY = "layout_state";
 
 export type SplitOrientation = "horizontal" | "vertical";
 

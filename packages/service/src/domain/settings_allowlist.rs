@@ -37,6 +37,7 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "parallel_execution",
     "skip_worktree",
     "bypass_acknowledged",
+    "layout_state",
 ];
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
@@ -90,6 +91,8 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_auto_save",
     "editor_git_blame",
     "editor_max_tabs",
+    "editor_sidebar_collapsed",
+    "git_sidebar_collapsed",
     // Workspace-scope agent defaults (mirror the per-project / per-feature keys)
     "agent_autonomy",
     "parallel_execution",
@@ -174,6 +177,7 @@ mod tests {
         assert!(is_feature_key_allowed("bypass_acknowledged"));
         assert!(is_feature_key_allowed("skip_worktree"));
         assert!(is_feature_key_allowed("model_plan"));
+        assert!(is_feature_key_allowed("layout_state"));
     }
 
     #[test]
@@ -256,6 +260,12 @@ mod tests {
         assert!(!is_workspace_key_allowed("thinking_effort_model_a/b"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a;drop"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a b"));
+    }
+
+    #[test]
+    fn workspace_accepts_ui_collapse_settings() {
+        assert!(is_workspace_key_allowed("editor_sidebar_collapsed"));
+        assert!(is_workspace_key_allowed("git_sidebar_collapsed"));
     }
 
     #[test]

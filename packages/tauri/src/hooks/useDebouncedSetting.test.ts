@@ -13,6 +13,7 @@ vi.mock("../api/generated", () => ({
 }));
 
 const mockSetQueryData = vi.fn();
+const mockGetQueryData = vi.fn();
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
@@ -20,6 +21,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
     ...actual,
     useQueryClient: vi.fn(() => ({
       invalidateQueries: mockInvalidateQueries,
+      getQueryData: mockGetQueryData,
       setQueryData: mockSetQueryData,
     })),
   };
@@ -28,9 +30,11 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 describe("useDebouncedSetting", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mockMutate.mockClear();
+    mockMutate.mockReset();
     mockInvalidateQueries.mockClear();
     mockSetQueryData.mockClear();
+    mockGetQueryData.mockClear();
+    mockGetQueryData.mockReturnValue({ value: "stored-value" });
     mockUseQuery.mockReturnValue({ data: { value: "stored-value" }, isLoading: false });
   });
 
@@ -58,6 +62,17 @@ describe("useDebouncedSetting", () => {
     });
     act(() => {
       vi.advanceTimersByTime(300);
+    });
+    expect(mockMutate).toHaveBeenCalledWith(
+      { key: "my-key", data: { value: "new-value" } },
+      expect.any(Object),
+    );
+  });
+
+  it("persists immediately when debounce is zero", () => {
+    const { result } = renderHook(() => useDebouncedSetting("my-key", 0));
+    act(() => {
+      result.current.setValue("new-value");
     });
     expect(mockMutate).toHaveBeenCalledWith(
       { key: "my-key", data: { value: "new-value" } },

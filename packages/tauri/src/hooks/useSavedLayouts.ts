@@ -22,9 +22,9 @@ import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-lay
  * UX wrapper around the `feature_layouts` CRUD endpoints. Owns:
  *   - List of saved layouts + the current default.
  *   - Save current as new / update existing / select / set default / delete.
- *   - Applying a layout: hydrates the in-memory store. Per-feature current
- *     state is *not* persisted — it lives only in Zustand for the session.
- *     Only explicit saves (Save as new / Update X) write to the DB.
+ *   - Applying a layout: hydrates the current per-feature layout state.
+ *     Current layout state is persisted separately in `feature_settings`;
+ *     explicit saves (Save as new / Update X) only manage named templates.
  */
 export function useSavedLayouts(featureId: number) {
   const layoutsQuery = useListLayouts();

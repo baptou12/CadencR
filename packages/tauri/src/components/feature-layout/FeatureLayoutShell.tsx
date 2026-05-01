@@ -3,6 +3,7 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 
 import { useFeatureLayoutHotkeys } from "@/hooks/useFeatureLayoutHotkeys";
 import { useFeatureLayoutHydration } from "@/hooks/useFeatureLayoutHydration";
+import { useFeatureLayoutPersistence } from "@/hooks/useFeatureLayoutPersistence";
 import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 import { DragChip } from "./DragChip";
@@ -31,6 +32,7 @@ export function FeatureLayoutShell({
   onEditorActivate,
 }: FeatureLayoutShellProps): ReactNode {
   useFeatureLayoutHydration(featureId);
+  useFeatureLayoutPersistence(featureId);
   useFeatureLayoutHotkeys(featureId, { onTerminalActivate, onEditorActivate });
 
   const splitRoot = useFeatureLayoutStore((s) => selectFeatureLayout(featureId)(s).splitRoot);
