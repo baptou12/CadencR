@@ -2,18 +2,13 @@
 - [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
 - [ ] [opencode] Not sync on command updates
-- [ ] [codex] ask user submission seems to be broken with enter key
 - [ ] [claude] Auto-accept / plan / auto
 - [ ] [db] change production database to ~/.cadencr
-- [ ] [editor] collapse should have a dedicated zone when collapsed
-- [ ] [editpr] some lines don't have the proper blame
 - [ ] [git] should update changes when update are done
-- [ ] [git] commit name goes too far
-- [ ] [git] sidebar should be collapsable + persisance
-- [ ] [git] Cannot see the file list properly when all files are collapsed
+- [ ] [git] Cannot see the file list properly (first item) when all files are collapsed
 - [ ] [global / codex?] agent statuses are wrong in the sidebar but not in the conversation ?
-- [ ] [global] opening a conversation is slow
-- [ ] [global] long conversation feels slow
+- [~] [global] opening a conversation is slow
+- [~] [global] long conversation feels slow
 - [ ] [global] archive / delete don't focus the right option
 
 ## FEAT
