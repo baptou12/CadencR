@@ -1,16 +1,11 @@
 ## FIX
-- [ ] [opencode] plan mode seems to lack of features from the server's output
 - [ ] [opencode] Build / plan mode
 - [ ] [opencode] Not sync on command updates
 - [ ] [claude] Auto-accept / plan / auto
-- [ ] [codex] read / grep tools not shown ?
 - [ ] [codex] sub-agents not visible
 - [ ] [db] change production database to ~/.cadencr
 - [ ] [git] Cannot see the file list properly (first item) when all files are collapsed
 - [ ] [global / codex?] agent statuses are wrong in the sidebar but not in the conversation ?
-- [~] [global] opening a conversation is slow
-- [~] [global] long conversation feels slow
-- [ ] [global] archive / delete don't focus the right option
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
