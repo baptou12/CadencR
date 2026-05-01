@@ -16,6 +16,8 @@ interface PromptWithModelPickerProps {
   disabled?: boolean;
   splitSendActions: SplitSendAction[];
   promptBarRef?: React.Ref<AgentPromptBarHandle>;
+  /** Forwarded to AgentPromptBar — gates agent-menu shortcuts on agent tab visibility. */
+  agentTabActive?: boolean;
 }
 
 /**
@@ -31,6 +33,7 @@ export function PromptWithModelPicker({
   disabled,
   splitSendActions,
   promptBarRef,
+  agentTabActive,
 }: PromptWithModelPickerProps) {
   const modelPickerRef = useRef<StandaloneModelPickerHandle>(null);
   const internalPromptBarRef = useRef<AgentPromptBarHandle>(null);
@@ -70,6 +73,7 @@ export function PromptWithModelPicker({
         disabled={disabled}
         splitSendActions={splitSendActions}
         onOpenModelPicker={() => modelPickerRef.current?.openModelPicker()}
+        agentTabActive={agentTabActive}
         featureId={featureId}
         projectId={projectId}
         noTopPadding

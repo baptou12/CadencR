@@ -91,6 +91,7 @@ export const AgentSession = memo(
       onLoadOlder,
       useWorktree,
       onToggleWorktree,
+      agentTabActive = true,
     } = props;
 
     const promptBarRef = useRef<AgentPromptBarHandle>(null);
@@ -317,6 +318,7 @@ export const AgentSession = memo(
         onPlanRequestChanges={onPlanRequestChanges}
         onPlanReject={onPlanReject}
         onOpenModelPicker={onModelChange ? () => metaBarRef.current?.openModelPicker() : undefined}
+        agentTabActive={agentTabActive}
         featureId={featureId}
         projectId={projectId}
         sessionId={sessionId}

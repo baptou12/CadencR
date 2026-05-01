@@ -49,6 +49,8 @@ interface AgentPromptBarProps {
   onPlanRequestChanges?: (feedback: string) => void;
   onPlanReject?: () => void;
   onOpenModelPicker?: () => void;
+  /** When false, gates agent-menu shortcuts (⌘P, ⌘↵, ⇧Tab, ⌘⇧Z) so they don't collide with sibling tabs. Default: true. */
+  agentTabActive?: boolean;
   featureId?: number;
   projectId?: number;
   sessionId?: number;
@@ -90,6 +92,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       onPlanRequestChanges,
       onPlanReject,
       onOpenModelPicker,
+      agentTabActive = true,
       featureId,
       projectId,
       sessionId,
@@ -245,7 +248,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
         onOpenModelPicker();
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
     );
 
     useHotkeys(
@@ -255,7 +258,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
         onToggleMaximize();
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
     );
 
     useHotkeys(
@@ -265,7 +268,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
         onPermissionModeToggle();
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
     );
 
     useHotkeys(
@@ -275,7 +278,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         e.preventDefault();
         onCollapse();
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
     );
 
     useHotkeys(

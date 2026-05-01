@@ -4,12 +4,29 @@ import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentPromptBar } from "./AgentPromptBar";
 
-const hotkeyHandlers = new Map<string, (e: Partial<KeyboardEvent>) => void>();
+interface HotkeyEntry {
+  handler: (e: Partial<KeyboardEvent>) => void;
+  options?: { enabled?: boolean };
+}
+const hotkeyHandlers = new Map<string, HotkeyEntry>();
 vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: vi.fn((key: string, handler: (e: Partial<KeyboardEvent>) => void) => {
-    hotkeyHandlers.set(key, handler);
-  }),
+  useHotkeys: vi.fn(
+    (
+      key: string,
+      handler: (e: Partial<KeyboardEvent>) => void,
+      options?: { enabled?: boolean },
+    ) => {
+      hotkeyHandlers.set(key, { handler, options });
+    },
+  ),
 }));
+
+function callHotkey(key: string, e: Partial<KeyboardEvent> = { preventDefault: vi.fn() }): void {
+  const entry = hotkeyHandlers.get(key);
+  if (!entry) throw new Error(`hotkey ${key} not registered`);
+  if (entry.options?.enabled === false) return;
+  entry.handler(e);
+}
 
 // Mock all tRPC-using hooks directly to avoid cascading mock complexity
 vi.mock("@/hooks/usePromptDraft", () => ({
@@ -310,9 +327,9 @@ describe("AgentPromptBar", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="running" />);
     // Focus the textbox (inside the wrapper)
     screen.getByRole("textbox").focus();
-    const handler = hotkeyHandlers.get("escape");
-    expect(handler).toBeDefined();
-    handler!({ preventDefault: vi.fn() });
+    const entry = hotkeyHandlers.get("escape");
+    expect(entry).toBeDefined();
+    entry!.handler({ preventDefault: vi.fn() });
     expect(onStop).toHaveBeenCalled();
   });
 
@@ -324,9 +341,44 @@ describe("AgentPromptBar", () => {
       </div>,
     );
     screen.getByTestId("outside").focus();
-    const handler = hotkeyHandlers.get("escape");
-    expect(handler).toBeDefined();
-    handler!({ preventDefault: vi.fn() });
+    const entry = hotkeyHandlers.get("escape");
+    expect(entry).toBeDefined();
+    entry!.handler({ preventDefault: vi.fn() });
     expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it("agent-menu hotkeys fire by default and are no-ops when agentTabActive is false", () => {
+    const onOpenModelPicker = vi.fn();
+    const onPermissionModeToggle = vi.fn();
+    const onToggleMaximize = vi.fn();
+    const props = {
+      onSend,
+      onStop,
+      status: "idle" as const,
+      onOpenModelPicker,
+      onPermissionModeToggle,
+      onToggleMaximize,
+    };
+
+    const { rerender } = render(<AgentPromptBar {...props} />);
+    callHotkey("meta+p");
+    expect(onOpenModelPicker).toHaveBeenCalledTimes(1);
+
+    rerender(<AgentPromptBar {...props} agentTabActive={false} />);
+    callHotkey("meta+p");
+    callHotkey("shift+tab");
+    callHotkey("meta+enter");
+    expect(onOpenModelPicker).toHaveBeenCalledTimes(1); // still 1, not 2
+    expect(onPermissionModeToggle).not.toHaveBeenCalled();
+    expect(onToggleMaximize).not.toHaveBeenCalled();
+  });
+
+  it("escape still works when agentTabActive is false (focus-gated, not tab-gated)", () => {
+    render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="running" agentTabActive={false} />,
+    );
+    screen.getByRole("textbox").focus();
+    hotkeyHandlers.get("escape")!.handler({ preventDefault: vi.fn() });
+    expect(onStop).toHaveBeenCalled();
   });
 });

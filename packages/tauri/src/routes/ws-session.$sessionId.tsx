@@ -305,6 +305,7 @@ function WebSocketSessionPage() {
             // overlay other tabs if mounted while the agent is hidden in its
             // pane. Gate by the layout-store's visibility selector.
             todos={agentVisible ? (session?.todos ?? null) : null}
+            agentTabActive={agentVisible}
             hasMore={ws.hasMore}
             onLoadOlder={ws.loadOlderMessages}
             useWorktree={useWorktree}

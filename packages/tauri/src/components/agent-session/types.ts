@@ -131,6 +131,12 @@ export interface AgentSessionProps {
   useWorktree?: boolean;
   /** Called when user toggles the "use worktree" chip */
   onToggleWorktree?: () => void;
+  /**
+   * Whether the agent tab is the visible tab for this feature. Forwarded
+   * to `AgentPromptBar` so its agent-menu shortcuts (⌘P open model picker,
+   * ⌘↵, ⇧Tab, ⌘⇧Z) only fire when the agent tab is active. Default: true.
+   */
+  agentTabActive?: boolean;
 }
 
 /** Handle exposed by AgentSession via forwardRef */

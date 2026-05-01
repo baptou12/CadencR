@@ -45,6 +45,8 @@ interface NextStepsBarProps {
   canStartRetro?: boolean;
   onStartRetro?: () => void;
   isStartingRetro?: boolean;
+  /** Forwarded to the inner prompt bars — gates agent-menu shortcuts on agent tab visibility. */
+  agentTabActive?: boolean;
 }
 
 export function NextStepsBar({
@@ -77,6 +79,7 @@ export function NextStepsBar({
   canStartRetro,
   onStartRetro,
   isStartingRetro,
+  agentTabActive,
 }: NextStepsBarProps) {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [showRefinePrompt, setShowRefinePrompt] = useState(false);
@@ -320,6 +323,7 @@ export function NextStepsBar({
           agentType="plan"
           disabled={isRefineDisabled}
           splitSendActions={refineSplitActions}
+          agentTabActive={agentTabActive}
         />
       )}
 
@@ -335,6 +339,7 @@ export function NextStepsBar({
             disabled={isStartingWorkflowSession}
             splitSendActions={sessionSplitActions}
             promptBarRef={sessionPromptRef}
+            agentTabActive={agentTabActive}
           />
         )}
 

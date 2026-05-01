@@ -16,6 +16,8 @@ interface PlanInputViewProps {
   onStartPrd: (description: string, images: PlanInputImage[]) => void;
   isStartingPlan: boolean;
   isStartingPrd: boolean;
+  /** Forwarded to the inner prompt bar — gates agent-menu shortcuts on agent tab visibility. */
+  agentTabActive?: boolean;
 }
 
 export function PlanInputView({
@@ -25,6 +27,7 @@ export function PlanInputView({
   onStartPrd,
   isStartingPlan,
   isStartingPrd,
+  agentTabActive,
 }: PlanInputViewProps) {
   const splitSendActions: SplitSendAction[] = useMemo(
     () => [
@@ -73,6 +76,7 @@ export function PlanInputView({
         secondaryAgentType="prd"
         disabled={isStartingPlan || isStartingPrd}
         splitSendActions={splitSendActions}
+        agentTabActive={agentTabActive}
       />
     </div>
   );

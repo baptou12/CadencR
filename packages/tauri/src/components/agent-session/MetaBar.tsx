@@ -250,7 +250,11 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
       {/* Model chip */}
       {onModelChange && (
         <div className={MODEL_GROUP}>
-          <ShortcutTooltip label="Open model picker" keys={["cmd", "P"]}>
+          <ShortcutTooltip
+            label="Open model picker"
+            keys={["cmd", "P"]}
+            disabled={internalModelPickerOpen}
+          >
             <RuntimeModelPicker
               open={internalModelPickerOpen}
               onOpenChange={setInternalModelPickerOpen}

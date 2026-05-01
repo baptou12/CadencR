@@ -269,6 +269,7 @@ export function FeatureWorkflowView({
               }}
               isStartingPlan={backend.isStartingPlan}
               isStartingPrd={backend.isStartingPrd}
+              agentTabActive={agentVisible}
             />
           </div>
         )}
@@ -389,6 +390,7 @@ export function FeatureWorkflowView({
                   canStartRetro={actions.canStartRetro}
                   onStartRetro={() => backend.startRetro()}
                   isStartingRetro={backend.isStartingRetro}
+                  agentTabActive={agentVisible}
                 />
               </div>
             )}

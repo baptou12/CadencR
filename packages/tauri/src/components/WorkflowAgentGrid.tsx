@@ -115,6 +115,7 @@ export function WorkflowAgentGrid({
         hasFileChanges={entry.hasFileChanges}
         onViewDiff={() => onViewDiff(entry)}
         todos={agentVisible ? entry.todos : null}
+        agentTabActive={agentVisible}
         currentProviderId={providerId}
         onProviderChange={(newProviderId) => handleProviderChange(entry.agentType, newProviderId)}
         currentModelId={modelId}
