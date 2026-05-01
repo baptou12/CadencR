@@ -197,7 +197,13 @@ export interface WsSessionStore {
       currentThinkingEffort?: string;
     },
   ) => void;
-  loadOlderMessages: (sessionId: string) => Promise<void>;
+  /**
+   * Loads older messages for a session. Resolves with the number of blocks
+   * prepended to the conversation so callers can preserve scroll position
+   * (e.g. Virtuoso's `firstItemIndex` decrement) without re-deriving the
+   * delta from React state.
+   */
+  loadOlderMessages: (sessionId: string) => Promise<number>;
 }
 
 // ---------------------------------------------------------------------------

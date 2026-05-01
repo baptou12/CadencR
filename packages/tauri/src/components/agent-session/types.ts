@@ -137,8 +137,13 @@ export interface AgentSessionProps {
   slashCommandsLoading?: boolean;
   /** Whether older messages exist beyond current window */
   hasMore?: boolean;
-  /** Called when user scrolls to top and older messages should be loaded */
-  onLoadOlder?: () => Promise<void>;
+  /**
+   * Called when user scrolls to top and older messages should be loaded.
+   * Resolves with the number of blocks that were prepended (or `void` for
+   * legacy callers that haven't migrated). The agent-session scroll hook
+   * uses this to preserve Virtuoso's `firstItemIndex` synchronously.
+   */
+  onLoadOlder?: () => Promise<number | void>;
   /** Whether "use worktree" is toggled on (shown as chip before first message) */
   useWorktree?: boolean;
   /** Called when user toggles the "use worktree" chip */

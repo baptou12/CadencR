@@ -485,8 +485,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       applyPersistedState(ctx, sessionId, payload, PLAN_RESTORE_PREFIX);
     },
 
-    async loadOlderMessages(sessionId: string) {
-      await loadOlderSessionMessages(ctx, sessionId);
+    async loadOlderMessages(sessionId: string): Promise<number> {
+      return loadOlderSessionMessages(ctx, sessionId);
     },
   };
 });

@@ -241,11 +241,16 @@ export function applyPersistedState(
   );
 }
 
-/** Load older messages for a session from the server. */
+/**
+ * Load older messages for a session from the server. Returns the number of
+ * blocks that were prepended so callers (Virtuoso scroll preservation) can
+ * decrement `firstItemIndex` synchronously without resorting to refs +
+ * `requestAnimationFrame` to read the new array length back from React.
+ */
 export async function loadOlderSessionMessages(
   ctx: StoreAccessors,
   sessionId: string,
-): Promise<void> {
+): Promise<number> {
   const session = ctx.get().sessions[sessionId];
   if (
     !session ||
@@ -254,7 +259,7 @@ export async function loadOlderSessionMessages(
     !session.featureId ||
     !session.sessionDbId
   )
-    return;
+    return 0;
 
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
   const data = await getFeatureAgentState(session.featureId, {
@@ -265,12 +270,12 @@ export async function loadOlderSessionMessages(
   const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);
   if (!serverSession) {
     ctx.set(updateSession(ctx.get(), sessionId, { hasMore: false }));
-    return;
+    return 0;
   }
 
   const olderBlocks = serverBlocksToAgentBlocks(serverSession.blocks as never[]);
   const currentSession = ctx.get().sessions[sessionId];
-  if (!currentSession) return;
+  if (!currentSession) return 0;
   const mergedBlocks = [...olderBlocks, ...currentSession.blocks];
   ctx.set(
     updateSession(ctx.get(), sessionId, {
@@ -279,6 +284,7 @@ export async function loadOlderSessionMessages(
       oldestMessageId: serverSession.oldestMessageId ?? null,
     }),
   );
+  return olderBlocks.length;
 }
 
 /** Format question answers into a user-visible markdown string. */

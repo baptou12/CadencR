@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
 import type { VirtuosoHandle } from "react-virtuoso";
-import type { AgentBlockData } from "../AgentBlock";
 
 /**
  * Initial value for `firstItemIndex`. Virtuoso uses item indices to track
@@ -12,9 +11,14 @@ import type { AgentBlockData } from "../AgentBlock";
 const PREPEND_START_INDEX = 1_000_000;
 
 interface UseAgentSessionScrollOptions {
-  blocks: AgentBlockData[];
   hasMore?: boolean;
-  onLoadOlder?: () => Promise<void>;
+  /**
+   * Resolves with the number of blocks that were prepended. The hook uses
+   * this delta to decrement `firstItemIndex` synchronously — no
+   * `requestAnimationFrame` + ref dance needed. Implementations that don't
+   * report a count (legacy callers) may resolve with `void`.
+   */
+  onLoadOlder?: () => Promise<number | void>;
 }
 
 interface UseAgentSessionScrollResult {
@@ -32,7 +36,6 @@ interface UseAgentSessionScrollResult {
 }
 
 export function useAgentSessionScroll({
-  blocks,
   hasMore,
   onLoadOlder,
 }: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
@@ -42,12 +45,7 @@ export function useAgentSessionScroll({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [firstItemIndex, setFirstItemIndex] = useState(PREPEND_START_INDEX);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
-  const blocksLengthRef = useRef(blocks.length);
   const isMountedRef = useRef(true);
-
-  useLayoutEffect(() => {
-    blocksLengthRef.current = blocks.length;
-  }, [blocks.length]);
 
   useEffect(
     () => () => {
@@ -83,23 +81,14 @@ export function useAgentSessionScroll({
     if (!hasMore || !onLoadOlder || loadingOlderRef.current) return;
     loadingOlderRef.current = true;
     setIsLoadingOlder(true);
-    const before = blocksLengthRef.current;
 
     void onLoadOlder()
-      .then(() => {
+      .then((prepended) => {
         if (!isMountedRef.current) return;
-        // Wait one frame so React commits the new blocks prop and our
-        // `blocksLengthRef` (updated via useLayoutEffect) reflects the
-        // appended count.
-        requestAnimationFrame(() => {
-          if (!isMountedRef.current) return;
-          const delta = blocksLengthRef.current - before;
-          if (delta > 0) {
-            setFirstItemIndex((idx) => idx - delta);
-          }
-          loadingOlderRef.current = false;
-          setIsLoadingOlder(false);
-        });
+        const delta = typeof prepended === "number" ? prepended : 0;
+        if (delta > 0) setFirstItemIndex((idx) => idx - delta);
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
       })
       .catch(() => {
         if (!isMountedRef.current) return;

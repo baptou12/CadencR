@@ -46,7 +46,8 @@ interface UseWebSocketSessionReturn {
   pendingQuestions: AgentQuestion[];
   respondToQuestion: (response: AgentQuestionAnswers) => void;
   hasMore: boolean;
-  loadOlderMessages: () => Promise<void>;
+  /** Resolves with the number of older blocks that were prepended. */
+  loadOlderMessages: () => Promise<number>;
 
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
@@ -157,7 +158,7 @@ export function useWebSocketSession(
   const actions = useMemo(() => {
     const s = useWsSessionStore.getState();
     return {
-      loadOlderMessages: (): Promise<void> => s.loadOlderMessages(sessionId),
+      loadOlderMessages: (): Promise<number> => s.loadOlderMessages(sessionId),
       sendPrompt: (
         text: string,
         images?: Array<{ base64: string; mimeType: string }>,

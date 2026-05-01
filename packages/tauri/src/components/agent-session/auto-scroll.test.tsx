@@ -295,19 +295,18 @@ describe("AgentSession auto-scroll", () => {
   });
 
   it("decrements firstItemIndex by the number of prepended blocks", async () => {
-    let resolveLoad: () => void = () => {};
+    let resolveLoad: (count: number) => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
-        new Promise<void>((resolve) => {
+        new Promise<number>((resolve) => {
           resolveLoad = resolve;
         }),
     );
 
-    const initialBlocks = [makeBlock("1", "Hello")];
-    const { rerender } = render(
+    render(
       <AgentSession
         agentType="session"
-        blocks={initialBlocks}
+        blocks={[makeBlock("1", "Hello")]}
         status="running"
         onSend={vi.fn()}
         onStop={vi.fn()}
@@ -323,28 +322,9 @@ describe("AgentSession auto-scroll", () => {
     fireStartReached();
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
 
-    // Resolve the in-flight fetch; the parent then commits the new (longer)
-    // blocks array. The hook waits one rAF before applying the decrement so
-    // that `useLayoutEffect` has updated `blocksLengthRef`.
-    act(() => resolveLoad());
-
-    const prependedBlocks = [
-      makeBlock("old-1", "Older 1"),
-      makeBlock("old-2", "Older 2"),
-      makeBlock("old-3", "Older 3"),
-      ...initialBlocks,
-    ];
-    rerender(
-      <AgentSession
-        agentType="session"
-        blocks={prependedBlocks}
-        status="running"
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-        hasMore
-        onLoadOlder={onLoadOlder}
-      />,
-    );
+    // Resolve with the prepended count: the hook decrements firstItemIndex
+    // by exactly that delta, no rerender or rAF needed.
+    act(() => resolveLoad(3));
 
     await waitFor(() => {
       const latest = firstItemIndexHistory.at(-1);
