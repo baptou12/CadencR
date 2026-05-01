@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 interface VirtuosoMockProps {
   data?: AgentBlockData[];
+  firstItemIndex?: number;
   itemContent?: (index: number, block: AgentBlockData) => ReactNode;
   components?: {
     Header?: () => ReactNode;
@@ -23,6 +24,9 @@ interface VirtuosoMockHandle {
 
 // Captured by the Virtuoso mock so tests can simulate scroll events.
 let lastVirtuosoProps: VirtuosoMockProps | null = null;
+// Each render appends the firstItemIndex value seen by Virtuoso so tests can
+// observe the decrement that happens after older history is prepended.
+let firstItemIndexHistory: number[] = [];
 const scrollToIndexMock = vi.fn();
 
 vi.mock("react-virtuoso", () => ({
@@ -31,6 +35,9 @@ vi.mock("react-virtuoso", () => ({
     ref: Ref<VirtuosoMockHandle>,
   ) {
     lastVirtuosoProps = props;
+    if (typeof props.firstItemIndex === "number") {
+      firstItemIndexHistory.push(props.firstItemIndex);
+    }
     useImperativeHandle(ref, () => ({ scrollToIndex: scrollToIndexMock }), []);
     return (
       <div data-testid="virtuoso-mock">
@@ -131,6 +138,7 @@ describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     lastVirtuosoProps = null;
+    firstItemIndexHistory = [];
     scrollToIndexMock.mockClear();
   });
 
@@ -284,5 +292,95 @@ describe("AgentSession auto-scroll", () => {
 
     fireStartReached();
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
+  });
+
+  it("decrements firstItemIndex by the number of prepended blocks", async () => {
+    let resolveLoad: () => void = () => {};
+    const onLoadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+
+    const initialBlocks = [makeBlock("1", "Hello")];
+    const { rerender } = render(
+      <AgentSession
+        agentType="session"
+        blocks={initialBlocks}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    // Capture the index Virtuoso saw before any prepend.
+    const initialIndex = firstItemIndexHistory.at(-1);
+    expect(typeof initialIndex).toBe("number");
+
+    fireStartReached();
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // Resolve the in-flight fetch; the parent then commits the new (longer)
+    // blocks array. The hook waits one rAF before applying the decrement so
+    // that `useLayoutEffect` has updated `blocksLengthRef`.
+    act(() => resolveLoad());
+
+    const prependedBlocks = [
+      makeBlock("old-1", "Older 1"),
+      makeBlock("old-2", "Older 2"),
+      makeBlock("old-3", "Older 3"),
+      ...initialBlocks,
+    ];
+    rerender(
+      <AgentSession
+        agentType="session"
+        blocks={prependedBlocks}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    await waitFor(() => {
+      const latest = firstItemIndexHistory.at(-1);
+      expect(latest).toBe((initialIndex as number) - 3);
+    });
+  });
+
+  it("ignores concurrent startReached calls while a load is in flight", async () => {
+    let resolveLoad: () => void = () => {};
+    const onLoadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    // Two consecutive startReached events while the first fetch is still in
+    // flight must collapse into a single onLoadOlder call.
+    fireStartReached();
+    fireStartReached();
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // Resolve the gate so the test does not leak a pending promise.
+    act(() => resolveLoad());
+    await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
   });
 });
