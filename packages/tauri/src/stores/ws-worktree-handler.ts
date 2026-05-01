@@ -1,5 +1,6 @@
 import { updateSession } from "./ws-session-types";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
+import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
 
 interface WorktreeStoreAccessors {
   get: () => WsSessionStore;
@@ -29,6 +30,7 @@ export function handleWorktreeEvent(
       );
       break;
     case "worktree.created":
+      invalidateWorktreeQueries();
       ctx.set(
         updateSession(ctx.get(), sessionId, {
           worktreeStatus: "created",

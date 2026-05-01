@@ -1,8 +1,7 @@
 /** WS event handler for workflow-domain messages. Agent helpers live in agent-event-handlers.ts. */
 
-import { invalidateFeatureQueries } from "@/lib/featureUpdated";
-import { type CommandsListPayload } from "@/lib/ws-envelope";
-import type { SlashCommand } from "@/hooks/useSlashCommand";
+import { handleWorkflowCrossDomainEvent } from "@/hooks/workflow-cross-domain-events";
+import { handleWorkflowWorktreeEvent } from "@/hooks/workflow-worktree-events";
 import {
   type WorkflowState,
   type WorkflowStatus,
@@ -47,44 +46,7 @@ export function createWorkflowMessageHandler(
     const ref = typeof data.ref === "string" ? data.ref : undefined;
     const payload = (data.payload ?? {}) as Record<string, unknown>;
 
-    // Handle cross-domain events before the workflow-only guard
-    if (domain === "session" && action === "feature.renamed") {
-      const title = payload.title as string | undefined;
-      if (title) set({ featureTitle: title });
-      return;
-    }
-
-    if (domain === "session" && action === "feature.autonaming") {
-      const featureIdPayload = payload.feature_id as number | undefined;
-      const inProgress = payload.in_progress === true;
-      if (featureIdPayload != null && featureIdPayload === get().featureId) {
-        set({ isAutoNaming: inProgress });
-      }
-      return;
-    }
-
-    if (domain === "feature" && action === "updated") {
-      const changed = (payload.changed ?? []) as string[];
-      const featureId = get().featureId;
-      if (featureId) invalidateFeatureQueries(featureId, changed);
-      return;
-    }
-
-    if (domain === "commands" && action === "list") {
-      const p = payload as unknown as CommandsListPayload;
-      if (!ref || ref !== get().slashCommandsRequestRef) {
-        return;
-      }
-      const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
-        name: c.name,
-        description: c.description ?? "",
-      }));
-      set({
-        slashCommands: cmds,
-        slashCommandsLoading: false,
-      });
-      return;
-    }
+    if (handleWorkflowCrossDomainEvent(domain, action, ref, payload, set, get)) return;
 
     if (domain !== "workflow") return;
 
@@ -392,37 +354,12 @@ export function createWorkflowMessageHandler(
         break;
       }
       case "worktree.creating":
-        set({
-          worktreeStatus: "creating",
-          worktreeBranch: (payload.branch as string) ?? null,
-          worktreePath: (payload.path as string) ?? null,
-          worktreeError: null,
-        });
-        break;
       case "worktree.created":
-        set({
-          worktreeStatus: "created",
-          worktreePath: (payload.path as string) ?? null,
-          worktreeBranch: (payload.branch as string) ?? null,
-        });
-        break;
       case "worktree.setup_running":
-        set({ worktreeStatus: "setup_running" });
-        break;
-      case "worktree.setup_output": {
-        const line = payload.line as string;
-        if (line != null)
-          set((state) => ({ worktreeSetupOutput: [...state.worktreeSetupOutput, line] }));
-        break;
-      }
+      case "worktree.setup_output":
       case "worktree.ready":
-        set({ worktreeStatus: "ready" });
-        break;
       case "worktree.setup_error":
-        set({
-          worktreeStatus: "setup_error",
-          worktreeError: (payload.error ?? payload.message ?? "") as string,
-        });
+        handleWorkflowWorktreeEvent(action, payload, set);
         break;
       case "completed": {
         set({ workflowStatus: "completed" });

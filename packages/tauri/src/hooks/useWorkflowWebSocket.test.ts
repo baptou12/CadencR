@@ -8,6 +8,11 @@ import { useWorkflowStore } from "./useWorkflowWebSocket";
 import { PLAN_KEY, PRD_KEY } from "@/types/workflow";
 import type { FeatureSnapshot, AgentSessionSummary, AgentSessionState } from "@/types/workflow";
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
+
+vi.mock("@/lib/worktreeQueries", () => ({
+  invalidateWorktreeQueries: vi.fn(),
+}));
 
 vi.mock("@/lib/ws-url", () => ({
   getWsUrl: () => "ws://localhost:5005/ws",
@@ -99,6 +104,7 @@ beforeEach(() => {
     error: null,
     hydrated: false,
   });
+  vi.mocked(invalidateWorktreeQueries).mockClear();
 });
 
 afterEach(() => {
@@ -2269,6 +2275,40 @@ describe("useWorkflowStore", () => {
       });
 
       expect(useWorkflowStore.getState().workflowStatus).toBe("idle");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Worktree events
+  // -------------------------------------------------------------------------
+
+  describe("worktree events", () => {
+    it("does not invalidate worktree queries before the worktree is created", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "worktree.creating",
+        payload: { branch: "feature/test", path: "/tmp/worktree" },
+      });
+
+      expect(useWorkflowStore.getState().worktreeStatus).toBe("creating");
+      expect(invalidateWorktreeQueries).not.toHaveBeenCalled();
+    });
+
+    it("invalidates worktree queries when the worktree is created", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "worktree.created",
+        payload: { branch: "feature/test", path: "/tmp/worktree" },
+      });
+
+      expect(useWorkflowStore.getState().worktreeStatus).toBe("created");
+      expect(useWorkflowStore.getState().worktreeBranch).toBe("feature/test");
+      expect(useWorkflowStore.getState().worktreePath).toBe("/tmp/worktree");
+      expect(invalidateWorktreeQueries).toHaveBeenCalledTimes(1);
     });
   });
 
