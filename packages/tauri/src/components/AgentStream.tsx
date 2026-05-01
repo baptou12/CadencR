@@ -1,20 +1,9 @@
-import { memo, useMemo, useSyncExternalStore, type CSSProperties } from "react";
-import { format, isToday } from "date-fns";
-import { AgentBlock, type AgentBlockData, buildToolResultMap } from "./AgentBlock";
-import { parseUTCDateTime } from "@/lib/date-utils";
+import { memo, useCallback, useMemo, type RefObject } from "react";
+import { Loader2Icon } from "lucide-react";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
+import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { isFileChangeTool } from "@/lib/tool-adapter";
-import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
-
-const RESIZE_STREAM_CONTAINMENT_STYLE: CSSProperties = {
-  contentVisibility: "auto",
-  containIntrinsicSize: "auto 120px",
-};
-
-function formatTimestamp(iso: string): string {
-  const date = parseUTCDateTime(iso);
-  if (isToday(date)) return format(date, "HH:mm");
-  return format(date, "yyyy/MM/dd HH:mm");
-}
 
 interface AgentStreamProps {
   blocks: AgentBlockData[];
@@ -23,6 +12,20 @@ interface AgentStreamProps {
   showStreamingIndicator?: boolean;
   /** Base path to strip from file paths in diffs */
   basePath?: string;
+  /** Imperative handle for scroll control (e.g. auto-scroll toggle). */
+  virtuosoRef?: RefObject<VirtuosoHandle | null>;
+  /**
+   * Index of the first item in the conceptual list. Must decrement by the
+   * number of prepended items when older history is loaded so that Virtuoso
+   * preserves the user's scroll position. Defaults to 0.
+   */
+  firstItemIndex?: number;
+  /** Fired when the user reaches (or leaves) the bottom of the stream. */
+  onAtBottomChange?: (atBottom: boolean) => void;
+  /** Fired when the user scrolls near the top of the stream. */
+  onStartReached?: () => void;
+  /** When true, a spinner is shown above the first item (older history loading). */
+  isLoadingOlder?: boolean;
 }
 
 function isHiddenByRenderer(block: AgentBlockData): boolean {
@@ -67,52 +70,103 @@ function coalesceDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
   return merged;
 }
 
-function useResizeStreamContainment(): boolean {
-  return useSyncExternalStore(subscribeResize, isResizing, isResizing);
-}
-
 export const AgentStream = memo(function AgentStream({
   blocks,
   isStreaming,
   showStreamingIndicator = true,
   basePath,
+  virtuosoRef,
+  firstItemIndex,
+  onAtBottomChange,
+  onStartReached,
+  isLoadingOlder = false,
 }: AgentStreamProps) {
   const rootBlocks = useMemo(() => blocks.filter((b) => !b.parentToolUseId), [blocks]);
   const displayBlocks = useMemo(() => coalesceDisplayBlocks(rootBlocks), [rootBlocks]);
-  const useContainment = useResizeStreamContainment();
+  // The tool-result map only changes when a new `tool_result` block lands;
+  // text-deltas produce a new `blocks` reference every token but never add
+  // one. Memoising on the count keeps the map (and downstream `itemContent`)
+  // reference-stable across deltas so memoised items in the viewport actually
+  // bail out of re-render during streaming.
+  const toolResultCount = useMemo(
+    () => blocks.reduce((n, b) => n + (b.type === "tool_result" ? 1 : 0), 0),
+    [blocks],
+  );
+  const toolResultMap = useMemo(
+    () => buildToolResultMap(blocks),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: rebuild only on tool_result count change (see comment above)
+    [toolResultCount],
+  );
 
-  const toolResultMap = useMemo(() => buildToolResultMap(blocks), [blocks]);
+  const itemContent = useCallback(
+    (_index: number, block: AgentBlockData) => (
+      <AgentStreamItem
+        block={block}
+        isStreaming={isStreaming}
+        basePath={basePath}
+        toolResultMap={toolResultMap}
+      />
+    ),
+    [isStreaming, basePath, toolResultMap],
+  );
+
+  const computeItemKey = useCallback(
+    (_index: number, block: AgentBlockData): string => block.id,
+    [],
+  );
+
+  const followOutput = useCallback(
+    (isAtBottom: boolean): "smooth" | false => (isAtBottom ? "smooth" : false),
+    [],
+  );
+
+  const components = useMemo(
+    () => ({
+      Header: (): React.ReactElement | null =>
+        isLoadingOlder ? (
+          <div className="flex justify-center py-2">
+            <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : null,
+      Footer: (): React.ReactElement | null =>
+        isStreaming && showStreamingIndicator ? (
+          <div className="flex items-center px-3 py-2 text-xs text-muted-foreground">
+            <span className="animate-pulse">█</span>
+          </div>
+        ) : null,
+    }),
+    [isLoadingOlder, isStreaming, showStreamingIndicator],
+  );
+
+  // Edge case: blocks present but all hidden by the renderer filters. Render
+  // the streaming cursor inline so users see the agent is still working.
+  if (displayBlocks.length === 0) {
+    return (
+      <div className="p-3">
+        {isStreaming && showStreamingIndicator && (
+          <div className="flex items-center py-2 text-xs text-muted-foreground">
+            <span className="animate-pulse">█</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-1 p-3">
-      {displayBlocks.map((block) => (
-        // During normal scroll, Chromium's placeholder heights from
-        // content-visibility can move the scroll position in split panes.
-        <div key={block.id} style={useContainment ? RESIZE_STREAM_CONTAINMENT_STYLE : undefined}>
-          {(block.type === "text" || block.type === "user_message") && block.createdAt && (
-            <div
-              className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${block.type === "user_message" ? "text-right" : ""}`}
-            >
-              <span className="font-medium">
-                {block.type === "user_message" ? "User" : (block.model ?? "unknown")}
-              </span>
-              {" · "}
-              {formatTimestamp(block.createdAt)}
-            </div>
-          )}
-          <AgentBlock
-            block={block}
-            isStreaming={isStreaming}
-            basePath={basePath}
-            toolResultMap={toolResultMap}
-          />
-        </div>
-      ))}
-      {isStreaming && showStreamingIndicator && (
-        <div className="flex items-center py-2 text-xs text-muted-foreground">
-          <span className="animate-pulse">█</span>
-        </div>
-      )}
-    </div>
+    <Virtuoso
+      ref={virtuosoRef}
+      data={displayBlocks}
+      firstItemIndex={firstItemIndex}
+      computeItemKey={computeItemKey}
+      itemContent={itemContent}
+      followOutput={followOutput}
+      atBottomStateChange={onAtBottomChange}
+      startReached={onStartReached}
+      overscan={{ main: 800, reverse: 800 }}
+      increaseViewportBy={{ top: 400, bottom: 400 }}
+      components={components}
+      className="h-full"
+      style={{ overflowX: "hidden" }}
+    />
   );
 });

@@ -1,9 +1,33 @@
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { AgentSession, shallowEqualSkipFunctions } from "./agent-session";
 import type { AgentSessionProps } from "./agent-session";
 import type { AgentBlockData } from "./AgentBlock";
+
+// Mock Virtuoso so JSDOM tests render all items synchronously instead of
+// relying on layout/IntersectionObserver. We don't need true virtualization
+// here — the assertions check that block content is reachable in the DOM.
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+    components,
+  }: {
+    data?: AgentBlockData[];
+    itemContent?: (index: number, block: AgentBlockData) => ReactNode;
+    components?: { Header?: () => ReactNode; Footer?: () => ReactNode };
+  }) => (
+    <div data-testid="virtuoso-mock">
+      {components?.Header ? <components.Header /> : null}
+      {data?.map((item, i) => (
+        <div key={item.id}>{itemContent?.(i, item)}</div>
+      ))}
+      {components?.Footer ? <components.Footer /> : null}
+    </div>
+  ),
+}));
 
 const hotkeyHandlers = new Map<string, (event: KeyboardEvent) => void>();
 

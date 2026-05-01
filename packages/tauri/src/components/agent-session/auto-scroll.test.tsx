@@ -1,9 +1,50 @@
+import { forwardRef, useImperativeHandle, type ReactNode, type Ref } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { fireEvent, render, screen, waitFor } from "@/test-utils";
+import { act, render, screen, waitFor } from "@/test-utils";
 import { AgentSession } from "./AgentSession";
 import type { AgentBlockData } from "../AgentBlock";
 import { toast } from "sonner";
+
+interface VirtuosoMockProps {
+  data?: AgentBlockData[];
+  itemContent?: (index: number, block: AgentBlockData) => ReactNode;
+  components?: {
+    Header?: () => ReactNode;
+    Footer?: () => ReactNode;
+  };
+  atBottomStateChange?: (atBottom: boolean) => void;
+  startReached?: (index: number) => void;
+}
+
+interface VirtuosoMockHandle {
+  scrollToIndex: ReturnType<typeof vi.fn>;
+}
+
+// Captured by the Virtuoso mock so tests can simulate scroll events.
+let lastVirtuosoProps: VirtuosoMockProps | null = null;
+const scrollToIndexMock = vi.fn();
+
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: forwardRef(function VirtuosoMock(
+    props: VirtuosoMockProps,
+    ref: Ref<VirtuosoMockHandle>,
+  ) {
+    lastVirtuosoProps = props;
+    useImperativeHandle(ref, () => ({ scrollToIndex: scrollToIndexMock }), []);
+    return (
+      <div data-testid="virtuoso-mock">
+        {props.components?.Header ? <props.components.Header /> : null}
+        {props.data?.map((item, i) => (
+          <div key={item.id} data-testid={`virtuoso-item-${item.id}`}>
+            {props.itemContent?.(i, item)}
+          </div>
+        ))}
+        {props.components?.Footer ? <props.components.Footer /> : null}
+      </div>
+    );
+  }),
+}));
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
@@ -68,146 +109,115 @@ function makeBlock(id: string, content: string): AgentBlockData {
   return { id, type: "text", content };
 }
 
-function getScrollContainer(container: HTMLElement): HTMLDivElement {
-  const scrollContainer = container.querySelector(".overflow-auto");
-  if (!(scrollContainer instanceof HTMLDivElement)) {
-    throw new Error("Scroll container not found");
-  }
-  return scrollContainer;
+function getAutoScrollButton(): HTMLElement {
+  return screen.getByRole("button", { name: /auto-scroll/i });
 }
 
-function setScrollMetrics(
-  el: HTMLDivElement,
-  {
-    scrollHeight,
-    clientHeight,
-    scrollTop,
-  }: { scrollHeight: number; clientHeight: number; scrollTop: number },
-): void {
-  Object.defineProperty(el, "scrollHeight", {
-    configurable: true,
-    value: scrollHeight,
-  });
-  Object.defineProperty(el, "clientHeight", {
-    configurable: true,
-    value: clientHeight,
-  });
-  el.scrollTop = scrollTop;
+/** Simulate Virtuoso reporting a change in bottom-state (user scrolled up/down). */
+function fireAtBottomChange(atBottom: boolean): void {
+  const cb = lastVirtuosoProps?.atBottomStateChange;
+  if (!cb) throw new Error("atBottomStateChange not wired");
+  act(() => cb(atBottom));
 }
 
-function setScrolledPosition(
-  el: HTMLDivElement,
-  scrollTop: number,
-  dims: { scrollHeight: number; clientHeight: number } = { scrollHeight: 1000, clientHeight: 200 },
-): void {
-  setScrollMetrics(el, { ...dims, scrollTop });
-  fireEvent.scroll(el);
-}
-
-function renderSession(): {
-  container: HTMLElement;
-  scrollContainer: HTMLDivElement;
-  autoScrollButton: HTMLElement;
-} {
-  const view = render(
-    <AgentSession
-      agentType="session"
-      blocks={[makeBlock("1", "Hello")]}
-      status="running"
-      onSend={vi.fn()}
-      onStop={vi.fn()}
-    />,
-  );
-
-  return {
-    container: view.container,
-    scrollContainer: getScrollContainer(view.container),
-    autoScrollButton: screen.getByRole("button", { name: /auto-scroll/i }),
-  };
-}
-
-function mockContainerMetrics(scrollHeight: number, clientHeight: number): { restore: () => void } {
-  const scrollHeightMock = vi
-    .spyOn(HTMLDivElement.prototype, "scrollHeight", "get")
-    .mockReturnValue(scrollHeight);
-  const clientHeightMock = vi
-    .spyOn(HTMLDivElement.prototype, "clientHeight", "get")
-    .mockReturnValue(clientHeight);
-  return {
-    restore(): void {
-      scrollHeightMock.mockRestore();
-      clientHeightMock.mockRestore();
-    },
-  };
+/** Simulate Virtuoso firing startReached (user near top → load older). */
+function fireStartReached(): void {
+  const cb = lastVirtuosoProps?.startReached;
+  if (!cb) throw new Error("startReached not wired");
+  act(() => cb(0));
 }
 
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    lastVirtuosoProps = null;
+    scrollToIndexMock.mockClear();
   });
 
   it("shows the auto-scroll chip and lets the user toggle it", async () => {
     const user = userEvent.setup();
-    const { scrollContainer, autoScrollButton } = renderSession();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
 
-    setScrollMetrics(scrollContainer, { scrollHeight: 1000, clientHeight: 200, scrollTop: 400 });
+    const button = getAutoScrollButton();
+    expect(button).toHaveAttribute("aria-pressed", "true");
 
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
+    // Toggle off
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "false");
 
-    await user.click(autoScrollButton);
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
-
-    scrollContainer.scrollTop = 0;
-    await user.click(autoScrollButton);
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
-    expect(scrollContainer.scrollTop).toBe(800);
+    // Toggle back on → should request a scroll-to-bottom via Virtuoso
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(scrollToIndexMock).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
   });
 
   it("re-enables auto-scroll when the user manually reaches the bottom", () => {
-    const { scrollContainer, autoScrollButton } = renderSession();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
 
-    setScrolledPosition(scrollContainer, 800);
-    setScrolledPosition(scrollContainer, 500);
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
+    fireAtBottomChange(false);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
-    setScrolledPosition(scrollContainer, 800);
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
+    fireAtBottomChange(true);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("does not disable auto-scroll for small near-bottom offsets", () => {
-    const { scrollContainer, autoScrollButton } = renderSession();
+  it("disables auto-scroll when the user scrolls away from the bottom", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
 
-    setScrolledPosition(scrollContainer, 800);
-    setScrolledPosition(scrollContainer, 799);
-
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("disables auto-scroll after a small manual upward scroll", () => {
-    const { scrollContainer, autoScrollButton } = renderSession();
-
-    setScrolledPosition(scrollContainer, 800);
-    setScrolledPosition(scrollContainer, 798);
-
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    fireAtBottomChange(false);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
   });
 
   it("does not re-enable auto-scroll when the prompt is focused", async () => {
     const user = userEvent.setup();
-    const { scrollContainer, autoScrollButton } = renderSession();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
 
-    setScrolledPosition(scrollContainer, 800);
-    setScrolledPosition(scrollContainer, 500);
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
+    fireAtBottomChange(false);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("textbox"));
-    expect(autoScrollButton).toHaveAttribute("aria-pressed", "false");
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("loads older history on mount when content is too short to scroll", async () => {
-    const metrics = mockContainerMetrics(300, 400);
+  it("loads older history when Virtuoso reports the start was reached", async () => {
     const onLoadOlder = vi.fn(async () => {});
-
     render(
       <AgentSession
         agentType="session"
@@ -220,12 +230,37 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
+    fireStartReached();
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
-    metrics.restore();
   });
 
-  it("does not show the older-history spinner unless a fetch is in flight", () => {
-    const metrics = mockContainerMetrics(2000, 400);
+  it("does not call onLoadOlder when there is no more history", () => {
+    const onLoadOlder = vi.fn(async () => {});
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore={false}
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    fireStartReached();
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("shows the loading-older spinner via the Virtuoso header while a fetch is in flight", async () => {
+    let resolveLoad: () => void = () => {};
+    const onLoadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLoad = resolve;
+        }),
+    );
+
     const { container } = render(
       <AgentSession
         agentType="session"
@@ -234,17 +269,24 @@ describe("AgentSession auto-scroll", () => {
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore
-        onLoadOlder={vi.fn(async () => {})}
+        onLoadOlder={onLoadOlder}
       />,
     );
 
     expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
-    metrics.restore();
+
+    fireStartReached();
+    await waitFor(() => {
+      expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    });
+
+    act(() => resolveLoad());
+    await waitFor(() => {
+      expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
+    });
   });
 
   it("shows a toast when loading older history fails", async () => {
-    const metrics = mockContainerMetrics(300, 400);
-
     render(
       <AgentSession
         agentType="session"
@@ -259,7 +301,7 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
+    fireStartReached();
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
-    metrics.restore();
   });
 });
