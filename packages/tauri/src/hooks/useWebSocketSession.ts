@@ -20,13 +20,13 @@ import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt"
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { SessionConfig } from "@/lib/ws-envelope";
 import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
-import type { AgentStatus } from "@/types/agent";
+import type { LiveAgentStatus } from "@/types/agent";
 import {
   type TurnLifecycle,
   createIdleTurnLifecycle,
-  lifecycleToStatus,
   persistedStatusToLifecycle,
 } from "@/stores/ws-turn-lifecycle";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 
 interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -38,7 +38,7 @@ interface UseWebSocketSessionReturn {
    *  maintained incrementally by the store. */
   toolResultMap: Map<string, AgentBlockData>;
   lifecycle: TurnLifecycle;
-  status: AgentStatus;
+  status: LiveAgentStatus;
   isConnected: boolean;
   sessionId: string;
   pendingPermission: PendingPermission | null;
@@ -94,6 +94,15 @@ export function useWebSocketSession(
   // re-render the hook.
   const session = useWsSessionStore((s) => s.sessions[sessionId]);
 
+  // Backend-driven status (the single source of truth — see
+  // `domain::session_status` on the Rust side and `session-status-store`
+  // on the frontend). Keyed by the DB session id, which the WS handler
+  // populates on `session.connected` / persistedLoaded.
+  const sessionDbId = session?.sessionDbId ?? null;
+  const liveStatus = useSessionStatusStore((s) =>
+    sessionDbId == null ? null : (s.bySession[sessionDbId]?.status ?? null),
+  );
+
   useEffect(() => {
     useWsSessionStore.getState().connect(sessionId);
     // Connections are cached; no disconnect on unmount.
@@ -121,7 +130,7 @@ export function useWebSocketSession(
     const restoredBlocks = serverBlocksToAgentBlocks(lastSession.blocks);
 
     const restoredLifecycle = persistedStatusToLifecycle(
-      lastSession.status as AgentStatus,
+      lastSession.status,
       lastSession.pendingPlanApproval,
     );
 
@@ -189,12 +198,21 @@ export function useWebSocketSession(
   // Snapshot fields refresh per session change (incl. token chunks).
   return useMemo<UseWebSocketSessionReturn>(() => {
     const lifecycle = session?.lifecycle ?? createIdleTurnLifecycle();
+    // Status is the backend-pushed value when available. Until the
+    // first `session_status.update` arrives (race during initial WS
+    // connect, or before `sessionDbId` is known), fall back to deriving
+    // from the local lifecycle so the UI doesn't blink to Idle on
+    // mount. Mapping mirrors the canonical reduction:
+    //   active → agent, paused → question, anything else → idle.
+    const status: LiveAgentStatus =
+      liveStatus ??
+      (lifecycle.phase === "active" ? "agent" : lifecycle.phase === "paused" ? "question" : "idle");
     return {
       blocks: session?.blocks ?? [],
       rootBlocks: session?.rootBlocks ?? [],
       toolResultMap: session?.toolResultMap ?? new Map(),
       lifecycle,
-      status: lifecycleToStatus(lifecycle),
+      status,
       isConnected: session?.isConnected ?? false,
       sessionId,
       hasMore: session?.hasMore ?? false,
@@ -212,5 +230,5 @@ export function useWebSocketSession(
       hasFileChanges: session?.hasFileChanges ?? false,
       ...actions,
     };
-  }, [session, sessionId, actions]);
+  }, [session, sessionId, actions, liveStatus]);
 }

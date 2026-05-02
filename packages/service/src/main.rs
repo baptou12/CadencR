@@ -73,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .await;
 
-            let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+            let (session_status_tx, _) = tokio::sync::broadcast::channel(64);
             let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
 
             let auth_token = config.auth_token.ok_or_else(|| {
@@ -90,8 +90,8 @@ async fn main() -> anyhow::Result<()> {
                 write_pool,
                 max_parallel_agents: AppState::max_parallel_from_env(),
                 agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
-                turn_state_tx: app_state::TurnStateBroadcaster::new(
-                    turn_state_tx,
+                session_status_tx: domain::session_status::SessionStatusBroadcaster::new(
+                    session_status_tx,
                     std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
                 ),
                 pty_manager: domain::terminal::service::PtyManager::new(),

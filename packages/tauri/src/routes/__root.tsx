@@ -24,7 +24,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { useAppWsStore } from "@/stores/app-ws-store";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
@@ -69,8 +69,8 @@ function RootLayout() {
     leftSidebarRef.current?.focus();
   }, []);
   useEffect(() => {
-    useAppWsStore.getState().connect();
-    return () => useAppWsStore.getState().disconnect();
+    useSessionStatusStore.getState().connect();
+    return () => useSessionStatusStore.getState().disconnect();
   }, []);
   useEffect(() => {
     void initNotificationPermission();

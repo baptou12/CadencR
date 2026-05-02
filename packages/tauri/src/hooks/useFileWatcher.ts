@@ -1,14 +1,16 @@
 import { useEffect } from "react";
 import { createEnvelope } from "@/lib/ws-envelope";
-import { useAppWsStore } from "@/stores/app-ws-store";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 
 /**
  * Subscribes to file-system change events for a project directory.
- * Sends a subscribe message via the app-level WebSocket when connected.
+ * Sends a subscribe message via the app-level WebSocket — the same
+ * connection that the session-status store maintains, so we don't open
+ * a second socket per app.
  */
 export function useFileWatcher(projectPath: string): void {
-  const ws = useAppWsStore((s) => s.ws);
-  const isConnected = useAppWsStore((s) => s.isConnected);
+  const ws = useSessionStatusStore((s) => s.ws);
+  const isConnected = useSessionStatusStore((s) => s.isConnected);
 
   useEffect(() => {
     if (!ws || !isConnected || ws.readyState !== WebSocket.OPEN || !projectPath) return;

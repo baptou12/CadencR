@@ -193,7 +193,7 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].content).toBe("hi");
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
   });
 
   it("incoming permission.request sets pendingPermission", async () => {
@@ -222,7 +222,7 @@ describe("useWebSocketSession", () => {
       preview: undefined,
       options: [],
     });
-    expect(result.current.status).toBe("paused");
+    expect(result.current.status).toBe("question");
   });
 
   it("permission.request stores request_id in pendingRequestId", async () => {
@@ -298,7 +298,7 @@ describe("useWebSocketSession", () => {
       result.current.respondToPermission("r2", "deny");
     });
     expect(result.current.pendingPermission).toBeNull();
-    expect(result.current.status).toBe("paused");
+    expect(result.current.status).toBe("question");
     const sent = JSON.parse(getWs().sent[0]);
     expect(sent.payload.decision).toBe("deny");
   });
@@ -316,7 +316,7 @@ describe("useWebSocketSession", () => {
         payload: { code: "ERR", message: "something broke" },
       });
     });
-    expect(result.current.status).toBe("error");
+    expect(result.current.status).toBe("idle");
   });
 
   it("session.ended sets completed status", async () => {
@@ -332,7 +332,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
   });
 
   it("message events with no recognized mutations do not re-enter running after end", async () => {
@@ -355,7 +355,7 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.sendPrompt("hello");
     });
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
 
     act(() => {
       getWs().simulateMessage({
@@ -364,7 +364,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
 
     act(() => {
       getWs().simulateMessage({
@@ -375,7 +375,7 @@ describe("useWebSocketSession", () => {
         },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
   });
 
   it("late stream events after end re-enter running (frontend trusts backend activity)", async () => {
@@ -424,7 +424,7 @@ describe("useWebSocketSession", () => {
         },
       });
     });
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
 
     act(() => {
       getWs().simulateMessage({
@@ -459,7 +459,7 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
   });
 
   it("multi-turn conversation accumulates blocks across turns", async () => {
@@ -489,7 +489,7 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.sendPrompt("hello");
     });
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
     // User message block added locally
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].type).toBe("user_message");
@@ -543,13 +543,13 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
 
     // 6. Second prompt
     act(() => {
       result.current.sendPrompt("thanks");
     });
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
     // Now: user_message + text + user_message = 3
     expect(result.current.blocks).toHaveLength(3);
     expect(result.current.blocks[2].type).toBe("user_message");
@@ -604,7 +604,7 @@ describe("useWebSocketSession", () => {
         payload: { reason: "done" },
       });
     });
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
 
     // Verify all blocks accumulated correctly
     expect(result.current.blocks.map((b) => b.type)).toEqual([
@@ -661,7 +661,7 @@ describe("useWebSocketSession", () => {
       });
     });
 
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
     expect(result.current.pendingPlanApproval).toBeNull();
 
     // turn_complete is terminal; plan approval only comes from permission.request
@@ -674,7 +674,7 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.pendingPlanApproval).toBeNull();
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
   });
 
   it("turn_complete without ExitPlanMode goes terminal normally", async () => {
@@ -720,7 +720,7 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.pendingPlanApproval).toBeNull();
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
   });
 
   it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
@@ -762,7 +762,7 @@ describe("useWebSocketSession", () => {
 
     expect(result.current.pendingPlanApproval).toBeNull();
     expect(result.current.permissionMode).toBe("acceptEdits");
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
 
     // Should have sent mode.set and permission.respond
     const sentMessages = ws.sent.map((s) => JSON.parse(s));
@@ -812,7 +812,7 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.pendingPlanApproval).toBeNull();
-    expect(result.current.status).toBe("running");
+    expect(result.current.status).toBe("agent");
 
     // Feedback should appear as user message in blocks
     const userMessages = result.current.blocks.filter((b) => b.type === "user_message");
@@ -2190,7 +2190,7 @@ describe("useWebSocketSession", () => {
       await Promise.resolve();
     });
 
-    expect(result.current.status).toBe("completed");
+    expect(result.current.status).toBe("idle");
 
     (useGetFeatureAgentState as ReturnType<typeof vi.fn>).mockReturnValue({
       data: undefined,

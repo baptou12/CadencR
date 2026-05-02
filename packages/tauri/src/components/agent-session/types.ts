@@ -5,7 +5,10 @@ import type { AgentQuestion, AgentQuestionAnswers } from "../AgentQuestionDrawer
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "../ToolPermissionPrompt";
-import type { AgentStatus } from "@/types/agent";
+// `AgentSession` is a live UI consumer — it reads the canonical 3-value
+// status pushed by the backend. Workflow-level lifecycle decisions live
+// elsewhere (and use the legacy `AgentStatus`).
+import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 

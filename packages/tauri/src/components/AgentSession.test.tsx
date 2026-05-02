@@ -289,7 +289,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "hello")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         onProviderChange={vi.fn()}
@@ -312,7 +312,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="plan"
         blocks={[makeBlock("1", "Agent output text")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
       />,
@@ -334,46 +334,49 @@ describe("AgentSession", () => {
     expect(screen.getByText("Plan")).toBeInTheDocument();
   });
 
-  it("shows status badge - running", () => {
+  it("shows status badge - working", () => {
     render(
       <AgentSession
         agentType="execute"
         blocks={[]}
-        status="running"
+        status="agent"
         onSend={onSend}
         onStop={onStop}
         collapsible
       />,
     );
-    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.getByText("Working")).toBeInTheDocument();
   });
 
-  it("shows completed badge", () => {
+  it("shows idle badge when status is idle", () => {
+    // The 3-value enum collapses "completed"/"error"/"never started" into
+    // a single Idle badge. The richer lifecycle distinction is handled
+    // out-of-band via session.error envelopes / toasts.
     render(
       <AgentSession
         agentType="plan"
         blocks={[makeBlock("1", "done")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         collapsible
       />,
     );
-    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
   });
 
-  it("shows error badge", () => {
+  it("shows awaiting input badge when status is question", () => {
     render(
       <AgentSession
         agentType="plan"
         blocks={[]}
-        status="error"
+        status="question"
         onSend={onSend}
         onStop={onStop}
         collapsible
       />,
     );
-    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting input")).toBeInTheDocument();
   });
 
   it("uses custom label when provided", () => {
@@ -432,7 +435,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="execute"
         blocks={[]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         hasFileChanges
@@ -447,7 +450,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="execute"
         blocks={[]}
-        status="running"
+        status="agent"
         onSend={onSend}
         onStop={onStop}
         todos={[{ content: "Do the thing", activeForm: "Doing the thing", status: "in_progress" }]}
@@ -511,7 +514,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "hello")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         onProviderChange={vi.fn()}
@@ -531,7 +534,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="plan"
         blocks={[makeBlock("1", "Plan output")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         collapsible
@@ -548,7 +551,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="prd"
         blocks={[makeBlock("1", "PRD output")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         collapsible
@@ -565,7 +568,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="plan"
         blocks={[makeBlock("1", "Plan output")]}
-        status="completed"
+        status="idle"
         onSend={onSend}
         onStop={onStop}
         collapsible
@@ -579,7 +582,7 @@ describe("AgentSession", () => {
       <AgentSession
         agentType="plan"
         blocks={[makeBlock("1", "Plan output")]}
-        status="paused"
+        status="question"
         onSend={onSend}
         onStop={onStop}
         collapsible
@@ -595,7 +598,7 @@ describe("AgentSession", () => {
 describe("shallowEqualSkipFunctions", () => {
   const base: Partial<AgentSessionProps> = {
     agentType: "execute",
-    status: "running",
+    status: "agent",
     blocks: [],
     collapsible: true,
     featureId: 1,
@@ -611,7 +614,7 @@ describe("shallowEqualSkipFunctions", () => {
 
   it("returns false when a data prop changes", () => {
     const prev = { ...base } as AgentSessionProps;
-    const next = { ...base, status: "completed" as const } as AgentSessionProps;
+    const next = { ...base, status: "idle" as const } as AgentSessionProps;
     expect(shallowEqualSkipFunctions(prev, next)).toBe(false);
   });
 

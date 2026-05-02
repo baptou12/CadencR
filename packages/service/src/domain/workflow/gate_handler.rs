@@ -70,7 +70,7 @@ impl QueueAdvancer {
     }
 
     /// Handle manual gate: unblock dependents but don't auto-start next items.
-    pub(crate) async fn handle_manual_gate(&self, agent_manager: &AgentManager) {
+    pub(crate) async fn handle_manual_gate(&self, _agent_manager: &AgentManager) {
         if let Err(e) = repo::unblock_ready_items(&self.write_pool, self.feature_id).await {
             error!(error = %e, "unblock_ready_items failed for manual gate");
         }
@@ -88,13 +88,9 @@ impl QueueAdvancer {
                 .ws_sender
                 .send(Message::Text(String::from(envelope).into()));
         }
-        if agent_manager.active_items.is_empty() {
-            crate::domain::ws_session::persistence::WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
-                self.feature_id,
-                "none",
-            );
-        }
+        // No feature-wide Idle broadcast: each completed session has already
+        // broadcast its own Idle when it finished. The frontend aggregates
+        // per-feature from per-session statuses.
     }
 
     /// Handle auto gate: existing autonomy-based advancement logic.

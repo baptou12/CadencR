@@ -68,7 +68,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={null}
-        featureTurnStates={{}}
         onSelectFeature={vi.fn()}
       />,
     );
@@ -83,7 +82,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={null}
-        featureTurnStates={{}}
         onSelectFeature={vi.fn()}
       />,
     );
@@ -96,7 +94,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={1}
-        featureTurnStates={{}}
         onSelectFeature={vi.fn()}
       />,
     );
@@ -112,7 +109,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={null}
-        featureTurnStates={{}}
         onSelectFeature={vi.fn()}
       />,
     );
@@ -132,7 +128,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={null}
-        featureTurnStates={{}}
         onSelectFeature={onSelectFeature}
       />,
     );
@@ -146,7 +141,6 @@ describe("ProjectFeatures", () => {
         projectId={1}
         projectPath="/test/path"
         activeFeatureId={null}
-        featureTurnStates={{}}
         onSelectFeature={vi.fn()}
       />,
     );

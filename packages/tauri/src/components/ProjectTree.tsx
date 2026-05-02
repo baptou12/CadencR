@@ -25,7 +25,6 @@ import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { useAppWsStore } from "@/stores/app-ws-store";
 import { open } from "@tauri-apps/plugin-dialog";
 
 interface ProjectTreeProps {
@@ -43,8 +42,6 @@ export function ProjectTree({
   const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
-
-  const featureTurnStates = useAppWsStore((s) => s.featureTurnStates);
 
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const setProjectSetting = useSetProjectSetting();
@@ -279,7 +276,6 @@ export function ProjectTree({
                     projectId={project.id}
                     projectPath={project.path}
                     activeFeatureId={isActive ? activeFeatureId : null}
-                    featureTurnStates={featureTurnStates}
                     onSelectFeature={onSelectFeature}
                   />
                 )}

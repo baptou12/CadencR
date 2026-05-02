@@ -9,6 +9,7 @@ pub mod mcp;
 pub mod permission_bridge;
 pub mod projects;
 pub mod runtime_stream;
+pub mod session_status;
 pub mod sessions;
 pub mod settings;
 pub mod settings_allowlist;

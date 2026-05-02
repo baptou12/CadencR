@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FALLBACK_MODEL_ID } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
-import { lifecycleToStatus } from "./ws-turn-lifecycle";
 import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
 
 vi.mock("@/lib/worktreeQueries", () => ({
@@ -1368,7 +1367,9 @@ describe("ws-session-store", () => {
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.permissionMode).toBe("plan");
-      expect(lifecycleToStatus(session.lifecycle)).toBe("running");
+      // Lifecycle has been "active" since the prompt; permissionMode change
+      // shouldn't push it to terminal/idle.
+      expect(session.lifecycle).toEqual({ phase: "active" });
     });
   });
 

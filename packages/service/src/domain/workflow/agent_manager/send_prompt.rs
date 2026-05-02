@@ -53,19 +53,19 @@ impl AgentManager {
         if result.is_ok() {
             // Every successful response clears the askUser gate — both the DB
             // row (so a reconnect-lag snapshot doesn't resurrect a ghost
-            // askUser) and the broadcast turn state (so the sidebar icon
+            // Question) and the broadcast status (so the sidebar icon
             // disappears without waiting for the runtime's next stream event).
             // Claude Code's `wait_for_approval` bridge does the same via
             // `mark_agent_resumed_static`; this is the direct-to-runtime
             // counterpart (OpenCode per-tool perms, AskUserQuestion answers,
             // and plan/PRD approvals all land here).
-            let next_turn = if response.is_approval_gate {
-                crate::domain::permission_bridge::turn_state_after_approval(
+            let next_status = if response.is_approval_gate {
+                crate::domain::permission_bridge::status_after_approval(
                     response.decision,
                     response.feedback.as_deref(),
                 )
             } else {
-                crate::domain::permission_bridge::turn_state_after_decision(response.decision)
+                crate::domain::permission_bridge::status_after_decision(response.decision)
             };
             if let Some(db_session_id) = self.active_items.get(slot).map(|e| *e.value()) {
                 WsSessionPersistence::clear_all_pending_user_input_static(
@@ -73,12 +73,14 @@ impl AgentManager {
                     db_session_id,
                 )
                 .await;
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
+                    self.feature_id,
+                    next_status,
+                    None,
+                );
             }
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
-                self.feature_id,
-                next_turn,
-            );
         }
 
         Ok(result.is_ok())
@@ -101,23 +103,24 @@ impl AgentManager {
             q.stream_input(content)
                 .await
                 .map_err(|e| format!("stream_input failed: {e}"))?;
-            // The stream reader broadcasts "none" + marks the session
+            // The stream reader broadcasts Idle + marks the session
             // completed at `is_result`, so a follow-up prompt into the same
-            // live runtime must re-assert "agent" / running for every
-            // consumer of the global turn state (sidebar, runtime hook,
+            // live runtime must re-assert Agent / running for every
+            // consumer of the per-session status (sidebar, runtime hook,
             // `agent_sessions.status`). The resume-from-paused branch below
-            // already does this via `broadcast_turn_state("agent")` — this
-            // mirrors it for the fast path.
+            // mirrors this for the slow path.
             if let Some(entry) = self.active_items.get(&slot) {
                 let db_session_id = *entry.value();
                 drop(entry);
                 WsSessionPersistence::mark_running_static(&self.write_pool, db_session_id).await;
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
+                    self.feature_id,
+                    crate::domain::session_status::AgentStatus::Agent,
+                    None,
+                );
             }
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
-                self.feature_id,
-                "agent",
-            );
             return Ok(());
         }
 
@@ -348,7 +351,7 @@ impl AgentManager {
                     self.queries.clone(),
                     self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
-                    self.turn_state_tx.clone(),
+                    self.session_status_tx.clone(),
                 );
 
                 // Frontend needs an explicit running event so the per-agent
@@ -369,10 +372,12 @@ impl AgentManager {
                     .ws_sender
                     .send(Message::Text(String::from(running_env).into()));
 
-                WsSessionPersistence::broadcast_turn_state(
-                    &self.turn_state_tx,
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
                     self.feature_id,
-                    "agent",
+                    crate::domain::session_status::AgentStatus::Agent,
+                    None,
                 );
                 info!(slot = %slot, "agent resumed successfully");
                 Ok(())

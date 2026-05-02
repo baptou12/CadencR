@@ -225,7 +225,7 @@ impl AgentManager {
             allowed_patterns,
             write_pool: self.write_pool.clone(),
             db_session_id,
-            turn_state_tx: self.turn_state_tx.clone(),
+            session_status_tx: self.session_status_tx.clone(),
         };
 
         let project_id = self.get_project_id().await;

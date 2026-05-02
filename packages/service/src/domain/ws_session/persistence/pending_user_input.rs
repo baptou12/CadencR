@@ -40,14 +40,14 @@ impl PendingUserInputKind {
         }
     }
 
-    /// Wire-format kind tag broadcast on `turn_states.update` envelopes.
-    /// Matches the frontend `PendingKind` union in `app-ws-store.ts`.
-    pub fn as_turn_state_kind(self) -> &'static str {
+    /// Project this DB-side kind onto the canonical, frontend-visible
+    /// [`PendingKind`] enum used on the wire.
+    pub fn as_session_kind(self) -> crate::domain::session_status::PendingKind {
         match self {
-            Self::Permission => "permission",
-            Self::Question => "question",
-            Self::PlanApproval => "plan-approval",
-            Self::PrdApproval => "prd-approval",
+            Self::Permission => crate::domain::session_status::PendingKind::Permission,
+            Self::Question => crate::domain::session_status::PendingKind::Question,
+            Self::PlanApproval => crate::domain::session_status::PendingKind::PlanApproval,
+            Self::PrdApproval => crate::domain::session_status::PendingKind::PrdApproval,
         }
     }
 }
@@ -163,43 +163,51 @@ impl WsSessionPersistence {
         }
     }
 
-    /// Paired write + broadcast: persist the gate, THEN broadcast `askUser`.
+    /// Paired write + broadcast: persist the gate, THEN broadcast Question.
     /// Ordering is load-bearing: a broadcast-lag recovery re-reads the DB,
     /// so the column must be set before any subscriber can see the event.
     pub async fn mark_awaiting_user_static(
         pool: &SqlitePool,
-        broadcaster: &crate::app_state::TurnStateBroadcaster,
+        broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
         session_id: i64,
         feature_id: i64,
         input: &PendingUserInput<'_>,
     ) {
-        let kind = input.kind().as_turn_state_kind();
+        let kind = input.kind().as_session_kind();
         Self::set_pending_user_input_static(pool, session_id, input).await;
         // Propagate `kind` so live askUser listeners can identify the gate
         // type (permission/question/plan/prd) without a DB snapshot round
-        // trip — previously only the snapshot path carried `kind`, so
-        // reconnect-free transitions landed with `kind = null` and the
-        // `reason` field on `useFeatureAgentRuntime` stayed empty.
-        Self::broadcast_turn_state_with_kind(broadcaster, feature_id, "askUser", Some(kind));
+        // trip.
+        Self::broadcast_session_status(
+            broadcaster,
+            session_id,
+            feature_id,
+            crate::domain::session_status::AgentStatus::Question,
+            Some(kind),
+        );
     }
 
-    /// Paired clear + broadcast: NULL the gate, THEN broadcast the next turn
-    /// (`"agent"` for Allow, `"none"` for Deny). Same ordering guarantee as
-    /// `mark_awaiting_user_static`.
+    /// Paired clear + broadcast: NULL the gate, THEN broadcast the next
+    /// status (`Agent` for Allow, `Idle` for Deny). Same ordering
+    /// guarantee as `mark_awaiting_user_static`.
     pub async fn mark_agent_resumed_static(
         pool: &SqlitePool,
-        broadcaster: &crate::app_state::TurnStateBroadcaster,
+        broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
         session_id: i64,
         feature_id: i64,
         kind: PendingUserInputKind,
-        next_turn: &'static str,
+        next_status: crate::domain::session_status::AgentStatus,
     ) {
         debug_assert!(
-            matches!(next_turn, "agent" | "none"),
-            "mark_agent_resumed_static expects 'agent' or 'none', got {next_turn:?}",
+            matches!(
+                next_status,
+                crate::domain::session_status::AgentStatus::Agent
+                    | crate::domain::session_status::AgentStatus::Idle
+            ),
+            "mark_agent_resumed_static expects Agent or Idle, got {next_status:?}",
         );
         Self::clear_pending_user_input_static(pool, session_id, kind).await;
-        Self::broadcast_turn_state(broadcaster, feature_id, next_turn);
+        Self::broadcast_session_status(broadcaster, session_id, feature_id, next_status, None);
     }
 }
 
@@ -420,11 +428,11 @@ mod pending_user_input_tests {
     }
 
     fn test_broadcaster() -> (
-        crate::app_state::TurnStateBroadcaster,
-        tokio::sync::broadcast::Receiver<crate::app_state::TurnStateEvent>,
+        crate::domain::session_status::SessionStatusBroadcaster,
+        tokio::sync::broadcast::Receiver<crate::domain::session_status::SessionStatusEvent>,
     ) {
         let (tx, rx) = tokio::sync::broadcast::channel(16);
-        let bc = crate::app_state::TurnStateBroadcaster::new(
+        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(
             tx,
             std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         );
@@ -433,6 +441,7 @@ mod pending_user_input_tests {
 
     #[tokio::test]
     async fn mark_awaiting_user_writes_db_before_broadcasting() {
+        use crate::domain::session_status::{AgentStatus, PendingKind};
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
@@ -450,14 +459,16 @@ mod pending_user_input_tests {
         // DB must be set by the time the broadcast is observable.
         assert!(column(&pool, id, "pending_permission").await.is_some());
         let event = rx.recv().await.unwrap();
+        assert_eq!(event.session_id, id);
         assert_eq!(event.feature_id, 42);
-        assert_eq!(event.turn, "askUser");
-        assert_eq!(event.kind.as_deref(), Some("permission"));
+        assert_eq!(event.status, AgentStatus::Question);
+        assert_eq!(event.kind, Some(PendingKind::Permission));
         assert!(event.seq > 0);
     }
 
     #[tokio::test]
     async fn mark_awaiting_user_propagates_kind_for_question_and_plan() {
+        use crate::domain::session_status::PendingKind;
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
@@ -490,19 +501,20 @@ mod pending_user_input_tests {
         )
         .await;
 
-        assert_eq!(rx.recv().await.unwrap().kind.as_deref(), Some("question"));
+        assert_eq!(rx.recv().await.unwrap().kind, Some(PendingKind::Question));
         assert_eq!(
-            rx.recv().await.unwrap().kind.as_deref(),
-            Some("plan-approval"),
+            rx.recv().await.unwrap().kind,
+            Some(PendingKind::PlanApproval),
         );
         assert_eq!(
-            rx.recv().await.unwrap().kind.as_deref(),
-            Some("prd-approval"),
+            rx.recv().await.unwrap().kind,
+            Some(PendingKind::PrdApproval),
         );
     }
 
     #[tokio::test]
     async fn mark_agent_resumed_clears_db_before_broadcasting() {
+        use crate::domain::session_status::AgentStatus;
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
@@ -521,18 +533,19 @@ mod pending_user_input_tests {
             id,
             42,
             PendingUserInputKind::Permission,
-            "agent",
+            AgentStatus::Agent,
         )
         .await;
 
         assert!(column(&pool, id, "pending_permission").await.is_none());
         let event = rx.recv().await.unwrap();
         assert_eq!(event.feature_id, 42);
-        assert_eq!(event.turn, "agent");
+        assert_eq!(event.status, AgentStatus::Agent);
     }
 
     #[tokio::test]
     async fn mark_agent_resumed_supports_deny_path() {
+        use crate::domain::session_status::AgentStatus;
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
@@ -543,11 +556,11 @@ mod pending_user_input_tests {
             id,
             1,
             PendingUserInputKind::PlanApproval,
-            "none",
+            AgentStatus::Idle,
         )
         .await;
 
         let event = rx.recv().await.unwrap();
-        assert_eq!(event.turn, "none");
+        assert_eq!(event.status, AgentStatus::Idle);
     }
 }

@@ -99,7 +99,7 @@ pub async fn post_stream_cleanup(
     active_items: &Arc<DashMap<AgentSlot, i64>>,
     queries: &Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: &Arc<DashMap<AgentSlot, String>>,
-    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
+    session_status_tx: &crate::domain::session_status::SessionStatusBroadcaster,
 ) {
     info!(slot = %slot, db_session_id, ws_detached, "workflow stream reader ended — cleaning up");
     queries.remove(&slot);
@@ -109,7 +109,13 @@ pub async fn post_stream_cleanup(
     // the agent as paused and auto-resume can pick it up.
     if ws_detached {
         info!(slot = %slot, "stream reader exited due to WS detach — agent ready for resume on reconnect");
-        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
+        WsSessionPersistence::broadcast_session_status(
+            session_status_tx,
+            db_session_id,
+            feature_id,
+            crate::domain::session_status::AgentStatus::Idle,
+            None,
+        );
         return;
     }
 
@@ -126,10 +132,11 @@ pub async fn post_stream_cleanup(
         handle_error(
             &slot,
             feature_id,
+            db_session_id,
             &err,
             write_pool,
             active_items,
-            turn_state_tx,
+            session_status_tx,
         )
         .await;
     } else {
@@ -172,10 +179,11 @@ async fn handle_paused(
 async fn handle_error(
     slot: &AgentSlot,
     feature_id: i64,
+    db_session_id: i64,
     err: &str,
     write_pool: &SqlitePool,
     active_items: &Arc<DashMap<AgentSlot, i64>>,
-    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
+    session_status_tx: &crate::domain::session_status::SessionStatusBroadcaster,
 ) {
     if let Some(engine) = crate::domain::ws_session::handler::workflow::get_engine(feature_id) {
         engine.on_item_error(slot.clone(), err).await;
@@ -185,6 +193,12 @@ async fn handle_error(
         if let Err(e) = repo::mark_item_error(write_pool, legacy_id, Some(err)).await {
             error!(slot = %slot, error = %e, "failed to mark item error (no engine)");
         }
-        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "none");
+        WsSessionPersistence::broadcast_session_status(
+            session_status_tx,
+            db_session_id,
+            feature_id,
+            crate::domain::session_status::AgentStatus::Idle,
+            None,
+        );
     }
 }

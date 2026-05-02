@@ -193,7 +193,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -220,7 +220,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -239,7 +239,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -275,7 +275,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -395,7 +395,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore
@@ -413,7 +413,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore={false}
@@ -438,7 +438,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore
@@ -464,7 +464,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore
@@ -491,7 +491,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore
@@ -529,7 +529,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
         hasMore

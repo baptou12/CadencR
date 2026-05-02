@@ -224,18 +224,27 @@ pub(crate) fn should_warmup_on_start() -> bool {
     )
 }
 
+const SESSION_FINISHED_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
 pub(crate) async fn session_finished(runtime_session_id: &str) -> bool {
-    let Ok(client) = OpenCodeClient::init().await else {
-        return false;
+    // Hard timeout: this probe is called from the WS stream reader's idle
+    // tick, and a stalled OpenCode server (no response) must not park the
+    // reader's loop. If we can't get an answer in time we treat it as
+    // "still running" — the next tick will retry.
+    let probe = async {
+        let client = OpenCodeClient::init().await.ok()?;
+        let messages = client.list_messages(runtime_session_id).await.ok()?;
+        Some(latest_message_is_final_stop(&messages))
     };
-    let Ok(messages) = client.list_messages(runtime_session_id).await else {
-        return false;
-    };
-    latest_message_is_final_stop(&messages)
+    tokio::time::timeout(SESSION_FINISHED_PROBE_TIMEOUT, probe)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false)
 }
 
 fn latest_message_is_final_stop(messages: &[Message]) -> bool {
-    messages.iter().rev().next().map_or(false, |message| {
+    messages.last().map_or(false, |message| {
         matches!(message.role, MessageRole::Assistant) && message.is_terminal_turn_message()
     })
 }

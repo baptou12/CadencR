@@ -24,7 +24,7 @@ pub(crate) fn spawn_stream_reader(
     mut message_rx: RuntimeMessageRx,
     sender: WsSender,
     write_pool: sqlx::SqlitePool,
-    turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     sdk_sessions: SdkSessions,
     runtime_provider: String,
     _model: Option<&str>,
@@ -55,6 +55,10 @@ pub(crate) fn spawn_stream_reader(
         let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut last_runtime_activity = Instant::now();
         let mut last_provider_reconcile = Instant::now();
+        // Local dedup: only broadcast Agent once per turn, not on every
+        // ContentBlockDelta. The Question and Idle transitions go through
+        // their own paired DB+broadcast helpers and update this tracker too.
+        let mut last_signal_status: Option<crate::domain::session_status::AgentStatus> = None;
 
         loop {
             let recv_result =
@@ -89,10 +93,12 @@ pub(crate) fn spawn_stream_reader(
                                     db_session_id,
                                 )
                                 .await;
-                                WsSessionPersistence::broadcast_turn_state(
-                                    &turn_state_tx,
+                                WsSessionPersistence::broadcast_session_status(
+                                    &session_status_tx,
+                                    db_session_id,
                                     feature_id,
-                                    "none",
+                                    crate::domain::session_status::AgentStatus::Idle,
+                                    None,
                                 );
                                 let end_env = WsEnvelope::new(
                                     "session",
@@ -137,7 +143,7 @@ pub(crate) fn spawn_stream_reader(
                         if let Some(value) = question_payload.as_ref() {
                             WsSessionPersistence::mark_awaiting_user_static(
                                 &write_pool,
-                                &turn_state_tx,
+                                &session_status_tx,
                                 db_session_id,
                                 feature_id,
                                 &PendingUserInput::Question(value),
@@ -146,7 +152,7 @@ pub(crate) fn spawn_stream_reader(
                         } else {
                             WsSessionPersistence::mark_awaiting_user_static(
                                 &write_pool,
-                                &turn_state_tx,
+                                &session_status_tx,
                                 db_session_id,
                                 feature_id,
                                 &PendingUserInput::Permission(&payload),
@@ -176,6 +182,35 @@ pub(crate) fn spawn_stream_reader(
                         )
                         .await;
                         send_runtime_session_id(&sender, &runtime_sid);
+                    }
+
+                    // Provider-neutral status emission: every event tells
+                    // us whether the agent is now working or done. The
+                    // exhaustive match in `provider_signal_for_event`
+                    // structurally prevents the Codex `MessageStart`-never-
+                    // broadcasts-Agent regression that motivated this
+                    // refactor — Codex, Claude Code and OpenCode all flow
+                    // through the same code path.
+                    //
+                    // We skip Result-derived signals here because the
+                    // dedicated `is_result` branch below reads back the DB
+                    // row to honor pending_plan_approval (a pending plan
+                    // gate keeps the session in Question, not Idle).
+                    if !runtime_event.is_result() {
+                        if let Some(signal) =
+                            crate::domain::session_status::provider_signal_for_event(&runtime_event)
+                        {
+                            let next = signal.status();
+                            if last_signal_status != Some(next) {
+                                WsSessionPersistence::broadcast_session_signal(
+                                    &session_status_tx,
+                                    db_session_id,
+                                    feature_id,
+                                    signal,
+                                );
+                                last_signal_status = Some(next);
+                            }
+                        }
                     }
 
                     let usage_update = usage_state.apply_event(runtime_adapter, &runtime_event);
@@ -222,11 +257,15 @@ pub(crate) fn spawn_stream_reader(
                                 .and_then(|row| row.pending_plan_approval)
                                 .is_some();
                         if !has_pending_plan_approval {
-                            WsSessionPersistence::broadcast_turn_state(
-                                &turn_state_tx,
+                            WsSessionPersistence::broadcast_session_status(
+                                &session_status_tx,
+                                db_session_id,
                                 feature_id,
-                                "none",
+                                crate::domain::session_status::AgentStatus::Idle,
+                                None,
                             );
+                            last_signal_status =
+                                Some(crate::domain::session_status::AgentStatus::Idle);
                         }
                         WsEnvelope::new(
                             "session",
@@ -270,7 +309,13 @@ pub(crate) fn spawn_stream_reader(
                     )
                     .await;
                     WsSessionPersistence::mark_paused_static(&write_pool, db_session_id).await;
-                    WsSessionPersistence::broadcast_turn_state(&turn_state_tx, feature_id, "none");
+                    WsSessionPersistence::broadcast_session_status(
+                        &session_status_tx,
+                        db_session_id,
+                        feature_id,
+                        crate::domain::session_status::AgentStatus::Idle,
+                        None,
+                    );
                     let err_env = WsEnvelope::new(
                         "session",
                         "error",

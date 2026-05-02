@@ -189,15 +189,15 @@ async fn start_test_server() -> TestServer {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
-    let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
+    let (session_status_tx, _) = tokio::sync::broadcast::channel(64);
     let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         read_pool: pool.clone(),
         write_pool: pool,
         max_parallel_agents: 3,
         agent_timeout_minutes: 30,
-        turn_state_tx: cadencr_service::app_state::TurnStateBroadcaster::new(
-            turn_state_tx,
+        session_status_tx: cadencr_service::domain::session_status::SessionStatusBroadcaster::new(
+            session_status_tx,
             std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         ),
         pty_manager: cadencr_service::domain::terminal::service::PtyManager::new(),

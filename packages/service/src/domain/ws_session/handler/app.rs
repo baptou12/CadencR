@@ -12,7 +12,9 @@ pub(super) async fn handle_app_action(
     app_state: &AppState,
 ) {
     match envelope.action.as_str() {
-        "subscribe.turn_states" => handle_subscribe_turn_states(envelope, sender, app_state).await,
+        "subscribe.session_status" => {
+            handle_subscribe_session_status(envelope, sender, app_state).await
+        }
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await
         }
@@ -22,63 +24,55 @@ pub(super) async fn handle_app_action(
     }
 }
 
-/// Subscribe the client to real-time turn state updates.
-/// Sends an initial snapshot, then streams incremental updates.
+/// Subscribe the client to real-time per-session status updates.
+/// Sends an initial snapshot keyed by `session_id`, then streams
+/// incremental [`SessionStatusEvent`]s.
 ///
 /// Every envelope carries a monotonic `seq` (stamped at send time by
-/// `TurnStateBroadcaster`). Snapshots include the current counter so the
+/// `SessionStatusBroadcaster`). Snapshots include the current counter so the
 /// frontend can reject any snapshot whose seq is older than an update
-/// already applied for a feature — that's how we close the "lag-recovery
-/// snapshot wipes live askUser" race.
-async fn handle_subscribe_turn_states(
+/// already applied for a session — that's how we close the lag-recovery
+/// race where a snapshot would otherwise wipe a fresh live update.
+async fn handle_subscribe_session_status(
     envelope: WsEnvelope,
     sender: &WsSender,
     app_state: &AppState,
 ) {
     // Subscribe FIRST so any update emitted between snapshot read and
-    // subscribe is queued in the broadcast buffer rather than lost. The
-    // frontend dedupes via per-feature seq: updates that are already
-    // reflected in the snapshot are rejected (seq <= applied per-feature
-    // seq), and genuinely newer updates overwrite the snapshot entry.
-    let mut rx = app_state.turn_state_tx.tx.subscribe();
+    // subscribe is queued in the broadcast buffer rather than lost.
+    let mut rx = app_state.session_status_tx.subscribe();
 
     // Read snapshot AFTER subscribing. Seq is read first so the snapshot's
     // stamped seq is a lower bound: every event with seq > snapshot.seq is
     // guaranteed to flow through `rx` (either because it was emitted after
     // subscribe, or because it was buffered before this line).
-    let seq = app_state.turn_state_tx.current_seq();
-    let states = crate::domain::sessions::repository::get_feature_turn_states(&app_state.read_pool)
-        .await
-        .unwrap_or_default();
+    let seq = app_state.session_status_tx.current_seq();
+    let states =
+        crate::domain::sessions::repository::get_session_status_snapshot(&app_state.read_pool)
+            .await
+            .unwrap_or_default();
 
     let snapshot = WsEnvelope::reply(
         &envelope.id,
         "app",
-        "turn_states.snapshot",
+        "session_status.snapshot",
         serde_json::json!({ "states": states, "seq": seq }),
     );
     let _ = sender.send(Message::Text(String::from(snapshot).into()));
 
     let sender = sender.clone();
     let read_pool = app_state.read_pool.clone();
-    let broadcaster = app_state.turn_state_tx.clone();
+    let broadcaster = app_state.session_status_tx.clone();
 
     tokio::spawn(async move {
         loop {
             match rx.recv().await {
                 Ok(event) => {
-                    let mut payload = serde_json::json!({
-                        "feature_id": event.feature_id,
-                        "turn": event.turn,
-                        "seq": event.seq,
-                    });
-                    // `kind` is only meaningful for askUser; keep the key off
-                    // the envelope entirely when absent so the frontend's
-                    // `isPendingKind` guard doesn't have to special-case null.
-                    if let Some(kind) = &event.kind {
-                        payload["kind"] = serde_json::Value::String(kind.clone());
-                    }
-                    let update = WsEnvelope::new("app", "turn_states.update", payload);
+                    let update = WsEnvelope::new(
+                        "app",
+                        "session_status.update",
+                        serde_json::to_value(&event).unwrap_or_else(|_| serde_json::json!({})),
+                    );
                     if sender
                         .send(Message::Text(String::from(update).into()))
                         .is_err()
@@ -90,17 +84,17 @@ async fn handle_subscribe_turn_states(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     warn!(
                         skipped = n,
-                        "turn state broadcast lagged, sending fresh snapshot"
+                        "session status broadcast lagged, sending fresh snapshot",
                     );
-                    // Re-send full snapshot on lag
-                    let states =
-                        crate::domain::sessions::repository::get_feature_turn_states(&read_pool)
-                            .await
-                            .unwrap_or_default();
+                    let states = crate::domain::sessions::repository::get_session_status_snapshot(
+                        &read_pool,
+                    )
+                    .await
+                    .unwrap_or_default();
                     let seq = broadcaster.current_seq();
                     let snapshot = WsEnvelope::new(
                         "app",
-                        "turn_states.snapshot",
+                        "session_status.snapshot",
                         serde_json::json!({ "states": states, "seq": seq }),
                     );
                     if sender

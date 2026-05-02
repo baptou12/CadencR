@@ -136,7 +136,7 @@ async fn handle_engine_create_or_reattach(
             app_state.write_pool.clone(),
             sender.clone(),
             app_state.max_parallel_agents,
-            app_state.turn_state_tx.clone(),
+            app_state.session_status_tx.clone(),
         )
         .await
         {

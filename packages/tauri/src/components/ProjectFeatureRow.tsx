@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { useGetStats, type Feature } from "@/api/generated";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
+import { useFeatureStatus } from "@/stores/session-status-store";
 
 export type { FeatureStatus };
 
@@ -19,7 +20,6 @@ interface ProjectFeatureRowProps {
   feature: Feature;
   projectId: number;
   activeFeatureId: number | null;
-  turn: "agent" | "askUser" | undefined;
   liveTitle: string | undefined;
   isAutoNaming: boolean;
   /** True when the feature has a worktree recorded in feature settings (icon). */
@@ -35,7 +35,6 @@ export function ProjectFeatureRow({
   feature,
   projectId,
   activeFeatureId,
-  turn,
   liveTitle,
   isAutoNaming,
   hasWorktree,
@@ -44,6 +43,11 @@ export function ProjectFeatureRow({
   onStatusChange,
   onArchiveOrDelete,
 }: ProjectFeatureRowProps): ReactElement {
+  // Live status is the canonical 3-value enum: per-session entries pushed
+  // by the backend, aggregated here per-feature. `useShallow` inside the
+  // hook ensures this row only re-renders when its own feature's
+  // (status, kind) actually changes.
+  const { status: liveStatus } = useFeatureStatus(feature.id);
   // Use the same mode each route's Git tab uses so the query key (and cache)
   // is shared — ws-session rows read "worktree" stats, others "branch".
   const isActive = activeFeatureId === feature.id;
@@ -84,10 +88,12 @@ export function ProjectFeatureRow({
         }
       }}
     >
-      {/* Turn state icon */}
+      {/* Live status icon driven by the per-session backend store. */}
       <div className="shrink-0 w-3.5">
-        {turn === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
-        {turn === "askUser" && <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />}
+        {liveStatus === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}
+        {liveStatus === "question" && (
+          <MessageCircleQuestionIcon className="size-3.5 text-amber-400" />
+        )}
       </div>
 
       {/* Name + optional metadata sub-line (stats + status badge) */}

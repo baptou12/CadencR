@@ -1,9 +1,9 @@
 use axum::extract::ws::Message;
 use sqlx::SqlitePool;
 
-use crate::app_state::TurnStateBroadcaster;
 use crate::domain::agents::adapter::RuntimePermissionRequest;
 use crate::domain::runtime_stream::workflow_permission_request_payload;
+use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
 use crate::domain::workflow::permission_router::{emit_plan_approval_gate_events, ApprovalKind};
 use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersistence};
@@ -16,7 +16,7 @@ pub(super) async fn handle_adapter_permission_request(
     db_session_id: i64,
     sender: &WsSender,
     write_pool: &SqlitePool,
-    turn_state_tx: &TurnStateBroadcaster,
+    session_status_tx: &SessionStatusBroadcaster,
 ) {
     if let Some(kind) = ApprovalKind::from_tool_name(&request.tool_name) {
         let tool_use_id = request
@@ -35,7 +35,22 @@ pub(super) async fn handle_adapter_permission_request(
             write_pool,
         )
         .await;
-        WsSessionPersistence::broadcast_turn_state(turn_state_tx, feature_id, "askUser");
+        // Plan/PRD approval gates are persisted in `pending_plan_approval`
+        // / `pending_prd_approval` by `emit_plan_approval_gate_events`
+        // above, so we just broadcast the matching Question status. The
+        // kind here mirrors the approval kind so the sidebar shows the
+        // right reason without round-tripping through a snapshot.
+        let pending_kind = match kind {
+            ApprovalKind::Plan => crate::domain::session_status::PendingKind::PlanApproval,
+            ApprovalKind::Prd => crate::domain::session_status::PendingKind::PrdApproval,
+        };
+        WsSessionPersistence::broadcast_session_status(
+            session_status_tx,
+            db_session_id,
+            feature_id,
+            crate::domain::session_status::AgentStatus::Question,
+            Some(pending_kind),
+        );
         return;
     }
 
@@ -43,7 +58,7 @@ pub(super) async fn handle_adapter_permission_request(
     persist_pending_request(
         &permission_payload,
         write_pool,
-        turn_state_tx,
+        session_status_tx,
         db_session_id,
         feature_id,
     )
@@ -59,7 +74,7 @@ pub(super) async fn handle_adapter_permission_request(
 async fn persist_pending_request(
     permission_payload: &crate::domain::ws_session::protocol::WorkflowPermissionRequestPayload,
     write_pool: &SqlitePool,
-    turn_state_tx: &TurnStateBroadcaster,
+    session_status_tx: &SessionStatusBroadcaster,
     db_session_id: i64,
     feature_id: i64,
 ) {
@@ -72,7 +87,7 @@ async fn persist_pending_request(
         });
         WsSessionPersistence::mark_awaiting_user_static(
             write_pool,
-            turn_state_tx,
+            session_status_tx,
             db_session_id,
             feature_id,
             &PendingUserInput::Question(&value),
@@ -92,7 +107,7 @@ async fn persist_pending_request(
     };
     WsSessionPersistence::mark_awaiting_user_static(
         write_pool,
-        turn_state_tx,
+        session_status_tx,
         db_session_id,
         feature_id,
         &PendingUserInput::Permission(&session_payload),

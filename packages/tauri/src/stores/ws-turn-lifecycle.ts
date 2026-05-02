@@ -1,4 +1,10 @@
-import type { AgentStatus } from "@/types/agent";
+/**
+ * DB-side `agent_sessions.status` column value (6-value legacy enum).
+ * Not exposed on the canonical `AgentStatus` wire format any more — this
+ * type is local to the lifecycle reconstruction so the frontend can still
+ * resume a session from a persisted row over REST.
+ */
+type DbSessionStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
 
 export type TurnPauseReason = "permission" | "question" | "planApproval" | "user";
 export type TurnTerminalReason = "completed" | "denied" | "cleared" | "streamClosed";
@@ -62,23 +68,8 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
   }
 }
 
-export function lifecycleToStatus(lifecycle: TurnLifecycle): AgentStatus {
-  switch (lifecycle.phase) {
-    case "idle":
-      return "idle";
-    case "active":
-      return "running";
-    case "paused":
-      return "paused";
-    case "error":
-      return "error";
-    case "terminal":
-      return lifecycle.reason === "completed" ? "completed" : "idle";
-  }
-}
-
 export function persistedStatusToLifecycle(
-  status: AgentStatus,
+  status: DbSessionStatus | string,
   pendingPlanApproval: unknown,
 ): TurnLifecycle {
   if (pendingPlanApproval != null) {

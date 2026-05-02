@@ -161,7 +161,7 @@ describe("AgentPromptBar", () => {
   });
 
   it("shows stop button when running", () => {
-    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="running" />);
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThan(0);
   });
@@ -185,7 +185,7 @@ describe("AgentPromptBar", () => {
     render(
       <div>
         <button data-testid="outside">Outside</button>
-        <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />
+        <AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />
       </div>,
     );
     const textbox = screen.getByRole("textbox");
@@ -206,7 +206,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar
         onSend={onSend}
         onStop={onStop}
-        status="paused"
+        status="question"
         pendingQuestions={[{ question: "What do you need?" }]}
         onQuestionResponse={vi.fn()}
       />,
@@ -219,7 +219,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar
         onSend={onSend}
         onStop={onStop}
-        status="running"
+        status="agent"
         pendingPermission={{
           toolName: "Bash",
           input: { command: "ls /tmp" },
@@ -253,7 +253,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar
         onSend={onSend}
         onStop={onStop}
-        status="running"
+        status="agent"
         pendingPermission={{
           toolName: "Bash",
           input: { command: "ls /tmp" },
@@ -282,7 +282,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar
         onSend={onSend}
         onStop={onStop}
-        status="paused"
+        status="question"
         pendingPlanApproval={{ allowedPrompts: [] }}
         onPlanApprove={vi.fn()}
         onPlanRequestChanges={vi.fn()}
@@ -307,7 +307,7 @@ describe("AgentPromptBar", () => {
         <AgentPromptBar
           onSend={onSend}
           onStop={onStop}
-          status="paused"
+          status="question"
           pendingQuestions={[{ question: "What do you need?", options: [{ label: "Option A" }] }]}
           onQuestionResponse={vi.fn()}
         />,
@@ -324,7 +324,7 @@ describe("AgentPromptBar", () => {
   });
 
   it("escape calls onStop when focus is inside the prompt bar", () => {
-    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="running" />);
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
     // Focus the textbox (inside the wrapper)
     screen.getByRole("textbox").focus();
     const entry = hotkeyHandlers.get("escape");
@@ -337,7 +337,7 @@ describe("AgentPromptBar", () => {
     render(
       <div>
         <button data-testid="outside">Outside</button>
-        <AgentPromptBar onSend={onSend} onStop={onStop} status="running" />
+        <AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />
       </div>,
     );
     screen.getByTestId("outside").focus();
@@ -375,7 +375,7 @@ describe("AgentPromptBar", () => {
 
   it("escape still works when agentTabActive is false (focus-gated, not tab-gated)", () => {
     render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="running" agentTabActive={false} />,
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="agent" agentTabActive={false} />,
     );
     screen.getByRole("textbox").focus();
     hotkeyHandlers.get("escape")!.handler({ preventDefault: vi.fn() });

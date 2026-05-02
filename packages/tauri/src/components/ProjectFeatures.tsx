@@ -21,13 +21,11 @@ export function ProjectFeatures({
   projectId,
   projectPath,
   activeFeatureId,
-  featureTurnStates,
   onSelectFeature,
 }: {
   projectId: number;
   projectPath: string;
   activeFeatureId: number | null;
-  featureTurnStates: Record<number, { turn: "agent" | "askUser"; kind: string | null }>;
   onSelectFeature: (featureId: number) => void;
 }) {
   const navigate = useNavigate();
@@ -139,7 +137,6 @@ export function ProjectFeatures({
       feature={feature}
       projectId={projectId}
       activeFeatureId={activeFeatureId}
-      turn={featureTurnStates[feature.id]?.turn}
       liveTitle={getLiveTitle(feature.id)}
       isAutoNaming={isAutoNaming(feature.id)}
       hasWorktree={worktreeFeatureIds.has(feature.id)}
