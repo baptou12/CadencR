@@ -254,7 +254,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     // when rendered inside a FeatureLayoutProvider; otherwise it's a no-op
     // gate (used by tests / standalone usage). The legacy `agentTabActive`
     // prop is composed via `enabled` so existing parents that haven't yet
-    // adopted the context still get correct gating.
+    // adopted the context still get correct gating. `enableOnFormTags` /
+    // `enableOnContentEditable` keep them firing while the user is typing in
+    // the prompt editor (a contenteditable) — its primary trigger surface.
+    const hotkeyOpts = {
+      enabled: agentTabActive,
+      enableOnFormTags: true as const,
+      enableOnContentEditable: true,
+    };
     useScopedHotkeys(
       "meta+p",
       (e) => {
@@ -263,7 +270,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onOpenModelPicker();
       },
       "agent",
-      { enabled: agentTabActive },
+      hotkeyOpts,
     );
 
     useScopedHotkeys(
@@ -274,7 +281,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onToggleMaximize();
       },
       "agent",
-      { enabled: agentTabActive },
+      hotkeyOpts,
     );
 
     useScopedHotkeys(
@@ -285,7 +292,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onPermissionModeToggle();
       },
       "agent",
-      { enabled: agentTabActive },
+      hotkeyOpts,
     );
 
     useScopedHotkeys(
@@ -296,7 +303,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onCollapse();
       },
       "agent",
-      { enabled: agentTabActive },
+      hotkeyOpts,
     );
 
     useHotkeys(

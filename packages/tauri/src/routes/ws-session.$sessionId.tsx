@@ -216,6 +216,10 @@ function WebSocketSessionPageBody({
     },
     [sendPromptAndFocus, setRootActive],
   );
+  // Both shortcuts must fire while focus is inside the prompt editor (a
+  // contenteditable) — Cmd+T explicitly checks `data-agent-prompt-bar` to
+  // narrow itself further. Without these flags react-hotkeys-hook skips the
+  // event when typing in the prompt.
   useScopedHotkeys(
     "meta+g",
     (e) => {
@@ -223,6 +227,7 @@ function WebSocketSessionPageBody({
       setInlineDiffOpen(true);
     },
     "agent",
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
   useScopedHotkeys(
     "meta+t",
@@ -237,6 +242,7 @@ function WebSocketSessionPageBody({
       ws.setThinkingEffort(next);
     },
     "agent",
+    { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
   const slashCommands = session?.slashCommands ?? [];
