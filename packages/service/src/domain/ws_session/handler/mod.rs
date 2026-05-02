@@ -193,8 +193,9 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Message>();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
 
-    // Spawn outbound forwarder: reads from channel, writes to WebSocket sink
-    let send_task = tokio::spawn(async move {
+    // Spawn outbound forwarder: reads from channel, writes to WebSocket sink.
+    // Exits when either the channel is dropped or the sink fails (peer gone).
+    let mut send_task = tokio::spawn(async move {
         use futures::SinkExt;
         while let Some(msg) = outbound_rx.recv().await {
             if ws_sink.send(msg).await.is_err() {
@@ -203,31 +204,49 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Inbound loop: read messages from client
-    while let Some(Ok(msg)) = ws_stream.next().await {
-        match msg {
-            Message::Text(text) => {
-                let text_str: &str = &text;
-                match WsEnvelope::try_from(text_str.to_string()) {
-                    Ok(envelope) => {
-                        dispatch_envelope(envelope, &outbound_tx, &sdk_sessions, &state).await;
+    // Inbound loop: read messages from client. We `select!` against the
+    // outbound task so a half-open TCP socket (e.g. laptop sleep, Wi-Fi
+    // change) is detected within ~one outbound send attempt instead of
+    // waiting minutes for OS-level TCP keepalive. Without this, the cleanup
+    // block below — which broadcasts `Idle` for every active session —
+    // never runs, leaving the UI stuck on "agent working" while the
+    // streamed events drop into a subscriber that nobody reads.
+    loop {
+        tokio::select! {
+            biased;
+            _ = &mut send_task => {
+                debug!("ws_sink closed; ending inbound loop");
+                break;
+            }
+            msg = ws_stream.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        let text_str: &str = &text;
+                        match WsEnvelope::try_from(text_str.to_string()) {
+                            Ok(envelope) => {
+                                dispatch_envelope(envelope, &outbound_tx, &sdk_sessions, &state)
+                                    .await;
+                            }
+                            Err(e) => {
+                                let err_env = WsEnvelope::new(
+                                    "session",
+                                    "error",
+                                    serde_json::to_value(SessionErrorPayload {
+                                        code: "PARSE_ERROR".into(),
+                                        message: format!("Invalid envelope: {e}"),
+                                    })
+                                    .unwrap(),
+                                );
+                                let _ = outbound_tx
+                                    .send(Message::Text(String::from(err_env).into()));
+                            }
+                        }
                     }
-                    Err(e) => {
-                        let err_env = WsEnvelope::new(
-                            "session",
-                            "error",
-                            serde_json::to_value(SessionErrorPayload {
-                                code: "PARSE_ERROR".into(),
-                                message: format!("Invalid envelope: {e}"),
-                            })
-                            .unwrap(),
-                        );
-                        let _ = outbound_tx.send(Message::Text(String::from(err_env).into()));
-                    }
+                    Some(Ok(Message::Close(_))) => break,
+                    Some(Ok(_)) => {} // ignore binary, ping, pong
+                    Some(Err(_)) | None => break,
                 }
             }
-            Message::Close(_) => break,
-            _ => {} // ignore binary, ping, pong
         }
     }
 
