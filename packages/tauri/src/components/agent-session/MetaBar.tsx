@@ -104,8 +104,11 @@ export interface MetaBarHandle {
 
 const CHIP =
   "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
+// Theme-aware model picker pill: borders/text use the active theme's primary
+// (purple in both Dracula and Aurora) so it reads correctly on dark *and*
+// white surfaces instead of the washed-out Tailwind violet-300 on white.
 const MODEL_GROUP =
-  "inline-flex h-8 items-stretch rounded-md border border-violet-400/15 bg-violet-500/12 text-[11px] font-medium text-violet-300 shadow-sm";
+  "inline-flex h-8 items-stretch rounded-md border border-primary/25 bg-primary/10 text-[11px] font-medium text-primary shadow-sm";
 const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
 export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
@@ -285,7 +288,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
               trigger={
                 <button
                   type="button"
-                  className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-violet-500/16")}
+                  className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-primary/15")}
                 >
                   <ProviderIcon
                     providerId={displayProviderId}
@@ -303,7 +306,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             onThinkingEffortChange &&
             displayedThinkingEffort && (
               <>
-                <div className="w-px bg-violet-300/15" aria-hidden="true" />
+                <div className="w-px bg-primary/20" aria-hidden="true" />
                 <ShortcutTooltip
                   label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
                   keys={["cmd", "T"]}
@@ -313,7 +316,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
                     onClick={handleThinkingEffortCycle}
                     className={cn(
                       MODEL_SEGMENT,
-                      "rounded-r-md px-2 text-violet-300 hover:bg-violet-500/10",
+                      "rounded-r-md px-2 text-primary hover:bg-primary/15",
                     )}
                     aria-label="Cycle thinking effort"
                   >

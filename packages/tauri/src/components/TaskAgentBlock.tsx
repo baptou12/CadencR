@@ -46,7 +46,7 @@ export function TaskAgentBlock({
   }, []);
 
   return (
-    <div className="my-1 rounded-md border border-border bg-black/30 overflow-hidden">
+    <div className="my-1 rounded-md border border-border bg-muted/40 overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 text-xs border-b border-border">
         <LayersIcon className="size-3.5 text-muted-foreground shrink-0" />
         <span className="font-medium text-foreground">{block.toolName}</span>

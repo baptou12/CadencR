@@ -31,9 +31,9 @@ export function CommentForm({
   const [content, setContent] = useState(initialContent);
 
   return (
-    <div className="mx-4 my-2 rounded border border-[#6272a4] bg-[#343746] p-3">
+    <div className="mx-4 my-2 rounded border border-[var(--editor-border)] bg-[var(--editor-line-highlight)] p-3">
       <textarea
-        className="w-full resize-y rounded border border-[#6272a4] bg-[#282a36] px-3 py-2 text-sm !text-white placeholder-[#6272a4] focus:border-[#bd93f9] focus:outline-none"
+        className="w-full resize-y rounded border border-[var(--editor-border)] bg-[var(--editor-bg)] px-3 py-2 text-sm !text-[var(--editor-fg)] placeholder-[var(--editor-comment)] focus:border-[var(--editor-purple)] focus:outline-none"
         placeholder="Add a comment..."
         rows={3}
         value={content}
@@ -50,7 +50,7 @@ export function CommentForm({
       />
       <div className="mt-2 flex items-center gap-2">
         <button
-          className="rounded bg-[#bd93f9] px-3 py-1 text-xs font-medium text-[#282a36] hover:bg-[#caa9fa] disabled:opacity-50"
+          className="rounded bg-[var(--editor-purple)] px-3 py-1 text-xs font-medium text-[var(--editor-bg)] hover:opacity-90 disabled:opacity-50"
           disabled={!content.trim()}
           onClick={() => {
             if (content.trim()) {
@@ -61,7 +61,7 @@ export function CommentForm({
           {submitLabel}
         </button>
         <button
-          className="rounded px-3 py-1 text-xs !text-white hover:!text-white"
+          className="rounded px-3 py-1 text-xs !text-[var(--editor-fg)] hover:opacity-80"
           onClick={onClose}
         >
           Cancel
@@ -100,39 +100,41 @@ export function CommentDisplay({
   }
 
   return (
-    <div className="mx-4 my-2 rounded border border-[#6272a4] bg-[#343746] p-3">
+    <div className="mx-4 my-2 rounded border border-[var(--editor-border)] bg-[var(--editor-line-highlight)] p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="flex-1 whitespace-pre-wrap text-sm !text-[#f8f8f2]">{comment.content}</p>
+        <p className="flex-1 whitespace-pre-wrap text-sm !text-[var(--editor-fg)]">
+          {comment.content}
+        </p>
         <div className="flex shrink-0 gap-1">
           <button
-            className="rounded p-1 !text-[#8892b0] hover:bg-[#44475a] hover:!text-[#f8f8f2]"
+            className="rounded p-1 !text-[var(--editor-comment)] hover:bg-[var(--editor-selection-bg)] hover:!text-[var(--editor-fg)]"
             onClick={() => setIsEditing(true)}
             title="Edit comment"
           >
-            <Pencil className="h-3.5 w-3.5" style={{ stroke: "#8892b0" }} />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
           <button
-            className="rounded p-1 !text-[#8892b0] hover:bg-[#44475a] hover:!text-[#ff5555]"
+            className="rounded p-1 !text-[var(--editor-comment)] hover:bg-[var(--editor-selection-bg)] hover:!text-[var(--editor-red)]"
             onClick={() => onDelete(comment.id)}
             title="Delete comment"
           >
-            <Trash2 className="h-3.5 w-3.5" style={{ stroke: "#8892b0" }} />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
-      <div className="mt-1 flex items-center gap-2 text-xs !text-[#6272a4]">
+      <div className="mt-1 flex items-center gap-2 text-xs !text-[var(--editor-comment)]">
         <span
           className={
             comment.status === "pending"
-              ? "!text-[#ffb86c]"
+              ? "!text-[var(--editor-orange)]"
               : comment.status === "sent"
-                ? "!text-[#50fa7b]"
-                : "!text-[#6272a4]"
+                ? "!text-[var(--editor-green)]"
+                : "!text-[var(--editor-comment)]"
           }
         >
           {comment.status}
         </span>
-        <span className="!text-[#8892b0]">
+        <span className="!text-[var(--editor-comment)]">
           {format(parseUTCDateTime(comment.created_at), "MMM d, yyyy h:mm a")}
         </span>
       </div>
@@ -157,7 +159,7 @@ export function CommentWidgetLine({
   onDelete: (id: number) => void;
 }) {
   return (
-    <div className="border-t border-b border-[#6272a4] bg-[#282a36]">
+    <div className="border-t border-b border-[var(--editor-border)] bg-[var(--editor-bg)]">
       {comments.map((c) => (
         <CommentDisplay key={c.id} comment={c} onEdit={onEdit} onDelete={onDelete} />
       ))}
@@ -181,7 +183,7 @@ export function CommentExtendLine({
   if (comments.length === 0) return null;
 
   return (
-    <div className="border-t border-[#6272a4] bg-[#282a36]">
+    <div className="border-t border-[var(--editor-border)] bg-[var(--editor-bg)]">
       {comments.map((c) => (
         <CommentDisplay key={c.id} comment={c} onEdit={onEdit} onDelete={onDelete} />
       ))}

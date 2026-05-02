@@ -88,19 +88,19 @@ export function PhaseCard({
           </PopoverContent>
         </Popover>
         {phase.phase_type === "qa" && (
-          <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-purple)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-purple)] shrink-0">
+          <span className="flex items-center gap-0.5 rounded-full bg-[var(--acc-purple)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--acc-purple)] shrink-0">
             <FlaskConical className="size-2.5" />
             QA
           </span>
         )}
         {phase.phase_type === "setup" && (
-          <span className="flex items-center gap-0.5 rounded-full bg-[var(--drac-cyan)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-cyan)] shrink-0">
+          <span className="flex items-center gap-0.5 rounded-full bg-[var(--acc-cyan)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--acc-cyan)] shrink-0">
             <Wrench className="size-2.5" />
             Setup
           </span>
         )}
         {phase.complexity != null && (
-          <span className="rounded-full bg-[var(--drac-red)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--drac-red)] shrink-0">
+          <span className="rounded-full bg-[var(--acc-red)]/20 px-1.5 py-0.5 text-[10px] font-medium leading-none text-[var(--acc-red)] shrink-0">
             {phase.complexity}
           </span>
         )}
@@ -110,7 +110,7 @@ export function PhaseCard({
               e.stopPropagation();
               onReset(phase);
             }}
-            className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-[var(--drac-orange)] shrink-0 ml-auto"
+            className="rounded p-0.5 text-muted-foreground hover:bg-background hover:text-[var(--acc-orange)] shrink-0 ml-auto"
             title="Reset phase to pending"
           >
             <RotateCcw className="size-3" />

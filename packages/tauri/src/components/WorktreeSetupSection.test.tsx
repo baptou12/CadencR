@@ -268,7 +268,7 @@ describe("WorktreeSetupSection", () => {
     );
     expect(screen.getByText("Setup")).toBeInTheDocument();
     expect(screen.getByText("worktree commands")).toBeInTheDocument();
-    expect(logEl.className).toContain("text-zinc-100");
+    expect(logEl.className).toContain("text-[var(--code-fg)]");
   });
 
   it("shows persisted log from snapshot on resume via ws mode", async () => {

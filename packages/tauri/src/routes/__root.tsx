@@ -31,6 +31,7 @@ import { useZoomHotkeys } from "@/hooks/useZoom";
 import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
+import { useThemeSync } from "@/hooks/useTheme";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -38,6 +39,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   useOperationToasts();
+  useThemeSync();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();

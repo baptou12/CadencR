@@ -1,6 +1,5 @@
 import { EditorView, GutterMarker, gutter, ViewPlugin } from "@codemirror/view";
 import { type Extension, StateField, StateEffect } from "@codemirror/state";
-import { DIFF_PALETTE } from "@/components/editor/editor-theme";
 
 const setHoveredLine = StateEffect.define<number | null>();
 
@@ -38,8 +37,8 @@ const gutterTheme = EditorView.theme(
     },
     ".cm-add-comment-marker": {
       cursor: "pointer",
-      color: DIFF_PALETTE.fg,
-      background: DIFF_PALETTE.purple,
+      color: "var(--editor-fg)",
+      background: "var(--editor-purple)",
       fontWeight: "bold",
       fontSize: "12px",
       lineHeight: "1",

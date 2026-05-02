@@ -364,7 +364,7 @@ export function AgentQuestionDrawer({
     : undefined;
 
   return (
-    <div className={cn("bg-[#181A25]", inline ? "px-3 py-2" : "border-t border-border px-4 py-3")}>
+    <div className={cn("bg-card", inline ? "px-3 py-2" : "border-t border-border px-4 py-3")}>
       {/* Progress indicator with navigation arrows */}
       {questions.length > 1 && (
         <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">

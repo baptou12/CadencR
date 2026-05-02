@@ -10,8 +10,8 @@ interface PhaseStatusConfig {
 export const PHASE_STATUS_CONFIG: Record<string, PhaseStatusConfig> = {
   draft: {
     icon: PencilLine,
-    className: "text-[var(--drac-purple)]",
-    badgeClassName: "bg-[var(--drac-purple)]/20 text-[var(--drac-purple)]",
+    className: "text-[var(--acc-purple)]",
+    badgeClassName: "bg-[var(--acc-purple)]/20 text-[var(--acc-purple)]",
     label: "Draft",
   },
   pending: {
@@ -22,26 +22,26 @@ export const PHASE_STATUS_CONFIG: Record<string, PhaseStatusConfig> = {
   },
   running: {
     icon: Loader2,
-    className: "text-[var(--drac-orange)] animate-spin",
-    badgeClassName: "bg-[var(--drac-orange)]/20 text-[var(--drac-orange)]",
+    className: "text-[var(--acc-orange)] animate-spin",
+    badgeClassName: "bg-[var(--acc-orange)]/20 text-[var(--acc-orange)]",
     label: "Running",
   },
   completed: {
     icon: CheckCircle2,
-    className: "text-[var(--drac-green)]",
-    badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]",
+    className: "text-[var(--acc-green)]",
+    badgeClassName: "bg-[var(--acc-green)]/20 text-[var(--acc-green)]",
     label: "Completed",
   },
   done: {
     icon: CheckCircle2,
-    className: "text-[var(--drac-green)]",
-    badgeClassName: "bg-[var(--drac-green)]/20 text-[var(--drac-green)]",
+    className: "text-[var(--acc-green)]",
+    badgeClassName: "bg-[var(--acc-green)]/20 text-[var(--acc-green)]",
     label: "Done",
   },
   error: {
     icon: XCircle,
-    className: "text-[var(--drac-red)]",
-    badgeClassName: "bg-[var(--drac-red)]/20 text-[var(--drac-red)]",
+    className: "text-[var(--acc-red)]",
+    badgeClassName: "bg-[var(--acc-red)]/20 text-[var(--acc-red)]",
     label: "Error",
   },
 };

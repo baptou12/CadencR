@@ -39,26 +39,31 @@ export interface ProviderMode {
   optIn?: boolean;
 }
 
+// Chips route through the theme's `--acc-*` vars (defined per theme in
+// index.css) so contrast holds in both Dracula (light accents on dark) and
+// Aurora (darker accents on white). Tailwind's plain `*-400 / *-500` shades
+// are dark-mode-tuned and read as washed-out pastels on a white surface.
+
 const CLAUDE_CODE_MODES: ProviderMode[] = [
   {
     id: "acceptEdits",
     label: "Auto-Accept Edits",
     icon: FileEditIcon,
-    chipClass: "bg-violet-500/15 text-violet-400 hover:bg-violet-500/25",
+    chipClass: "bg-[var(--acc-purple)]/15 text-[var(--acc-purple)] hover:bg-[var(--acc-purple)]/25",
     description: "Auto-approve file edits in the working directory.",
   },
   {
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
-    chipClass: "bg-green-500/15 text-green-400 hover:bg-green-500/25",
+    chipClass: "bg-[var(--acc-green)]/15 text-[var(--acc-green)] hover:bg-[var(--acc-green)]/25",
     description: "Research and propose changes without editing source.",
   },
   {
     id: "auto",
     label: "Auto",
     icon: Sparkles,
-    chipClass: "bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25",
+    chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description:
       "Classifier-backed: safe actions auto-run, risky ones blocked. Requires Sonnet 4.6 / Opus 4.6+.",
   },
@@ -66,7 +71,7 @@ const CLAUDE_CODE_MODES: ProviderMode[] = [
     id: "bypassPermissions",
     label: "Bypass",
     icon: ShieldOff,
-    chipClass: "bg-red-500/15 text-red-400 hover:bg-red-500/25",
+    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
     description: "DANGEROUS: skip every safety check. Only use in isolated containers / VMs.",
     optIn: true,
   },
@@ -77,14 +82,14 @@ const OPENCODE_MODES: ProviderMode[] = [
     id: "acceptEdits",
     label: "Build",
     icon: Hammer,
-    chipClass: "bg-fuchsia-500/15 text-fuchsia-400 hover:bg-fuchsia-500/25",
+    chipClass: "bg-[var(--acc-pink)]/15 text-[var(--acc-pink)] hover:bg-[var(--acc-pink)]/25",
     description: "Default OpenCode agent with all tools enabled.",
   },
   {
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
-    chipClass: "bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25",
+    chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description: "Restricted OpenCode agent for analysis without changes.",
   },
 ];
@@ -94,21 +99,21 @@ const CODEX_MODES: ProviderMode[] = [
     id: "default",
     label: "Default",
     icon: Zap,
-    chipClass: "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
+    chipClass: "bg-[var(--acc-cyan)]/15 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/25",
     description: "Workspace-write sandbox with on-request approvals.",
   },
   {
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
-    chipClass: "bg-fuchsia-500/15 text-fuchsia-400 hover:bg-fuchsia-500/25",
+    chipClass: "bg-[var(--acc-pink)]/15 text-[var(--acc-pink)] hover:bg-[var(--acc-pink)]/25",
     description: "Plan first; sandbox/approvals match Default.",
   },
   {
     id: "bypassPermissions",
     label: "Full Access",
     icon: ShieldOff,
-    chipClass: "bg-red-500/15 text-red-400 hover:bg-red-500/25",
+    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
     description: "DANGEROUS: full filesystem and network access, no approvals.",
     optIn: true,
   },

@@ -87,22 +87,22 @@ const SHELL_LANGUAGES = new Set(["bash", "sh", "zsh", "shell", "console", "termi
 function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
   return {
     h1: ({ children }) => (
-      <h1 className="text-2xl font-bold mt-5 mb-2 text-[var(--drac-purple)]">{children}</h1>
+      <h1 className="text-2xl font-bold mt-5 mb-2 text-[var(--acc-purple)]">{children}</h1>
     ),
     h2: ({ children }) => (
-      <h2 className="text-xl font-bold mt-4 mb-2 text-[var(--drac-cyan)]">{children}</h2>
+      <h2 className="text-xl font-bold mt-4 mb-2 text-[var(--acc-cyan)]">{children}</h2>
     ),
     h3: ({ children }) => (
-      <h3 className="text-lg font-semibold mt-3 mb-1.5 text-[var(--drac-green)]">{children}</h3>
+      <h3 className="text-lg font-semibold mt-3 mb-1.5 text-[var(--acc-green)]">{children}</h3>
     ),
     h4: ({ children }) => (
-      <h4 className="text-base font-semibold mt-2 mb-1 text-[var(--drac-orange)]">{children}</h4>
+      <h4 className="text-base font-semibold mt-2 mb-1 text-[var(--acc-orange)]">{children}</h4>
     ),
     h5: ({ children }) => (
-      <h5 className="text-sm font-semibold mt-2 mb-1 text-[var(--drac-pink)]">{children}</h5>
+      <h5 className="text-sm font-semibold mt-2 mb-1 text-[var(--acc-pink)]">{children}</h5>
     ),
     h6: ({ children }) => (
-      <h6 className="text-xs font-semibold mt-1 mb-0.5 text-[var(--drac-yellow)]">{children}</h6>
+      <h6 className="text-xs font-semibold mt-1 mb-0.5 text-[var(--acc-yellow)]">{children}</h6>
     ),
     code: ({ className, children, node, ...props }) => {
       const match = /language-(\w+)/.exec(className || "");
@@ -128,7 +128,7 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
       }
       return (
         <code
-          className="rounded bg-muted px-1 py-0.5 text-xs font-mono text-[var(--drac-pink)]"
+          className="rounded bg-muted px-1 py-0.5 text-xs font-mono text-[var(--acc-pink)]"
           {...props}
         >
           {children}
@@ -141,7 +141,7 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-[var(--drac-cyan)] underline underline-offset-2 hover:text-[var(--drac-purple)]"
+        className="text-[var(--acc-cyan)] underline underline-offset-2 hover:text-[var(--acc-purple)]"
       >
         {children}
       </a>
@@ -158,7 +158,7 @@ function buildComponents(sendToTerminal?: (cmd: string) => void): Components {
     ),
     td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
     blockquote: ({ children }) => (
-      <blockquote className="my-1 border-l-2 border-[var(--drac-comment)] pl-3 text-[var(--drac-comment)] italic">
+      <blockquote className="my-1 border-l-2 border-[var(--acc-comment)] pl-3 text-[var(--acc-comment)] italic">
         {children}
       </blockquote>
     ),

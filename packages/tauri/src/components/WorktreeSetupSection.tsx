@@ -56,7 +56,7 @@ function LogOutput({ log }: { log: string }) {
     >
       <pre
         ref={ref}
-        className="max-h-40 overflow-auto px-3 py-2 text-xs font-mono leading-relaxed text-zinc-100 whitespace-pre-wrap"
+        className="max-h-40 overflow-auto px-3 py-2 text-xs font-mono leading-relaxed text-[var(--code-fg)] whitespace-pre-wrap"
       >
         {log}
       </pre>

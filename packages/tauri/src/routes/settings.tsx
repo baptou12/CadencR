@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
 import { ProvidersTab } from "../components/settings/ProvidersTab";
+import { ThemeSelector } from "../components/settings/ThemeSelector";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
@@ -143,6 +144,16 @@ function GeneralTab() {
           </p>
         </div>
         <LoaderStyleControl />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Appearance</h2>
+          <p className="text-sm text-muted-foreground">
+            Pick a theme. Affects the whole UI — sidebar, editor, terminal, and chrome.
+          </p>
+        </div>
+        <ThemeSelector />
       </section>
 
       <section className="space-y-4">

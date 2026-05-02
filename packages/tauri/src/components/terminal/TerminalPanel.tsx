@@ -23,6 +23,7 @@ import {
 } from "@/hooks/useTerminalState";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { useTheme } from "@/hooks/useTheme";
 
 // ---------------------------------------------------------------------------
 // Props & handle
@@ -38,8 +39,11 @@ interface TerminalPanelProps {
   expectedCwd: string | null;
 }
 
+// Theme colors come from CSS vars defined per theme in index.css. Tailwind's
+// arbitrary-value `[var(--…)]` syntax keeps the JIT classes stable while still
+// resolving against the active `<html data-theme="…">`.
 const ICON_BTN =
-  "flex size-6 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]";
+  "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
 
 export interface TerminalPanelHandle {
   focusActivePane: () => void;
@@ -71,6 +75,9 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     const leaves = useMemo(() => (root ? getLeaves(root) : []), [root]);
     const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
     const [activePaneId, setActivePaneId] = useState<string | null>(null);
+    // xterm canvas can't read CSS vars — feed the palette in as a prop.
+    const { theme } = useTheme();
+    const xtermPalette = theme.xterm;
     const setPtyId = useTerminalStore((s) => s.setPtyId);
     const setPaneCwd = useTerminalStore((s) => s.setPaneCwd);
     const dismissCwdWarning = useTerminalStore((s) => s.dismissCwdWarning);
@@ -284,8 +291,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
             <ResizableHandle
               className={
                 isVertical
-                  ? "!h-0.5 !w-full bg-[#292e42] hover:bg-[#3b4261] transition-colors"
-                  : "bg-[#292e42] hover:bg-[#3b4261] transition-colors"
+                  ? "!h-0.5 !w-full bg-[var(--terminal-panel-handle-bg)] hover:bg-[var(--terminal-panel-handle-bg-hover)] transition-colors"
+                  : "bg-[var(--terminal-panel-handle-bg)] hover:bg-[var(--terminal-panel-handle-bg-hover)] transition-colors"
               }
             />
             <ResizablePanel minSize={10}>{renderTreeNode(b)}</ResizablePanel>
@@ -367,6 +374,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               projectId={projectId}
               existingPtyId={leaf.ptyId}
               requestedCwd={expectedCwd ?? undefined}
+              theme={xtermPalette}
               initialCommand={leaf.initialCommand}
               onInitialCommandConsumed={() => clearInitialCommand(featureId, leaf.id)}
               onPtyReady={(ptyId, cwd) => {

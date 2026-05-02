@@ -27,23 +27,28 @@ export const TerminalCwdWarning = memo(function TerminalCwdWarning({
   return (
     <div
       role="status"
-      className="flex items-start gap-2 border-b border-[#3b4261] bg-[#24283b] px-3 py-1.5 text-[11px] text-[#c0caf5]"
+      className="flex items-start gap-2 border-b border-[var(--terminal-warning-border)] bg-[var(--terminal-warning-bg)] px-3 py-1.5 text-[11px] text-[var(--terminal-warning-fg)]"
     >
-      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#e0af68]" />
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--terminal-warning-accent)]" />
       <div className="min-w-0 flex-1 leading-tight">
         <div>
-          <span className="font-medium text-[#e0af68]">Wrong working directory.</span> This terminal
-          is still running in the project root, not the active worktree.
+          <span className="font-medium text-[var(--terminal-warning-accent)]">
+            Wrong working directory.
+          </span>{" "}
+          This terminal is still running in the project root, not the active worktree.
         </div>
-        <div className="mt-0.5 truncate text-[#9aa5ce]" title={`${paneCwd} → ${expectedCwd}`}>
-          <span className="text-[#7aa2f7]">now:</span> {paneCwd}{" "}
-          <span className="text-[#7aa2f7]">expected:</span> {expectedCwd}
+        <div
+          className="mt-0.5 truncate text-[var(--terminal-warning-fg-secondary)]"
+          title={`${paneCwd} → ${expectedCwd}`}
+        >
+          <span className="text-[var(--terminal-warning-link)]">now:</span> {paneCwd}{" "}
+          <span className="text-[var(--terminal-warning-link)]">expected:</span> {expectedCwd}
         </div>
       </div>
       <button
         type="button"
         onClick={onRestart}
-        className="flex shrink-0 items-center gap-1 rounded bg-[#3b4261] px-2 py-0.5 text-[#c0caf5] transition-colors hover:bg-[#414868]"
+        className="flex shrink-0 items-center gap-1 rounded bg-[var(--terminal-warning-button-bg)] px-2 py-0.5 text-[var(--terminal-warning-fg)] transition-colors hover:bg-[var(--terminal-warning-button-bg-hover)]"
       >
         <RotateCw className="size-3" />
         Restart here
@@ -52,7 +57,7 @@ export const TerminalCwdWarning = memo(function TerminalCwdWarning({
         type="button"
         onClick={onDismiss}
         aria-label="Dismiss warning"
-        className="flex size-5 shrink-0 items-center justify-center rounded text-[#565f89] transition-colors hover:bg-[#292e42] hover:text-[#c0caf5]"
+        className="flex size-5 shrink-0 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]"
       >
         <X className="size-3" />
       </button>

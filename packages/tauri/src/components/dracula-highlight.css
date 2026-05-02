@@ -1,8 +1,14 @@
-/* Dracula theme for highlight.js token classes (used by lowlight in Markdown code blocks) */
+/* Theme-driven syntax highlighting for highlight.js token classes
+ * (used by lowlight inside Markdown code blocks).
+ *
+ * Colors come from the active theme via the `--editor-*` CSS variables in
+ * `index.css`, so chat code blocks track the user's theme picker without
+ * any JS rewiring.
+ */
 
 .hljs-comment,
 .hljs-quote {
-  color: #6272a4;
+  color: var(--editor-comment);
   font-style: italic;
 }
 
@@ -11,27 +17,27 @@
 .hljs-literal,
 .hljs-meta,
 .hljs-meta .hljs-keyword {
-  color: #ff79c6;
+  color: var(--editor-pink);
 }
 
 .hljs-number,
 .hljs-regexp,
 .hljs-symbol,
 .hljs-bullet {
-  color: #bd93f9;
+  color: var(--editor-purple);
 }
 
 .hljs-string,
 .hljs-doctag,
 .hljs-meta .hljs-string {
-  color: #f1fa8c;
+  color: var(--editor-yellow);
 }
 
 .hljs-title,
 .hljs-title.class_,
 .hljs-title.function_,
 .hljs-section {
-  color: #50fa7b;
+  color: var(--editor-green);
 }
 
 .hljs-name,
@@ -39,40 +45,40 @@
 .hljs-selector-class,
 .hljs-type,
 .hljs-class .hljs-title {
-  color: #8be9fd;
+  color: var(--editor-cyan);
 }
 
 .hljs-attr,
 .hljs-attribute {
-  color: #50fa7b;
+  color: var(--editor-green);
 }
 
 .hljs-built_in,
 .hljs-builtin-name {
-  color: #8be9fd;
+  color: var(--editor-cyan);
 }
 
 .hljs-variable,
 .hljs-template-variable,
 .hljs-params {
-  color: #ffb86c;
+  color: var(--editor-orange);
 }
 
 .hljs-tag {
-  color: #ff79c6;
+  color: var(--editor-pink);
 }
 
 .hljs-operator,
 .hljs-punctuation {
-  color: #f8f8f2;
+  color: var(--editor-fg);
 }
 
 .hljs-addition {
-  color: #50fa7b;
+  color: var(--editor-green);
 }
 
 .hljs-deletion {
-  color: #ff5555;
+  color: var(--editor-red);
 }
 
 .hljs-emphasis {
@@ -84,6 +90,6 @@
 }
 
 .hljs-link {
-  color: #8be9fd;
+  color: var(--editor-cyan);
   text-decoration: underline;
 }

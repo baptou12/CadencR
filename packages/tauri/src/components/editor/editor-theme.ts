@@ -1,144 +1,158 @@
 import { EditorView } from "@codemirror/view";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import type { Extension } from "@codemirror/state";
+import { createTheme } from "@uiw/codemirror-themes";
 
-// Cadencr uses Dracula palette variables defined in index.css
-// We map them to hex values here since CM6 themes can't use CSS vars directly.
-const PALETTE = {
-  bg: "#1e2030", // slightly darker than drac-bg for editor
-  bgSelected: "#44475a", // drac-selection
-  fg: "#f8f8f2", // drac-fg
-  comment: "#6272a4", // drac-comment
-  cyan: "#8be9fd", // drac-cyan
-  green: "#50fa7b", // drac-green
-  orange: "#ffb86c", // drac-orange
-  pink: "#ff79c6", // drac-pink
-  purple: "#bd93f9", // drac-purple
-  red: "#ff5555", // drac-red
-  yellow: "#f1fa8c", // drac-yellow
-  border: "#383a59",
-  cursor: "#bd93f9",
-  lineHighlight: "#2a2c3e",
-  gutterBg: "#1e2030",
-  gutterFg: "#6272a4",
-  selectionBg: "#44475a",
-};
+/**
+ * CodeMirror theme. Driven entirely by CSS variables defined in `index.css`
+ * under `:root[data-theme="<id>"]` blocks — switching the document's
+ * `data-theme` attribute live re-skins every mounted editor without a
+ * remount or compartment reconfigure.
+ *
+ * All Cadencr themes ship a dark code surface (Aurora keeps it dark on
+ * purpose for legibility), so the CodeMirror `dark` flag is fixed to `true`.
+ * If a future theme inverts that, replace this static extension with a
+ * hook + compartment.
+ */
 
-const cadencrTheme = EditorView.theme(
+const cadencrTheme = createTheme({
+  theme: "dark",
+  settings: {
+    background: "var(--editor-bg)",
+    foreground: "var(--editor-fg)",
+    caret: "var(--editor-cursor)",
+    selection: "var(--editor-selection-bg)",
+    selectionMatch: "var(--editor-selection-bg-soft)",
+    lineHighlight: "var(--editor-line-highlight)",
+    gutterBackground: "var(--editor-gutter-bg)",
+    gutterForeground: "var(--editor-gutter-fg)",
+    gutterBorder: "var(--editor-border)",
+    fontFamily:
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    fontSize: "13px",
+  },
+  styles: [
+    { tag: t.keyword, color: "var(--editor-pink)" },
+    {
+      tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
+      color: "var(--editor-fg)",
+    },
+    { tag: [t.function(t.variableName), t.labelName], color: "var(--editor-green)" },
+    { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--editor-purple)" },
+    { tag: [t.definition(t.name), t.separator], color: "var(--editor-fg)" },
+    {
+      tag: [
+        t.typeName,
+        t.className,
+        t.number,
+        t.changed,
+        t.annotation,
+        t.modifier,
+        t.self,
+        t.namespace,
+      ],
+      color: "var(--editor-cyan)",
+    },
+    {
+      tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
+      color: "var(--editor-pink)",
+    },
+    {
+      tag: [t.meta, t.comment],
+      color: "var(--editor-comment)",
+      fontStyle: "italic",
+    },
+    { tag: t.strong, fontWeight: "bold" },
+    { tag: t.emphasis, fontStyle: "italic" },
+    { tag: t.strikethrough, textDecoration: "line-through" },
+    { tag: t.link, color: "var(--editor-cyan)", textDecoration: "underline" },
+    { tag: t.heading, fontWeight: "bold", color: "var(--editor-purple)" },
+    { tag: [t.atom, t.bool, t.special(t.variableName)], color: "var(--editor-orange)" },
+    { tag: [t.processingInstruction, t.string, t.inserted], color: "var(--editor-yellow)" },
+    { tag: t.invalid, color: "var(--editor-red)" },
+  ],
+});
+
+/** Editor chrome that createTheme doesn't cover — height, panels, tooltip,
+ *  autocomplete, matching brackets. CSS-var-driven so it tracks the theme. */
+const cadencrChromeTheme = EditorView.theme(
   {
     "&": {
-      color: PALETTE.fg,
-      backgroundColor: PALETTE.bg,
       height: "100%",
-      fontSize: "13px",
     },
-    ".cm-scroller": {
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    ".cm-panels": {
+      backgroundColor: "var(--editor-bg)",
+      color: "var(--editor-fg)",
     },
-    ".cm-content": { caretColor: PALETTE.cursor },
-    ".cm-cursor, .cm-dropCursor": { borderLeftColor: PALETTE.cursor },
-    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: PALETTE.selectionBg,
-    },
-    ".cm-panels": { backgroundColor: PALETTE.bg, color: PALETTE.fg },
-    ".cm-activeLine": { backgroundColor: PALETTE.lineHighlight },
-    ".cm-gutters": {
-      backgroundColor: PALETTE.gutterBg,
-      color: PALETTE.gutterFg,
-      border: "none",
-      borderRight: `1px solid ${PALETTE.border}`,
-    },
-    ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 4px" },
-    ".cm-activeLineGutter": { backgroundColor: PALETTE.lineHighlight },
     ".cm-foldPlaceholder": {
       backgroundColor: "transparent",
       border: "none",
-      color: PALETTE.comment,
+      color: "var(--editor-comment)",
     },
     ".cm-tooltip": {
-      border: `1px solid ${PALETTE.border}`,
-      backgroundColor: PALETTE.bg,
+      border: "1px solid var(--editor-border)",
+      backgroundColor: "var(--editor-bg)",
     },
-    ".cm-tooltip .cm-tooltip-arrow:before": { borderTopColor: PALETTE.border },
-    ".cm-tooltip .cm-tooltip-arrow:after": { borderTopColor: PALETTE.bg },
+    ".cm-tooltip .cm-tooltip-arrow:before": { borderTopColor: "var(--editor-border)" },
+    ".cm-tooltip .cm-tooltip-arrow:after": { borderTopColor: "var(--editor-bg)" },
     ".cm-tooltip-autocomplete": {
-      "& > ul > li[aria-selected]": { backgroundColor: PALETTE.bgSelected, color: PALETTE.fg },
+      "& > ul > li[aria-selected]": {
+        backgroundColor: "var(--editor-selection-bg)",
+        color: "var(--editor-fg)",
+      },
     },
-    ".cm-matchingBracket": { color: PALETTE.green, fontWeight: "bold" },
+    ".cm-matchingBracket": { color: "var(--editor-green)", fontWeight: "bold" },
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 4px" },
   },
   { dark: true },
 );
 
-const cadencrHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: PALETTE.pink },
-  { tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName], color: PALETTE.fg },
-  { tag: [t.function(t.variableName), t.labelName], color: PALETTE.green },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: PALETTE.purple },
-  { tag: [t.definition(t.name), t.separator], color: PALETTE.fg },
-  {
-    tag: [
-      t.typeName,
-      t.className,
-      t.number,
-      t.changed,
-      t.annotation,
-      t.modifier,
-      t.self,
-      t.namespace,
-    ],
-    color: PALETTE.cyan,
-  },
-  {
-    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
-    color: PALETTE.pink,
-  },
-  { tag: [t.meta, t.comment], color: PALETTE.comment, fontStyle: "italic" },
-  { tag: t.strong, fontWeight: "bold" },
-  { tag: t.emphasis, fontStyle: "italic" },
-  { tag: t.strikethrough, textDecoration: "line-through" },
-  { tag: t.link, color: PALETTE.cyan, textDecoration: "underline" },
-  { tag: t.heading, fontWeight: "bold", color: PALETTE.purple },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: PALETTE.orange },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: PALETTE.yellow },
-  { tag: t.invalid, color: PALETTE.red },
-]);
-
+/** Diff/merge-specific theme — uses CSS-var-driven decoration colors. */
 const cadencrDiffTheme = EditorView.theme(
   {
-    // Unified merge view: deleted lines shown above current text
     ".cm-mergeView & .cm-deletedChunk": {
-      backgroundColor: `${PALETTE.red}15`,
+      backgroundColor: "var(--diff-del-bg)",
     },
     ".cm-mergeView & .cm-insertedLine": {
-      backgroundColor: `${PALETTE.green}15`,
+      backgroundColor: "var(--diff-add-bg)",
     },
     ".cm-mergeView & .cm-deletedLine": {
-      backgroundColor: `${PALETTE.red}15`,
+      backgroundColor: "var(--diff-del-bg)",
     },
     ".cm-mergeView & .cm-changedLine .cm-deletedText": {
-      backgroundColor: `${PALETTE.red}30`,
+      backgroundColor: "var(--diff-del-bg-strong)",
       textDecoration: "none",
     },
     ".cm-mergeView & .cm-changedLine .cm-insertedText": {
-      backgroundColor: `${PALETTE.green}30`,
+      backgroundColor: "var(--diff-add-bg-strong)",
       textDecoration: "none",
     },
     // Override CodeMirror's default 2px bottom gradient underline on changed text
     "&.cm-merge-b .cm-changedText, &.cm-merge-a .cm-changedText": {
       background: "none",
     },
-    // Change gutter markers
     ".cm-mergeView & .cm-changeGutter": {
       width: "3px",
       paddingLeft: "0",
+    },
+    // "X unchanged lines" placeholder produced by `collapseUnchanged`. Without
+    // an explicit rule, CodeMirror falls back to its base style (black bg /
+    // white text) which ignores the active theme entirely.
+    ".cm-mergeView & .cm-collapsedLines, & .cm-collapsedLines": {
+      backgroundColor: "var(--editor-line-highlight)",
+      color: "var(--editor-comment)",
+      borderTop: "1px solid var(--editor-border)",
+      borderBottom: "1px solid var(--editor-border)",
+      padding: "4px 10px",
+    },
+    ".cm-mergeView & .cm-collapsedLines:hover, & .cm-collapsedLines:hover": {
+      backgroundColor: "var(--editor-selection-bg-soft)",
+      color: "var(--editor-fg)",
     },
     // Merge controls (accept/reject buttons) — hidden in read-only mode
     ".cm-mergeView & .cm-merge-revert": {
       display: "none",
     },
-    // Side-by-side MergeView
     ".cm-mergeView": {
       height: "100%",
     },
@@ -149,15 +163,10 @@ const cadencrDiffTheme = EditorView.theme(
   { dark: true },
 );
 
-export const DIFF_PALETTE = PALETTE;
-
-export const cadencrEditorTheme: Extension[] = [
-  cadencrTheme,
-  syntaxHighlighting(cadencrHighlightStyle),
-];
+export const cadencrEditorTheme: Extension[] = [cadencrTheme, cadencrChromeTheme];
 
 export const cadencrDiffExtensions: Extension[] = [
   cadencrTheme,
-  syntaxHighlighting(cadencrHighlightStyle),
+  cadencrChromeTheme,
   cadencrDiffTheme,
 ];

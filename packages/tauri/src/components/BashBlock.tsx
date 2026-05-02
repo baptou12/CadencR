@@ -36,23 +36,29 @@ export const BashBlock = memo(function BashBlock({
     [command],
   );
 
+  // Color tokens go through the active theme — no hardcoded zinc/red shades.
+  // The body matches the terminal/code surface (`--code-bg` / `--code-fg`) so
+  // shell output reads as a terminal block in both Dracula and Aurora.
   return (
     <CollapsibleBlock
       totalCount={totalLines}
       visibleCount={DEFAULT_BASH_LINES}
       unit="lines"
-      className={isError ? "border-red-800" : "border-zinc-700"}
-      headerClassName={isError ? "bg-red-950 text-red-400 py-1" : "bg-zinc-900 text-zinc-400 py-1"}
-      toggleClassName="ml-auto text-zinc-500 hover:text-zinc-300"
+      className={isError ? "border-destructive/40" : "border-border"}
+      headerClassName={
+        isError ? "bg-destructive/10 text-destructive py-1" : "bg-muted text-muted-foreground py-1"
+      }
+      toggleClassName="ml-auto text-muted-foreground hover:text-foreground"
       bodyClassName={cn(
-        "bg-zinc-950 px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
-        isError ? "text-red-300" : "text-zinc-300",
+        "px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
+        "bg-[var(--code-bg)]",
+        isError ? "text-destructive" : "text-[var(--code-fg)]",
       )}
-      truncationClassName="text-zinc-600"
+      truncationClassName="text-muted-foreground/60"
       header={
         <>
           <TerminalIcon className="size-3 shrink-0" />
-          <span className="font-medium text-zinc-300">Bash</span>
+          <span className="font-medium text-foreground">Bash</span>
           <pre className="font-mono whitespace-pre-wrap break-all">
             {formattedCommand ?? "Running command…"}
           </pre>
@@ -66,12 +72,12 @@ export const BashBlock = memo(function BashBlock({
               {showAll ? parseAnsi(content) : truncatedAnsi}
             </pre>
           ) : running ? (
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2Icon className="size-3 animate-spin" />
               <span>Running…</span>
             </div>
           ) : (
-            <div className="text-xs text-zinc-500">No output</div>
+            <div className="text-xs text-muted-foreground">No output</div>
           )}
         </>
       )}

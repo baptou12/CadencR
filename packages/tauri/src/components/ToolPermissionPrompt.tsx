@@ -245,7 +245,7 @@ export function ToolPermissionPrompt({
   usePermissionHotkeys({ disableShortcuts, options, onTrigger: handleHotkey });
 
   return (
-    <div className="border-t border-amber-500/30 bg-[#181A25] px-3 py-2">
+    <div className="border-t border-amber-500/30 bg-card px-3 py-2">
       {/* Header */}
       <div className="mb-2 flex items-center gap-2 text-xs text-amber-400">
         <ShieldAlertIcon className="size-3.5" />
