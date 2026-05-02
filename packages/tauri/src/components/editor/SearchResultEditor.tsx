@@ -253,7 +253,7 @@ const compactTheme = EditorView.theme(
       paddingRight: "2px",
     },
     ".cm-search-match": {
-      backgroundColor: "rgba(189, 147, 249, 0.25)",
+      backgroundColor: "var(--editor-search-match-bg)",
       borderRadius: "2px",
     },
   },

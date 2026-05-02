@@ -93,6 +93,8 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_right_collapsed",
     "loader_style",
     "zoom_global",
+    // Active theme (id from packages/tauri/src/lib/themes/registry.ts)
+    "theme_current",
     // Editor preferences
     "editor_vim_mode",
     "editor_auto_save",
@@ -245,6 +247,14 @@ mod tests {
     #[test]
     fn workspace_rejects_unknown_static_key() {
         assert!(!is_workspace_key_allowed("arbitrary"));
+    }
+
+    #[test]
+    fn workspace_accepts_theme_current() {
+        // Theme picker writes the active theme id (see
+        // packages/tauri/src/lib/themes/registry.ts). Workspace-scoped so it
+        // mirrors every other UI-chrome setting.
+        assert!(is_workspace_key_allowed("theme_current"));
     }
 
     #[test]

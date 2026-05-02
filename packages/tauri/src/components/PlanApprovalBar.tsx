@@ -72,9 +72,9 @@ export function PlanApprovalBar({
   };
 
   return (
-    <div className="flex flex-col gap-2 bg-[#181A25] px-3 py-3">
+    <div className="flex flex-col gap-2 bg-card px-3 py-3">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-        <ClipboardCheck className="size-4 text-blue-400" />
+        <ClipboardCheck className="size-4 text-primary" />
         Plan ready for review
       </div>
 

@@ -43,7 +43,27 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* -------------------------------------------------------------------------
+ * Theme system
+ *
+ * The active theme is encoded as `<html data-theme="<id>">` and switched via
+ * the theme picker in Settings (see lib/themes/). Every block below is the
+ * *complete* set of CSS custom properties one theme needs — Tailwind tokens,
+ * editor accent palette, terminal chrome. New themes are added by appending
+ * a new `:root[data-theme="<id>"] { ... }` block here.
+ *
+ * The unscoped `:root` block carries values that are theme-agnostic (radius)
+ * and acts as a safety net for any var that a theme forgets to override.
+ * ------------------------------------------------------------------------- */
+
 :root {
+  --radius: 0.625rem;
+}
+
+/* Default — Dracula. Also used when `data-theme` is absent (first paint, SSR). */
+:root,
+:root[data-theme="dracula"] {
+  /* Tailwind semantic tokens */
   --background: oklch(0.22 0.022 277.497);
   --foreground: oklch(0.977 0.008 106.793);
   --card: oklch(0.22 0.022 277.497);
@@ -68,18 +88,6 @@
   --chart-3: oklch(0.871 0.219 148.046);
   --chart-4: oklch(0.883 0.093 212.886);
   --chart-5: oklch(0.834 0.124 66.552);
-  --drac-bg: #282a36;
-  --drac-fg: #f8f8f2;
-  --drac-selection: #44475a;
-  --drac-comment: #6272a4;
-  --drac-cyan: #8be9fd;
-  --drac-green: #50fa7b;
-  --drac-orange: #ffb86c;
-  --drac-pink: #ff79c6;
-  --drac-purple: #bd93f9;
-  --drac-red: #ff5555;
-  --drac-yellow: #f1fa8c;
-  --radius: 0.625rem;
   --sidebar: oklch(0.23 0.022 277.497);
   --sidebar-foreground: oklch(0.977 0.008 106.793);
   --sidebar-primary: oklch(0.742 0.149 301.871);
@@ -88,6 +96,165 @@
   --sidebar-accent-foreground: oklch(0.977 0.008 106.793);
   --sidebar-border: oklch(0.403 0.032 277.821);
   --sidebar-ring: oklch(0.56 0.08 270.087);
+
+  /* Vibrant accent palette — drives editor syntax highlighting, diff
+   * decorations, markdown code blocks (highlight.js), and ad-hoc UI accents. */
+  --acc-cyan: #8be9fd;
+  --acc-green: #50fa7b;
+  --acc-orange: #ffb86c;
+  --acc-pink: #ff79c6;
+  --acc-purple: #bd93f9;
+  --acc-red: #ff5555;
+  --acc-yellow: #f1fa8c;
+  --acc-comment: #6272a4;
+
+  /* Code surface — used by the CodeMirror editor and the xterm.js terminal. */
+  --code-bg: #282a36;
+  --code-fg: #f8f8f2;
+
+  /* CodeMirror editor — slightly darker bg than `--code-bg` to demarcate
+   * the editor surface from app chrome of the same family. */
+  --editor-bg: #1e2030;
+  --editor-fg: var(--code-fg);
+  --editor-comment: var(--acc-comment);
+  --editor-cyan: var(--acc-cyan);
+  --editor-green: var(--acc-green);
+  --editor-orange: var(--acc-orange);
+  --editor-pink: var(--acc-pink);
+  --editor-purple: var(--acc-purple);
+  --editor-red: var(--acc-red);
+  --editor-yellow: var(--acc-yellow);
+  --editor-border: #383a59;
+  --editor-cursor: var(--acc-purple);
+  --editor-line-highlight: #2a2c3e;
+  --editor-gutter-bg: #1e2030;
+  --editor-gutter-fg: var(--acc-comment);
+  --editor-selection-bg: #44475a;
+  --editor-selection-bg-soft: #383a59;
+  --editor-search-match-bg: rgba(189, 147, 249, 0.25);
+
+  /* Diff decorations (CodeMirror merge view + InlineDiffBlock) */
+  --diff-add-bg: rgba(80, 250, 123, 0.08);
+  --diff-add-bg-strong: rgba(80, 250, 123, 0.18);
+  --diff-del-bg: rgba(255, 85, 85, 0.08);
+  --diff-del-bg-strong: rgba(255, 85, 85, 0.18);
+
+  /* Terminal chrome — panel buttons, resize handles, cwd-warning banner.
+   * The canvas-rendered xterm itself uses a JS palette in lib/themes/. */
+  --terminal-bg: #1a1b26;
+  --terminal-panel-icon: #565f89;
+  --terminal-panel-icon-hover: #c0caf5;
+  --terminal-panel-icon-bg-hover: #292e42;
+  --terminal-panel-handle-bg: #292e42;
+  --terminal-panel-handle-bg-hover: #3b4261;
+  --terminal-warning-bg: #24283b;
+  --terminal-warning-border: #3b4261;
+  --terminal-warning-fg: #c0caf5;
+  --terminal-warning-fg-secondary: #9aa5ce;
+  --terminal-warning-accent: #e0af68;
+  --terminal-warning-link: #7aa2f7;
+  --terminal-warning-button-bg: #3b4261;
+  --terminal-warning-button-bg-hover: #414868;
+}
+
+/* Aurora — a white version of the vibrant Dracula theme.
+ * Tailwind tokens follow the design source-of-truth in
+ * `Cadence Desktop v1 - Standalone.html` (`:root[data-theme="light"]`).
+ * Code surface and terminal go light too so the theme reads as a coherent
+ * white IDE, not a hybrid white-chrome / dark-editor split. */
+:root[data-theme="aurora"] {
+  /* Tailwind semantic tokens */
+  --background: oklch(0.985 0.004 290);
+  --foreground: oklch(0.205 0.04 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.205 0.04 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.205 0.04 285);
+  --primary: oklch(0.55 0.245 295);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.945 0.012 290);
+  --secondary-foreground: oklch(0.205 0.04 285);
+  --muted: oklch(0.945 0.012 290);
+  --muted-foreground: oklch(0.46 0.04 285);
+  --accent: oklch(0.93 0.02 290);
+  --accent-foreground: oklch(0.205 0.04 285);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.905 0.015 290);
+  --input: oklch(0.96 0.012 290);
+  --ring: oklch(0.62 0.18 295);
+  --chart-1: oklch(0.55 0.245 295);
+  --chart-2: oklch(0.6 0.22 350);
+  --chart-3: oklch(0.58 0.18 150);
+  --chart-4: oklch(0.58 0.13 220);
+  --chart-5: oklch(0.66 0.18 55);
+  --sidebar: oklch(0.965 0.008 290);
+  --sidebar-foreground: oklch(0.205 0.04 285);
+  --sidebar-primary: oklch(0.55 0.245 295);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.02 290);
+  --sidebar-accent-foreground: oklch(0.205 0.04 285);
+  --sidebar-border: oklch(0.9 0.015 290);
+  --sidebar-ring: oklch(0.62 0.18 295);
+
+  /* Vibrant accents, re-tuned for contrast on white surfaces. */
+  --acc-cyan: oklch(0.58 0.13 220);
+  --acc-green: oklch(0.58 0.18 150);
+  --acc-orange: oklch(0.66 0.18 55);
+  --acc-pink: oklch(0.6 0.22 350);
+  --acc-purple: oklch(0.55 0.245 295);
+  --acc-red: oklch(0.58 0.22 25);
+  --acc-yellow: oklch(0.72 0.16 85);
+  --acc-comment: oklch(0.55 0.06 270);
+
+  /* Code surface — light, matching the rest of Aurora. */
+  --code-bg: oklch(1 0 0);
+  --code-fg: oklch(0.205 0.04 285);
+
+  /* CodeMirror — accents pulled from the Aurora `--acc-*` palette, which was
+   * already tuned for legibility on white. Selection picks up a soft purple
+   * tint from the primary so it reads against the white canvas. */
+  --editor-bg: oklch(1 0 0);
+  --editor-fg: oklch(0.205 0.04 285);
+  --editor-comment: oklch(0.55 0.06 270);
+  --editor-cyan: oklch(0.5 0.13 220);
+  --editor-green: oklch(0.5 0.18 150);
+  --editor-orange: oklch(0.58 0.18 55);
+  --editor-pink: oklch(0.52 0.22 350);
+  --editor-purple: oklch(0.5 0.245 295);
+  --editor-red: oklch(0.52 0.22 25);
+  --editor-yellow: oklch(0.62 0.16 85);
+  --editor-border: oklch(0.905 0.015 290);
+  --editor-cursor: oklch(0.55 0.245 295);
+  --editor-line-highlight: oklch(0.965 0.012 290);
+  --editor-gutter-bg: oklch(0.985 0.004 290);
+  --editor-gutter-fg: oklch(0.55 0.06 270);
+  --editor-selection-bg: oklch(0.86 0.05 295);
+  --editor-selection-bg-soft: oklch(0.93 0.025 295);
+  --editor-search-match-bg: rgba(124, 78, 209, 0.18);
+
+  /* Diff decorations — opacities tuned for a white canvas. */
+  --diff-add-bg: rgba(58, 161, 92, 0.12);
+  --diff-add-bg-strong: rgba(58, 161, 92, 0.22);
+  --diff-del-bg: rgba(205, 65, 53, 0.12);
+  --diff-del-bg-strong: rgba(205, 65, 53, 0.22);
+
+  /* Terminal chrome — fully light. The xterm canvas itself paints from the
+   * JS palette in `lib/themes/aurora.ts`. */
+  --terminal-bg: #ffffff;
+  --terminal-panel-icon: #6c7393;
+  --terminal-panel-icon-hover: #1f2030;
+  --terminal-panel-icon-bg-hover: oklch(0.93 0.02 290);
+  --terminal-panel-handle-bg: oklch(0.93 0.02 290);
+  --terminal-panel-handle-bg-hover: oklch(0.88 0.02 290);
+  --terminal-warning-bg: oklch(0.965 0.008 290);
+  --terminal-warning-border: oklch(0.905 0.015 290);
+  --terminal-warning-fg: oklch(0.205 0.04 285);
+  --terminal-warning-fg-secondary: oklch(0.46 0.04 285);
+  --terminal-warning-accent: oklch(0.55 0.18 55);
+  --terminal-warning-link: oklch(0.5 0.13 220);
+  --terminal-warning-button-bg: oklch(0.93 0.02 290);
+  --terminal-warning-button-bg-hover: oklch(0.88 0.02 290);
 }
 
 @layer base {

@@ -58,7 +58,7 @@ export function InlineDiffBlock({
 
   if (oldContent === newContent) {
     return (
-      <div className="rounded-lg border border-[#6272a4] bg-[#282a36] px-3 py-2 text-xs text-[#6272a4]">
+      <div className="rounded-lg border border-[var(--editor-border)] bg-[var(--editor-bg)] px-3 py-2 text-xs text-[var(--editor-comment)]">
         No changes
       </div>
     );
@@ -67,20 +67,20 @@ export function InlineDiffBlock({
   const { additions, deletions } = stats;
 
   return (
-    <div className="overflow-hidden rounded-lg border border-[#6272a4] bg-[#282a36]">
+    <div className="overflow-hidden rounded-lg border border-[var(--editor-border)] bg-[var(--editor-bg)]">
       {/* Compact file header */}
-      <div className="flex items-center gap-2 border-b border-[#6272a4] bg-[color-mix(in_srgb,var(--drac-cyan)_15%,#282a36)] px-3 py-1 text-xs">
+      <div className="flex items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--editor-cyan)_15%,var(--editor-bg))] px-3 py-1 text-xs">
         {toolName && (
           <>
-            <ToolIcon className="size-3 shrink-0 text-[#8be9fd]" />
-            <span className="font-medium text-[#8be9fd]">{toolName}</span>
+            <ToolIcon className="size-3 shrink-0 text-[var(--editor-cyan)]" />
+            <span className="font-medium text-[var(--editor-cyan)]">{toolName}</span>
           </>
         )}
-        <span className="flex-1 truncate font-mono text-[#f8f8f2]" title={filePath}>
+        <span className="flex-1 truncate font-mono text-[var(--editor-fg)]" title={filePath}>
           {displayPath}
         </span>
-        <span className="text-[#50fa7b]">+{additions}</span>
-        <span className="text-[#ff5555]">-{deletions}</span>
+        <span className="text-[var(--editor-green)]">+{additions}</span>
+        <span className="text-[var(--editor-red)]">-{deletions}</span>
       </div>
 
       {/* Diff content */}

@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalWebSocket } from "@/hooks/useTerminalWebSocket";
 import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
+import type { XTermPalette } from "@/lib/themes";
 
 interface XTermInstanceProps {
   featureId: number;
@@ -13,6 +14,10 @@ interface XTermInstanceProps {
   existingPtyId?: string;
   /** Working directory hint forwarded to the backend on a fresh PTY request. */
   requestedCwd?: string;
+  /** Active theme's xterm palette — applied at mount and live-swapped when
+   *  the user picks a new theme. Canvas-rendered xterm can't read CSS vars,
+   *  so this has to flow through props. */
+  theme: XTermPalette;
   /** Called when the PTY process exits (e.g. Ctrl+D) */
   onExit?: (ptyId: string) => void;
   /**
@@ -47,6 +52,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       projectId,
       existingPtyId,
       requestedCwd,
+      theme,
       onExit,
       onPtyReady,
       killOnUnmount = false,
@@ -193,7 +199,10 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       const container = containerRef.current;
       if (!container) return;
 
-      const terminal = createXtermInstance();
+      // The mount effect intentionally doesn't depend on `theme` (re-mounting
+      // would lose scrollback). Subsequent palette changes flow through the
+      // live-swap effect below, which mutates `terminal.options.theme`.
+      const terminal = createXtermInstance(theme);
       const fitAddon = new FitAddon();
       const webLinksAddon = new WebLinksAddon();
 
@@ -343,18 +352,34 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [featureId, projectId]);
 
+    // Live-swap the xterm palette on theme change. xterm short-circuits when
+    // the same reference is reassigned, so we spread into a fresh literal,
+    // then `refresh()` forces an immediate canvas redraw. The renderer can
+    // only refresh once xterm has been opened against a sized container —
+    // before that, options.theme is enough; the open() pass picks it up.
+    useEffect(() => {
+      const term = terminalRef.current;
+      if (!term) return;
+      term.options.theme = { ...theme };
+      if (term.element) term.refresh(0, term.rows - 1);
+    }, [theme]);
+
     return (
       <div
         ref={containerRef}
         className="h-full w-full"
-        style={{ backgroundColor: "#1a1b26", paddingLeft: 8, paddingRight: 8 }}
+        style={{
+          backgroundColor: "var(--terminal-bg)",
+          paddingLeft: 8,
+          paddingRight: 8,
+        }}
       />
     );
   },
 );
 
-/** Create a configured xterm.js Terminal instance */
-function createXtermInstance(): Terminal {
+/** Create a configured xterm.js Terminal instance bound to the active theme. */
+function createXtermInstance(theme: XTermPalette): Terminal {
   return new Terminal({
     cursorBlink: true,
     cursorStyle: "block",
@@ -366,31 +391,7 @@ function createXtermInstance(): Terminal {
     fontWeight: "400",
     fontWeightBold: "600",
     letterSpacing: 0,
-    theme: {
-      background: "#1a1b26",
-      foreground: "#c0caf5",
-      cursor: "#c0caf5",
-      cursorAccent: "#1a1b26",
-      selectionBackground: "#33467c",
-      selectionForeground: "#c0caf5",
-      selectionInactiveBackground: "#283457",
-      black: "#15161e",
-      red: "#f7768e",
-      green: "#9ece6a",
-      yellow: "#e0af68",
-      blue: "#7aa2f7",
-      magenta: "#bb9af7",
-      cyan: "#7dcfff",
-      white: "#a9b1d6",
-      brightBlack: "#414868",
-      brightRed: "#f7768e",
-      brightGreen: "#9ece6a",
-      brightYellow: "#e0af68",
-      brightBlue: "#7aa2f7",
-      brightMagenta: "#bb9af7",
-      brightCyan: "#7dcfff",
-      brightWhite: "#c0caf5",
-    },
+    theme,
     macOptionIsMeta: true,
     allowProposedApi: true,
     scrollback: 5000,

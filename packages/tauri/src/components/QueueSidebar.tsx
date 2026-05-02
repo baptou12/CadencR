@@ -222,9 +222,9 @@ export function QueueSidebar({
             <button
               type="button"
               onClick={() => setShowPrd(true)}
-              className="flex items-center gap-2 rounded-md border border-[var(--drac-purple)]/40 bg-[var(--drac-purple)]/15 px-2 py-1.5 text-left transition-colors hover:bg-[var(--drac-purple)]/25"
+              className="flex items-center gap-2 rounded-md border border-[var(--acc-purple)]/40 bg-[var(--acc-purple)]/15 px-2 py-1.5 text-left transition-colors hover:bg-[var(--acc-purple)]/25"
             >
-              <FileText className="size-3.5 shrink-0 text-[var(--drac-purple)]" />
+              <FileText className="size-3.5 shrink-0 text-[var(--acc-purple)]" />
               <span className="text-xs font-medium text-foreground">PRD</span>
             </button>
           )}
@@ -272,7 +272,7 @@ export function QueueSidebar({
           <DialogContent className="!max-w-[90vw] !w-[90vw] !max-h-[90vh] !flex !flex-col overflow-hidden">
             <DialogHeader className="shrink-0">
               <div className="flex items-center gap-3">
-                <FileText className="size-5 shrink-0 text-[var(--drac-purple)]" />
+                <FileText className="size-5 shrink-0 text-[var(--acc-purple)]" />
                 <DialogTitle className="text-lg">Product Requirements Document</DialogTitle>
               </div>
               <DialogDescription className="sr-only">
@@ -315,7 +315,7 @@ export function QueueSidebar({
               {expandedPhase.commit_message && (
                 <div className="mt-4 rounded-md border border-border bg-muted/50 p-3">
                   <p className="text-xs font-medium text-muted-foreground mb-1">Commit message</p>
-                  <code className="text-sm text-[var(--drac-green)]">
+                  <code className="text-sm text-[var(--acc-green)]">
                     {expandedPhase.commit_message}
                   </code>
                 </div>
@@ -331,8 +331,8 @@ export function QueueSidebar({
                 )}
               {expandedPhase.deviations &&
                 (expandedPhase.status === "completed" || expandedPhase.status === "done") && (
-                  <div className="mt-4 rounded-md border border-[var(--drac-orange)]/40 bg-[var(--drac-orange)]/10 p-3">
-                    <p className="text-xs font-medium text-[var(--drac-orange)] mb-1">Deviations</p>
+                  <div className="mt-4 rounded-md border border-[var(--acc-orange)]/40 bg-[var(--acc-orange)]/10 p-3">
+                    <p className="text-xs font-medium text-[var(--acc-orange)] mb-1">Deviations</p>
                     <Markdown content={expandedPhase.deviations} className="text-sm" />
                   </div>
                 )}

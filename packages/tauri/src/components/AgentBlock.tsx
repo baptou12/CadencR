@@ -288,14 +288,14 @@ function ToolCallBlock({
     summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
 
   return (
-    <div className="my-1 rounded-md border border-border bg-blue-500/5">
+    <div className="my-1 rounded-md border border-border bg-primary/5">
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <WrenchIcon className="size-3 text-blue-400" />
-        <span className="font-medium text-blue-300">{canonicalName}</span>
+        <WrenchIcon className="size-3 text-primary" />
+        <span className="font-medium text-primary">{canonicalName}</span>
         {detail && <span className="truncate text-muted-foreground">{detail}</span>}
         <ChevronRightIcon
           className={cn(
