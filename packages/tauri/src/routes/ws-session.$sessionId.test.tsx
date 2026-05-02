@@ -234,6 +234,10 @@ vi.mock("@/api/generated", () => ({
   useGetBranch: vi.fn(() => ({ data: undefined })),
   useGetFeatureSettings: vi.fn(() => ({ data: [] })),
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
+  // The route reads two opt-in mode toggles (Claude bypass, Codex full-access)
+  // via useGetWorkspaceSetting. Default both off so the chip shows the
+  // standard cycle.
+  useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
 }));
 
 import { Route } from "./ws-session.$sessionId";

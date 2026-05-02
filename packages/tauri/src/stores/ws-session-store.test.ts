@@ -1224,6 +1224,44 @@ describe("ws-session-store", () => {
       expect(permResp.payload.decision).toBe("allow_once");
     });
 
+    it("approvePlan exits to the active provider's primary edit mode (Codex → default)", async () => {
+      const { ws } = await setupWithInit();
+      // Switch the session to Codex before approving — exit mode must follow
+      // the catalog, not be hard-coded to Claude's "acceptEdits".
+      useWsSessionStore.setState((state) =>
+        updateSession(state, "s1", { currentProviderId: "codex_cli" }),
+      );
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().approvePlan("s1");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.permissionMode).toBe("default");
+
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
+      expect(modeSet?.payload.mode).toBe("default");
+    });
+
+    it("approvePlan exits to the active provider's primary edit mode (OpenCode → acceptEdits/build)", async () => {
+      const { ws } = await setupWithInit();
+      useWsSessionStore.setState((state) =>
+        updateSession(state, "s1", { currentProviderId: "opencode" }),
+      );
+      streamExitPlanMode(ws);
+      sendPlanPermissionRequest(ws);
+
+      useWsSessionStore.getState().approvePlan("s1");
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.permissionMode).toBe("acceptEdits");
+
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
+      expect(modeSet?.payload.mode).toBe("acceptEdits");
+    });
+
     it("approvePlan adds 'Plan approved.' user message and marks plan block approved", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);

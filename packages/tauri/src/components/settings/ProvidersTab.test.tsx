@@ -15,6 +15,13 @@ vi.mock("@/api/generated", () => ({
     isError: false,
     isLoading: false,
   }),
+  // DangerousModeToggle reads/writes workspace settings via useDebouncedSetting,
+  // which in turn calls useGetWorkspaceSetting + useSetWorkspaceSetting on the
+  // generated API client. Mock both so the toggle renders in its "off" state
+  // without hitting the network.
+  useGetWorkspaceSetting: () => ({ data: { value: "false" }, isLoading: false }),
+  useSetWorkspaceSetting: () => ({ mutate: vi.fn() }),
+  getGetWorkspaceSettingQueryKey: (key: string) => ["workspace", "setting", key],
 }));
 
 vi.mock("@/api/agentRuntime", () => ({

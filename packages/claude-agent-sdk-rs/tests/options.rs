@@ -32,6 +32,10 @@ fn permission_mode_serializes_to_camel_case() {
         serde_json::to_string(&PermissionMode::DontAsk).unwrap(),
         r#""dontAsk""#
     );
+    assert_eq!(
+        serde_json::to_string(&PermissionMode::Auto).unwrap(),
+        r#""auto""#
+    );
 }
 
 #[test]
@@ -44,6 +48,7 @@ fn permission_mode_as_cli_flag() {
     );
     assert_eq!(PermissionMode::Plan.as_cli_flag(), "plan");
     assert_eq!(PermissionMode::DontAsk.as_cli_flag(), "dontAsk");
+    assert_eq!(PermissionMode::Auto.as_cli_flag(), "auto");
 }
 
 // ---------------------------------------------------------------------------

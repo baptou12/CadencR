@@ -11,6 +11,7 @@ import type { PendingPermission } from "../ToolPermissionPrompt";
 import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
+import type { PermissionMode } from "@/types/permission-mode";
 
 export interface AgentSessionProps {
   /** The type of agent being displayed */
@@ -72,9 +73,15 @@ export interface AgentSessionProps {
   /** Todo list from TodoWrite tool calls */
   todos?: TodoItem[] | null;
   /** Current permission mode (session agents only) */
-  permissionMode?: "acceptEdits" | "plan";
+  permissionMode?: PermissionMode;
   /** Called when user toggles permission mode */
   onPermissionModeToggle?: () => void;
+  /**
+   * Per-provider opt-in modes the user has unlocked via provider settings.
+   * Driven by `claude_bypass_permissions_enabled` and
+   * `codex_full_access_enabled` workspace settings.
+   */
+  enabledOptInModes?: PermissionMode[];
   /** Pending plan approval from ExitPlanMode tool call */
   pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
   /** Label for the approve button */

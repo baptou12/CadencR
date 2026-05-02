@@ -26,6 +26,10 @@ pub enum RuntimePermissionMode {
     AcceptEdits,
     BypassPermissions,
     Plan,
+    /// Claude Code v2.1.83+ classifier-backed mode. Currently a Claude-only
+    /// mode; OpenCode and Codex adapters fall back to their own "everyday"
+    /// permission level when this is selected.
+    Auto,
     DontAsk,
 }
 
@@ -582,6 +586,24 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 
     fn supports_builtin_compact_command(&self) -> bool {
         self.compaction_strategy().is_some()
+    }
+
+    /// Whether this provider's CLI can run a given permission mode. Used by
+    /// the WS handler to reject `mode.set` requests the active provider
+    /// doesn't support. Mirrored on the frontend by `lib/provider-modes.ts`.
+    ///
+    /// Default conservatively rejects every mode — adapters must opt in
+    /// explicitly so a new provider doesn't silently accept Claude-flavored
+    /// modes its CLI can't actually execute.
+    fn supports_permission_mode(&self, _mode: &RuntimePermissionMode) -> bool {
+        false
+    }
+
+    /// Wire string the chip lands on for this provider after a session
+    /// switches to it (post-`provider.set`). Mirrors `defaultEditModeFor` in
+    /// `lib/provider-modes.ts`. Default matches the FE catalog's fallback.
+    fn default_permission_mode_wire(&self) -> &'static str {
+        "acceptEdits"
     }
 
     async fn session_finished(&self, _runtime_session_id: &str) -> bool {

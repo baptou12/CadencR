@@ -78,6 +78,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "claude_cli_path",
     "opencode_cli_path",
     "codex_cli_path",
+    // Per-provider opt-in for the dangerous "skip every check" mode. Mirrored
+    // by CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY / CODEX_FULL_ACCESS_SETTING_KEY
+    // in packages/tauri/src/shared/permission-mode-settings.ts. Stored as
+    // "true" / "false"; when "true" the matching mode joins the Shift+Tab
+    // cycle for that provider's chip.
+    "claude_bypass_permissions_enabled",
+    "codex_full_access_enabled",
     // Last-session restoration
     "lastOpenedFeature",
     // UI chrome
@@ -266,6 +273,17 @@ mod tests {
     fn workspace_accepts_ui_collapse_settings() {
         assert!(is_workspace_key_allowed("editor_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("git_sidebar_collapsed"));
+    }
+
+    #[test]
+    fn workspace_accepts_dangerous_mode_toggles() {
+        // DangerousModeToggle persists these via useDebouncedSetting → PUT
+        // /api/workspace/settings/{key}. Without these, the FE gets a
+        // BAD_REQUEST and the toggle silently fails to enable.
+        assert!(is_workspace_key_allowed(
+            "claude_bypass_permissions_enabled"
+        ));
+        assert!(is_workspace_key_allowed("codex_full_access_enabled"));
     }
 
     #[test]

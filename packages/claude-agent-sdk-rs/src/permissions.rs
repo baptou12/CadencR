@@ -9,6 +9,12 @@ pub enum PermissionMode {
     AcceptEdits,
     BypassPermissions,
     Plan,
+    /// Classifier-backed mode (Claude Code v2.1.83+). A separate model
+    /// auto-approves safe actions and blocks risky ones, so the CLI runs
+    /// without per-tool prompts but with safety checks the user did not have
+    /// to write themselves. Requires Sonnet 4.6 / Opus 4.6+ on Max/Team/
+    /// Enterprise/API plans.
+    Auto,
     DontAsk,
 }
 
@@ -20,6 +26,7 @@ impl PermissionMode {
             Self::AcceptEdits => "acceptEdits",
             Self::BypassPermissions => "bypassPermissions",
             Self::Plan => "plan",
+            Self::Auto => "auto",
             Self::DontAsk => "dontAsk",
         }
     }
