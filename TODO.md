@@ -1,11 +1,10 @@
 ## FIX
-- [ ] [opencode] Build / plan mode
 - [ ] [opencode] Not sync on command updates
-- [ ] [claude] Auto-accept / plan / auto
+- [ ] [opencode] inline diff broken sometimes
 - [ ] [codex] sub-agents not visible
+- [~] [codex] permisisons seems lacking of options
+- [~] [codex] bash tool don't always show the command
 - [ ] [db] change production database to ~/.cadencr
-- [ ] [git] Cannot see the file list properly (first item) when all files are collapsed
-- [ ] [global / codex?] agent statuses are wrong in the sidebar but not in the conversation ?
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
