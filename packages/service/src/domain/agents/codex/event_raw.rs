@@ -58,6 +58,10 @@ fn tool_call_event(
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
     let id = response_item_id(params, item, name.as_str());
+    if name == "Bash" {
+        index_state.record_suppressed_raw_tool_item(&id);
+        return Vec::new();
+    }
     if index_state.has_index(&id) {
         return Vec::new();
     }
@@ -84,6 +88,9 @@ fn tool_result_event(
     index_state: &mut IndexState,
 ) -> Option<RuntimeEvent> {
     let raw_id = item.get("call_id").and_then(Value::as_str)?;
+    if index_state.has_suppressed_raw_tool_item(raw_id) {
+        return None;
+    }
     let id = index_state.canonical_id(raw_id);
     if !index_state.record_result(raw_id) {
         return None;
@@ -112,20 +119,25 @@ fn canonical_tool_name(name: &str) -> String {
         "grep" | "search" | "search_files" | "code_search" => "Grep".to_string(),
         "bash" | "shell" | "exec" | "exec_command" => "Bash".to_string(),
         "web_search" | "web_search_preview" => "WebSearch".to_string(),
+        "web_fetch" | "webfetch" | "fetch" => "WebFetch".to_string(),
         "tool_search" => "ToolSearch".to_string(),
         _ => name.to_string(),
     }
 }
 
 fn args(item: &Value, field: &str) -> Value {
-    match item.get(field) {
+    let mut input = match item.get(field) {
         Some(Value::String(raw)) if raw.trim().is_empty() => serde_json::json!({}),
         Some(Value::String(raw)) => {
             serde_json::from_str::<Value>(raw).unwrap_or_else(|_| serde_json::json!({ field: raw }))
         }
         Some(value) => value.clone(),
         None => serde_json::json!({}),
+    };
+    if let Value::Object(input_object) = &mut input {
+        input_object.insert("raw_item".to_string(), item.clone());
     }
+    input
 }
 
 fn tool_search_input(item: &Value) -> Value {
@@ -221,6 +233,70 @@ mod tests {
         assert_eq!(id, "call_read");
         assert_eq!(name, "Read");
         assert_eq!(input["file_path"], json!("src/main.rs"));
+        assert_eq!(input["raw_item"]["name"], json!("read_file"));
+    }
+
+    #[test]
+    fn suppresses_raw_bash_function_call() {
+        let mut indexes = IndexState::default();
+        let events = raw_response_item_events(
+            json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call_bash",
+                    "name": "exec_command",
+                    "arguments": "{\"command\":\"nl -ba src/lib.rs | sed -n '1,20p'\"}"
+                }
+            }),
+            &mut indexes,
+        );
+
+        assert!(events.is_empty());
+
+        let output_events = raw_response_item_events(
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": "call_bash",
+                    "output": "file contents"
+                }
+            }),
+            &mut indexes,
+        );
+        assert!(output_events.is_empty());
+    }
+
+    #[test]
+    fn maps_raw_web_fetch_function_call_with_url_and_raw_payload() {
+        let mut indexes = IndexState::default();
+        let events = raw_response_item_events(
+            json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call_fetch",
+                    "name": "web_fetch",
+                    "arguments": "{\"url\":\"https://example.com\",\"format\":\"markdown\"}",
+                    "status": "completed"
+                }
+            }),
+            &mut indexes,
+        );
+
+        let Some(RuntimeStreamEvent::ContentBlockStart { block, .. }) = events[0].stream_event()
+        else {
+            panic!("expected tool start");
+        };
+        let RuntimeContentBlock::ToolUse { name, input, .. } = block else {
+            panic!("expected tool use");
+        };
+        assert_eq!(name, "WebFetch");
+        assert_eq!(input["url"], json!("https://example.com"));
+        assert_eq!(input["raw_item"]["status"], json!("completed"));
     }
 
     #[test]

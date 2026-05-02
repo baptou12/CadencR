@@ -407,6 +407,7 @@ mod tests {
             .respond_permission(RuntimePermissionResponse {
                 request_id: "que_1".to_string(),
                 decision: RuntimePermissionDecision::AllowOnce,
+                option_id: None,
                 feedback: None,
                 updated_input: Some(json!({ "answers": [["Alpha"]] })),
             })
@@ -468,6 +469,7 @@ mod tests {
             .respond_permission(RuntimePermissionResponse {
                 request_id: "approval_plan_881".to_string(),
                 decision: RuntimePermissionDecision::Deny,
+                option_id: None,
                 feedback: Some("please revise".to_string()),
                 updated_input: None,
             })

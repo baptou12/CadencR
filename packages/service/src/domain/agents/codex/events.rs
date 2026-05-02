@@ -137,7 +137,7 @@ mod tests {
     use super::super::event_state::IndexState;
     use super::notification_events;
     use crate::domain::agents::adapter::{
-        RuntimeEvent, RuntimeStreamEvent, RuntimeUserContentBlock,
+        RuntimeContentBlock, RuntimeEvent, RuntimeStreamEvent, RuntimeUserContentBlock,
     };
     use serde_json::json;
 
@@ -169,6 +169,48 @@ mod tests {
     }
 
     #[test]
+    fn command_action_item_does_not_emit_completed_bash_fallback() {
+        let mut indexes = IndexState::default();
+        let started = notification_events(
+            "item/started",
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "cmd",
+                    "command": "/bin/zsh -lc 'cat /etc/hosts'",
+                    "commandActions": [{ "type": "read", "path": "/etc/hosts" }]
+                }
+            }),
+            None,
+            &mut indexes,
+        );
+        let completed = notification_events(
+            "item/completed",
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "commandExecution",
+                    "id": "cmd",
+                    "command": "/bin/zsh -lc 'cat /etc/hosts'",
+                    "status": "completed"
+                }
+            }),
+            None,
+            &mut indexes,
+        );
+
+        assert!(matches!(
+            started[0].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart {
+                block: RuntimeContentBlock::ToolUse { name, .. },
+                ..
+            }) if name == "Read"
+        ));
+        assert!(completed.is_empty());
+    }
+
+    #[test]
     fn tool_start_emits_tool_use() {
         let events = map_events(
             "item/started",
@@ -185,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn command_output_delta_prefers_aggregated_output() {
+    fn command_output_delta_without_visible_command_is_suppressed() {
         let events = map_events(
             "item/commandExecution/outputDelta",
             json!({
@@ -196,18 +238,7 @@ mod tests {
             }),
         );
 
-        let Some(RuntimeStreamEvent::ContentBlockDelta { delta, .. }) = events[0].stream_event()
-        else {
-            panic!("expected content delta");
-        };
-        let crate::domain::agents::adapter::RuntimeContentDelta::InputJson { partial_json } = delta
-        else {
-            panic!("expected input json delta");
-        };
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(partial_json).expect("valid json"),
-            json!({ "output": "old\nnew chunk" })
-        );
+        assert!(events.is_empty());
     }
 
     #[test]

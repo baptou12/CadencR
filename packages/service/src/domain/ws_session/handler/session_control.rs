@@ -195,6 +195,7 @@ pub(super) async fn handle_permission_respond(
             PermissionDecision::AllowFuture => RuntimePermissionDecision::AllowFuture,
             PermissionDecision::Deny => RuntimePermissionDecision::Deny,
         },
+        option_id: payload.option_id.clone(),
         feedback: payload.feedback.clone(),
         updated_input: payload.updated_input.clone(),
     };
@@ -276,6 +277,7 @@ pub(super) async fn handle_permission_respond(
     let response = PermissionResponse {
         request_id: payload.request_id,
         decision: payload.decision,
+        option_id: payload.option_id,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
         is_approval_gate: false,

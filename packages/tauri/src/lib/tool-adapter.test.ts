@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractBashOutput,
+  extractBashCommand,
   extractTaskOutput,
   isToolCallRunning,
   extractInlineDiffPreview,
@@ -13,6 +14,12 @@ describe("normalizeToolName", () => {
   it("normalizes apply_patch aliases to ApplyPatch", () => {
     expect(normalizeToolName("apply_patch")).toBe("ApplyPatch");
     expect(normalizeToolName("ApplyPatch")).toBe("ApplyPatch");
+  });
+});
+
+describe("extractBashCommand", () => {
+  it("joins array commands from Codex payloads", () => {
+    expect(extractBashCommand(JSON.stringify({ command: ["pnpm", "test"] }))).toBe("pnpm test");
   });
 });
 
@@ -73,6 +80,12 @@ describe("isStructuredBashPayload", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("detects commandActions-only Bash payloads", () => {
+    expect(isStructuredBashPayload(JSON.stringify({ commandActions: ["read: src/main.ts"] }))).toBe(
+      true,
+    );
   });
 
   it("does not treat plain tool result text as structured Bash payload", () => {

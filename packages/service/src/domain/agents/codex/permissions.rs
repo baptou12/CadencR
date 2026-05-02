@@ -1,6 +1,10 @@
 use serde_json::Value;
 
 use super::permission_details::permission_details;
+pub(super) use super::permission_options::{
+    codex_decision_from_option_id, permission_option_values, STRICT_AUTO_REVIEW_OPTION_ID,
+};
+use super::permission_options::{fallback_permission_options, permission_options};
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
@@ -42,7 +46,7 @@ pub(super) fn permission_request(
         description: details.description,
         pattern: None,
         preview,
-        options: permission_options(details.supports_allow_future),
+        options: permission_options(method, params, details.supports_allow_future),
     }
 }
 
@@ -52,30 +56,6 @@ fn item_id(params: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .or_else(|| params.get("item_id").and_then(Value::as_str))
         .map(ToOwned::to_owned)
-}
-
-fn permission_options(supports_allow_future: bool) -> Vec<RuntimePermissionOption> {
-    let mut options = vec![RuntimePermissionOption {
-        decision: RuntimePermissionDecision::AllowOnce,
-        label: "Allow once".to_string(),
-        description: "Approve this Codex request".to_string(),
-        collect_feedback: false,
-    }];
-    if supports_allow_future {
-        options.push(RuntimePermissionOption {
-            decision: RuntimePermissionDecision::AllowFuture,
-            label: "Allow for session".to_string(),
-            description: "Approve matching requests for this Codex session".to_string(),
-            collect_feedback: false,
-        });
-    }
-    options.push(RuntimePermissionOption {
-        decision: RuntimePermissionDecision::Deny,
-        label: "Deny".to_string(),
-        description: "Reject this Codex request".to_string(),
-        collect_feedback: true,
-    });
-    options
 }
 
 pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionRequest> {
@@ -92,10 +72,6 @@ pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionR
         .and_then(Value::as_str)
         .unwrap_or("CodexRequest")
         .to_string();
-    let supports_allow_future = raw
-        .get("supports_allow_future")
-        .and_then(Value::as_bool)
-        .unwrap_or_else(|| supports_allow_future_for_tool(&tool_name));
     Some(RuntimePermissionRequest {
         request_id: request_id.clone(),
         tool_use_id: raw
@@ -113,7 +89,54 @@ pub(super) fn parse_permission_request(raw: &Value) -> Option<RuntimePermissionR
             .get("preview")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
-        options: permission_options(supports_allow_future),
+        options: permission_options_from_raw_or_fallback(raw, &tool_name),
+    })
+}
+
+fn permission_options_from_raw_or_fallback(
+    raw: &Value,
+    tool_name: &str,
+) -> Vec<RuntimePermissionOption> {
+    parsed_permission_options(raw)
+        .filter(|options| !options.is_empty())
+        .unwrap_or_else(|| {
+            let supports_allow_future = raw
+                .get("supports_allow_future")
+                .and_then(Value::as_bool)
+                .unwrap_or_else(|| supports_allow_future_for_tool(tool_name));
+            fallback_permission_options(supports_allow_future)
+        })
+}
+
+fn parsed_permission_options(raw: &Value) -> Option<Vec<RuntimePermissionOption>> {
+    Some(
+        raw.get("options")?
+            .as_array()?
+            .iter()
+            .filter_map(parsed_permission_option)
+            .collect(),
+    )
+}
+
+fn parsed_permission_option(value: &Value) -> Option<RuntimePermissionOption> {
+    let decision = match value.get("decision")?.as_str()? {
+        "allow_once" => RuntimePermissionDecision::AllowOnce,
+        "allow_future" => RuntimePermissionDecision::AllowFuture,
+        "deny" => RuntimePermissionDecision::Deny,
+        _ => return None,
+    };
+    Some(RuntimePermissionOption {
+        decision,
+        option_id: value
+            .get("option_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        label: value.get("label")?.as_str()?.to_string(),
+        description: value.get("description")?.as_str()?.to_string(),
+        collect_feedback: value
+            .get("collect_feedback")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     })
 }
 
@@ -221,6 +244,47 @@ mod tests {
         );
 
         assert!(!has_allow_future(&request));
+    }
+
+    #[test]
+    fn command_permission_without_available_decisions_keeps_allow_future_fallback() {
+        let request = permission_request(
+            &json!("approval-no-decisions"),
+            "item/commandExecution/requestApproval",
+            &json!({
+                "threadId": "thread",
+                "turnId": "turn",
+                "itemId": "cmd",
+                "command": "git status"
+            }),
+        );
+
+        assert!(has_allow_future(&request));
+        assert_eq!(request.options.len(), 3);
+    }
+
+    #[test]
+    fn reparsed_permission_preserves_native_option_ids() {
+        let request = super::parse_permission_request(&json!({
+            "type": "codex_permission_request",
+            "request_id": "approval-native",
+            "tool_name": "Bash",
+            "tool_input": { "command": "git status" },
+            "options": [{
+                "decision": "allow_once",
+                "option_id": "codex:\"accept\"",
+                "label": "Approve",
+                "description": "Approve this request",
+                "collect_feedback": false
+            }]
+        }))
+        .expect("permission request should parse");
+
+        assert_eq!(request.options.len(), 1);
+        assert_eq!(
+            request.options[0].option_id.as_deref(),
+            Some("codex:\"accept\"")
+        );
     }
 
     #[test]

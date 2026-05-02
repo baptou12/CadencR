@@ -199,6 +199,7 @@ export interface WorkflowState {
     requestId: string,
     decision: PermissionDecisionValue,
     feedback?: string,
+    optionId?: string,
   ) => void;
   respondToQuestion: (slotKey: string, response: AgentQuestionAnswers) => void;
   sendPromptToAgent: (

@@ -20,18 +20,21 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
     vec![
         RuntimePermissionOption {
             decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
             label: "Allow once".to_string(),
             description: "Approve this request only".to_string(),
             collect_feedback: false,
         },
         RuntimePermissionOption {
             decision: RuntimePermissionDecision::AllowFuture,
+            option_id: None,
             label: "Always allow".to_string(),
             description: "Let OpenCode allow similar requests automatically".to_string(),
             collect_feedback: false,
         },
         RuntimePermissionOption {
             decision: RuntimePermissionDecision::Deny,
+            option_id: None,
             label: "Deny".to_string(),
             description: "Reject this request".to_string(),
             collect_feedback: false,

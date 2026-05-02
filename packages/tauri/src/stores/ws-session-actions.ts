@@ -132,13 +132,9 @@ export function applyPlanChangesRequest(
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
     sendRaw(
       sessionId,
-      createPermissionRespond(
-        session.serverSessionId,
-        session.pendingRequestId,
-        "deny",
-        undefined,
+      createPermissionRespond(session.serverSessionId, session.pendingRequestId, "deny", {
         feedback,
-      ),
+      }),
     );
     if (isRestored) {
       sendRaw(

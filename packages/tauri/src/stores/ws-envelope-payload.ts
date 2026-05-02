@@ -21,6 +21,7 @@ function optionalArray(record: Record<string, unknown>, key: string): unknown[] 
 
 interface ParsedPermissionOption {
   decision: "allow_once" | "allow_future" | "deny";
+  optionId?: string;
   label: string;
   description: string;
   collectFeedback?: boolean;
@@ -153,6 +154,7 @@ export function parsePermissionPayload(payload: unknown): {
       }
       return {
         decision,
+        optionId: optionalString(item, "option_id"),
         label,
         description,
         collectFeedback: typeof collectFeedback === "boolean" ? collectFeedback : undefined,

@@ -130,6 +130,7 @@ export interface AgentSessionProps {
   onPermissionDecision?: (
     decision: "allow_once" | "allow_future" | "deny",
     feedback?: string,
+    optionId?: string,
   ) => void;
   /** Called when user clicks "Mark Done" (session agents in workflow) */
   onMarkDone?: () => void;

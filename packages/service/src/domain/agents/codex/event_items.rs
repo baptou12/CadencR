@@ -1,5 +1,6 @@
 use serde_json::Value;
 
+use super::event_command_actions::{command_action_events, has_exploring_command_actions};
 use super::event_inputs::{
     collab_tool_input, collab_tool_name, command_input, dynamic_tool_input, dynamic_tool_name,
     file_input, mcp_input, mcp_tool_name, patch_from_changes,
@@ -42,6 +43,18 @@ pub(super) fn item_events(
         Some("plan" | "Plan") => plan_item(params, completed, index_state),
         Some("reasoning") => thinking_item(params, completed, index_state),
         Some("commandExecution") => {
+            let id = item_id(item);
+            if has_exploring_command_actions(&params) {
+                index_state.record_command_action_item(&id);
+                return command_action_events(&params, completed, index_state);
+            }
+            if index_state.has_command_action_item(&id) {
+                return Vec::new();
+            }
+            if !completed {
+                index_state.record_delayed_command_item(&id);
+                return Vec::new();
+            }
             tool_item(params, "Bash", command_input, completed, index_state)
         }
         Some("fileChange") => tool_item(params, "ApplyPatch", file_input, completed, index_state),
@@ -101,6 +114,12 @@ pub(super) fn command_output_delta_event(
     else {
         return Vec::new();
     };
+    if index_state.has_command_action_item(&item_id)
+        || index_state.has_delayed_command_item(&item_id)
+        || !index_state.has_index(&item_id)
+    {
+        return Vec::new();
+    }
     let output = params
         .get("aggregatedOutput")
         .or_else(|| params.get("delta"))

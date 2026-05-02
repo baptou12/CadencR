@@ -38,6 +38,16 @@ export function extractBashOutput(toolArgs?: string): string | undefined {
   return undefined;
 }
 
+export function extractBashCommand(toolArgs?: string): string | undefined {
+  const args = parseToolArgsObject(toolArgs);
+  if (!args) return undefined;
+  return extractBashCommandFromArgs(args);
+}
+
+export function extractBashCommandFromArgs(args: Record<string, unknown>): string | undefined {
+  return commandValue(args.command) ?? commandValue(args.cmd);
+}
+
 export function isStructuredBashPayload(toolArgs?: string): boolean {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return false;
@@ -47,9 +57,24 @@ export function isStructuredBashPayload(toolArgs?: string): boolean {
     "exitCode" in args ||
     "status" in args ||
     "output" in args ||
+    "commandActions" in args ||
+    "command_actions" in args ||
     LEGACY_OPENCODE_OUTPUT_KEYS.some((key) => key in args) ||
     LEGACY_OPENCODE_STATUS_KEY in args
   );
+}
+
+function commandValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  if (Array.isArray(value)) {
+    const parts = value.filter((part): part is string => typeof part === "string");
+    return parts.length > 0 ? parts.join(" ") : undefined;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return stringArg(record, "command", "cmd", "description");
+  }
+  return undefined;
 }
 
 export function extractTaskOutput(toolArgs?: string): string | undefined {

@@ -71,6 +71,16 @@ describe("ws-envelope", () => {
       expect(env.payload).toEqual({ session_id: "s1", request_id: "r1", decision: "allow_once" });
     });
 
+    it("createPermissionRespond includes native option id", () => {
+      const env = createPermissionRespond("s1", "r1", "allow_once", { optionId: "codex:1" });
+      expect(env.payload).toEqual({
+        session_id: "s1",
+        request_id: "r1",
+        decision: "allow_once",
+        option_id: "codex:1",
+      });
+    });
+
     it("createInterrupt", () => {
       const env = createInterrupt("s1");
       expect(env.domain).toBe("session");

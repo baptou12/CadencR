@@ -6,6 +6,9 @@ pub(super) struct IndexState {
     by_id: HashMap<String, u64>,
     canonical_by_id: HashMap<String, String>,
     results: HashSet<String>,
+    command_action_items: HashSet<String>,
+    delayed_command_items: HashSet<String>,
+    suppressed_raw_tool_items: HashSet<String>,
 }
 
 impl IndexState {
@@ -14,6 +17,9 @@ impl IndexState {
         self.by_id.clear();
         self.canonical_by_id.clear();
         self.results.clear();
+        self.command_action_items.clear();
+        self.delayed_command_items.clear();
+        self.suppressed_raw_tool_items.clear();
     }
 
     pub(super) fn has_index(&self, id: &str) -> bool {
@@ -49,5 +55,29 @@ impl IndexState {
 
     pub(super) fn record_result(&mut self, id: &str) -> bool {
         self.results.insert(self.canonical_id(id))
+    }
+
+    pub(super) fn record_command_action_item(&mut self, id: &str) {
+        self.command_action_items.insert(id.to_string());
+    }
+
+    pub(super) fn has_command_action_item(&self, id: &str) -> bool {
+        self.command_action_items.contains(id)
+    }
+
+    pub(super) fn record_delayed_command_item(&mut self, id: &str) {
+        self.delayed_command_items.insert(id.to_string());
+    }
+
+    pub(super) fn has_delayed_command_item(&self, id: &str) -> bool {
+        self.delayed_command_items.contains(id)
+    }
+
+    pub(super) fn record_suppressed_raw_tool_item(&mut self, id: &str) {
+        self.suppressed_raw_tool_items.insert(id.to_string());
+    }
+
+    pub(super) fn has_suppressed_raw_tool_item(&self, id: &str) -> bool {
+        self.suppressed_raw_tool_items.contains(id)
     }
 }

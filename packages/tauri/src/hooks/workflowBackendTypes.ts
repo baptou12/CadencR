@@ -117,7 +117,12 @@ export interface WorkflowBackend {
   ): void;
   stopAgent(entry: FeatureSession): void;
   interruptAgent(entry: FeatureSession): void;
-  submitPermission(entry: FeatureSession, decision: string, feedback?: string): void;
+  submitPermission(
+    entry: FeatureSession,
+    decision: string,
+    feedback?: string,
+    optionId?: string,
+  ): void;
   submitAnswers(entry: FeatureSession, response: AgentQuestionAnswers): void;
   startSession(prompt: string, images?: string[]): void;
   startRefine(description: string, images?: string[]): void;

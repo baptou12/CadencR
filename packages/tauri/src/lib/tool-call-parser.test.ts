@@ -11,6 +11,11 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Reading file", detail: "src/main.ts" });
   });
 
+  it("parses LS tool with path", () => {
+    const result = parseToolCall("LS", JSON.stringify({ path: "src" }));
+    expect(result).toEqual({ label: "Listing files", detail: "src" });
+  });
+
   it("parses Write tool with file_path", () => {
     const result = parseToolCall("Write", JSON.stringify({ file_path: "src/out.ts" }));
     expect(result).toEqual({ label: "Writing file", detail: "src/out.ts" });

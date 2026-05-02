@@ -43,18 +43,21 @@ pub fn build_default_permission_options(pattern: Option<&str>) -> Vec<Permission
     vec![
         PermissionOptionPayload {
             decision: PermissionDecision::AllowOnce,
+            option_id: None,
             label: "Allow once".to_string(),
             description: "Approve this tool call only".to_string(),
             collect_feedback: false,
         },
         PermissionOptionPayload {
             decision: PermissionDecision::AllowFuture,
+            option_id: None,
             label: "Allow for future use".to_string(),
             description: allow_future_description,
             collect_feedback: false,
         },
         PermissionOptionPayload {
             decision: PermissionDecision::Deny,
+            option_id: None,
             label: "Deny".to_string(),
             description: "Reject this tool call".to_string(),
             collect_feedback: true,

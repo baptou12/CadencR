@@ -294,11 +294,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       requestId: string,
       decision: PermissionDecisionValue,
       feedback?: string,
+      optionId?: string,
     ) {
       const session = getSession(sessionId);
       sendRaw(
         sessionId,
-        createPermissionRespond(session.serverSessionId, requestId, decision, undefined, feedback),
+        createPermissionRespond(session.serverSessionId, requestId, decision, {
+          feedback,
+          optionId,
+        }),
       );
       set(
         updateSession(get(), sessionId, {
@@ -312,12 +316,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       const session = getSession(sessionId);
       sendRaw(
         sessionId,
-        createPermissionRespond(
-          session.serverSessionId,
-          session.pendingRequestId,
-          "allow_once",
-          buildAskUserQuestionUpdatedInput(session.pendingQuestionToolInput, response),
-        ),
+        createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once", {
+          updatedInput: buildAskUserQuestionUpdatedInput(
+            session.pendingQuestionToolInput,
+            response,
+          ),
+        }),
       );
 
       const formatted = formatQuestionResponse(session.pendingQuestionToolInput, response);

@@ -168,8 +168,16 @@ describe("processSdkMessage – Bash stream events", () => {
 
   it.each([
     ["Read", { file_path: "packages/service/src/main.rs" }],
+    ["LS", { path: "packages/service/src" }],
     ["Grep", { pattern: "rawResponseItem", path: "packages/service/src" }],
     ["Glob", { pattern: "**/*.rs" }],
+    [
+      "WebFetch",
+      {
+        url: "https://example.com/docs",
+        raw_item: { name: "web_fetch", arguments: { url: "https://example.com/docs" } },
+      },
+    ],
   ])("keeps initial %s input for generic Codex tools", (toolName, input) => {
     const state = createStreamingState();
     const result = processSdkMessage(

@@ -36,6 +36,7 @@ pub(super) async fn handle_permission_respond(
     let response = super::session_prompt::PermissionResponse {
         request_id: payload.request_id.clone(),
         decision: payload.decision,
+        option_id: payload.option_id,
         feedback: payload.feedback,
         updated_input: payload.updated_input,
         is_approval_gate: false,
