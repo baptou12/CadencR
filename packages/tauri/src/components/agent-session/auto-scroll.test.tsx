@@ -1,4 +1,11 @@
-import { forwardRef, useImperativeHandle, type ReactNode, type Ref } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type ReactNode,
+  type Ref,
+} from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { act, render, screen, waitFor } from "@/test-utils";
@@ -16,6 +23,8 @@ interface VirtuosoMockProps {
   };
   atBottomStateChange?: (atBottom: boolean) => void;
   startReached?: (index: number) => void;
+  followOutput?: (isAtBottom: boolean) => "auto" | "smooth" | false;
+  scrollerRef?: (el: HTMLElement | null | Window) => void;
 }
 
 interface VirtuosoMockHandle {
@@ -24,6 +33,10 @@ interface VirtuosoMockHandle {
 
 // Captured by the Virtuoso mock so tests can simulate scroll events.
 let lastVirtuosoProps: VirtuosoMockProps | null = null;
+// Captured scroller element so tests can dispatch real DOM events on it
+// (wheel / touchmove / pointerdown) — this is how the scroll hook detects
+// user-driven scroll intent.
+let lastScrollerEl: HTMLElement | null = null;
 // Each render appends the firstItemIndex value seen by Virtuoso so tests can
 // observe the decrement that happens after older history is prepended.
 let firstItemIndexHistory: number[] = [];
@@ -39,8 +52,24 @@ vi.mock("react-virtuoso", () => ({
       firstItemIndexHistory.push(props.firstItemIndex);
     }
     useImperativeHandle(ref, () => ({ scrollToIndex: scrollToIndexMock }), []);
+    // Hand the scroller element back to the parent's `scrollerRef` callback
+    // exactly like real Virtuoso does, so the scroll hook can attach its
+    // user-input listeners. The real component does this in an effect once
+    // the scrolling DOM node is mounted; we mirror that timing.
+    const scrollerElRef = useRef<HTMLDivElement | null>(null);
+    const { scrollerRef } = props;
+    useEffect(() => {
+      const el = scrollerElRef.current;
+      if (!scrollerRef) return;
+      scrollerRef(el);
+      lastScrollerEl = el;
+      return () => {
+        scrollerRef(null);
+        lastScrollerEl = null;
+      };
+    }, [scrollerRef]);
     return (
-      <div data-testid="virtuoso-mock">
+      <div data-testid="virtuoso-mock" ref={scrollerElRef}>
         {props.components?.Header ? <props.components.Header /> : null}
         {props.data?.map((item, i) => (
           <div key={item.id} data-testid={`virtuoso-item-${item.id}`}>
@@ -134,10 +163,26 @@ function fireStartReached(): void {
   act(() => cb(0));
 }
 
+/** Read what `followOutput` returns for a given Virtuoso-side at-bottom state. */
+function callFollowOutput(virtuosoAtBottom: boolean): "auto" | "smooth" | false {
+  const cb = lastVirtuosoProps?.followOutput;
+  if (!cb) throw new Error("followOutput not wired");
+  return cb(virtuosoAtBottom);
+}
+
+/** Dispatch a real DOM event on the captured scroller element. */
+function dispatchOnScroller(event: Event): void {
+  if (!lastScrollerEl) throw new Error("scroller element not captured");
+  act(() => {
+    lastScrollerEl?.dispatchEvent(event);
+  });
+}
+
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     lastVirtuosoProps = null;
+    lastScrollerEl = null;
     firstItemIndexHistory = [];
     scrollToIndexMock.mockClear();
   });
@@ -168,7 +213,9 @@ describe("AgentSession auto-scroll", () => {
     });
   });
 
-  it("disables auto-scroll when the user scrolls away from the bottom", () => {
+  // Rule 2: a real wheel-up on the scroller disables auto-scroll. No need
+  // for an `atBottomStateChange` round-trip — the input itself is enough.
+  it("rule 2: wheel-up on the scroller disables auto-scroll", () => {
     render(
       <AgentSession
         agentType="session"
@@ -180,11 +227,14 @@ describe("AgentSession auto-scroll", () => {
     );
 
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
-    fireAtBottomChange(false);
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+    expect(callFollowOutput(true)).toBe(false);
   });
 
-  it("re-enables auto-scroll when the user reaches the bottom again", () => {
+  // Wheel-down (scrolling toward the bottom) must NOT disable. Otherwise
+  // any natural read-along scroll would knock follow-mode off.
+  it("rule 2: wheel-down does not disable auto-scroll", () => {
     render(
       <AgentSession
         agentType="session"
@@ -195,7 +245,24 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    fireAtBottomChange(false);
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: 50, bubbles: true }));
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  // Rule 1: when Virtuoso reports we're at the bottom, auto-scroll re-engages.
+  // This is what the chip-click path also relies on (after the scroll lands).
+  it("rule 1: atBottom=true re-enables auto-scroll", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
     fireAtBottomChange(true);
@@ -214,12 +281,114 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    fireAtBottomChange(false);
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("textbox"));
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
   });
+
+  // The headline bug fix: a content re-measure (Read/Glob/Grep tool result
+  // lands → displayBlocks rebuilds → scrollHeight grows before Virtuoso
+  // re-anchors) makes Virtuoso emit a phantom `atBottomStateChange(false)`.
+  // We must ignore it — only real user input (rule 2) disables follow-mode.
+  it("ignores atBottom=false (Virtuoso wobble) entirely", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+
+    fireAtBottomChange(false);
+
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    // followOutput must still tell Virtuoso to follow even when Virtuoso
+    // itself thinks we're not at the bottom — that's how rule 1 keeps the
+    // stream anchored across re-measure wobbles.
+    expect(callFollowOutput(false)).toBe("auto");
+  });
+
+  // Rule 3: chip click. Re-engages follow-mode synchronously and asks
+  // Virtuoso to scroll to the last item.
+  it("rule 3: chip click re-engages follow-mode and scrolls to bottom", async () => {
+    const user = userEvent.setup();
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="running"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+    expect(callFollowOutput(false)).toBe(false);
+
+    await user.click(getAutoScrollButton());
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    expect(callFollowOutput(false)).toBe("auto");
+    expect(scrollToIndexMock).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  // The "scroll jumps" case the user reported: a single markdown block grows
+  // token-by-token. Virtuoso's `followOutput` only fires on count changes,
+  // not on in-place content updates that change the last item's *height*. We
+  // re-anchor imperatively in a `useLayoutEffect` keyed on the last block's
+  // content length.
+  it("re-anchors at the bottom when the last block's content grows in place", () => {
+    const baseProps = {
+      agentType: "session" as const,
+      status: "running" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    };
+    const { rerender } = render(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello")]} />);
+
+    // Drop the initial-mount scroll so the assertion targets the streaming
+    // re-anchor specifically.
+    scrollToIndexMock.mockClear();
+
+    rerender(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello world")]} />);
+
+    expect(scrollToIndexMock).toHaveBeenCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  });
+
+  // Conversely, if the user has scrolled away (rule 2), an in-place content
+  // update must NOT yank the view back down — the chip is the only way back
+  // (rule 3).
+  it("does not re-anchor when the user has scrolled up", () => {
+    const baseProps = {
+      agentType: "session" as const,
+      status: "running" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    };
+    const { rerender } = render(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello")]} />);
+
+    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    scrollToIndexMock.mockClear();
+
+    rerender(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello world")]} />);
+
+    expect(scrollToIndexMock).not.toHaveBeenCalled();
+  });
+
   it("loads older history when Virtuoso reports the start was reached", async () => {
     const onLoadOlder = vi.fn(async () => {});
     render(

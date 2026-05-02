@@ -1,46 +1,55 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
 import { toast } from "sonner";
 import type { VirtuosoHandle } from "react-virtuoso";
 
 /**
  * Initial value for `firstItemIndex`. Virtuoso uses item indices to track
  * scroll position; when older history is prepended we *decrement* this so
- * existing items keep their conceptual indices. Starting from a large value
- * gives plenty of headroom for prepends.
+ * existing items keep their conceptual indices.
  */
 const PREPEND_START_INDEX = 1_000_000;
+
+/**
+ * Auto-scroll, in three rules:
+ *
+ *   1. At the bottom → auto-scroll, always.
+ *   2. User scrolls up → stop auto-scrolling.
+ *   3. User clicks the chip → scroll to bottom (lands at bottom, rule 1
+ *      re-engages).
+ *
+ * `atBottom=false` from Virtuoso is *ignored* (it wobbles whenever content
+ * height changes mid-stream); the only disable path is real user input on
+ * the scroller — wheel-up or touch-drag-down.
+ */
 
 interface UseAgentSessionScrollOptions {
   hasMore?: boolean;
   /**
    * Resolves with the number of blocks that were prepended. The hook uses
-   * this delta to decrement `firstItemIndex` synchronously — no
-   * `requestAnimationFrame` + ref dance needed. Implementations that don't
-   * report a count (legacy callers) may resolve with `void`.
+   * this delta to decrement `firstItemIndex` synchronously. Implementations
+   * that don't report a count may resolve with `void`.
    */
   onLoadOlder?: () => Promise<number | void>;
 }
 
 interface UseAgentSessionScrollResult {
-  /** Pass to `<AgentStream virtuosoRef={...} />`. Used by `scrollToBottom` to scroll to the bottom imperatively. */
   virtuosoRef: RefObject<VirtuosoHandle | null>;
-  /** Pass to `<AgentStream firstItemIndex={...} />`. Decrements when older items are prepended so the user's scroll position is preserved. */
   firstItemIndex: number;
-  /**
-   * Pass to `<AgentStream onAtBottomChange={...} />`. The auto-scroll state
-   * is just a mirror of Virtuoso's "at bottom" — no extra book-keeping.
-   */
   handleAtBottomChange: (atBottom: boolean) => void;
-  /** Pass to `<AgentStream onStartReached={...} />`. Triggers older-history loading when the user scrolls near the top. */
   handleStartReached: () => void;
-  /** True when we're at the bottom and Virtuoso is following new output. */
   autoScrollEnabled: boolean;
+  /** `followOutput` and the imperative re-anchor read `.current` to decide whether to follow. */
+  autoScrollEnabledRef: MutableRefObject<boolean>;
+  /** Pass to `<AgentStream scrollerRef={...} />`. */
+  handleScrollerRef: (el: HTMLElement | null | Window) => void;
   isLoadingOlder: boolean;
-  /**
-   * Wire to the auto-scroll chip's onClick. Scrolls the list to the last
-   * item; the resulting `atBottomStateChange(true)` flips `autoScrollEnabled`
-   * back on. This is the only way to re-enable follow-mode from the UI.
-   */
   scrollToBottom: () => void;
 }
 
@@ -54,6 +63,8 @@ export function useAgentSessionScroll({
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [firstItemIndex, setFirstItemIndex] = useState(PREPEND_START_INDEX);
   const autoScrollEnabledRef = useRef(autoScrollEnabled);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
+  const touchStartYRef = useRef(0);
   const isMountedRef = useRef(true);
 
   useEffect(
@@ -63,28 +74,83 @@ export function useAgentSessionScroll({
     [],
   );
 
+  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
+    if (autoScrollEnabledRef.current === enabled) return;
+    autoScrollEnabledRef.current = enabled;
+    setAutoScrollEnabledState(enabled);
+  }, []);
+
   const scrollToBottom = useCallback((): void => {
+    setAutoScrollEnabled(true);
     virtuosoRef.current?.scrollToIndex({
       index: "LAST",
       align: "end",
       behavior: "auto",
     });
-  }, []);
-
-  const setAutoScrollEnabled = useCallback((enabled: boolean): void => {
-    autoScrollEnabledRef.current = enabled;
-    setAutoScrollEnabledState((current) => (current === enabled ? current : enabled));
-  }, []);
+  }, [setAutoScrollEnabled]);
 
   const handleAtBottomChange = useCallback(
     (atBottom: boolean): void => {
-      if (atBottom) {
-        if (!autoScrollEnabledRef.current) setAutoScrollEnabled(true);
-      } else if (autoScrollEnabledRef.current) {
-        setAutoScrollEnabled(false);
-      }
+      if (atBottom) setAutoScrollEnabled(true);
     },
     [setAutoScrollEnabled],
+  );
+
+  // Stable handlers so add/removeEventListener pair correctly across
+  // scroller swaps (callback ref may fire with a new element).
+  const onWheel = useCallback(
+    (e: WheelEvent): void => {
+      if (e.deltaY < 0) setAutoScrollEnabled(false);
+    },
+    [setAutoScrollEnabled],
+  );
+  const onTouchStart = useCallback((e: TouchEvent): void => {
+    touchStartYRef.current = e.touches[0]?.clientY ?? 0;
+  }, []);
+  const onTouchMove = useCallback(
+    (e: TouchEvent): void => {
+      const y = e.touches[0]?.clientY ?? 0;
+      if (y > touchStartYRef.current + 5) setAutoScrollEnabled(false);
+    },
+    [setAutoScrollEnabled],
+  );
+
+  // Virtuoso's `scrollerRef` is a callback ref. Attach listeners inline so
+  // the scroller doesn't need to live in component state (no extra render
+  // on mount/unmount). Virtuoso's own `scrollToIndex` doesn't synthesize
+  // wheel/touch events, so these listeners only fire on real user input.
+  const handleScrollerRef = useCallback(
+    (el: HTMLElement | null | Window): void => {
+      const next = el instanceof HTMLElement ? el : null;
+      const prev = scrollerElRef.current;
+      if (prev === next) return;
+
+      if (prev) {
+        prev.removeEventListener("wheel", onWheel);
+        prev.removeEventListener("touchstart", onTouchStart);
+        prev.removeEventListener("touchmove", onTouchMove);
+      }
+      scrollerElRef.current = next;
+      if (next) {
+        next.addEventListener("wheel", onWheel, { passive: true });
+        next.addEventListener("touchstart", onTouchStart, { passive: true });
+        next.addEventListener("touchmove", onTouchMove, { passive: true });
+      }
+    },
+    [onWheel, onTouchStart, onTouchMove],
+  );
+
+  // Detach on unmount in case Virtuoso never calls scrollerRef(null).
+  useEffect(
+    () => () => {
+      const el = scrollerElRef.current;
+      if (!el) return;
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      scrollerElRef.current = null;
+    },
+    [onWheel, onTouchStart, onTouchMove],
   );
 
   const handleStartReached = useCallback((): void => {
@@ -114,6 +180,8 @@ export function useAgentSessionScroll({
     handleAtBottomChange,
     handleStartReached,
     autoScrollEnabled,
+    autoScrollEnabledRef,
+    handleScrollerRef,
     isLoadingOlder,
     scrollToBottom,
   };

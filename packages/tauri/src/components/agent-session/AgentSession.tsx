@@ -124,6 +124,8 @@ export const AgentSession = memo(
 
     const {
       virtuosoRef,
+      autoScrollEnabledRef,
+      handleScrollerRef,
       firstItemIndex,
       handleAtBottomChange,
       handleStartReached,
@@ -293,6 +295,8 @@ export const AgentSession = memo(
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}
           virtuosoRef={virtuosoRef}
+          autoScrollEnabledRef={autoScrollEnabledRef}
+          scrollerRef={handleScrollerRef}
           firstItemIndex={firstItemIndex}
           onAtBottomChange={handleAtBottomChange}
           onStartReached={handleStartReached}

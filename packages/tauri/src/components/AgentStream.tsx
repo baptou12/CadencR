@@ -1,4 +1,11 @@
-import { memo, useCallback, useMemo, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  type MutableRefObject,
+  type RefObject,
+} from "react";
 import { Loader2Icon } from "lucide-react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
@@ -28,6 +35,10 @@ interface AgentStreamProps {
   basePath?: string;
   /** Imperative handle for scroll control (e.g. auto-scroll toggle). */
   virtuosoRef?: RefObject<VirtuosoHandle | null>;
+  /** Auto-scroll state ref. Read by `followOutput` and the imperative re-anchor. */
+  autoScrollEnabledRef?: MutableRefObject<boolean>;
+  /** Forwarded to Virtuoso's `scrollerRef`. Scroll hook attaches wheel/touch listeners. */
+  scrollerRef?: (el: HTMLElement | null | Window) => void;
   /**
    * Index of the first item in the conceptual list. Must decrement by the
    * number of prepended items when older history is loaded so that Virtuoso
@@ -106,6 +117,8 @@ export const AgentStream = memo(function AgentStream({
   showStreamingIndicator = true,
   basePath,
   virtuosoRef,
+  autoScrollEnabledRef,
+  scrollerRef,
   firstItemIndex,
   onAtBottomChange,
   onStartReached,
@@ -148,14 +161,27 @@ export const AgentStream = memo(function AgentStream({
     [],
   );
 
-  // "auto" (instant) — never "smooth". Smooth-scroll animations during fast
-  // streaming lose the race against new tokens: the animation isn't done
-  // when the next token lands, Virtuoso emits atBottomStateChange(false),
-  // and follow-mode is permanently knocked off mid-turn.
+  // Read our own auto-scroll ref instead of Virtuoso's `isAtBottom` (which
+  // wobbles to false on every re-measure). "auto" (instant) — never "smooth":
+  // animations lose the race against fast streaming.
   const followOutput = useCallback(
-    (isAtBottom: boolean): "auto" | false => (isAtBottom ? "auto" : false),
-    [],
+    (): "auto" | false => (autoScrollEnabledRef?.current ? "auto" : false),
+    [autoScrollEnabledRef],
   );
+
+  // Re-anchor when the last block's content grows in place — `followOutput`
+  // only fires on count changes, not on token-by-token markdown growth.
+  // `useLayoutEffect` runs after commit, before paint — no flash.
+  const lastBlockId = displayBlocks[displayBlocks.length - 1]?.id;
+  const lastBlockContentLength = displayBlocks[displayBlocks.length - 1]?.content.length ?? 0;
+  useLayoutEffect(() => {
+    if (!autoScrollEnabledRef?.current) return;
+    virtuosoRef?.current?.scrollToIndex({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+  }, [lastBlockId, lastBlockContentLength, autoScrollEnabledRef, virtuosoRef]);
 
   const components = useMemo(
     () => ({
@@ -182,6 +208,7 @@ export const AgentStream = memo(function AgentStream({
   return (
     <Virtuoso
       ref={virtuosoRef}
+      scrollerRef={scrollerRef}
       data={displayBlocks}
       firstItemIndex={firstItemIndex}
       computeItemKey={computeItemKey}
