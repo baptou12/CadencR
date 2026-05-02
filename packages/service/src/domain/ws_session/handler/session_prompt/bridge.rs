@@ -56,6 +56,7 @@ pub(crate) fn build_persist_content(text: &str, images: &[ImagePayload]) -> Stri
 pub struct PermissionResponse {
     pub(crate) request_id: String,
     pub(crate) decision: PermissionDecision,
+    pub(crate) option_id: Option<String>,
     pub(crate) feedback: Option<String>,
     pub(crate) updated_input: Option<serde_json::Value>,
     pub(crate) is_approval_gate: bool,

@@ -43,6 +43,7 @@ const INITIAL_INPUT_TOOLS = new Set([
   "Bash",
   "TodoWrite",
   "Read",
+  "LS",
   "Glob",
   "Grep",
   "WebSearch",

@@ -346,7 +346,7 @@ export function useWsWorkflowBackend(
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       store.interruptItem(slotKey);
     },
-    submitPermission: (entry, decision, feedback) => {
+    submitPermission: (entry, decision, feedback, optionId) => {
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       const requestId = entry.pendingPermission?.requestId ?? "";
       const mapped =
@@ -356,6 +356,7 @@ export function useWsWorkflowBackend(
         requestId,
         mapped as "allow_once" | "allow_future" | "deny",
         feedback,
+        optionId,
       );
     },
     submitAnswers: (entry, response) => {

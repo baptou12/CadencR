@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use super::event_json::{metadata, thread_id};
-use super::permissions::{permission_request, request_id_from_value};
+use super::permissions::{permission_option_values, permission_request, request_id_from_value};
 use crate::domain::agents::adapter::{
     RuntimeEvent, RuntimeEventKind, RuntimeInitEvent, RuntimeMcpServerStatus,
     RuntimePermissionDecision,
@@ -36,6 +36,7 @@ pub fn init_event(
 
 pub fn permission_request_event(id: &Value, method: &str, params: &Value) -> RuntimeEvent {
     let request = permission_request(id, method, params);
+    let options = permission_option_values(&request.options);
     let supports_allow_future = request
         .options
         .iter()
@@ -52,6 +53,7 @@ pub fn permission_request_event(id: &Value, method: &str, params: &Value) -> Run
                 "description": request.description,
                 "preview": request.preview,
                 "supports_allow_future": supports_allow_future,
+                "options": options,
             }),
         ),
         RuntimeEventKind::Other,

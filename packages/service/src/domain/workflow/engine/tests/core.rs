@@ -185,6 +185,7 @@ async fn test_respond_permission_no_channel() {
     let response = PermissionResponse {
         request_id: "req-1".to_string(),
         decision: PermissionDecision::AllowOnce,
+        option_id: None,
         feedback: None,
         updated_input: None,
         is_approval_gate: false,
@@ -209,6 +210,7 @@ async fn test_respond_permission_with_channel() {
     let response = PermissionResponse {
         request_id: "req-2".to_string(),
         decision: PermissionDecision::AllowOnce,
+        option_id: None,
         feedback: None,
         updated_input: None,
         is_approval_gate: false,

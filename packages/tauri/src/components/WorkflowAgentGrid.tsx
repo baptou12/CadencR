@@ -169,8 +169,8 @@ export function WorkflowAgentGrid({
         slashCommandsLoading={slashCommandsLoading}
         initialDraft={entry.draftPrompt}
         pendingPermission={entry.pendingPermission}
-        onPermissionDecision={(decision, feedback) =>
-          backend.submitPermission(entry, decision, feedback)
+        onPermissionDecision={(decision, feedback, optionId) =>
+          backend.submitPermission(entry, decision, feedback, optionId)
         }
         pendingPlanApproval={entry.pendingPlanApproval}
         planApprovalError={backend.planApprovalError}

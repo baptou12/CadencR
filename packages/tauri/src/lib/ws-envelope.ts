@@ -65,19 +65,25 @@ export function createPromptSend(
   });
 }
 
+interface PermissionRespondOptions {
+  updatedInput?: Record<string, unknown>;
+  feedback?: string;
+  optionId?: string;
+}
+
 export function createPermissionRespond(
   sessionId: string,
   requestId: string,
   decision: "allow_once" | "allow_future" | "deny",
-  updatedInput?: Record<string, unknown>,
-  feedback?: string,
+  options: PermissionRespondOptions = {},
 ): WsEnvelope {
   return createEnvelope("session", "permission.respond", {
     session_id: sessionId,
     request_id: requestId,
     decision,
-    ...(updatedInput ? { updated_input: updatedInput } : {}),
-    ...(feedback ? { feedback } : {}),
+    ...(options.updatedInput ? { updated_input: options.updatedInput } : {}),
+    ...(options.feedback ? { feedback: options.feedback } : {}),
+    ...(options.optionId ? { option_id: options.optionId } : {}),
   });
 }
 

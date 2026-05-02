@@ -295,6 +295,7 @@ async fn handle_approval(
     let response = super::session_prompt::PermissionResponse {
         request_id,
         decision,
+        option_id: None,
         feedback: payload.feedback.clone(),
         updated_input: None,
         is_approval_gate: true,

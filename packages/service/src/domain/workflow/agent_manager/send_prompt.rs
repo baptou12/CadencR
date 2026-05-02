@@ -42,6 +42,7 @@ impl AgentManager {
                     RuntimePermissionDecision::Deny
                 }
             },
+            option_id: response.option_id.clone(),
             feedback: response.feedback.clone(),
             updated_input: response.updated_input.clone(),
         };

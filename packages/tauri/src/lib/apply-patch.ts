@@ -14,7 +14,7 @@ export interface ApplyPatchPreview {
   newContent: string;
 }
 
-const PATCH_TEXT_KEYS = ["patch_text", "patchText"] as const;
+const PATCH_TEXT_KEYS = ["patch_text", "patchText", "input"] as const;
 const ADD_PREFIX = "*** Add File: ";
 const UPDATE_PREFIX = "*** Update File: ";
 const DELETE_PREFIX = "*** Delete File: ";

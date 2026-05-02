@@ -237,12 +237,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       send("retry_worktree_setup");
     },
 
-    respondToPermission(slotKey, requestId, decision, feedback) {
+    respondToPermission(slotKey, requestId, decision, feedback, optionId) {
       send("permission.respond", {
         agent_slot: slotKeyToAgentSlot(slotKey),
         request_id: requestId,
         decision,
         ...(feedback ? { feedback } : {}),
+        ...(optionId ? { option_id: optionId } : {}),
       });
       // Backend emits `pending_cleared` on success; no optimistic clear.
     },

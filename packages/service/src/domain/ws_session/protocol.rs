@@ -120,6 +120,7 @@ pub struct PermissionRespondPayload {
     pub session_id: String,
     pub request_id: String,
     pub decision: PermissionDecision,
+    pub option_id: Option<String>,
     pub feedback: Option<String>,
     pub updated_input: Option<serde_json::Value>,
 }
@@ -203,6 +204,7 @@ pub struct PermissionRequestPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionOptionPayload {
     pub decision: PermissionDecision,
+    pub option_id: Option<String>,
     pub label: String,
     pub description: String,
     #[serde(default)]
@@ -217,6 +219,7 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
                 RuntimePermissionDecision::AllowFuture => PermissionDecision::AllowFuture,
                 RuntimePermissionDecision::Deny => PermissionDecision::Deny,
             },
+            option_id: option.option_id,
             label: option.label,
             description: option.description,
             collect_feedback: option.collect_feedback,
@@ -361,6 +364,7 @@ pub struct WorkflowPermissionRespondPayload {
     pub agent_slot: AgentSlot,
     pub request_id: String,
     pub decision: PermissionDecision,
+    pub option_id: Option<String>,
     pub feedback: Option<String>,
     pub updated_input: Option<serde_json::Value>,
 }
@@ -745,6 +749,7 @@ mod tests {
             session_id: "s1".into(),
             request_id: "r1".into(),
             decision: PermissionDecision::AllowOnce,
+            option_id: None,
             feedback: None,
             updated_input: None,
         };
@@ -781,6 +786,7 @@ mod tests {
             preview: Some("ls".into()),
             options: vec![PermissionOptionPayload {
                 decision: PermissionDecision::AllowOnce,
+                option_id: None,
                 label: "Allow once".into(),
                 description: "Approve this tool call only".into(),
                 collect_feedback: false,
@@ -979,12 +985,14 @@ mod tests {
             agent_slot: AgentSlot::QueueItem(5),
             request_id: "r1".into(),
             decision: PermissionDecision::AllowFuture,
+            option_id: Some("native-option".into()),
             feedback: Some("ok".into()),
             updated_input: Some(serde_json::json!({"key": "val"})),
         };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowPermissionRespondPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.decision, PermissionDecision::AllowFuture);
+        assert_eq!(d.option_id.as_deref(), Some("native-option"));
         assert_eq!(d.agent_slot, AgentSlot::QueueItem(5));
         assert_eq!(d.updated_input.unwrap()["key"], "val");
     }
@@ -1265,6 +1273,7 @@ mod tests {
             preview: Some("ls".into()),
             options: vec![PermissionOptionPayload {
                 decision: PermissionDecision::AllowFuture,
+                option_id: None,
                 label: "Allow for future use".into(),
                 description: "Save `Bash(ls:*)` to settings".into(),
                 collect_feedback: false,

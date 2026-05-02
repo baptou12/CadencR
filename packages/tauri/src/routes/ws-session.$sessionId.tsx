@@ -336,8 +336,8 @@ function WebSocketSessionPageBody({
           }}
           onStop={ws.interrupt}
           pendingPermission={ws.pendingPermission}
-          onPermissionDecision={(decision, feedback) => {
-            ws.respondToPermission(ws.pendingRequestId, decision, feedback);
+          onPermissionDecision={(decision, feedback, optionId) => {
+            ws.respondToPermission(ws.pendingRequestId, decision, feedback, optionId);
           }}
           pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
           onAnswerSubmit={ws.respondToQuestion}

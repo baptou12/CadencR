@@ -74,6 +74,7 @@ interface UseWebSocketSessionReturn {
     requestId: string,
     decision: PermissionDecisionValue,
     feedback?: string,
+    optionId?: string,
   ) => void;
   interrupt: () => void;
   destroy: () => void;
@@ -177,7 +178,8 @@ export function useWebSocketSession(
         requestId: string,
         decision: PermissionDecisionValue,
         feedback?: string,
-      ): void => s.respondToPermission(sessionId, requestId, decision, feedback),
+        optionId?: string,
+      ): void => s.respondToPermission(sessionId, requestId, decision, feedback, optionId),
       respondToQuestion: (response: AgentQuestionAnswers): void =>
         s.respondToQuestion(sessionId, response),
       interrupt: (): void => s.interrupt(sessionId),

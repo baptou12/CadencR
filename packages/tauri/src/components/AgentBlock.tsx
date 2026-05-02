@@ -1,16 +1,9 @@
 import { useState, useCallback, memo, useMemo } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
-import {
-  ChevronRightIcon,
-  WrenchIcon,
-  BrainIcon,
-  Loader2Icon,
-  TerminalIcon,
-  CopyIcon,
-  CheckIcon,
-} from "lucide-react";
+import { ChevronRightIcon, WrenchIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { parseToolCall, parseCadencrMcpTool } from "@/lib/tool-call-parser";
 import {
+  extractBashCommand,
   extractBashOutput,
   extractInlineDiffPreview,
   isStructuredBashPayload,
@@ -24,8 +17,8 @@ import { InlineDiffBlock } from "@/components/InlineDiffBlock";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
 import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
-import { CollapsibleBlock } from "@/components/ui/collapsible-block";
-import { parseAnsi } from "@/lib/ansi-to-html";
+import { BashBlock } from "@/components/BashBlock";
+import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 
@@ -128,12 +121,11 @@ export const AgentBlock = memo(function AgentBlock({
       // Bash: unified block with command header + output body
       if (block.toolName === "Bash") {
         const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
-        const summary = parseToolCall("Bash", block.toolArgs);
         const running = !result && isToolCallRunning(block.toolArgs);
         const resultOutput = result ? bashResultOutput(result.content) : undefined;
         return (
           <BashBlock
-            command={summary?.detail}
+            command={extractBashCommand(block.toolArgs)}
             content={resultOutput ?? extractBashOutput(block.toolArgs)}
             running={running}
             isError={result?.isError}
@@ -320,115 +312,6 @@ function ToolCallBlock({
     </div>
   );
 }
-
-const DEFAULT_BASH_LINES = 10;
-
-/** Insert line breaks before shell operators for readability. */
-function formatShellCommand(cmd: string): string {
-  return cmd.replace(/\s+(&&|\|\||[;&|])\s*/g, "\n  $1 ");
-}
-
-/** Unified Bash block: command header + output body, appears at tool_call time. */
-const BashBlock = memo(function BashBlock({
-  command,
-  content,
-  running,
-  isError,
-}: {
-  command?: string;
-  content?: string;
-  running?: boolean;
-  isError?: boolean;
-}) {
-  const lines = content?.split("\n") ?? [];
-  const totalLines = lines.length;
-  const truncatedAnsi = useMemo(
-    () => parseAnsi((content?.split("\n") ?? []).slice(-DEFAULT_BASH_LINES).join("\n")),
-    [content],
-  );
-  const hasOutput = typeof content === "string" && content.length > 0;
-  const formattedCommand = useMemo(
-    () => (command ? formatShellCommand(command) : undefined),
-    [command],
-  );
-
-  return (
-    <CollapsibleBlock
-      totalCount={totalLines}
-      visibleCount={DEFAULT_BASH_LINES}
-      unit="lines"
-      className={isError ? "border-red-800" : "border-zinc-700"}
-      headerClassName={isError ? "bg-red-950 text-red-400 py-1" : "bg-zinc-900 text-zinc-400 py-1"}
-      toggleClassName="ml-auto text-zinc-500 hover:text-zinc-300"
-      bodyClassName={cn(
-        "bg-zinc-950 px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
-        isError ? "text-red-300" : "text-zinc-300",
-      )}
-      truncationClassName="text-zinc-600"
-      header={
-        <>
-          <TerminalIcon className="size-3 shrink-0" />
-          <span className="font-medium text-zinc-300">Bash</span>
-          <pre className="font-mono whitespace-pre-wrap break-all">
-            {formattedCommand ?? "Running command…"}
-          </pre>
-        </>
-      }
-    >
-      {({ showAll }) =>
-        hasOutput ? (
-          <pre className="whitespace-pre-wrap">{showAll ? parseAnsi(content) : truncatedAnsi}</pre>
-        ) : running ? (
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <Loader2Icon className="size-3 animate-spin" />
-            <span>Running…</span>
-          </div>
-        ) : (
-          <div className="text-xs text-zinc-500">No output</div>
-        )
-      }
-    </CollapsibleBlock>
-  );
-});
-
-const ThinkingBlock = memo(function ThinkingBlock({
-  content,
-  cacheKey,
-}: {
-  content: string;
-  cacheKey?: string;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  if (!content.trim()) return null;
-
-  return (
-    <div className="my-1 rounded-md border border-border bg-purple-500/5">
-      <button
-        type="button"
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <BrainIcon className="size-3 text-purple-400" />
-        <span className="font-medium text-purple-300">Thinking</span>
-        <ChevronRightIcon
-          className={cn(
-            "ml-auto size-3 text-muted-foreground transition-transform",
-            expanded && "rotate-90",
-          )}
-        />
-      </button>
-      {expanded && (
-        <div className="border-t border-border px-3 py-2">
-          <Markdown
-            content={content}
-            cacheKey={cacheKey}
-            className="text-xs text-muted-foreground"
-          />
-        </div>
-      )}
-    </div>
-  );
-});
 
 interface CompactMetadata {
   trigger?: string;

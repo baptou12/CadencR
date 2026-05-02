@@ -1,56 +1,58 @@
 use serde_json::Value;
 
 pub(super) fn command_input(item: &Value) -> Value {
-    serde_json::json!({
-        "command": item.get("command").cloned().unwrap_or(Value::Null),
-        "cwd": item.get("cwd").cloned().unwrap_or(Value::Null),
-        "status": item.get("status").cloned().unwrap_or(Value::Null),
-        "output": item.get("aggregatedOutput").cloned().unwrap_or(Value::Null),
-        "exitCode": item.get("exitCode").cloned().unwrap_or(Value::Null),
-    })
+    let mut input = full_item_input(item);
+    insert_alias(&mut input, item, "output", "aggregatedOutput");
+    Value::Object(input)
 }
 
 pub(super) fn file_input(item: &Value) -> Value {
     let patch_text = patch_from_changes(item.get("changes"));
-    serde_json::json!({
-        "patch_text": patch_text.clone(),
-        "patch": patch_text,
-        "changes": item.get("changes").cloned().unwrap_or(Value::Null),
-        "status": item.get("status").cloned().unwrap_or(Value::Null),
-    })
+    let mut input = full_item_input(item);
+    input.insert("patch_text".to_string(), patch_text.clone());
+    input.insert("patch".to_string(), patch_text);
+    Value::Object(input)
 }
 
 pub(super) fn mcp_input(item: &Value) -> Value {
-    serde_json::json!({
-        "arguments": item.get("arguments").cloned().unwrap_or(Value::Null),
-        "result": item.get("result").cloned().unwrap_or(Value::Null),
-        "error": item.get("error").cloned().unwrap_or(Value::Null),
-        "status": item.get("status").cloned().unwrap_or(Value::Null),
-    })
+    Value::Object(full_item_input(item))
 }
 
 pub(super) fn dynamic_tool_input(item: &Value) -> Value {
-    serde_json::json!({
-        "namespace": item.get("namespace").cloned().unwrap_or(Value::Null),
-        "tool": item.get("tool").cloned().unwrap_or(Value::Null),
-        "arguments": item.get("arguments").cloned().unwrap_or(Value::Null),
-        "status": item.get("status").cloned().unwrap_or(Value::Null),
-        "contentItems": item.get("contentItems").cloned().unwrap_or(Value::Null),
-        "success": item.get("success").cloned().unwrap_or(Value::Null),
-    })
+    let mut input = full_item_input(item);
+    flatten_arguments(&mut input, item);
+    Value::Object(input)
 }
 
 pub(super) fn collab_tool_input(item: &Value) -> Value {
-    serde_json::json!({
-        "tool": item.get("tool").cloned().unwrap_or(Value::Null),
-        "status": item.get("status").cloned().unwrap_or(Value::Null),
-        "senderThreadId": item.get("senderThreadId").cloned().unwrap_or(Value::Null),
-        "receiverThreadIds": item.get("receiverThreadIds").cloned().unwrap_or(Value::Null),
-        "prompt": item.get("prompt").cloned().unwrap_or(Value::Null),
-        "model": item.get("model").cloned().unwrap_or(Value::Null),
-        "reasoningEffort": item.get("reasoningEffort").cloned().unwrap_or(Value::Null),
-        "agentsStates": item.get("agentsStates").cloned().unwrap_or(Value::Null),
-    })
+    Value::Object(full_item_input(item))
+}
+
+fn full_item_input(item: &Value) -> serde_json::Map<String, Value> {
+    item.as_object().cloned().unwrap_or_default()
+}
+
+fn insert_alias(
+    input: &mut serde_json::Map<String, Value>,
+    item: &Value,
+    alias: &str,
+    source: &str,
+) {
+    if input.contains_key(alias) {
+        return;
+    }
+    if let Some(value) = item.get(source).cloned() {
+        input.insert(alias.to_string(), value);
+    }
+}
+
+fn flatten_arguments(input: &mut serde_json::Map<String, Value>, item: &Value) {
+    let Some(arguments) = item.get("arguments").and_then(Value::as_object) else {
+        return;
+    };
+    for (key, value) in arguments {
+        input.entry(key.clone()).or_insert_with(|| value.clone());
+    }
 }
 
 pub(super) fn mcp_tool_name(item: &Value) -> String {
@@ -78,9 +80,24 @@ pub(super) fn dynamic_tool_name(item: &Value) -> String {
         .get("tool")
         .and_then(Value::as_str)
         .unwrap_or("dynamic_tool");
+    if let Some(canonical) = canonical_dynamic_tool_name(tool) {
+        return canonical.to_string();
+    }
     match item.get("namespace").and_then(Value::as_str) {
         Some(namespace) if !namespace.is_empty() => format!("{namespace}__{tool}"),
         _ => tool.to_string(),
+    }
+}
+
+fn canonical_dynamic_tool_name(tool: &str) -> Option<&'static str> {
+    match tool {
+        "read" | "read_file" | "fs_read" | "fs_read_file" => Some("Read"),
+        "list" | "ls" => Some("LS"),
+        "glob" | "file_glob" | "find_files" => Some("Glob"),
+        "grep" | "search" | "search_files" | "code_search" => Some("Grep"),
+        "web_fetch" | "webfetch" | "fetch" => Some("WebFetch"),
+        "web_search" | "web_search_preview" => Some("WebSearch"),
+        _ => None,
     }
 }
 
@@ -183,7 +200,7 @@ fn append_delete_patch(lines: &mut Vec<String>, path: &str, diff: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{file_input, patch_from_changes};
+    use super::{dynamic_tool_input, dynamic_tool_name, file_input, patch_from_changes};
     use serde_json::json;
 
     #[test]
@@ -203,6 +220,43 @@ mod tests {
         );
         assert_eq!(input["patch"], input["patch_text"]);
         assert_eq!(input["status"], "running");
+    }
+
+    #[test]
+    fn command_input_preserves_command_actions() {
+        let input = super::command_input(&json!({
+            "command": "rg Codex",
+            "commandActions": [{ "type": "search", "query": "Codex" }]
+        }));
+
+        assert_eq!(input["command"], "rg Codex");
+        assert_eq!(
+            input["commandActions"],
+            json!([{ "type": "search", "query": "Codex" }])
+        );
+    }
+
+    #[test]
+    fn dynamic_tool_input_preserves_full_item_and_flattens_arguments() {
+        let input = dynamic_tool_input(&json!({
+            "type": "dynamicToolCall",
+            "tool": "web_fetch",
+            "arguments": { "url": "https://example.com", "format": "markdown" },
+            "status": "completed"
+        }));
+
+        assert_eq!(input["type"], "dynamicToolCall");
+        assert_eq!(input["arguments"]["url"], "https://example.com");
+        assert_eq!(input["url"], "https://example.com");
+        assert_eq!(input["status"], "completed");
+    }
+
+    #[test]
+    fn dynamic_tool_name_canonicalizes_web_fetch() {
+        assert_eq!(
+            dynamic_tool_name(&json!({ "tool": "web_fetch" })),
+            "WebFetch"
+        );
     }
 
     #[test]

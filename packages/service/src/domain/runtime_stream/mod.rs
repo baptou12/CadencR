@@ -129,6 +129,7 @@ mod tests {
             preview: Some("preview".into()),
             options: vec![RuntimePermissionOption {
                 decision: RuntimePermissionDecision::AllowOnce,
+                option_id: None,
                 label: "Allow once".into(),
                 description: "Allow this read".into(),
                 collect_feedback: false,

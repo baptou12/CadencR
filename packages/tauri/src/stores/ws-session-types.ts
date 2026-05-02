@@ -160,6 +160,7 @@ export interface WsSessionStore {
     requestId: string,
     decision: PermissionDecisionValue,
     feedback?: string,
+    optionId?: string,
   ) => void;
   respondToQuestion: (sessionId: string, response: AgentQuestionAnswers) => void;
   interrupt: (sessionId: string) => void;

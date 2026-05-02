@@ -1,6 +1,6 @@
 import { extractApplyPatchPrimaryPath } from "@/lib/apply-patch";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
-import { normalizeToolName } from "@/lib/tool-adapter";
+import { extractBashCommandFromArgs, normalizeToolName } from "@/lib/tool-adapter";
 
 /**
  * Parses Claude Code tool call arguments into human-readable summaries.
@@ -130,7 +130,7 @@ const toolParsers: Record<string, ToolParser> = {
 
   Bash: (args) => ({
     label: "Running command",
-    detail: stringArg(args, "command"),
+    detail: extractBashCommandFromArgs(args),
   }),
 
   Glob: (args) => {
@@ -160,6 +160,11 @@ const toolParsers: Record<string, ToolParser> = {
   Read: (args) => ({
     label: "Reading file",
     detail: stringArg(args, "file_path", "filePath", "path"),
+  }),
+
+  LS: (args) => ({
+    label: "Listing files",
+    detail: stringArg(args, "path", "directory", "dir"),
   }),
 
   Write: (args) => ({

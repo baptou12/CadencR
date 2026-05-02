@@ -10,6 +10,7 @@ export type PermissionDecisionValue = "allow_once" | "allow_future" | "deny";
 
 export interface PermissionOption {
   decision: PermissionDecisionValue;
+  optionId?: string;
   label: string;
   description: string;
   collectFeedback?: boolean;
@@ -29,7 +30,7 @@ interface ToolPermissionPromptProps {
   /** The pending permission request to display */
   permission: PendingPermission;
   /** Called when the user makes a decision */
-  onDecision: (decision: PermissionDecisionValue, feedback?: string) => void;
+  onDecision: (decision: PermissionDecisionValue, feedback?: string, optionId?: string) => void;
   /** When true, disables keyboard shortcuts */
   disableShortcuts?: boolean;
 }
@@ -200,13 +201,16 @@ export function ToolPermissionPrompt({
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
 
-  const submitDecision = useCallback(
-    (decision: PermissionDecisionValue) => {
-      if (decision === "deny") {
-        onDecision("deny", feedback.trim() || undefined);
+  const submitOption = useCallback(
+    (option: PermissionOption) => {
+      const trimmedFeedback = feedback.trim() || undefined;
+      if (option.decision === "deny") {
+        if (option.optionId) onDecision("deny", trimmedFeedback, option.optionId);
+        else onDecision("deny", trimmedFeedback);
         return;
       }
-      onDecision(decision);
+      if (option.optionId) onDecision(option.decision, undefined, option.optionId);
+      else onDecision(option.decision);
     },
     [feedback, onDecision],
   );
@@ -219,14 +223,15 @@ export function ToolPermissionPrompt({
         setShowFeedback(true);
         return;
       }
-      submitDecision(option.decision);
+      submitOption(option);
     },
-    [options, showFeedback, submitDecision],
+    [options, showFeedback, submitOption],
   );
 
   const handleDenyWithEnter = useCallback(() => {
-    submitDecision("deny");
-  }, [submitDecision]);
+    const denyOption = options.find((option) => option.decision === "deny");
+    if (denyOption) submitOption(denyOption);
+  }, [options, submitOption]);
 
   const handleHotkey = useCallback(
     (index: number) => {

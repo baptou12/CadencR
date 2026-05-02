@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
-import type { PendingPermission } from "./ToolPermissionPrompt";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
 import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { SplitSendActions } from "./SplitSendActions";
@@ -17,63 +16,13 @@ import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
-import type { AgentQuestion, AgentQuestionAnswers } from "./AgentQuestionDrawer";
-// AgentPromptBar reflects the live status badge; its `status` prop is
-// the 3-value canonical enum, not the legacy lifecycle one.
-import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
-import type { PermissionMode } from "@/types/permission-mode";
+import type {
+  AgentPromptBarHandle,
+  AgentPromptBarProps,
+  SplitSendAction,
+} from "./agent-prompt-bar-types";
 
-export interface SplitSendAction {
-  label: string;
-  icon: React.ReactNode;
-  onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
-  variant?: "default" | "outline";
-  kbdShortcut?: string[];
-}
-
-interface AgentPromptBarProps {
-  onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
-  onStop: () => void;
-  status: AgentStatus;
-  splitSendActions?: SplitSendAction[];
-  disabled?: boolean;
-  pendingQuestions?: AgentQuestion[];
-  onQuestionResponse?: (response: AgentQuestionAnswers) => void;
-  disableShortcuts?: boolean;
-  onCollapse?: () => void;
-  permissionMode?: PermissionMode;
-  onPermissionModeToggle?: () => void;
-  pendingPlanApproval?: {
-    allowedPrompts?: Array<{ tool: string; prompt: string }>;
-  } | null;
-  planFeedbackDefault?: string;
-  planApproveLabel?: string;
-  planApprovalError?: string | null;
-  onPlanApprove?: () => void;
-  onPlanRequestChanges?: (feedback: string) => void;
-  onPlanReject?: () => void;
-  onOpenModelPicker?: () => void;
-  /** When false, gates agent-menu shortcuts (⌘P, ⌘↵, ⇧Tab, ⌘⇧Z) so they don't collide with sibling tabs. Default: true. */
-  agentTabActive?: boolean;
-  featureId?: number;
-  projectId?: number;
-  sessionId?: number;
-  wsSessionId?: string;
-  initialDraft?: string | null;
-  onToggleMaximize?: () => void;
-  noTopPadding?: boolean;
-  slashCommandsOverride?: import("@/hooks/useSlashCommand").SlashCommand[];
-  slashCommandsLoading?: boolean;
-  pendingPermission?: PendingPermission | null;
-  onPermissionDecision?: (
-    decision: "allow_once" | "allow_future" | "deny",
-    feedback?: string,
-  ) => void;
-}
-
-export interface AgentPromptBarHandle {
-  focusInput: () => void;
-}
+export type { AgentPromptBarHandle, SplitSendAction } from "./agent-prompt-bar-types";
 
 export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarProps>(
   function AgentPromptBar(

@@ -30,6 +30,14 @@ describe("extractApplyPatchPrimaryPath", () => {
       }),
     ).toBe("toto.txt");
   });
+
+  it("extracts the first patched path from Codex input", () => {
+    expect(
+      extractApplyPatchPrimaryPath({
+        input: "*** Begin Patch\n*** Add File: codex.txt\n+hello\n*** End Patch\n",
+      }),
+    ).toBe("codex.txt");
+  });
 });
 
 describe("extractApplyPatchPreview", () => {
@@ -124,6 +132,15 @@ describe("extractApplyPatchPreviewPartial", () => {
       filePath: "bar.ts",
       oldContent: "x",
       newContent: "y",
+    });
+  });
+
+  it("recognises Codex input key as patch text", () => {
+    const partial = '{"input":"*** Begin Patch\\n*** Update File: input.ts\\n@@\\n-a\\n+b';
+    expect(extractApplyPatchPreviewPartial(partial)).toEqual({
+      filePath: "input.ts",
+      oldContent: "a",
+      newContent: "b",
     });
   });
 

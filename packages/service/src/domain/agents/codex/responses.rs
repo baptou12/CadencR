@@ -1,7 +1,8 @@
 use serde_json::{json, Value};
 
 use super::permissions::{
-    available_decisions, supports_accept_for_session, DECISION_CANCEL, DECISION_DECLINE,
+    available_decisions, codex_decision_from_option_id, supports_accept_for_session,
+    DECISION_CANCEL, DECISION_DECLINE, STRICT_AUTO_REVIEW_OPTION_ID,
 };
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
 
@@ -19,6 +20,9 @@ pub(super) fn response_value(
 }
 
 fn approval_response(params: &Value, response: &RuntimePermissionResponse) -> Value {
+    if let Some(decision) = codex_decision_from_option_id(response.option_id.as_deref()) {
+        return json!({ "decision": decision });
+    }
     let decision = match response.decision {
         RuntimePermissionDecision::AllowOnce => "accept",
         RuntimePermissionDecision::AllowFuture if supports_accept_for_session(params) => {
@@ -119,14 +123,19 @@ fn permissions_response(params: &Value, response: &RuntimePermissionResponse) ->
     if matches!(response.decision, RuntimePermissionDecision::Deny) {
         return json!({ "permissions": {}, "scope": "turn" });
     }
+    let strict_auto_review = response.option_id.as_deref() == Some(STRICT_AUTO_REVIEW_OPTION_ID);
     let scope = match response.decision {
         RuntimePermissionDecision::AllowFuture => "session",
         _ => "turn",
     };
-    json!({
+    let mut result = json!({
         "permissions": params.get("permissions").cloned().unwrap_or(Value::Null),
         "scope": scope,
-    })
+    });
+    if strict_auto_review {
+        result["strictAutoReview"] = Value::Bool(true);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -140,6 +149,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "question".to_string(),
             decision: RuntimePermissionDecision::Deny,
+            option_id: None,
             feedback: None,
             updated_input: None,
         };
@@ -152,6 +162,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "question".to_string(),
             decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
             feedback: None,
             updated_input: Some(json!({ "answers": [["yes"], ["no"]] })),
         };
@@ -174,6 +185,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "question".to_string(),
             decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
             feedback: None,
             updated_input: Some(json!({
                 "answers": {
@@ -195,6 +207,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "permissions".to_string(),
             decision: RuntimePermissionDecision::AllowFuture,
+            option_id: None,
             feedback: None,
             updated_input: None,
         };
@@ -212,6 +225,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "command".to_string(),
             decision: RuntimePermissionDecision::Deny,
+            option_id: None,
             feedback: Some("Skip it".to_string()),
             updated_input: None,
         };
@@ -225,10 +239,54 @@ mod tests {
     }
 
     #[test]
+    fn approval_response_uses_native_codex_option_id() {
+        let response = RuntimePermissionResponse {
+            request_id: "command".to_string(),
+            decision: RuntimePermissionDecision::AllowOnce,
+            option_id: Some("codex:\"acceptWithExecpolicyAmendment\"".to_string()),
+            feedback: None,
+            updated_input: None,
+        };
+
+        let value = response_value(
+            "item/commandExecution/requestApproval",
+            &Value::Null,
+            &response,
+        );
+        assert_eq!(
+            value,
+            json!({ "decision": "acceptWithExecpolicyAmendment" })
+        );
+    }
+
+    #[test]
+    fn permissions_response_marks_strict_auto_review() {
+        let response = RuntimePermissionResponse {
+            request_id: "permissions".to_string(),
+            decision: RuntimePermissionDecision::AllowOnce,
+            option_id: Some("codex_permissions_strict_auto_review".to_string()),
+            feedback: None,
+            updated_input: None,
+        };
+        let params = json!({ "permissions": { "write": true } });
+
+        let value = response_value("item/permissions/requestApproval", &params, &response);
+        assert_eq!(
+            value,
+            json!({
+                "permissions": { "write": true },
+                "scope": "turn",
+                "strictAutoReview": true
+            })
+        );
+    }
+
+    #[test]
     fn command_deny_uses_cancel_only_when_decline_is_unavailable() {
         let response = RuntimePermissionResponse {
             request_id: "command".to_string(),
             decision: RuntimePermissionDecision::Deny,
+            option_id: None,
             feedback: None,
             updated_input: None,
         };
@@ -246,6 +304,7 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "approval".to_string(),
             decision: RuntimePermissionDecision::AllowFuture,
+            option_id: None,
             feedback: None,
             updated_input: None,
         };

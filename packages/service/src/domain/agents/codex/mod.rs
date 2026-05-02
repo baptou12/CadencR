@@ -1,3 +1,4 @@
+mod event_command_actions;
 mod event_inputs;
 mod event_items;
 mod event_json;
@@ -12,6 +13,7 @@ mod input;
 mod mcp;
 mod model;
 mod permission_details;
+mod permission_options;
 mod permissions;
 mod responses;
 mod session;

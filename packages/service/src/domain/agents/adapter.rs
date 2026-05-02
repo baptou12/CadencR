@@ -160,6 +160,7 @@ pub enum RuntimePermissionDecision {
 pub struct RuntimePermissionResponse {
     pub request_id: String,
     pub decision: RuntimePermissionDecision,
+    pub option_id: Option<String>,
     pub feedback: Option<String>,
     pub updated_input: Option<Value>,
 }
@@ -203,6 +204,7 @@ pub struct RuntimePermissionRequest {
 #[derive(Debug, Clone)]
 pub struct RuntimePermissionOption {
     pub decision: RuntimePermissionDecision,
+    pub option_id: Option<String>,
     pub label: String,
     pub description: String,
     pub collect_feedback: bool,
@@ -721,6 +723,7 @@ mod tests {
             .respond_permission(RuntimePermissionResponse {
                 request_id: "req".to_string(),
                 decision: RuntimePermissionDecision::AllowOnce,
+                option_id: None,
                 feedback: None,
                 updated_input: None,
             })
