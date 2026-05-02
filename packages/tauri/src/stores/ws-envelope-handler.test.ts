@@ -191,3 +191,48 @@ describe("handleEnvelope error handling", () => {
     expect(updated.blocks.some((b) => b.isError)).toBe(true);
   });
 });
+
+describe("handleEnvelope stream_status", () => {
+  it("flips streamHealth to degraded with reason on a degraded envelope", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "stream_status",
+      payload: { state: "degraded", reason: "no heartbeat for 60s" },
+    });
+
+    const updated = ctx.getSession("s1");
+    expect(updated.streamHealth.state).toBe("degraded");
+    expect(updated.streamHealth.reason).toBe("no heartbeat for 60s");
+    expect(typeof updated.streamHealth.since).toBe("number");
+  });
+
+  it("clears streamHealth back to ok on a recovered envelope", () => {
+    const session = createSessionEntry();
+    session.streamHealth = { state: "degraded", reason: "reconnecting", since: 1 };
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "stream_status",
+      payload: { state: "recovered" },
+    });
+
+    expect(ctx.getSession("s1").streamHealth.state).toBe("ok");
+  });
+
+  it("ignores envelopes with an unrecognized state without throwing", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "stream_status",
+      payload: { state: "ascended" },
+    });
+
+    expect(ctx.getSession("s1").streamHealth.state).toBe("ok");
+  });
+});

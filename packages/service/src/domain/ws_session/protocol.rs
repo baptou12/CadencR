@@ -235,6 +235,34 @@ pub struct SessionEndedPayload {
     pub reason: String,
 }
 
+/// Discriminant for `SessionStreamStatusPayload`.
+///
+/// Hard failures stay on `session.error`; this enum only carries
+/// transient transport-health transitions.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StreamStatusState {
+    Degraded,
+    Recovered,
+}
+
+/// Provider-neutral transport-health envelope for the agent stream.
+///
+/// Emitted by the WS bridge when the underlying runtime reports
+/// `RuntimeEventKind::StreamStatus`. The frontend uses this to render a
+/// "Reconnecting…" / "Recovered" banner under the loader so users never
+/// see an infinite silent loader (plan findings 1, 2, 3, 8).
+///
+/// `reason` is opaque human-readable text suited for a tooltip (e.g.
+/// `"reconnecting (attempt 3): connection refused"`, `"no heartbeat
+/// for 60s"`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionStreamStatusPayload {
+    pub state: StreamStatusState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureRenamedPayload {
     pub feature_id: i64,

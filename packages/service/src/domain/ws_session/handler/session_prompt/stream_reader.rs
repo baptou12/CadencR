@@ -3,6 +3,7 @@ use tokio::time::Instant;
 use tracing::{debug, error, info};
 
 use crate::domain::agents::adapter::RuntimeMessageRx;
+use crate::domain::agents::adapter::RuntimeStreamStatus;
 use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, permission_request_payload, persist_usage, RuntimeUsageState,
@@ -10,7 +11,7 @@ use crate::domain::runtime_stream::{
 use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersistence};
 use crate::domain::ws_session::protocol::{
     PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload, SessionMessagePayload,
-    SessionUsageUpdatePayload, WsEnvelope,
+    SessionStreamStatusPayload, SessionUsageUpdatePayload, StreamStatusState, WsEnvelope,
 };
 
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
@@ -120,6 +121,43 @@ pub(crate) fn spawn_stream_reader(
             match msg {
                 Some(Ok(runtime_event)) => {
                     last_runtime_activity = Instant::now();
+
+                    // Provider-neutral transport health (today only OpenCode
+                    // emits these). Intercept BEFORE the message branch
+                    // because these events aren't user-visible messages —
+                    // they only drive the "Reconnecting…" UI banner. See
+                    // plan finding #1 / Phase 3.1.
+                    if let Some(status) = runtime_event.stream_status() {
+                        let payload = match status {
+                            RuntimeStreamStatus::Degraded { reason } => {
+                                SessionStreamStatusPayload {
+                                    state: StreamStatusState::Degraded,
+                                    reason: Some(reason.clone()),
+                                }
+                            }
+                            RuntimeStreamStatus::Recovered => SessionStreamStatusPayload {
+                                state: StreamStatusState::Recovered,
+                                reason: None,
+                            },
+                        };
+                        let env = WsEnvelope::new(
+                            "session",
+                            "stream_status",
+                            serde_json::to_value(payload).unwrap(),
+                        );
+                        if sender
+                            .send(Message::Text(String::from(env).into()))
+                            .is_err()
+                        {
+                            debug!(
+                                db_session_id,
+                                "WebSocket sender closed during stream_status forward"
+                            );
+                            break;
+                        }
+                        continue;
+                    }
+
                     if let Some(request) = runtime_adapter.and_then(|adapter| {
                         adapter.parse_permission_request(runtime_event.raw_json())
                     }) {

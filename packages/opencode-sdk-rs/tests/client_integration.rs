@@ -275,24 +275,48 @@ async fn event_stream_parses_sse_messages_without_real_opencode() {
 
 #[tokio::test]
 async fn shared_dispatcher_reconnects_after_stream_end() {
+    // Contract under the resilience refactor (PR-A):
+    //  1. The first subscribe receives events from the first connection.
+    //  2. When the upstream stream ends, the dispatcher drops the
+    //     subscriber sender — receivers observe `None` so service-side
+    //     adapters can auto-resubscribe (smoking-gun fix, plan finding 1).
+    //     Without this, receivers used to block forever on a stalled
+    //     stream and the UI would freeze with a silent loader.
+    //  3. After resubscribing, the new receiver picks up events from the
+    //     second connection.
     let (addr, connection_count) = start_reconnecting_server().await;
     let client = OpenCodeClient::with_base_url(format!("http://{addr}"));
     let dispatcher = shared_dispatcher(client, None).await;
-    let mut rx = dispatcher.subscribe("sess-1").await;
 
-    let first = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+    // First subscription — first connection's events.
+    let mut rx_first = dispatcher.subscribe("sess-1").await;
+    let first = tokio::time::timeout(std::time::Duration::from_secs(2), rx_first.recv())
         .await
         .expect("first event should arrive")
-        .expect("channel should stay open");
-    let second = tokio::time::timeout(std::time::Duration::from_secs(3), rx.recv())
-        .await
-        .expect("second event should arrive after reconnect")
-        .expect("channel should stay open");
-
+        .expect("first event channel open during first connection");
     match first {
         SseEvent::MessageCreated(message) => assert_eq!(message.id, "msg-1"),
         other => panic!("expected first message.created event, got {other:?}"),
     }
+
+    // The receiver MUST observe a clean close when the upstream stream
+    // ends and the dispatcher drops senders before reconnecting. This is
+    // what wakes the service-side `source_rx.recv().await` so the adapter
+    // can resubscribe and surface a "degraded" status to the UI.
+    let close_signal = tokio::time::timeout(std::time::Duration::from_secs(5), rx_first.recv())
+        .await
+        .expect("receiver should observe close within reconnect window");
+    assert!(
+        close_signal.is_none(),
+        "expected channel close (None) on dispatcher reconnect, got {close_signal:?}"
+    );
+
+    // Resubscribe — fresh receiver sees the second connection's events.
+    let mut rx_second = dispatcher.subscribe("sess-1").await;
+    let second = tokio::time::timeout(std::time::Duration::from_secs(5), rx_second.recv())
+        .await
+        .expect("second event should arrive on fresh subscription")
+        .expect("fresh receiver channel open during second connection");
     match second {
         SseEvent::MessageCreated(message) => assert_eq!(message.id, "msg-2"),
         other => panic!("expected second message.created event, got {other:?}"),

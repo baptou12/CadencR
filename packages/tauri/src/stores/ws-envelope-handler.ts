@@ -21,6 +21,7 @@ import {
   parseModelPayload,
   parsePermissionPayload,
   parseProviderPayload,
+  parseStreamStatusPayload,
   parseUsagePayload,
 } from "./ws-envelope-payload";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
@@ -242,6 +243,9 @@ function handleSessionAction(
     }
     case "usage_update":
       handleUsageUpdate(ctx, sessionId, envelope.payload);
+      break;
+    case "stream_status":
+      handleStreamStatus(ctx, sessionId, envelope.payload);
       break;
     case "feature.renamed": {
       const p = parseFeatureRenamePayload(envelope.payload);
@@ -474,6 +478,34 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
       runtimeSessionId: "",
     }),
   );
+}
+
+/**
+ * `session.stream_status` envelope handler. The backend emits this when
+ * the underlying transport for an agent stream goes degraded or recovers
+ * (today only OpenCode emits transitions away from `"ok"`). The shape is
+ * provider-neutral. PR-A wires the store flag; PR-C will render an
+ * inline "Reconnecting…" banner under the loader.
+ *
+ * This is the user-visible counterpart to plan finding #1: the smoking-
+ * gun fix in the SDK now drops subscriber senders on reconnect, the
+ * service adapter forwards lifecycle events as `RuntimeStreamStatus`,
+ * and we land that here so the UI never silently freezes.
+ */
+function handleStreamStatus(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseStreamStatusPayload(payload);
+  if (!p) {
+    // Surface malformed envelopes — see error-handling.md. Keeping this
+    // a console warning (not a toast) since users can't act on it; the
+    // backend is misbehaving.
+    console.warn("[ws-session] dropped malformed stream_status envelope", { payload });
+    return;
+  }
+  const next: SessionEntry["streamHealth"] =
+    p.state === "degraded"
+      ? { state: "degraded", reason: p.reason, since: Date.now() }
+      : { state: "ok", since: Date.now() };
+  ctx.set(updateSession(ctx.get(), sessionId, { streamHealth: next }));
 }
 
 function handleUsageUpdate(ctx: StoreAccessors, sessionId: string, payload: unknown): void {

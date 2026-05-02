@@ -273,7 +273,27 @@ pub enum RuntimeEventKind {
     CompactBoundary {
         metadata: Option<RuntimeCompactMetadata>,
     },
+    /// Provider-neutral signal that the underlying transport is degraded
+    /// (reconnecting, stalled, reconcile-failed) or recovered. Mapped to
+    /// the `session.stream_status` WS envelope so the UI can show a
+    /// "Reconnecting…" banner instead of an infinite silent loader.
+    /// Hard failures stay on the existing `RuntimeError` channel.
+    StreamStatus(RuntimeStreamStatus),
     Other,
+}
+
+/// Lifecycle of the agent's underlying transport, surfaced provider-neutral
+/// so any adapter (today only OpenCode emits these) can opt in. See
+/// `domain::agents::opencode::stream_loop` for the OpenCode mapping from
+/// `opencode_sdk_rs::DispatcherStatus`.
+#[derive(Debug, Clone)]
+pub enum RuntimeStreamStatus {
+    /// The transport is degraded (reconnecting, no heartbeat, reconcile
+    /// failed). Carries a free-form reason for logging / tooltip.
+    Degraded { reason: String },
+    /// The transport recovered after a degraded period. The UI banner
+    /// should clear.
+    Recovered,
 }
 
 /// Provider-neutral metadata captured from a compaction boundary event.
@@ -443,6 +463,23 @@ impl RuntimeEvent {
             RuntimeEventKind::CompactBoundary { metadata } => metadata.as_ref(),
             _ => None,
         }
+    }
+
+    pub fn stream_status(&self) -> Option<&RuntimeStreamStatus> {
+        match &self.kind {
+            RuntimeEventKind::StreamStatus(status) => Some(status),
+            _ => None,
+        }
+    }
+
+    /// Convenience constructor for stream-status events. Emitters don't
+    /// have meaningful session_id / usage / context_window metadata for
+    /// these — the WS bridge ignores those fields for status envelopes.
+    pub fn stream_status_event(status: RuntimeStreamStatus) -> Self {
+        Self::new(
+            RuntimeEventMetadata::default(),
+            RuntimeEventKind::StreamStatus(status),
+        )
     }
 }
 

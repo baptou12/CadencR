@@ -8,6 +8,7 @@ mod session;
 mod session_resolution;
 mod stream_loop;
 mod stream_state;
+mod stream_supervisor;
 mod stream_synthesizer;
 mod tool_names;
 

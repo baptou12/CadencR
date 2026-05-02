@@ -1,104 +1,48 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Duration;
 
-use futures_util::StreamExt;
 use once_cell::sync::Lazy;
-use reqwest_eventsource::{Event, EventSource};
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::sleep;
+use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::warn;
 
+use super::lifecycle::{DispatcherStatus, LifecycleBus};
+use super::runner;
 use crate::client::OpenCodeClient;
-use crate::error::SdkError;
-use crate::event_parsing::parse_sse_event;
 use crate::sse_reconcile::ReconnectState;
 use crate::types::SseEvent;
-
-pub struct SseStream {
-    inner: EventSource,
-}
-
-impl SseStream {
-    pub fn connect(request: reqwest::RequestBuilder) -> Result<Self, SdkError> {
-        let request = request.header("accept", "text/event-stream");
-        let inner =
-            EventSource::new(request).map_err(|error| SdkError::Protocol(error.to_string()))?;
-        Ok(Self { inner })
-    }
-
-    pub async fn next(&mut self) -> Option<Result<SseEvent, SdkError>> {
-        match self.inner.next().await? {
-            Ok(Event::Open) => Some(Ok(SseEvent::ServerConnected)),
-            Ok(Event::Message(message)) => Some(
-                serde_json::from_str::<serde_json::Value>(&message.data)
-                    .map(parse_sse_event)
-                    .map_err(SdkError::from),
-            ),
-            Err(error) => Some(Err(SdkError::from(error))),
-        }
-    }
-}
 
 pub struct SseDispatcher {
     // Use unbounded fan-out channels so a slow Cadencr consumer cannot block
     // the shared OpenCode SSE reader and freeze every later event in the turn.
-    subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::UnboundedSender<SseEvent>>>>>,
-    permission_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<SseEvent>>>>,
-    reconnect_state: Arc<Mutex<ReconnectState>>,
-    session_roots: Arc<Mutex<HashMap<String, String>>>,
+    pub(super) subscribers: Arc<Mutex<HashMap<String, Vec<mpsc::UnboundedSender<SseEvent>>>>>,
+    pub(super) permission_subscribers: Arc<Mutex<Vec<mpsc::UnboundedSender<SseEvent>>>>,
+    pub(super) reconnect_state: Arc<Mutex<ReconnectState>>,
+    pub(super) session_roots: Arc<Mutex<HashMap<String, String>>>,
+    pub(super) lifecycle: LifecycleBus,
 }
 
 impl SseDispatcher {
-    pub async fn start(client: OpenCodeClient, directory: Option<String>) -> Arc<Self> {
-        let dispatcher = Arc::new(Self {
+    /// Construct a dispatcher without spawning the reconnect runner. Tests
+    /// use this to drive `dispatch_event` directly; production code goes
+    /// through `start()` (see `runner.rs`).
+    pub(super) fn new() -> Self {
+        Self {
             subscribers: Arc::new(Mutex::new(HashMap::new())),
             permission_subscribers: Arc::new(Mutex::new(Vec::new())),
             reconnect_state: Arc::new(Mutex::new(ReconnectState::default())),
             session_roots: Arc::new(Mutex::new(HashMap::new())),
-        });
-        let stream_dispatcher = Arc::clone(&dispatcher);
-        tokio::spawn(async move {
-            let mut should_reconcile = false;
-            loop {
-                let mut stream = match client.event_stream_for_directory(directory.as_deref()) {
-                    Ok(stream) => stream,
-                    Err(error) => {
-                        warn!(error = %error, "failed to connect opencode SSE stream");
-                        sleep(Duration::from_millis(250)).await;
-                        continue;
-                    }
-                };
+            lifecycle: LifecycleBus::new(),
+        }
+    }
 
-                if should_reconcile {
-                    stream_dispatcher
-                        .reconcile_after_reconnect(&client, directory.as_deref())
-                        .await;
-                }
-
-                let mut should_reconnect = false;
-                while let Some(next) = stream.next().await {
-                    match next {
-                        Ok(event) => stream_dispatcher.dispatch_live(event).await,
-                        Err(error) => {
-                            warn!(error = %error, "opencode SSE stream error");
-                            should_reconnect = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !should_reconnect {
-                    warn!("opencode SSE stream ended; reconnecting");
-                }
-                should_reconcile = true;
-                sleep(Duration::from_millis(250)).await;
-            }
-        });
+    pub async fn start(client: OpenCodeClient, directory: Option<String>) -> Arc<Self> {
+        let dispatcher = Arc::new(Self::new());
+        runner::spawn(Arc::clone(&dispatcher), client, directory);
         dispatcher
     }
 
+    /// Subscribe to live events for `session_id`. Multiple callers may
+    /// subscribe to the same session; each gets its own receiver.
     pub async fn subscribe(&self, session_id: &str) -> mpsc::UnboundedReceiver<SseEvent> {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut subscribers = self.subscribers.lock().await;
@@ -124,12 +68,19 @@ impl SseDispatcher {
         rx
     }
 
-    async fn dispatch_live(&self, event: SseEvent) {
+    /// Subscribe to dispatcher health/transition events. Used by the
+    /// service adapter to surface degraded streams to the UI instead of
+    /// leaving an infinite silent loader.
+    pub fn subscribe_status(&self) -> broadcast::Receiver<DispatcherStatus> {
+        self.lifecycle.subscribe()
+    }
+
+    pub(super) async fn dispatch_live(&self, event: SseEvent) {
         self.reconnect_state.lock().await.record_event(&event);
         self.dispatch_event(event).await;
     }
 
-    async fn dispatch_event(&self, event: SseEvent) {
+    pub(super) async fn dispatch_event(&self, event: SseEvent) {
         self.update_session_root(&event).await;
         if let Some(session_id) = event.session_id() {
             let root_session_id = self.resolve_root_session_id(session_id).await;
@@ -155,7 +106,30 @@ impl SseDispatcher {
         }
     }
 
-    async fn reconcile_after_reconnect(&self, client: &OpenCodeClient, directory: Option<&str>) {
+    /// Drop every subscriber sender so receivers in the service adapter
+    /// observe `None` from `recv().await` and trigger their auto-resubscribe
+    /// path. THIS IS THE SMOKING-GUN FIX for the silent UI freeze (see plan
+    /// finding #1): without this, a stalled / reconnecting upstream leaves
+    /// the receivers blocked forever.
+    pub(super) async fn drop_all_subscribers(&self) -> usize {
+        let mut subs = self.subscribers.lock().await;
+        let session_count: usize = subs.values().map(Vec::len).sum();
+        subs.clear();
+        let mut perms = self.permission_subscribers.lock().await;
+        let perm_count = perms.len();
+        perms.clear();
+        let total = session_count + perm_count;
+        if total > 0 {
+            warn!(
+                session_subscribers = session_count,
+                permission_subscribers = perm_count,
+                "opencode SSE: dropped subscribers on disconnect (auto-resubscribe will fire)"
+            );
+        }
+        total
+    }
+
+    pub(super) async fn subscribed_root_session_ids(&self) -> Vec<String> {
         let subscribed_session_ids = self
             .subscribers
             .lock()
@@ -164,32 +138,22 @@ impl SseDispatcher {
             .cloned()
             .collect::<Vec<_>>();
         if subscribed_session_ids.is_empty() {
-            return;
+            return Vec::new();
         }
 
         let session_roots = self.session_roots.lock().await;
-        let root_session_ids = subscribed_session_ids
-            .into_iter()
-            .map(|session_id| {
-                session_roots
-                    .get(&session_id)
-                    .cloned()
-                    .unwrap_or(session_id)
-            })
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-        drop(session_roots);
-
-        let replay = self
-            .reconnect_state
-            .lock()
-            .await
-            .reconcile_subscribers(client, directory, &root_session_ids)
-            .await;
-        for event in replay {
-            self.dispatch_event(event).await;
+        let mut seen = std::collections::HashSet::new();
+        let mut roots = Vec::new();
+        for session_id in subscribed_session_ids {
+            let root = session_roots
+                .get(&session_id)
+                .cloned()
+                .unwrap_or(session_id);
+            if seen.insert(root.clone()) {
+                roots.push(root);
+            }
         }
+        roots
     }
 
     async fn update_session_root(&self, event: &SseEvent) {
@@ -259,20 +223,34 @@ mod tests {
     use crate::types::{Message, MessageRole, Session, SessionStatus, SseEvent};
 
     #[tokio::test]
-    async fn child_session_events_are_forwarded_to_root_subscriber() {
-        let dispatcher = SseDispatcher {
-            subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            reconnect_state: std::sync::Arc::new(tokio::sync::Mutex::new(
-                crate::sse_reconcile::ReconnectState::default(),
-            )),
-            session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-        };
+    async fn drop_all_subscribers_closes_every_receiver() {
+        let dispatcher = SseDispatcher::new();
+        let mut rx_a = dispatcher.subscribe("ses_a").await;
+        let mut rx_b = dispatcher.subscribe("ses_b").await;
+        let mut rx_perm = dispatcher.subscribe_permissions().await;
 
+        let total = dispatcher.drop_all_subscribers().await;
+        assert_eq!(total, 3, "expected 3 subscribers to be dropped");
+
+        // Receivers must observe None now; previously they would block
+        // forever and freeze the UI loader.
+        assert!(
+            rx_a.recv().await.is_none(),
+            "ses_a receiver should be closed"
+        );
+        assert!(
+            rx_b.recv().await.is_none(),
+            "ses_b receiver should be closed"
+        );
+        assert!(
+            rx_perm.recv().await.is_none(),
+            "permission receiver should be closed"
+        );
+    }
+
+    #[tokio::test]
+    async fn child_session_events_are_forwarded_to_root_subscriber() {
+        let dispatcher = SseDispatcher::new();
         let mut root_rx = dispatcher.subscribe("root").await;
         dispatcher
             .dispatch_event(SseEvent::SessionCreated(Session {
@@ -301,19 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn child_status_updates_do_not_clobber_root_mapping() {
-        let dispatcher = SseDispatcher {
-            subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-            permission_subscribers: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            reconnect_state: std::sync::Arc::new(tokio::sync::Mutex::new(
-                crate::sse_reconcile::ReconnectState::default(),
-            )),
-            session_roots: std::sync::Arc::new(tokio::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
-        };
-
+        let dispatcher = SseDispatcher::new();
         let mut root_rx = dispatcher.subscribe("root").await;
         dispatcher
             .dispatch_event(SseEvent::SessionCreated(Session {
