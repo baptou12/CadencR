@@ -256,7 +256,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -297,7 +297,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -322,7 +322,7 @@ describe("AgentSession auto-scroll", () => {
       <AgentSession
         agentType="session"
         blocks={[makeBlock("1", "Hello")]}
-        status="running"
+        status="agent"
         onSend={vi.fn()}
         onStop={vi.fn()}
       />,
@@ -350,7 +350,7 @@ describe("AgentSession auto-scroll", () => {
   it("re-anchors at the bottom when the last block's content grows in place", () => {
     const baseProps = {
       agentType: "session" as const,
-      status: "running" as const,
+      status: "agent" as const,
       onSend: vi.fn(),
       onStop: vi.fn(),
     };
@@ -375,7 +375,7 @@ describe("AgentSession auto-scroll", () => {
   it("does not re-anchor when the user has scrolled up", () => {
     const baseProps = {
       agentType: "session" as const,
-      status: "running" as const,
+      status: "agent" as const,
       onSend: vi.fn(),
       onStop: vi.fn(),
     };
