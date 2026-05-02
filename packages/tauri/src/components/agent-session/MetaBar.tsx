@@ -89,6 +89,13 @@ export interface MetaBarProps {
    * for pre-agent kickoff prompts in PlanInputView / NextStepsBar).
    */
   variant?: "session" | "standalone";
+  /**
+   * When `true`, the auto-scroll, todos, and session-info chips are omitted
+   * because the parent renders them in a separate `MetaBarSecondary` strip
+   * below the prompt (used when the container is too narrow to fit them
+   * inline with the model picker / mode / worktree chips).
+   */
+  secondaryBelow?: boolean;
 }
 
 export interface MetaBarHandle {
@@ -133,6 +140,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     onPause,
     onModelSelected,
     variant = "session",
+    secondaryBelow = false,
   },
   ref,
 ) {
@@ -201,7 +209,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             }
       }
     >
-      {showAutoScrollChip && (
+      {showAutoScrollChip && !secondaryBelow && (
         <button
           type="button"
           aria-pressed={autoScrollEnabled}
@@ -336,10 +344,12 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
       )}
 
       {/* Tasks chip */}
-      {todos && todos.length > 0 && <AgentTodoList todos={todos} chipClass={CHIP} />}
+      {!secondaryBelow && todos && todos.length > 0 && (
+        <AgentTodoList todos={todos} chipClass={CHIP} />
+      )}
 
       {/* Session info */}
-      {runtimeSessionId && onPause && (
+      {!secondaryBelow && runtimeSessionId && onPause && (
         <div className="ml-auto">
           <SessionInfoChip
             runtimeProvider={runtimeProvider}

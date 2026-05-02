@@ -25,8 +25,19 @@ import { shallowEqualSkipFunctions } from "./shallowEqualSkipFunctions";
 import { useAgentSessionScroll } from "./useAgentSessionScroll";
 import { useAgentSessionModelState } from "./useAgentSessionModelState";
 import { MetaBar, type MetaBarHandle } from "./MetaBar";
+import { MetaBarSecondary } from "./MetaBarSecondary";
+import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { getLatestUserPromptText } from "./getLatestUserPromptText";
+
+/**
+ * Container width below which the auto-scroll, todos, and info chips slide
+ * out of the inline `MetaBar` and into a `MetaBarSecondary` strip rendered
+ * below the prompt. Picked to match the point at which the inline bar starts
+ * clipping when the model picker + mode + worktree + review chips are all
+ * visible.
+ */
+const META_BAR_COMPACT_THRESHOLD_PX = 640;
 
 // ---------------------------------------------------------------------------
 // Component
@@ -238,19 +249,22 @@ export const AgentSession = memo(
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
     const showWorktreeChip = !!onToggleWorktree && blocks.length === 0;
     const showAutoScrollChip = !!shouldShowPromptBar;
-    const hasMeta =
-      showAutoScrollChip ||
-      !!onPermissionModeToggle ||
-      !!onModelChange ||
-      showDiffBar ||
-      (todos && todos.length > 0) ||
-      !!runtimeSessionId ||
-      showWorktreeChip;
+
+    const isNarrow = useNarrowContainer(containerRef, META_BAR_COMPACT_THRESHOLD_PX);
+
+    // When narrow, secondary chips render below the prompt — so they don't
+    // count toward whether the inline `MetaBar` should appear above it.
+    const hasInlineMeta =
+      !!onPermissionModeToggle || !!onModelChange || showDiffBar || showWorktreeChip;
+    const hasSecondaryMeta =
+      showAutoScrollChip || (todos && todos.length > 0) || !!(runtimeSessionId && onStop);
+    const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
 
     // ---- Shared sub-sections ----
     const metaBar = hasMeta ? (
       <MetaBar
         ref={metaBarRef}
+        secondaryBelow={isNarrow}
         showAutoScrollChip={showAutoScrollChip}
         autoScrollEnabled={autoScrollEnabled}
         onToggleAutoScroll={scrollToBottom}
@@ -342,10 +356,26 @@ export const AgentSession = memo(
       />
     ) : null;
 
+    const secondaryBar =
+      isNarrow && hasSecondaryMeta && shouldShowPromptBar ? (
+        <MetaBarSecondary
+          showAutoScrollChip={showAutoScrollChip}
+          autoScrollEnabled={autoScrollEnabled}
+          onToggleAutoScroll={scrollToBottom}
+          todos={todos}
+          runtimeProvider={runtimeProvider}
+          runtimeSessionId={runtimeSessionId}
+          projectPath={projectPath}
+          isRunning={status === "agent"}
+          onPause={onStop}
+        />
+      ) : null;
+
     const bottomSection = (
       <div className="shrink-0">
         {metaBar}
         {promptBar}
+        {secondaryBar}
         {normalizeContextWindow(contextUsage?.contextWindow) != null && (
           <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
             <ContextUsageBar
@@ -433,6 +463,7 @@ export const AgentSession = memo(
               )}
               {metaBar}
               {promptBar}
+              {secondaryBar}
               {contextUsage && (
                 <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
                   <ContextUsageBar

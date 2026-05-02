@@ -74,3 +74,36 @@ describe("MetaBar mode chip", () => {
     expect(screen.queryByRole("button", { name: /Permission mode/i })).toBeNull();
   });
 });
+
+describe("MetaBar secondaryBelow", () => {
+  it("hides auto-scroll, todos and session-info chips when secondaryBelow is true", () => {
+    renderChip({
+      secondaryBelow: true,
+      showAutoScrollChip: true,
+      todos: [{ content: "Do thing", activeForm: "Doing thing", status: "pending" }],
+      runtimeProvider: PROVIDER_IDS.CLAUDE_CODE,
+      runtimeSessionId: "abc-123",
+      onPause: vi.fn(),
+    });
+    expect(screen.queryByRole("button", { name: /Auto-scroll/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Session info/i })).toBeNull();
+    // Todos chip has no accessible name; it's the only button with "1" text.
+    expect(screen.queryByText("0/1")).toBeNull();
+    // The mode chip (inline) should still render — only the relocated chips are hidden.
+    expect(screen.getByRole("button", { name: /Permission mode/i })).toBeInTheDocument();
+  });
+
+  it("renders auto-scroll, todos and session-info chips inline when secondaryBelow is false", () => {
+    renderChip({
+      secondaryBelow: false,
+      showAutoScrollChip: true,
+      todos: [{ content: "Do thing", activeForm: "Doing thing", status: "pending" }],
+      runtimeProvider: PROVIDER_IDS.CLAUDE_CODE,
+      runtimeSessionId: "abc-123",
+      onPause: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: /Auto-scroll/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Session info/i })).toBeInTheDocument();
+    expect(screen.getByText("0/1")).toBeInTheDocument();
+  });
+});
