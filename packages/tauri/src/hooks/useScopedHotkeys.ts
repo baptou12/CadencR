@@ -4,7 +4,7 @@ import {
   type Keys,
   type Options as HotkeysOptions,
 } from "react-hotkeys-hook";
-import type { DependencyList } from "react";
+import { useRef, type DependencyList } from "react";
 
 import { useFeatureLayoutContext } from "@/components/feature-layout/FeatureLayoutContext";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
@@ -37,15 +37,21 @@ export function useScopedHotkeys(
   deps?: DependencyList,
 ): void {
   const isFocused = useIsTabFocused(scope);
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
   const userEnabled = options?.enabled ?? true;
   // For boolean Triggers we AND the focus gate; for function Triggers we let
   // the user predicate run and rely on the inner callback short-circuit.
   const enabled = typeof userEnabled === "function" ? userEnabled : isFocused && userEnabled;
 
+  // The wrapper reads `isFocused` via a ref so caller-supplied `deps` keep
+  // their original semantics — react-hotkeys-hook memoises the wrapper
+  // against `deps`, so a closed-over `isFocused` would otherwise stay frozen
+  // at the value captured on the first render.
   useHotkeys(
     keys,
     (e, h) => {
-      if (!isFocused) return;
+      if (!isFocusedRef.current) return;
       callback(e, h);
     },
     { ...options, enabled },

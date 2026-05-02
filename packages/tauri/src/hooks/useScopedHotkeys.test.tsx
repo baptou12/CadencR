@@ -44,13 +44,22 @@ function ScopedHarness({
   onFire,
   combo = "meta+x",
   enabled,
+  withDeps = false,
 }: {
   scope: TabKind;
   onFire: () => void;
   combo?: string;
   enabled?: boolean;
+  /** When true, pass an empty deps array — exercises the memoised-callback path. */
+  withDeps?: boolean;
 }): ReactElement {
-  useScopedHotkeys(combo, onFire, scope, enabled === undefined ? undefined : { enabled });
+  useScopedHotkeys(
+    combo,
+    onFire,
+    scope,
+    enabled === undefined ? undefined : { enabled },
+    withDeps ? [] : undefined,
+  );
   return <div data-testid="harness" tabIndex={0} />;
 }
 
@@ -131,6 +140,27 @@ describe("useScopedHotkeys", () => {
     });
     fireEvent.keyDown(document.body, { key: "x", metaKey: true, code: "KeyX" });
     expect(onFire).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-evaluates after a focus toggle when caller passes deps (regression)", () => {
+    // With caller-supplied deps react-hotkeys-hook memoises the wrapper
+    // callback. If the first render mounts while another tab is focused, the
+    // cached closure captures `isFocused === false`. Once focus returns to
+    // this scope, `enabled` flips back to true and listeners reattach, but
+    // the stale closure used to short-circuit and the digit shortcuts in
+    // AgentQuestionDrawer silently stopped firing.
+    cleanup = seedLayout("terminal");
+    const onFire = vi.fn();
+    render(withProvider(<ScopedHarness scope="agent" onFire={onFire} withDeps />));
+
+    fireEvent.keyDown(document.body, { key: "x", metaKey: true, code: "KeyX" });
+    expect(onFire).not.toHaveBeenCalled();
+
+    act(() => {
+      seedLayout("agent");
+    });
+    fireEvent.keyDown(document.body, { key: "x", metaKey: true, code: "KeyX" });
+    expect(onFire).toHaveBeenCalledTimes(1);
   });
 
   it("composes with the user-provided enabled flag (AND semantics)", () => {
