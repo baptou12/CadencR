@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { ClipboardCheck, Play, MessageSquare, Send, AlertTriangle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,31 +32,34 @@ export function PlanApprovalBar({
     setShowFeedback(true);
   };
 
-  useGlobalShortcut(
+  useScopedGlobalShortcut(
     "meta+1",
     (e) => {
       e.preventDefault();
       onApprove();
     },
+    "agent",
     { enabled: !showFeedback },
   );
 
-  useGlobalShortcut(
+  useScopedGlobalShortcut(
     "meta+2",
     (e) => {
       e.preventDefault();
       openFeedback();
     },
+    "agent",
     { enabled: !showFeedback },
   );
 
-  useGlobalShortcut(
+  useScopedGlobalShortcut(
     "escape",
     (e) => {
       e.preventDefault();
       e.stopPropagation();
       onReject!();
     },
+    "agent",
     { enabled: !showFeedback && !!onReject },
   );
 

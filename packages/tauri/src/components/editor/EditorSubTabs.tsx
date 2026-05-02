@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { X } from "lucide-react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useScopedGlobalShortcut, useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { cn } from "@/lib/utils";
 import { FileSymbolIcon } from "./file-icons";
 import { useEditorStore } from "@/stores/editor-store";
@@ -68,31 +67,44 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
     }
   }
 
-  // Next/prev tab navigation (capture-phase so it works with CodeMirror focused)
-  useGlobalShortcut("meta+shift+]", (e) => {
-    if (!tabs.length) return;
-    e.preventDefault();
-    const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
-    const next = tabs[(idx + 1) % tabs.length];
-    if (next) setActiveFile(featureId, paneId, next.filePath);
-  });
+  // Next/prev tab navigation (capture-phase so it works with CodeMirror focused).
+  // All three are scoped to the editor tab — Cmd+Shift+] / Cmd+Shift+[ should
+  // not cycle file tabs while focused on terminal/git/agent, and Cmd+W must
+  // not close a buffer while another tab is in front (it would conflict with
+  // the global Cmd+W close-window shortcut otherwise).
+  useScopedGlobalShortcut(
+    "meta+shift+]",
+    (e) => {
+      if (!tabs.length) return;
+      e.preventDefault();
+      const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
+      const next = tabs[(idx + 1) % tabs.length];
+      if (next) setActiveFile(featureId, paneId, next.filePath);
+    },
+    "editor",
+  );
 
-  useGlobalShortcut("meta+shift+[", (e) => {
-    if (!tabs.length) return;
-    e.preventDefault();
-    const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
-    const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
-    if (prev) setActiveFile(featureId, paneId, prev.filePath);
-  });
+  useScopedGlobalShortcut(
+    "meta+shift+[",
+    (e) => {
+      if (!tabs.length) return;
+      e.preventDefault();
+      const idx = tabs.findIndex((t) => t.filePath === activeFilePath);
+      const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+      if (prev) setActiveFile(featureId, paneId, prev.filePath);
+    },
+    "editor",
+  );
 
-  // CMD+W: close active buffer (works even when CodeMirror has focus)
-  useHotkeys(
+  // CMD+W: close active buffer (works even when CodeMirror has focus).
+  useScopedHotkeys(
     "meta+w",
     () => {
       if (!activeFilePath) return;
       const tab = tabs.find((t) => t.filePath === activeFilePath);
       if (tab) requestClose(tab.filePath, tab.fileName, tab.isDirty);
     },
+    "editor",
     { preventDefault: true, enableOnContentEditable: true, enableOnFormTags: true },
     [tabs, activeFilePath, featureId, paneId],
   );

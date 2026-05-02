@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
@@ -249,44 +250,53 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       [],
     );
 
-    useHotkeys(
+    // Agent-menu shortcuts. `useScopedHotkeys` gates them on the active tab
+    // when rendered inside a FeatureLayoutProvider; otherwise it's a no-op
+    // gate (used by tests / standalone usage). The legacy `agentTabActive`
+    // prop is composed via `enabled` so existing parents that haven't yet
+    // adopted the context still get correct gating.
+    useScopedHotkeys(
       "meta+p",
       (e) => {
         if (!onOpenModelPicker) return;
         e.preventDefault();
         onOpenModelPicker();
       },
-      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
+      "agent",
+      { enabled: agentTabActive },
     );
 
-    useHotkeys(
+    useScopedHotkeys(
       "meta+enter",
       (e) => {
         if (!onToggleMaximize) return;
         e.preventDefault();
         onToggleMaximize();
       },
-      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
+      "agent",
+      { enabled: agentTabActive },
     );
 
-    useHotkeys(
+    useScopedHotkeys(
       "shift+tab",
       (e) => {
         if (!onPermissionModeToggle) return;
         e.preventDefault();
         onPermissionModeToggle();
       },
-      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
+      "agent",
+      { enabled: agentTabActive },
     );
 
-    useHotkeys(
+    useScopedHotkeys(
       "meta+shift+z",
       (e) => {
         if (isRunning || !onCollapse) return;
         e.preventDefault();
         onCollapse();
       },
-      { enabled: agentTabActive, enableOnFormTags: true, enableOnContentEditable: true },
+      "agent",
+      { enabled: agentTabActive },
     );
 
     useHotkeys(

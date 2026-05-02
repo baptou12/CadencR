@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -142,25 +142,27 @@ function usePermissionHotkeys({
   const denyIndex = options.findIndex((o) => o.decision === "deny");
 
   // cmd+Y → approve (allow_once)
-  useHotkeys(
+  useScopedHotkeys(
     "meta+y",
     (e) => {
       if (allowOnceIndex < 0) return;
       e.preventDefault();
       onTrigger(allowOnceIndex);
     },
+    "agent",
     { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [onTrigger, allowOnceIndex],
   );
 
   // cmd+N → reject (deny)
-  useHotkeys(
+  useScopedHotkeys(
     "meta+n",
     (e) => {
       if (denyIndex < 0) return;
       e.preventDefault();
       onTrigger(denyIndex);
     },
+    "agent",
     { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [onTrigger, denyIndex],
   );

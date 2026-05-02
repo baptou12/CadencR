@@ -4,6 +4,7 @@ import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
 import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabs } from "@/components/feature-layout/types";
 import { AGENT_LABELS } from "@/components/agent-session";
@@ -51,13 +52,7 @@ import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTa
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { ReconnectIndicator } from "@/components/ReconnectIndicator";
 
-export function FeatureWorkflowView({
-  featureId,
-  projectId,
-  feature,
-  featureQuery: _featureQuery,
-  initialDescription,
-}: {
+interface FeatureWorkflowViewProps {
   featureId: number;
   projectId: number;
   feature:
@@ -72,7 +67,24 @@ export function FeatureWorkflowView({
     | undefined;
   featureQuery: { refetch: () => unknown };
   initialDescription?: string;
-}) {
+}
+
+/** Wraps the body in FeatureLayoutProvider so `useWorkflowKeyboard` can scope shortcuts to the active tab. */
+export function FeatureWorkflowView(props: FeatureWorkflowViewProps) {
+  return (
+    <FeatureLayoutProvider featureId={props.featureId}>
+      <FeatureWorkflowViewBody {...props} />
+    </FeatureLayoutProvider>
+  );
+}
+
+function FeatureWorkflowViewBody({
+  featureId,
+  projectId,
+  feature,
+  featureQuery: _featureQuery,
+  initialDescription,
+}: FeatureWorkflowViewProps) {
   const [openAgent, setOpenAgent] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const descriptionRef = useRef(description);

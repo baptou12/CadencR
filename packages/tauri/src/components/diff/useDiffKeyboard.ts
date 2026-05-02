@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 
 interface UseDiffKeyboardParams {
   fileNames: string[];
@@ -23,7 +23,12 @@ interface UseDiffKeyboardParams {
   setCollapsedFiles: (updater: (prev: Set<string>) => Set<string>) => void;
 }
 
-/** Vim-style keyboard navigation for the diff viewer (Ctrl+J/K/L/D/U/H). */
+/**
+ * Vim-style keyboard navigation for the diff viewer (Ctrl+J/K/L/D/U/H). All
+ * shortcuts are scoped to the Git tab so they don't fire while the user is
+ * focused on Terminal/Editor/Agent (e.g. Ctrl+D in Terminal must not scroll
+ * the diff).
+ */
 export function useDiffKeyboard({
   fileNames,
   focusedFileIndex,
@@ -41,65 +46,89 @@ export function useDiffKeyboard({
   const focusedFileIndexRef = useRef(focusedFileIndex);
   focusedFileIndexRef.current = focusedFileIndex;
 
-  useGlobalShortcut("ctrl+j", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const next = Math.min(focusedFileIndexRef.current + 1, fileNames.length - 1);
-    setFocusedFileIndex(next);
-    scrollToFileIndex(next);
-  });
+  useScopedGlobalShortcut(
+    "ctrl+j",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const next = Math.min(focusedFileIndexRef.current + 1, fileNames.length - 1);
+      setFocusedFileIndex(next);
+      scrollToFileIndex(next);
+    },
+    "git",
+  );
 
-  useGlobalShortcut("ctrl+k", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const next = Math.max(focusedFileIndexRef.current - 1, 0);
-    setFocusedFileIndex(next);
-    scrollToFileIndex(next);
-  });
+  useScopedGlobalShortcut(
+    "ctrl+k",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const next = Math.max(focusedFileIndexRef.current - 1, 0);
+      setFocusedFileIndex(next);
+      scrollToFileIndex(next);
+    },
+    "git",
+  );
 
-  useGlobalShortcut("ctrl+l", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const idx = focusedFileIndexRef.current;
-    if (idx >= 0 && idx < fileNames.length) {
-      toggleFile(fileNames[idx]);
-    }
-  });
-
-  useGlobalShortcut("ctrl+d", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({
-      top: diffAreaRef.current.clientHeight / 2,
-      behavior: "smooth",
-    });
-  });
-
-  useGlobalShortcut("ctrl+u", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    diffAreaRef.current?.scrollBy({
-      top: -diffAreaRef.current.clientHeight / 2,
-      behavior: "smooth",
-    });
-  });
-
-  useGlobalShortcut("ctrl+h", (e) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const idx = focusedFileIndexRef.current;
-    if (idx >= 0 && idx < fileNames.length) {
-      const name = fileNames[idx];
-      const sha = blobShas[name] ?? "";
-      if (viewedFilesSet.has(name)) {
-        unmarkViewed.mutate({ featureId, params: { file_path: name } });
-      } else {
-        markViewed.mutate({
-          featureId,
-          data: { feature_id: featureId, file_path: name, blob_sha: sha },
-        });
-        setCollapsedFiles((p) => new Set([...p, name]));
+  useScopedGlobalShortcut(
+    "ctrl+l",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const idx = focusedFileIndexRef.current;
+      if (idx >= 0 && idx < fileNames.length) {
+        toggleFile(fileNames[idx]);
       }
-    }
-  });
+    },
+    "git",
+  );
+
+  useScopedGlobalShortcut(
+    "ctrl+d",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      diffAreaRef.current?.scrollBy({
+        top: diffAreaRef.current.clientHeight / 2,
+        behavior: "smooth",
+      });
+    },
+    "git",
+  );
+
+  useScopedGlobalShortcut(
+    "ctrl+u",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      diffAreaRef.current?.scrollBy({
+        top: -diffAreaRef.current.clientHeight / 2,
+        behavior: "smooth",
+      });
+    },
+    "git",
+  );
+
+  useScopedGlobalShortcut(
+    "ctrl+h",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const idx = focusedFileIndexRef.current;
+      if (idx >= 0 && idx < fileNames.length) {
+        const name = fileNames[idx];
+        const sha = blobShas[name] ?? "";
+        if (viewedFilesSet.has(name)) {
+          unmarkViewed.mutate({ featureId, params: { file_path: name } });
+        } else {
+          markViewed.mutate({
+            featureId,
+            data: { feature_id: featureId, file_path: name, blob_sha: sha },
+          });
+          setCollapsedFiles((p) => new Set([...p, name]));
+        }
+      }
+    },
+    "git",
+  );
 }
