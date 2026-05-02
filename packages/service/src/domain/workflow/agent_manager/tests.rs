@@ -57,9 +57,9 @@ async fn setup_test_db() -> SqlitePool {
 
 fn make_agent_manager(pool: SqlitePool, feature_id: i64) -> AgentManager {
     let (tx, _rx) = mpsc::unbounded_channel();
-    let (turn_state_tx, _) = tokio::sync::broadcast::channel(64);
-    let broadcaster = crate::app_state::TurnStateBroadcaster::new(
-        turn_state_tx,
+    let (session_status_tx, _) = tokio::sync::broadcast::channel(64);
+    let broadcaster = crate::domain::session_status::SessionStatusBroadcaster::new(
+        session_status_tx,
         std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     );
     AgentManager::new(

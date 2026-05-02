@@ -33,7 +33,7 @@ pub struct QueueAdvancer {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
-    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
 }
 
 impl QueueAdvancer {
@@ -44,7 +44,7 @@ impl QueueAdvancer {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
-        turn_state_tx: crate::app_state::TurnStateBroadcaster,
+        session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     ) -> Result<Self, String> {
         let project_id =
             sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
@@ -90,7 +90,7 @@ impl QueueAdvancer {
             read_pool,
             write_pool,
             ws_sender,
-            turn_state_tx,
+            session_status_tx,
         })
     }
 
@@ -160,11 +160,13 @@ impl QueueAdvancer {
         agent_manager.cleanup_agent(&slot);
         permissions.cleanup(&slot);
 
-        if agent_manager.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
+        if let Some(sid) = db_session_id {
+            WsSessionPersistence::broadcast_session_status(
+                &self.session_status_tx,
+                sid,
                 self.feature_id,
-                "none",
+                crate::domain::session_status::AgentStatus::Idle,
+                None,
             );
         }
 
@@ -260,6 +262,7 @@ impl QueueAdvancer {
 
         warn!(feature_id = self.feature_id, slot = %slot, error, "queue item errored");
 
+        let errored_session_id = agent_manager.active_items.get(&slot).map(|e| *e.value());
         agent_manager.cleanup_agent(&slot);
         permissions.cleanup(&slot);
 
@@ -332,12 +335,16 @@ impl QueueAdvancer {
             .ws_sender
             .send(Message::Text(String::from(envelope).into()));
 
-        if agent_manager.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
+        if let Some(sid) = errored_session_id {
+            WsSessionPersistence::broadcast_session_status(
+                &self.session_status_tx,
+                sid,
                 self.feature_id,
-                "none",
+                crate::domain::session_status::AgentStatus::Idle,
+                None,
             );
+        }
+        if agent_manager.active_items.is_empty() {
             set_status.set_status(WorkflowStatus::Error).await;
         }
     }

@@ -124,24 +124,32 @@ impl WsSessionPersistence {
             .await;
     }
 
-    pub fn broadcast_turn_state(
-        broadcaster: &crate::app_state::TurnStateBroadcaster,
+    /// Broadcast a status transition for a single session. Every status
+    /// mutation in the codebase goes through here (or through
+    /// `mark_awaiting_user_static` / `mark_agent_resumed_static` which
+    /// pair this with a DB write). `session_id` is required so the
+    /// frontend can route per-session updates without inferring identity.
+    pub fn broadcast_session_status(
+        broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
+        session_id: i64,
         feature_id: i64,
-        turn: &str,
+        status: crate::domain::session_status::AgentStatus,
+        kind: Option<crate::domain::session_status::PendingKind>,
     ) {
-        broadcaster.send(feature_id, turn);
+        broadcaster.broadcast(session_id, feature_id, status, kind);
     }
 
-    /// Same as `broadcast_turn_state`, but also emits a pending-input kind
-    /// so live askUser listeners know which gate triggered without round-
-    /// tripping through a DB snapshot.
-    pub fn broadcast_turn_state_with_kind(
-        broadcaster: &crate::app_state::TurnStateBroadcaster,
+    /// Convenience: broadcast a [`ProviderSignal`] (TurnStarted /
+    /// AwaitingUser(kind) / TurnEnded). Equivalent to calling
+    /// `broadcast_session_status` with the signal's status + kind, but
+    /// callers that already speak the signal vocabulary stay readable.
+    pub fn broadcast_session_signal(
+        broadcaster: &crate::domain::session_status::SessionStatusBroadcaster,
+        session_id: i64,
         feature_id: i64,
-        turn: &str,
-        kind: Option<&str>,
+        signal: crate::domain::session_status::ProviderSignal,
     ) {
-        broadcaster.send_with_kind(feature_id, turn, kind);
+        broadcaster.signal(session_id, feature_id, signal);
     }
 
     #[cfg(test)]
@@ -368,9 +376,12 @@ mod session_state_tests {
         assert_eq!(row.0, "completed");
     }
 
-    fn test_broadcaster() -> (crate::app_state::TurnStateBroadcaster, tokio::sync::broadcast::Receiver<crate::app_state::TurnStateEvent>) {
+    fn test_broadcaster() -> (
+        crate::domain::session_status::SessionStatusBroadcaster,
+        tokio::sync::broadcast::Receiver<crate::domain::session_status::SessionStatusEvent>,
+    ) {
         let (tx, rx) = tokio::sync::broadcast::channel(16);
-        let bc = crate::app_state::TurnStateBroadcaster::new(
+        let bc = crate::domain::session_status::SessionStatusBroadcaster::new(
             tx,
             std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         );
@@ -378,38 +389,56 @@ mod session_state_tests {
     }
 
     #[tokio::test]
-    async fn test_broadcast_turn_state_sends_event() {
+    async fn test_broadcast_session_status_sends_event() {
+        use crate::domain::session_status::{AgentStatus, PendingKind};
         let (bc, mut rx) = test_broadcaster();
-        WsSessionPersistence::broadcast_turn_state(&bc, 42, "askUser");
+        WsSessionPersistence::broadcast_session_status(
+            &bc,
+            10,
+            42,
+            AgentStatus::Question,
+            Some(PendingKind::Permission),
+        );
 
         let event = rx.recv().await.unwrap();
+        assert_eq!(event.session_id, 10);
         assert_eq!(event.feature_id, 42);
-        assert_eq!(event.turn, "askUser");
+        assert_eq!(event.status, AgentStatus::Question);
+        assert_eq!(event.kind, Some(PendingKind::Permission));
         assert_eq!(event.seq, 1);
     }
 
     #[tokio::test]
-    async fn test_broadcast_turn_state_none() {
+    async fn test_broadcast_session_status_idle() {
+        use crate::domain::session_status::AgentStatus;
         let (bc, mut rx) = test_broadcaster();
-        WsSessionPersistence::broadcast_turn_state(&bc, 7, "none");
+        WsSessionPersistence::broadcast_session_status(&bc, 5, 7, AgentStatus::Idle, None);
 
         let event = rx.recv().await.unwrap();
         assert_eq!(event.feature_id, 7);
-        assert_eq!(event.turn, "none");
+        assert_eq!(event.status, AgentStatus::Idle);
     }
 
     #[tokio::test]
-    async fn test_broadcast_turn_state_no_receivers_does_not_panic() {
+    async fn test_broadcast_session_status_no_receivers_does_not_panic() {
+        use crate::domain::session_status::AgentStatus;
         let (bc, _) = test_broadcaster();
-        WsSessionPersistence::broadcast_turn_state(&bc, 1, "agent");
+        WsSessionPersistence::broadcast_session_status(&bc, 1, 1, AgentStatus::Agent, None);
     }
 
     #[tokio::test]
-    async fn test_broadcast_turn_state_seq_is_monotonic() {
+    async fn test_broadcast_session_status_seq_is_monotonic() {
+        use crate::domain::session_status::{AgentStatus, PendingKind};
         let (bc, mut rx) = test_broadcaster();
-        WsSessionPersistence::broadcast_turn_state(&bc, 1, "agent");
-        WsSessionPersistence::broadcast_turn_state(&bc, 1, "askUser");
-        WsSessionPersistence::broadcast_turn_state(&bc, 2, "agent");
+        WsSessionPersistence::broadcast_session_status(&bc, 1, 1, AgentStatus::Agent, None);
+        WsSessionPersistence::broadcast_session_status(
+            &bc,
+            1,
+            1,
+            AgentStatus::Question,
+            Some(PendingKind::Question),
+        );
+        WsSessionPersistence::broadcast_session_status(&bc, 2, 2, AgentStatus::Agent, None);
 
         let a = rx.recv().await.unwrap();
         let b = rx.recv().await.unwrap();

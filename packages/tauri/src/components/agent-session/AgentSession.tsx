@@ -114,7 +114,7 @@ export const AgentSession = memo(
     // summary is a sidebar-level question ("any agent busy in this feature?");
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
-    const isStreaming = status === "running";
+    const isStreaming = status === "agent";
     const shouldShowStreamingIndicator = loaderStyle !== "usage-glow";
 
     // ---- Collapsible state ----
@@ -137,7 +137,7 @@ export const AgentSession = memo(
 
     // Auto-open when agent starts running (uncontrolled mode only)
     useEffect(() => {
-      if ((status === "running" || status === "paused") && !isControlled) {
+      if (status !== "idle" && !isControlled) {
         setInternalOpen(true);
       }
     }, [status, isControlled]);
@@ -277,7 +277,7 @@ export const AgentSession = memo(
         runtimeProvider={runtimeProvider}
         runtimeSessionId={runtimeSessionId}
         projectPath={projectPath}
-        isRunning={status === "running"}
+        isRunning={status === "agent"}
         onPause={onStop}
         onModelSelected={() => promptBarRef.current?.focusInput()}
       />

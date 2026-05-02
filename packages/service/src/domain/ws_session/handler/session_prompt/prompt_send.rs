@@ -247,7 +247,7 @@ pub(crate) async fn handle_prompt_send(
                         format!("No runtime adapter registered for provider '{provider_id}'");
                     persist_pause_and_send_session_error(
                         &write_pool,
-                        &app_state.turn_state_tx,
+                        &app_state.session_status_tx,
                         sender,
                         &envelope.id,
                         feature_id,
@@ -269,7 +269,7 @@ pub(crate) async fn handle_prompt_send(
                 feature_id,
                 db_session_id,
                 write_pool: write_pool.clone(),
-                turn_state_tx: app_state.turn_state_tx.clone(),
+                session_status_tx: app_state.session_status_tx.clone(),
             };
             options.permission_handler = Some(Arc::new(bridge));
             if let Some(ref sid) = options.resume_session_id {
@@ -309,10 +309,12 @@ pub(crate) async fn handle_prompt_send(
                         )
                         .await;
                     }
-                    WsSessionPersistence::broadcast_turn_state(
-                        &app_state.turn_state_tx,
+                    WsSessionPersistence::broadcast_session_status(
+                        &app_state.session_status_tx,
+                        db_session_id,
                         feature_id,
-                        "agent",
+                        crate::domain::session_status::AgentStatus::Agent,
+                        None,
                     );
                     let message_rx = runtime_session.take_message_rx();
                     let query_arc = Arc::new(Mutex::new(runtime_session));
@@ -323,7 +325,7 @@ pub(crate) async fn handle_prompt_send(
                         message_rx,
                         sender.clone(),
                         app_state.write_pool.clone(),
-                        app_state.turn_state_tx.clone(),
+                        app_state.session_status_tx.clone(),
                         sdk_sessions.clone(),
                         provider_id.clone(),
                         spawned_model.as_deref(),
@@ -393,7 +395,7 @@ pub(crate) async fn handle_prompt_send(
                     error!(db_session_id, error = %message, "runtime query spawn failed");
                     persist_pause_and_send_session_error(
                         &write_pool,
-                        &app_state.turn_state_tx,
+                        &app_state.session_status_tx,
                         sender,
                         &envelope.id,
                         feature_id,
@@ -425,10 +427,12 @@ pub(crate) async fn handle_prompt_send(
             // from `stream_reader.rs:191-197` stay sticky across the second
             // prompt and the UI never shows the agent is alive again.
             WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id).await;
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 handle.feature_id,
-                "agent",
+                crate::domain::session_status::AgentStatus::Agent,
+                None,
             );
 
             let q = query.lock().await;
@@ -441,7 +445,7 @@ pub(crate) async fn handle_prompt_send(
                 error!(db_session_id, error = %message, "stream_input failed");
                 persist_pause_and_send_session_error(
                     &app_state.write_pool,
-                    &app_state.turn_state_tx,
+                    &app_state.session_status_tx,
                     sender,
                     &envelope.id,
                     handle.feature_id,

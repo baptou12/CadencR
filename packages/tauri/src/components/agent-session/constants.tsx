@@ -1,8 +1,8 @@
-import { Loader2Icon, CheckCircleIcon, XCircleIcon, PauseCircleIcon } from "lucide-react";
+import { Loader2Icon, MessageCircleQuestionIcon } from "lucide-react";
 import type { AgentType } from "../../types/agent-types";
 
-export type { AgentStatus } from "@/types/agent";
-import type { AgentStatus } from "@/types/agent";
+export type { LiveAgentStatus as AgentStatus } from "@/types/agent";
+import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 
 export const AGENT_LABELS: Partial<Record<AgentType, string>> = {
   plan: "Plan",
@@ -16,34 +16,21 @@ export const AGENT_LABELS: Partial<Record<AgentType, string>> = {
   retro: "Retro",
 };
 
+// 3-value status badge map. Mirrors the canonical `AgentStatus` enum
+// pushed by the backend on `app/session_status.*`.
 export const STATUS_BADGE: Record<
   AgentStatus,
   { label: string; className: string; icon?: React.ReactNode }
 > = {
   idle: { label: "Idle", className: "bg-gray-500/15 text-gray-400" },
-  running: {
-    label: "Running",
+  agent: {
+    label: "Working",
     className: "bg-yellow-500/15 text-yellow-300",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
-  completed: {
-    label: "Completed",
-    className: "bg-green-500/15 text-green-300",
-    icon: <CheckCircleIcon className="size-3" />,
-  },
-  error: {
-    label: "Error",
-    className: "bg-red-500/15 text-red-300",
-    icon: <XCircleIcon className="size-3" />,
-  },
-  paused: {
-    label: "Paused",
-    className: "bg-orange-500/15 text-orange-300",
-    icon: <PauseCircleIcon className="size-3" />,
-  },
-  waiting: {
-    label: "Waiting",
-    className: "bg-blue-500/15 text-blue-300",
-    icon: <PauseCircleIcon className="size-3" />,
+  question: {
+    label: "Awaiting input",
+    className: "bg-amber-500/15 text-amber-300",
+    icon: <MessageCircleQuestionIcon className="size-3" />,
   },
 };

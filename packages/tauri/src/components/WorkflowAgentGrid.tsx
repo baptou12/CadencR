@@ -1,11 +1,38 @@
 import { type AgentSessionHandle, AgentSession, AGENT_LABELS } from "@/components/agent-session";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
-import type { ContextUsageState } from "@/types/agent";
+import type { ContextUsageState, LiveAgentStatus } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 import { capitalize, cn } from "@/lib/utils";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 import type { ReactElement, ReactNode } from "react";
+
+/**
+ * Resolve the live 3-value status for a workflow agent session.
+ *
+ * Pure function: caller passes the live `bySession` map (typically read
+ * once via `useSessionStatusStore` at the parent level so a single
+ * subscription covers every grid item). Falls back to deriving from the
+ * persisted lifecycle when no live entry has been seen yet (e.g. before
+ * the WS snapshot lands, or for completed agents that no longer
+ * broadcast).
+ */
+function liveStatusFor(
+  entry: FeatureSession,
+  bySession: Record<number, { status: LiveAgentStatus }>,
+): LiveAgentStatus {
+  const live = bySession[entry.sessionDbId];
+  if (live) return live.status;
+  switch (entry.status) {
+    case "running":
+      return "agent";
+    case "paused":
+      return entry.pendingQuestions && entry.pendingQuestions.length > 0 ? "question" : "idle";
+    default:
+      return "idle";
+  }
+}
 
 interface WorkflowAgentGridProps {
   backend: WorkflowBackend;
@@ -61,7 +88,11 @@ export function WorkflowAgentGrid({
   slashCommands,
   slashCommandsLoading,
 }: WorkflowAgentGridProps): ReactElement {
+  // Single subscription for the whole grid: every entry derives its live
+  // status from this map without each row opening its own selector.
+  const bySession = useSessionStatusStore((s) => s.bySession);
   const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean): ReactNode => {
+    const liveStatus = liveStatusFor(entry, bySession);
     const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
     const providerId = resolveProvider(entry.agentType);
     const modelId = resolveModel(entry.agentType);
@@ -82,9 +113,9 @@ export function WorkflowAgentGrid({
         navAgentIndex={index}
         agentType={entry.agentType}
         label={label}
-        status={entry.status}
+        status={liveStatus}
         blocks={entry.blocks}
-        open={openAgent === sessionKey || entry.status === "running" || entry.status === "paused"}
+        open={openAgent === sessionKey || liveStatus !== "idle"}
         onToggle={() => {
           setOpenAgent((prev) => (prev === sessionKey ? null : sessionKey));
           if (openAgent !== sessionKey && entry.blocks.length === 0 && backend.loadAgentHistory) {

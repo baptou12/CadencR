@@ -15,6 +15,7 @@ use tracing::{debug, error};
 use crate::domain::agents::adapter::{
     RuntimePermissionResponseKind, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
+use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::permissions::{self, ResolvedPermission};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -215,7 +216,7 @@ pub async fn wait_and_apply_decision(
     force_prompt: bool,
     worktree_path: &Path,
     session_cache: &Arc<Mutex<HashSet<String>>>,
-    turn_state_tx: &crate::app_state::TurnStateBroadcaster,
+    session_status_tx: &crate::domain::session_status::SessionStatusBroadcaster,
     feature_id: i64,
     write_pool: &sqlx::SqlitePool,
     db_session_id: i64,
@@ -226,15 +227,15 @@ pub async fn wait_and_apply_decision(
         Some(response) => {
             // Claude Code keeps streaming after `can_use_tool` returns Deny
             // with `interrupt: false`, so the turn stays on the agent until a
-            // real Result arrives. Broadcasting "none" here would flip the
-            // sidebar to idle while the CLI is still working.
+            // real Result arrives. Broadcasting Idle here would flip the
+            // sidebar while the CLI is still working.
             WsSessionPersistence::mark_agent_resumed_static(
                 write_pool,
-                turn_state_tx,
+                session_status_tx,
                 db_session_id,
                 feature_id,
                 clear_kind,
-                "agent",
+                AgentStatus::Agent,
             )
             .await;
             let input = response.updated_input.unwrap_or(original_input);
@@ -252,16 +253,16 @@ pub async fn wait_and_apply_decision(
         }
         None => {
             // Channel closed before we got a response. Clear the DB gate AND
-            // broadcast `"none"` so any connected client still showing
-            // `askUser` drops back to idle — otherwise the sidebar stays stuck
-            // even after the gate is gone from the DB.
+            // broadcast Idle so any connected client still showing Question
+            // drops back to idle — otherwise the sidebar stays stuck even
+            // after the gate is gone from the DB.
             WsSessionPersistence::mark_agent_resumed_static(
                 write_pool,
-                turn_state_tx,
+                session_status_tx,
                 db_session_id,
                 feature_id,
                 clear_kind,
-                "none",
+                AgentStatus::Idle,
             )
             .await;
             RuntimeToolPermissionResult::Deny {
@@ -273,49 +274,44 @@ pub async fn wait_and_apply_decision(
     }
 }
 
-/// Turn state broadcast on the direct-SDK response path (OpenCode per-tool
+/// Status broadcast on the direct-SDK response path (OpenCode per-tool
 /// perms, AskUserQuestion). Deny ends the turn here because the caller
 /// explicitly emits `session.ended` alongside this broadcast.
-pub fn turn_state_after_decision(decision: PermissionDecision) -> &'static str {
+pub fn status_after_decision(decision: PermissionDecision) -> AgentStatus {
     match decision {
-        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "agent",
-        PermissionDecision::Deny => "none",
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => AgentStatus::Agent,
+        PermissionDecision::Deny => AgentStatus::Idle,
     }
 }
 
-pub fn turn_state_after_approval(
-    decision: PermissionDecision,
-    feedback: Option<&str>,
-) -> &'static str {
+pub fn status_after_approval(decision: PermissionDecision, feedback: Option<&str>) -> AgentStatus {
     match decision {
-        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => "agent",
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => AgentStatus::Agent,
         PermissionDecision::Deny => {
             let has_feedback = feedback.is_some_and(|f| !f.trim().is_empty());
             if has_feedback {
-                "agent"
+                AgentStatus::Agent
             } else {
-                "none"
+                AgentStatus::Idle
             }
         }
     }
 }
 
-pub fn turn_state_after_runtime_permission(
+pub fn status_after_runtime_permission(
     kind: RuntimePermissionResponseKind,
     decision: PermissionDecision,
     feedback: Option<&str>,
-) -> &'static str {
+) -> AgentStatus {
     match kind {
-        RuntimePermissionResponseKind::PlanApproval => {
-            turn_state_after_approval(decision, feedback)
-        }
+        RuntimePermissionResponseKind::PlanApproval => status_after_approval(decision, feedback),
         RuntimePermissionResponseKind::ContinueOnDeny
             if matches!(decision, PermissionDecision::Deny) =>
         {
-            "agent"
+            AgentStatus::Agent
         }
         RuntimePermissionResponseKind::ContinueOnDeny | RuntimePermissionResponseKind::Normal => {
-            turn_state_after_decision(decision)
+            status_after_decision(decision)
         }
     }
 }
@@ -327,85 +323,89 @@ pub fn runtime_permission_denial_completes_session(
 ) -> bool {
     matches!(decision, PermissionDecision::Deny)
         && !matches!(kind, RuntimePermissionResponseKind::PlanApproval)
-        && turn_state_after_runtime_permission(kind, decision, feedback) == "none"
+        && status_after_runtime_permission(kind, decision, feedback) == AgentStatus::Idle
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        runtime_permission_denial_completes_session, turn_state_after_approval,
-        turn_state_after_decision, turn_state_after_runtime_permission,
+        runtime_permission_denial_completes_session, status_after_approval, status_after_decision,
+        status_after_runtime_permission,
     };
     use crate::domain::agents::adapter::RuntimePermissionResponseKind;
+    use crate::domain::session_status::AgentStatus;
     use crate::domain::ws_session::protocol::PermissionDecision;
 
     #[test]
     fn deny_decision_ends_turn_on_direct_sdk_path() {
-        assert_eq!(turn_state_after_decision(PermissionDecision::Deny), "none");
+        assert_eq!(
+            status_after_decision(PermissionDecision::Deny),
+            AgentStatus::Idle
+        );
     }
 
     #[test]
-    fn allow_decisions_resume_agent_turn_state() {
+    fn allow_decisions_resume_agent_status() {
         assert_eq!(
-            turn_state_after_decision(PermissionDecision::AllowOnce),
-            "agent"
+            status_after_decision(PermissionDecision::AllowOnce),
+            AgentStatus::Agent
         );
         assert_eq!(
-            turn_state_after_decision(PermissionDecision::AllowFuture),
-            "agent"
+            status_after_decision(PermissionDecision::AllowFuture),
+            AgentStatus::Agent
         );
     }
 
     #[test]
     fn approval_deny_without_feedback_ends_turn() {
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::Deny, None),
-            "none",
+            status_after_approval(PermissionDecision::Deny, None),
+            AgentStatus::Idle,
         );
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::Deny, Some("")),
-            "none",
+            status_after_approval(PermissionDecision::Deny, Some("")),
+            AgentStatus::Idle,
         );
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::Deny, Some("   ")),
-            "none",
+            status_after_approval(PermissionDecision::Deny, Some("   ")),
+            AgentStatus::Idle,
         );
     }
 
     #[test]
     fn approval_deny_with_feedback_hands_turn_back_to_agent() {
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::Deny, Some("not quite, try X")),
-            "agent",
+            status_after_approval(PermissionDecision::Deny, Some("not quite, try X")),
+            AgentStatus::Agent,
         );
     }
 
     #[test]
     fn approval_allow_always_resumes_agent() {
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::AllowOnce, None),
-            "agent",
+            status_after_approval(PermissionDecision::AllowOnce, None),
+            AgentStatus::Agent,
         );
         assert_eq!(
-            turn_state_after_approval(PermissionDecision::AllowFuture, Some("extra note")),
-            "agent",
+            status_after_approval(PermissionDecision::AllowFuture, Some("extra note")),
+            AgentStatus::Agent,
         );
     }
 
     #[test]
     fn runtime_permission_continue_on_deny_hands_turn_back_to_agent() {
         assert_eq!(
-            turn_state_after_runtime_permission(
+            status_after_runtime_permission(
                 RuntimePermissionResponseKind::ContinueOnDeny,
                 PermissionDecision::Deny,
                 None,
             ),
-            "agent"
+            AgentStatus::Agent,
         );
     }
 
     #[test]
-    fn runtime_permission_completion_uses_central_turn_state_policy() {
+    fn runtime_permission_completion_uses_central_status_policy() {
         assert!(runtime_permission_denial_completes_session(
             RuntimePermissionResponseKind::Normal,
             PermissionDecision::Deny,

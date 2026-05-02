@@ -154,25 +154,30 @@ pub struct PhaseTitle {
     pub title: String,
 }
 
+/// Raw row used by `get_session_status_snapshot`. Boolean projections of
+/// the four `pending_*` columns keep the SQL → derive pipeline trivial.
 #[derive(Debug, sqlx::FromRow)]
-pub struct TurnStateRow {
+pub struct SessionStatusSnapshotRow {
+    pub session_id: i64,
     pub feature_id: i64,
-    pub needs_input: i64,
-    /// Canonical kind of the pending gate, if any:
-    /// "question" | "permission" | "plan-approval" | "prd-approval" | NULL.
-    pub pending_kind: Option<String>,
+    pub status: String,
+    pub pending_permission: bool,
+    pub pending_question: bool,
+    pub pending_plan_approval: bool,
+    pub pending_prd_approval: bool,
 }
 
-/// Public-facing turn state per feature: the top-level turn plus (if paused
-/// on user input) the kind of gate. Serializes as
-/// `{ "turn": "askUser", "kind": "question" }` for snapshot payloads so the
-/// frontend can render the right icon/reason without waiting for a live
-/// update.
+/// Public-facing per-session status entry serialized in
+/// `app/session_status.snapshot` payloads. The `seq` is stamped at
+/// subscription time by the WS handler, so it lives on the snapshot
+/// envelope rather than per-entry.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct FeatureTurnState {
-    pub turn: String,
+pub struct SessionStatusSnapshotEntry {
+    pub session_id: i64,
+    pub feature_id: i64,
+    pub status: crate::domain::session_status::AgentStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
+    pub kind: Option<crate::domain::session_status::PendingKind>,
 }
 
 #[cfg(test)]

@@ -17,7 +17,9 @@ import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import type { AgentQuestion, AgentQuestionAnswers } from "./AgentQuestionDrawer";
-import type { AgentStatus } from "@/types/agent";
+// AgentPromptBar reflects the live status badge; its `status` prop is
+// the 3-value canonical enum, not the legacy lifecycle one.
+import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 
 export interface SplitSendAction {
   label: string;
@@ -162,8 +164,13 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       focusInput: () => editorRef.current?.focus(),
     }));
 
-    const isRunning = status === "running";
-    const isPaused = status === "paused";
+    // Map the canonical 3-value status onto the legacy boolean flags the
+    // rest of this file uses. `agent` is the working state (analogous to
+    // the old "running"); `question` is a pause that the user must answer
+    // (analogous to the old "paused"). `idle` covers everything else
+    // (completed/error/never-started — all UI-equivalent here).
+    const isRunning = status === "agent";
+    const isPaused = status === "question";
     const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled;
     const getImages = useCallback(() => {
       return attachments.length > 0

@@ -83,7 +83,7 @@ pub struct WorkflowPermissionBridge {
     pub allowed_patterns: Arc<HashSet<String>>,
     pub write_pool: SqlitePool,
     pub db_session_id: i64,
-    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
 }
 
 #[async_trait]
@@ -223,7 +223,7 @@ impl WorkflowPermissionBridge {
             });
             WsSessionPersistence::mark_awaiting_user_static(
                 &self.write_pool,
-                &self.turn_state_tx,
+                &self.session_status_tx,
                 self.db_session_id,
                 self.feature_id,
                 &PendingUserInput::Question(&pq_json),
@@ -243,7 +243,7 @@ impl WorkflowPermissionBridge {
             };
             WsSessionPersistence::mark_awaiting_user_static(
                 &self.write_pool,
-                &self.turn_state_tx,
+                &self.session_status_tx,
                 self.db_session_id,
                 self.feature_id,
                 &PendingUserInput::Permission(&perm_payload),
@@ -281,7 +281,7 @@ impl WorkflowPermissionBridge {
             force_prompt,
             &self.worktree_path,
             &self.session_cache,
-            &self.turn_state_tx,
+            &self.session_status_tx,
             self.feature_id,
             &self.write_pool,
             self.db_session_id,

@@ -1,10 +1,30 @@
 /**
  * Shared agent types used across renderer components and hooks.
- * Extracted to break circular dependencies between AgentSession,
- * AgentPromptBar, and useFeatureAgentState.
+ *
+ * Two distinct status concepts coexist on the frontend:
+ *
+ * - [`LiveAgentStatus`] — the canonical 3-value enum pushed by the
+ *   backend on `app/session_status.*` envelopes (mirrors the Rust
+ *   `AgentStatus` in `domain::session_status`). This is the SINGLE
+ *   source of truth for the UI badge / sidebar icon / input-bar
+ *   "disabled while working" check.
+ *
+ * - [`AgentStatus`] — the legacy 6-value lifecycle column read from the
+ *   DB via REST. Workflow code uses this for resumability and
+ *   "can-start" decisions (`is the agent already running?`,
+ *   `did it error out?`, `is it complete?`). NOT a source of live
+ *   status — go through the live store for that.
+ *
+ * Pending-input gate kinds are surfaced separately via `PendingKind`
+ * so the UI can show permission / question / plan-approval /
+ * prd-approval labels alongside the question icon.
  */
 
+export type LiveAgentStatus = "idle" | "agent" | "question";
+
 export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
+
+export type PendingKind = "permission" | "question" | "plan-approval" | "prd-approval";
 
 export interface TodoItem {
   content: string;

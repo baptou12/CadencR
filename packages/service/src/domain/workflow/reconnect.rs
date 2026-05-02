@@ -60,13 +60,10 @@ impl QueueAdvancer {
             .ws_sender
             .send(Message::Text(String::from(envelope).into()));
 
-        if agent_manager.active_items.len() <= 1 {
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
-                self.feature_id,
-                "none",
-            );
-        }
+        // The paused session itself has already had its status broadcast
+        // (Idle / Question depending on the gate). No feature-wide
+        // broadcast: feature-level state is derived client-side from the
+        // remaining per-session entries.
     }
 
     /// After a review item completes, check if the review agent created new phases.

@@ -242,7 +242,13 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
                 .await;
         }
         WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
-        WsSessionPersistence::broadcast_turn_state(&state.turn_state_tx, feature_id, "none");
+        WsSessionPersistence::broadcast_session_status(
+            &state.session_status_tx,
+            db_session_id,
+            feature_id,
+            crate::domain::session_status::AgentStatus::Idle,
+            None,
+        );
     }
     drop(sessions);
 
@@ -1455,7 +1461,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
-            app_state.turn_state_tx.clone(),
+            app_state.session_status_tx.clone(),
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
@@ -1533,7 +1539,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
-            app_state.turn_state_tx.clone(),
+            app_state.session_status_tx.clone(),
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
@@ -1583,7 +1589,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
-            app_state.turn_state_tx.clone(),
+            app_state.session_status_tx.clone(),
             sdk_sessions.clone(),
             crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
             None,
@@ -1642,7 +1648,7 @@ mod tests {
             msg_rx,
             ws_tx,
             app_state.write_pool.clone(),
-            app_state.turn_state_tx.clone(),
+            app_state.session_status_tx.clone(),
             sdk_sessions,
             "opencode".to_string(),
             None,
@@ -1694,19 +1700,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_app_subscribe_turn_states_sends_snapshot() {
+    async fn test_app_subscribe_session_status_sends_snapshot() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
 
-        let envelope = make_envelope("app", "subscribe.turn_states", serde_json::json!({}));
+        let envelope = make_envelope("app", "subscribe.session_status", serde_json::json!({}));
         dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
 
         let msg = rx.recv().await.unwrap();
         if let Message::Text(text) = msg {
             let env: WsEnvelope = serde_json::from_str(&text).unwrap();
             assert_eq!(env.domain, "app");
-            assert_eq!(env.action, "turn_states.snapshot");
+            assert_eq!(env.action, "session_status.snapshot");
             // Payload should have a "states" object (empty since no running sessions)
             let states = env.payload.get("states").unwrap();
             assert!(states.is_object());
@@ -1721,14 +1727,20 @@ mod tests {
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let app_state = make_test_app_state().await;
 
-        let envelope = make_envelope("app", "subscribe.turn_states", serde_json::json!({}));
+        let envelope = make_envelope("app", "subscribe.session_status", serde_json::json!({}));
         dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
 
         // Drain the snapshot message
         let _ = rx.recv().await.unwrap();
 
-        // Broadcast a turn state change
-        WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, 42, "askUser");
+        // Broadcast a status change for session 7 / feature 42.
+        WsSessionPersistence::broadcast_session_status(
+            &app_state.session_status_tx,
+            7,
+            42,
+            crate::domain::session_status::AgentStatus::Question,
+            Some(crate::domain::session_status::PendingKind::Permission),
+        );
 
         // Give the forwarding task a moment to process
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
@@ -1737,11 +1749,16 @@ mod tests {
         if let Message::Text(text) = msg {
             let env: WsEnvelope = serde_json::from_str(&text).unwrap();
             assert_eq!(env.domain, "app");
-            assert_eq!(env.action, "turn_states.update");
+            assert_eq!(env.action, "session_status.update");
+            assert_eq!(env.payload.get("session_id").unwrap().as_i64().unwrap(), 7,);
             assert_eq!(env.payload.get("feature_id").unwrap().as_i64().unwrap(), 42);
             assert_eq!(
-                env.payload.get("turn").unwrap().as_str().unwrap(),
-                "askUser"
+                env.payload.get("status").unwrap().as_str().unwrap(),
+                "question",
+            );
+            assert_eq!(
+                env.payload.get("kind").unwrap().as_str().unwrap(),
+                "permission",
             );
             // Every update carries a monotonic seq so the frontend can reject
             // out-of-order state transitions.

@@ -402,10 +402,12 @@ pub(super) async fn handle_init(
             let _ = sender.send(axum::extract::ws::Message::Text(
                 String::from(envelope).into(),
             ));
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 feature_id,
-                "askUser",
+                crate::domain::session_status::AgentStatus::Question,
+                Some(crate::domain::session_status::PendingKind::PlanApproval),
             );
             return;
         }
@@ -421,10 +423,12 @@ pub(super) async fn handle_init(
             let _ = sender.send(axum::extract::ws::Message::Text(
                 String::from(envelope).into(),
             ));
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 feature_id,
-                "askUser",
+                crate::domain::session_status::AgentStatus::Question,
+                Some(crate::domain::session_status::PendingKind::Permission),
             );
             return;
         }
@@ -442,10 +446,12 @@ pub(super) async fn handle_init(
             let _ = sender.send(axum::extract::ws::Message::Text(
                 String::from(envelope).into(),
             ));
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 feature_id,
-                "askUser",
+                crate::domain::session_status::AgentStatus::Question,
+                Some(crate::domain::session_status::PendingKind::Question),
             );
             return;
         }
@@ -455,12 +461,18 @@ pub(super) async fn handle_init(
     // early if there was a live gate, so by this point we've confirmed
     // nothing should be pending. Without this, a ws-session Claude Code
     // AskUserQuestion that stored in pending_permission would leak into
-    // a ghost askUser on every reconnect.
+    // a ghost Question on every reconnect.
     WsSessionPersistence::clear_all_pending_user_input_static(&app_state.write_pool, db_session_id)
         .await;
 
-    // Broadcast "none" to clear any stale turn state — session is idle until a prompt is sent
-    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
+    // Broadcast Idle to clear any stale status — session is idle until a prompt is sent.
+    WsSessionPersistence::broadcast_session_status(
+        &app_state.session_status_tx,
+        db_session_id,
+        feature_id,
+        crate::domain::session_status::AgentStatus::Idle,
+        None,
+    );
 }
 
 #[cfg(test)]

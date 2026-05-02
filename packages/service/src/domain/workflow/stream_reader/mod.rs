@@ -47,7 +47,7 @@ pub fn spawn_workflow_stream_reader(
     queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     paused_sessions: Arc<DashMap<AgentSlot, String>>,
     _model: Option<&str>,
-    turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
 ) {
     tokio::spawn(async move {
         // Seed from the persisted row when resuming a session — otherwise
@@ -122,7 +122,7 @@ pub fn spawn_workflow_stream_reader(
                             db_session_id,
                             &sender,
                             &write_pool,
-                            &turn_state_tx,
+                            &session_status_tx,
                         )
                         .await;
                         continue;
@@ -312,7 +312,7 @@ pub fn spawn_workflow_stream_reader(
             &active_items,
             &queries,
             &paused_sessions,
-            &turn_state_tx,
+            &session_status_tx,
         )
         .await;
     });

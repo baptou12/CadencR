@@ -140,21 +140,21 @@ pub(super) async fn handle_permission_respond(
                 .execute(&app_state.write_pool)
                 .await;
             // Pair clear + broadcast so the sidebar doesn't stay stuck on
-            // `askUser` after restore → Approve/Reject (normal paths use the
+            // Question after restore → Approve/Reject (normal paths use the
             // same helper via `mark_agent_resumed_static`). Plan-approval
             // gate: Deny-with-feedback hands the turn back to the agent;
             // bare Deny ends the turn.
-            let next_turn = crate::domain::permission_bridge::turn_state_after_approval(
+            let next_status = crate::domain::permission_bridge::status_after_approval(
                 payload.decision,
                 payload.feedback.as_deref(),
             );
             WsSessionPersistence::mark_agent_resumed_static(
                 &app_state.write_pool,
-                &app_state.turn_state_tx,
+                &app_state.session_status_tx,
                 db_session_id,
                 extracted.feature_id,
                 PendingUserInputKind::PlanApproval,
-                next_turn,
+                next_status,
             )
             .await;
             info!(
@@ -213,7 +213,7 @@ pub(super) async fn handle_permission_respond(
             } else {
                 payload.feedback.as_deref()
             };
-            let next_turn = crate::domain::permission_bridge::turn_state_after_runtime_permission(
+            let next_status = crate::domain::permission_bridge::status_after_runtime_permission(
                 permission_kind,
                 payload.decision.clone(),
                 turn_feedback,
@@ -246,10 +246,12 @@ pub(super) async fn handle_permission_respond(
                 db_session_id,
             )
             .await;
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 extracted.feature_id,
-                next_turn,
+                next_status,
+                None,
             );
             return;
         }
@@ -858,7 +860,13 @@ pub(super) async fn handle_destroy(
     }
 
     WsSessionPersistence::mark_completed_static(&app_state.write_pool, db_session_id).await;
-    WsSessionPersistence::broadcast_turn_state(&app_state.turn_state_tx, feature_id, "none");
+    WsSessionPersistence::broadcast_session_status(
+        &app_state.session_status_tx,
+        db_session_id,
+        feature_id,
+        crate::domain::session_status::AgentStatus::Idle,
+        None,
+    );
 
     let reply = WsEnvelope::reply(
         &envelope.id,
@@ -905,10 +913,12 @@ pub(super) async fn handle_delete(
 
     match WsSessionPersistence::delete_session_static(&app_state.write_pool, db_session_id).await {
         Ok((feature_id, agent_type)) => {
-            WsSessionPersistence::broadcast_turn_state(
-                &app_state.turn_state_tx,
+            WsSessionPersistence::broadcast_session_status(
+                &app_state.session_status_tx,
+                db_session_id,
                 feature_id,
-                "none",
+                crate::domain::session_status::AgentStatus::Idle,
+                None,
             );
 
             // When deleting a plan or prd agent, reset workflow status to idle

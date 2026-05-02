@@ -49,7 +49,7 @@ pub struct AgentManager {
     pub read_pool: SqlitePool,
     pub write_pool: SqlitePool,
     pub ws_sender: WsSender,
-    pub turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     /// AgentSlot → runtime session handle (for interrupt/stream_input)
     pub queries: Arc<DashMap<AgentSlot, RuntimeSessionHandle>>,
     /// AgentSlot → db_session_id
@@ -66,14 +66,14 @@ impl AgentManager {
         read_pool: SqlitePool,
         write_pool: SqlitePool,
         ws_sender: WsSender,
-        turn_state_tx: crate::app_state::TurnStateBroadcaster,
+        session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     ) -> Self {
         Self {
             feature_id,
             read_pool,
             write_pool,
             ws_sender,
-            turn_state_tx,
+            session_status_tx,
             queries: Arc::new(DashMap::new()),
             active_items: Arc::new(DashMap::new()),
             interrupted_items: Arc::new(DashSet::new()),
@@ -199,13 +199,15 @@ impl AgentManager {
                     self.queries.clone(),
                     self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
-                    self.turn_state_tx.clone(),
+                    self.session_status_tx.clone(),
                 );
 
-                WsSessionPersistence::broadcast_turn_state(
-                    &self.turn_state_tx,
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
                     self.feature_id,
-                    "agent",
+                    crate::domain::session_status::AgentStatus::Agent,
+                    None,
                 );
 
                 let envelope = WsEnvelope::new(
@@ -241,10 +243,12 @@ impl AgentManager {
                 )
                 .await;
                 WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
-                WsSessionPersistence::broadcast_turn_state(
-                    &self.turn_state_tx,
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
                     self.feature_id,
-                    "none",
+                    crate::domain::session_status::AgentStatus::Idle,
+                    None,
                 );
                 Err(message)
             }
@@ -376,13 +380,15 @@ impl AgentManager {
                     self.queries.clone(),
                     self.paused_sessions.clone(),
                     Some(ctx.model.as_str()),
-                    self.turn_state_tx.clone(),
+                    self.session_status_tx.clone(),
                 );
 
-                WsSessionPersistence::broadcast_turn_state(
-                    &self.turn_state_tx,
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
                     self.feature_id,
-                    "agent",
+                    crate::domain::session_status::AgentStatus::Agent,
+                    None,
                 );
 
                 let envelope = WsEnvelope::new(
@@ -416,10 +422,12 @@ impl AgentManager {
                 WsSessionPersistence::mark_error_static(&self.write_pool, db_session_id).await;
                 let _ = repo::mark_item_error(&self.write_pool, item_id, Some(&message)).await;
                 self.send_item_update(item_id).await;
-                WsSessionPersistence::broadcast_turn_state(
-                    &self.turn_state_tx,
+                WsSessionPersistence::broadcast_session_status(
+                    &self.session_status_tx,
+                    db_session_id,
                     self.feature_id,
-                    "none",
+                    crate::domain::session_status::AgentStatus::Idle,
+                    None,
                 );
                 Err(message)
             }

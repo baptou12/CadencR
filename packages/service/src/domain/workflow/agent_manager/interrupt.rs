@@ -101,6 +101,7 @@ impl AgentManager {
     /// Used during graceful shutdown so agents can be resumed on next app start.
     pub async fn pause_all(&self) {
         let slots: Vec<AgentSlot> = self.queries.iter().map(|e| e.key().clone()).collect();
+        let mut paused_session_ids: Vec<i64> = Vec::new();
         for slot in slots {
             if let Some(query_arc) = self.queries.get(&slot) {
                 let q = query_arc.lock().await;
@@ -119,6 +120,7 @@ impl AgentManager {
                         .await;
                         WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id)
                             .await;
+                        paused_session_ids.push(db_session_id);
                     }
                 }
                 // Interrupt the process
@@ -130,7 +132,17 @@ impl AgentManager {
                 let _ = repo::mark_running_item_paused(&self.write_pool, *item_id).await;
             }
         }
-        WsSessionPersistence::broadcast_turn_state(&self.turn_state_tx, self.feature_id, "none");
+        // Per-session Idle broadcast: each paused session flips to Idle
+        // independently so the sidebar drops the working/asking icon for it.
+        for sid in paused_session_ids {
+            WsSessionPersistence::broadcast_session_status(
+                &self.session_status_tx,
+                sid,
+                self.feature_id,
+                crate::domain::session_status::AgentStatus::Idle,
+                None,
+            );
+        }
         info!(feature_id = self.feature_id, "pause_all: all agents paused");
     }
 
@@ -154,8 +166,10 @@ impl AgentManager {
             self.send_item_update(*item_id).await;
         }
 
-        // Mark the agent_sessions row as completed for all slot types
-        if let Some((_, db_session_id)) = removed {
+        // Mark the agent_sessions row as completed for all slot types and
+        // broadcast Idle for the affected session.
+        let removed_session_id = removed.map(|(_, db_session_id)| db_session_id);
+        if let Some(db_session_id) = removed_session_id {
             if let Err(e) = sqlx::query("UPDATE agent_sessions SET status = 'completed', ended_at = datetime('now') WHERE id = ?")
                 .bind(db_session_id)
                 .execute(&self.write_pool)
@@ -178,11 +192,13 @@ impl AgentManager {
             .ws_sender
             .send(Message::Text(String::from(envelope).into()));
 
-        if self.active_items.is_empty() {
-            WsSessionPersistence::broadcast_turn_state(
-                &self.turn_state_tx,
+        if let Some(db_session_id) = removed_session_id {
+            WsSessionPersistence::broadcast_session_status(
+                &self.session_status_tx,
+                db_session_id,
                 self.feature_id,
-                "none",
+                crate::domain::session_status::AgentStatus::Idle,
+                None,
             );
         }
 

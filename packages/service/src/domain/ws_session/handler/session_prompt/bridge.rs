@@ -70,7 +70,7 @@ pub(super) struct WsBridgeCanUseTool {
     pub(super) feature_id: i64,
     pub(super) db_session_id: i64,
     pub(super) write_pool: sqlx::SqlitePool,
-    pub(super) turn_state_tx: crate::app_state::TurnStateBroadcaster,
+    pub(super) session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
 }
 
 #[async_trait]
@@ -139,7 +139,7 @@ impl WsBridgeCanUseTool {
 
         WsSessionPersistence::mark_awaiting_user_static(
             &self.write_pool,
-            &self.turn_state_tx,
+            &self.session_status_tx,
             self.db_session_id,
             self.feature_id,
             &PendingUserInput::PlanApproval(&request.input),
@@ -177,11 +177,11 @@ impl WsBridgeCanUseTool {
                 // Denies terminate the turn like any other rejection.
                 WsSessionPersistence::mark_agent_resumed_static(
                     &self.write_pool,
-                    &self.turn_state_tx,
+                    &self.session_status_tx,
                     self.db_session_id,
                     self.feature_id,
                     PendingUserInputKind::PlanApproval,
-                    crate::domain::permission_bridge::turn_state_after_approval(
+                    crate::domain::permission_bridge::status_after_approval(
                         decision,
                         response.feedback.as_deref(),
                     ),
@@ -191,15 +191,15 @@ impl WsBridgeCanUseTool {
             }
             None => {
                 // Channel closed before a response. Clear the DB gate AND
-                // broadcast `"none"` so any subscribed client still showing
-                // `askUser` drops back to idle.
+                // broadcast Idle so any subscribed client still showing
+                // Question drops back to idle.
                 WsSessionPersistence::mark_agent_resumed_static(
                     &self.write_pool,
-                    &self.turn_state_tx,
+                    &self.session_status_tx,
                     self.db_session_id,
                     self.feature_id,
                     PendingUserInputKind::PlanApproval,
-                    "none",
+                    crate::domain::session_status::AgentStatus::Idle,
                 )
                 .await;
                 RuntimeToolPermissionResult::Deny {
@@ -409,7 +409,7 @@ impl WsBridgeCanUseTool {
         };
         WsSessionPersistence::mark_awaiting_user_static(
             &self.write_pool,
-            &self.turn_state_tx,
+            &self.session_status_tx,
             self.db_session_id,
             self.feature_id,
             &PendingUserInput::Permission(&payload),
@@ -433,7 +433,7 @@ impl WsBridgeCanUseTool {
             force_prompt,
             &self.worktree_path,
             &self.session_cache,
-            &self.turn_state_tx,
+            &self.session_status_tx,
             self.feature_id,
             &self.write_pool,
             self.db_session_id,

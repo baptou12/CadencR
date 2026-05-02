@@ -235,7 +235,7 @@ pub(crate) async fn session_finished(runtime_session_id: &str) -> bool {
 }
 
 fn latest_message_is_final_stop(messages: &[Message]) -> bool {
-    messages.iter().rev().next().map_or(false, |message| {
+    messages.last().map_or(false, |message| {
         matches!(message.role, MessageRole::Assistant) && message.is_terminal_turn_message()
     })
 }

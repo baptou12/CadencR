@@ -52,7 +52,7 @@ impl WorkflowEngine {
         write_pool: SqlitePool,
         raw_sender: mpsc::UnboundedSender<Message>,
         max_parallel: usize,
-        turn_state_tx: crate::app_state::TurnStateBroadcaster,
+        session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     ) -> Result<Self, String> {
         let now_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -64,7 +64,7 @@ impl WorkflowEngine {
             read_pool.clone(),
             write_pool.clone(),
             ws_sender.clone(),
-            turn_state_tx,
+            session_status_tx,
         );
         let queue = QueueAdvancer::new(
             feature_id,
@@ -73,7 +73,7 @@ impl WorkflowEngine {
             read_pool.clone(),
             write_pool.clone(),
             ws_sender.clone(),
-            agent_manager.turn_state_tx.clone(),
+            agent_manager.session_status_tx.clone(),
         )
         .await?;
         let permissions = PermissionRouter::new();
