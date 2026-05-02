@@ -1,4 +1,5 @@
 use serde_json::Value;
+use tracing::warn;
 
 use crate::parsing::{
     parse_message_from, parse_part_from, parse_permission_from, parse_question_from,
@@ -18,61 +19,73 @@ pub fn parse_sse_event(raw: Value) -> SseEvent {
         "server.connected" => SseEvent::ServerConnected,
         "session.created" => parse_session_from(&payload)
             .map(SseEvent::SessionCreated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "session_from failed")),
         "session.updated" => parse_session_from(&payload)
             .map(SseEvent::SessionUpdated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "session_from failed")),
         "session.deleted" => maybe_string(&payload, &["session_id", "sessionID", "id"])
             .map(|session_id| SseEvent::SessionDeleted { session_id })
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "missing session_id")),
         "session.status" => parse_session_status_event(&payload)
             .map(SseEvent::SessionUpdated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "session_status_event failed")),
         "session.idle" => parse_session_idle_event(&payload)
             .map(SseEvent::SessionUpdated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "session_idle_event failed")),
         "message.created" => parse_message_from(&payload)
             .map(SseEvent::MessageCreated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "message_from failed")),
         "message.updated" => parse_message_from(&payload)
             .map(SseEvent::MessageUpdated)
-            .unwrap_or(SseEvent::Unknown(raw)),
-        "message.part.delta" => parse_part_delta_event(&payload).unwrap_or(SseEvent::Unknown(raw)),
-        "message.part.created" => {
-            parse_part_event(&payload, true).unwrap_or(SseEvent::Unknown(raw))
-        }
-        "message.part.updated" => {
-            parse_part_event(&payload, false).unwrap_or(SseEvent::Unknown(raw))
-        }
+            .unwrap_or_else(|| unknown(raw, &event_name, "message_from failed")),
+        "message.part.delta" => parse_part_delta_event(&payload)
+            .unwrap_or_else(|| unknown(raw, &event_name, "part_delta_event failed")),
+        "message.part.created" => parse_part_event(&payload, true)
+            .unwrap_or_else(|| unknown(raw, &event_name, "part_created_event failed")),
+        "message.part.updated" => parse_part_event(&payload, false)
+            .unwrap_or_else(|| unknown(raw, &event_name, "part_updated_event failed")),
         "permission.created" | "permission.asked" => parse_permission_from(&payload)
             .map(SseEvent::PermissionCreated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "permission_from failed")),
         "permission.updated" => parse_status_event(&payload, &["status"])
             .map(|(id, status)| SseEvent::PermissionUpdated { id, status })
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "permission status_event failed")),
         "permission.replied" => parse_status_event(&payload, &["reply"])
             .map(|(id, status)| SseEvent::PermissionUpdated { id, status })
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "permission reply status_event failed")),
         "question.created" | "question.asked" => parse_question_from(&payload)
             .map(SseEvent::QuestionCreated)
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "question_from failed")),
         "question.updated" => parse_status_event(&payload, &["status"])
             .map(|(id, status)| SseEvent::QuestionUpdated { id, status })
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "question status_event failed")),
         "question.replied" => maybe_string(&payload, &["request_id", "requestID", "id"])
             .map(|id| SseEvent::QuestionUpdated {
                 id,
                 status: "answered".to_string(),
             })
-            .unwrap_or(SseEvent::Unknown(raw)),
+            .unwrap_or_else(|| unknown(raw, &event_name, "missing question request_id")),
         "question.rejected" => maybe_string(&payload, &["request_id", "requestID", "id"])
             .map(|id| SseEvent::QuestionUpdated {
                 id,
                 status: "rejected".to_string(),
             })
-            .unwrap_or(SseEvent::Unknown(raw)),
-        _ => SseEvent::Unknown(raw),
+            .unwrap_or_else(|| unknown(raw, &event_name, "missing question request_id")),
+        _ => unknown(raw, &event_name, "unrecognized event name"),
     }
+}
+
+/// Helper that logs why an event fell through to `Unknown` before returning
+/// it. Replaces the old silent `.unwrap_or(SseEvent::Unknown(raw))` calls so
+/// malformed events show up in tracing instead of vanishing into the void.
+fn unknown(raw: Value, event_name: &str, reason: &str) -> SseEvent {
+    warn!(
+        event = event_name,
+        reason,
+        payload = %raw,
+        "opencode SSE: dropping unparseable event"
+    );
+    SseEvent::Unknown(raw)
 }
 
 fn parse_part_event(payload: &Value, created: bool) -> Option<SseEvent> {

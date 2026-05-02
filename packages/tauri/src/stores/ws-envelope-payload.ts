@@ -187,6 +187,22 @@ export function parseEndedPayload(payload: unknown): { reason?: string } | null 
   return { reason: optionalString(record, "reason") };
 }
 
+/**
+ * Parse the `session.stream_status` envelope. Backend emits exactly one
+ * of `"degraded"` or `"recovered"` for `state`; we narrow defensively
+ * (anything else is ignored). Hard failures arrive on `session.error`,
+ * not here.
+ */
+export function parseStreamStatusPayload(
+  payload: unknown,
+): { state: "degraded" | "recovered"; reason?: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const state = optionalString(record, "state");
+  if (state !== "degraded" && state !== "recovered") return null;
+  return { state, reason: optionalString(record, "reason") };
+}
+
 export function parseUsagePayload(payload: unknown): {
   input_tokens: number;
   output_tokens: number;

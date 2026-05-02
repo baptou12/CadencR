@@ -20,7 +20,7 @@ pub use parsing::{
 pub use process::{
     opencode_discovery_spec, set_binary_override, OpenCodeServer, OpenCodeServerInfo,
 };
-pub use sse::{shared_dispatcher, SseDispatcher, SseStream};
+pub use sse::{shared_dispatcher, DispatcherStatus, SseDispatcher, SseStream};
 pub use types::{
     Command, Message, MessagePart, MessageRole, ModelRef, PermissionReply, PermissionRequest,
     PromptOptions, PromptPart, Question, QuestionItem, QuestionOption, Session, SessionStatus,

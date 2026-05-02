@@ -33,6 +33,35 @@ export interface QueuedPrompt {
   useWorktree?: boolean;
 }
 
+/**
+ * Provider-neutral transport health for the agent stream.
+ *
+ * Set from the `session.stream_status` WebSocket envelope (see
+ * `ws-envelope-handler.ts::handleStreamStatus`). The backend emits this
+ * for OpenCode today (other providers fall back to `"ok"`); the field is
+ * intentionally provider-neutral so future providers can opt in without
+ * touching shared frontend code.
+ *
+ * UI semantics (PR-A wires the state; PR-C will render the banner):
+ * - `"ok"`: stream is healthy. No banner.
+ * - `"degraded"`: dispatcher is reconnecting / stalled / reconcile failed.
+ *   Render a "Reconnecting…" banner under the loader so the user is never
+ *   left staring at a silent loader (matches `explicit-state.md`).
+ *
+ * Hard failures travel separately via the `session.error` envelope.
+ */
+export interface StreamHealth {
+  state: "ok" | "degraded";
+  /** Free-form human-readable reason; suitable for a tooltip. */
+  reason?: string;
+  /** `Date.now()` when the current state was entered. */
+  since?: number;
+}
+
+export function createStreamHealth(): StreamHealth {
+  return { state: "ok" };
+}
+
 // ---------------------------------------------------------------------------
 // Per-session state
 // ---------------------------------------------------------------------------
@@ -89,6 +118,12 @@ export interface SessionEntry {
   featureId: number | null;
   sessionDbId: number | null;
   queuedPrompts: QueuedPrompt[];
+  /**
+   * Transport health for the agent stream (driven by
+   * `session.stream_status`). Provider-neutral; today only OpenCode
+   * emits transitions away from `"ok"`. See `StreamHealth`.
+   */
+  streamHealth: StreamHealth;
 }
 
 export function createSessionEntry(): SessionEntry {
@@ -134,6 +169,7 @@ export function createSessionEntry(): SessionEntry {
     featureId: null,
     sessionDbId: null,
     queuedPrompts: [],
+    streamHealth: createStreamHealth(),
   };
 }
 

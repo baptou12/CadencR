@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex, RwLock};
 use tracing::{error, warn};
 
 use super::model::{parse_model_ref, permission_mode_agent};
@@ -32,6 +32,11 @@ pub(super) struct OpenCodeSession {
     pub(super) directory: String,
     pub(super) system_prompt: Option<String>,
     pub(super) event_rx: Option<mpsc::UnboundedReceiver<opencode_sdk_rs::SseEvent>>,
+    /// Lifecycle bus subscription captured at construction; passed to
+    /// `spawn_event_loop` once per session so the WS bridge can show a
+    /// "Reconnecting…" banner when the SDK dispatcher cycles. See plan
+    /// finding #1 + Phase 3.2.
+    pub(super) status_rx: Option<broadcast::Receiver<opencode_sdk_rs::DispatcherStatus>>,
     pub(super) local_rx: Option<mpsc::UnboundedReceiver<Result<RuntimeEvent, RuntimeError>>>,
     pub(super) local_tx: mpsc::UnboundedSender<Result<RuntimeEvent, RuntimeError>>,
     pub(super) pending_requests: Arc<Mutex<HashMap<String, PendingRequestKind>>>,
@@ -57,6 +62,7 @@ impl OpenCodeSession {
         context_window: Option<u64>,
     ) -> Self {
         let (local_tx, local_rx) = mpsc::unbounded_channel();
+        let status_rx = Some(dispatcher.subscribe_status());
         Self {
             client,
             dispatcher,
@@ -67,6 +73,7 @@ impl OpenCodeSession {
             directory,
             system_prompt,
             event_rx: Some(event_rx),
+            status_rx,
             local_rx: Some(local_rx),
             local_tx,
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
@@ -191,6 +198,10 @@ impl AgentRuntimeSession for OpenCodeSession {
                 .map(|model| format!("{}/{}", model.provider_id, model.model_id))
         });
 
+        // Resilient mode: pass the dispatcher Arc so the loop auto-
+        // resubscribes when the SDK runner cycles a connection, and pass
+        // the status_rx so lifecycle events surface as `RuntimeStreamStatus`
+        // to the WS bridge. See plan finding #1 + Phase 3.2/3.3.
         spawn_event_loop(
             source_rx,
             tx.clone(),
@@ -199,6 +210,8 @@ impl AgentRuntimeSession for OpenCodeSession {
             model,
             self.context_window,
             self.expected_mcp_servers.clone(),
+            Some(Arc::clone(&self.dispatcher)),
+            self.status_rx.take(),
         );
         spawn_local_result_forwarder(local_rx, tx);
         rx
