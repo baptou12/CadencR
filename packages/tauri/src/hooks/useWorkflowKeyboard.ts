@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { type AgentSessionHandle } from "@/components/agent-session";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
-import { getActiveFocusZone } from "@/lib/focus-zones";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 
@@ -11,8 +10,11 @@ interface WorkflowKeyboardOptions {
 }
 
 /**
- * Manages all keyboard shortcuts and agent focus navigation for the workflow view.
- * Returns refs and state needed by the rendering layer.
+ * Manages all keyboard shortcuts and agent focus navigation for the workflow
+ * view. The workflow view is the content of the Agent tab in the non-WS
+ * feature route, so every shortcut here is scoped to the "agent" tab via
+ * `useScopedHotkeys` — they no-op when the user has Terminal/Git/Editor in
+ * front. This replaces the previous DOM-based `getActiveFocusZone()` checks.
  */
 export function useWorkflowKeyboard(
   backend: WorkflowBackend,
@@ -88,32 +90,27 @@ export function useWorkflowKeyboard(
     onFocus: focusAgentFromLetter,
   });
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+alt+down",
     (e) => {
-      const zone = getActiveFocusZone();
-      if (zone && zone !== "main-content") return;
       e.preventDefault();
       moveFocus("down");
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+alt+up",
     (e) => {
-      const zone = getActiveFocusZone();
-      if (zone && zone !== "main-content") return;
       e.preventDefault();
       moveFocus("up");
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "enter",
     (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
       const focused = document.activeElement as HTMLElement | null;
       if (!focused?.hasAttribute("data-nav-item")) return;
       const agentIndexStr = focused.getAttribute("data-nav-agent-index");
@@ -134,22 +131,22 @@ export function useWorkflowKeyboard(
           requestAnimationFrame(() => agentRefs.current.get(agentIndex)?.focusPromptBar());
       }
     },
+    "agent",
     { enableOnFormTags: false },
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+alt+z",
     (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
       e.preventDefault();
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       const zone = document.querySelector('[data-focus-zone="main-content"]');
       if (zone instanceof HTMLElement) zone.focus();
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+shift+b",
     (e) => {
       if (backend.canContinueBuild && !backend.isContinuingBuild) {
@@ -164,24 +161,23 @@ export function useWorkflowKeyboard(
         backend.startBuilding();
       }
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
   const [sessionPromptTrigger, setSessionPromptTrigger] = useState(0);
-  useHotkeys(
+  useScopedHotkeys(
     "meta+shift+s",
     (e) => {
       if (!backend.actions.canStartWorkflowSession || backend.isStartingWorkflowSession) return;
       e.preventDefault();
       setSessionPromptTrigger((v) => v + 1);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "escape",
     (e) => {
-      if (getActiveFocusZone() !== "main-content") return;
       const focused = document.activeElement as HTMLElement | null;
       if (!focused?.hasAttribute("data-nav-item")) return;
       const agentIndexStr = focused.getAttribute("data-nav-agent-index");
@@ -192,7 +188,7 @@ export function useWorkflowKeyboard(
       if (entry.agentType === "execute" && entry.subprocessId) backend.interruptAgent(entry);
       else backend.stopAgent(entry);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
   // Auto-focus first agent on mount
@@ -224,17 +220,17 @@ export function useWorkflowKeyboard(
     prevRunningAgentsRef.current = currentRunning;
   }, [agentFocusEnabled, backend.sessionEntries]);
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+g",
     (e) => {
       e.preventDefault();
       const entry = getFocusedEntry();
       if (entry) onViewDiff(entry);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+m",
     (e) => {
       e.preventDefault();
@@ -244,10 +240,10 @@ export function useWorkflowKeyboard(
       if (entry.status !== "running" && entry.status !== "paused") return;
       backend.markDone(entry.sessionDbId);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+1",
     (e) => {
       e.preventDefault();
@@ -255,10 +251,10 @@ export function useWorkflowKeyboard(
       if (!entry || !entry.pendingPlanApproval || !entry.subprocessId) return;
       backend.approvePlan(entry.subprocessId);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+2",
     (e) => {
       e.preventDefault();
@@ -267,7 +263,7 @@ export function useWorkflowKeyboard(
       const idx = backend.sessionEntries.indexOf(entry);
       if (idx >= 0) agentRefs.current.get(idx)?.focusActiveInput();
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
   return {

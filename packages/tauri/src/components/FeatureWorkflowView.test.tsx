@@ -51,6 +51,8 @@ vi.mock("@/stores/feature-layout-store", () => ({
   selectFeatureLayout: () => (s: { features: Record<number, unknown> }) => s.features[1],
   findLeafById: (root: { type: string }) => (root.type === "leaf" ? root : null),
   isTabVisible: () => true,
+  getFocusedTab: (state: { splitRoot?: { activeTabId?: string } } | undefined) =>
+    state?.splitRoot?.activeTabId ?? null,
 }));
 
 const mockInvalidate = vi.fn();

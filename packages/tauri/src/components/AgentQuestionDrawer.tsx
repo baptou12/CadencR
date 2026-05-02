@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -268,7 +268,10 @@ export function AgentQuestionDrawer({
 
   // 1 through 9 to select/toggle option by index. cmd+O toggles "Other..."
   const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
-  useHotkeys(
+  // Default (no enableOnFormTags) — pressing "1" while typing in the free-text
+  // input must insert the character, not select an option. Same applies to
+  // Enter and arrow navigation while focused inside the textarea.
+  useScopedHotkeys(
     "1,2,3,4,5,6,7,8,9",
     (e) => {
       if (!open || !currentQuestion?.options) return;
@@ -279,13 +282,12 @@ export function AgentQuestionDrawer({
       handleOptionToggle(option.label);
       flashHighlight(digit - 1);
     },
-    // Default (no enableOnFormTags) — pressing "1" while typing in the free-text input
-    // must insert the character, not select an option.
+    "agent",
     { enabled: open && !disableShortcuts },
     [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "meta+o",
     (e) => {
       if (!open || !currentQuestion?.options) return;
@@ -293,6 +295,7 @@ export function AgentQuestionDrawer({
       handleOtherToggle();
       flashHighlight(otherShortcutIndex);
     },
+    "agent",
     { enabled: open && !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [
       open,
@@ -305,7 +308,7 @@ export function AgentQuestionDrawer({
   );
 
   // Enter to validate/submit current question
-  useHotkeys(
+  useScopedHotkeys(
     "enter",
     (e) => {
       if (!open || !currentQuestion) return;
@@ -314,29 +317,32 @@ export function AgentQuestionDrawer({
       e.preventDefault();
       handleNext();
     },
+    "agent",
     { enabled: open && !disableShortcuts },
     [open, disableShortcuts, currentQuestion, showOther, handleNext],
   );
 
   // Left/Right arrow keys to navigate between questions
-  useHotkeys(
+  useScopedHotkeys(
     "left",
     (e) => {
       if (!open || freeTextFocusedRef.current) return;
       e.preventDefault();
       handleBack();
     },
+    "agent",
     { enabled: open && !disableShortcuts && canGoBack },
     [open, disableShortcuts, canGoBack, handleBack],
   );
 
-  useHotkeys(
+  useScopedHotkeys(
     "right",
     (e) => {
       if (!open || freeTextFocusedRef.current) return;
       e.preventDefault();
       handleForward();
     },
+    "agent",
     { enabled: open && !disableShortcuts && canGoForward },
     [open, disableShortcuts, canGoForward, handleForward],
   );

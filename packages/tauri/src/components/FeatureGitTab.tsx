@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
@@ -39,10 +39,14 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     verb: onStartReviewFixer ? "Fix" : "Send",
   });
 
-  useGlobalShortcut("meta+enter", (e) => {
-    e.preventDefault();
-    void send();
-  });
+  useScopedGlobalShortcut(
+    "meta+enter",
+    (e) => {
+      e.preventDefault();
+      void send();
+    },
+    "git",
+  );
 
   return (
     <div className="flex h-full flex-col">

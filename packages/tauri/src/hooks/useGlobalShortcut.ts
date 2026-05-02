@@ -50,7 +50,10 @@ function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
  * or any other embedded component can swallow the event.
  *
  * Use this instead of useHotkeys when the shortcut must work regardless
- * of which element has focus.
+ * of which element has focus. The listener is attached for the component's
+ * lifetime; toggling `enabled` flips a ref instead of detaching/re-attaching,
+ * so consumers like `useScopedGlobalShortcut` can gate on rapidly-changing
+ * state (active tab) without DOM churn.
  */
 export function useGlobalShortcut(
   shortcut: string,
@@ -60,20 +63,16 @@ export function useGlobalShortcut(
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
 
-  const enabled = options?.enabled ?? true;
+  const enabledRef = useRef(true);
+  enabledRef.current = options?.enabled ?? true;
 
   useEffect(() => {
-    if (!enabled) return;
-
     const parsed = parseShortcut(shortcut);
-
     const handler = (e: KeyboardEvent) => {
-      if (matchesShortcut(e, parsed)) {
-        callbackRef.current(e);
-      }
+      if (!enabledRef.current) return;
+      if (matchesShortcut(e, parsed)) callbackRef.current(e);
     };
-
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [shortcut, enabled]);
+  }, [shortcut]);
 }

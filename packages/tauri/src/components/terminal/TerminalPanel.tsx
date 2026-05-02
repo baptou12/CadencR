@@ -10,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 import {
@@ -21,7 +21,6 @@ import {
   findAdjacentLeaf,
   useTerminalStore,
 } from "@/hooks/useTerminalState";
-import { getActiveFocusZone } from "@/lib/focus-zones";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
@@ -166,26 +165,28 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     );
 
     // -- Keyboard shortcuts --
+    // All terminal pane shortcuts are scoped to the terminal tab so they
+    // don't fire when the user has another tab focused.
 
-    useHotkeys(
+    useScopedHotkeys(
       "meta+d",
       (e) => {
-        if (getActiveFocusZone() !== "terminal") return;
         e.preventDefault();
         splitPane(resolvedActivePaneId ?? undefined, "horizontal");
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      "terminal",
+      undefined,
       [splitPane, resolvedActivePaneId],
     );
 
-    useHotkeys(
+    useScopedHotkeys(
       "meta+shift+d",
       (e) => {
-        if (getActiveFocusZone() !== "terminal") return;
         e.preventDefault();
         splitPane(resolvedActivePaneId ?? undefined, "vertical");
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      "terminal",
+      undefined,
       [splitPane, resolvedActivePaneId],
     );
 
@@ -198,17 +199,17 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [root, resolvedActivePaneId, focusPane],
     );
 
-    useHotkeys(
+    useScopedHotkeys(
       ["meta+alt+left", "meta+alt+right", "meta+alt+up", "meta+alt+down"],
       (e, handler) => {
-        if (getActiveFocusZone() !== "terminal") return;
         e.preventDefault();
         const dir = handler.keys?.[0];
         if (dir === "left" || dir === "right" || dir === "up" || dir === "down") {
           navigatePane(dir);
         }
       },
-      { enableOnFormTags: true, enableOnContentEditable: true },
+      "terminal",
+      undefined,
       [navigatePane],
     );
 

@@ -1,13 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { AgentSession, type AgentSessionHandle } from "@/components/agent-session";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
+import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
 import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabs } from "@/components/feature-layout/types";
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
@@ -71,7 +72,31 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
   const { cwd, featureId, projectId } = Route.useSearch();
+  return (
+    <FeatureLayoutProvider featureId={featureId}>
+      <WebSocketSessionPageBody
+        sessionId={sessionId}
+        cwd={cwd}
+        featureId={featureId}
+        projectId={projectId}
+      />
+    </FeatureLayoutProvider>
+  );
+}
 
+interface WebSocketSessionPageBodyProps {
+  sessionId: string;
+  cwd: string;
+  featureId: number;
+  projectId: number;
+}
+
+function WebSocketSessionPageBody({
+  sessionId,
+  cwd,
+  featureId,
+  projectId,
+}: WebSocketSessionPageBodyProps) {
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
   useSaveLastOpenedFeature(projectId, featureId, focusedTabId);
@@ -191,15 +216,15 @@ function WebSocketSessionPage() {
     },
     [sendPromptAndFocus, setRootActive],
   );
-  useHotkeys(
+  useScopedHotkeys(
     "meta+g",
     (e) => {
       e.preventDefault();
       setInlineDiffOpen(true);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
-  useHotkeys(
+  useScopedHotkeys(
     "meta+t",
     (e) => {
       const active = document.activeElement;
@@ -211,7 +236,7 @@ function WebSocketSessionPage() {
       if (!next) return;
       ws.setThinkingEffort(next);
     },
-    { enableOnFormTags: true, enableOnContentEditable: true },
+    "agent",
   );
 
   const slashCommands = session?.slashCommands ?? [];

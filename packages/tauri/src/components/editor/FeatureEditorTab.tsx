@@ -7,9 +7,8 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import type { EditorView } from "@codemirror/view";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useScopedGlobalShortcut, useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
 import {
@@ -160,72 +159,72 @@ const FeatureEditorTab = memo(
       setPendingProceed(null);
     }
 
-    useGlobalShortcut(
+    useScopedGlobalShortcut(
       "meta+p",
       (e) => {
         e.preventDefault();
         setFileSearchOpen(true);
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
 
-    useGlobalShortcut(
+    useScopedGlobalShortcut(
       "meta+shift+f",
       (e) => {
         e.preventDefault();
         setContentSearchOpen(true);
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
 
-    // Split pane shortcuts — only active when editor tab is selected
-    useHotkeys(
+    // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
+    useScopedHotkeys(
       "meta+d",
       (e) => {
         e.preventDefault();
         splitEditorPane(featureId, activePaneId, "vertical");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
-    useHotkeys(
+    useScopedHotkeys(
       "meta+shift+d",
       (e) => {
         e.preventDefault();
         splitEditorPane(featureId, activePaneId, "horizontal");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
-    useHotkeys(
+    useScopedHotkeys(
       "meta+alt+left",
       (e) => {
         e.preventDefault();
         navigatePane(featureId, "left");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
-    useHotkeys(
+    useScopedHotkeys(
       "meta+alt+right",
       (e) => {
         e.preventDefault();
         navigatePane(featureId, "right");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
-    useHotkeys(
+    useScopedHotkeys(
       "meta+alt+up",
       (e) => {
         e.preventDefault();
         navigatePane(featureId, "up");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
-    useHotkeys(
+    useScopedHotkeys(
       "meta+alt+down",
       (e) => {
         e.preventDefault();
         navigatePane(featureId, "down");
       },
-      { enabled: isEditorFocused },
+      "editor",
     );
 
     useEffect(() => {
