@@ -228,7 +228,7 @@ pub(crate) fn spawn_stream_reader(
 
                     // Sub-agent events carry their own token totals; writing them
                     // to the parent's row would clobber the parent's totals.
-                    if !usage_state.is_subagent_event(&runtime_event) {
+                    if !usage_update.is_subagent {
                         let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
                     }
                     if usage_update.changed
