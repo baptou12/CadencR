@@ -170,10 +170,13 @@ export function parsePermissionPayload(payload: unknown): {
   };
 }
 
-export function parseErrorPayload(payload: unknown): { message?: string } | null {
+export function parseErrorPayload(payload: unknown): { code?: string; message?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { message: optionalString(record, "message") ?? optionalString(record, "error") };
+  return {
+    code: optionalString(record, "code"),
+    message: optionalString(record, "message") ?? optionalString(record, "error"),
+  };
 }
 
 export function parseEndedPayload(payload: unknown): { reason?: string } | null {

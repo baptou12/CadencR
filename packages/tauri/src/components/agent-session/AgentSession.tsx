@@ -62,6 +62,7 @@ export const AgentSession = memo(
       todos,
       permissionMode,
       onPermissionModeToggle,
+      enabledOptInModes,
       pendingPlanApproval,
       planApproveLabel,
       planApprovalError,
@@ -255,6 +256,7 @@ export const AgentSession = memo(
         onToggleAutoScroll={scrollToBottom}
         permissionMode={permissionMode}
         onPermissionModeToggle={onPermissionModeToggle}
+        enabledOptInModes={enabledOptInModes}
         showWorktreeChip={showWorktreeChip}
         useWorktree={useWorktree}
         onToggleWorktree={onToggleWorktree}

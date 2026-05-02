@@ -20,6 +20,7 @@ import type { AgentQuestion, AgentQuestionAnswers } from "./AgentQuestionDrawer"
 // AgentPromptBar reflects the live status badge; its `status` prop is
 // the 3-value canonical enum, not the legacy lifecycle one.
 import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
+import type { PermissionMode } from "@/types/permission-mode";
 
 export interface SplitSendAction {
   label: string;
@@ -39,7 +40,7 @@ interface AgentPromptBarProps {
   onQuestionResponse?: (response: AgentQuestionAnswers) => void;
   disableShortcuts?: boolean;
   onCollapse?: () => void;
-  permissionMode?: "acceptEdits" | "plan";
+  permissionMode?: PermissionMode;
   onPermissionModeToggle?: () => void;
   pendingPlanApproval?: {
     allowedPrompts?: Array<{ tool: string; prompt: string }>;

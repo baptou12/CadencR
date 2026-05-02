@@ -8,8 +8,8 @@ use super::super::persistence::{PendingUserInputKind, WsSessionPersistence};
 use super::super::protocol::*;
 use super::session_prompt::PermissionResponse;
 use super::{
-    parse_permission_mode, parse_session_id, persist_and_close_query, send_error, QueryState,
-    SdkSessions, WsSender,
+    default_permission_mode_wire, parse_permission_mode, parse_session_id, persist_and_close_query,
+    provider_supports_mode, send_error, QueryState, SdkSessions, WsSender,
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
@@ -373,25 +373,63 @@ pub(super) async fn handle_provider_set(
     match &mut handle.state {
         QueryState::Pending(options) => {
             let provider_changed = handle.runtime_provider != payload.provider;
-            handle.runtime_provider = payload.provider.clone();
             if provider_changed {
+                handle.runtime_provider = payload.provider.clone();
                 // Resume IDs are provider-specific; drop any stale value when switching providers.
                 handle.resume_session_id = None;
                 options.resume_session_id = None;
-            }
-            let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
-                .bind(&payload.provider)
-                .bind(db_session_id)
-                .execute(&app_state.write_pool)
+
+                // Permission modes are also provider-specific (Claude's `auto`
+                // doesn't exist on Codex, Codex's `default` doesn't exist on
+                // Claude, etc.). Reset the desired/spawned/options modes so
+                // the next spawn picks the new provider's adapter default
+                // rather than carrying stale Claude-flavored state into a
+                // Codex session.
+                handle.desired_permission_mode = None;
+                handle.config.permission_mode = None;
+                options.permission_mode = None;
+
+                let new_mode_wire = default_permission_mode_wire(&payload.provider);
+                let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
+                    .bind(&payload.provider)
+                    .bind(db_session_id)
+                    .execute(&app_state.write_pool)
+                    .await;
+                WsSessionPersistence::update_permission_mode_static(
+                    &app_state.write_pool,
+                    db_session_id,
+                    new_mode_wire,
+                )
                 .await;
 
-            let reply = WsEnvelope::reply(
-                &envelope.id,
-                "session",
-                "provider.set.ok",
-                serde_json::to_value(serde_json::json!({ "provider": payload.provider })).unwrap(),
-            );
-            let _ = sender.send(Message::Text(String::from(reply).into()));
+                let reply = WsEnvelope::reply(
+                    &envelope.id,
+                    "session",
+                    "provider.set.ok",
+                    serde_json::json!({ "provider": payload.provider }),
+                );
+                let _ = sender.send(Message::Text(String::from(reply).into()));
+
+                // Broadcast the new chip state via the standard `mode.changed`
+                // envelope so the FE updates through the same path as a
+                // user-initiated mode change (no optimistic update).
+                let mode_changed = WsEnvelope::reply(
+                    &envelope.id,
+                    "session",
+                    "mode.changed",
+                    serde_json::json!({ "mode": new_mode_wire }),
+                );
+                let _ = sender.send(Message::Text(String::from(mode_changed).into()));
+            } else {
+                // Same-provider re-set: idempotent ack, no DB writes / mode reset.
+                let reply = WsEnvelope::reply(
+                    &envelope.id,
+                    "session",
+                    "provider.set.ok",
+                    serde_json::json!({ "provider": payload.provider }),
+                );
+                let _ = sender.send(Message::Text(String::from(reply).into()));
+            }
         }
         QueryState::Active { .. } => {
             send_error(
@@ -578,6 +616,23 @@ pub(super) async fn handle_mode_set(
             return;
         }
     };
+
+    // Reject modes the active provider doesn't support — guards against a
+    // stale FE catalog (e.g. user just switched provider but UI hadn't
+    // re-rendered) and surfaces the failure to the user via the standard
+    // error envelope rather than silently dropping the request.
+    if !provider_supports_mode(&handle.runtime_provider, &new_mode) {
+        send_error(
+            sender,
+            &envelope.id,
+            "MODE_NOT_SUPPORTED",
+            &format!(
+                "Provider {} does not support permission mode {}",
+                handle.runtime_provider, payload.mode
+            ),
+        );
+        return;
+    }
 
     info!(db_session_id, mode = %payload.mode, "updating permission mode");
     handle.desired_permission_mode = Some(new_mode.clone());

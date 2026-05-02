@@ -2,8 +2,13 @@ import { useState, type ReactNode } from "react";
 import { PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { BinaryDiscoverySection } from "./BinaryDiscoverySection";
 import { CustomModelsSection } from "./CustomModelsSection";
+import { DangerousModeToggle } from "./DangerousModeToggle";
 import { ProfilesSection } from "./ProfilesSection";
 import { ProviderPicker, type ProviderPickerOption } from "./ProviderPicker";
+import {
+  CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
+  CODEX_FULL_ACCESS_SETTING_KEY,
+} from "@/shared/permission-mode-settings";
 
 interface ProviderConfig {
   id: ProviderId;
@@ -30,6 +35,30 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
             </>
           }
         />
+        <DangerousModeToggle
+          settingKey={CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY}
+          title="Allow BypassPermissions"
+          description={
+            <>
+              Adds <strong>Bypass</strong> to the permission-mode cycle in the agent prompt for
+              Claude Code sessions. When active, Claude executes every tool call without prompting
+              and skips all safety checks.
+            </>
+          }
+          warningTitle="Enable BypassPermissions for Claude Code?"
+          warningBody={
+            <>
+              <p>
+                BypassPermissions disables every safety check. Claude can edit, delete, and run any
+                command without confirmation, including destructive ones.
+              </p>
+              <p>
+                Only enable this in isolated environments (containers, VMs, dev containers) where
+                Claude Code cannot damage your host system. You can always toggle it off later.
+              </p>
+            </>
+          }
+        />
         <ProfilesSection />
         <CustomModelsSection />
       </>
@@ -52,16 +81,44 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
   {
     id: PROVIDER_IDS.CODEX_CLI,
     render: () => (
-      <BinaryDiscoverySection
-        discoveryKey="codex"
-        description={
-          <>
-            Every <strong>codex</strong> install Cadence found on disk. The selected one is used to
-            start <strong>codex app-server</strong>; override via onboarding or the{" "}
-            <strong>codex_cli_path</strong> workspace setting.
-          </>
-        }
-      />
+      <>
+        <BinaryDiscoverySection
+          discoveryKey="codex"
+          description={
+            <>
+              Every <strong>codex</strong> install Cadence found on disk. The selected one is used
+              to start <strong>codex app-server</strong>; override via onboarding or the{" "}
+              <strong>codex_cli_path</strong> workspace setting.
+            </>
+          }
+        />
+        <DangerousModeToggle
+          settingKey={CODEX_FULL_ACCESS_SETTING_KEY}
+          title="Allow Full Access"
+          description={
+            <>
+              Adds <strong>Full Access</strong> to the permission-mode cycle in the agent prompt for
+              Codex sessions. Maps to Codex's <strong>danger-full-access</strong> sandbox plus{" "}
+              <strong>--ask-for-approval never</strong>: Codex runs every command, can write
+              anywhere, and can make network requests without prompting.
+            </>
+          }
+          warningTitle="Enable Full Access for Codex?"
+          warningBody={
+            <>
+              <p>
+                Full Access removes the workspace-write sandbox and disables every approval prompt.
+                Codex can modify files outside the project, reach the network freely, and execute
+                arbitrary commands.
+              </p>
+              <p>
+                Only enable this in isolated environments (containers, VMs, throwaway branches). You
+                can always toggle it off later.
+              </p>
+            </>
+          }
+        />
+      </>
     ),
   },
 ];

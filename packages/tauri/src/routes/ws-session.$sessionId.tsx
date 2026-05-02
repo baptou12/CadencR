@@ -23,8 +23,21 @@ import {
   isTabVisible,
 } from "@/stores/feature-layout-store";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
-import { useGetStats, useGetBranch, useGetFeatureSettings, useListProjects } from "@/api/generated";
+import {
+  useGetStats,
+  useGetBranch,
+  useGetFeatureSettings,
+  useGetWorkspaceSetting,
+  useListProjects,
+} from "@/api/generated";
 import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
+import { nextProviderMode } from "@/lib/provider-modes";
+import {
+  CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
+  CODEX_FULL_ACCESS_SETTING_KEY,
+} from "@/shared/permission-mode-settings";
+import { PROVIDER_IDS } from "@/lib/providers";
+import type { PermissionMode } from "@/types/permission-mode";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
@@ -99,6 +112,43 @@ function WebSocketSessionPage() {
     ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
   const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
   const activeProviderId = ws.runtimeProvider || ws.currentProviderId || resolvedProviderId;
+
+  // Per-provider opt-in toggles. Modes flagged `optIn: true` in the catalog
+  // (Claude `bypassPermissions`, Codex `bypassPermissions`/full-access) only
+  // join the cycle when their workspace setting is `"true"`. Each toggle is
+  // scoped to its own provider — we filter the resulting list by what the
+  // active provider would actually expose.
+  const claudeBypassSetting = useGetWorkspaceSetting(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY);
+  const codexFullAccessSetting = useGetWorkspaceSetting(CODEX_FULL_ACCESS_SETTING_KEY);
+  const enabledOptInModes = useMemo<PermissionMode[]>(() => {
+    const out: PermissionMode[] = [];
+    if (
+      activeProviderId === PROVIDER_IDS.CLAUDE_CODE &&
+      claudeBypassSetting.data?.value === "true"
+    ) {
+      out.push("bypassPermissions");
+    }
+    if (
+      activeProviderId === PROVIDER_IDS.CODEX_CLI &&
+      codexFullAccessSetting.data?.value === "true"
+    ) {
+      out.push("bypassPermissions");
+    }
+    return out;
+  }, [activeProviderId, claudeBypassSetting.data?.value, codexFullAccessSetting.data?.value]);
+
+  // Stable across re-renders triggered by WS chunks — keeps MetaBar's
+  // mode-chip `useMemo` from busting on every streamed message.
+  const handlePermissionModeToggle = useCallback((): void => {
+    const store = useWsSessionStore.getState();
+    const session = store.sessions[sessionId];
+    if (!session) return;
+    const current = session.permissionMode;
+    const next = nextProviderMode(activeProviderId, current, enabledOptInModes);
+    if (next !== current) {
+      store.setPermissionMode(sessionId, next);
+    }
+  }, [activeProviderId, enabledOptInModes, sessionId]);
 
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
 
@@ -261,10 +311,8 @@ function WebSocketSessionPage() {
           pendingQuestions={ws.pendingQuestions.length > 0 ? ws.pendingQuestions : undefined}
           onAnswerSubmit={ws.respondToQuestion}
           permissionMode={ws.permissionMode}
-          onPermissionModeToggle={() => {
-            const next = ws.permissionMode === "plan" ? "acceptEdits" : "plan";
-            ws.setPermissionMode(next);
-          }}
+          enabledOptInModes={enabledOptInModes}
+          onPermissionModeToggle={handlePermissionModeToggle}
           pendingPlanApproval={ws.pendingPlanApproval}
           onPlanApprove={ws.approvePlan}
           onPlanRequestChanges={ws.requestPlanChanges}
@@ -316,7 +364,9 @@ function WebSocketSessionPage() {
       activeProviderId,
       agentCatalog.data?.providers,
       agentVisible,
+      enabledOptInModes,
       featureId,
+      handlePermissionModeToggle,
       handleViewDiff,
       projectId,
       resolveModelThinkingEffort,

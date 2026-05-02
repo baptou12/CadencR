@@ -4,8 +4,6 @@ import {
   ArrowDownIcon,
   ChevronDownIcon,
   CheckIcon,
-  Zap,
-  ClipboardList,
   FileEditIcon,
   GitBranchIcon,
 } from "lucide-react";
@@ -24,6 +22,8 @@ import {
   nextThinkingEffort,
   type ThinkingEffortLevel,
 } from "@/shared/thinking-effort";
+import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
+import type { PermissionMode } from "@/types/permission-mode";
 
 interface Model {
   id: string;
@@ -42,8 +42,16 @@ export interface MetaBarProps {
   showAutoScrollChip: boolean;
   autoScrollEnabled: boolean;
   onToggleAutoScroll: () => void;
-  permissionMode?: "acceptEdits" | "plan";
+  permissionMode?: PermissionMode;
   onPermissionModeToggle?: () => void;
+  /**
+   * Per-provider opt-in modes the user has unlocked via provider settings.
+   * E.g. enabling "Allow BypassPermissions" for Claude Code adds
+   * `"bypassPermissions"` to this list when the active provider is Claude.
+   * Modes flagged `optIn: true` in the catalog are filtered out unless they
+   * appear here.
+   */
+  enabledOptInModes?: PermissionMode[];
   showWorktreeChip: boolean;
   useWorktree?: boolean;
   onToggleWorktree?: () => void;
@@ -100,6 +108,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     onToggleAutoScroll,
     permissionMode,
     onPermissionModeToggle,
+    enabledOptInModes,
     showWorktreeChip,
     useWorktree,
     onToggleWorktree,
@@ -167,6 +176,14 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     onThinkingEffortChange(nextThinkingEffort(supportedThinkingEfforts, currentThinkingEffort));
   };
 
+  // Hide the chip when the provider can't cycle (< 2 visible modes).
+  const activeMode = useMemo(() => {
+    if (!onPermissionModeToggle || !permissionMode) return null;
+    const visibleModes = getVisibleModes(displayProviderId, enabledOptInModes ?? []);
+    if (visibleModes.length < 2) return null;
+    return findProviderMode(displayProviderId, permissionMode) ?? visibleModes[0];
+  }, [displayProviderId, enabledOptInModes, onPermissionModeToggle, permissionMode]);
+
   const isStandalone = variant === "standalone";
 
   return (
@@ -202,29 +219,18 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         </button>
       )}
 
-      {/* Mode chip */}
-      {onPermissionModeToggle && (
-        <ShortcutTooltip
-          label={permissionMode === "plan" ? "Plan mode" : "Auto mode"}
-          keys={["shift", "Tab"]}
-        >
+      {/* Mode chip — labels/colors driven by the per-provider catalog. */}
+      {activeMode && (
+        <ShortcutTooltip label={`${activeMode.label} mode`} keys={["shift", "Tab"]}>
           <button
             type="button"
             onClick={onPermissionModeToggle}
-            title="Toggle permission mode (Shift+Tab)"
-            className={cn(
-              CHIP,
-              permissionMode === "plan"
-                ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
-                : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25",
-            )}
+            title={`${activeMode.description} (Shift+Tab to cycle)`}
+            aria-label={`Permission mode: ${activeMode.label}. ${activeMode.description}`}
+            className={cn(CHIP, activeMode.chipClass)}
           >
-            {permissionMode === "plan" ? (
-              <ClipboardList className="size-3" />
-            ) : (
-              <Zap className="size-3" />
-            )}
-            {permissionMode === "plan" ? "Plan" : "Auto"}
+            <activeMode.icon className="size-3" />
+            {activeMode.label}
           </button>
         </ShortcutTooltip>
       )}

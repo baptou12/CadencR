@@ -89,6 +89,23 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         Some(RuntimeCompactionStrategy::SummaryReplay)
     }
 
+    fn supports_permission_mode(
+        &self,
+        mode: &crate::domain::agents::adapter::RuntimePermissionMode,
+    ) -> bool {
+        // OpenCode primary agents are `build` (default/acceptEdits) and `plan`.
+        // Auto / Bypass / DontAsk have no equivalent.
+        use crate::domain::agents::adapter::RuntimePermissionMode;
+        matches!(
+            mode,
+            RuntimePermissionMode::Default
+                | RuntimePermissionMode::AcceptEdits
+                | RuntimePermissionMode::Plan
+        )
+    }
+    // Default `default_permission_mode_wire` ("acceptEdits") maps to OpenCode's
+    // `build` agent in the adapter — see `permission_mode_agent` in model.rs.
+
     async fn session_finished(&self, runtime_session_id: &str) -> bool {
         crate::domain::agents::providers::opencode::session_finished(runtime_session_id).await
     }

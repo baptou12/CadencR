@@ -110,6 +110,7 @@ fn map_permission_mode(mode: RuntimePermissionMode) -> claude_agent_sdk_rs::Perm
             claude_agent_sdk_rs::PermissionMode::BypassPermissions
         }
         RuntimePermissionMode::Plan => claude_agent_sdk_rs::PermissionMode::Plan,
+        RuntimePermissionMode::Auto => claude_agent_sdk_rs::PermissionMode::Auto,
         RuntimePermissionMode::DontAsk => claude_agent_sdk_rs::PermissionMode::DontAsk,
     }
 }
@@ -219,6 +220,13 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     fn supports_builtin_compact_command(&self) -> bool {
         true
     }
+
+    fn supports_permission_mode(&self, _mode: &RuntimePermissionMode) -> bool {
+        // Claude Code's CLI accepts every variant the SDK exposes.
+        true
+    }
+    // Default `default_permission_mode_wire` ("acceptEdits") matches Claude Code's
+    // primary edit mode — no override needed.
 
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
@@ -343,6 +351,10 @@ mod tests {
         assert_eq!(
             map_permission_mode(RuntimePermissionMode::Plan),
             claude_agent_sdk_rs::PermissionMode::Plan
+        );
+        assert_eq!(
+            map_permission_mode(RuntimePermissionMode::Auto),
+            claude_agent_sdk_rs::PermissionMode::Auto
         );
         assert_eq!(
             map_permission_mode(RuntimePermissionMode::DontAsk),

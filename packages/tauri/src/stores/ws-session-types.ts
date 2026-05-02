@@ -17,8 +17,10 @@ import { createStreamingState } from "./ws-message-processing";
 import type { TurnLifecycle } from "./ws-turn-lifecycle";
 import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
 import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
+import { defaultEditModeFor } from "../lib/provider-modes";
+import type { PermissionMode } from "../types/permission-mode";
 
-export type PermissionMode = "acceptEdits" | "plan";
+export type { PermissionMode };
 
 export interface PendingPlanApproval {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
@@ -103,7 +105,7 @@ export function createSessionEntry(): SessionEntry {
     pendingRequestId: "",
     pendingQuestions: [],
     pendingQuestionToolInput: {},
-    permissionMode: "acceptEdits",
+    permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),
     currentThinkingEffort: undefined,
     pendingPlanApproval: null,
     pendingManualCompact: false,

@@ -260,6 +260,29 @@ impl AgentRuntimeAdapter for CodexAdapter {
         Some(RuntimeCompactionStrategy::LiveRuntime)
     }
 
+    fn supports_permission_mode(
+        &self,
+        mode: &crate::domain::agents::adapter::RuntimePermissionMode,
+    ) -> bool {
+        // Codex maps Default/AcceptEdits → workspace-write+on-request,
+        // Plan → workspace-write+on-request+plan_mode hint, BypassPermissions
+        // → danger-full-access. Auto and DontAsk have no Codex equivalent.
+        use crate::domain::agents::adapter::RuntimePermissionMode;
+        matches!(
+            mode,
+            RuntimePermissionMode::Default
+                | RuntimePermissionMode::AcceptEdits
+                | RuntimePermissionMode::Plan
+                | RuntimePermissionMode::BypassPermissions
+        )
+    }
+
+    fn default_permission_mode_wire(&self) -> &'static str {
+        // Codex's chip lands on "Default" (workspace-write + on-request),
+        // matching `defaultEditModeFor` in lib/provider-modes.ts.
+        "default"
+    }
+
     async fn spawn(
         &self,
         content: Value,

@@ -1,3 +1,4 @@
+import { toast } from "sonner";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
@@ -36,6 +37,8 @@ import { normalizeContextWindow } from "@/types/agent";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
+import { findProviderMode } from "@/lib/provider-modes";
+import type { PermissionMode } from "@/types/permission-mode";
 
 // Types for the store accessors we need
 
@@ -140,14 +143,31 @@ function handleSessionAction(
       break;
     case "mode.changed": {
       const p = parseModePayload(envelope.payload);
-      if (p?.mode === "acceptEdits" || p?.mode === "plan") {
-        ctx.set(updateSession(ctx.get(), sessionId, { permissionMode: p.mode }));
+      // Accept any mode the active provider's catalog defines. Unknown values
+      // are dropped silently — the backend rejects them via MODE_NOT_SUPPORTED
+      // before we ever see this event, so reaching this branch with an
+      // unrecognized mode would mean the FE catalog is stale.
+      const session = p?.mode ? ctx.getSession(sessionId) : null;
+      if (p?.mode && session) {
+        const providerId = session.currentProviderId || session.runtimeProvider;
+        if (findProviderMode(providerId, p.mode as PermissionMode)) {
+          ctx.set(
+            updateSession(ctx.get(), sessionId, {
+              permissionMode: p.mode as PermissionMode,
+            }),
+          );
+        }
       }
       break;
     }
     case "provider.set.ok": {
       const p = parseProviderPayload(envelope.payload);
       if (p?.provider) {
+        // Provider switch only updates provider state; the backend follows up
+        // with a `mode.changed` envelope carrying the new provider's default
+        // permission mode. We let that envelope drive the chip state via the
+        // shared path above instead of writing it optimistically here (would
+        // create dual sources of truth — see no-optimistic-updates.md).
         ctx.set(
           updateSession(ctx.get(), sessionId, {
             currentProviderId: p.provider,
@@ -384,8 +404,22 @@ function handlePermissionRequest(ctx: StoreAccessors, sessionId: string, payload
   }
 }
 
+/**
+ * Error codes whose user mistake originates outside the agent stream (e.g. a
+ * meta-bar action). Surfacing these as inline error blocks in the chat is
+ * confusing — the user wasn't talking to the agent. Route them to a toast
+ * instead, and don't transition the turn lifecycle since no turn was active.
+ */
+const TOAST_ERROR_CODES = new Set(["MODE_NOT_SUPPORTED"]);
+
 function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseErrorPayload(payload);
+
+  if (p?.code && TOAST_ERROR_CODES.has(p.code) && p.message) {
+    toast.error(p.message);
+    return;
+  }
+
   const session = ctx.getSession(sessionId);
   const state = session.streamingState;
   if (p?.message) {
