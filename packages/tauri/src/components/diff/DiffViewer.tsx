@@ -213,7 +213,11 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
         const isFocused = fileIndex === focusedFileIndex;
 
         return (
-          <div key={displayName} data-file={displayName} className="border-b border-border">
+          <div
+            key={displayName}
+            data-file={displayName}
+            className="relative isolate border-b border-border"
+          >
             <DiffFileHeader
               displayName={displayName}
               additions={additions}
