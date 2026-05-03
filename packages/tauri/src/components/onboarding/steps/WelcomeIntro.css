@@ -1,0 +1,373 @@
+/*
+ * Cinematic intro for the onboarding welcome step. Plays exactly once on
+ * the very first open of the overlay; gated by the `onboarding_intro_shown`
+ * workspace setting.
+ *
+ * Design language: restraint. Premium motion is slow, deliberate, and
+ * single-purpose. Everything uses the same easing curve (a smooth quintic
+ * ease-out — Apple-style "settles into place" feel) and the staging gives
+ * each element room to breathe before the next one arrives.
+ *
+ * Timeline (mounted at t=0):
+ *   0.00s — black stage fades in
+ *   0.30s — dashed orbit ring whispers in (no scale pop)
+ *   0.80s — purple core blooms (scale + blur lift)
+ *   1.30s — green arc draws along the ring
+ *   1.60s — cyan arc draws along the ring
+ *   2.30s — orbit begins a 30-second rotation; core breathes
+ *   2.40s — CADENCR wordmark fades up (sidebar typography)
+ *   2.90s — thin accent line draws under the wordmark
+ *   3.20s — tagline fades in
+ *   3.60s — CTA button fades in (the only auto-dismiss is the button click)
+ *   4.10s — "or press any key" hint fades in (whispered)
+ *
+ * The intro never auto-dismisses: the user takes whatever time they need
+ * to read, then clicks the CTA. Click anywhere or press any key also work.
+ *
+ * Honours `prefers-reduced-motion`: animations collapse to plain fades and
+ * the orbit holds still.
+ */
+
+.welcome-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.25rem;
+  /* Pure deep black; the only colour comes from the logo itself. */
+  background: #07080d;
+  cursor: pointer;
+  animation: welcome-intro-bg-in 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: opacity 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Subtle radial bloom + edge vignette layered behind everything. Adds depth
+ * without ever drawing attention to itself. */
+.welcome-intro::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(179, 136, 255, 0.07) 0%, transparent 36%),
+    radial-gradient(circle at 50% 50%, rgba(128, 216, 255, 0.025) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 50%, transparent 38%, rgba(0, 0, 0, 0.65) 100%);
+  pointer-events: none;
+  opacity: 0;
+  animation: welcome-intro-fade-in 1300ms cubic-bezier(0.16, 1, 0.3, 1) 200ms both;
+}
+
+.welcome-intro--fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.welcome-intro__stage {
+  position: relative;
+  width: min(48vmin, 264px);
+  height: min(48vmin, 264px);
+  filter: drop-shadow(0 0 40px rgba(179, 136, 255, 0.18)) drop-shadow(0 0 90px rgba(0, 0, 0, 0.6));
+}
+
+.welcome-intro__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Center node — slow bloom (scale + blur lift), then a 4.5s breath. */
+.welcome-intro__dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation:
+    welcome-intro-dot-bloom 1300ms cubic-bezier(0.16, 1, 0.3, 1) 800ms both,
+    welcome-intro-dot-breathe 4500ms ease-in-out 2300ms infinite;
+}
+
+/* Dashed gray ring — sets the stage first; never scales or rotates. */
+.welcome-intro__ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: welcome-intro-ring-in 1000ms cubic-bezier(0.16, 1, 0.3, 1) 300ms both;
+}
+
+/* Holds both colored arcs so they orbit together once revealed. The spin is
+ * intentionally slow (30s/turn) — almost imperceptible, just enough to give
+ * the mark a heartbeat. */
+.welcome-intro__orbit {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: welcome-intro-orbit-spin 30s linear 2300ms infinite;
+}
+
+.welcome-intro__arc {
+  stroke-dashoffset: 360;
+  animation: welcome-intro-arc-draw 1200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.welcome-intro__arc--green {
+  animation-delay: 1300ms;
+}
+
+.welcome-intro__arc--cyan {
+  animation-delay: 1600ms;
+}
+
+/* Wordmark uses the Sidebar typography exactly: Avenir Next stack, bold,
+ * uppercase, tracking-widest (0.1em). NO letter-spacing animation — the type
+ * is already typeset; it just settles into place with a hairline lift. */
+.welcome-intro__wordmark {
+  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-size: clamp(1.625rem, 3.6vmin, 2.25rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  /* Compensate the trailing letter-spacing so the optical center matches
+   * the logo above. */
+  padding-left: 0.1em;
+  color: rgba(255, 255, 255, 0.96);
+  opacity: 0;
+  transform: translateY(6px);
+  animation: welcome-intro-wordmark-in 1100ms cubic-bezier(0.16, 1, 0.3, 1) 2400ms both;
+}
+
+/* Thin centered accent line — luxury-monogram detail. */
+.welcome-intro__accent {
+  width: 56px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45) 50%, transparent);
+  transform-origin: center;
+  transform: scaleX(0);
+  opacity: 0;
+  animation: welcome-intro-accent-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 2900ms both;
+}
+
+.welcome-intro__tagline {
+  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-size: 0.875rem;
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  animation: welcome-intro-fade-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 3200ms both;
+}
+
+/* The CTA — restrained outline button with a subtle border-glow on hover.
+ * Uses the sidebar typography so it visually rhymes with the wordmark. */
+.welcome-intro__cta {
+  /* Reset native button defaults */
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.85rem 2rem;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+
+  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.92);
+
+  opacity: 0;
+  transform: translateY(6px);
+  animation: welcome-intro-cta-in 900ms cubic-bezier(0.16, 1, 0.3, 1) 3600ms both;
+
+  transition:
+    border-color 350ms ease-out,
+    background-color 350ms ease-out,
+    color 350ms ease-out,
+    box-shadow 500ms ease-out,
+    transform 250ms ease-out;
+}
+
+.welcome-intro__cta:hover {
+  border-color: rgba(179, 136, 255, 0.6);
+  background: rgba(179, 136, 255, 0.06);
+  color: #ffffff;
+  box-shadow:
+    0 0 0 1px rgba(179, 136, 255, 0.18),
+    0 12px 40px -8px rgba(179, 136, 255, 0.35);
+}
+
+.welcome-intro__cta:active {
+  transform: translateY(1px);
+}
+
+.welcome-intro__cta:focus-visible {
+  outline: none;
+  border-color: rgba(179, 136, 255, 0.8);
+  box-shadow: 0 0 0 3px rgba(179, 136, 255, 0.25);
+}
+
+/* The arrow nudges right on hover — tiny detail, big "I get it" moment. */
+.welcome-intro__cta-arrow {
+  display: inline-block;
+  font-size: 0.95em;
+  letter-spacing: 0;
+  transition: transform 350ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.welcome-intro__cta:hover .welcome-intro__cta-arrow {
+  transform: translateX(3px);
+}
+
+.welcome-intro__hint {
+  position: absolute;
+  bottom: 2rem;
+  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.2);
+  opacity: 0;
+  animation: welcome-intro-fade-in 700ms cubic-bezier(0.16, 1, 0.3, 1) 4100ms both;
+}
+
+/* ───────── Keyframes ───────── */
+
+@keyframes welcome-intro-bg-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes welcome-intro-dot-bloom {
+  0% {
+    opacity: 0;
+    transform: scale(0.55);
+    filter: blur(3px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes welcome-intro-dot-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(179, 136, 255, 0.45));
+  }
+  50% {
+    transform: scale(1.035);
+    filter: drop-shadow(0 0 12px rgba(179, 136, 255, 0.7));
+  }
+}
+
+@keyframes welcome-intro-ring-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.9;
+  }
+}
+
+@keyframes welcome-intro-arc-draw {
+  from {
+    stroke-dashoffset: 360;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes welcome-intro-orbit-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes welcome-intro-wordmark-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcome-intro-accent-in {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes welcome-intro-cta-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes welcome-intro-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ───────── Reduced motion ───────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-intro,
+  .welcome-intro::before,
+  .welcome-intro__dot,
+  .welcome-intro__ring,
+  .welcome-intro__orbit,
+  .welcome-intro__arc,
+  .welcome-intro__wordmark,
+  .welcome-intro__accent,
+  .welcome-intro__tagline,
+  .welcome-intro__cta,
+  .welcome-intro__hint {
+    animation: welcome-intro-fade-in 250ms ease-out both !important;
+  }
+  .welcome-intro__arc {
+    stroke-dashoffset: 0;
+  }
+  .welcome-intro__dot,
+  .welcome-intro__ring,
+  .welcome-intro__wordmark,
+  .welcome-intro__accent,
+  .welcome-intro__cta {
+    opacity: 1;
+    transform: none;
+  }
+}
