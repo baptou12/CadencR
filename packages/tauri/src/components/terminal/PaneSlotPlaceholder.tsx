@@ -13,9 +13,16 @@ interface PaneSlotPlaceholderProps {
 
 /**
  * Per-pane container that hosts the imperatively-appended xterm slot and
- * (optionally) a cwd-mismatch warning banner above it. The slot is appended
- * at the end of this element via `appendChild`, so React-rendered children
- * (the warning) stay above it naturally without fighting reconciliation.
+ * (optionally) a cwd-mismatch warning banner *below* it.
+ *
+ * The xterm slot is appended via `appendChild` to a dedicated inner anchor
+ * div that is always the first JSX child. The warning is rendered as a
+ * subsequent JSX sibling, so the DOM order (slot first, warning last) is
+ * deterministic regardless of whether the warning was already visible at
+ * mount or appeared later once the PTY reported its cwd. Anchoring the
+ * appendChild target to its own div is what guarantees this — appending
+ * directly to the placeholder div used to interleave with the React-managed
+ * warning, which is why the banner sometimes ended up above the terminal.
  *
  * Memoized + paneId-arg callbacks so a sibling pane re-rendering doesn't
  * cascade through the whole tree.
@@ -28,7 +35,10 @@ export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
   onRestart,
   onDismiss,
 }: PaneSlotPlaceholderProps) {
-  const refCallback = useCallback(
+  // The slot anchor is what receives the imperative appendChild from
+  // TerminalPanel, not the outer div. This keeps the xterm slot above any
+  // React-rendered siblings (e.g. the warning banner).
+  const slotAnchorRef = useCallback(
     (el: HTMLDivElement | null) => registerPlaceholder(leaf.id, el),
     [registerPlaceholder, leaf.id],
   );
@@ -47,7 +57,8 @@ export const PaneSlotPlaceholder = memo(function PaneSlotPlaceholder({
     ) : null;
 
   return (
-    <div ref={refCallback} className="flex h-full w-full flex-col" onClick={handleFocus}>
+    <div className="flex h-full w-full flex-col" onClick={handleFocus}>
+      <div ref={slotAnchorRef} className="flex min-h-0 flex-1 flex-col" />
       {warning}
     </div>
   );

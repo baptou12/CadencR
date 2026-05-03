@@ -55,9 +55,10 @@ export interface TerminalPanelHandle {
 
 function createSlotElement(id: string): HTMLDivElement {
   const el = document.createElement("div");
-  // Slot sits inside a flex-column placeholder alongside the optional cwd
-  // warning banner. `flex: 1` lets xterm fill the remaining space; the explicit
-  // min-height: 0 prevents overflow when the warning is present.
+  // Slot sits inside a flex-column anchor above the optional cwd warning
+  // banner (rendered as a sibling JSX node in PaneSlotPlaceholder). `flex: 1`
+  // lets xterm fill the remaining space; the explicit min-height: 0 prevents
+  // overflow when the warning is present.
   el.style.flex = "1 1 0";
   el.style.minHeight = "0";
   el.style.width = "100%";
