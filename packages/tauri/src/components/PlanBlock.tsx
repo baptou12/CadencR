@@ -15,10 +15,10 @@ export function PlanBlock({
   if (!plan) return null;
 
   return (
-    <div className="my-2 rounded-md border border-primary/30 bg-primary/5">
-      <div className="flex items-center gap-2 border-b border-primary/30 px-3 py-1.5 text-xs">
-        <ClipboardCheck className="size-3 text-primary" />
-        <span className="font-medium text-primary">Plan</span>
+    <div className="my-2 rounded-md border border-[var(--block-plan-accent)]/30 bg-[var(--block-plan-bg)]">
+      <div className="flex items-center gap-2 border-b border-[var(--block-plan-accent)]/30 px-3 py-1.5 text-xs">
+        <ClipboardCheck className="size-3 text-[var(--block-plan-accent)]" />
+        <span className="font-medium text-[var(--block-plan-accent)]">Plan</span>
       </div>
       <div className="px-3 py-2">
         <Markdown content={plan} />

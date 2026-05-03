@@ -28,14 +28,16 @@ function renderChip(overrides: Partial<MetaBarProps> = {}) {
 }
 
 describe("MetaBar mode chip", () => {
-  // Chip color tokens route through the active theme's `--acc-*` palette
-  // (see lib/provider-modes.ts) so contrast holds in both Dracula and Aurora.
-  // These assertions check the var name rather than a Tailwind named color.
-  it("renders 'Auto-Accept Edits' with purple styling for Claude Code's primary mode", () => {
+  // Chip color tokens route through the active theme (see
+  // lib/provider-modes.ts). Identities that fall outside the canonical
+  // Dracula palette (violet / fuchsia / blue) live under `--chip-*`; the
+  // ones that match Dracula directly stay on `--acc-*`. These assertions
+  // check the var name rather than a Tailwind named color.
+  it("renders 'Auto-Accept Edits' with violet styling for Claude Code's primary mode", () => {
     renderChip({ currentProviderId: PROVIDER_IDS.CLAUDE_CODE, permissionMode: "acceptEdits" });
     const chip = screen.getByRole("button", { name: /Permission mode: Auto-Accept Edits/i });
     expect(chip).toBeInTheDocument();
-    expect(chip.className).toMatch(/--acc-purple/);
+    expect(chip.className).toMatch(/--chip-violet/);
   });
 
   it("renders 'Plan' with green styling when Claude is in plan mode", () => {
@@ -50,16 +52,16 @@ describe("MetaBar mode chip", () => {
     expect(chip.className).toMatch(/--acc-yellow/);
   });
 
-  it("renders 'Build' with pink styling for OpenCode's primary mode", () => {
+  it("renders 'Build' with fuchsia styling for OpenCode's primary mode", () => {
     renderChip({ currentProviderId: PROVIDER_IDS.OPENCODE, permissionMode: "acceptEdits" });
     const chip = screen.getByRole("button", { name: /Permission mode: Build/i });
-    expect(chip.className).toMatch(/--acc-pink/);
+    expect(chip.className).toMatch(/--chip-fuchsia/);
   });
 
-  it("renders 'Default' with cyan styling for Codex's primary mode", () => {
+  it("renders 'Default' with blue styling for Codex's primary mode", () => {
     renderChip({ currentProviderId: PROVIDER_IDS.CODEX_CLI, permissionMode: "default" });
     const chip = screen.getByRole("button", { name: /Permission mode: Default/i });
-    expect(chip.className).toMatch(/--acc-cyan/);
+    expect(chip.className).toMatch(/--chip-blue/);
   });
 
   it("renders 'Full Access' with red styling for Codex when the opt-in toggle is on", () => {

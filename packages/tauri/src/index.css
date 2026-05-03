@@ -108,12 +108,62 @@
   --acc-yellow: #f1fa8c;
   --acc-comment: #6272a4;
 
-  /* Code surface — used by the CodeMirror editor and the xterm.js terminal. */
-  --code-bg: #282a36;
+  /* Code surface — used for the static `ShellTerminalFrame` and code-only
+   * textareas. Distinct from `--background` so shell-toned surfaces read as
+   * a terminal, not as flat panel chrome. */
+  --code-bg: #1a1b26;
   --code-fg: #f8f8f2;
 
-  /* CodeMirror editor — slightly darker bg than `--code-bg` to demarcate
-   * the editor surface from app chrome of the same family. */
+  /* Agent-stream block surfaces.
+   *
+   * Each block type that appears in the conversation owns a *bg* +
+   * *accent* pair so the theme fully drives its identity — components do
+   * not pick colors, they only reference these tokens. Borders, icon and
+   * label colors are derived from the `*-accent` token (with opacity for
+   * subtle outlines), so flipping a theme automatically retones every
+   * block in lockstep.
+   *
+   * Naming: `--block-<type>-bg` paints the block container; the
+   * `--block-<type>-accent` paints the title row, icon and border. Bash
+   * is split into `header` / `body` because terminal output traditionally
+   * uses a darker body than its chrome strip. */
+  --block-tool-bg: #191f31;
+  --block-tool-accent: #8ec5ff;
+  --block-thinking-bg: #1f1d31;
+  --block-thinking-accent: #dbb1ff;
+  --block-plan-bg: #191f31;
+  --block-plan-accent: #8ec5ff;
+  --block-bash-header-bg: #18181b;
+  --block-bash-body-bg: #09090b;
+  --block-bash-fg: #d4d4d8;
+  --block-bash-muted-fg: #9f9fa9;
+  --block-task-bg: #15161d;
+
+  /* Prompt chip palette — restores the Tailwind shades that shipped before
+   * the theme refactor (violet / fuchsia / blue). These hues are not part
+   * of the canonical Dracula palette but they're what users associate with
+   * the model picker, Auto-Accept-Edits, OpenCode Build, and Codex Default
+   * modes, so we keep them as dedicated tokens rather than collapsing
+   * them onto `--acc-*`.
+   *
+   * Per-family shade tokens follow the original Tailwind layering:
+   *   `*-bg`   → saturated mid (Tailwind 500): the low-opacity fill behind
+   *              the chip and its hover variant.
+   *   `*-fg`   → lighter mid (Tailwind 400): chip text and accent borders.
+   *   `*-soft` → lightest (Tailwind 300): used by the model picker for
+   *              high-readability text on its tinted bg. Only violet
+   *              currently needs this third shade. */
+  --chip-violet-bg: #8b5cf6;
+  --chip-violet-fg: #a78bfa;
+  --chip-violet-soft: #c4b5fd;
+  --chip-fuchsia-bg: #d946ef;
+  --chip-fuchsia-fg: #e879f9;
+  --chip-blue-bg: #3b82f6;
+  --chip-blue-fg: #60a5fa;
+
+  /* CodeMirror editor — a hair lighter than `--code-bg` / `--terminal-bg`
+   * so the editor surface reads as its own elevated layer above the
+   * terminal-toned blocks. */
   --editor-bg: #1e2030;
   --editor-fg: var(--code-fg);
   --editor-comment: var(--acc-comment);
@@ -207,9 +257,38 @@
   --acc-yellow: oklch(0.72 0.16 85);
   --acc-comment: oklch(0.55 0.06 270);
 
-  /* Code surface — light, matching the rest of Aurora. */
-  --code-bg: oklch(1 0 0);
+  /* Code surface — soft off-white so bash/code blocks visibly separate from
+   * the white chat panel. */
+  --code-bg: oklch(0.97 0.008 290);
   --code-fg: oklch(0.205 0.04 285);
+
+  /* Agent-stream block surfaces — see Dracula block above for naming.
+   * Backgrounds use saturated tints (~0.96 L, low chroma) so each block
+   * carries its hue without fighting the white panel; accents drop to
+   * ~0.45 L so headings stay readable on those tinted surfaces. */
+  --block-tool-bg: oklch(0.96 0.04 245);
+  --block-tool-accent: oklch(0.45 0.18 245);
+  --block-thinking-bg: oklch(0.96 0.04 295);
+  --block-thinking-accent: oklch(0.45 0.2 295);
+  --block-plan-bg: oklch(0.96 0.04 245);
+  --block-plan-accent: oklch(0.45 0.18 245);
+  --block-bash-header-bg: oklch(0.94 0.012 290);
+  --block-bash-body-bg: oklch(0.965 0.008 290);
+  --block-bash-fg: oklch(0.3 0.03 285);
+  --block-bash-muted-fg: oklch(0.5 0.03 285);
+  --block-task-bg: oklch(0.94 0.012 290);
+
+  /* Prompt chip palette — Aurora pulls these darker so the same chip
+   * identities (violet / fuchsia / blue) read against the white panel.
+   * On light surfaces the role of `*-soft` flips: it's the *darkest*
+   * shade (highest contrast for text on the tinted chip bg). */
+  --chip-violet-bg: oklch(0.55 0.245 295);
+  --chip-violet-fg: oklch(0.45 0.22 290);
+  --chip-violet-soft: oklch(0.35 0.18 290);
+  --chip-fuchsia-bg: oklch(0.6 0.22 350);
+  --chip-fuchsia-fg: oklch(0.5 0.22 350);
+  --chip-blue-bg: oklch(0.55 0.2 245);
+  --chip-blue-fg: oklch(0.45 0.18 245);
 
   /* CodeMirror — accents pulled from the Aurora `--acc-*` palette, which was
    * already tuned for legibility on white. Selection picks up a soft purple

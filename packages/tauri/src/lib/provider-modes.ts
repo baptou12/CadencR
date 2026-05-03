@@ -39,17 +39,19 @@ export interface ProviderMode {
   optIn?: boolean;
 }
 
-// Chips route through the theme's `--acc-*` vars (defined per theme in
-// index.css) so contrast holds in both Dracula (light accents on dark) and
-// Aurora (darker accents on white). Tailwind's plain `*-400 / *-500` shades
-// are dark-mode-tuned and read as washed-out pastels on a white surface.
+// Chips route through theme tokens (defined per theme in index.css) so
+// contrast holds in both Dracula and Aurora. We use `--chip-*` for chip
+// identities that fall outside the canonical Dracula palette (violet,
+// fuchsia, blue) and `--acc-*` for the ones that already match (green,
+// yellow, red, pink, cyan).
 
 const CLAUDE_CODE_MODES: ProviderMode[] = [
   {
     id: "acceptEdits",
     label: "Auto-Accept Edits",
     icon: FileEditIcon,
-    chipClass: "bg-[var(--acc-purple)]/15 text-[var(--acc-purple)] hover:bg-[var(--acc-purple)]/25",
+    chipClass:
+      "bg-[var(--chip-violet-bg)]/15 text-[var(--chip-violet-fg)] hover:bg-[var(--chip-violet-bg)]/25",
     description: "Auto-approve file edits in the working directory.",
   },
   {
@@ -82,7 +84,8 @@ const OPENCODE_MODES: ProviderMode[] = [
     id: "acceptEdits",
     label: "Build",
     icon: Hammer,
-    chipClass: "bg-[var(--acc-pink)]/15 text-[var(--acc-pink)] hover:bg-[var(--acc-pink)]/25",
+    chipClass:
+      "bg-[var(--chip-fuchsia-bg)]/15 text-[var(--chip-fuchsia-fg)] hover:bg-[var(--chip-fuchsia-bg)]/25",
     description: "Default OpenCode agent with all tools enabled.",
   },
   {
@@ -99,14 +102,16 @@ const CODEX_MODES: ProviderMode[] = [
     id: "default",
     label: "Default",
     icon: Zap,
-    chipClass: "bg-[var(--acc-cyan)]/15 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/25",
+    chipClass:
+      "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
     description: "Workspace-write sandbox with on-request approvals.",
   },
   {
     id: "plan",
     label: "Plan",
     icon: ClipboardList,
-    chipClass: "bg-[var(--acc-pink)]/15 text-[var(--acc-pink)] hover:bg-[var(--acc-pink)]/25",
+    chipClass:
+      "bg-[var(--chip-fuchsia-bg)]/15 text-[var(--chip-fuchsia-fg)] hover:bg-[var(--chip-fuchsia-bg)]/25",
     description: "Plan first; sandbox/approvals match Default.",
   },
   {

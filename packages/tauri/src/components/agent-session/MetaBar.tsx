@@ -104,11 +104,14 @@ export interface MetaBarHandle {
 
 const CHIP =
   "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
-// Theme-aware model picker pill: borders/text use the active theme's primary
-// (purple in both Dracula and Aurora) so it reads correctly on dark *and*
-// white surfaces instead of the washed-out Tailwind violet-300 on white.
+// Theme-aware model picker pill. The original (pre-refactor) look stacked
+// three violet shades — saturated mid (500) for the bg, lighter mid (400)
+// for the border, lightest (300) for the text. Each comes from the theme:
+//   --chip-violet-bg   ≈ violet-500
+//   --chip-violet-fg   ≈ violet-400
+//   --chip-violet-soft ≈ violet-300
 const MODEL_GROUP =
-  "inline-flex h-8 items-stretch rounded-md border border-primary/25 bg-primary/10 text-[11px] font-medium text-primary shadow-sm";
+  "inline-flex h-8 items-stretch rounded-md border border-[var(--chip-violet-fg)]/15 bg-[var(--chip-violet-bg)]/12 text-[11px] font-medium text-[var(--chip-violet-soft)] shadow-sm";
 const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
 
 export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
@@ -288,7 +291,10 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
               trigger={
                 <button
                   type="button"
-                  className={cn(MODEL_SEGMENT, "min-w-0 rounded-l-md hover:bg-primary/15")}
+                  className={cn(
+                    MODEL_SEGMENT,
+                    "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16",
+                  )}
                 >
                   <ProviderIcon
                     providerId={displayProviderId}
@@ -306,7 +312,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             onThinkingEffortChange &&
             displayedThinkingEffort && (
               <>
-                <div className="w-px bg-primary/20" aria-hidden="true" />
+                <div className="w-px bg-[var(--chip-violet-soft)]/15" aria-hidden="true" />
                 <ShortcutTooltip
                   label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
                   keys={["cmd", "T"]}
@@ -316,7 +322,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
                     onClick={handleThinkingEffortCycle}
                     className={cn(
                       MODEL_SEGMENT,
-                      "rounded-r-md px-2 text-primary hover:bg-primary/15",
+                      "rounded-r-md px-2 text-[var(--chip-violet-soft)] hover:bg-[var(--chip-violet-bg)]/10",
                     )}
                     aria-label="Cycle thinking effort"
                   >

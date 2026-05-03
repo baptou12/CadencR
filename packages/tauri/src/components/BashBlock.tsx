@@ -36,9 +36,13 @@ export const BashBlock = memo(function BashBlock({
     [command],
   );
 
-  // Color tokens go through the active theme — no hardcoded zinc/red shades.
-  // The body matches the terminal/code surface (`--code-bg` / `--code-fg`) so
-  // shell output reads as a terminal block in both Dracula and Aurora.
+  // Colors come straight from the theme:
+  //   - `--block-bash-header-bg` / `--block-bash-body-bg`: surfaces
+  //   - `--block-bash-fg`: terminal "white" — the Bash label and the body
+  //     output's default text.
+  //   - `--block-bash-muted-fg`: dimmer terminal text — the rendered
+  //     command line, the toggle, the running/empty placeholders.
+  // No Tailwind shades, no opacity tricks — themes own every color.
   return (
     <CollapsibleBlock
       totalCount={totalLines}
@@ -46,19 +50,21 @@ export const BashBlock = memo(function BashBlock({
       unit="lines"
       className={isError ? "border-destructive/40" : "border-border"}
       headerClassName={
-        isError ? "bg-destructive/10 text-destructive py-1" : "bg-muted text-muted-foreground py-1"
+        isError
+          ? "bg-destructive/10 text-destructive py-1"
+          : "bg-[var(--block-bash-header-bg)] text-[var(--block-bash-muted-fg)] py-1"
       }
-      toggleClassName="ml-auto text-muted-foreground hover:text-foreground"
+      toggleClassName="ml-auto text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
       bodyClassName={cn(
         "px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
-        "bg-[var(--code-bg)]",
-        isError ? "text-destructive" : "text-[var(--code-fg)]",
+        "bg-[var(--block-bash-body-bg)]",
+        isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
       )}
-      truncationClassName="text-muted-foreground/60"
+      truncationClassName="text-[var(--block-bash-muted-fg)]/70"
       header={
         <>
           <TerminalIcon className="size-3 shrink-0" />
-          <span className="font-medium text-foreground">Bash</span>
+          <span className="font-medium text-[var(--block-bash-fg)]">Bash</span>
           <pre className="font-mono whitespace-pre-wrap break-all">
             {formattedCommand ?? "Running command…"}
           </pre>
@@ -72,12 +78,12 @@ export const BashBlock = memo(function BashBlock({
               {showAll ? parseAnsi(content) : truncatedAnsi}
             </pre>
           ) : running ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-[var(--block-bash-muted-fg)]">
               <Loader2Icon className="size-3 animate-spin" />
               <span>Running…</span>
             </div>
           ) : (
-            <div className="text-xs text-muted-foreground">No output</div>
+            <div className="text-xs text-[var(--block-bash-muted-fg)]">No output</div>
           )}
         </>
       )}
