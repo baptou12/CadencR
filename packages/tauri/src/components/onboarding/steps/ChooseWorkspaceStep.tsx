@@ -1,0 +1,115 @@
+import { useCallback, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, CheckCircle2, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreateProject, getListProjectsQueryKey, type Project } from "@/api/generated";
+import { Button } from "@/components/ui/button";
+import { OnboardingFooter } from "../OnboardingFooter";
+import type { OnboardingStepProps } from "../OnboardingOverlay";
+
+/**
+ * Step 3 — pick a folder on disk and turn it into a Cadencr project.
+ *
+ * Mirrors the "New Project" flow in `CommandPalette.tsx` (Tauri folder
+ * dialog → `useCreateProject`). We don't extract a shared helper yet because
+ * the surrounding mutation/UI plumbing differs (loading state, toast, inline
+ * confirmation chip); if a third caller appears we should hoist the few lines
+ * of folder→{name,path} logic.
+ */
+export function ChooseWorkspaceStep({
+  isPersisting,
+  onAdvance,
+  onBack,
+  onSkipStep,
+}: OnboardingStepProps) {
+  const queryClient = useQueryClient();
+  const [createdProject, setCreatedProject] = useState<Project | null>(null);
+
+  const createProjectMutation = useCreateProject({
+    mutation: {
+      onSuccess: (project) => {
+        setCreatedProject(project);
+        void queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      },
+      onError: (err: unknown) => {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        toast.error(`Could not create project: ${message}`);
+      },
+    },
+  });
+
+  const pickFolder = useCallback(async () => {
+    const folder = await openDialog({ directory: true, multiple: false });
+    if (typeof folder !== "string") return;
+    const name = folder.split("/").filter(Boolean).pop() ?? folder;
+    createProjectMutation.mutate({ data: { name, path: folder } });
+  }, [createProjectMutation]);
+
+  const isCreating = createProjectMutation.isPending;
+  const primaryDisabled = isPersisting || isCreating;
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onAdvance();
+      }}
+      className="flex flex-col gap-6"
+    >
+      <header className="space-y-2">
+        <h2 className="text-2xl font-semibold tracking-tight">Choose a project folder</h2>
+        <p className="text-sm text-muted-foreground">
+          Cadencr works on a folder on your machine. Pick the repository you want to use for your
+          first session — you can add more later.
+        </p>
+      </header>
+
+      <div className="rounded-md border border-border bg-muted/30 p-4 flex items-center gap-3">
+        <FolderOpen className="size-5 text-muted-foreground" />
+        <div className="flex-1 min-w-0 text-sm">
+          {createdProject ? (
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-500" />
+                <span className="font-medium">{createdProject.name}</span>
+              </div>
+              <code className="text-xs text-muted-foreground font-mono truncate block">
+                {createdProject.path}
+              </code>
+            </div>
+          ) : (
+            <span className="text-muted-foreground">No folder selected yet.</span>
+          )}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={pickFolder}
+          disabled={isCreating}
+        >
+          {isCreating ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              Creating…
+            </>
+          ) : createdProject ? (
+            "Choose another"
+          ) : (
+            "Choose folder…"
+          )}
+        </Button>
+      </div>
+
+      <OnboardingFooter
+        primaryLabel="Continue"
+        onPrimary={onAdvance}
+        primaryDisabled={primaryDisabled}
+        onBack={onBack}
+        onSkipStep={onSkipStep}
+        skipStepLabel="Do this later"
+      />
+    </form>
+  );
+}

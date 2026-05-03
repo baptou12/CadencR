@@ -128,6 +128,19 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "agent_runtime_retro",
     "agent_runtime_auto_name",
     "agent_runtime_brainstorm",
+    // First-run onboarding overlay state.
+    // `onboarding_step` is one of the values defined in
+    // packages/tauri/src/lib/onboarding-step.ts; missing/unset is treated as
+    // step "welcome" by the frontend so existing installs see the overlay
+    // until they dismiss or complete it.
+    // `default_agent_provider` is set during the onboarding's "pick agent"
+    // step (provider id from the agent catalog).
+    "onboarding_step",
+    "default_agent_provider",
+    // Plays the welcome-step intro animation exactly once, on the very first
+    // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
+    // the animation completes (or the user clicks to skip).
+    "onboarding_intro_shown",
 ];
 
 /// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
@@ -294,6 +307,15 @@ mod tests {
             "claude_bypass_permissions_enabled"
         ));
         assert!(is_workspace_key_allowed("codex_full_access_enabled"));
+    }
+
+    #[test]
+    fn workspace_accepts_onboarding_keys() {
+        // Used by the first-run OnboardingOverlay to persist the current step
+        // and the default agent provider chosen by the user.
+        assert!(is_workspace_key_allowed("onboarding_step"));
+        assert!(is_workspace_key_allowed("default_agent_provider"));
+        assert!(is_workspace_key_allowed("onboarding_intro_shown"));
     }
 
     #[test]
