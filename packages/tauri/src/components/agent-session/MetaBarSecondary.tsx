@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { AgentTodoList } from "../AgentTodoList";
 import { SessionInfoChip } from "./SessionInfoChip";
 import type { TodoItem } from "@/types/agent";
+import { AUTO_SCROLL_ACTIVE_CHIP, META_BAR_CHIP } from "./meta-bar-chip-styles";
 
 /**
  * Compact strip rendered *below* the prompt when the agent session container
@@ -30,9 +31,6 @@ export interface MetaBarSecondaryProps {
   onPause?: () => void;
 }
 
-const CHIP =
-  "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
-
 export const MetaBarSecondary = memo(function MetaBarSecondary({
   showAutoScrollChip,
   autoScrollEnabled,
@@ -56,9 +54,9 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
           aria-pressed={autoScrollEnabled}
           onClick={onToggleAutoScroll}
           className={cn(
-            CHIP,
+            META_BAR_CHIP,
             autoScrollEnabled
-              ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+              ? AUTO_SCROLL_ACTIVE_CHIP
               : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
           )}
         >
@@ -68,7 +66,7 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
         </button>
       )}
 
-      {hasTodos && <AgentTodoList todos={todos} chipClass={CHIP} />}
+      {hasTodos && <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />}
 
       {hasInfo && (
         <div className="ml-auto">
@@ -78,7 +76,7 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
             projectPath={projectPath}
             isRunning={isRunning}
             onPause={onPause}
-            chipClass={CHIP}
+            chipClass={META_BAR_CHIP}
           />
         </div>
       )}

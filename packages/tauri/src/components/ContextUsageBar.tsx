@@ -26,7 +26,7 @@ export function ContextUsageBar({
 
   return (
     <div className={cn("flex items-center gap-2 px-3 py-1", className)}>
-      <div className="h-[2px] flex-1 rounded-full bg-muted">
+      <div className="h-[3px] flex-1 rounded-full bg-border/80">
         <div
           className={cn(
             "h-full rounded-full transition-all duration-300",
@@ -48,7 +48,7 @@ export function ContextUsageBar({
           }}
         />
       </div>
-      <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/70">
         {Math.round(ratio * 100)}%
       </span>
     </div>

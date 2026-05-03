@@ -24,6 +24,12 @@ import {
 } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
+import {
+  AUTO_SCROLL_ACTIVE_CHIP,
+  META_BAR_CHIP,
+  REVIEW_CHANGES_CHIP,
+  WORKTREE_ACTIVE_CHIP,
+} from "./meta-bar-chip-styles";
 
 interface Model {
   id: string;
@@ -102,8 +108,6 @@ export interface MetaBarHandle {
   openModelPicker: () => void;
 }
 
-const CHIP =
-  "inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-[11px] font-medium transition-colors";
 // Theme-aware model picker pill. The original (pre-refactor) look stacked
 // three violet shades — saturated mid (500) for the bg, lighter mid (400)
 // for the border, lightest (300) for the text. Each comes from the theme:
@@ -221,9 +225,9 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           aria-pressed={autoScrollEnabled}
           onClick={onToggleAutoScroll}
           className={cn(
-            CHIP,
+            META_BAR_CHIP,
             autoScrollEnabled
-              ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+              ? AUTO_SCROLL_ACTIVE_CHIP
               : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
           )}
         >
@@ -241,7 +245,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             onClick={onPermissionModeToggle}
             title={`${activeMode.description} (Shift+Tab to cycle)`}
             aria-label={`Permission mode: ${activeMode.label}. ${activeMode.description}`}
-            className={cn(CHIP, activeMode.chipClass)}
+            className={cn(META_BAR_CHIP, activeMode.chipClass)}
           >
             <activeMode.icon className="size-3" />
             {activeMode.label}
@@ -255,9 +259,9 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           type="button"
           onClick={onToggleWorktree}
           className={cn(
-            CHIP,
+            META_BAR_CHIP,
             useWorktree
-              ? "bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30"
+              ? WORKTREE_ACTIVE_CHIP
               : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
           )}
         >
@@ -344,7 +348,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           <button
             type="button"
             onClick={onViewDiff}
-            className={cn(CHIP, "bg-orange-500/15 text-orange-400 hover:bg-orange-500/25")}
+            className={cn(META_BAR_CHIP, REVIEW_CHANGES_CHIP)}
           >
             <FileEditIcon className="size-3" />
             Review Changes
@@ -354,7 +358,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
 
       {/* Tasks chip */}
       {!secondaryBelow && todos && todos.length > 0 && (
-        <AgentTodoList todos={todos} chipClass={CHIP} />
+        <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />
       )}
 
       {/* Session info */}
@@ -366,7 +370,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
             projectPath={projectPath}
             isRunning={isRunning}
             onPause={onPause}
-            chipClass={CHIP}
+            chipClass={META_BAR_CHIP}
           />
         </div>
       )}
