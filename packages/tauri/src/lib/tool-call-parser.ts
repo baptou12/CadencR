@@ -133,6 +133,16 @@ const toolParsers: Record<string, ToolParser> = {
     detail: extractBashCommandFromArgs(args),
   }),
 
+  exec_command: (args) => ({
+    label: "Starting terminal command",
+    detail: extractBashCommandFromArgs(args),
+  }),
+
+  write_stdin: (args) => ({
+    label: "Writing to terminal",
+    detail: writeStdinDetail(args),
+  }),
+
   Glob: (args) => {
     const pattern = typeof args.pattern === "string" ? args.pattern : undefined;
     const path = typeof args.path === "string" ? args.path : undefined;
@@ -206,6 +216,24 @@ const toolParsers: Record<string, ToolParser> = {
     label: "Plan ready for review",
   }),
 };
+
+function writeStdinDetail(args: Record<string, unknown>): string | undefined {
+  const sessionId = sessionIdDetail(args);
+  const chars = typeof args.chars === "string" ? args.chars : undefined;
+  const suffix = sessionId ? ` ${sessionId}` : "";
+
+  if (chars === undefined || chars.length === 0) return `poll session${suffix}`.trim();
+  if (chars === "\u0003") return `interrupt session${suffix}`.trim();
+  if (chars === "\u0004") return `send EOF to session${suffix}`.trim();
+  return `send ${chars.length.toLocaleString()} chars to session${suffix}`.trim();
+}
+
+function sessionIdDetail(args: Record<string, unknown>): string | undefined {
+  const value = args.session_id ?? args.sessionId ?? args.processId;
+  if (typeof value === "string" && value.length > 0) return value;
+  if (typeof value === "number") return String(value);
+  return undefined;
+}
 
 /**
  * Parse a tool call into a human-readable summary.

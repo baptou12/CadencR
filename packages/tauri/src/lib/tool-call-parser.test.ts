@@ -41,6 +41,38 @@ describe("parseToolCall", () => {
     expect(result).toEqual({ label: "Running command", detail: "git status" });
   });
 
+  it("parses Codex exec_command with cmd", () => {
+    const result = parseToolCall("exec_command", JSON.stringify({ cmd: "pnpm test" }));
+    expect(result).toEqual({ label: "Starting terminal command", detail: "pnpm test" });
+  });
+
+  it("parses Codex write_stdin polling", () => {
+    const result = parseToolCall("write_stdin", JSON.stringify({ session_id: 42, chars: "" }));
+    expect(result).toEqual({
+      label: "Writing to terminal",
+      detail: "poll session 42",
+    });
+  });
+
+  it("parses Codex write_stdin interrupt", () => {
+    const result = parseToolCall(
+      "write_stdin",
+      JSON.stringify({ session_id: 42, chars: "\u0003" }),
+    );
+    expect(result).toEqual({
+      label: "Writing to terminal",
+      detail: "interrupt session 42",
+    });
+  });
+
+  it("parses Codex write_stdin typed input without exposing content", () => {
+    const result = parseToolCall("write_stdin", JSON.stringify({ session_id: 42, chars: "yes\n" }));
+    expect(result).toEqual({
+      label: "Writing to terminal",
+      detail: "send 4 chars to session 42",
+    });
+  });
+
   it("parses Task tool with description", () => {
     const result = parseToolCall("Task", JSON.stringify({ description: "Find agent files" }));
     expect(result).toEqual({ label: "Running subtask", detail: "Find agent files" });
@@ -132,6 +164,12 @@ describe("getToolActivityLabel", () => {
 
   it("returns label only when no detail", () => {
     expect(getToolActivityLabel("ExitPlanMode")).toBe("Plan ready for review");
+  });
+
+  it("returns Codex write_stdin activity label", () => {
+    expect(
+      getToolActivityLabel("write_stdin", JSON.stringify({ session_id: "abc", chars: "\u0004" })),
+    ).toBe("Writing to terminal: send EOF to session abc");
   });
 
   it("returns 'Running <toolName>' for unknown tools", () => {
