@@ -23,6 +23,7 @@ import {
   useSetFeatureSetting,
 } from "@/api/generated";
 import { CustomActionsBar } from "./CustomActionsBar";
+import { AppEnvironmentBadge } from "./AppEnvironmentBadge";
 import { ModelSelector } from "./ModelSelector";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
@@ -132,15 +133,10 @@ export function FeatureTopBar({
               >
                 Cadencr
               </span>
-              {import.meta.env.DEV ? (
-                <span className="ml-1 self-start text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">
-                  dev
-                </span>
-              ) : (
-                <span className="ml-1 self-start text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-white/20 text-white leading-none">
-                  beta
-                </span>
-              )}
+              <AppEnvironmentBadge
+                className="ml-1 self-start"
+                kind={import.meta.env.DEV ? "dev" : "beta"}
+              />
               <Link
                 to="/settings"
                 className="ml-1 opacity-0 group-hover/logo:opacity-100 transition-opacity"

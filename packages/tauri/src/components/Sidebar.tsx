@@ -5,6 +5,7 @@ import { Settings, PanelLeftClose } from "lucide-react";
 import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
+import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
@@ -123,15 +124,10 @@ export function Sidebar() {
           >
             Cadencr
           </span>
-          {import.meta.env.DEV ? (
-            <span className="ml-2 self-start mt-2 text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-orange-500/20 text-orange-400 leading-none">
-              dev
-            </span>
-          ) : (
-            <span className="ml-2 self-start mt-2 text-[9px] font-semibold uppercase tracking-wider px-1 py-px rounded bg-white/20 text-white leading-none">
-              beta
-            </span>
-          )}
+          <AppEnvironmentBadge
+            className="ml-2 self-start mt-2"
+            kind={import.meta.env.DEV ? "dev" : "beta"}
+          />
         </div>
         <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button

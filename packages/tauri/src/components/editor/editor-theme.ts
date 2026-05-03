@@ -3,6 +3,9 @@ import { tags as t } from "@lezer/highlight";
 import type { Extension } from "@codemirror/state";
 import { createTheme } from "@uiw/codemirror-themes";
 
+const collapsedLinesIconMask =
+  'url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%272.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27m7 15 5 5 5-5%27/%3E%3Cpath d=%27m7 9 5-5 5 5%27/%3E%3C/svg%3E") center / contain no-repeat';
+
 /**
  * CodeMirror theme. Driven entirely by CSS variables defined in `index.css`
  * under `:root[data-theme="<id>"]` blocks — switching the document's
@@ -139,15 +142,39 @@ const cadencrDiffTheme = EditorView.theme(
     // an explicit rule, CodeMirror falls back to its base style (black bg /
     // white text) which ignores the active theme entirely.
     ".cm-mergeView & .cm-collapsedLines, & .cm-collapsedLines": {
-      backgroundColor: "var(--editor-line-highlight)",
-      color: "var(--editor-comment)",
+      alignItems: "center",
+      background: "var(--editor-selection-bg-soft)",
+      color: "var(--editor-fg)",
+      cursor: "pointer",
+      display: "flex",
+      fontSize: "12px",
+      fontWeight: "600",
+      gap: "8px",
+      letterSpacing: "0.01em",
+      lineHeight: "20px",
       borderTop: "1px solid var(--editor-border)",
       borderBottom: "1px solid var(--editor-border)",
-      padding: "4px 10px",
+      boxShadow:
+        "inset 0 1px 0 color-mix(in srgb, var(--editor-fg) 8%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--editor-bg) 30%, transparent)",
+      padding: "5px 12px",
+      transition: "color 120ms ease, box-shadow 120ms ease",
     },
     ".cm-mergeView & .cm-collapsedLines:hover, & .cm-collapsedLines:hover": {
-      backgroundColor: "var(--editor-selection-bg-soft)",
+      background: "var(--editor-selection-bg-soft)",
+      boxShadow:
+        "inset 0 1px 0 color-mix(in srgb, var(--editor-fg) 12%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--editor-fg) 8%, transparent)",
       color: "var(--editor-fg)",
+    },
+    ".cm-mergeView & .cm-collapsedLines:before, & .cm-collapsedLines:before": {
+      backgroundColor: "currentColor",
+      content: '""',
+      flex: "0 0 auto",
+      height: "14px",
+      marginInlineEnd: "0",
+      mask: collapsedLinesIconMask,
+      opacity: "0.9",
+      width: "14px",
+      WebkitMask: collapsedLinesIconMask,
     },
     // Merge controls (accept/reject buttons) — hidden in read-only mode
     ".cm-mergeView & .cm-merge-revert": {
