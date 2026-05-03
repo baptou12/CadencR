@@ -33,7 +33,7 @@ export class SlashCommandNode extends TextNode {
   createDOM(config: EditorConfig): HTMLElement {
     const el = super.createDOM(config);
     el.className =
-      "inline-block rounded bg-purple-100 text-purple-800 px-1 text-sm font-medium dark:bg-purple-900/40 dark:text-purple-300";
+      "inline-block rounded border border-[var(--chip-violet-fg)]/25 bg-[var(--chip-violet-bg)]/18 px-1 text-sm font-semibold text-[var(--chip-violet-fg)]";
     el.dataset.commandName = this.__commandName;
     return el;
   }

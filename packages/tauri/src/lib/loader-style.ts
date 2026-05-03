@@ -41,16 +41,16 @@ export function parseLoaderStyle(value: string | null | undefined): LoaderStyle 
 
 export function getContextUsageAppearance(ratio: number): ContextUsageAppearance {
   if (ratio > 0.9) {
-    return { barClassName: "bg-red-500", glowColor: "rgba(255, 85, 85, 0.95)" };
+    return { barClassName: "bg-[var(--acc-red)]", glowColor: "var(--acc-red)" };
   }
 
   if (ratio > 0.8) {
-    return { barClassName: "bg-orange-500", glowColor: "rgba(255, 184, 108, 0.95)" };
+    return { barClassName: "bg-[var(--acc-orange)]", glowColor: "var(--acc-orange)" };
   }
 
   if (ratio > 0.5) {
-    return { barClassName: "bg-yellow-500", glowColor: "rgba(241, 250, 140, 0.9)" };
+    return { barClassName: "bg-[var(--acc-yellow)]", glowColor: "var(--acc-yellow)" };
   }
 
-  return { barClassName: "bg-emerald-500", glowColor: "rgba(80, 250, 123, 0.9)" };
+  return { barClassName: "bg-[var(--acc-green)]", glowColor: "var(--acc-green)" };
 }

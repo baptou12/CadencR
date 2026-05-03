@@ -33,7 +33,7 @@ export class MentionNode extends TextNode {
   createDOM(config: EditorConfig): HTMLElement {
     const el = super.createDOM(config);
     el.className =
-      "inline-block rounded bg-blue-100 text-blue-800 px-1 text-sm font-medium dark:bg-blue-900/40 dark:text-blue-300";
+      "inline-block rounded border border-[var(--chip-blue-fg)]/25 bg-[var(--chip-blue-bg)]/18 px-1 text-sm font-semibold text-[var(--chip-blue-fg)]";
     el.dataset.mentionPath = this.__mentionPath;
     return el;
   }

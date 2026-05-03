@@ -69,7 +69,9 @@ describe("ContextUsageBar", () => {
         isStreaming={false}
       />,
     );
-    expect(container.querySelector(".bg-emerald-500")).toBeInTheDocument();
+    expect(container.querySelector(".h-full.rounded-full")?.className).toContain(
+      "bg-[var(--acc-green)]",
+    );
   });
 
   it("renders medium usage (yellow)", () => {
@@ -80,7 +82,9 @@ describe("ContextUsageBar", () => {
         isStreaming={false}
       />,
     );
-    expect(container.querySelector(".bg-yellow-500")).toBeInTheDocument();
+    expect(container.querySelector(".h-full.rounded-full")?.className).toContain(
+      "bg-[var(--acc-yellow)]",
+    );
   });
 
   it("renders high usage (orange)", () => {
@@ -91,7 +95,9 @@ describe("ContextUsageBar", () => {
         isStreaming={false}
       />,
     );
-    expect(container.querySelector(".bg-orange-500")).toBeInTheDocument();
+    expect(container.querySelector(".h-full.rounded-full")?.className).toContain(
+      "bg-[var(--acc-orange)]",
+    );
   });
 
   it("renders critical usage (red)", () => {
@@ -102,7 +108,9 @@ describe("ContextUsageBar", () => {
         isStreaming={false}
       />,
     );
-    expect(container.querySelector(".bg-red-500")).toBeInTheDocument();
+    expect(container.querySelector(".h-full.rounded-full")?.className).toContain(
+      "bg-[var(--acc-red)]",
+    );
   });
 
   it("renders usage-glow style when active", () => {
