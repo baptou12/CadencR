@@ -19,6 +19,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { PROJECT_COLORS } from "@/lib/project-colors";
@@ -164,111 +171,151 @@ export function ProjectTree({
             return (
               <div key={project.id}>
                 {/* Project row */}
-                <button
-                  type="button"
-                  data-nav-item
-                  data-nav-type="project"
-                  data-nav-id={String(project.id)}
-                  onClick={() => toggleExpand(project.id)}
-                  className={`group/project flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
-                    isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
-                  }`}
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <ProjectColorDot projectId={project.id} />
-                  <span className="min-w-0 truncate">{project.name}</span>
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      type="button"
+                      data-nav-item
+                      data-nav-type="project"
+                      data-nav-id={String(project.id)}
+                      onClick={() => toggleExpand(project.id)}
+                      className={`group/project flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
+                        isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
+                      }`}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <ProjectColorDot projectId={project.id} />
+                      <span className="min-w-0 truncate">{project.name}</span>
 
-                  <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
-                    {/* Add feature/session */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <PlusIcon className="h-3.5 w-3.5" />
-                        </span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded((prev) => ({
-                              ...prev,
-                              [project.id]: true,
-                            }));
-                            pendingProjectIdRef.current = project.id;
-                            createFeatureMutation.mutate({
-                              data: { project_id: project.id, type: "ws-feature" },
-                            });
-                          }}
-                        >
-                          New Feature
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded((prev) => ({
-                              ...prev,
-                              [project.id]: true,
-                            }));
-                            pendingProjectIdRef.current = project.id;
-                            createWsSessionMutation.mutate({
-                              data: { project_id: project.id, type: "ws-session" },
-                            });
-                          }}
-                        >
-                          New Session
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
+                        {/* Add feature/session */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <PlusIcon className="h-3.5 w-3.5" />
+                            </span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpanded((prev) => ({
+                                  ...prev,
+                                  [project.id]: true,
+                                }));
+                                pendingProjectIdRef.current = project.id;
+                                createFeatureMutation.mutate({
+                                  data: { project_id: project.id, type: "ws-feature" },
+                                });
+                              }}
+                            >
+                              New Feature
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpanded((prev) => ({
+                                  ...prev,
+                                  [project.id]: true,
+                                }));
+                                pendingProjectIdRef.current = project.id;
+                                createWsSessionMutation.mutate({
+                                  data: { project_id: project.id, type: "ws-session" },
+                                });
+                              }}
+                            >
+                              New Session
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
 
-                    {/* Project menu */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Ellipsis className="h-3.5 w-3.5" />
-                        </span>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSettingsProject({
-                              id: project.id,
-                              name: project.name,
-                            });
-                          }}
-                        >
-                          Project Settings
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteProject({
-                              id: project.id,
-                              name: project.name,
-                            });
-                          }}
-                        >
-                          Delete Project
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </button>
+                        {/* Project menu */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <Ellipsis className="h-3.5 w-3.5" />
+                            </span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSettingsProject({
+                                  id: project.id,
+                                  name: project.name,
+                                });
+                              }}
+                            >
+                              Project Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteProject({
+                                  id: project.id,
+                                  name: project.name,
+                                });
+                              }}
+                            >
+                              Delete Project
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </button>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      onSelect={() => {
+                        setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                        pendingProjectIdRef.current = project.id;
+                        createFeatureMutation.mutate({
+                          data: { project_id: project.id, type: "ws-feature" },
+                        });
+                      }}
+                    >
+                      New Feature
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      onSelect={() => {
+                        setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                        pendingProjectIdRef.current = project.id;
+                        createWsSessionMutation.mutate({
+                          data: { project_id: project.id, type: "ws-session" },
+                        });
+                      }}
+                    >
+                      New Session
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
+                    >
+                      Project Settings
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      variant="destructive"
+                      onSelect={() => setDeleteProject({ id: project.id, name: project.name })}
+                    >
+                      Delete Project
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
 
                 {/* Features (expanded) */}
                 {isExpanded && (

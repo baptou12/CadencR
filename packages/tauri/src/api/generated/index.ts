@@ -261,6 +261,30 @@ export interface CreateFeatureResponse {
   id: number;
 }
 
+export type CreateFileRequestFeatureId = number | null;
+
+export interface CreateFileRequest {
+  feature_id?: CreateFileRequestFeatureId;
+  file_path: string;
+  project_id: number;
+}
+
+export interface CreateFileResponse {
+  path: string;
+}
+
+export type CreateFolderRequestFeatureId = number | null;
+
+export interface CreateFolderRequest {
+  dir_path: string;
+  feature_id?: CreateFolderRequestFeatureId;
+  project_id: number;
+}
+
+export interface CreateFolderResponse {
+  path: string;
+}
+
 export interface CreateProjectRequest {
   name: string;
   path: string;
@@ -410,6 +434,13 @@ export type DraftResponseDraftPrompt = string | null;
 
 export interface DraftResponse {
   draftPrompt?: DraftResponseDraftPrompt;
+}
+
+export interface EditorRootResponse {
+  /** Absolute filesystem path of the editor root (project or feature
+worktree). Used by the frontend to build absolute paths for native
+shell operations such as "Reveal in Finder". */
+  root: string;
 }
 
 export type FeatureAgentAutonomy = string | null;
@@ -934,6 +965,19 @@ export interface RemoveOrphanWorktreeBody {
   worktree_path: string;
 }
 
+export type RenamePathRequestFeatureId = number | null;
+
+export interface RenamePathRequest {
+  feature_id?: RenamePathRequestFeatureId;
+  new_name: string;
+  old_path: string;
+  project_id: number;
+}
+
+export interface RenamePathResponse {
+  new_path: string;
+}
+
 export interface RetryWorktreeBody {
   feature_id: number;
   project_id: number;
@@ -1136,6 +1180,18 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+export type TrashPathRequestFeatureId = number | null;
+
+export interface TrashPathRequest {
+  feature_id?: TrashPathRequestFeatureId;
+  path: string;
+  project_id: number;
+}
+
+export interface TrashPathResponse {
+  success: boolean;
+}
+
 export type TriggeredBy = (typeof TriggeredBy)[keyof typeof TriggeredBy];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -1306,6 +1362,11 @@ active. When absent, the read resolves against the project root.
  */
   feature_id?: number | null;
   file_path: string;
+};
+
+export type GetEditorRootParams = {
+  project_id: number;
+  feature_id?: number | null;
 };
 
 export type FileSearchParams = {
@@ -2857,6 +2918,147 @@ export function useContentSearch<
   return query;
 }
 
+export const createEditorFile = (createFileRequest: CreateFileRequest, signal?: AbortSignal) => {
+  return customInstance<CreateFileResponse>({
+    url: `/api/editor/create-file`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createFileRequest,
+    signal,
+  });
+};
+
+export const getCreateEditorFileMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorFile>>,
+    TError,
+    { data: CreateFileRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorFile>>,
+  TError,
+  { data: CreateFileRequest },
+  TContext
+> => {
+  const mutationKey = ["createEditorFile"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorFile>>,
+    { data: CreateFileRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorFile(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorFileMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorFile>>
+>;
+export type CreateEditorFileMutationBody = CreateFileRequest;
+export type CreateEditorFileMutationError = ErrorType<unknown>;
+
+export const useCreateEditorFile = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorFile>>,
+    TError,
+    { data: CreateFileRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorFile>>,
+  TError,
+  { data: CreateFileRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateEditorFileMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const createEditorFolder = (
+  createFolderRequest: CreateFolderRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<CreateFolderResponse>({
+    url: `/api/editor/create-folder`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: createFolderRequest,
+    signal,
+  });
+};
+
+export const getCreateEditorFolderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorFolder>>,
+    TError,
+    { data: CreateFolderRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createEditorFolder>>,
+  TError,
+  { data: CreateFolderRequest },
+  TContext
+> => {
+  const mutationKey = ["createEditorFolder"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createEditorFolder>>,
+    { data: CreateFolderRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createEditorFolder(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateEditorFolderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createEditorFolder>>
+>;
+export type CreateEditorFolderMutationBody = CreateFolderRequest;
+export type CreateEditorFolderMutationError = ErrorType<unknown>;
+
+export const useCreateEditorFolder = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createEditorFolder>>,
+    TError,
+    { data: CreateFolderRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createEditorFolder>>,
+  TError,
+  { data: CreateFolderRequest },
+  TContext
+> => {
+  const mutationOptions = getCreateEditorFolderMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const readFile = (params: ReadFileParams, signal?: AbortSignal) => {
   return customInstance<ReadFileResponse>({
     url: `/api/editor/read`,
@@ -2902,6 +3104,127 @@ export function useReadFile<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof readFile>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getReadFileQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const renameEditorPath = (renamePathRequest: RenamePathRequest) => {
+  return customInstance<RenamePathResponse>({
+    url: `/api/editor/rename`,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    data: renamePathRequest,
+  });
+};
+
+export const getRenameEditorPathMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameEditorPath>>,
+    TError,
+    { data: RenamePathRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof renameEditorPath>>,
+  TError,
+  { data: RenamePathRequest },
+  TContext
+> => {
+  const mutationKey = ["renameEditorPath"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof renameEditorPath>>,
+    { data: RenamePathRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return renameEditorPath(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RenameEditorPathMutationResult = NonNullable<
+  Awaited<ReturnType<typeof renameEditorPath>>
+>;
+export type RenameEditorPathMutationBody = RenamePathRequest;
+export type RenameEditorPathMutationError = ErrorType<unknown>;
+
+export const useRenameEditorPath = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof renameEditorPath>>,
+    TError,
+    { data: RenamePathRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof renameEditorPath>>,
+  TError,
+  { data: RenamePathRequest },
+  TContext
+> => {
+  const mutationOptions = getRenameEditorPathMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const getEditorRoot = (params: GetEditorRootParams, signal?: AbortSignal) => {
+  return customInstance<EditorRootResponse>({
+    url: `/api/editor/root`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetEditorRootQueryKey = (params?: GetEditorRootParams) => {
+  return [`/api/editor/root`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetEditorRootQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEditorRoot>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetEditorRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getEditorRoot>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEditorRootQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getEditorRoot>>> = ({ signal }) =>
+    getEditorRoot(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEditorRoot>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEditorRootQueryResult = NonNullable<Awaited<ReturnType<typeof getEditorRoot>>>;
+export type GetEditorRootQueryError = ErrorType<unknown>;
+
+export function useGetEditorRoot<
+  TData = Awaited<ReturnType<typeof getEditorRoot>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetEditorRootParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getEditorRoot>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEditorRootQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -2962,6 +3285,74 @@ export function useFileSearch<
 
   return query;
 }
+
+export const trashEditorPath = (trashPathRequest: TrashPathRequest) => {
+  return customInstance<TrashPathResponse>({
+    url: `/api/editor/trash`,
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    data: trashPathRequest,
+  });
+};
+
+export const getTrashEditorPathMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof trashEditorPath>>,
+    TError,
+    { data: TrashPathRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof trashEditorPath>>,
+  TError,
+  { data: TrashPathRequest },
+  TContext
+> => {
+  const mutationKey = ["trashEditorPath"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof trashEditorPath>>,
+    { data: TrashPathRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return trashEditorPath(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TrashEditorPathMutationResult = NonNullable<
+  Awaited<ReturnType<typeof trashEditorPath>>
+>;
+export type TrashEditorPathMutationBody = TrashPathRequest;
+export type TrashEditorPathMutationError = ErrorType<unknown>;
+
+export const useTrashEditorPath = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof trashEditorPath>>,
+    TError,
+    { data: TrashPathRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof trashEditorPath>>,
+  TError,
+  { data: TrashPathRequest },
+  TContext
+> => {
+  const mutationOptions = getTrashEditorPathMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const fileTree = (params: FileTreeParams, signal?: AbortSignal) => {
   return customInstance<FileTreeEntry[]>({

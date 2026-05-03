@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import { useScopedGlobalShortcut, useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { cn } from "@/lib/utils";
+import { copyToClipboard } from "@/lib/clipboard";
 import { FileSymbolIcon } from "./file-icons";
 import { useEditorStore } from "@/stores/editor-store";
 import { saveFile } from "./editorSaveRegistry";
@@ -15,10 +16,19 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
 
 interface EditorSubTabsProps {
   featureId: number;
   paneId: string;
+  projectId: number;
 }
 
 interface PendingClose {
@@ -26,10 +36,18 @@ interface PendingClose {
   fileName: string;
 }
 
-export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps) {
+export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSubTabsProps) {
   const pane = useEditorStore((s) => s.features[featureId]?.panes[paneId]);
   const setActiveFile = useEditorStore((s) => s.setActiveFile);
   const closeTab = useEditorStore((s) => s.closeTab);
+  const { reveal } = useFileTreeMutations(projectId, featureId);
+
+  function closeMany(filter: (path: string) => boolean) {
+    const targets = (pane?.tabs ?? []).filter((t) => filter(t.filePath));
+    for (const t of targets) {
+      closeTab(featureId, paneId, t.filePath);
+    }
+  }
 
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
   const [pendingClose, setPendingClose] = useState<PendingClose | null>(null);
@@ -119,44 +137,76 @@ export default function EditorSubTabs({ featureId, paneId }: EditorSubTabsProps)
           const showClose = !tab.isDirty || hoveredClose === tab.filePath;
 
           return (
-            <button
-              key={tab.filePath}
-              type="button"
-              className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-border whitespace-nowrap shrink-0 hover:bg-accent transition-colors",
-                isActive
-                  ? "bg-background text-foreground border-t-2 border-t-primary"
-                  : "text-muted-foreground",
-              )}
-              onClick={() => setActiveFile(featureId, paneId, tab.filePath)}
-            >
-              <FileSymbolIcon fileName={tab.fileName} className="shrink-0 flex items-center" />
-              <span>{tab.disambiguatedName}</span>
-              <span
-                role="button"
-                aria-label={`Close ${tab.disambiguatedName}`}
-                tabIndex={0}
-                className="ml-0.5 rounded hover:bg-muted p-0.5 flex items-center justify-center w-4 h-4"
-                onMouseEnter={() => setHoveredClose(tab.filePath)}
-                onMouseLeave={() => setHoveredClose(null)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  requestClose(tab.filePath, tab.fileName, tab.isDirty);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.stopPropagation();
-                    requestClose(tab.filePath, tab.fileName, tab.isDirty);
-                  }
-                }}
-              >
-                {showClose ? (
-                  <X className="w-3 h-3" />
-                ) : (
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary block" />
-                )}
-              </span>
-            </button>
+            <ContextMenu key={tab.filePath}>
+              <ContextMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-border whitespace-nowrap shrink-0 hover:bg-accent transition-colors",
+                    isActive
+                      ? "bg-background text-foreground border-t-2 border-t-primary"
+                      : "text-muted-foreground",
+                  )}
+                  onClick={() => setActiveFile(featureId, paneId, tab.filePath)}
+                >
+                  <FileSymbolIcon fileName={tab.fileName} className="shrink-0 flex items-center" />
+                  <span>{tab.disambiguatedName}</span>
+                  <span
+                    role="button"
+                    aria-label={`Close ${tab.disambiguatedName}`}
+                    tabIndex={0}
+                    className="ml-0.5 rounded hover:bg-muted p-0.5 flex items-center justify-center w-4 h-4"
+                    onMouseEnter={() => setHoveredClose(tab.filePath)}
+                    onMouseLeave={() => setHoveredClose(null)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      requestClose(tab.filePath, tab.fileName, tab.isDirty);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.stopPropagation();
+                        requestClose(tab.filePath, tab.fileName, tab.isDirty);
+                      }
+                    }}
+                  >
+                    {showClose ? (
+                      <X className="w-3 h-3" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-primary block" />
+                    )}
+                  </span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  onSelect={() => requestClose(tab.filePath, tab.fileName, tab.isDirty)}
+                >
+                  Close
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => closeMany((p) => p !== tab.filePath)}>
+                  Close Others
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onSelect={() => {
+                    const idx = tabs.findIndex((t) => t.filePath === tab.filePath);
+                    closeMany((p) => {
+                      const otherIdx = tabs.findIndex((x) => x.filePath === p);
+                      return otherIdx > idx;
+                    });
+                  }}
+                >
+                  Close to the Right
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => closeMany(() => true)}>Close All</ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onSelect={() => void copyToClipboard(tab.filePath, "Path copied")}>
+                  Copy Path
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => void reveal(tab.filePath)}>
+                  Reveal in File Manager
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           );
         })}
       </div>

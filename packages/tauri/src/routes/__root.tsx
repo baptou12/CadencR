@@ -32,6 +32,7 @@ import { initNotificationPermission, listenForNotificationClicks } from "@/lib/n
 import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
 import { useThemeSync } from "@/hooks/useTheme";
+import UniversalContextMenu from "@/components/UniversalContextMenu";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -325,114 +326,116 @@ function RootLayout() {
     <SidebarContext.Provider
       value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}
     >
-      <div className="flex h-screen">
-        <ResizablePanelGroup orientation="horizontal" onLayoutChanged={handleLayoutChanged}>
-          <ResizablePanel
-            id="sidebar"
-            panelRef={sidebarPanelRef}
-            collapsible
-            collapsedSize={0}
-            defaultSize={defaultLeftSize}
-            minSize="200px"
-            maxSize="400px"
-          >
-            <div
-              ref={leftSidebarRef}
-              data-focus-zone="left-sidebar"
-              tabIndex={0}
-              className="h-full outline-none"
-              onFocus={(e) => {
-                // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
-                if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                  const firstItem = e.currentTarget.querySelector(
-                    "[data-nav-item]",
-                  ) as HTMLElement | null;
-                  if (firstItem) firstItem.focus();
-                }
-              }}
+      <UniversalContextMenu>
+        <div className="flex h-screen">
+          <ResizablePanelGroup orientation="horizontal" onLayoutChanged={handleLayoutChanged}>
+            <ResizablePanel
+              id="sidebar"
+              panelRef={sidebarPanelRef}
+              collapsible
+              collapsedSize={0}
+              defaultSize={defaultLeftSize}
+              minSize="200px"
+              maxSize="400px"
             >
-              <Sidebar />
-            </div>
-          </ResizablePanel>
-          <ResizableHandle
-            className={cn(
-              "cursor-col-resize bg-border",
-              isSidebarCollapsed && "pointer-events-none opacity-0",
-            )}
-          />
-          <ResizablePanel id="main">
-            <main
-              data-focus-zone="main-content"
-              tabIndex={0}
-              className="h-full overflow-hidden outline-none"
-              onFocus={(e) => {
-                // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
-                if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                  const firstItem = e.currentTarget.querySelector(
-                    "[data-nav-item]",
-                  ) as HTMLElement | null;
-                  if (firstItem) {
-                    firstItem.focus();
-                  } else {
-                    // Fallback for session view: focus the prompt bar textarea
-                    const textarea = e.currentTarget.querySelector(
-                      "textarea",
+              <div
+                ref={leftSidebarRef}
+                data-focus-zone="left-sidebar"
+                tabIndex={0}
+                className="h-full outline-none"
+                onFocus={(e) => {
+                  // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
+                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                    const firstItem = e.currentTarget.querySelector(
+                      "[data-nav-item]",
                     ) as HTMLElement | null;
-                    if (textarea) textarea.focus();
+                    if (firstItem) firstItem.focus();
                   }
-                }
-              }}
-            >
-              <Outlet />
-            </main>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-        <CommandPalette
-          open={commandPaletteOpen}
-          onOpenChange={setCommandPaletteOpen}
-          activeProjectId={activeProjectId}
-          activeFeatureId={activeFeatureId}
-        />
-        <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-        <Toaster position="top-center" richColors />
-        <FocusRing />
-        <ConfirmDialog
-          open={confirmAction != null}
-          onOpenChange={(open) => {
-            if (!open) setConfirmAction(null);
-          }}
-          title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
-          description={confirmAction === "delete" ? "This cannot be undone." : undefined}
-          confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
-          variant={confirmAction === "delete" ? "destructive" : "default"}
-          onConfirm={() => {
-            if (activeFeatureId == null) return;
-            if (confirmAction === "delete") {
-              deleteFeatureMutation.mutate({ id: activeFeatureId });
-            } else {
-              archiveFeatureMutation.mutate({
-                id: activeFeatureId,
-                data: { status: "archived" },
-              });
-            }
-          }}
-        />
-        <ConfirmDialog
-          open={appClose.showConfirm}
-          onOpenChange={appClose.setShowConfirm}
-          title="Quit Cadencr?"
-          description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
-          confirmText="Quit"
-          variant="destructive"
-          onConfirm={appClose.confirmAndClose}
-        >
-          <ul className="text-sm text-muted-foreground space-y-1 py-2">
-            {appClose.runningAgents.map((agent) => (
-              <li key={agent.sessionId}>{agent.label}</li>
-            ))}
-          </ul>
-        </ConfirmDialog>
-      </div>
+                }}
+              >
+                <Sidebar />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle
+              className={cn(
+                "cursor-col-resize bg-border",
+                isSidebarCollapsed && "pointer-events-none opacity-0",
+              )}
+            />
+            <ResizablePanel id="main">
+              <main
+                data-focus-zone="main-content"
+                tabIndex={0}
+                className="h-full overflow-hidden outline-none"
+                onFocus={(e) => {
+                  // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
+                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
+                    const firstItem = e.currentTarget.querySelector(
+                      "[data-nav-item]",
+                    ) as HTMLElement | null;
+                    if (firstItem) {
+                      firstItem.focus();
+                    } else {
+                      // Fallback for session view: focus the prompt bar textarea
+                      const textarea = e.currentTarget.querySelector(
+                        "textarea",
+                      ) as HTMLElement | null;
+                      if (textarea) textarea.focus();
+                    }
+                  }
+                }}
+              >
+                <Outlet />
+              </main>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={setCommandPaletteOpen}
+            activeProjectId={activeProjectId}
+            activeFeatureId={activeFeatureId}
+          />
+          <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
+          <Toaster position="top-center" richColors />
+          <FocusRing />
+          <ConfirmDialog
+            open={confirmAction != null}
+            onOpenChange={(open) => {
+              if (!open) setConfirmAction(null);
+            }}
+            title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
+            description={confirmAction === "delete" ? "This cannot be undone." : undefined}
+            confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
+            variant={confirmAction === "delete" ? "destructive" : "default"}
+            onConfirm={() => {
+              if (activeFeatureId == null) return;
+              if (confirmAction === "delete") {
+                deleteFeatureMutation.mutate({ id: activeFeatureId });
+              } else {
+                archiveFeatureMutation.mutate({
+                  id: activeFeatureId,
+                  data: { status: "archived" },
+                });
+              }
+            }}
+          />
+          <ConfirmDialog
+            open={appClose.showConfirm}
+            onOpenChange={appClose.setShowConfirm}
+            title="Quit Cadencr?"
+            description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
+            confirmText="Quit"
+            variant="destructive"
+            onConfirm={appClose.confirmAndClose}
+          >
+            <ul className="text-sm text-muted-foreground space-y-1 py-2">
+              {appClose.runningAgents.map((agent) => (
+                <li key={agent.sessionId}>{agent.label}</li>
+              ))}
+            </ul>
+          </ConfirmDialog>
+        </div>
+      </UniversalContextMenu>
     </SidebarContext.Provider>
   );
 }

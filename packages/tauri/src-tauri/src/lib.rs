@@ -97,6 +97,48 @@ fn read_file_base64(path: String) -> Result<String, String> {
     Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
 }
 
+/// Open the OS file manager and select the given path. Used by the file-tree
+/// "Reveal in Finder" context-menu action. Caller must pass an absolute path
+/// (the frontend resolves relative paths via the `/api/editor/root` endpoint).
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {e}"))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(format!("/select,{path}"))
+            .spawn()
+            .map_err(|e| format!("Failed to open Explorer: {e}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Linux file managers vary in support for selecting a file. The most
+        // portable behavior is to open the parent directory.
+        let target = p
+            .parent()
+            .map(|x| x.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        std::process::Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {e}"))?;
+    }
+
+    Ok(())
+}
+
 #[derive(serde::Serialize, Clone)]
 struct RuntimeConfig {
     #[serde(rename = "baseUrl")]
@@ -228,7 +270,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification_router::init())
         .invoke_handler(tauri::generate_handler![
             read_file_base64,
-            get_runtime_config
+            get_runtime_config,
+            reveal_in_finder
         ])
         .menu(|handle| {
             // No "Help" submenu: macOS gives any submenu literally named "Help"

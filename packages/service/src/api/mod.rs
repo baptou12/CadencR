@@ -7,6 +7,7 @@ use crate::domain::agents::discovery::routes::discovery_router;
 use crate::domain::agents::runtime::AgentCatalogResponse;
 use crate::domain::custom_actions::routes::custom_actions_router;
 use crate::domain::diff_comments::routes::diff_comments_router;
+use crate::domain::editor::mutation_routes::editor_mutation_router;
 use crate::domain::editor::routes::editor_router;
 use crate::domain::feature_layouts::routes::feature_layouts_router;
 use crate::domain::features::routes::features_router;
@@ -38,6 +39,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(sessions_router())
         .merge(terminal_router())
         .merge(editor_router())
+        .merge(editor_mutation_router())
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
