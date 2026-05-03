@@ -10,6 +10,7 @@ use crate::domain::custom_actions::models as custom_actions_models;
 use crate::domain::custom_actions::routes as custom_actions_routes;
 use crate::domain::diff_comments::models as diff_comments_models;
 use crate::domain::diff_comments::routes as diff_comments_routes;
+use crate::domain::editor::mutation_routes as editor_mutation_routes;
 use crate::domain::editor::routes as editor_routes;
 use crate::domain::feature_layouts::models as feature_layouts_models;
 use crate::domain::feature_layouts::routes as feature_layouts_routes;
@@ -58,6 +59,11 @@ use crate::domain::workspace::routes as workspace_routes;
         editor_routes::tree_handler,
         editor_routes::content_search_handler,
         editor_routes::search_handler,
+        editor_mutation_routes::create_editor_file_handler,
+        editor_mutation_routes::create_editor_folder_handler,
+        editor_mutation_routes::rename_editor_path_handler,
+        editor_mutation_routes::trash_editor_path_handler,
+        editor_mutation_routes::get_editor_root_handler,
         workspace_routes::list_settings_handler,
         workspace_routes::get_setting_handler,
         workspace_routes::set_setting_handler,
@@ -179,6 +185,15 @@ use crate::domain::workspace::routes as workspace_routes;
         editor_routes::ContentSearchResponse,
         editor_routes::FileMatchResult,
         editor_routes::FileSearchResponse,
+        editor_mutation_routes::CreateFileRequest,
+        editor_mutation_routes::CreateFileResponse,
+        editor_mutation_routes::CreateFolderRequest,
+        editor_mutation_routes::CreateFolderResponse,
+        editor_mutation_routes::RenamePathRequest,
+        editor_mutation_routes::RenamePathResponse,
+        editor_mutation_routes::TrashPathRequest,
+        editor_mutation_routes::TrashPathResponse,
+        editor_mutation_routes::EditorRootResponse,
         workspace_models::Setting,
         workspace_models::ModelSettings,
         workspace_models::AgentProviderSettings,

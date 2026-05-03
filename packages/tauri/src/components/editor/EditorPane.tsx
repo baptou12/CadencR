@@ -41,7 +41,7 @@ export default function EditorPane({
 
   return (
     <div className="flex flex-col h-full" onFocus={handleFocus}>
-      <EditorSubTabs featureId={featureId} paneId={paneId} />
+      <EditorSubTabs featureId={featureId} paneId={paneId} projectId={projectId} />
 
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (

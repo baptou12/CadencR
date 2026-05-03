@@ -9,6 +9,13 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FileSymbolIcon } from "./file-icons";
 import SearchResultEditor from "./SearchResultEditor";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { copyToClipboard } from "@/lib/clipboard";
 
 interface ContentSearchDialogProps {
   projectId: number;
@@ -290,15 +297,34 @@ function FileGroup({
 
   return (
     <div className="mb-3">
-      <button
-        type="button"
-        onClick={() => onSelect(group.path, firstMatchLine)}
-        className="flex items-center gap-1.5 px-2 py-1 w-full text-left text-xs font-medium text-foreground hover:bg-accent rounded transition-colors"
-      >
-        <FileSymbolIcon fileName={fileName} className="shrink-0 flex items-center" />
-        <span className="truncate">{group.path}</span>
-        <span className="ml-auto text-muted-foreground shrink-0">{group.matches.length}</span>
-      </button>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            type="button"
+            onClick={() => onSelect(group.path, firstMatchLine)}
+            className="flex items-center gap-1.5 px-2 py-1 w-full text-left text-xs font-medium text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <FileSymbolIcon fileName={fileName} className="shrink-0 flex items-center" />
+            <span className="truncate">{group.path}</span>
+            <span className="ml-auto text-muted-foreground shrink-0">{group.matches.length}</span>
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => onSelect(group.path, firstMatchLine)}>
+            Open
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copyToClipboard(group.path, "Path copied")}>
+            Copy Path
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() =>
+              void copyToClipboard(group.matches[0]?.line_content ?? "", "Match copied")
+            }
+          >
+            Copy Match
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       <div className="mt-1">
         <SearchResultEditor
           filePath={group.path}

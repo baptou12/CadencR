@@ -2,6 +2,7 @@ import { memo } from "react";
 import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "../AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
+import AgentStreamContextMenu from "./AgentStreamContextMenu";
 
 interface AgentStreamItemProps {
   block: AgentBlockData;
@@ -34,22 +35,26 @@ export const AgentStreamItem = memo(function AgentStreamItem({
   const isUserMessage = block.type === "user_message";
 
   return (
-    <div className="py-0.5">
-      {showHeader && block.createdAt && (
-        <div
-          className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${isUserMessage ? "text-right" : ""}`}
-        >
-          <span className="font-medium">{isUserMessage ? "User" : (block.model ?? "unknown")}</span>
-          {" · "}
-          {formatTimestamp(block.createdAt)}
-        </div>
-      )}
-      <AgentBlock
-        block={block}
-        isStreaming={isStreaming}
-        basePath={basePath}
-        toolResultMap={toolResultMap}
-      />
-    </div>
+    <AgentStreamContextMenu block={block}>
+      <div className="py-0.5">
+        {showHeader && block.createdAt && (
+          <div
+            className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${isUserMessage ? "text-right" : ""}`}
+          >
+            <span className="font-medium">
+              {isUserMessage ? "User" : (block.model ?? "unknown")}
+            </span>
+            {" · "}
+            {formatTimestamp(block.createdAt)}
+          </div>
+        )}
+        <AgentBlock
+          block={block}
+          isStreaming={isStreaming}
+          basePath={basePath}
+          toolResultMap={toolResultMap}
+        />
+      </div>
+    </AgentStreamContextMenu>
   );
 });
