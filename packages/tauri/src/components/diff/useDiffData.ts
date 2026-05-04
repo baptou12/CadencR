@@ -4,6 +4,7 @@ import {
   useGetFileBlobShas,
   useGetCommitLog,
   useGetDiff,
+  useGetChangedFiles,
   useGetFileContentBatch,
   getGetFileContentQueryKey,
   useListDiffViewed,
@@ -85,7 +86,16 @@ export interface FileMeta {
   deletions: number;
 }
 
-export function useDiffData(featureId: number, mode: "worktree" | "branch", targetBranch?: string) {
+/**
+ * Diff endpoint mode values. `"uncommitted"` is the new Git-tab segmented
+ * control's working-tree alias (backed by the same `worktree` codepath on the
+ * server, including untracked-as-new-file synthesis); `"worktree"` remains the
+ * legacy value still passed by other call sites; `"branch"` is the
+ * commits-vs-target-branch view.
+ */
+export type DiffMode = "worktree" | "branch" | "uncommitted";
+
+export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: string) {
   const queryClient = useQueryClient();
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [commitLimit, setCommitLimit] = useState(20);
@@ -115,6 +125,26 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
       }),
     [fileSections],
   );
+
+  // Per-file staging state. Only meaningful in the working-tree views; in
+  // `branch` mode the set stays empty so the badge never renders.
+  const isUncommittedView = mode === "uncommitted" || mode === "worktree";
+  const { data: changedFiles = [] } = useGetChangedFiles(
+    {
+      feature_id: featureId,
+      mode,
+      target_branch: targetBranch,
+    },
+    { query: { enabled: isUncommittedView && !selectedCommit } },
+  );
+  const stagedFiles: Set<string> = useMemo(() => {
+    const set = new Set<string>();
+    if (!isUncommittedView) return set;
+    for (const f of changedFiles) {
+      if (f.is_staged) set.add(f.file);
+    }
+    return set;
+  }, [changedFiles, isUncommittedView]);
 
   // ---- Batch file content prefetch ----
   // Seeding runs in `onSuccess` (via `seedBatchFileContentCache`) so cache
@@ -227,6 +257,7 @@ export function useDiffData(featureId: number, mode: "worktree" | "branch", targ
     rawDiff,
     fileMeta,
     fileNames,
+    stagedFiles,
     selectedCommit,
     setSelectedCommit,
     commits,

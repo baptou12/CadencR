@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { PencilIcon, FilePlusIcon } from "lucide-react";
 import { toRelativePath } from "@/lib/utils";
 import { ReadOnlyDiffView } from "@/components/editor/ReadOnlyDiffView";
+import { NumStat } from "@/components/diff/NumStat";
 
 interface InlineDiffBlockProps {
   filePath: string;
@@ -79,8 +80,7 @@ export function InlineDiffBlock({
         <span className="flex-1 truncate font-mono text-[var(--editor-fg)]" title={filePath}>
           {displayPath}
         </span>
-        <span className="text-[var(--editor-green)]">+{additions}</span>
-        <span className="text-[var(--editor-red)]">-{deletions}</span>
+        <NumStat additions={additions} deletions={deletions} hideZero={false} />
       </div>
 
       {/* Diff content */}

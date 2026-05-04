@@ -10,6 +10,13 @@ export interface ChangedFileEntry {
   oldFile?: string;
   additions: number;
   deletions: number;
+  /**
+   * True when the file has staged content (`git add`-ed). Backed by the
+   * `is_staged` field on `ChangedFile` from `/api/git/changed-files`, threaded
+   * through `useDiffData` and merged onto the parsed-diff entry list. Always
+   * `false` in `branch` mode (no concept of staging when comparing commits).
+   */
+  is_staged?: boolean;
 }
 
 export interface CommitEntry {

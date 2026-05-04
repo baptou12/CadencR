@@ -1,11 +1,25 @@
-import { memo, useMemo } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { Button } from "@/components/ui/button";
-import { SendIcon, Loader2Icon } from "lucide-react";
+import { SendIcon, Loader2Icon, PanelLeft, PanelLeftClose } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffViewer } from "./diff/DiffViewer";
-import { useListDiffComments } from "@/api/generated";
+import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
+import type { DiffMode } from "./diff/useDiffData";
+import {
+  useListDiffComments,
+  useGetFeatureSettings,
+  useSetFeatureSetting,
+  getGetFeatureSettingsQueryKey,
+} from "@/api/generated";
 import { useSendPendingComments } from "@/hooks/useSendPendingComments";
+import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
+
+const GIT_VIEW_MODE_SETTING = "git_view_mode";
+const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
 
 interface FeatureGitTabProps {
   featureId: number;
@@ -23,6 +37,10 @@ interface FeatureGitTabProps {
   onStartReviewFixer?: (message: string) => void;
 }
 
+function isGitViewMode(v: string | undefined): v is GitViewMode {
+  return v === "uncommitted" || v === "vs-target";
+}
+
 export const FeatureGitTab = memo(function FeatureGitTab({
   featureId,
   diffMode = "worktree",
@@ -30,8 +48,81 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   onSendComments,
   onStartReviewFixer,
 }: FeatureGitTabProps) {
+  const queryClient = useQueryClient();
   const { data: comments = [] } = useListDiffComments(featureId);
   const pendingComments = useMemo(() => comments.filter((c) => c.status === "pending"), [comments]);
+  const fallbackViewMode: GitViewMode = diffMode === "branch" ? "vs-target" : "uncommitted";
+
+  // Per-feature persisted toggle. The `viewMode` local state holds the
+  // user's pick; it stays in sync with the persisted setting via the effect
+  // below, so reload / cross-tab switches resume on the right view. Local
+  // state lets the toggle flip instantly without an optimistic cache write
+  // (per `no-optimistic-updates.md`).
+  const { data: settingsData } = useGetFeatureSettings(featureId);
+  const persistedViewMode = useMemo<GitViewMode>(() => {
+    const raw = settingsData?.find((s) => s.key === GIT_VIEW_MODE_SETTING)?.value;
+    return isGitViewMode(raw) ? raw : fallbackViewMode;
+  }, [fallbackViewMode, settingsData]);
+
+  const [viewMode, setViewMode] = useState<GitViewMode>(persistedViewMode);
+  useEffect(() => {
+    setViewMode(persistedViewMode);
+  }, [persistedViewMode]);
+
+  const setFeatureSetting = useSetFeatureSetting({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetFeatureSettingsQueryKey(featureId) });
+      },
+      onError: (err: unknown) => {
+        // Roll back the local pick so the UI matches the persisted state.
+        setViewMode(persistedViewMode);
+        const message = err instanceof Error ? err.message : "Unknown error";
+        toast.error(`Could not save Git view setting: ${message}`);
+      },
+    },
+  });
+
+  const handleViewModeChange = useCallback(
+    (next: GitViewMode) => {
+      if (next === viewMode) return;
+      setViewMode(next);
+      setFeatureSetting.mutate({
+        id: featureId,
+        data: { key: GIT_VIEW_MODE_SETTING, value: next },
+      });
+    },
+    [featureId, setFeatureSetting, viewMode],
+  );
+
+  // Live snapshot — narrow selector so this component only re-renders when its
+  // own feature's status changes (per frontend-performance.md).
+  const snapshot = useGitStatusStore(selectGitStatus(featureId));
+  const targetBranch = snapshot?.target_branch;
+
+  // The file-list collapse state lives here (alongside the new top toolbar)
+  // so we can render the toggle next to the view-mode segmented control —
+  // the user's specific request was to move the button up here. `DiffViewer`
+  // accepts the controlled props and skips its own internal rail / tree
+  // collapse buttons so there's a single source of truth.
+  const {
+    value: persistedFileListCollapsed,
+    setValue: persistFileListCollapsed,
+    isLoading: isFileListCollapseLoading,
+  } = useDebouncedSetting(GIT_SIDEBAR_COLLAPSED_SETTING, 0);
+  const fileListCollapsed = persistedFileListCollapsed === "true";
+  const setFileListCollapsed = useCallback(
+    (collapsed: boolean): void => {
+      persistFileListCollapsed(String(collapsed));
+    },
+    [persistFileListCollapsed],
+  );
+
+  // Translate the active toggle into the diff endpoints' `mode` parameter.
+  // "uncommitted" hits the working-tree path on the server (alias of the legacy
+  // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
+  const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
+  const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
 
   const onSend = onStartReviewFixer ?? onSendComments;
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
@@ -53,8 +144,36 @@ export const FeatureGitTab = memo(function FeatureGitTab({
 
   return (
     <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setFileListCollapsed(!fileListCollapsed)}
+          disabled={isFileListCollapseLoading}
+          aria-pressed={!fileListCollapsed}
+          aria-label={fileListCollapsed ? "Expand file list" : "Collapse file list"}
+          title={fileListCollapsed ? "Expand file list" : "Collapse file list"}
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {fileListCollapsed ? (
+            <PanelLeft className="h-4 w-4" />
+          ) : (
+            <PanelLeftClose className="h-4 w-4" />
+          )}
+        </button>
+        <GitTabToggle
+          value={viewMode}
+          onChange={handleViewModeChange}
+          targetBranch={targetBranch}
+        />
+      </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <DiffViewer featureId={featureId} mode={diffMode} />
+        <DiffViewer
+          featureId={featureId}
+          mode={effectiveDiffMode}
+          targetBranch={diffTargetBranch}
+          fileListCollapsed={fileListCollapsed}
+          onFileListCollapsedChange={setFileListCollapsed}
+        />
       </div>
       {shouldRender && (
         <div className="border-t px-4 py-3 flex justify-end">
