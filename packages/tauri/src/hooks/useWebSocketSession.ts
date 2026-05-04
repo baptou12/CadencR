@@ -28,7 +28,7 @@ import {
 } from "@/stores/ws-turn-lifecycle";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 
-interface UseWebSocketSessionReturn {
+export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
   /** Pre-filtered subset of `blocks` excluding subagent children, maintained
    *  incrementally by the store so AgentStream avoids re-deriving it on

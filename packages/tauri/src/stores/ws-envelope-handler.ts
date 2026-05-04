@@ -25,6 +25,7 @@ import {
   parseUsagePayload,
 } from "./ws-envelope-payload";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
+import { useGitStatusStore } from "./useGitStatusStore";
 import {
   type BlockMutation,
   blocksPatchWithDerived,
@@ -79,6 +80,20 @@ export function handleEnvelope(
   }
 
   if (envelope.domain === "workflow") {
+    // `worktree.created` / `worktree.ready` are the moments when the
+    // backend has just written `worktree_path` to the DB and the
+    // git-status watcher needs to be re-bound to the new path. Bump the
+    // per-feature epoch so any mounted `useGitStatusSubscription` re-issues
+    // its subscribe envelope (which makes the backend re-resolve the path).
+    if (envelope.action === "worktree.created" || envelope.action === "worktree.ready") {
+      const featureId =
+        isRecord(envelope.payload) && typeof envelope.payload.feature_id === "number"
+          ? envelope.payload.feature_id
+          : null;
+      if (featureId != null) {
+        useGitStatusStore.getState().bumpWatcherEpoch(featureId);
+      }
+    }
     handleWorktreeEvent(ctx, sessionId, envelope.action, envelope.payload);
     return;
   }

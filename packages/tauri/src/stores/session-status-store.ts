@@ -34,6 +34,7 @@ import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
+import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 
 export type { LiveAgentStatus, PendingKind };
 
@@ -216,6 +217,11 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       return;
     }
 
+    if (domain === "git") {
+      handleGitEnvelope(action, payload);
+      return;
+    }
+
     if (domain !== "app") return;
     if (action === "session_status.snapshot") handleSnapshot(payload);
     else if (action === "session_status.update") handleUpdate(payload);
@@ -237,6 +243,12 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
 
       const protocols = getWsProtocols();
       const ws = new WebSocket(getWsUrl(), protocols.length ? protocols : undefined);
+      // `intentionalClose` flips to true in `disconnect()` *before* we call
+      // `ws.close()`. The close handler then knows not to schedule a
+      // reconnect and not to scribble on the current `store.ws` (which may
+      // already be a freshly-created replacement — see the React Strict
+      // Mode race below).
+      let intentionalClose = false;
 
       ws.addEventListener("open", () => {
         reconnectDelay = RECONNECT_BASE_MS;
@@ -248,13 +260,36 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
       });
 
+      // The close handler must guard against two failure modes that *both*
+      // produce duplicate live connections in dev (React Strict Mode):
+      //
+      //  1. After `disconnect()` is called (Strict cleanup), the WS we just
+      //     closed will fire `close`. By then `connect()` has already run
+      //     a second time and `store.ws` points at a *different* socket —
+      //     blindly setting `ws: null` here would null that out and the
+      //     subscribe-effects bound to it would silently stop working.
+      //
+      //  2. `scheduleReconnect()` will fire `connect()` again ~1 s after
+      //     close. Combined with #1 we get two open sockets at once, and
+      //     only one of them carries the `subscribe.git_status` registered
+      //     by `useGitStatusSubscription` — the other receives no
+      //     `commit.output` envelopes, which looks exactly like "streaming
+      //     is broken".
+      //
+      // Both paths are skipped on intentional close, and the store mutation
+      // is gated by an instance check so a stale socket can't clobber the
+      // current one.
       ws.addEventListener("close", () => {
-        set({ isConnected: false, ws: null });
-        scheduleReconnect();
+        if (get().ws === ws) {
+          set({ isConnected: false, ws: null });
+        }
+        if (!intentionalClose) {
+          scheduleReconnect();
+        }
       });
 
       ws.addEventListener("error", () => {
-        set({ isConnected: false });
+        if (get().ws === ws) set({ isConnected: false });
       });
 
       ws.addEventListener("message", (event) => {
@@ -275,6 +310,12 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         }
       });
 
+      // Stash the flag-setter on the socket so `disconnect()` can flip it
+      // without us having to expose another store field.
+      (ws as WebSocket & { __intentionalClose?: () => void }).__intentionalClose = () => {
+        intentionalClose = true;
+      };
+
       set({ ws });
     },
 
@@ -285,6 +326,12 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       }
       const ws = get().ws;
       if (ws) {
+        // Mark this close as intentional *before* closing, so the close
+        // handler skips both the store wipe (it's already a no-op via the
+        // instance check) and — crucially — `scheduleReconnect`. Without
+        // this, every Strict-Mode unmount kicks off a reconnect that
+        // silently spawns a parallel socket.
+        (ws as WebSocket & { __intentionalClose?: () => void }).__intentionalClose?.();
         ws.close();
       }
       set({ ws: null, isConnected: false });

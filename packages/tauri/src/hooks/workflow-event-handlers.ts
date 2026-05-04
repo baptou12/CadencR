@@ -359,7 +359,7 @@ export function createWorkflowMessageHandler(
       case "worktree.setup_output":
       case "worktree.ready":
       case "worktree.setup_error":
-        handleWorkflowWorktreeEvent(action, payload, set);
+        handleWorkflowWorktreeEvent(action, payload, set, get);
         break;
       case "completed": {
         set({ workflowStatus: "completed" });
