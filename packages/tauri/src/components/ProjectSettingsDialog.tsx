@@ -147,7 +147,7 @@ export function ProjectSettingsDialog({
                       data: { key: "setup_worktree", value: setupWorktree },
                     })
                   }
-                  className="min-h-24 resize-y rounded-none border-0 bg-[var(--code-bg)] font-mono text-xs leading-relaxed text-[var(--code-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className="min-h-24 resize-y rounded-none border-0 bg-[var(--block-bash-body-bg)] font-mono text-xs leading-relaxed text-[var(--block-bash-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
               </ShellTerminalFrame>
               <p className="text-xs text-muted-foreground">

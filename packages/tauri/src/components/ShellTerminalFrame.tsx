@@ -17,22 +17,23 @@ export function ShellTerminalFrame({
   className,
   bodyClassName,
 }: ShellTerminalFrameProps): ReactElement {
-  // Theme-aware: body matches the editor/terminal code surface (`--code-bg`),
-  // chrome uses semantic muted/border tokens so the frame reads correctly in
-  // both Dracula and Aurora.
+  // Editable shell surfaces use the same lighter command strip and black
+  // body tokens as the canonical conversation `BashBlock`.
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-md border border-border bg-[var(--code-bg)]",
+        "overflow-hidden rounded-md border border-border bg-[var(--block-bash-body-bg)]",
         className,
       )}
     >
-      <div className="flex items-center gap-2 bg-muted px-3 py-1 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 bg-[var(--block-bash-header-bg)] px-3 py-1 text-xs text-[var(--block-bash-muted-fg)]">
         <TerminalIcon className="size-3 shrink-0" />
-        <span className="font-medium text-foreground">{title}</span>
-        {subtitle && <span className="min-w-0 truncate text-muted-foreground/80">{subtitle}</span>}
+        <span className="font-medium text-[var(--block-bash-fg)]">{title}</span>
+        {subtitle && (
+          <span className="min-w-0 truncate text-[var(--block-bash-muted-fg)]">{subtitle}</span>
+        )}
       </div>
-      <div className={cn("bg-[var(--code-bg)]", bodyClassName)}>{children}</div>
+      <div className={cn("bg-[var(--block-bash-body-bg)]", bodyClassName)}>{children}</div>
     </div>
   );
 }

@@ -266,9 +266,8 @@ describe("WorktreeSetupSection", () => {
     const logEl = screen.getByText(
       (_, el) => el?.tagName === "PRE" && el.textContent === "installing deps\nall done",
     );
-    expect(screen.getByText("Setup")).toBeInTheDocument();
-    expect(screen.getByText("worktree commands")).toBeInTheDocument();
-    expect(logEl.className).toContain("text-[var(--code-fg)]");
+    expect(screen.getByText("Setup — worktree commands")).toBeInTheDocument();
+    expect(logEl.parentElement?.className).toContain("bg-[var(--block-bash-body-bg)]");
   });
 
   it("shows persisted log from snapshot on resume via ws mode", async () => {

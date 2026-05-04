@@ -63,9 +63,9 @@
   --acc-yellow: #f1fa8c;
   --acc-comment: #6271a4;
 
-  /* Code surface — used for the static `ShellTerminalFrame` and code-only
-   * textareas. Distinct from `--background` so shell-toned surfaces read as
-   * a terminal, not as flat panel chrome. */
+  /* Code surface — used for editor-adjacent code-only surfaces. Bash-style
+   * tools use the `--block-bash-*` tokens below so every shell surface has
+   * the same lighter command strip and black output body. */
   --code-bg: #1a1b26;
   --code-fg: #f8f8f2;
 
@@ -88,7 +88,7 @@
   --block-thinking-accent: #dbb1ff;
   --block-plan-bg: #191f31;
   --block-plan-accent: #8ec5ff;
-  --block-bash-header-bg: #27272a;
+  --block-bash-header-bg: #202024;
   --block-bash-body-bg: #09090b;
   --block-bash-fg: #d4d4d8;
   --block-bash-muted-fg: #9f9fa9;
@@ -237,7 +237,7 @@
   --block-thinking-accent: oklch(0.45 0.2 295);
   --block-plan-bg: oklch(0.96 0.04 245);
   --block-plan-accent: oklch(0.45 0.18 245);
-  --block-bash-header-bg: #27272a;
+  --block-bash-header-bg: #202024;
   --block-bash-body-bg: #09090b;
   --block-bash-fg: #d4d4d8;
   --block-bash-muted-fg: #9f9fa9;

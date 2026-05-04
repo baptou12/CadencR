@@ -13,7 +13,7 @@ import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/CopyButton";
-import { ShellTerminalFrame } from "@/components/ShellTerminalFrame";
+import { BashBlock } from "@/components/BashBlock";
 import { cn } from "@/lib/utils";
 
 type SetupStep = "naming" | "named" | "creating" | "created" | "setup" | "done" | "error";
@@ -41,26 +41,12 @@ function StepIcon({
 }
 
 function LogOutput({ log }: { log: string }) {
-  const ref = useRef<HTMLPreElement>(null);
-  useEffect(() => {
-    if (ref.current) {
-      ref.current.scrollTop = ref.current.scrollHeight;
-    }
-  }, [log]);
   return (
-    <ShellTerminalFrame
-      title="Setup"
-      subtitle="worktree commands"
-      className="mt-1"
-      bodyClassName="p-0"
-    >
-      <pre
-        ref={ref}
-        className="max-h-40 overflow-auto px-3 py-2 text-xs font-mono leading-relaxed text-[var(--code-fg)] whitespace-pre-wrap"
-      >
-        {log}
-      </pre>
-    </ShellTerminalFrame>
+    <BashBlock
+      command="Setup — worktree commands"
+      content={log}
+      bodyExtraClassName="max-h-40 overflow-y-auto"
+    />
   );
 }
 
