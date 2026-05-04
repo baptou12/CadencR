@@ -5,8 +5,7 @@
 //! `feature_settings`, then delegates to the matching helper. Each mode
 //! is a tiny submodule:
 //!
-//! - [`branch`] — branch-name and `~/.cadencr/<project>/<safe-branch>` path
-//!   construction.
+//! - [`branch`] — branch-name construction.
 //! - [`db`] — `feature_settings` + project lookups shared across modes.
 //! - [`new_branch`] — `WorktreeMode::New` helpers (`ensure_new_branch_name`,
 //!   `add_new_worktree`).
@@ -32,6 +31,7 @@ use std::path::PathBuf;
 use sqlx::SqlitePool;
 
 use crate::domain::workflow::engine::WsSender;
+use crate::shared::worktree_paths::compute_worktree_path;
 
 use db::{lookup_project, read_base_branch};
 use envelope::send_envelope;
@@ -172,7 +172,7 @@ async fn ensure_new(
     let (project_dir, project_name) = lookup_project(read_pool, project_id).await?;
     let branch =
         new_branch::ensure_new_branch_name(read_pool, write_pool, feature_id, project_id).await?;
-    let path_str = branch::compute_worktree_path(&project_name, &branch).await?;
+    let path_str = compute_worktree_path(&project_name, &branch).await?;
     let base_branch = read_base_branch(read_pool, feature_id).await;
 
     send_envelope(

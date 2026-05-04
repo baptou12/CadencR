@@ -2,6 +2,7 @@ use base64::Engine;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri_plugin_shell::process::CommandChild;
@@ -97,6 +98,21 @@ fn generate_auth_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
+fn production_db_path_from_home(home: &Path) -> PathBuf {
+    home.join(".cadencr").join("database").join("cadencr.db")
+}
+
+fn production_db_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or_else(|| "Failed to get home dir".to_string())?;
+    let db_path = production_db_path_from_home(&home);
+    let db_dir = db_path
+        .parent()
+        .ok_or_else(|| "Failed to resolve database directory".to_string())?;
+    std::fs::create_dir_all(db_dir)
+        .map_err(|e| format!("Failed to create app database dir: {e}"))?;
+    Ok(db_path)
+}
+
 pub struct SpawnResult {
     pub state: SidecarState,
     /// Flipped by the log-pump on `CommandEvent::Terminated` so the health
@@ -105,13 +121,7 @@ pub struct SpawnResult {
 }
 
 pub fn spawn_sidecar(app: &tauri::AppHandle) -> Result<SpawnResult, String> {
-    let db_dir = dirs::data_dir()
-        .ok_or_else(|| "Failed to get data dir".to_string())?
-        .join("cadencr");
-
-    std::fs::create_dir_all(&db_dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
-
-    let db_path = db_dir.join("cadencr.db");
+    let db_path = production_db_path()?;
     let port = SIDECAR_PORT;
     let base_url = format!("http://127.0.0.1:{port}");
     let auth_token = generate_auth_token();
@@ -240,5 +250,20 @@ pub fn stop_sidecar(state: &SidecarState) {
         // Tauri's shell plugin only exposes SIGKILL; the sidecar must
         // handle graceful shutdown via its own signal handler.
         log::info!("Sidecar process terminated");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::production_db_path_from_home;
+
+    #[test]
+    fn production_db_lives_under_cadencr_database_dir() {
+        let home = std::path::Path::new("/Users/example");
+
+        assert_eq!(
+            production_db_path_from_home(home),
+            home.join(".cadencr").join("database").join("cadencr.db")
+        );
     }
 }

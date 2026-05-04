@@ -2,9 +2,9 @@
 //! handler only persists settings; the dispatcher logic exercised here lives
 //! one layer below. Validation cases are in `feature_create_test.rs`.
 //!
-//! `ensure_worktree` writes provisioned worktrees to `~/.cadencr`. To avoid
-//! polluting the developer's home dir, these tests redirect `$HOME` to a
-//! tempdir for the duration of each test via `common::worktree::HomeGuard`.
+//! `ensure_worktree` writes provisioned worktrees to `~/.cadencr/worktrees`.
+//! To avoid polluting the developer's home dir, these tests redirect `$HOME`
+//! to a tempdir for the duration of each test via `common::worktree::HomeGuard`.
 
 mod common;
 
@@ -98,7 +98,8 @@ async fn ensure_worktree_new_with_base_branch_forks_from_base() {
 #[tokio::test]
 async fn ensure_worktree_reuse_unattached_branch_creates_new_worktree() {
     // Branch exists but no worktree yet — `git worktree add` must fire and
-    // produce a new path under `~/.cadencr/{project}/{safe-branch}`.
+    // produce a new path under
+    // `~/.cadencr/worktrees/{project}/{safe-branch}`.
     let pool = worktree_pool().await;
     let tmp_home = tempfile::tempdir().unwrap();
     let _guard = HomeGuard::set(tmp_home.path());
@@ -120,9 +121,19 @@ async fn ensure_worktree_reuse_unattached_branch_creates_new_worktree() {
     let canon_wt = std::fs::canonicalize(&wt_path).unwrap_or(wt_path.clone());
     assert!(
         canon_wt.starts_with(&canon_home),
-        "worktree path must land under HOME-redirected ~/.cadencr; got {} (home={})",
+        "worktree path must land under HOME-redirected ~/.cadencr/worktrees; got {} (home={})",
         canon_wt.display(),
         canon_home.display()
+    );
+    assert!(
+        wt_path.ends_with(
+            std::path::Path::new(".cadencr")
+                .join("worktrees")
+                .join("reuseproj")
+                .join("feat-free")
+        ),
+        "worktree path must use the Cadencr worktrees layout; got {}",
+        wt_path.display()
     );
     assert!(
         wt_path.exists(),

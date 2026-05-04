@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::domain::git::models::WorktreeInfo;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_safe_refs};
+use crate::shared::worktree_paths::compute_worktree_path;
 
 /// List all worktrees for a repository.
 pub async fn list_worktrees(repo_path: &Path) -> Result<Vec<WorktreeInfo>, AppError> {
@@ -95,7 +96,7 @@ pub async fn get_worktree_info(
 }
 
 /// Create a git worktree with a new branch.
-/// Places the worktree at ~/.cadencr/<project_name>/<safe_branch>.
+/// Places the worktree at ~/.cadencr/worktrees/<project_name>/<safe_branch>.
 pub async fn create_worktree(
     repo_path: &Path,
     branch_name: &str,
@@ -118,11 +119,10 @@ pub async fn create_worktree(
         )));
     }
 
-    let safe_branch = branch_name.replace('/', "-");
-    let home = dirs::home_dir()
-        .ok_or_else(|| AppError::Internal("Cannot determine home directory".into()))?;
-    let worktree_path = home.join(".cadencr").join(project_name).join(&safe_branch);
-    let worktree_str = worktree_path.to_string_lossy().to_string();
+    let worktree_str = compute_worktree_path(project_name, branch_name)
+        .await
+        .map_err(AppError::BadRequest)?;
+    let worktree_path = std::path::PathBuf::from(&worktree_str);
 
     // Check if directory already exists
     if worktree_path.exists() {

@@ -5,8 +5,7 @@ use std::path::Path;
 
 use crate::domain::git::commands as git_commands;
 use crate::shared::git_cli::run_git_safe_refs;
-
-use super::branch::compute_worktree_path;
+use crate::shared::worktree_paths::compute_worktree_path;
 
 /// Outcome of `attach_to_existing_branch`: whether the worktree was newly
 /// created or already attached to a different feature on disk.
@@ -41,8 +40,8 @@ pub async fn attach_to_existing_branch(
         });
     }
 
-    // Build a fresh path under ~/.cadencr/<project>/<safe-branch> and run
-    // `git worktree add <path> <branch>` (no `-b` — branch already exists).
+    // Build a fresh path under ~/.cadencr/worktrees/<project>/<safe-branch>
+    // and run `git worktree add <path> <branch>` (no `-b` — branch exists).
     let path_str = compute_worktree_path(project_name, branch).await?;
     run_git_safe_refs(
         &["worktree", "add"],

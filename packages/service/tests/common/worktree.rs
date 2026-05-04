@@ -91,7 +91,7 @@ pub fn init_git_repo(dir: &Path) {
 }
 
 /// Process-global lock for tests that mutate `$HOME` to redirect the
-/// `~/.cadencr` worktree root into a tempdir. cargo test runs tokio tests in
+/// `~/.cadencr/worktrees` root into a tempdir. cargo test runs tokio tests in
 /// parallel; without this lock two of them would race and one's `$HOME`
 /// pop would leak into the other.
 static HOME_LOCK: Mutex<()> = Mutex::new(());
