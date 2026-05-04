@@ -8,13 +8,26 @@ import type { PendingPermission, PermissionDecisionValue } from "./ToolPermissio
 export interface SplitSendAction {
   label: string;
   icon: ReactNode;
-  onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  onClick: (
+    text: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void | Promise<void>;
   variant?: "default" | "outline";
   kbdShortcut?: string[];
 }
 
 export interface AgentPromptBarProps {
-  onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  /**
+   * Called when the user submits the prompt. May return a Promise — the
+   * prompt bar awaits it before clearing the input so a failed save
+   * (e.g. worktree settings persistence) doesn't drop the user's text.
+   * Errors are surfaced via toast inside the consumer; the bar restores
+   * the draft on rejection.
+   */
+  onSend: (
+    message: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void | Promise<void>;
   onStop: () => void;
   status: LiveAgentStatus;
   splitSendActions?: SplitSendAction[];

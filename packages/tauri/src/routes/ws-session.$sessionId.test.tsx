@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
-import { waitFor } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => {
   const mockSplitEditorFocused = vi.fn(() => false);
   const mockFocusPromptBar = vi.fn();
   const mockFocusActiveInput = vi.fn();
+  // Default: succeeds. Tests can replace per-call behavior via mockRejected.
+  const mockSetFeatureSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
+  const mockSendPrompt = vi.fn();
+  const mockToastError = vi.fn();
   return {
     mockUseParams,
     mockUseSearch,
@@ -18,6 +22,9 @@ const mocks = vi.hoisted(() => {
     mockSplitEditorFocused,
     mockFocusPromptBar,
     mockFocusActiveInput,
+    mockSetFeatureSettingMutateAsync,
+    mockSendPrompt,
+    mockToastError,
   };
 });
 
@@ -89,13 +96,20 @@ vi.mock("@/components/diff/DiffViewerModal", () => ({
     open ? <div data-testid="diff-modal" /> : null,
 }));
 
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: mocks.mockToastError,
+  },
+}));
+
 vi.mock("@/hooks/useWebSocketSession", () => ({
   useWebSocketSession: vi.fn(() => ({
     blocks: [],
     status: "idle",
     isConnected: false,
     initSession: vi.fn(),
-    sendPrompt: vi.fn(),
+    sendPrompt: mocks.mockSendPrompt,
     interrupt: vi.fn(),
     clearSession: vi.fn(),
     pendingPermission: null,
@@ -230,14 +244,26 @@ vi.mock("@/api/agentRuntime", () => ({
 }));
 
 vi.mock("@/api/generated", () => ({
-  useGetStats: vi.fn(() => ({ data: undefined })),
   useGetBranch: vi.fn(() => ({ data: undefined })),
   useGetFeatureSettings: vi.fn(() => ({ data: [] })),
+  useGetGitStatus: vi.fn(() => ({ data: undefined })),
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
   // The route reads two opt-in mode toggles (Claude bypass, Codex full-access)
   // via useGetWorkspaceSetting. Default both off so the chip shows the
   // standard cycle.
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
+  // Used by the first-prompt worktree-mode persistence (writes
+  // `worktree_mode` / `worktree_reuse_branch` / `worktree_base_branch`
+  // before sending the prompt).
+  useSetFeatureSetting: vi.fn(() => ({ mutateAsync: mocks.mockSetFeatureSettingMutateAsync })),
+  // The route's resolver (`resolveWorktreeChoice`) consults the branch
+  // list to pick reuse-vs-new at send-time. The popover's lazy fetch
+  // also runs through this hook.
+  useListBranches: vi.fn(() => ({ data: undefined, isLoading: false, isError: false })),
+}));
+
+vi.mock("@/hooks/useGitStatusSubscription", () => ({
+  useGitStatusSubscription: vi.fn(),
 }));
 
 import { Route } from "./ws-session.$sessionId";
@@ -261,6 +287,10 @@ describe("WsSessionPage route", () => {
     vi.mocked(AgentSession).mockClear();
     mocks.mockFocusPromptBar.mockClear();
     mocks.mockFocusActiveInput.mockClear();
+    mocks.mockSendPrompt.mockClear();
+    mocks.mockToastError.mockClear();
+    mocks.mockSetFeatureSettingMutateAsync.mockReset();
+    mocks.mockSetFeatureSettingMutateAsync.mockResolvedValue(undefined);
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
     mocks.mockUseSearch.mockReturnValue({ cwd: "/test/path", featureId: 35, projectId: 1 });
     mocks.mockAgentVisible.mockReturnValue(true);
@@ -319,5 +349,37 @@ describe("WsSessionPage route", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 20));
 
     expect(mocks.mockFocusPromptBar).not.toHaveBeenCalled();
+  });
+
+  it("toasts and aborts the send when saving worktree settings fails (does not call sendPrompt)", async () => {
+    // Reproduce the bug: the user toggled "Use worktree", typed a prompt,
+    // hit send, and `setFeatureSetting.mutateAsync` rejects (e.g. backend
+    // returned 500). Before the fix, the prompt was already cleared by the
+    // prompt bar before the await — losing the text. After the fix, the
+    // route still rejects (so the bar restores the draft) and never calls
+    // `ws.sendPrompt`.
+    mocks.mockSetFeatureSettingMutateAsync.mockRejectedValueOnce(new Error("disk full"));
+
+    render(<WsSessionPage />);
+    const props = lastAgentSessionProps();
+    // Flip "use worktree" on so the route's first-prompt branch runs.
+    // Wrap in `act` so the setState flushes before we re-read props for
+    // the latest `onSend` closure (it depends on `useWorktree`).
+    await act(async () => {
+      (props.onToggleWorktree as () => void)();
+    });
+
+    const propsAfterToggle = lastAgentSessionProps();
+    const onSend = propsAfterToggle.onSend as (text: string) => Promise<void>;
+
+    // `AgentPromptBar` restores the cleared draft only when `onSend` rejects.
+    // The route still owns the toast, but must rethrow the settings failure.
+    await act(async () => {
+      await expect(onSend("hello")).rejects.toThrow("disk full");
+    });
+
+    expect(mocks.mockToastError).toHaveBeenCalledTimes(1);
+    expect(mocks.mockToastError.mock.calls[0][0]).toMatch(/worktree settings/i);
+    expect(mocks.mockSendPrompt).not.toHaveBeenCalled();
   });
 });

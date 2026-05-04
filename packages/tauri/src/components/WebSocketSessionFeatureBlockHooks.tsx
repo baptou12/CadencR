@@ -14,11 +14,11 @@ import { useAgentCatalog } from "@/api/agentRuntime";
 import {
   useGetBranch,
   useGetFeatureSettings,
-  useGetStats,
   useGetWorkspaceSetting,
   useListProjects,
-  type GitStats,
+  useGetGitStatus,
 } from "@/api/generated";
+import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
@@ -31,6 +31,7 @@ import {
   CODEX_FULL_ACCESS_SETTING_KEY,
 } from "@/shared/permission-mode-settings";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import type { WorktreeStatus } from "@/types/workflow";
@@ -43,8 +44,8 @@ interface SessionRefs {
 
 interface SessionFeatureData {
   projectPath: string;
-  gitStats: GitStats | undefined;
   gitBranch: string | undefined;
+  defaultBranch: string | undefined;
   featureSettings: Record<string, string>;
   session: ReturnType<typeof useWsSessionStore.getState>["sessions"][string] | undefined;
   effectiveCwd: string;
@@ -58,6 +59,8 @@ interface SessionControls {
   ws: ReturnType<typeof useWebSocketSession>;
   useWorktree: boolean;
   setUseWorktree: Dispatch<SetStateAction<boolean>>;
+  selectedBranch: string | null;
+  setSelectedBranch: Dispatch<SetStateAction<string | null>>;
   initializedRef: RefObject<string | null>;
   resolveModelThinkingEffort: ReturnType<typeof useResolvedModel>["resolveModelThinkingEffort"];
   agentCatalog: ReturnType<typeof useAgentCatalog>;
@@ -89,9 +92,10 @@ export function useSessionFeatureData(
   const projectLookupEnabled = options?.projectLookupEnabled ?? true;
   const projectsQuery = useListProjects({ query: { enabled: projectLookupEnabled } });
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
-  const { data: gitStats } = useGetStats(
-    { feature_id: featureId, mode: "worktree" },
-    { query: { enabled: gitMetadataEnabled, refetchInterval: 5 * 60 * 1000 } },
+  useGitStatusSubscription(gitMetadataEnabled ? featureId : null);
+  const { data: initialGitStatus } = useGetGitStatus(
+    { feature_id: featureId },
+    { query: { enabled: gitMetadataEnabled } },
   );
   const { data: branchData } = useGetBranch(
     { project_id: projectId },
@@ -106,7 +110,9 @@ export function useSessionFeatureData(
   const liveWorktreeBranch = useWsSessionStore((s) => s.sessions[sessionId]?.worktreeBranch);
   const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
   const retryWorktreeSetup = useWsSessionStore((s) => s.retryWorktreeSetup);
-  const gitBranch = liveWorktreeBranch ?? featureSettings.worktree_branch ?? branchData?.branch;
+  const gitBranch =
+    liveWorktreeBranch ?? featureSettings.worktree_branch ?? branchData?.branch ?? undefined;
+  const defaultBranch = branchData?.branch ?? undefined;
   const effectiveCwd = session?.worktreePath ?? featureSettings.worktree_path ?? cwd;
   const worktreeStatus =
     session?.worktreeStatus && session.worktreeStatus !== "idle"
@@ -117,11 +123,16 @@ export function useSessionFeatureData(
     (): void => retryWorktreeSetup(sessionId),
     [retryWorktreeSetup, sessionId],
   );
+  useEffect(() => {
+    if (initialGitStatus) {
+      useGitStatusStore.getState().setStatus(initialGitStatus);
+    }
+  }, [initialGitStatus]);
   return useMemo<SessionFeatureData>(
     () => ({
       projectPath: projectPath ?? cwd,
-      gitStats,
       gitBranch,
+      defaultBranch,
       featureSettings,
       session,
       effectiveCwd,
@@ -132,10 +143,10 @@ export function useSessionFeatureData(
     }),
     [
       cwd,
+      defaultBranch,
       effectiveCwd,
       featureSettings,
       gitBranch,
-      gitStats,
       handleRetryWorktreeSetup,
       projectPath,
       requestSlashCommands,
@@ -168,6 +179,7 @@ export function useSessionControls(
     loadPersisted: options?.loadPersistedState ?? true,
   });
   const [useWorktree, setUseWorktree] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const initializedRef = useRef<string | null>(null);
   const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModel(
     featureId,
@@ -193,6 +205,8 @@ export function useSessionControls(
       ws,
       useWorktree,
       setUseWorktree,
+      selectedBranch,
+      setSelectedBranch,
       initializedRef,
       resolveModelThinkingEffort,
       agentCatalog,
@@ -217,6 +231,7 @@ export function useSessionControls(
       resolvedModelId,
       resolvedProviderId,
       resolvedThinkingEffort,
+      selectedBranch,
       supportedThinkingEfforts,
       useWorktree,
       ws,

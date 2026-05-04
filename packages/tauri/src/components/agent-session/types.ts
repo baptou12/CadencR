@@ -32,8 +32,16 @@ export interface AgentSessionProps {
   toolResultMap?: Map<string, AgentBlockData>;
   /** Current status of the agent */
   status: AgentStatus;
-  /** Called when the user sends a message via the prompt bar */
-  onSend: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  /**
+   * Called when the user sends a message via the prompt bar. May return a
+   * Promise — the prompt bar awaits it before clearing the input so a
+   * failed pre-send step (e.g. saving worktree settings) doesn't drop the
+   * user's text. Consumers should toast errors themselves.
+   */
+  onSend: (
+    message: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+  ) => void | Promise<void>;
   /** Called when the user clicks the stop button */
   onStop: () => void;
   /** Active questions from AskUserQuestion tool calls */
@@ -159,6 +167,16 @@ export interface AgentSessionProps {
   useWorktree?: boolean;
   /** Called when user toggles the "use worktree" chip */
   onToggleWorktree?: () => void;
+  /**
+   * Optional richer pre-first-prompt worktree picker — a two-chip group:
+   * a Branch chip (with chevron + virtualized branch list, default = the
+   * project's current branch) and a "Use worktree" toggle. Embedders that
+   * don't supply these fall back to the legacy boolean chip.
+   */
+  worktreeProjectId?: number;
+  worktreeDefaultBranch?: string;
+  worktreeSelectedBranch?: string | null;
+  onWorktreeBranchChange?: (next: string | null) => void;
   /**
    * Whether the agent tab is the visible tab for this feature. Forwarded
    * to `AgentPromptBar` so its agent-menu shortcuts (⌘P open model picker,
