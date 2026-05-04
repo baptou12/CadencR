@@ -21,6 +21,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useGetStats, type Feature } from "@/api/generated";
+import { NumStat } from "@/components/diff/NumStat";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 
@@ -131,11 +132,12 @@ export function ProjectFeatureRow({
             </div>
             {(hasStats || feature.type !== "ws-session") && (
               <div className="flex items-center gap-2 text-[11px] leading-tight">
-                {hasStats && gitStats.insertions > 0 && (
-                  <span className="text-green-500/90">+{gitStats.insertions}</span>
-                )}
-                {hasStats && gitStats.deletions > 0 && (
-                  <span className="text-red-400/90">-{gitStats.deletions}</span>
+                {hasStats && (
+                  <NumStat
+                    additions={gitStats.insertions}
+                    deletions={gitStats.deletions}
+                    className="text-[11px] leading-tight"
+                  />
                 )}
                 {feature.type !== "ws-session" && (
                   <Select

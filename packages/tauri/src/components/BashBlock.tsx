@@ -1,5 +1,4 @@
-import { memo, useMemo } from "react";
-import type { ReactElement } from "react";
+import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseAnsi } from "@/lib/ansi-to-html";
@@ -14,15 +13,19 @@ import {
 
 const DEFAULT_BASH_LINES = 10;
 
-interface BashBlockProps {
+/** Insert line breaks before shell operators for readability in the header. */
+function formatShellCommand(cmd: string): string {
+  return cmd.replace(/\s+(&&|\|\||[;&|])\s*/g, "\n  $1 ");
+}
+
+export interface BashBlockProps {
   command?: string;
   content?: string;
   running?: boolean;
   isError?: boolean;
-}
-
-function formatShellCommand(cmd: string): string {
-  return cmd.replace(/\s+(&&|\|\||[;&|])\s*/g, "\n  $1 ");
+  maxLines?: number;
+  bodyExtraClassName?: string;
+  runningFooter?: ReactNode;
 }
 
 export const BashBlock = memo(function BashBlock({
@@ -30,33 +33,26 @@ export const BashBlock = memo(function BashBlock({
   content,
   running,
   isError,
+  maxLines = DEFAULT_BASH_LINES,
+  bodyExtraClassName,
+  runningFooter,
 }: BashBlockProps): ReactElement {
   const lines = content?.split("\n") ?? [];
   const totalLines = lines.length;
-  const truncatedAnsi = useMemo(
-    () => parseAnsi((content?.split("\n") ?? []).slice(-DEFAULT_BASH_LINES).join("\n")),
-    [content],
-  );
+
   const hasOutput = typeof content === "string" && content.length > 0;
   const formattedCommand = useMemo(
     () => (command ? formatShellCommand(command) : undefined),
     [command],
   );
 
-  // Colors come straight from the theme:
-  //   - `--block-bash-header-bg` / `--block-bash-body-bg`: surfaces
-  //   - `--block-bash-fg`: terminal "white" — the Bash label and the body
-  //     output's default text.
-  //   - `--block-bash-muted-fg`: dimmer terminal text — the rendered
-  //     command line, the toggle, the running/empty placeholders.
-  // No Tailwind shades, no opacity tricks — themes own every color.
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div>
+        <div className="min-w-0 max-w-full">
           <CollapsibleBlock
             totalCount={totalLines}
-            visibleCount={DEFAULT_BASH_LINES}
+            visibleCount={maxLines}
             unit="lines"
             className={isError ? "border-destructive/40" : "border-border"}
             headerClassName={
@@ -69,6 +65,7 @@ export const BashBlock = memo(function BashBlock({
               "px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
               "bg-[var(--block-bash-body-bg)]",
               isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
+              bodyExtraClassName,
             )}
             truncationClassName="text-[var(--block-bash-muted-fg)]/70"
             header={
@@ -81,22 +78,24 @@ export const BashBlock = memo(function BashBlock({
               </>
             }
           >
-            {({ showAll }) => (
-              <>
-                {hasOutput ? (
-                  <pre className="whitespace-pre-wrap">
-                    {showAll ? parseAnsi(content) : truncatedAnsi}
-                  </pre>
-                ) : running ? (
-                  <div className="flex items-center gap-2 text-xs text-[var(--block-bash-muted-fg)]">
-                    <Loader2Icon className="size-3 animate-spin" />
-                    <span>Running…</span>
-                  </div>
-                ) : (
-                  <div className="text-xs text-[var(--block-bash-muted-fg)]">No output</div>
-                )}
-              </>
-            )}
+            {({ showAll }) =>
+              hasOutput ? (
+                <BashBodyContent
+                  content={content ?? ""}
+                  maxLines={maxLines}
+                  showAll={showAll}
+                  running={running}
+                  runningFooter={runningFooter}
+                />
+              ) : running ? (
+                <div className="flex items-center gap-2 text-xs text-[var(--block-bash-muted-fg)]">
+                  <Loader2Icon className="size-3 animate-spin" />
+                  <span>Running…</span>
+                </div>
+              ) : (
+                <div className="text-xs text-[var(--block-bash-muted-fg)]">No output</div>
+              )
+            }
           </CollapsibleBlock>
         </div>
       </ContextMenuTrigger>
@@ -128,3 +127,31 @@ export const BashBlock = memo(function BashBlock({
     </ContextMenu>
   );
 });
+
+interface BashBodyContentProps {
+  content: string;
+  maxLines: number;
+  showAll: boolean;
+  running?: boolean;
+  runningFooter?: ReactNode;
+}
+
+function BashBodyContent({
+  content,
+  maxLines,
+  showAll,
+  running,
+  runningFooter,
+}: BashBodyContentProps): ReactElement {
+  const truncatedAnsi = useMemo(
+    () => parseAnsi(content.split("\n").slice(-maxLines).join("\n")),
+    [content, maxLines],
+  );
+  const fullAnsi = useMemo(() => (showAll ? parseAnsi(content) : null), [content, showAll]);
+  return (
+    <>
+      <pre className="whitespace-pre">{showAll ? fullAnsi : truncatedAnsi}</pre>
+      {running && runningFooter}
+    </>
+  );
+}

@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
-import { useGetFeaturePrd, useListProjects, useGetStats } from "@/api/generated";
+import { useGetFeaturePrd, useListProjects, useGetGitStatus } from "@/api/generated";
+import { useGitStatusStore } from "@/stores/useGitStatusStore";
+import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureTerminalTab, type FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
@@ -235,11 +237,20 @@ function FeatureWorkflowViewBody({
     [backend, featureId, setPaneActiveTab],
   );
 
-  // Git stats for tab bar badge
-  const { data: gitStats } = useGetStats(
-    { feature_id: featureId, mode: "branch" },
-    { query: { refetchInterval: 5 * 60 * 1000 } },
-  );
+  // Subscribe this feature to live git status pushes. The dispatcher in
+  // `ws-git-status-handler` writes incoming snapshots into `useGitStatusStore`.
+  useGitStatusSubscription(featureId);
+
+  // One-shot hydration on mount so the store is populated before the WS
+  // event arrives (or if a user lands here on a feature whose worktree was
+  // already attached). The subscribe callback also pushes a snapshot — the
+  // store accepts whichever arrives first; the next one overwrites.
+  const { data: initialGitStatus } = useGetGitStatus({ feature_id: featureId });
+  useEffect(() => {
+    if (initialGitStatus) {
+      useGitStatusStore.getState().setStatus(initialGitStatus);
+    }
+  }, [initialGitStatus]);
 
   // Terminal state
   const sendToTerminalStore = useTerminalStore((s) => s.sendToTerminal);
@@ -466,14 +477,8 @@ function FeatureWorkflowViewBody({
       label: "Git",
       Icon: GitCompareArrowsIcon,
       shortcut: ["cmd", "shift", "G"],
-      badge: <GitBadge gitStats={gitStats} gitBranch={backend.worktreeBranch} />,
-      content: (
-        <FeatureGitTab
-          featureId={featureId}
-          diffMode="branch"
-          onStartReviewFixer={startReviewFixerFromGit}
-        />
-      ),
+      badge: <GitBadge featureId={featureId} gitBranch={backend.worktreeBranch} />,
+      content: <FeatureGitTab featureId={featureId} onStartReviewFixer={startReviewFixerFromGit} />,
     },
     editor: {
       label: "Editor",
