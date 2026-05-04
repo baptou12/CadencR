@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { CopyButton } from "./CopyButton";
-import { NumStat } from "./NumStat";
+import { NumStat } from "@/components/NumStat";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface DiffFileHeaderProps {

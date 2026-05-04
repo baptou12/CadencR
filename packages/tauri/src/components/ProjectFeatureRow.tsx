@@ -21,7 +21,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useGetStats, type Feature } from "@/api/generated";
-import { NumStat } from "@/components/diff/NumStat";
+import { NumStat } from "@/components/NumStat";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 

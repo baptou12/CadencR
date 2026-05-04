@@ -62,12 +62,16 @@ export function CustomActionButton({
           <Button
             variant="ghost"
             size="icon"
-            className="relative size-7 rounded-r-none"
+            className="relative size-7 rounded-r-none text-xs"
             title={`Run ${action.name}`}
             onClick={handleClick}
             disabled={runMutation.isPending}
           >
-            <CustomActionIcon iconData={action.icon_data ?? null} name={action.name} />
+            <CustomActionIcon
+              iconData={action.icon_data ?? null}
+              name={action.name}
+              className="size-3.5"
+            />
             <CustomActionStatusDot
               lastRun={action.last_run ?? null}
               isRunning={runMutation.isPending}
@@ -77,7 +81,7 @@ export function CustomActionButton({
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-5 rounded-l-none px-0"
+              className="h-7 w-5 rounded-l-none px-0 text-xs"
               title={`Open ${action.name} details`}
             >
               <ChevronDownIcon className="size-3" />

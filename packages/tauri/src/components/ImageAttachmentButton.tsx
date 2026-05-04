@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Paperclip } from "lucide-react";
+import { ImageIcon } from "lucide-react";
 
 interface ImageAttachmentButtonProps {
   onFilesSelected: (files: FileList | File[]) => void;
@@ -38,7 +38,7 @@ export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttach
         aria-label="Attach images"
         className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
       >
-        <Paperclip className="size-3.5" />
+        <ImageIcon className="size-4" />
       </button>
     </>
   );

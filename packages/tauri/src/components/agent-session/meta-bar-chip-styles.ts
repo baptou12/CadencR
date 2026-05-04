@@ -5,7 +5,7 @@ export const AUTO_SCROLL_ACTIVE_CHIP =
   "bg-[var(--acc-green)]/15 text-[var(--acc-green)] hover:bg-[var(--acc-green)]/25";
 
 export const WORKTREE_ACTIVE_CHIP =
-  "bg-[var(--acc-cyan)]/18 text-[var(--acc-cyan)] hover:bg-[var(--acc-cyan)]/28";
+  "bg-[var(--chip-worktree-bg)] text-[var(--chip-worktree-fg)] hover:bg-[var(--chip-worktree-bg-hover)]";
 
 export const REVIEW_CHANGES_CHIP =
   "bg-[var(--acc-orange)]/15 text-[var(--acc-orange)] hover:bg-[var(--acc-orange)]/25";

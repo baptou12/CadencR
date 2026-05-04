@@ -32,6 +32,7 @@ const VARIANT_CLASSES = {
     "mr-1.5 inline-flex size-6 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground",
   modal:
     "inline-flex items-center justify-center rounded border border-border bg-muted px-2 py-1 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[24px]",
+  hint: "inline-flex items-center justify-center gap-px rounded border border-current/25 bg-transparent px-1 py-0.5 text-[10px] font-mono font-medium leading-none text-current [&_svg]:!size-2.5",
 } as const;
 
 type Variant = keyof typeof VARIANT_CLASSES;

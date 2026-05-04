@@ -68,13 +68,13 @@ function buildTree(files: ChangedFileEntry[]): TreeNode[] {
 function statusColor(status: string): string {
   switch (status.charAt(0).toUpperCase()) {
     case "A":
-      return "text-[#50fa7b]"; // added = green
+      return "text-[var(--numstat-add-fg)]"; // added = green
     case "M":
-      return "text-[#f1fa8c]"; // modified = yellow
+      return "text-[var(--acc-yellow)]"; // modified = yellow
     case "D":
-      return "text-[#ff5555]"; // deleted = red
+      return "text-[var(--numstat-del-fg)]"; // deleted = red
     case "R":
-      return "text-[#8be9fd]"; // renamed = blue
+      return "text-[var(--acc-cyan)]"; // renamed = blue
     default:
       return "text-foreground";
   }
@@ -211,7 +211,7 @@ export function DiffFileTree({
             DiffFileTreeHelpers.tsx), so this stays inert until then. */}
         {fileEntry.is_staged && (
           <BookmarkCheck
-            className="h-3 w-3 shrink-0 text-[#50fa7b]"
+            className="h-3 w-3 shrink-0 text-[var(--numstat-add-fg)]"
             aria-label="Staged"
             data-testid="staged-badge"
           />
@@ -231,7 +231,7 @@ export function DiffFileTree({
 
         {/* Viewed indicator */}
         {isViewed && (
-          <span className="shrink-0 text-[#50fa7b]" title="Viewed">
+          <span className="shrink-0 text-[var(--numstat-add-fg)]" title="Viewed">
             ✓
           </span>
         )}
@@ -290,7 +290,7 @@ export function DiffFileTree({
                 }`}
                 onClick={() => onSelectCommit(null)}
               >
-                <Circle className="h-2.5 w-2.5 shrink-0 fill-[#f1fa8c] text-[#f1fa8c]" />
+                <Circle className="h-2.5 w-2.5 shrink-0 fill-[var(--acc-yellow)] text-[var(--acc-yellow)]" />
                 <span className="truncate">Working Changes</span>
               </button>
             )}
@@ -310,8 +310,8 @@ export function DiffFileTree({
                     <Circle
                       className={`mt-0.5 h-2.5 w-2.5 shrink-0 ${
                         commit.isPushed
-                          ? "fill-[#50fa7b] text-[#50fa7b]"
-                          : "fill-[#ffb86c] text-[#ffb86c]"
+                          ? "fill-[var(--numstat-add-fg)] text-[var(--numstat-add-fg)]"
+                          : "fill-[var(--acc-orange)] text-[var(--acc-orange)]"
                       }`}
                     />
                     <div className="min-w-0 flex-1">

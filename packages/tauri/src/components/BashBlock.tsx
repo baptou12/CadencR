@@ -55,11 +55,10 @@ export const BashBlock = memo(function BashBlock({
             visibleCount={maxLines}
             unit="lines"
             className={isError ? "border-destructive/40" : "border-border"}
-            headerClassName={
-              isError
-                ? "bg-destructive/10 text-destructive py-1"
-                : "bg-[var(--block-bash-header-bg)] text-[var(--block-bash-muted-fg)] py-1"
-            }
+            headerClassName={cn(
+              "bg-[var(--block-bash-header-bg)] py-1",
+              isError ? "text-destructive" : "text-[var(--block-bash-muted-fg)]",
+            )}
             toggleClassName="ml-auto text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
             bodyClassName={cn(
               "px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",

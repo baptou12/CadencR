@@ -70,8 +70,8 @@ export function CustomActionsOverflowDropdown({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-7" title="More actions">
-          <MoreHorizontalIcon className="size-4" />
+        <Button variant="ghost" size="icon" className="size-7 text-xs" title="More actions">
+          <MoreHorizontalIcon className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

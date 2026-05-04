@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
@@ -8,11 +8,13 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffViewer } from "./diff/DiffViewer";
 import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
+import { NumStat } from "@/components/NumStat";
 import type { DiffMode } from "./diff/useDiffData";
 import {
   useListDiffComments,
   useGetFeatureSettings,
   useSetFeatureSetting,
+  useGetStats,
   getGetFeatureSettingsQueryKey,
 } from "@/api/generated";
 import { useSendPendingComments } from "@/hooks/useSendPendingComments";
@@ -123,6 +125,11 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
+  const statsQuery = useGetStats({
+    feature_id: featureId,
+    mode: effectiveDiffMode,
+    target_branch: diffTargetBranch,
+  });
 
   const onSend = onStartReviewFixer ?? onSendComments;
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
@@ -165,6 +172,12 @@ export const FeatureGitTab = memo(function FeatureGitTab({
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
         />
+        <GitToolbarNumStat
+          isLoading={statsQuery.isLoading}
+          isError={statsQuery.isError}
+          additions={statsQuery.data?.insertions}
+          deletions={statsQuery.data?.deletions}
+        />
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <DiffViewer
@@ -192,3 +205,32 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     </div>
   );
 });
+
+interface GitToolbarNumStatProps {
+  isLoading: boolean;
+  isError: boolean;
+  additions: number | undefined;
+  deletions: number | undefined;
+}
+
+function GitToolbarNumStat({
+  isLoading,
+  isError,
+  additions,
+  deletions,
+}: GitToolbarNumStatProps): ReactElement {
+  if (isLoading) {
+    return <span className="text-xs text-muted-foreground animate-pulse">Loading stats…</span>;
+  }
+  if (isError) {
+    return <span className="text-xs text-destructive">Stats unavailable</span>;
+  }
+  return (
+    <NumStat
+      additions={additions}
+      deletions={deletions}
+      hideZero={false}
+      className="text-xs shrink-0"
+    />
+  );
+}

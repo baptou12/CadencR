@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/diff-thresholds";
-import { NumStat } from "./NumStat";
+import { NumStat } from "@/components/NumStat";
 
 export type LargeDiffPlaceholderVariant = "large" | "binary";
 

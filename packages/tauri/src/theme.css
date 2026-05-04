@@ -30,14 +30,14 @@
   --secondary: oklch(0.403 0.032 277.821);
   --secondary-foreground: oklch(0.977 0.008 106.793);
   --muted: oklch(0.403 0.032 277.821);
-  --muted-foreground: #6272a4;
+  --muted-foreground: #6271a4;
   --accent: oklch(0.403 0.032 277.821);
   --accent-foreground: oklch(0.977 0.008 106.793);
   --destructive: oklch(0.682 0.206 24.421);
   --destructive-foreground: oklch(0.977 0.008 106.793);
   --border: oklch(0.32 0.032 277.821);
   --input: oklch(0.403 0.032 277.821);
-  --ring: #6272a4;
+  --ring: #6271a4;
   --chart-1: oklch(0.742 0.149 301.871);
   --chart-2: oklch(0.755 0.183 346.794);
   --chart-3: oklch(0.871 0.219 148.046);
@@ -50,7 +50,7 @@
   --sidebar-accent: oklch(0.403 0.032 277.821);
   --sidebar-accent-foreground: oklch(0.977 0.008 106.793);
   --sidebar-border: oklch(0.403 0.032 277.821);
-  --sidebar-ring: #6272a4;
+  --sidebar-ring: #6271a4;
 
   /* Vibrant accent palette — drives editor syntax highlighting, diff
    * decorations, markdown code blocks (highlight.js), and ad-hoc UI accents. */
@@ -61,7 +61,7 @@
   --acc-purple: #bd93f9;
   --acc-red: #ff5555;
   --acc-yellow: #f1fa8c;
-  --acc-comment: #6272a4;
+  --acc-comment: #6271a4;
 
   /* Code surface — used for the static `ShellTerminalFrame` and code-only
    * textareas. Distinct from `--background` so shell-toned surfaces read as
@@ -88,11 +88,21 @@
   --block-thinking-accent: #dbb1ff;
   --block-plan-bg: #191f31;
   --block-plan-accent: #8ec5ff;
-  --block-bash-header-bg: #18181b;
+  --block-bash-header-bg: #27272a;
   --block-bash-body-bg: #09090b;
   --block-bash-fg: #d4d4d8;
   --block-bash-muted-fg: #9f9fa9;
   --block-task-bg: #15161d;
+
+  /* App-level semantic accents. Keep these separate from editor syntax
+   * colors so future themes can tune UI contrast independently. */
+  --numstat-add-fg: #50fa7b;
+  --numstat-del-fg: #ff5555;
+  --chip-worktree-bg: rgba(139, 233, 253, 0.18);
+  --chip-worktree-bg-hover: rgba(139, 233, 253, 0.28);
+  --chip-worktree-fg: #8be9fd;
+  --chip-shared-worktree-bg: rgba(255, 184, 108, 0.18);
+  --chip-shared-worktree-fg: #ffb86c;
 
   /* Prompt chip palette — restores the Tailwind shades that shipped before
    * the theme refactor (violet / fuchsia / blue). These hues are not part
@@ -227,11 +237,20 @@
   --block-thinking-accent: oklch(0.45 0.2 295);
   --block-plan-bg: oklch(0.96 0.04 245);
   --block-plan-accent: oklch(0.45 0.18 245);
-  --block-bash-header-bg: oklch(0.94 0.012 290);
-  --block-bash-body-bg: oklch(0.965 0.008 290);
-  --block-bash-fg: oklch(0.3 0.03 285);
-  --block-bash-muted-fg: oklch(0.5 0.03 285);
+  --block-bash-header-bg: #27272a;
+  --block-bash-body-bg: #09090b;
+  --block-bash-fg: #d4d4d8;
+  --block-bash-muted-fg: #9f9fa9;
   --block-task-bg: oklch(0.94 0.012 290);
+
+  /* App-level semantic accents — tuned for contrast on light surfaces. */
+  --numstat-add-fg: oklch(0.42 0.16 150);
+  --numstat-del-fg: oklch(0.48 0.2 25);
+  --chip-worktree-bg: oklch(0.9 0.06 220);
+  --chip-worktree-bg-hover: oklch(0.86 0.07 220);
+  --chip-worktree-fg: oklch(0.36 0.12 220);
+  --chip-shared-worktree-bg: oklch(0.9 0.07 70);
+  --chip-shared-worktree-fg: oklch(0.42 0.13 60);
 
   /* Prompt chip palette — Aurora pulls these darker so the same chip
    * identities (violet / fuchsia / blue) read against the white panel.

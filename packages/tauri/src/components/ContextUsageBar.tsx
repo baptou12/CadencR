@@ -6,6 +6,7 @@ import {
 } from "@/types/agent";
 import { cn } from "@/lib/utils";
 import { getContextUsageAppearance, type LoaderStyle } from "@/lib/loader-style";
+import { KbdShortcut } from "@/components/KbdShortcut";
 
 export function ContextUsageBar({
   usage,
@@ -48,9 +49,22 @@ export function ContextUsageBar({
           }}
         />
       </div>
-      <span className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/70">
+      <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
         {Math.round(ratio * 100)}%
       </span>
+      <PromptKeyboardHint />
     </div>
+  );
+}
+
+function PromptKeyboardHint(): ReactElement {
+  return (
+    <span className="hidden shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground md:inline-flex">
+      <KbdShortcut keys={["enter"]} variant="hint" />
+      <span>send</span>
+      <span className="text-muted-foreground">·</span>
+      <KbdShortcut keys={["shift", "enter"]} variant="hint" />
+      <span>newline</span>
+    </span>
   );
 }

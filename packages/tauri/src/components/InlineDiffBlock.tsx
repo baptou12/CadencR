@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { PencilIcon, FilePlusIcon } from "lucide-react";
 import { toRelativePath } from "@/lib/utils";
 import { ReadOnlyDiffView } from "@/components/editor/ReadOnlyDiffView";
-import { NumStat } from "@/components/diff/NumStat";
+import { NumStat } from "@/components/NumStat";
 
 interface InlineDiffBlockProps {
   filePath: string;

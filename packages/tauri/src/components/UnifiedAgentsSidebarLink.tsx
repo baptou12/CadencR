@@ -43,7 +43,7 @@ export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink()
   return (
     <ShortcutTooltip label="Open unified agents" keys={["cmd", "shift", "R"]} className="w-full">
       <AgentsSidebarAnchor active={active}>
-        <LayoutGridIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <LayoutGridIcon className="size-3.5 shrink-0" />
         <span className="min-w-0 flex-1 truncate">Agents</span>
         <SidebarCounters
           loading={agentsQuery.isLoading}
@@ -73,7 +73,7 @@ function AgentsSidebarAnchor({
         "focus-visible:bg-accent focus-visible:outline-none",
         active
           ? "bg-accent/50 text-accent-foreground font-medium"
-          : "text-foreground/85 hover:bg-accent/50",
+          : "text-foreground hover:bg-accent/50",
       )}
     >
       {children}

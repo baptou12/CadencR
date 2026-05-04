@@ -108,7 +108,9 @@ function CommitHoverContent({ commit }: { commit: CommitEntry }) {
         <Circle
           className={cn(
             "mt-0.5 h-2.5 w-2.5 shrink-0",
-            commit.isPushed ? "fill-[#50fa7b] text-[#50fa7b]" : "fill-[#ffb86c] text-[#ffb86c]",
+            commit.isPushed
+              ? "fill-[var(--numstat-add-fg)] text-[var(--numstat-add-fg)]"
+              : "fill-[var(--acc-orange)] text-[var(--acc-orange)]",
           )}
         />
         <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">

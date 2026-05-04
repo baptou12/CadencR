@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { FileText } from "lucide-react";
-import { NumStat } from "./NumStat";
+import { NumStat } from "@/components/NumStat";
 
 interface DiffHeaderProps {
   fileCount: number;

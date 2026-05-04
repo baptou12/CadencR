@@ -80,7 +80,7 @@ const GROUP =
 const SEGMENT =
   "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors text-foreground hover:bg-accent";
 const SEGMENT_ACTIVE =
-  "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors bg-cyan-500/25 text-cyan-300 hover:bg-cyan-500/35";
+  "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors bg-[var(--chip-worktree-bg)] text-[var(--chip-worktree-fg)] hover:bg-[var(--chip-worktree-bg-hover)]";
 
 function filterBranches(branches: BranchInfo[], query: string): BranchInfo[] {
   if (!query) return branches;
@@ -169,7 +169,9 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
                   Use the branch the project is currently on.
                 </div>
               </div>
-              {selectedBranch == null && <CheckIcon className="size-3.5 shrink-0 text-cyan-400" />}
+              {selectedBranch == null && (
+                <CheckIcon className="size-3.5 shrink-0 text-[var(--chip-worktree-fg)]" />
+              )}
             </button>
             <BranchList
               isLoading={branchesQuery.isLoading}
@@ -274,7 +276,10 @@ function BranchList({
                 routes through the `reuse` mode — no fresh worktree is
                 created; the conversation lands on the existing one. */}
             {branch.attached_worktree_path ? (
-              <GitBranchIcon className="size-3 shrink-0 text-cyan-400" aria-label="Has worktree" />
+              <GitBranchIcon
+                className="size-3 shrink-0 text-[var(--chip-worktree-fg)]"
+                aria-label="Has worktree"
+              />
             ) : (
               <span className="size-3 shrink-0" aria-hidden="true" />
             )}
@@ -294,7 +299,7 @@ function BranchList({
                 in use by feature #{branch.attached_feature_id}
               </span>
             )}
-            {isSelected && <CheckIcon className="size-3 shrink-0 text-cyan-400" />}
+            {isSelected && <CheckIcon className="size-3 shrink-0 text-[var(--chip-worktree-fg)]" />}
           </button>
         );
       }}

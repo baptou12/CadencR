@@ -89,7 +89,7 @@ export const BranchChip = memo(function BranchChip({
         <HoverCard.Root openDelay={150} closeDelay={100}>
           <HoverCard.Trigger asChild>
             <span
-              className="ml-1 inline-flex items-center gap-0.5 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-amber-800 dark:text-amber-200"
+              className="ml-1 inline-flex items-center gap-0.5 rounded border border-[var(--chip-shared-worktree-fg)]/20 bg-[var(--chip-shared-worktree-bg)] px-1 py-0.5 text-[var(--chip-shared-worktree-fg)]"
               aria-label="Worktree shared with other features"
               data-testid="shared-worktree-indicator"
             >

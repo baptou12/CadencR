@@ -7,7 +7,7 @@
 import { memo, type ReactElement } from "react";
 import { BookmarkCheck } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { NumStat } from "@/components/diff/NumStat";
+import { NumStat } from "@/components/NumStat";
 import type { UncommittedFile } from "@/api/generated";
 import { cn } from "@/lib/utils";
 

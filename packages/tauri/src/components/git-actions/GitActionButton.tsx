@@ -25,6 +25,9 @@ import { getCompareUrl } from "@/api/generated";
 import { useGitAction, type GitAction } from "./useGitAction";
 import { GitActionPopover, ICONS } from "./GitActionPopover";
 
+const GIT_ACTION_BUTTON_CLASS =
+  "border-border/80 bg-muted/20 text-xs text-foreground hover:bg-muted/35 disabled:opacity-100 disabled:bg-muted/20 disabled:text-muted-foreground";
+
 const CommitDialog = lazy(() => import("./CommitDialog"));
 const PushDialog = lazy(() => import("./PushDialog"));
 
@@ -114,8 +117,8 @@ export const GitActionButton = memo(function GitActionButton({
       <div className="inline-flex items-center">
         <Button
           variant="outline"
-          size="sm"
-          className="rounded-r-none border-r-0"
+          size="xs"
+          className={`${GIT_ACTION_BUTTON_CLASS} rounded-r-none border-r-0`}
           disabled={primaryDisabled}
           onClick={() => state.primary && runAction(state.primary)}
           title={primaryDisabled ? (state.disabled.commit ?? state.label) : state.label}
@@ -127,8 +130,8 @@ export const GitActionButton = memo(function GitActionButton({
           <PopoverTrigger asChild>
             <Button
               variant="outline"
-              size="sm"
-              className="rounded-l-none px-1.5"
+              size="xs"
+              className={`${GIT_ACTION_BUTTON_CLASS} rounded-l-none px-1.5`}
               aria-label="More git actions"
             >
               <ChevronDown className="size-3.5" />

@@ -62,11 +62,11 @@ export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps
       <Button
         variant="ghost"
         size="icon"
-        className="size-7"
+        className="size-7 text-xs"
         title="Add custom action"
         onClick={openCreate}
       >
-        <PlusIcon className="size-4" />
+        <PlusIcon className="size-3.5" />
       </Button>
 
       <CustomActionEditorDialog
