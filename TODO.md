@@ -2,8 +2,11 @@
 - [ ] [opencode] Not sync on command updates
 - [ ] [opencode] inline diff broken sometimes
 - [ ] [codex] sub-agents outputs on main agent
+- [ ] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
 - [~] [codex] permisisons seems lacking of options
-- [ ] [db] change production database to ~/.cadencr
+- [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
+- [~] [agent] scroll is not smooth, still jumps
+- [~] [unified] better filters and sort + stop auto-refresh
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
