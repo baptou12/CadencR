@@ -17,6 +17,10 @@ interface TabHostRegistry {
   unregisterHost(key: string, expectedCurrent: HTMLElement): void;
 }
 
+export function makeTabHostKey(featureId: number, paneId: string): string {
+  return `${featureId}:${paneId}`;
+}
+
 export const useTabHostRegistry = create<TabHostRegistry>((set) => ({
   hosts: {},
   registerHost: (key, el) =>

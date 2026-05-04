@@ -14,7 +14,11 @@ const PERSIST_DEBOUNCE_MS = 500;
  * written back immediately, which prevents fallback/default hydration from
  * clobbering a server value before the user changes anything.
  */
-export function useFeatureLayoutPersistence(featureId: number): void {
+export function useFeatureLayoutPersistence(
+  featureId: number,
+  options: { enabled?: boolean } = {},
+): void {
+  const enabled = options.enabled ?? true;
   const queryClient = useQueryClient();
   const { mutate } = useSetFeatureSetting();
   const serializedLayout = useFeatureLayoutStore((s) => {
@@ -34,7 +38,7 @@ export function useFeatureLayoutPersistence(featureId: number): void {
   }, [featureId]);
 
   useEffect((): (() => void) | void => {
-    if (serializedLayout === null) return;
+    if (!enabled || serializedLayout === null) return;
 
     if (!hasBaselineRef.current) {
       hasBaselineRef.current = true;
@@ -72,5 +76,5 @@ export function useFeatureLayoutPersistence(featureId: number): void {
     }, PERSIST_DEBOUNCE_MS);
 
     return (): void => window.clearTimeout(timeoutId);
-  }, [featureId, serializedLayout, mutate, queryClient]);
+  }, [enabled, featureId, serializedLayout, mutate, queryClient]);
 }

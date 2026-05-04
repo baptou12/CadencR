@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Settings, PanelLeftClose } from "lucide-react";
@@ -6,6 +6,7 @@ import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
+import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { startDragging, toggleMaximize } from "@/lib/window-drag";
@@ -16,8 +17,31 @@ export function Sidebar() {
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
+  const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
+  useSidebarKeyboardNavigation(sidebarRef, navigate);
 
-  // Detect active project/feature from current route
+  return (
+    <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
+      <SidebarHeader onCollapse={() => setCollapsed(true)} />
+      <div className="flex-1 min-w-0 min-h-0 overflow-hidden p-2">
+        <div className="mb-2 px-1">
+          <UnifiedAgentsSidebarLink />
+        </div>
+        <ProjectTree
+          activeProjectId={activeProjectId}
+          activeFeatureId={effectiveFeatureId}
+          onSelectFeature={setSelectedFeatureId}
+        />
+      </div>
+      <SidebarSettingsLink />
+    </aside>
+  );
+}
+
+function useSidebarActiveIds(selectedFeatureId: number | null): {
+  activeProjectId: number | null;
+  effectiveFeatureId: number | null;
+} {
   const routerState = useRouterState();
   const routeParams = (routerState.location.pathname.match(
     /\/projects\/(\d+)(?:\/features\/(\d+))?/,
@@ -33,14 +57,19 @@ export function Sidebar() {
       ? Number(routerState.location.search.featureId)
       : null;
 
-  const effectiveFeatureId = activeFeatureId ?? selectedFeatureId;
+  return { activeProjectId, effectiveFeatureId: activeFeatureId ?? selectedFeatureId };
+}
 
-  const getNavItems = () => {
+function useSidebarKeyboardNavigation(
+  sidebarRef: RefObject<HTMLElement | null>,
+  navigate: ReturnType<typeof useNavigate>,
+): void {
+  const getNavItems = (): HTMLElement[] => {
     if (!sidebarRef.current) return [];
     return Array.from(sidebarRef.current.querySelectorAll("[data-nav-item]")) as HTMLElement[];
   };
 
-  const moveFocus = (direction: "up" | "down") => {
+  const moveFocus = (direction: "up" | "down"): void => {
     const items = getNavItems();
     if (items.length === 0) return;
 
@@ -102,66 +131,58 @@ export function Sidebar() {
       } else if (type === "project" && id) {
         // Toggle expand by clicking the project button
         focused.click();
+      } else if (type === "agents") {
+        void navigate({ to: "/agents" });
       }
     },
     { enableOnFormTags: false },
   );
+}
 
+function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement {
   return (
-    <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
-      <div
-        className="group relative h-16"
-        onMouseDown={startDragging}
-        onDoubleClick={toggleMaximize}
-      >
-        <div className="absolute inset-0 flex items-center justify-center">
-          <img src={logoSvg} alt="Cadencr" className="size-11 mr-2 shrink-0 -translate-y-px" />
-          <span
-            className="text-2xl font-bold uppercase tracking-widest leading-none"
-            style={{
-              fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif",
-            }}
-          >
-            Cadencr
-          </span>
-          <AppEnvironmentBadge
-            className="ml-2 self-start mt-2"
-            kind={import.meta.env.DEV ? "dev" : "beta"}
-          />
-        </div>
-        <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7"
-            title="Collapse sidebar (⌘B)"
-            onClick={() => setCollapsed(true)}
-          >
-            <PanelLeftClose className="size-4" />
-            <span className="sr-only">Collapse sidebar</span>
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 min-w-0 min-h-0 overflow-hidden p-2">
-        <ProjectTree
-          activeProjectId={activeProjectId}
-          activeFeatureId={effectiveFeatureId}
-          onSelectFeature={setSelectedFeatureId}
+    <div className="group relative h-16" onMouseDown={startDragging} onDoubleClick={toggleMaximize}>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <img src={logoSvg} alt="Cadencr" className="size-11 mr-2 shrink-0 -translate-y-px" />
+        <span
+          className="text-2xl font-bold uppercase tracking-widest leading-none"
+          style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}
+        >
+          Cadencr
+        </span>
+        <AppEnvironmentBadge
+          className="ml-2 self-start mt-2"
+          kind={import.meta.env.DEV ? "dev" : "beta"}
         />
       </div>
+      <div className="absolute right-4 inset-y-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          title="Collapse sidebar (⌘B)"
+          onClick={onCollapse}
+        >
+          <PanelLeftClose className="size-4" />
+          <span className="sr-only">Collapse sidebar</span>
+        </Button>
+      </div>
+    </div>
+  );
+}
 
-      <Link
-        to="/settings"
-        data-nav-item
-        className="flex items-center justify-between gap-2 px-3 py-2 text-xs border-t border-border/40 text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
-      >
-        <span className="flex items-center gap-2">
-          <Settings className="size-4" />
-          <span>Settings</span>
-        </span>
-        <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
-      </Link>
-    </aside>
+function SidebarSettingsLink(): ReactElement {
+  return (
+    <Link
+      to="/settings"
+      data-nav-item
+      className="flex items-center justify-between gap-2 px-3 py-2 text-xs border-t border-border/40 text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
+    >
+      <span className="flex items-center gap-2">
+        <Settings className="size-4" />
+        <span>Settings</span>
+      </span>
+      <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
+    </Link>
   );
 }

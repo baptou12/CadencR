@@ -132,6 +132,56 @@ pub struct FeatureAgentStateResponse {
     pub sessions: Vec<SessionState>,
 }
 
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum UnifiedAgentsMode {
+    Recent,
+    All,
+}
+
+impl Default for UnifiedAgentsMode {
+    fn default() -> Self {
+        Self::Recent
+    }
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UnifiedAgentProject {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UnifiedAgentFeature {
+    pub id: i64,
+    pub title: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UnifiedAgentEntry {
+    pub project: UnifiedAgentProject,
+    pub feature: UnifiedAgentFeature,
+    pub session: SessionState,
+    pub last_activity_at: Option<String>,
+    pub is_pinned: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UnifiedAgentsResponse {
+    pub agents: Vec<UnifiedAgentEntry>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AgentPinResponse {
+    pub success: bool,
+    pub is_pinned: bool,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct DraftResponse {
     #[serde(rename = "draftPrompt")]

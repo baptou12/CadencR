@@ -61,6 +61,11 @@ export interface AgentCatalogResponse {
   providers: ProviderCatalogEntry[];
 }
 
+export interface AgentPinResponse {
+  is_pinned: boolean;
+  success: boolean;
+}
+
 export type AgentSessionRowContextWindow = number | null;
 
 export type AgentSessionRowDraftPrompt = string | null;
@@ -1200,6 +1205,42 @@ export const TriggeredBy = {
   schedule: "schedule",
 } as const;
 
+export type UnifiedAgentEntryLastActivityAt = string | null;
+
+export interface UnifiedAgentEntry {
+  feature: UnifiedAgentFeature;
+  is_pinned: boolean;
+  last_activity_at?: UnifiedAgentEntryLastActivityAt;
+  project: UnifiedAgentProject;
+  session: SessionState;
+}
+
+export interface UnifiedAgentFeature {
+  created_at: string;
+  id: number;
+  status: string;
+  title: string;
+  type: string;
+}
+
+export interface UnifiedAgentProject {
+  id: number;
+  name: string;
+  path: string;
+}
+
+export type UnifiedAgentsMode = (typeof UnifiedAgentsMode)[keyof typeof UnifiedAgentsMode];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const UnifiedAgentsMode = {
+  recent: "recent",
+  all: "all",
+} as const;
+
+export interface UnifiedAgentsResponse {
+  agents: UnifiedAgentEntry[];
+}
+
 export type UpdateCustomActionRequestCommand = string | null;
 
 /**
@@ -1302,6 +1343,14 @@ export interface WriteFileRequest {
 export interface WriteFileResponse {
   success: boolean;
 }
+
+export type GetUnifiedAgentsParams = {
+  mode?: null | UnifiedAgentsMode;
+  fresh_minutes?: number | null;
+  project_id?: number | null;
+  include_archived?: boolean | null;
+  message_limit?: number | null;
+};
 
 export type ListCustomActionsParams = {
   project_id: number;
@@ -1600,6 +1649,188 @@ export function useBinaryDiscovery<
 
   return query;
 }
+
+export const getUnifiedAgents = (params?: GetUnifiedAgentsParams, signal?: AbortSignal) => {
+  return customInstance<UnifiedAgentsResponse>({
+    url: `/api/agents/unified`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetUnifiedAgentsQueryKey = (params?: GetUnifiedAgentsParams) => {
+  return [`/api/agents/unified`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetUnifiedAgentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getUnifiedAgents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetUnifiedAgentsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getUnifiedAgents>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetUnifiedAgentsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getUnifiedAgents>>> = ({ signal }) =>
+    getUnifiedAgents(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getUnifiedAgents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetUnifiedAgentsQueryResult = NonNullable<Awaited<ReturnType<typeof getUnifiedAgents>>>;
+export type GetUnifiedAgentsQueryError = ErrorType<unknown>;
+
+export function useGetUnifiedAgents<
+  TData = Awaited<ReturnType<typeof getUnifiedAgents>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetUnifiedAgentsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getUnifiedAgents>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUnifiedAgentsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const pinAgent = (sessionId: number) => {
+  return customInstance<AgentPinResponse>({ url: `/api/agents/${sessionId}/pin`, method: "PUT" });
+};
+
+export const getPinAgentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pinAgent>>,
+    TError,
+    { sessionId: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pinAgent>>,
+  TError,
+  { sessionId: number },
+  TContext
+> => {
+  const mutationKey = ["pinAgent"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pinAgent>>,
+    { sessionId: number }
+  > = (props) => {
+    const { sessionId } = props ?? {};
+
+    return pinAgent(sessionId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PinAgentMutationResult = NonNullable<Awaited<ReturnType<typeof pinAgent>>>;
+
+export type PinAgentMutationError = ErrorType<unknown>;
+
+export const usePinAgent = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pinAgent>>,
+    TError,
+    { sessionId: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pinAgent>>,
+  TError,
+  { sessionId: number },
+  TContext
+> => {
+  const mutationOptions = getPinAgentMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const unpinAgent = (sessionId: number) => {
+  return customInstance<AgentPinResponse>({
+    url: `/api/agents/${sessionId}/pin`,
+    method: "DELETE",
+  });
+};
+
+export const getUnpinAgentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpinAgent>>,
+    TError,
+    { sessionId: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unpinAgent>>,
+  TError,
+  { sessionId: number },
+  TContext
+> => {
+  const mutationKey = ["unpinAgent"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unpinAgent>>,
+    { sessionId: number }
+  > = (props) => {
+    const { sessionId } = props ?? {};
+
+    return unpinAgent(sessionId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnpinAgentMutationResult = NonNullable<Awaited<ReturnType<typeof unpinAgent>>>;
+
+export type UnpinAgentMutationError = ErrorType<unknown>;
+
+export const useUnpinAgent = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unpinAgent>>,
+    TError,
+    { sessionId: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unpinAgent>>,
+  TError,
+  { sessionId: number },
+  TContext
+> => {
+  const mutationOptions = getUnpinAgentMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const listCustomModels = (signal?: AbortSignal) => {
   return customInstance<CustomModelsResponse>({

@@ -23,13 +23,17 @@ import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-lay
  * If the feature already has state in the store (user already visited it this
  * session), we skip — the in-memory state is the source of truth.
  */
-export function useFeatureLayoutHydration(featureId: number): void {
-  const layoutsQuery = useListLayouts();
-  const settingsQuery = useGetFeatureSettings(featureId);
+export function useFeatureLayoutHydration(
+  featureId: number,
+  options: { enabled?: boolean } = {},
+): void {
+  const enabled = options.enabled ?? true;
+  const layoutsQuery = useListLayouts({ query: { enabled } });
+  const settingsQuery = useGetFeatureSettings(featureId, { query: { enabled } });
   const setStoreState = useFeatureLayoutStore((s) => s.setState);
 
   useEffect(() => {
-    if (layoutsQuery.isLoading || settingsQuery.isLoading) return;
+    if (!enabled || layoutsQuery.isLoading || settingsQuery.isLoading) return;
     // Already hydrated this feature in the current session — keep its state.
     if (useFeatureLayoutStore.getState().features[featureId]) return;
 
@@ -54,6 +58,7 @@ export function useFeatureLayoutHydration(featureId: number): void {
     }
     setStoreState(featureId, flatLayoutState());
   }, [
+    enabled,
     featureId,
     layoutsQuery.isLoading,
     layoutsQuery.data,

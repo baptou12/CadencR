@@ -9,7 +9,7 @@ import {
 import type { TabKind } from "@/stores/feature-layout-schema";
 import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
 
-type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers;
+type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers & { enabled?: boolean };
 
 const HOTKEY_OPTIONS = { enableOnFormTags: true, enableOnContentEditable: true } as const;
 
@@ -27,7 +27,7 @@ export function useFeatureLayoutHotkeys(
   options: FeatureLayoutHotkeysOptions = {},
 ): void {
   const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
-  const { onTerminalActivate, onEditorActivate } = options;
+  const { onTerminalActivate, onEditorActivate, enabled = true } = options;
 
   const activate = useCallback(
     (tab: TabKind) => {
@@ -47,7 +47,7 @@ export function useFeatureLayoutHotkeys(
       e.preventDefault();
       activate("agent");
     },
-    HOTKEY_OPTIONS,
+    { ...HOTKEY_OPTIONS, enabled },
   );
   useHotkeys(
     "meta+shift+t",
@@ -55,7 +55,7 @@ export function useFeatureLayoutHotkeys(
       e.preventDefault();
       activate("terminal");
     },
-    HOTKEY_OPTIONS,
+    { ...HOTKEY_OPTIONS, enabled },
   );
   useHotkeys(
     "meta+shift+g",
@@ -63,7 +63,7 @@ export function useFeatureLayoutHotkeys(
       e.preventDefault();
       activate("git");
     },
-    HOTKEY_OPTIONS,
+    { ...HOTKEY_OPTIONS, enabled },
   );
   useHotkeys(
     "meta+shift+e",
@@ -71,6 +71,6 @@ export function useFeatureLayoutHotkeys(
       e.preventDefault();
       activate("editor");
     },
-    HOTKEY_OPTIONS,
+    { ...HOTKEY_OPTIONS, enabled },
   );
 }

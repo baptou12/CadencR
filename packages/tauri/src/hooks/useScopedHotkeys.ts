@@ -21,11 +21,13 @@ import { EMPTY_LAYOUT_STATE, type TabKind } from "@/stores/feature-layout-schema
  * wrap.
  */
 function useIsTabFocused(scope: TabKind): boolean {
-  const featureId = useFeatureLayoutContext()?.featureId;
+  const context = useFeatureLayoutContext();
+  const featureId = context?.featureId;
+  const hotkeysEnabled = context?.hotkeysEnabled ?? true;
   return useFeatureLayoutStore((s) =>
     featureId === undefined
-      ? true
-      : getFocusedTab(s.features[featureId] ?? EMPTY_LAYOUT_STATE) === scope,
+      ? hotkeysEnabled
+      : hotkeysEnabled && getFocusedTab(s.features[featureId] ?? EMPTY_LAYOUT_STATE) === scope,
   );
 }
 

@@ -122,6 +122,30 @@ describe("useWebSocketSession", () => {
     expect(lastCall).toHaveLength(3);
   });
 
+  it("can skip persisted history loading when a caller already hydrated the session", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    const mockedQuery = useGetFeatureAgentState as ReturnType<typeof vi.fn>;
+    mockedQuery.mockClear();
+
+    renderHook(() =>
+      useWebSocketSession("snapshot-hydrated", 42, {
+        loadPersisted: false,
+      }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedQuery).toHaveBeenCalledWith(
+      42,
+      undefined,
+      expect.objectContaining({
+        query: expect.objectContaining({ enabled: false }),
+      }),
+    );
+  });
+
   it("initSession sends correct envelope", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {

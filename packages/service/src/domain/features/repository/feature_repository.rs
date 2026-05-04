@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 use super::super::models::Feature;
 use crate::error::AppError;
@@ -61,12 +61,47 @@ pub async fn get_max_session_num(pool: &SqlitePool, project_id: i64) -> Result<i
 }
 
 pub async fn update_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
+    let mut tx = pool.begin().await?;
     sqlx::query("UPDATE features SET status = ? WHERE id = ?")
         .bind(status)
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
+        .await?;
+    if status == "archived" {
+        clear_agent_session_pins(&mut tx, id).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn clear_agent_session_pins(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    feature_id: i64,
+) -> Result<(), AppError> {
+    if !agent_sessions_has_pin_column(&mut **tx).await? {
+        return Ok(());
+    }
+
+    sqlx::query("UPDATE agent_sessions SET is_pinned = 0 WHERE feature_id = ?")
+        .bind(feature_id)
+        .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+async fn agent_sessions_has_pin_column(
+    executor: &mut sqlx::SqliteConnection,
+) -> Result<bool, AppError> {
+    let rows = sqlx::query(r#"PRAGMA table_info("agent_sessions")"#)
+        .fetch_all(executor)
+        .await?;
+    for row in rows {
+        let name: String = row.try_get("name")?;
+        if name == "is_pinned" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(), AppError> {
@@ -289,4 +324,62 @@ pub async fn force_workflow_status(
         .execute(pool)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn setup_pool() -> SqlitePool {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY,
+                project_id INTEGER NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                type TEXT NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            r#"CREATE TABLE agent_sessions (
+                id INTEGER PRIMARY KEY,
+                feature_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                is_pinned INTEGER NOT NULL DEFAULT 0
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn archive_clears_agent_session_pins() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type) VALUES (1, 1, 'f', 'draft', 'ws-session')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, status, is_pinned) VALUES (10, 1, 'completed', 1)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        update_status(&pool, 1, "archived").await.unwrap();
+
+        let pinned: i64 = sqlx::query_scalar("SELECT is_pinned FROM agent_sessions WHERE id = 10")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(pinned, 0);
+    }
 }

@@ -108,7 +108,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
     const filesQuery = useListFiles(
       { feature_id: featureId! },
-      { query: { enabled: !!featureId } },
+      { query: { enabled: !!featureId && agentTabActive && !disabled } },
     );
 
     useImperativeHandle(ref, () => ({
@@ -264,6 +264,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         onStop();
       },
       { enableOnFormTags: true, enableOnContentEditable: true },
+      [isRunning, onStop],
     );
 
     const specialPrompt =

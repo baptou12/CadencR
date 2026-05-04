@@ -21,6 +21,9 @@ interface FeatureTerminalTabProps {
   featureId: number;
   projectId: number;
   hidden?: boolean;
+  activeOverride?: boolean;
+  focusedOverride?: boolean;
+  hotkeysEnabled?: boolean;
 }
 
 export interface FeatureTerminalTabHandle {
@@ -30,17 +33,19 @@ export interface FeatureTerminalTabHandle {
 
 export const FeatureTerminalTab = memo(
   forwardRef<FeatureTerminalTabHandle, FeatureTerminalTabProps>(function FeatureTerminalTab(
-    { featureId, projectId, hidden },
+    { featureId, projectId, hidden, activeOverride, focusedOverride, hotkeysEnabled = true },
     ref,
   ) {
     const terminalRef = useRef<TerminalPanelHandle>(null);
     const terminalState = useTerminalState(featureId);
-    const isTerminalVisible = useFeatureLayoutStore((s) =>
+    const layoutTerminalVisible = useFeatureLayoutStore((s) =>
       isTabVisible(selectFeatureLayout(featureId)(s), "terminal"),
     );
-    const isTerminalFocused = useFeatureLayoutStore(
+    const layoutTerminalFocused = useFeatureLayoutStore(
       (s) => getFocusedTab(selectFeatureLayout(featureId)(s)) === "terminal",
     );
+    const isTerminalVisible = activeOverride ?? layoutTerminalVisible;
+    const isTerminalFocused = focusedOverride ?? layoutTerminalFocused;
 
     // Compute the cwd a freshly-spawned terminal *would* end up in, given the
     // current feature settings: the worktree if one was created, otherwise the
@@ -106,6 +111,7 @@ export const FeatureTerminalTab = memo(
           splitPane={terminalState.splitPane}
           removePane={terminalState.removePane}
           expectedCwd={expectedCwd}
+          hotkeysEnabled={hotkeysEnabled}
         />
       </div>
     );
