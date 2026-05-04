@@ -88,8 +88,21 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
+/**
+ * Endpoints that drive long-running git processes (commit fires
+ * pre-commit hooks; push waits on the network). The 30 s default is way
+ * too tight — a hook that runs the full test suite easily takes minutes.
+ * For these calls we disable the timeout entirely; the server streams
+ * progress over WebSocket while the HTTP request stays open.
+ */
+const NO_TIMEOUT_PATHS = ["/api/git/commit", "/api/git/push"];
+
 export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> {
-  const response = await axiosInstance(config);
+  const finalConfig =
+    typeof config.url === "string" && NO_TIMEOUT_PATHS.some((p) => config.url!.startsWith(p))
+      ? { ...config, timeout: 0 }
+      : config;
+  const response = await axiosInstance(finalConfig);
   return response.data;
 }
 
