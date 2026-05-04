@@ -1,10 +1,13 @@
-use axum::extract::{Json, Query, State};
-use axum::routing::{delete, get, post};
+use axum::extract::{Json, Path, Query, State};
+use axum::routing::{delete, get, patch, post};
 use axum::Router;
 
 use crate::app_state::AppState;
+use crate::domain::git::git_status::GitStatusSnapshot;
 use crate::domain::git::models::*;
+use crate::domain::git::porcelain::UncommittedFile;
 use crate::domain::git::service;
+use crate::domain::git::workflow_service;
 use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
@@ -198,6 +201,124 @@ pub async fn get_blame_handler(
 }
 
 // ---------------------------------------------------------------------------
+// Git workflow overhaul: branches / status / compare-url / target-branch
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/git/branches",
+    params(("project_id" = i64, Query,)),
+    responses((status = 200, body = Vec<BranchInfo>))
+)]
+pub async fn list_branches_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ListBranchesParams>,
+) -> Result<Json<Vec<BranchInfo>>, AppError> {
+    Ok(Json(workflow_service::list_branches(&state, params).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/git/status",
+    params(("feature_id" = i64, Query,)),
+    responses((status = 200, body = GitStatusSnapshot))
+)]
+pub async fn get_git_status_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetGitStatusParams>,
+) -> Result<Json<GitStatusSnapshot>, AppError> {
+    Ok(Json(
+        workflow_service::get_git_status(&state, params).await?,
+    ))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/git/compare-url",
+    params(("feature_id" = i64, Query,)),
+    responses((status = 200, body = CompareUrlResponse))
+)]
+pub async fn get_compare_url_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetCompareUrlParams>,
+) -> Result<Json<CompareUrlResponse>, AppError> {
+    Ok(Json(
+        workflow_service::get_compare_url(&state, params).await?,
+    ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/git/commit",
+    request_body = CommitBody,
+    responses((status = 200, body = SuccessResponse))
+)]
+pub async fn commit_handler(
+    State(state): State<AppState>,
+    Json(body): Json<CommitBody>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    Ok(Json(workflow_service::commit(&state, body).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/git/push",
+    request_body = PushBody,
+    responses((status = 200, body = SuccessResponse))
+)]
+pub async fn push_handler(
+    State(state): State<AppState>,
+    Json(body): Json<PushBody>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    Ok(Json(workflow_service::push(&state, body).await?))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/git/push-input",
+    request_body = PushInputBody,
+    responses((status = 200, body = SuccessResponse))
+)]
+pub async fn push_input_handler(
+    State(state): State<AppState>,
+    Json(body): Json<PushInputBody>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    Ok(Json(workflow_service::push_input(&state, body).await?))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/git/uncommitted-files",
+    params(("feature_id" = i64, Query,)),
+    responses((status = 200, body = Vec<UncommittedFile>))
+)]
+pub async fn get_uncommitted_files_handler(
+    State(state): State<AppState>,
+    Query(params): Query<GetUncommittedFilesParams>,
+) -> Result<Json<Vec<UncommittedFile>>, AppError> {
+    Ok(Json(
+        workflow_service::get_uncommitted_files(&state, params).await?,
+    ))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/features/{id}/target-branch",
+    params(("id" = i64, Path,)),
+    request_body = UpdateTargetBranchBody,
+    responses((status = 200, body = SuccessResponse))
+)]
+pub async fn update_target_branch_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateTargetBranchBody>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    Ok(Json(
+        workflow_service::update_target_branch(&state, id, body).await?,
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -248,4 +369,19 @@ pub fn git_router() -> Router<AppState> {
             get(has_uncommitted_changes_handler),
         )
         .route("/api/git/blame", get(get_blame_handler))
+        // Git workflow overhaul
+        .route("/api/git/branches", get(list_branches_handler))
+        .route("/api/git/status", get(get_git_status_handler))
+        .route("/api/git/compare-url", get(get_compare_url_handler))
+        .route(
+            "/api/features/{id}/target-branch",
+            patch(update_target_branch_handler),
+        )
+        .route("/api/git/commit", post(commit_handler))
+        .route("/api/git/push", post(push_handler))
+        .route("/api/git/push-input", post(push_input_handler))
+        .route(
+            "/api/git/uncommitted-files",
+            get(get_uncommitted_files_handler),
+        )
 }

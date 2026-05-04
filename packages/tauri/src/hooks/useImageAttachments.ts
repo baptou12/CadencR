@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -147,11 +147,17 @@ export function useImageAttachments() {
     });
   }, []);
 
-  const clearAttachments = useCallback(() => {
+  const clearAttachments = useCallback((options?: { revokeObjectUrls?: boolean }) => {
     setAttachments((prev) => {
-      prev.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      if (options?.revokeObjectUrls !== false) {
+        prev.forEach((a) => URL.revokeObjectURL(a.previewUrl));
+      }
       return [];
     });
+  }, []);
+
+  const restoreAttachments = useCallback((next: ImageAttachment[]) => {
+    setAttachments(next);
   }, []);
 
   // React-level handlers — still needed for visual drag feedback.
@@ -166,14 +172,26 @@ export function useImageAttachments() {
     setIsDragging(false);
   }, []);
 
-  const dragHandlers = { onDragOver, onDrop };
+  const dragHandlers = useMemo(() => ({ onDragOver, onDrop }), [onDragOver, onDrop]);
 
-  return {
-    attachments,
-    addFiles,
-    removeAttachment,
-    clearAttachments,
-    dragHandlers,
-    isDragging,
-  };
+  return useMemo(
+    () => ({
+      attachments,
+      addFiles,
+      removeAttachment,
+      clearAttachments,
+      restoreAttachments,
+      dragHandlers,
+      isDragging,
+    }),
+    [
+      attachments,
+      addFiles,
+      removeAttachment,
+      clearAttachments,
+      restoreAttachments,
+      dragHandlers,
+      isDragging,
+    ],
+  );
 }

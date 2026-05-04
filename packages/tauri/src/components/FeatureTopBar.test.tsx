@@ -46,7 +46,17 @@ vi.mock("@/api/generated", () => ({
   })),
   useGetBranch: vi.fn(() => ({ data: { branch: "main" } })),
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
+  // GitActionButton + BranchChip dependencies — feature/git-workflow-overhaul.
+  usePush: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useCommit: vi.fn(() => ({ mutateAsync: vi.fn(), isPending: false })),
+  useGetUncommittedFiles: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+  useListBranches: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
+  useUpdateTargetBranch: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  getCompareUrl: vi.fn(),
 }));
+
+// GitActionButton uses Tauri shell:open; jsdom can't resolve the plugin.
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 
 // CustomActionsBar pulls in network hooks we don't care about for these tests.
 vi.mock("./CustomActionsBar", () => ({

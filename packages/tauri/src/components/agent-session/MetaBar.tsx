@@ -10,6 +10,7 @@ import {
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
 import { SessionInfoChip } from "./SessionInfoChip";
+import { WorktreeButtonGroup } from "./WorktreePopover";
 import type { TodoItem } from "@/types/agent";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
@@ -61,6 +62,16 @@ export interface MetaBarProps {
   showWorktreeChip: boolean;
   useWorktree?: boolean;
   onToggleWorktree?: () => void;
+  /**
+   * Optional richer two-chip worktree picker (Branch + Use worktree). When
+   * the embedder provides every field below, the chip group replaces the
+   * legacy on/off button. Embedders that don't supply these fall back to
+   * the bare toggle.
+   */
+  worktreeProjectId?: number;
+  worktreeDefaultBranch?: string;
+  worktreeSelectedBranch?: string | null;
+  onWorktreeBranchChange?: (next: string | null) => void;
   onProviderChange?: (providerId: string) => void;
   currentProviderId?: string;
   /**
@@ -129,6 +140,10 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     showWorktreeChip,
     useWorktree,
     onToggleWorktree,
+    worktreeProjectId,
+    worktreeDefaultBranch,
+    worktreeSelectedBranch,
+    onWorktreeBranchChange,
     onProviderChange,
     currentProviderId,
     onModelChange,
@@ -253,23 +268,34 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         </ShortcutTooltip>
       )}
 
-      {/* Worktree chip */}
-      {showWorktreeChip && (
-        <button
-          type="button"
-          onClick={onToggleWorktree}
-          className={cn(
-            META_BAR_CHIP,
-            useWorktree
-              ? WORKTREE_ACTIVE_CHIP
-              : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
-          )}
-        >
-          <GitBranchIcon className="size-3" />
-          Use worktree
-          {useWorktree && <CheckIcon className="size-3" />}
-        </button>
-      )}
+      {/* Worktree chips — two-chip group (Branch + Use worktree) when the
+          embedder provides projectId + branch state, else legacy single toggle. */}
+      {showWorktreeChip &&
+        (worktreeProjectId != null && onWorktreeBranchChange && onToggleWorktree ? (
+          <WorktreeButtonGroup
+            projectId={worktreeProjectId}
+            defaultBranch={worktreeDefaultBranch}
+            useWorktree={!!useWorktree}
+            onToggleWorktree={onToggleWorktree}
+            selectedBranch={worktreeSelectedBranch ?? null}
+            onSelectedBranchChange={onWorktreeBranchChange}
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={onToggleWorktree}
+            className={cn(
+              META_BAR_CHIP,
+              useWorktree
+                ? WORKTREE_ACTIVE_CHIP
+                : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            <GitBranchIcon className="size-3" />
+            Use worktree
+            {useWorktree && <CheckIcon className="size-3" />}
+          </button>
+        ))}
 
       {/* Model chip */}
       {onModelChange && (

@@ -140,6 +140,25 @@ describe("DiffFileTree", () => {
     expect(screen.getByText(/2h ago/)).toBeInTheDocument();
   });
 
+  it("renders the staged badge only for is_staged files", () => {
+    const files: ChangedFileEntry[] = [
+      { file: "staged.ts", status: "M", additions: 1, deletions: 0, is_staged: true },
+      { file: "unstaged.ts", status: "M", additions: 1, deletions: 0 },
+    ];
+    render(
+      <DiffFileTree
+        files={files}
+        expandedFiles={new Set()}
+        selectedFile={null}
+        onToggleExpand={vi.fn()}
+        onSelectFile={vi.fn()}
+        {...defaultCommitProps}
+      />,
+    );
+    // Only one staged badge should render — on the staged file's row.
+    expect(screen.getAllByTestId("staged-badge")).toHaveLength(1);
+  });
+
   it("renders directory structure for nested paths", () => {
     render(
       <DiffFileTree

@@ -6,8 +6,6 @@ import {
   FilePlusIcon,
   MessageSquarePlusIcon,
   DiffIcon,
-  FileTextIcon,
-  MessageSquareIcon,
   ArrowLeftIcon,
   TerminalIcon,
 } from "lucide-react";
@@ -26,11 +24,17 @@ import {
   useListProjects,
   useCreateProject,
   getListProjectsQueryKey,
-  useListFeatures,
   getListFeaturesQueryKey,
   useCreateFeature,
+  type CreateFeatureRequest,
 } from "../api/generated";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  isWorktreeChoiceValid,
+  type WorktreeChoiceValue,
+} from "@/components/command-palette/WorktreeChoice";
+import { CommandPaletteWorktreeStep } from "@/components/command-palette/CommandPaletteWorktreeStep";
+import { ProjectFeatureGroup } from "@/components/command-palette/ProjectFeatureGroup";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -39,40 +43,7 @@ interface CommandPaletteProps {
   activeFeatureId: number | null;
 }
 
-type Mode = "commands" | "pick-project-feature" | "pick-project-session";
-
-function ProjectFeatureGroup({
-  projectId,
-  projectName,
-  onSelect,
-}: {
-  projectId: number;
-  projectName: string;
-  onSelect: (projectId: number, featureId: number) => void;
-}) {
-  const featuresQuery = useListFeatures({ project_id: projectId });
-
-  if (!featuresQuery.data?.length) return null;
-
-  return (
-    <CommandGroup heading={projectName}>
-      {featuresQuery.data.map((f: { id: number; title: string; type: string }) => (
-        <CommandItem
-          key={f.id}
-          keywords={[projectName, f.title]}
-          onSelect={() => onSelect(projectId, f.id)}
-        >
-          {f.type === "ws-session" ? (
-            <MessageSquareIcon className="mr-2" />
-          ) : (
-            <FileTextIcon className="mr-2" />
-          )}
-          <span className="truncate">{f.title}</span>
-        </CommandItem>
-      ))}
-    </CommandGroup>
-  );
-}
+type Mode = "commands" | "pick-project-feature" | "pick-project-session" | "pick-worktree-mode";
 
 export function CommandPalette({
   open,
@@ -82,6 +53,8 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [mode, setMode] = useState<Mode>("commands");
   const [search, setSearch] = useState("");
+  const [pendingProjectId, setPendingProjectId] = useState<number | null>(null);
+  const [worktreeChoice, setWorktreeChoice] = useState<WorktreeChoiceValue>({ mode: "new" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -138,6 +111,8 @@ export function CommandPalette({
       if (!open) {
         setMode("commands");
         setSearch("");
+        setPendingProjectId(null);
+        setWorktreeChoice({ mode: "new" });
       }
       onOpenChange(open);
     },
@@ -166,26 +141,38 @@ export function CommandPalette({
     close();
   }, [createProjectMutation, close]);
 
-  const handleNewFeature = useCallback(
-    (projectId: number) => {
-      createFeatureMutation.mutate({
-        data: { project_id: projectId, title: "Untitled Feature" },
-      });
-      close();
-    },
-    [createFeatureMutation, close],
-  );
+  const startWorktreePick = useCallback((projectId: number) => {
+    setPendingProjectId(projectId);
+    setWorktreeChoice({ mode: "new" });
+    setSearch("");
+    setMode("pick-worktree-mode");
+  }, []);
+
+  const handleConfirmCreateFeature = useCallback(() => {
+    if (pendingProjectId == null) return;
+    if (!isWorktreeChoiceValid(worktreeChoice)) return;
+    const data: CreateFeatureRequest = {
+      project_id: pendingProjectId,
+      title: "Untitled Feature",
+      worktree_mode: worktreeChoice.mode,
+    };
+    if (worktreeChoice.mode === "reuse") {
+      data.reuse_branch = worktreeChoice.branch;
+    }
+    createFeatureMutation.mutate({ data });
+    close();
+  }, [pendingProjectId, worktreeChoice, createFeatureMutation, close]);
 
   const handleProjectPick = useCallback(
     (projectId: number) => {
       if (mode === "pick-project-feature") {
-        handleNewFeature(projectId);
+        startWorktreePick(projectId);
       } else if (mode === "pick-project-session") {
         createSessionMutation.mutate({ data: { project_id: projectId, type: "ws-session" } });
         close();
       }
     },
-    [mode, handleNewFeature, createSessionMutation, close],
+    [mode, startWorktreePick, createSessionMutation, close],
   );
 
   const handleOpenDiff = useCallback(() => {
@@ -204,12 +191,30 @@ export function CommandPalette({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (mode === "pick-worktree-mode") {
+        if (e.key === "Escape" || (e.key === "Backspace" && search === "")) {
+          e.preventDefault();
+          // Step back: if we got here from a project pick step, return there.
+          // Otherwise (active project) go back to the root commands.
+          setSearch("");
+          if (activeProjectId == null) {
+            setMode("pick-project-feature");
+          } else {
+            setMode("commands");
+            setPendingProjectId(null);
+          }
+        } else if (e.key === "Enter" && isWorktreeChoiceValid(worktreeChoice)) {
+          e.preventDefault();
+          handleConfirmCreateFeature();
+        }
+        return;
+      }
       if (mode !== "commands" && e.key === "Backspace" && search === "") {
         e.preventDefault();
         setMode("commands");
       }
     },
-    [mode, search],
+    [mode, search, worktreeChoice, activeProjectId, handleConfirmCreateFeature],
   );
 
   // Sort projects: active project first
@@ -220,6 +225,20 @@ export function CommandPalette({
         ...projects.filter((p: { id: number }) => p.id !== activeProjectId),
       ]
     : projects;
+
+  if (mode === "pick-worktree-mode" && pendingProjectId != null) {
+    return (
+      <CommandPaletteWorktreeStep
+        open={open}
+        onOpenChange={handleOpenChange}
+        projectId={pendingProjectId}
+        value={worktreeChoice}
+        onChange={setWorktreeChoice}
+        onConfirm={handleConfirmCreateFeature}
+        onKeyDown={handleKeyDown}
+      />
+    );
+  }
 
   if (mode === "pick-project-feature" || mode === "pick-project-session") {
     return (
@@ -277,7 +296,7 @@ export function CommandPalette({
           <CommandItem
             onSelect={() => {
               if (activeProjectId != null) {
-                handleNewFeature(activeProjectId);
+                startWorktreePick(activeProjectId);
               } else {
                 setMode("pick-project-feature");
                 setSearch("");

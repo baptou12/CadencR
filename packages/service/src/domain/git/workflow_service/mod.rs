@@ -1,0 +1,45 @@
+//! Service layer for the Git workflow overhaul endpoints.
+//!
+//! Split into five sub-modules to stay under the 400-line cap:
+//!
+//! - [`branches`]: `GET /api/git/branches` and the worktree-attachment join.
+//! - [`status`]: `GET /api/git/status`, `GET /api/git/compare-url`, plus the
+//!   shared `enrich_with_sharing` helper used by the file-watcher.
+//! - [`target_branch`]: `PATCH /api/features/{id}/target-branch` and the
+//!   `resolve_target_branch` fallback chain (also called by the watcher).
+//! - [`commit_push`]: `POST /api/git/commit`, `GET /api/git/uncommitted-files`.
+//! - [`push`]: `POST /api/git/push`, `POST /api/git/push-input` —
+//!   PTY-streamed push with passphrase / yes-no prompt forwarding.
+//!
+//! The public surface is preserved by re-exports; callers continue to use
+//! `workflow_service::list_branches(...)`, `workflow_service::commit(...)`, etc.
+
+mod branches;
+mod commit_push;
+mod push;
+mod status;
+mod streaming;
+mod target_branch;
+
+pub use branches::list_branches;
+pub use commit_push::{commit, get_uncommitted_files};
+pub use push::{push, push_input};
+pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
+pub use target_branch::{resolve_target_branch, update_target_branch};
+
+use crate::app_state::AppState;
+
+const SETTING_TARGET_BRANCH: &str = "target_branch";
+
+/// Best-effort recompute + WS broadcast after a successful write. Errors are
+/// logged and swallowed — the HTTP response already reported success and the
+/// next fs event (or the next subscriber) will refresh the snapshot anyway.
+async fn broadcast_after_write(state: &AppState, feature_id: i64) {
+    if let Err(e) = crate::domain::git::watcher::recompute_and_broadcast(state, feature_id).await {
+        tracing::warn!(
+            feature_id,
+            error = %e,
+            "git status recompute after write failed (best-effort)"
+        );
+    }
+}

@@ -8,6 +8,7 @@ import {
   GitCommit,
   Circle,
   PanelLeft,
+  BookmarkCheck,
 } from "lucide-react";
 import { CopyButton } from "./CopyButton";
 import { AutoScrollText, CommitItemHoverCard, formatRelativeDate } from "./DiffFileTreeHelpers";
@@ -203,6 +204,18 @@ export function DiffFileTree({
         <span className={`shrink-0 font-mono font-bold ${statusColor(fileEntry.status)}`}>
           {statusIcon(fileEntry.status)}
         </span>
+
+        {/* Staged badge — visual only, no stage/unstage controls in scope.
+            Only renders when the backend reports `is_staged`; today the
+            /api/git/changed-files endpoint doesn't emit it (TODO in
+            DiffFileTreeHelpers.tsx), so this stays inert until then. */}
+        {fileEntry.is_staged && (
+          <BookmarkCheck
+            className="h-3 w-3 shrink-0 text-[#50fa7b]"
+            aria-label="Staged"
+            data-testid="staged-badge"
+          />
+        )}
 
         {/* File name - clickable to scroll */}
         <button

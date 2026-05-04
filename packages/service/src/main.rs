@@ -55,6 +55,16 @@ async fn main() -> anyhow::Result<()> {
                 info!("Loaded env from {}", dotenv_path.display());
             }
 
+            // Hydrate process env from the user's login shell BEFORE any
+            // subprocesses (git, gpg, ssh, agent CLIs, PTY shells) get
+            // spawned. Without this, a Tauri/launchd-launched binary
+            // inherits a stripped-down env (`PATH=/usr/bin:/bin:...`, no
+            // `GPG_TTY`, no `SSH_AUTH_SOCK`) and `git commit -S` fails for
+            // anyone who configured signing or agent sockets in their
+            // `.zshrc` / `.zprofile`. Best-effort: warns on failure,
+            // never blocks startup.
+            shared::login_env::hydrate_from_login_shell().await;
+
             let db_path = config
                 .db_path
                 .clone()
@@ -102,6 +112,10 @@ async fn main() -> anyhow::Result<()> {
                 port: config.port,
                 custom_action_scheduler:
                     domain::custom_actions::scheduler::CustomActionScheduler::new(),
+                git_watcher: std::sync::Arc::new(domain::git::watcher::GitWatcherRegistry::new()),
+                push_sessions: std::sync::Arc::new(
+                    domain::git::push_sessions::PushSessionRegistry::new(),
+                ),
             };
 
             // Push user-selected CLI binary paths into the SDK overrides
@@ -119,13 +133,57 @@ async fn main() -> anyhow::Result<()> {
             info!("Cadencr service listening on {addr}");
 
             let listener = tokio::net::TcpListener::bind(&addr).await?;
-            axum::serve(listener, app)
+            // Wrap in a `Listener` that disables Nagle's algorithm on every
+            // accepted connection. Nagle is the default on `tokio::net::TcpStream`
+            // and silently coalesces small frames for ~200 ms — which turns
+            // a real-time WebSocket stream (commit output, agent output) into
+            // a "dump everything at the end" feed. We never want that here.
+            axum::serve(NoDelayListener(listener), app)
                 .with_graceful_shutdown(shutdown_signal())
                 .await?;
         }
     }
 
     Ok(())
+}
+
+/// `tokio::net::TcpListener` wrapper that disables Nagle's algorithm on every
+/// accepted connection. Without this, small WebSocket frames (single
+/// command-output chunks, agent stream lines) sit in the OS TCP buffer for
+/// up to ~200 ms before being flushed, which destroys the live-streaming UX
+/// the commit dialog and agent panes depend on.
+struct NoDelayListener(tokio::net::TcpListener);
+
+impl axum::serve::Listener for NoDelayListener {
+    type Io = tokio::net::TcpStream;
+    type Addr = std::net::SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            match self.0.accept().await {
+                Ok((stream, addr)) => {
+                    // Best-effort: a `set_nodelay` failure on a localhost
+                    // TCP stream is exotic and not worth aborting the
+                    // connection over — log it and continue.
+                    if let Err(err) = stream.set_nodelay(true) {
+                        tracing::warn!("set_nodelay failed: {err}");
+                    }
+                    return (stream, addr);
+                }
+                Err(err) => {
+                    // Mirror axum's own retry-with-backoff behavior on
+                    // transient accept errors; without this an EMFILE / per-
+                    // process FD exhaustion would tight-loop.
+                    tracing::warn!("accept failed: {err}");
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        self.0.local_addr()
+    }
 }
 
 fn service_dotenv_path(manifest_dir: impl AsRef<Path>) -> PathBuf {

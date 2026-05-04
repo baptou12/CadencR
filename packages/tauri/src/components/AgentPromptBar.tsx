@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
-import { Send, Pause } from "lucide-react";
+import { Loader2, Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
@@ -16,6 +16,7 @@ import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
+import { useAgentPromptSend } from "./agent-prompt-send";
 import type {
   AgentPromptBarHandle,
   AgentPromptBarProps,
@@ -103,8 +104,15 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     }, [hasSpecialState]);
 
     const history = usePromptHistory(projectId ?? 0, wsSessionId);
-    const { attachments, addFiles, removeAttachment, clearAttachments, dragHandlers, isDragging } =
-      useImageAttachments();
+    const {
+      attachments,
+      addFiles,
+      removeAttachment,
+      clearAttachments,
+      restoreAttachments,
+      dragHandlers,
+      isDragging,
+    } = useImageAttachments();
 
     const filesQuery = useListFiles(
       { feature_id: featureId! },
@@ -122,48 +130,53 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     // (completed/error/never-started — all UI-equivalent here).
     const isRunning = status === "agent";
     const isPaused = status === "question";
-    const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled;
-    const getImages = useCallback(() => {
-      return attachments.length > 0
-        ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
-        : undefined;
-    }, [attachments]);
+    const getAttachments = useCallback(() => attachments, [attachments]);
+    const addHistoryEntry = useCallback(
+      (entry: string) => {
+        if (projectId) history.addEntry(entry);
+      },
+      [projectId, history],
+    );
+    // `useAgentPromptSend` owns the await-and-restore-on-failure dance plus
+    // the `sending` busy flag. Per `explicit-state.md`, the busy flag drives
+    // a visible spinner on the send button so the user never stares at a
+    // frozen prompt while async pre-send work (e.g. saving worktree
+    // settings) is in flight.
+    const { sending, runSend } = useAgentPromptSend({
+      editorRef,
+      setText,
+      clearAttachments,
+      restoreAttachments,
+      saveDraft,
+      addHistoryEntry,
+      getAttachments,
+    });
+    const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled && !sending;
 
     const handleSend = useCallback(() => {
       const trimmed = textRef.current.trim();
       if (!trimmed && attachments.length === 0) return;
-      if (projectId) history.addEntry(trimmed);
-      saveDraft(null);
-      onSend(trimmed, getImages());
-      setText("");
-      editorRef.current?.clear();
-      requestAnimationFrame(() => editorRef.current?.focus());
-      clearAttachments();
-    }, [attachments, onSend, clearAttachments, projectId, history, saveDraft, getImages]);
+      void runSend(onSend, trimmed);
+    }, [attachments, onSend, runSend]);
     const handleSplitAction = useCallback(
       (action: SplitSendAction) => {
         const trimmed = textRef.current.trim();
         if (!trimmed && attachments.length === 0) return;
-        action.onClick(trimmed, getImages());
-        setText("");
-        editorRef.current?.clear();
-        requestAnimationFrame(() => editorRef.current?.focus());
-        clearAttachments();
-        saveDraft(null);
+        void runSend(action.onClick, trimmed);
       },
-      [attachments, clearAttachments, saveDraft, getImages],
+      [attachments, runSend],
     );
     const handleEnterSend = useCallback(() => {
       const trimmed = textRef.current.trim();
       const hasContent = trimmed.length > 0 || attachments.length > 0;
-      if (!hasContent || disabledRef.current) return true; // consume but don't send
+      if (!hasContent || disabledRef.current || sending) return true; // consume but don't send
       if (splitSendActions && splitSendActions.length > 0) {
         handleSplitAction(splitSendActions[0]);
       } else {
         handleSend();
       }
       return true;
-    }, [attachments, splitSendActions, handleSplitAction, handleSend]);
+    }, [attachments, sending, splitSendActions, handleSplitAction, handleSend]);
 
     const handleEditorChange = useCallback(
       (newText: string) => {
@@ -327,7 +340,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               onEnterSend={handleEnterSend}
               onArrowUp={handleArrowUp}
               onArrowDown={handleArrowDown}
-              disabled={disabled}
+              disabled={disabled || sending}
               placeholder={
                 isPaused
                   ? "Send a message to resume…"
@@ -341,7 +354,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
             />
 
             <div className="flex shrink-0 items-center gap-1.5 self-end">
-              <ImageAttachmentButton onFilesSelected={addFiles} />
+              <ImageAttachmentButton onFilesSelected={addFiles} disabled={disabled || sending} />
 
               {isRunning ? (
                 <button
@@ -358,9 +371,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
                   onClick={handleSend}
                   disabled={!canSend}
                   aria-label="Send message"
+                  aria-busy={sending}
                   className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity disabled:opacity-30"
                 >
-                  <Send className="size-3.5" />
+                  {sending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Send className="size-3.5" />
+                  )}
                 </button>
               ) : null}
             </div>

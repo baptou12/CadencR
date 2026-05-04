@@ -1,6 +1,12 @@
 pub mod commands;
 pub mod file_size;
+pub mod git_status;
+pub mod host;
 pub mod models;
+pub mod porcelain;
+pub mod push_sessions;
 pub mod repository;
 pub mod routes;
 pub mod service;
+pub mod watcher;
+pub mod workflow_service;

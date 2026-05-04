@@ -69,6 +69,59 @@ describe("window-drag", () => {
       expect(mockStartDragging).not.toHaveBeenCalled();
       document.body.removeChild(anchor);
     });
+
+    it("ignores clicks inside a Radix dialog (synthetic-event bubbles up)", () => {
+      // Repro for "selecting text in CommitDialog drags the window": Radix
+      // mounts dialog content in a portal but React still bubbles the
+      // synthetic event up through the React owner tree, which is itself
+      // wrapped in a draggable region (FeatureTopBar).
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      const text = document.createElement("p");
+      dialog.appendChild(text);
+      document.body.appendChild(dialog);
+      const e = makeEvent({ target: text as unknown as EventTarget });
+      startDragging(e);
+      expect(mockStartDragging).not.toHaveBeenCalled();
+      document.body.removeChild(dialog);
+    });
+
+    it.each([["menu"], ["listbox"], ["alertdialog"], ["tooltip"]])(
+      "ignores clicks inside role=%s",
+      (role) => {
+        const surface = document.createElement("div");
+        surface.setAttribute("role", role);
+        document.body.appendChild(surface);
+        const e = makeEvent({ target: surface as unknown as EventTarget });
+        startDragging(e);
+        expect(mockStartDragging).not.toHaveBeenCalled();
+        document.body.removeChild(surface);
+      },
+    );
+
+    it("ignores shift-click (text-selection extension)", () => {
+      const e = makeEvent({ shiftKey: true });
+      startDragging(e);
+      expect(mockStartDragging).not.toHaveBeenCalled();
+    });
+
+    it("ignores clicks while a text selection is active", () => {
+      const p = document.createElement("p");
+      p.textContent = "selectable text";
+      document.body.appendChild(p);
+      const range = document.createRange();
+      range.selectNodeContents(p);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+
+      const e = makeEvent();
+      startDragging(e);
+      expect(mockStartDragging).not.toHaveBeenCalled();
+
+      sel?.removeAllRanges();
+      document.body.removeChild(p);
+    });
   });
 
   describe("toggleMaximize", () => {

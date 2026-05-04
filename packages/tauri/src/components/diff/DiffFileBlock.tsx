@@ -117,7 +117,7 @@ function useNearViewport(ref: React.RefObject<HTMLElement | null>, disabled: boo
 export interface DiffFileBlockProps {
   section: FileDiffSection;
   featureId: number;
-  mode: "worktree" | "branch";
+  mode: "worktree" | "branch" | "uncommitted";
   targetBranch?: string;
   commitSha?: string;
   diffMode: "unified" | "split";

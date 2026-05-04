@@ -172,6 +172,23 @@ export interface BlameResponse {
   lines: BlameLine[];
 }
 
+export type BranchInfoAttachedFeatureId = number | null;
+
+export type BranchInfoAttachedWorktreePath = string | null;
+
+/**
+ * One row per branch known to the project repo. Local + remote-tracking
+entries are merged: an `origin/foo` that has a matching local `foo` shows
+once with `is_local = true`. `attached_*` are populated from the worktree
+registry so the UI can warn when reusing a branch already in use.
+ */
+export interface BranchInfo {
+  attached_feature_id?: BranchInfoAttachedFeatureId;
+  attached_worktree_path?: BranchInfoAttachedWorktreePath;
+  is_local: boolean;
+  name: string;
+}
+
 export type BranchResponseBranch = string | null;
 
 export interface BranchResponse {
@@ -184,12 +201,22 @@ export interface ChangedFile {
   additions: number;
   deletions: number;
   file: string;
+  /** `true` when the file has staged changes (i.e. shows up in
+`git diff --cached`). Always `false` in branch-comparison mode.
+The frontend uses this to render a "staged" badge next to the file. */
+  is_staged?: boolean;
   old_file?: ChangedFileOldFile;
   status: string;
 }
 
 export interface ClaudeCodeSuccessResponse {
   ok: boolean;
+}
+
+export interface CommitBody {
+  feature_id: number;
+  file_paths: string[];
+  message: string;
 }
 
 export interface CommitLogEntry {
@@ -205,6 +232,17 @@ export interface CommitLogEntry {
 export interface CommitLogResponse {
   commits: CommitLogEntry[];
   is_on_base_branch: boolean;
+}
+
+/**
+ * Response for `GET /api/git/compare-url`. `available = false` lets the
+frontend disable the action without inspecting the host. `label` is always
+present so the UI has copy to render.
+ */
+export interface CompareUrlResponse {
+  available: boolean;
+  label: string;
+  url: string;
 }
 
 export interface ContentMatch {
@@ -252,14 +290,34 @@ it parses as JSON to fail fast on obviously bad payloads. */
   name: string;
 }
 
+/**
+ * Branch name to attach to when `worktree_mode == "reuse"`. Validated as
+non-empty and non-flag-prefixed in the handler.
+ */
+export type CreateFeatureRequestReuseBranch = string | null;
+
 export type CreateFeatureRequestTitle = string | null;
 
 export type CreateFeatureRequestType = string | null;
 
+/**
+ * One of `"new"`, `"reuse"`, `"skip"`. When `"reuse"`, `reuse_branch`
+must be set. Persisted to `feature_settings.worktree_mode` before the
+`ensure_worktree` background task is spawned.
+ */
+export type CreateFeatureRequestWorktreeMode = string | null;
+
 export interface CreateFeatureRequest {
   project_id: number;
+  /** Branch name to attach to when `worktree_mode == "reuse"`. Validated as
+non-empty and non-flag-prefixed in the handler. */
+  reuse_branch?: CreateFeatureRequestReuseBranch;
   title?: CreateFeatureRequestTitle;
   type?: CreateFeatureRequestType;
+  /** One of `"new"`, `"reuse"`, `"skip"`. When `"reuse"`, `reuse_branch`
+must be set. Persisted to `feature_settings.worktree_mode` before the
+`ensure_worktree` background task is spawned. */
+  worktree_mode?: CreateFeatureRequestWorktreeMode;
 }
 
 export interface CreateFeatureResponse {
@@ -646,10 +704,80 @@ export interface GetFileContentBatchBody {
   target_branch?: GetFileContentBatchBodyTargetBranch;
 }
 
+/**
+ * Known git hosting providers. `Other` is the fallback for self-hosted
+installations whose URL we cannot confidently classify.
+ */
+export type GitHost = (typeof GitHost)[keyof typeof GitHost];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const GitHost = {
+  GitHub: "GitHub",
+  GitLab: "GitLab",
+  Bitbucket: "Bitbucket",
+  Other: "Other",
+} as const;
+
 export interface GitStats {
   deletions: number;
   files_changed: number;
   insertions: number;
+}
+
+export type GitStatusSnapshotActionLabel = string | null;
+
+export type GitStatusSnapshotCompareUrl = string | null;
+
+export type GitStatusSnapshotHost = null | GitHost;
+
+/**
+ * One-shot snapshot of the worktree's git state. Field semantics:
+
+- `*_count` fields are derived from `git status --porcelain=v2`.
+- `ahead_of_remote` is the count of commits reachable from `HEAD` that no
+  remote has yet — `branch.ab` ahead when an upstream is configured, or
+  `git rev-list --count --not --remotes HEAD` otherwise (which is exactly
+  what a first `git push -u origin HEAD` would publish).
+- `behind_remote` comes from `branch.ab` and is `0` when no upstream is
+  configured (we can't be "behind" something that doesn't exist).
+- `ahead_of_target` is `git rev-list --count {target}..HEAD` using the
+  target ref **verbatim** as picked by the user — local `main` and
+  remote-tracking `origin/main` are different inputs and produce
+  different counts on purpose. Returns `0` if the ref doesn't resolve.
+- `host` / `compare_url` / `action_label` are populated only when a remote
+  exists. The frontend disables the open-PR button when `compare_url` is
+  `None`.
+- `shared_with` lists OTHER features that point at the same worktree
+  directory (reuse-branch flow). Filled in by the caller via
+  `enrich_with_sharing` — `compute_status` itself leaves it empty.
+- `computed_at` is unix milliseconds; the frontend store uses it to drop
+  incoming snapshots that are older than what's already cached, which
+  breaks the HTTP-vs-WebSocket race during worktree setup.
+ */
+export interface GitStatusSnapshot {
+  action_label?: GitStatusSnapshotActionLabel;
+  /** @minimum 0 */
+  ahead_of_remote: number;
+  /** @minimum 0 */
+  ahead_of_target: number;
+  /** @minimum 0 */
+  behind_remote: number;
+  compare_url?: GitStatusSnapshotCompareUrl;
+  computed_at: number;
+  current_branch: string;
+  feature_id: number;
+  has_remote: boolean;
+  host?: GitStatusSnapshotHost;
+  shared_with?: SharedFeatureRef[];
+  /** @minimum 0 */
+  staged_count: number;
+  target_branch: string;
+  /** @minimum 0 */
+  uncommitted_count: number;
+  /** @minimum 0 */
+  unstaged_count: number;
+  /** @minimum 0 */
+  untracked_count: number;
 }
 
 export type GitSuccessResponseError = string | null;
@@ -959,6 +1087,20 @@ export const ProviderStatus = {
   coming_soon: "coming_soon",
 } as const;
 
+export interface PushBody {
+  feature_id: number;
+}
+
+/**
+ * User-typed bytes for an interactive `git push` prompt. The backend
+appends a `\n` if the caller didn't, since every prompt we care about
+(passphrase, `yes/no`, HTTPS password) reads a line.
+ */
+export interface PushInputBody {
+  feature_id: number;
+  text: string;
+}
+
 export interface ReadFileResponse {
   content: string;
   /** @minimum 0 */
@@ -1159,6 +1301,16 @@ export interface SettingValueResponse {
   value?: SettingValueResponseValue;
 }
 
+/**
+ * Lightweight pointer to another feature that shares the same worktree
+directory. Surfaced in the header so the user knows their changes will
+affect the donor feature's view too.
+ */
+export interface SharedFeatureRef {
+  feature_id: number;
+  title: string;
+}
+
 export type SnapshotQueueItemAgentSessionId = number | null;
 
 export type SnapshotQueueItemGroupIndex = number | null;
@@ -1241,6 +1393,24 @@ export interface UnifiedAgentsResponse {
   agents: UnifiedAgentEntry[];
 }
 
+/**
+ * One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
+`"untracked"`, or `"both"` (staged + further unstaged change). `change_kind`
+is the porcelain v2 letter mapped to a friendly token: `"added"`,
+`"modified"`, `"deleted"`, `"renamed"`, or `"untracked"`.
+
+`additions`/`deletions` are filled from `git diff --numstat` (sum of staged
+and unstaged sides). They are `0` for untracked files (numstat doesn't
+cover them) and for binary files (where numstat reports `-`).
+ */
+export interface UncommittedFile {
+  additions?: number;
+  change_kind: string;
+  deletions?: number;
+  path: string;
+  status: string;
+}
+
 export type UpdateCustomActionRequestCommand = string | null;
 
 /**
@@ -1281,6 +1451,10 @@ export interface UpdateFeatureLayoutRequest {
 
 export interface UpdateStatusRequest {
   status: string;
+}
+
+export interface UpdateTargetBranchBody {
+  target_branch: string;
 }
 
 export interface UpdateTitleRequest {
@@ -1474,6 +1648,10 @@ export type DeleteFeatureBranchParams = {
   feature_id: number;
 };
 
+export type ListBranchesParams = {
+  project_id: number;
+};
+
 export type GetChangedFilesParams = {
   feature_id: number;
   mode: string;
@@ -1483,6 +1661,10 @@ export type GetChangedFilesParams = {
 export type GetCommitLogParams = {
   feature_id: number;
   limit?: number;
+};
+
+export type GetCompareUrlParams = {
+  feature_id: number;
 };
 
 export type GetDiffParams = {
@@ -1531,6 +1713,14 @@ export type GetStatsParams = {
   feature_id: number;
   mode?: string;
   target_branch?: string;
+};
+
+export type GetGitStatusParams = {
+  feature_id: number;
+};
+
+export type GetUncommittedFilesParams = {
+  feature_id: number;
 };
 
 export type RemoveWorktreeParams = {
@@ -5614,6 +5804,74 @@ export const useUpdateFeatureStatus = <TError = ErrorType<unknown>, TContext = u
   return useMutation(mutationOptions);
 };
 
+export const updateTargetBranch = (id: number, updateTargetBranchBody: UpdateTargetBranchBody) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/features/${id}/target-branch`,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    data: updateTargetBranchBody,
+  });
+};
+
+export const getUpdateTargetBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTargetBranch>>,
+    TError,
+    { id: number; data: UpdateTargetBranchBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTargetBranch>>,
+  TError,
+  { id: number; data: UpdateTargetBranchBody },
+  TContext
+> => {
+  const mutationKey = ["updateTargetBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTargetBranch>>,
+    { id: number; data: UpdateTargetBranchBody }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateTargetBranch(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTargetBranchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTargetBranch>>
+>;
+export type UpdateTargetBranchMutationBody = UpdateTargetBranchBody;
+export type UpdateTargetBranchMutationError = ErrorType<unknown>;
+
+export const useUpdateTargetBranch = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTargetBranch>>,
+    TError,
+    { id: number; data: UpdateTargetBranchBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTargetBranch>>,
+  TError,
+  { id: number; data: UpdateTargetBranchBody },
+  TContext
+> => {
+  const mutationOptions = getUpdateTargetBranchMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const updateFeatureTitle = (id: number, updateTitleRequest: UpdateTitleRequest) => {
   return customInstance<FeaturesSuccessResponse>({
     url: `/api/features/${id}/title`,
@@ -5909,6 +6167,54 @@ export const useDeleteFeatureBranch = <TError = ErrorType<unknown>, TContext = u
   return useMutation(mutationOptions);
 };
 
+export const listBranches = (params: ListBranchesParams, signal?: AbortSignal) => {
+  return customInstance<BranchInfo[]>({ url: `/api/git/branches`, method: "GET", params, signal });
+};
+
+export const getListBranchesQueryKey = (params?: ListBranchesParams) => {
+  return [`/api/git/branches`, ...(params ? [params] : [])] as const;
+};
+
+export const getListBranchesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBranches>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListBranchesParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof listBranches>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListBranchesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listBranches>>> = ({ signal }) =>
+    listBranches(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBranches>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBranchesQueryResult = NonNullable<Awaited<ReturnType<typeof listBranches>>>;
+export type ListBranchesQueryError = ErrorType<unknown>;
+
+export function useListBranches<
+  TData = Awaited<ReturnType<typeof listBranches>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListBranchesParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof listBranches>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBranchesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 export const getChangedFiles = (params: GetChangedFilesParams, signal?: AbortSignal) => {
   return customInstance<ChangedFile[]>({
     url: `/api/git/changed-files`,
@@ -5962,6 +6268,72 @@ export function useGetChangedFiles<
   return query;
 }
 
+export const commit = (commitBody: CommitBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/commit`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: commitBody,
+    signal,
+  });
+};
+
+export const getCommitMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commit>>,
+    TError,
+    { data: CommitBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof commit>>,
+  TError,
+  { data: CommitBody },
+  TContext
+> => {
+  const mutationKey = ["commit"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof commit>>, { data: CommitBody }> = (
+    props,
+  ) => {
+    const { data } = props ?? {};
+
+    return commit(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CommitMutationResult = NonNullable<Awaited<ReturnType<typeof commit>>>;
+export type CommitMutationBody = CommitBody;
+export type CommitMutationError = ErrorType<unknown>;
+
+export const useCommit = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof commit>>,
+    TError,
+    { data: CommitBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof commit>>,
+  TError,
+  { data: CommitBody },
+  TContext
+> => {
+  const mutationOptions = getCommitMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const getCommitLog = (params: GetCommitLogParams, signal?: AbortSignal) => {
   return customInstance<CommitLogResponse>({
     url: `/api/git/commit-log`,
@@ -6007,6 +6379,59 @@ export function useGetCommitLog<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitLog>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetCommitLogQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getCompareUrl = (params: GetCompareUrlParams, signal?: AbortSignal) => {
+  return customInstance<CompareUrlResponse>({
+    url: `/api/git/compare-url`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetCompareUrlQueryKey = (params?: GetCompareUrlParams) => {
+  return [`/api/git/compare-url`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetCompareUrlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompareUrl>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCompareUrlParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCompareUrl>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCompareUrlQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCompareUrl>>> = ({ signal }) =>
+    getCompareUrl(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompareUrl>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCompareUrlQueryResult = NonNullable<Awaited<ReturnType<typeof getCompareUrl>>>;
+export type GetCompareUrlQueryError = ErrorType<unknown>;
+
+export function useGetCompareUrl<
+  TData = Awaited<ReturnType<typeof getCompareUrl>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCompareUrlParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCompareUrl>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCompareUrlQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -6600,6 +7025,126 @@ export function useGetOriginalBranch<
   return query;
 }
 
+export const push = (pushBody: PushBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/push`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pushBody,
+    signal,
+  });
+};
+
+export const getPushMutationOptions = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof push>>,
+    TError,
+    { data: PushBody },
+    TContext
+  >;
+}): UseMutationOptions<Awaited<ReturnType<typeof push>>, TError, { data: PushBody }, TContext> => {
+  const mutationKey = ["push"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof push>>, { data: PushBody }> = (
+    props,
+  ) => {
+    const { data } = props ?? {};
+
+    return push(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushMutationResult = NonNullable<Awaited<ReturnType<typeof push>>>;
+export type PushMutationBody = PushBody;
+export type PushMutationError = ErrorType<unknown>;
+
+export const usePush = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof push>>,
+    TError,
+    { data: PushBody },
+    TContext
+  >;
+}): UseMutationResult<Awaited<ReturnType<typeof push>>, TError, { data: PushBody }, TContext> => {
+  const mutationOptions = getPushMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const pushInput = (pushInputBody: PushInputBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/push-input`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pushInputBody,
+    signal,
+  });
+};
+
+export const getPushInputMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushInput>>,
+    TError,
+    { data: PushInputBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushInput>>,
+  TError,
+  { data: PushInputBody },
+  TContext
+> => {
+  const mutationKey = ["pushInput"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushInput>>,
+    { data: PushInputBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return pushInput(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushInputMutationResult = NonNullable<Awaited<ReturnType<typeof pushInput>>>;
+export type PushInputMutationBody = PushInputBody;
+export type PushInputMutationError = ErrorType<unknown>;
+
+export const usePushInput = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushInput>>,
+    TError,
+    { data: PushInputBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushInput>>,
+  TError,
+  { data: PushInputBody },
+  TContext
+> => {
+  const mutationOptions = getPushInputMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const getStats = (params: GetStatsParams, signal?: AbortSignal) => {
   return customInstance<GitStats>({ url: `/api/git/stats`, method: "GET", params, signal });
 };
@@ -6640,6 +7185,118 @@ export function useGetStats<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getStats>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStatsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getGitStatus = (params: GetGitStatusParams, signal?: AbortSignal) => {
+  return customInstance<GitStatusSnapshot>({
+    url: `/api/git/status`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetGitStatusQueryKey = (params?: GetGitStatusParams) => {
+  return [`/api/git/status`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGitStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGitStatus>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitStatusParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getGitStatus>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGitStatusQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGitStatus>>> = ({ signal }) =>
+    getGitStatus(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGitStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGitStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getGitStatus>>>;
+export type GetGitStatusQueryError = ErrorType<unknown>;
+
+export function useGetGitStatus<
+  TData = Awaited<ReturnType<typeof getGitStatus>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGitStatusParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getGitStatus>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGitStatusQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getUncommittedFiles = (params: GetUncommittedFilesParams, signal?: AbortSignal) => {
+  return customInstance<UncommittedFile[]>({
+    url: `/api/git/uncommitted-files`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetUncommittedFilesQueryKey = (params?: GetUncommittedFilesParams) => {
+  return [`/api/git/uncommitted-files`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetUncommittedFilesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getUncommittedFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetUncommittedFilesParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getUncommittedFiles>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetUncommittedFilesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getUncommittedFiles>>> = ({ signal }) =>
+    getUncommittedFiles(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getUncommittedFiles>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetUncommittedFilesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getUncommittedFiles>>
+>;
+export type GetUncommittedFilesQueryError = ErrorType<unknown>;
+
+export function useGetUncommittedFiles<
+  TData = Awaited<ReturnType<typeof getUncommittedFiles>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetUncommittedFilesParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getUncommittedFiles>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetUncommittedFilesQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

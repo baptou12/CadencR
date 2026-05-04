@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { CopyButton } from "./CopyButton";
+import { NumStat } from "./NumStat";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface DiffFileHeaderProps {
@@ -50,8 +51,12 @@ export function DiffFileHeader({
         )}
         <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
       </button>
-      <span className="text-xs text-[#50fa7b] shrink-0">+{additions}</span>
-      <span className="text-xs text-[#ff5555] shrink-0">-{deletions}</span>
+      <NumStat
+        additions={additions}
+        deletions={deletions}
+        hideZero={false}
+        className="text-xs shrink-0"
+      />
       {showViewedCheckbox && (
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0">
           <Checkbox

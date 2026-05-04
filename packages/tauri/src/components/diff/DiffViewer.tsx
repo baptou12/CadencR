@@ -5,20 +5,35 @@ import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffFileTree, type ChangedFileEntry } from "./DiffFileTree";
 import { DiffFileBlock } from "./DiffFileBlock";
 import { DiffFileHeader } from "./DiffFileHeader";
-import { useDiffData } from "./useDiffData";
+import { useDiffData, type DiffMode } from "./useDiffData";
 import { useDiffKeyboard } from "./useDiffKeyboard";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { DiffComment } from "./DiffCommentWidget";
 
 interface DiffViewerProps {
   featureId: number;
-  mode: "worktree" | "branch";
+  mode: DiffMode;
   targetBranch?: string;
+  /**
+   * Optional controlled file-list collapsed state. When provided, the parent
+   * (e.g. `FeatureGitTab`) owns the toggle and renders its own button above
+   * the viewer; we suppress our internal rail button and tree collapse button
+   * so there's a single source of truth. When omitted (e.g. `DiffViewerModal`),
+   * the viewer falls back to self-managing the persisted setting.
+   */
+  fileListCollapsed?: boolean;
+  onFileListCollapsedChange?: (collapsed: boolean) => void;
 }
 
 const GIT_SIDEBAR_COLLAPSED_SETTING = "git_sidebar_collapsed";
 
-export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
+export function DiffViewer({
+  featureId,
+  mode,
+  targetBranch,
+  fileListCollapsed,
+  onFileListCollapsedChange,
+}: DiffViewerProps) {
   const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
@@ -28,13 +43,20 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     lineNumber: number;
   } | null>(null);
   const diffAreaRef = useRef<HTMLDivElement>(null);
+  const isControlled = fileListCollapsed !== undefined;
   const {
     value: persistedFileListCollapsed,
     setValue: persistFileListCollapsed,
     isLoading: isFileListCollapseLoading,
   } = useDebouncedSetting(GIT_SIDEBAR_COLLAPSED_SETTING, 0);
-  const isFileListCollapsed = persistedFileListCollapsed === "true";
-  const showFileListRail = isFileListCollapseLoading || isFileListCollapsed;
+  const isFileListCollapsed = isControlled
+    ? !!fileListCollapsed
+    : persistedFileListCollapsed === "true";
+  // When controlled, the parent has already resolved the persisted state, so
+  // we don't gate on our own loading flag — would otherwise flash the rail.
+  const showFileListRail = isControlled
+    ? isFileListCollapsed
+    : isFileListCollapseLoading || isFileListCollapsed;
 
   const data = useDiffData(featureId, mode, targetBranch);
 
@@ -155,9 +177,15 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
     return data.fileMeta.map(({ section, displayName, additions, deletions }) => {
       const status =
         section.oldFileName === "/dev/null" ? "A" : section.newFileName === "/dev/null" ? "D" : "M";
-      return { file: displayName, status, additions, deletions };
+      return {
+        file: displayName,
+        status,
+        additions,
+        deletions,
+        is_staged: data.stagedFiles.has(displayName),
+      };
     });
-  }, [data.fileMeta, showFileListRail]);
+  }, [data.fileMeta, data.stagedFiles, showFileListRail]);
 
   const expandedFiles = useMemo(() => {
     if (showFileListRail) return new Set<string>();
@@ -183,9 +211,13 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
 
   const setFileListCollapsed = useCallback(
     (collapsed: boolean): void => {
+      if (isControlled) {
+        onFileListCollapsedChange?.(collapsed);
+        return;
+      }
       persistFileListCollapsed(String(collapsed));
     },
-    [persistFileListCollapsed],
+    [isControlled, onFileListCollapsedChange, persistFileListCollapsed],
   );
 
   if (data.isLoading) {
@@ -300,18 +332,24 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
       {/* Diff area + file tree */}
       {showFileListRail ? (
         <div className="flex min-h-0 flex-1">
-          <div className="flex w-9 shrink-0 justify-center border-r border-border bg-card pt-2">
-            <button
-              type="button"
-              title="Expand file list"
-              aria-label="Expand Git file list"
-              className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              disabled={isFileListCollapseLoading}
-              onClick={() => setFileListCollapsed(false)}
-            >
-              <PanelLeft className="h-4 w-4" />
-            </button>
-          </div>
+          {/* When the parent controls the toggle, it renders the expand
+              button alongside its own toolbar — the rail is just an empty
+              divider here. The internal expand button is preserved for the
+              standalone (uncontrolled) modal case. */}
+          {!isControlled && (
+            <div className="flex w-9 shrink-0 justify-center border-r border-border bg-card pt-2">
+              <button
+                type="button"
+                title="Expand file list"
+                aria-label="Expand Git file list"
+                className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                disabled={isFileListCollapseLoading}
+                onClick={() => setFileListCollapsed(false)}
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <div className="min-w-0 flex-1 overflow-hidden">{diffContent}</div>
         </div>
       ) : (
@@ -329,7 +367,7 @@ export function DiffViewer({ featureId, mode, targetBranch }: DiffViewerProps) {
               onSelectCommit={data.setSelectedCommit}
               isOnBaseBranch={data.isOnBaseBranch}
               onLoadMoreCommits={() => data.setCommitLimit((l) => l + 20)}
-              onCollapse={() => setFileListCollapsed(true)}
+              onCollapse={isControlled ? undefined : () => setFileListCollapsed(true)}
             />
           </ResizablePanel>
           <ResizableHandle className="bg-accent" />

@@ -30,6 +30,7 @@ vi.mock("@/api/generated", () => ({
   useGetDiff: mocks.useGetDiffMock,
   useGetFileBlobShas: vi.fn(() => ({ data: [] })),
   useGetCommitLog: vi.fn(() => ({ data: { commits: [], is_on_base_branch: true } })),
+  useGetChangedFiles: vi.fn(() => ({ data: [] })),
   useGetFileContent: vi.fn(() => ({ data: undefined })),
   // Orval emits a mutation hook for batch endpoints — mirror the mutation
   // shape so call sites that read `.mutate` and `.data` don't blow up.

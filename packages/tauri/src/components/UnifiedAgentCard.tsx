@@ -297,8 +297,12 @@ function UnifiedReadOnlyAgent({
       sessionId={entry.session.sessionDbId}
       blocks={blocks}
       status={status}
-      onSend={() => toast.info("Open this feature to interact with workflow agents.")}
-      onStop={() => toast.info("Open this feature to stop this workflow agent.")}
+      onSend={() => {
+        toast.info("Open this feature to interact with workflow agents.");
+      }}
+      onStop={() => {
+        toast.info("Open this feature to stop this workflow agent.");
+      }}
       pendingPermission={asPendingPermission(entry.session.pendingPermission)}
       pendingQuestions={asQuestions(entry.session.pendingQuestions)}
       pendingPlanApproval={asPlanApproval(entry.session.pendingPlanApproval)}

@@ -105,6 +105,10 @@ export const AgentSession = memo(
       onLoadOlder,
       useWorktree,
       onToggleWorktree,
+      worktreeProjectId,
+      worktreeDefaultBranch,
+      worktreeSelectedBranch,
+      onWorktreeBranchChange,
       agentTabActive = true,
     } = props;
 
@@ -247,7 +251,9 @@ export const AgentSession = memo(
     );
 
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
-    const showWorktreeChip = !!onToggleWorktree && blocks.length === 0;
+    // Either the legacy on/off toggle is wired (`onToggleWorktree`) or the
+    // richer two-chip group is (toggle + branch picker + projectId).
+    const showWorktreeChip = blocks.length === 0 && !!onToggleWorktree;
     const showAutoScrollChip = !!shouldShowPromptBar;
 
     const isNarrow = useNarrowContainer(containerRef, META_BAR_COMPACT_THRESHOLD_PX);
@@ -274,6 +280,10 @@ export const AgentSession = memo(
         showWorktreeChip={showWorktreeChip}
         useWorktree={useWorktree}
         onToggleWorktree={onToggleWorktree}
+        worktreeProjectId={worktreeProjectId}
+        worktreeDefaultBranch={worktreeDefaultBranch}
+        worktreeSelectedBranch={worktreeSelectedBranch}
+        onWorktreeBranchChange={onWorktreeBranchChange}
         onProviderChange={onProviderChange}
         currentProviderId={activeProviderId}
         onModelChange={onModelChange}

@@ -35,6 +35,7 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, Ap
     Ok(row)
 }
 
+#[allow(dead_code)]
 pub async fn create_feature(
     pool: &SqlitePool,
     project_id: i64,

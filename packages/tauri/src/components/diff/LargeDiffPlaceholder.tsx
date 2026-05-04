@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes } from "@/lib/diff-thresholds";
+import { NumStat } from "./NumStat";
 
 export type LargeDiffPlaceholderVariant = "large" | "binary";
 
@@ -39,9 +40,12 @@ export function LargeDiffPlaceholder({
             {!isBinary && (
               <>
                 {" · "}
-                <span className="text-emerald-600 dark:text-emerald-400">+{additions}</span>
-                {" / "}
-                <span className="text-rose-600 dark:text-rose-400">-{deletions}</span>
+                <NumStat
+                  additions={additions}
+                  deletions={deletions}
+                  hideZero={false}
+                  separator=" / "
+                />
               </>
             )}
           </span>

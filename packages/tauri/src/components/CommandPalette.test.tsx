@@ -19,6 +19,16 @@ vi.mock("../api/generated", () => ({
     data: [{ id: 1, name: "Test Project", path: "/test/project" }],
   })),
   useListFeatures: vi.fn(() => ({ data: [] })),
+  useListBranches: vi.fn(() => ({
+    data: [
+      { name: "main", is_local: true },
+      { name: "feature/foo", is_local: true, attached_feature_id: 42 },
+      { name: "origin/remote-only", is_local: false },
+    ],
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
   useCreateProject: vi.fn(() => ({ mutate: generatedMocks.createProject })),
   useCreateFeature: vi.fn(() => ({ mutate: generatedMocks.createFeature })),
   getListProjectsQueryKey: vi.fn(() => ["/api/projects"] as const),
@@ -102,6 +112,55 @@ describe("CommandPalette", () => {
     const settingsEl = screen.getAllByText(/Settings/)[0];
     await user.click(settingsEl);
     expect(mockNavigate).toHaveBeenCalledWith({ to: "/settings" });
+  });
+
+  it("New Feature opens worktree-choice step and submits with mode=new by default", async () => {
+    const user = userEvent.setup();
+    render(
+      <CommandPalette
+        open
+        onOpenChange={onOpenChange}
+        activeProjectId={1}
+        activeFeatureId={null}
+      />,
+    );
+    await user.click(screen.getByText("New Feature"));
+    expect(await screen.findByText("New feature: choose worktree")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create feature" }));
+    expect(generatedMocks.createFeature).toHaveBeenCalledWith({
+      data: {
+        project_id: 1,
+        title: "Untitled Feature",
+        worktree_mode: "new",
+      },
+    });
+  });
+
+  it("worktree-choice 'reuse' disables submit until a branch is picked", async () => {
+    const user = userEvent.setup();
+    render(
+      <CommandPalette
+        open
+        onOpenChange={onOpenChange}
+        activeProjectId={1}
+        activeFeatureId={null}
+      />,
+    );
+    await user.click(screen.getByText("New Feature"));
+    await user.click(screen.getByText("Reuse existing branch"));
+    const submitBtn = screen.getByRole("button", { name: "Create feature" });
+    expect(submitBtn).toBeDisabled();
+    await user.click(await screen.findByText("main"));
+    expect(submitBtn).toBeEnabled();
+    await user.click(submitBtn);
+    expect(generatedMocks.createFeature).toHaveBeenCalledWith({
+      data: {
+        project_id: 1,
+        title: "Untitled Feature",
+        worktree_mode: "reuse",
+        reuse_branch: "main",
+      },
+    });
   });
 
   it("shows New Session command", () => {

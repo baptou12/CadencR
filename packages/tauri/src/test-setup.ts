@@ -88,3 +88,54 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
   clearRect: vi.fn(),
   fillRect: vi.fn(),
 })) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+
+// ---------------------------------------------------------------------------
+// react-virtuoso
+// ---------------------------------------------------------------------------
+// Virtuoso relies on real layout (ResizeObserver size + viewport math) which
+// jsdom doesn't provide, so it renders zero rows out of the box. We replace
+// it with a flat render of every item so tests can `findByText` content
+// inside virtualized lists. Tests that need to drive Virtuoso-specific
+// callbacks (atBottomStateChange, startReached, etc.) can still call
+// `vi.mock("react-virtuoso", ...)` locally — the local mock wins.
+vi.mock("react-virtuoso", async () => {
+  const React = await import("react");
+  type ItemContent = (index: number, data?: unknown) => unknown;
+  interface VirtuosoProps {
+    totalCount?: number;
+    data?: unknown[];
+    itemContent?: ItemContent;
+    components?: { Header?: () => unknown; Footer?: () => unknown };
+    style?: React.CSSProperties;
+  }
+  const Virtuoso = React.forwardRef<unknown, VirtuosoProps>(function VirtuosoMock(
+    { totalCount, data, itemContent, components, style },
+    _ref,
+  ) {
+    const count = data?.length ?? totalCount ?? 0;
+    const headerEl = components?.Header
+      ? React.createElement(components.Header as () => React.ReactNode)
+      : null;
+    const footerEl = components?.Footer
+      ? React.createElement(components.Footer as () => React.ReactNode)
+      : null;
+    const rowEls: React.ReactNode[] = [];
+    for (let i = 0; i < count; i++) {
+      rowEls.push(
+        React.createElement(
+          "div",
+          { key: i, "data-virtuoso-row-index": i },
+          itemContent ? (itemContent(i, data?.[i]) as React.ReactNode) : null,
+        ),
+      );
+    }
+    return React.createElement(
+      "div",
+      { "data-testid": "virtuoso-mock", style },
+      headerEl,
+      ...rowEls,
+      footerEl,
+    );
+  });
+  return { Virtuoso };
+});

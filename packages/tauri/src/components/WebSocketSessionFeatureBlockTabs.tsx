@@ -1,11 +1,15 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useCallback, useMemo } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
 import { AgentSession } from "@/components/agent-session";
+import { resolveWorktreeChoice } from "@/components/agent-session/WorktreePopover";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabDef, FeatureTabs } from "@/components/feature-layout/types";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
+import { getListBranchesQueryKey, listBranches, useSetFeatureSetting } from "@/api/generated";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -44,6 +48,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
     args;
   const activeFeatureId = hotkeysEnabled ? featureId : undefined;
   const activeProjectId = hotkeysEnabled ? projectId : undefined;
+  const onSend = useAgentSendHandler({ featureId, projectId, data, controls });
   return useMemo(
     () => ({
       label: "Agent",
@@ -60,7 +65,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           rootBlocks={controls.ws.rootBlocks}
           toolResultMap={controls.ws.toolResultMap}
           status={controls.ws.status}
-          onSend={(text, images) => handleSend(text, images, data, controls)}
+          onSend={onSend}
           onStop={controls.ws.interrupt}
           pendingPermission={controls.ws.pendingPermission}
           onPermissionDecision={(decision, feedback, optionId) => {
@@ -107,6 +112,10 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           onLoadOlder={controls.ws.loadOlderMessages}
           useWorktree={controls.useWorktree}
           onToggleWorktree={() => controls.setUseWorktree((v) => !v)}
+          worktreeProjectId={projectId}
+          worktreeDefaultBranch={data.defaultBranch}
+          worktreeSelectedBranch={controls.selectedBranch}
+          onWorktreeBranchChange={controls.setSelectedBranch}
           className="h-full"
         />
       ),
@@ -119,6 +128,8 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       controls,
       data,
       hotkeysEnabled,
+      onSend,
+      projectId,
       refs.agent,
       sessionId,
     ],
@@ -147,12 +158,12 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
       label: "Git",
       Icon: GitCompareArrowsIcon,
       shortcut: ["cmd", "shift", "G"],
-      badge: <GitBadge gitStats={data.gitStats} gitBranch={data.gitBranch} />,
+      badge: <GitBadge featureId={featureId} gitBranch={data.gitBranch} />,
       content: (
         <FeatureGitTab featureId={featureId} diffMode="worktree" onSendComments={sendFromGitTab} />
       ),
     }),
-    [data.gitBranch, data.gitStats, featureId, sendFromGitTab],
+    [data.gitBranch, featureId, sendFromGitTab],
   );
 }
 
@@ -179,22 +190,115 @@ function useEditorTab(args: UseSessionTabsArgs): FeatureTabDef {
   );
 }
 
-function handleSend(
-  text: string,
-  images: Array<{ base64: string; mimeType: string }> | undefined,
-  data: ReturnType<typeof useSessionFeatureData>,
-  controls: ReturnType<typeof useSessionControls>,
-): void {
-  if (text.trim() === "/clear") {
-    controls.ws.clearSession();
-    return;
+function useAgentSendHandler(args: {
+  featureId: number;
+  projectId: number;
+  data: ReturnType<typeof useSessionFeatureData>;
+  controls: ReturnType<typeof useSessionControls>;
+}): (text: string, images?: Array<{ base64: string; mimeType: string }>) => Promise<void> {
+  const { featureId, projectId, data, controls } = args;
+  const queryClient = useQueryClient();
+  const setFeatureSetting = useSetFeatureSetting();
+  return useCallback(
+    async (text, images) => {
+      if (text.trim() === "/clear") {
+        controls.ws.clearSession();
+        return;
+      }
+      if (text.trim() === "/compact" && COMPACT_ACTION_PROVIDERS.has(controls.activeProviderId)) {
+        controls.ws.compactSession();
+        return;
+      }
+      const isFirstPrompt = (data.session?.blocks?.length ?? 0) === 0;
+      const branches = await loadBranchesForFirstPrompt({
+        isFirstPrompt,
+        projectId,
+        queryClient,
+        selectedBranch: controls.selectedBranch,
+        useWorktree: controls.useWorktree,
+      });
+      const choice = resolveWorktreeChoice({
+        useWorktree: controls.useWorktree,
+        selectedBranch: controls.selectedBranch,
+        branches,
+      });
+      if (isFirstPrompt && choice.kind !== "off") {
+        await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
+      }
+      controls.ws.sendPrompt(
+        text,
+        images,
+        isFirstPrompt && controls.useWorktree ? true : undefined,
+      );
+    },
+    [
+      controls.activeProviderId,
+      controls.selectedBranch,
+      controls.useWorktree,
+      controls.ws,
+      data.session?.blocks?.length,
+      featureId,
+      projectId,
+      queryClient,
+      setFeatureSetting,
+    ],
+  );
+}
+
+interface LoadBranchesParams {
+  isFirstPrompt: boolean;
+  projectId: number;
+  queryClient: QueryClient;
+  selectedBranch: string | null;
+  useWorktree: boolean;
+}
+
+async function loadBranchesForFirstPrompt(
+  params: LoadBranchesParams,
+): Promise<Awaited<ReturnType<typeof listBranches>> | undefined> {
+  const { isFirstPrompt, projectId, queryClient, selectedBranch, useWorktree } = params;
+  if (!isFirstPrompt || !useWorktree || selectedBranch == null) return undefined;
+  try {
+    return await queryClient.ensureQueryData({
+      queryKey: getListBranchesQueryKey({ project_id: projectId }),
+      queryFn: ({ signal }) => listBranches({ project_id: projectId }, signal),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    toast.error(`Could not load branches: ${message}`);
+    throw err;
   }
-  if (text.trim() === "/compact" && COMPACT_ACTION_PROVIDERS.has(controls.activeProviderId)) {
-    controls.ws.compactSession();
-    return;
+}
+
+type WorktreeChoice = ReturnType<typeof resolveWorktreeChoice>;
+
+async function saveWorktreeChoice(params: {
+  choice: WorktreeChoice;
+  featureId: number;
+  setFeatureSetting: ReturnType<typeof useSetFeatureSetting>;
+}): Promise<void> {
+  const { choice, featureId, setFeatureSetting } = params;
+  try {
+    if (choice.kind === "reuse") {
+      await setFeatureSetting.mutateAsync({
+        id: featureId,
+        data: { key: "worktree_reuse_branch", value: choice.branch },
+      });
+    } else if (choice.kind === "new" && choice.base) {
+      await setFeatureSetting.mutateAsync({
+        id: featureId,
+        data: { key: "worktree_base_branch", value: choice.base },
+      });
+    }
+    await setFeatureSetting.mutateAsync({
+      id: featureId,
+      data: { key: "worktree_mode", value: choice.kind },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    toast.error(`Could not save worktree settings: ${message}`);
+    throw err;
   }
-  const isFirstPrompt = (data.session?.blocks?.length ?? 0) === 0;
-  controls.ws.sendPrompt(text, images, isFirstPrompt && controls.useWorktree ? true : undefined);
 }
 
 function handleModelChange(

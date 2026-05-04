@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import { FileText } from "lucide-react";
+import { NumStat } from "./NumStat";
 
 interface DiffHeaderProps {
   fileCount: number;
@@ -23,8 +24,7 @@ export function DiffHeader({
       <span>
         {fileCount} file{fileCount !== 1 ? "s" : ""} changed
       </span>
-      <span className="text-[#50fa7b]">+{totalAdditions}</span>
-      <span className="text-[#ff5555]">-{totalDeletions}</span>
+      <NumStat additions={totalAdditions} deletions={totalDeletions} hideZero={false} />
       <div className="ml-auto flex items-center gap-2">{children}</div>
     </div>
   );

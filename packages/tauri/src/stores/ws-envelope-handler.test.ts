@@ -5,6 +5,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import { handleEnvelope, type StoreAccessors } from "./ws-envelope-handler";
 import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
+import { useGitStatusStore } from "./useGitStatusStore";
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -147,6 +148,50 @@ describe("handleEnvelope provider.set.ok", () => {
     });
 
     expect(ctx.getSession("s1").permissionMode).toBe("default");
+  });
+});
+
+describe("handleEnvelope workflow worktree events", () => {
+  it("bumps the per-feature watcher epoch on worktree.created", () => {
+    // The git-status subscription hook listens to this counter so it can
+    // re-issue subscribe and force the backend to re-resolve `worktree_path`
+    // once the worktree exists. Drives both feature-view and ws-session.
+    useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
+    const ctx = createTestContext(createSessionEntry());
+
+    handleEnvelope(ctx, "s1", {
+      domain: "workflow",
+      action: "worktree.created",
+      payload: { feature_id: 42, path: "/tmp/wt", branch: "feature/x" },
+    });
+
+    expect(useGitStatusStore.getState().watcherEpoch[42]).toBe(1);
+  });
+
+  it("also bumps on worktree.ready (re-emit path on a fresh frontend session)", () => {
+    useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: { 42: 5 } });
+    const ctx = createTestContext(createSessionEntry());
+
+    handleEnvelope(ctx, "s1", {
+      domain: "workflow",
+      action: "worktree.ready",
+      payload: { feature_id: 42 },
+    });
+
+    expect(useGitStatusStore.getState().watcherEpoch[42]).toBe(6);
+  });
+
+  it("does not bump for unrelated workflow envelopes", () => {
+    useGitStatusStore.setState({ byFeature: {}, errorByFeature: {}, watcherEpoch: {} });
+    const ctx = createTestContext(createSessionEntry());
+
+    handleEnvelope(ctx, "s1", {
+      domain: "workflow",
+      action: "worktree.creating",
+      payload: { feature_id: 42 },
+    });
+
+    expect(useGitStatusStore.getState().watcherEpoch[42]).toBeUndefined();
   });
 });
 

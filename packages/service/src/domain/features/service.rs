@@ -16,11 +16,16 @@ pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, Ap
     repository::get_by_id(pool, id).await
 }
 
-pub async fn create_feature(
+/// Create a feature row and persist worktree-mode preferences atomically so a
+/// failed settings write cannot leave a partially configured feature behind.
+/// Validation happens in the HTTP handler — this layer trusts its inputs.
+pub async fn create_feature_with_worktree(
     pool: &SqlitePool,
     project_id: i64,
     title: Option<String>,
     type_: Option<String>,
+    worktree_mode: Option<String>,
+    reuse_branch: Option<String>,
 ) -> Result<CreateFeatureResponse, AppError> {
     let type_str = type_.as_deref().unwrap_or("ws-feature");
     let title = match title {
@@ -30,8 +35,39 @@ pub async fn create_feature(
             format!("Session {}", max_num + 1)
         }
     };
-    let id = repository::create_feature(pool, project_id, &title, type_str).await?;
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query("INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)")
+        .bind(project_id)
+        .bind(&title)
+        .bind(type_str)
+        .execute(&mut *tx)
+        .await?;
+    let id = result.last_insert_rowid();
+    if let Some(mode) = worktree_mode.as_deref() {
+        set_feature_setting_in_tx(&mut tx, id, "worktree_mode", mode).await?;
+    }
+    if let Some(branch) = reuse_branch.as_deref() {
+        set_feature_setting_in_tx(&mut tx, id, "worktree_reuse_branch", branch).await?;
+    }
+    tx.commit().await?;
     Ok(CreateFeatureResponse { id })
+}
+
+async fn set_feature_setting_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    feature_id: i64,
+    key: &str,
+    value: &str,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO feature_settings (feature_id, key, value) VALUES (?, ?, ?) ON CONFLICT(feature_id, key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(feature_id)
+    .bind(key)
+    .bind(value)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub async fn update_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
