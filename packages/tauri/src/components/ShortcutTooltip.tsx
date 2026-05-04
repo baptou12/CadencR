@@ -72,7 +72,7 @@ export function ShortcutTooltip({
       {visible && !disabled && (
         <div
           className={cn(
-            "pointer-events-none absolute z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-lg",
+            "pointer-events-none absolute z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg",
             above ? "bottom-full mb-1.5" : "top-full mt-1.5",
             alignRight ? "right-0" : "left-1/2 -translate-x-1/2",
           )}
