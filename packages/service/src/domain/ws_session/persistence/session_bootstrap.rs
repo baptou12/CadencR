@@ -16,6 +16,7 @@ impl WsSessionPersistence {
             current_models: HashMap::new(),
             pending_tool_inputs: HashMap::new(),
             pending_tool_row_ids: HashMap::new(),
+            pending_mergeable_blocks: HashMap::new(),
             file_change_marked: false,
         }
     }

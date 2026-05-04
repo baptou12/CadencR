@@ -194,7 +194,7 @@ pub fn spawn_workflow_stream_reader(
                         }
                     }
 
-                    persistence.persist_runtime_event(&runtime_event).await;
+                    let persisted_message = persistence.persist_runtime_event(&runtime_event).await;
                     // Sub-agent events carry their own token totals; writing them
                     // to the parent's row would clobber the parent's totals.
                     if !usage_update.is_subagent {
@@ -225,6 +225,7 @@ pub fn spawn_workflow_stream_reader(
                         &mut completed_ok,
                         &mut agent_done_called,
                         &write_pool,
+                        persisted_message,
                     )
                     .await;
 

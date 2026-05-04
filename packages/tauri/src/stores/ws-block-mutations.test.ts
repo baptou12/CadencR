@@ -1,14 +1,7 @@
 import { describe, it, expect } from "vitest";
-import {
-  applyMutations,
-  blocksPatchWithDerived,
-  parseTodosFromBlocks,
-  buildMessagePatch,
-  rebuildDerivedAgentStreamState,
-} from "./ws-block-mutations";
+import { applyMutations, parseTodosFromBlocks } from "./ws-block-mutations";
 import { createStreamingState } from "./ws-message-processing";
 import type { AgentBlockData } from "@/components/AgentBlock";
-import type { BlockMutation } from "./ws-message-processing";
 
 describe("parseTodosFromBlocks", () => {
   it("extracts todos from the last TodoWrite block", () => {
@@ -113,70 +106,6 @@ describe("parseTodosFromBlocks", () => {
       },
     ];
     expect(parseTodosFromBlocks(blocks)).toBeUndefined();
-  });
-});
-
-describe("buildMessagePatch", () => {
-  it("detects file change tools", () => {
-    const blocks: AgentBlockData[] = [
-      { id: "b1", type: "tool_call", content: "", toolName: "Write" },
-    ];
-    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, {
-      enterPlanModeRequested: false,
-    });
-    expect(patch.hasFileChanges).toBe(true);
-  });
-
-  it("detects apply_patch as a file change tool", () => {
-    const blocks: AgentBlockData[] = [
-      { id: "b1", type: "tool_call", content: "", toolName: "apply_patch" },
-    ];
-    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, {
-      enterPlanModeRequested: false,
-    });
-    expect(patch.hasFileChanges).toBe(true);
-  });
-
-  it("does not set hasFileChanges for non-file tools", () => {
-    const blocks: AgentBlockData[] = [
-      { id: "b1", type: "tool_call", content: "", toolName: "Read" },
-    ];
-    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, {
-      enterPlanModeRequested: false,
-    });
-    expect(patch.hasFileChanges).toBeUndefined();
-  });
-
-  it("detects enterPlanMode and sets permissionMode", () => {
-    const blocks: AgentBlockData[] = [];
-    const mutations: BlockMutation[] = [];
-    const patch = buildMessagePatch(blocks, mutations, {
-      enterPlanModeRequested: true,
-    });
-    expect(patch.permissionMode).toBe("plan");
-  });
-
-  it("extracts todos from mutated TodoWrite block", () => {
-    const todoContent = JSON.stringify({
-      todos: [{ content: "Do X", status: "pending", activeForm: "Doing X" }],
-    });
-    const blocks: AgentBlockData[] = [
-      {
-        id: "t1",
-        type: "tool_call",
-        content: todoContent,
-        toolName: "TodoWrite",
-        toolArgs: todoContent,
-      },
-    ];
-    const mutations: BlockMutation[] = [{ action: "append", block: blocks[0] }];
-    const patch = buildMessagePatch(blocks, mutations, {
-      enterPlanModeRequested: false,
-    });
-    expect(patch.todos).toEqual([{ content: "Do X", status: "pending", activeForm: "Doing X" }]);
   });
 });
 
@@ -359,6 +288,77 @@ describe("applyMutations", () => {
     expect(streamState.rootBlocks[0].content).toBe("hi world");
   });
 
+  it("reconciles duplicate appends by block id instead of adding a second block", () => {
+    const streamState = createStreamingState();
+    const existing: AgentBlockData = { id: "msg-10", type: "text", content: "hello" };
+    applyMutations([], [{ action: "append", block: existing }], streamState);
+
+    const result = applyMutations(
+      [existing],
+      [{ action: "append", block: { id: "msg-10", type: "text", content: "" } }],
+      streamState,
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toBe("hello");
+    expect(streamState.rootBlocks).toHaveLength(1);
+  });
+
+  it("keeps existing children when a duplicate task append has an empty child list", () => {
+    const streamState = createStreamingState();
+    const task: AgentBlockData = {
+      id: "task",
+      type: "tool_call",
+      content: "{}",
+      toolName: "Agent",
+      toolUseId: "task-tu",
+      childBlocks: [{ id: "child", type: "text", content: "done" }],
+    };
+    applyMutations([], [{ action: "append", block: task }], streamState);
+    const result = applyMutations(
+      [task],
+      [
+        {
+          action: "append",
+          block: { ...task, content: "", childBlocks: [] },
+        },
+      ],
+      streamState,
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].childBlocks?.map((block) => block.id)).toEqual(["child"]);
+  });
+
+  it("skips no-op duplicate child appends instead of appending again", () => {
+    const streamState = createStreamingState();
+    const parent: AgentBlockData = {
+      id: "parent",
+      type: "tool_call",
+      content: "{}",
+      toolUseId: "tu-parent",
+      childBlocks: [{ id: "child", type: "text", content: "already streamed" }],
+    };
+    applyMutations([], [{ action: "append", block: parent }], streamState);
+    const initialParentRef = streamState.rootBlocks[0];
+    const result = applyMutations(
+      [parent],
+      [
+        {
+          action: "append",
+          block: {
+            id: "child",
+            type: "text",
+            content: "",
+            parentToolUseId: "tu-parent",
+          },
+        },
+      ],
+      streamState,
+    );
+    expect(result[0].childBlocks).toHaveLength(1);
+    expect(result[0]).toBe(initialParentRef);
+  });
+
   it("does not loop forever when partial json starts with '{'", () => {
     const streamState = createStreamingState();
     const validArgs = JSON.stringify({
@@ -393,37 +393,5 @@ describe("applyMutations", () => {
 
     expect(result[0].toolArgs).toBe(validArgs);
     expect(result[0].content).toBe('{"description": "Fi');
-  });
-});
-
-describe("rebuildDerivedAgentStreamState", () => {
-  it("filters out children and indexes tool_result blocks by toolUseId", () => {
-    const streamState = createStreamingState();
-    const blocks: AgentBlockData[] = [
-      { id: "a", type: "text", content: "hi" },
-      { id: "b", type: "text", content: "child", parentToolUseId: "tu-x" },
-      { id: "c", type: "tool_result", content: "ok", toolUseId: "tu-x" },
-    ];
-    rebuildDerivedAgentStreamState(streamState, blocks);
-    expect(streamState.rootBlocks.map((b) => b.id)).toEqual(["a", "c"]);
-    expect(streamState.toolResultMap.get("tu-x")?.id).toBe("c");
-    expect(streamState.rootBlockPosById.get("a")).toBe(0);
-    expect(streamState.rootBlockPosById.get("c")).toBe(1);
-  });
-});
-
-describe("blocksPatchWithDerived", () => {
-  it("returns fresh refs for blocks, rootBlocks, and toolResultMap", () => {
-    const streamState = createStreamingState();
-    const blocks: AgentBlockData[] = [
-      { id: "a", type: "text", content: "hi" },
-      { id: "b", type: "tool_result", content: "ok", toolUseId: "tu-1" },
-    ];
-    const patch = blocksPatchWithDerived(streamState, blocks);
-    expect(patch.blocks).toBe(blocks);
-    expect(patch.rootBlocks).not.toBe(streamState.rootBlocks);
-    expect(patch.rootBlocks.map((b) => b.id)).toEqual(["a", "b"]);
-    expect(patch.toolResultMap).not.toBe(streamState.toolResultMap);
-    expect(patch.toolResultMap.get("tu-1")?.id).toBe("b");
   });
 });

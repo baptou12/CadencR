@@ -8,7 +8,9 @@ use crate::domain::agents::{runtime_adapter, runtime_session_finished};
 use crate::domain::runtime_stream::{
     capture_runtime_session_id, permission_request_payload, persist_usage, RuntimeUsageState,
 };
-use crate::domain::ws_session::persistence::{PendingUserInput, WsSessionPersistence};
+use crate::domain::ws_session::persistence::{
+    raw_event_with_agent_message_id, PendingUserInput, WsSessionPersistence,
+};
 use crate::domain::ws_session::protocol::{
     PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload, SessionMessagePayload,
     SessionStreamStatusPayload, SessionUsageUpdatePayload, StreamStatusState, WsEnvelope,
@@ -17,8 +19,7 @@ use crate::domain::ws_session::protocol::{
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 
-/// Spawn a background task that reads from the runtime message receiver and forwards
-/// messages to the WebSocket client.
+/// Spawn a background task that forwards runtime messages to the WebSocket client.
 pub(crate) fn spawn_stream_reader(
     db_session_id: i64,
     feature_id: i64,
@@ -33,9 +34,7 @@ pub(crate) fn spawn_stream_reader(
 ) {
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
-        // Seed from provider (opencode) or from the persisted session row
-        // when resuming; `None` means unknown until the first authoritative
-        // event arrives.
+        // Seed from provider or persisted session; `None` means unknown.
         let initial_context_window: Option<u64> = match provider_context_window {
             Some(cw) if cw > 0 => Some(cw),
             _ => WsSessionPersistence::get_session_row(&write_pool, db_session_id)
@@ -50,15 +49,12 @@ pub(crate) fn spawn_stream_reader(
             feature_id,
             Some(db_session_id),
         );
-        // Capture the runtime session ID from the first event that has one.
         let mut needs_session_id_capture = true;
         let mut runtime_session_id: Option<String> = None;
         let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut last_runtime_activity = Instant::now();
         let mut last_provider_reconcile = Instant::now();
-        // Local dedup: only broadcast Agent once per turn, not on every
-        // ContentBlockDelta. The Question and Idle transitions go through
-        // their own paired DB+broadcast helpers and update this tracker too.
+        // Avoid rebroadcasting Agent on every ContentBlockDelta.
         let mut last_signal_status: Option<crate::domain::session_status::AgentStatus> = None;
 
         loop {
@@ -69,7 +65,7 @@ pub(crate) fn spawn_stream_reader(
             let msg = match recv_result {
                 Ok(msg) => msg,
                 Err(_) => {
-                    // Timeout — check if WS sender is still alive
+                    // Timeout: check if WS sender is still alive.
                     if sender.send(Message::Ping(vec![].into())).is_err() {
                         debug!(
                             db_session_id,
@@ -122,11 +118,7 @@ pub(crate) fn spawn_stream_reader(
                 Some(Ok(runtime_event)) => {
                     last_runtime_activity = Instant::now();
 
-                    // Provider-neutral transport health (today only OpenCode
-                    // emits these). Intercept BEFORE the message branch
-                    // because these events aren't user-visible messages —
-                    // they only drive the "Reconnecting…" UI banner. See
-                    // plan finding #1 / Phase 3.1.
+                    // Transport health events only drive the reconnecting UI banner.
                     if let Some(status) = runtime_event.stream_status() {
                         let payload = match status {
                             RuntimeStreamStatus::Degraded { reason } => {
@@ -173,11 +165,7 @@ pub(crate) fn spawn_stream_reader(
                         } else {
                             None
                         };
-                        // Persist + broadcast "askUser" together. The OpenCode
-                        // stream path previously only broadcast, leaving the
-                        // DB blank — any snapshot recovery silently dropped
-                        // the gate. Now reconnect/lag resubscribe reads a
-                        // consistent row.
+                        // Persist + broadcast gates together so snapshots recover them.
                         if let Some(value) = question_payload.as_ref() {
                             WsSessionPersistence::mark_awaiting_user_static(
                                 &write_pool,
@@ -222,18 +210,7 @@ pub(crate) fn spawn_stream_reader(
                         send_runtime_session_id(&sender, &runtime_sid);
                     }
 
-                    // Provider-neutral status emission: every event tells
-                    // us whether the agent is now working or done. The
-                    // exhaustive match in `provider_signal_for_event`
-                    // structurally prevents the Codex `MessageStart`-never-
-                    // broadcasts-Agent regression that motivated this
-                    // refactor — Codex, Claude Code and OpenCode all flow
-                    // through the same code path.
-                    //
-                    // We skip Result-derived signals here because the
-                    // dedicated `is_result` branch below reads back the DB
-                    // row to honor pending_plan_approval (a pending plan
-                    // gate keeps the session in Question, not Idle).
+                    // Result-derived signals are handled below so plan gates stay in Question.
                     if !runtime_event.is_result() {
                         if let Some(signal) =
                             crate::domain::session_status::provider_signal_for_event(&runtime_event)
@@ -262,10 +239,9 @@ pub(crate) fn spawn_stream_reader(
                     }
 
                     // Persist before forwarding (best-effort).
-                    persistence.persist_runtime_event(&runtime_event).await;
+                    let persisted_message = persistence.persist_runtime_event(&runtime_event).await;
 
-                    // Sub-agent events carry their own token totals; writing them
-                    // to the parent's row would clobber the parent's totals.
+                    // Sub-agent token totals must not clobber the parent row.
                     if !usage_update.is_subagent {
                         let _ = persist_usage(&runtime_event, db_session_id, &write_pool).await;
                     }
@@ -314,7 +290,10 @@ pub(crate) fn spawn_stream_reader(
                             .unwrap(),
                         )
                     } else {
-                        let block = runtime_event.raw_json().clone();
+                        let block = raw_event_with_agent_message_id(
+                            runtime_event.raw_json(),
+                            persisted_message,
+                        );
                         WsEnvelope::new(
                             "session",
                             "message",
@@ -382,8 +361,7 @@ pub(crate) fn spawn_stream_reader(
             }
         }
 
-        // Transition Active -> Pending so the next prompt.send spawns a fresh
-        // runtime process with --resume instead of writing to dead stdin.
+        // Next prompt.send resumes in a fresh runtime instead of dead stdin.
         let mut sessions = sdk_sessions.lock().await;
         if let Some(handle) = sessions.get_mut(&db_session_id) {
             if let QueryState::Active { ref query, .. } = handle.state {
