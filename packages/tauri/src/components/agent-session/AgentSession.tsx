@@ -29,6 +29,7 @@ import { MetaBarSecondary } from "./MetaBarSecondary";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { getLatestUserPromptText } from "./getLatestUserPromptText";
+import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
 
 /**
  * Container width below which the auto-scroll, todos, and info chips slide
@@ -151,6 +152,11 @@ export const AgentSession = memo(
     } = useAgentSessionScroll({
       hasMore,
       onLoadOlder,
+    });
+
+    useAutoScrollShortcut({
+      enabled: agentTabActive && !disableShortcuts,
+      onEnableAutoScroll: scrollToBottom,
     });
 
     // Auto-open when agent starts running (uncontrolled mode only)
