@@ -6,6 +6,10 @@ use serde::Deserialize;
 use crate::app_state::AppState;
 use crate::domain::features::models::*;
 use crate::domain::features::service;
+use crate::domain::features::worktree_settings::{
+    normalize_feature_setting_value, validate_reuse_branch_for_project,
+};
+use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
 use crate::error::AppError;
 
@@ -38,8 +42,21 @@ pub async fn create_feature_handler(
     State(state): State<AppState>,
     Json(body): Json<CreateFeatureRequest>,
 ) -> Result<Json<CreateFeatureResponse>, AppError> {
+    let (worktree_mode, reuse_branch) =
+        validate_worktree_mode(&body.worktree_mode, &body.reuse_branch)?;
+    if let Some(branch) = reuse_branch.as_deref() {
+        validate_reuse_branch_for_project(&state.read_pool, body.project_id, branch).await?;
+    }
     Ok(Json(
-        service::create_feature(&state.write_pool, body.project_id, body.title, body.type_).await?,
+        service::create_feature_with_worktree(
+            &state.write_pool,
+            body.project_id,
+            body.title,
+            body.type_,
+            worktree_mode,
+            reuse_branch,
+        )
+        .await?,
     ))
 }
 
@@ -191,7 +208,9 @@ pub async fn set_feature_setting_handler(
             body.key
         )));
     }
-    service::set_feature_setting(&state.write_pool, id, &body.key, &body.value).await?;
+    let value =
+        normalize_feature_setting_value(&state.read_pool, id, &body.key, &body.value).await?;
+    service::set_feature_setting(&state.write_pool, id, &body.key, &value).await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 

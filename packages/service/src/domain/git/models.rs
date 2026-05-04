@@ -175,6 +175,11 @@ pub struct ChangedFile {
     pub old_file: Option<String>,
     pub additions: i32,
     pub deletions: i32,
+    /// `true` when the file has staged changes (i.e. shows up in
+    /// `git diff --cached`). Always `false` in branch-comparison mode.
+    /// The frontend uses this to render a "staged" badge next to the file.
+    #[serde(default)]
+    pub is_staged: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -329,6 +334,80 @@ pub struct BlameResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Branches / status / compare-url / target-branch (Git workflow overhaul)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct ListBranchesParams {
+    pub project_id: i64,
+}
+
+/// One row per branch known to the project repo. Local + remote-tracking
+/// entries are merged: an `origin/foo` that has a matching local `foo` shows
+/// once with `is_local = true`. `attached_*` are populated from the worktree
+/// registry so the UI can warn when reusing a branch already in use.
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+pub struct BranchInfo {
+    pub name: String,
+    pub is_local: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_worktree_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attached_feature_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetGitStatusParams {
+    pub feature_id: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetCompareUrlParams {
+    pub feature_id: i64,
+}
+
+/// Response for `GET /api/git/compare-url`. `available = false` lets the
+/// frontend disable the action without inspecting the host. `label` is always
+/// present so the UI has copy to render.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CompareUrlResponse {
+    pub url: String,
+    pub label: String,
+    pub available: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateTargetBranchBody {
+    pub target_branch: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CommitBody {
+    pub feature_id: i64,
+    pub message: String,
+    pub file_paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PushBody {
+    pub feature_id: i64,
+}
+
+/// User-typed bytes for an interactive `git push` prompt. The backend
+/// appends a `\n` if the caller didn't, since every prompt we care about
+/// (passphrase, `yes/no`, HTTPS password) reads a line.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PushInputBody {
+    pub feature_id: i64,
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetUncommittedFilesParams {
+    pub feature_id: i64,
+}
+
+// ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
@@ -382,9 +461,11 @@ mod tests {
             old_file: None,
             additions: 5,
             deletions: 3,
+            is_staged: false,
         };
         let json = serde_json::to_string(&cf).unwrap();
         assert!(!json.contains("old_file"), "None should be skipped");
+        assert!(json.contains("\"is_staged\":false"));
 
         let cf_rename = ChangedFile {
             file: "new.rs".into(),
@@ -392,11 +473,20 @@ mod tests {
             old_file: Some("old.rs".into()),
             additions: 0,
             deletions: 0,
+            is_staged: true,
         };
         let json = serde_json::to_string(&cf_rename).unwrap();
         assert!(json.contains("old_file"));
+        assert!(json.contains("\"is_staged\":true"));
         let back: ChangedFile = serde_json::from_str(&json).unwrap();
         assert_eq!(back.old_file, Some("old.rs".into()));
+        assert!(back.is_staged);
+
+        // Backwards compat: payloads from older API versions without
+        // `is_staged` should still deserialize and default to `false`.
+        let legacy = "{\"file\":\"x\",\"status\":\"M\",\"additions\":0,\"deletions\":0}";
+        let back: ChangedFile = serde_json::from_str(legacy).unwrap();
+        assert!(!back.is_staged);
     }
 
     #[test]

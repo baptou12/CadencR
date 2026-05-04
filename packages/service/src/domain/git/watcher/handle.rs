@@ -1,0 +1,153 @@
+//! Per-worktree handle and refcount lifecycle helpers.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::extract::ws::Message;
+use notify_debouncer_mini::Debouncer;
+use tokio::sync::{mpsc, Mutex};
+use tokio::task::JoinHandle;
+use tracing::debug;
+
+use super::debouncer::{build_debouncer, spawn_compute_task};
+use crate::app_state::AppState;
+use crate::error::AppError;
+
+/// Grace period before tearing down a watcher whose refcount hits zero.
+pub(super) const GRACE_PERIOD: Duration = Duration::from_secs(30);
+
+/// One subscriber tied to a specific WebSocket connection.
+///
+/// `target_branch` is intentionally **not** cached here: it's mutable state
+/// (the user can change it via the branch chip → PATCH), and a stale cached
+/// value made target-branch changes silently no-op the recompute. The
+/// recompute path resolves it fresh from the DB per (feature_id) on every
+/// run; the cost is one indexed `feature_settings` lookup per debounce
+/// window, which is negligible compared to the git calls that follow.
+pub(super) struct Subscriber {
+    pub(super) feature_id: i64,
+    pub(super) sender: mpsc::UnboundedSender<Message>,
+}
+
+/// What the fs callback pushes through to the compute task.
+pub(super) enum RecomputePing {
+    /// Triggered by debounced fs events.
+    FsEvent,
+    /// Triggered by `nudge()` after a Cadencr-initiated write. Used by
+    /// sub-agent 3's commit/push handlers.
+    #[allow(dead_code)]
+    Explicit,
+    /// Asks the compute task to exit (used by `shutdown`).
+    Shutdown,
+}
+
+/// Per-worktree state. Multiple features (and multiple WS sessions per
+/// feature) may register against a single handle.
+pub(super) struct WatcherHandle {
+    pub(super) subscribers: Vec<Subscriber>,
+    /// Underlying fs watcher; dropping releases the OS resources.
+    pub(super) _debouncer: Debouncer<notify_debouncer_mini::notify::RecommendedWatcher>,
+    /// Channel the fs callback pushes coalesced "recompute requested" pings on.
+    pub(super) ping_tx: mpsc::UnboundedSender<RecomputePing>,
+    /// Background task that consumes `ping_tx` and runs `compute_status`.
+    pub(super) compute_task: JoinHandle<()>,
+    /// Last time `nudge()` was called (unix millis).
+    pub(super) last_nudge_ms: Arc<AtomicI64>,
+    /// Pending grace-timer task — `None` while the handle has subscribers.
+    pub(super) grace_task: Option<JoinHandle<()>>,
+    /// Bumped on every subscribe/unsubscribe so the grace timer can detect
+    /// resubscription during the 30-second window.
+    pub(super) epoch: Arc<AtomicU64>,
+}
+
+impl WatcherHandle {
+    pub(super) fn cancel_grace(&mut self) {
+        if let Some(task) = self.grace_task.take() {
+            task.abort();
+        }
+    }
+}
+
+/// Inner registry state — a `HashMap` keyed by canonicalized worktree path.
+pub(super) struct RegistryInner {
+    pub(super) handles: HashMap<PathBuf, WatcherHandle>,
+}
+
+/// Spawn a fresh handle: build the fs filter, debouncer, and compute task.
+pub(super) fn spawn_handle(
+    registry: Arc<Mutex<RegistryInner>>,
+    worktree_path: PathBuf,
+    state: AppState,
+) -> Result<WatcherHandle, AppError> {
+    let last_nudge_ms = Arc::new(AtomicI64::new(0));
+    let last_compute_ms = Arc::new(AtomicI64::new(0));
+    let epoch = Arc::new(AtomicU64::new(0));
+    let (ping_tx, ping_rx) = mpsc::unbounded_channel::<RecomputePing>();
+
+    let debouncer = build_debouncer(
+        worktree_path.clone(),
+        ping_tx.clone(),
+        last_nudge_ms.clone(),
+    )?;
+
+    let compute_task = spawn_compute_task(registry, worktree_path, state, ping_rx, last_compute_ms);
+
+    Ok(WatcherHandle {
+        subscribers: Vec::new(),
+        _debouncer: debouncer,
+        ping_tx,
+        compute_task,
+        last_nudge_ms,
+        grace_task: None,
+        epoch,
+    })
+}
+
+/// Schedule a deferred drop for an empty handle. Captures the `epoch` at
+/// scheduling time; if a resubscribe bumps it before the timer fires, the
+/// drop is a no-op.
+pub(super) fn schedule_grace_drop(
+    inner: &mut RegistryInner,
+    path: &Path,
+    registry: Arc<Mutex<RegistryInner>>,
+) {
+    let Some(handle) = inner.handles.get_mut(path) else {
+        return;
+    };
+    handle.cancel_grace();
+    let epoch_at_schedule = handle.epoch.load(Ordering::Relaxed);
+    let epoch = handle.epoch.clone();
+    let path_owned = path.to_path_buf();
+    let task = tokio::spawn(async move {
+        tokio::time::sleep(GRACE_PERIOD).await;
+        if epoch.load(Ordering::Relaxed) != epoch_at_schedule {
+            return;
+        }
+        let mut inner = registry.lock().await;
+        if let Some(handle) = inner.handles.get(&path_owned) {
+            if !handle.subscribers.is_empty() {
+                return;
+            }
+        }
+        if let Some(mut handle) = inner.handles.remove(&path_owned) {
+            let _ = handle.ping_tx.send(RecomputePing::Shutdown);
+            handle.cancel_grace();
+            handle.compute_task.abort();
+            debug!(path = %path_owned.display(), "git watcher dropped after grace");
+        }
+    });
+    handle.grace_task = Some(task);
+}
+
+/// Best-effort sender identity check. `mpsc::UnboundedSender` exposes
+/// `same_channel`, which is what we want — every WS connection holds one
+/// sender clone.
+pub(super) fn sender_eq(
+    a: &mpsc::UnboundedSender<Message>,
+    b: &mpsc::UnboundedSender<Message>,
+) -> bool {
+    a.same_channel(b)
+}

@@ -97,6 +97,56 @@ async fn run_raw(args: &[&str], cwd: &Path) -> Result<String, AppError> {
     Ok(stdout)
 }
 
+/// Run a git command and return the **raw** stderr verbatim on failure
+/// (only the home-dir prefix is stripped to avoid leaking the user's
+/// real path). Intended for user-facing operations like commit and push
+/// where the original git error message is the actionable signal —
+/// `error-handling.md` forbids dropping it. Validates positionals against
+/// flag-prefix injection.
+///
+/// Layout: `git <subcommand_args>... <flags>... <positionals>...`
+pub async fn run_git_capture(
+    subcommand_args: &[&str],
+    flags: &[&str],
+    positionals: &[&str],
+    cwd: &Path,
+) -> Result<String, AppError> {
+    validate_positionals(positionals)?;
+    let mut args: Vec<&str> =
+        Vec::with_capacity(subcommand_args.len() + flags.len() + positionals.len());
+    args.extend_from_slice(subcommand_args);
+    args.extend_from_slice(flags);
+    args.extend_from_slice(positionals);
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(cwd)
+        .output()
+        .await
+        .map_err(|e| AppError::GitCommandError(format!("Failed to spawn git: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let scrubbed = scrub_home_prefix(stderr.trim());
+        return Err(AppError::GitCommandError(scrubbed));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Replace the user's home directory with `~` so we don't leak the real
+/// filesystem layout, but otherwise preserve git's verbatim message.
+fn scrub_home_prefix(s: &str) -> String {
+    let Some(home) = dirs::home_dir() else {
+        return s.to_string();
+    };
+    let home_str = home.to_string_lossy();
+    if home_str.is_empty() {
+        return s.to_string();
+    }
+    s.replace(home_str.as_ref(), "~")
+}
+
 /// Strip absolute paths and truncate stderr to avoid leaking filesystem info.
 fn sanitize_git_stderr(stderr: &str) -> String {
     use regex_lite::Regex;
@@ -134,6 +184,24 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn run_git_capture_rejects_flag_positional() {
+        let err = run_git_capture(&["log"], &[], &["--upload-pack=evil"], &temp_dir())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)), "{err:?}");
+    }
+
+    #[test]
+    fn scrub_home_prefix_replaces_home_dir() {
+        let home = dirs::home_dir().unwrap();
+        let home_str = home.to_string_lossy();
+        let input = format!("error in {home_str}/repo/foo");
+        let out = scrub_home_prefix(&input);
+        assert!(out.starts_with("error in ~/"), "{out}");
+        assert!(!out.contains(home_str.as_ref()), "{out}");
     }
 
     #[tokio::test]

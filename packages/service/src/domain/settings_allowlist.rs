@@ -38,6 +38,20 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "skip_worktree",
     "bypass_acknowledged",
     "layout_state",
+    // Git workflow (per-feature). `worktree_mode` selects how the worktree is
+    // provisioned at feature creation: "new" (default), "reuse" (attach to an
+    // existing branch / its worktree), or "skip". `worktree_reuse_branch`
+    // carries the branch name when mode = "reuse". `worktree_base_branch`
+    // (mode = "new" only) overrides the source branch the new worktree forks
+    // from — defaults to the project's current HEAD when unset.
+    // `target_branch` overrides the auto-detected compare target.
+    // `git_view_mode` persists the Git tab segmented control: "uncommitted"
+    // or "vs-target".
+    "worktree_mode",
+    "worktree_reuse_branch",
+    "worktree_base_branch",
+    "target_branch",
+    "git_view_mode",
 ];
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
@@ -232,6 +246,31 @@ mod tests {
     fn project_allows_setup_worktree_but_feature_does_not() {
         assert!(is_project_key_allowed("setup_worktree"));
         assert!(!is_feature_key_allowed("setup_worktree"));
+    }
+
+    #[test]
+    fn feature_allows_git_workflow_keys() {
+        // Mirror how `skip_worktree` is scoped: writable on feature only.
+        for k in [
+            "worktree_mode",
+            "worktree_reuse_branch",
+            "worktree_base_branch",
+            "target_branch",
+            "git_view_mode",
+        ] {
+            assert!(
+                is_feature_key_allowed(k),
+                "{k} should be allowed on feature"
+            );
+            assert!(
+                !is_project_key_allowed(k),
+                "{k} must be rejected on project"
+            );
+            assert!(
+                !is_workspace_key_allowed(k),
+                "{k} must be rejected on workspace"
+            );
+        }
     }
 
     #[test]

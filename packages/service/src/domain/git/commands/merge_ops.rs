@@ -1,0 +1,135 @@
+//! `git merge-tree` / `git merge --no-ff` / `git branch -d` orchestration.
+//! Branch-resolution lives in [`super::merge`].
+
+use std::path::Path;
+
+use tokio::process::Command;
+
+use crate::domain::git::models::{MergeConflictResult, MergeResult};
+use crate::error::AppError;
+use crate::shared::git_cli::{run_git, run_git_safe_refs};
+
+use super::merge::get_current_branch;
+
+/// Check if merging source_branch into target_branch would produce conflicts.
+///
+/// Uses the modern two-argument form of `git merge-tree` (Git 2.38+) which
+/// performs a real merge in-memory and exits with code 0 for clean merges or
+/// code 1 for conflicts. The old three-argument form would false-positive on
+/// identical changes present on both sides.
+pub async fn check_merge_conflicts(
+    repo_path: &Path,
+    source_branch: &str,
+    target_branch: &str,
+) -> Result<MergeConflictResult, AppError> {
+    // `git merge-tree --write-tree` performs an in-memory merge.
+    // Exit 0 → clean merge, exit 1 → conflicts (listed on stdout).
+    crate::shared::git_cli::guard_positionals(&[target_branch, source_branch])?;
+    let output = Command::new("git")
+        .args(["merge-tree", "--write-tree", target_branch, source_branch])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| AppError::GitCommandError(format!("Failed to run git merge-tree: {e}")))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    tracing::debug!(
+        exit_code,
+        stdout = %stdout.chars().take(500).collect::<String>(),
+        "git merge-tree --write-tree {} {}",
+        target_branch,
+        source_branch,
+    );
+
+    if output.status.success() {
+        // Clean merge — no conflicts
+        return Ok(MergeConflictResult {
+            has_conflicts: false,
+            conflict_files: vec![],
+        });
+    }
+
+    // Parse conflicting file names from the "CONFLICT" lines in stdout.
+    // Format: "CONFLICT (content): Merge conflict in <path>"
+    let conflict_files: Vec<String> = stdout
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("CONFLICT") {
+                // Extract path after "Merge conflict in "
+                if let Some(path) = rest.rsplit("Merge conflict in ").next() {
+                    let path = path.trim();
+                    if !path.is_empty() {
+                        return Some(path.to_string());
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
+    Ok(MergeConflictResult {
+        has_conflicts: true,
+        conflict_files,
+    })
+}
+
+/// Merge source_branch into target_branch using --no-ff.
+pub async fn merge_branch(
+    repo_path: &Path,
+    source_branch: &str,
+    target_branch: &str,
+) -> Result<MergeResult, AppError> {
+    // Get current branch to restore later
+    let original_branch = get_current_branch(repo_path).await.ok().flatten();
+
+    // Checkout target and merge
+    let merge_result =
+        match run_git_safe_refs(&["checkout"], &[], &[target_branch], repo_path).await {
+            Ok(_) => match run_git_safe_refs(&["merge"], &["--no-ff"], &[source_branch], repo_path)
+                .await
+            {
+                Ok(_) => MergeResult {
+                    success: true,
+                    error: None,
+                },
+                Err(e) => {
+                    // Abort the merge (no user positionals → plain run_git is fine)
+                    let _ = run_git(&["merge", "--abort"], repo_path).await;
+                    MergeResult {
+                        success: false,
+                        error: Some(e.to_string()),
+                    }
+                }
+            },
+            Err(e) => MergeResult {
+                success: false,
+                error: Some(e.to_string()),
+            },
+        };
+
+    // Restore original branch
+    if let Some(ref orig) = original_branch {
+        if orig != target_branch {
+            let _ = run_git_safe_refs(&["checkout"], &[], &[orig], repo_path).await;
+        }
+    }
+
+    Ok(merge_result)
+}
+
+/// Delete a local branch using -d (safe, only if fully merged).
+pub async fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError> {
+    match run_git_safe_refs(&["branch"], &["-d"], &[branch_name], repo_path).await {
+        Ok(_) => Ok(MergeResult {
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(MergeResult {
+            success: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}

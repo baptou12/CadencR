@@ -140,6 +140,21 @@ pub async fn get_changed_files(
 /// given request. `None` for `new_ref` means "the working tree". Shared by
 /// `get_file_content` and `get_file_content_batch` so both endpoints stay in
 /// lock-step.
+///
+/// Priority for the comparison base in the "vs target" mode:
+///
+///   1. an explicit, non-empty `target_branch` from the caller — the user
+///      picked it, we use it verbatim,
+///   2. otherwise `workflow_service::resolve_target_branch` (consults the
+///      stored feature setting, then the fallback chain pinned to
+///      `origin/HEAD`),
+///   3. otherwise the literal `"main"` last-resort label.
+///
+/// Bug fix: step 1 used to be silently overridden by `get_original_branch`,
+/// which meant that an explicit pick from the picker (e.g. `origin/main`)
+/// was discarded in favor of the original-branch fallback. The file-content
+/// diff then used a different base than the stats endpoint and the user saw
+/// inconsistent diffs.
 async fn resolve_diff_refs(
     state: &AppState,
     feature_id: i64,
@@ -151,19 +166,25 @@ async fn resolve_diff_refs(
     if let Some(sha) = commit_sha {
         return Ok((format!("{sha}^"), Some(sha.to_string())));
     }
-    if mode == "worktree" {
+    // `"uncommitted"` is an explicit alias for the working-tree-vs-HEAD diff;
+    // the new Git tab segmented control persists this value, but the existing
+    // `"worktree"` value remains supported for older clients.
+    if mode == "worktree" || mode == "uncommitted" {
         return Ok(("HEAD".to_string(), None));
     }
-    let branch =
-        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_BRANCH)
-            .await?;
-    let fallback = target_branch.unwrap_or("main");
-    let base = match branch {
-        Some(ref b) => commands::get_original_branch(path, b)
-            .await
-            .unwrap_or_else(|_| fallback.to_string()),
-        None => fallback.to_string(),
-    };
+    if let Some(explicit) = target_branch.and_then(|t| {
+        let trimmed = t.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }) {
+        return Ok((explicit, Some("HEAD".to_string())));
+    }
+    let base = crate::domain::git::workflow_service::resolve_target_branch(state, feature_id, path)
+        .await
+        .unwrap_or_else(|_| "main".to_string());
     Ok((base, Some("HEAD".to_string())))
 }
 
@@ -274,26 +295,26 @@ pub async fn get_commit_log(
         },
     };
 
-    let base_branch = match commands::get_original_branch(path, &branch_name).await {
-        Ok(b) => b,
-        Err(_) => {
-            let commits = commands::get_recent_commits(path, &branch_name, params.limit).await?;
-            return Ok(CommitLogResponse {
-                commits,
-                is_on_base_branch: true,
-            });
-        }
-    };
+    // Use the same target-branch resolution as the status snapshot so the
+    // commit-log view and the "ahead of target" badge are always counting
+    // the same thing. Critical for the `main` (stale local) vs
+    // `origin/main` (remote tip) divergence: if the user picked
+    // `origin/main` as their target, both UIs must compare against
+    // `origin/main`, not silently fall back to local `main` here.
+    let base_branch =
+        crate::domain::git::workflow_service::resolve_target_branch(state, params.feature_id, path)
+            .await
+            .unwrap_or_else(|_| "main".to_string());
 
     if branch_name == base_branch {
-        let commits = commands::get_recent_commits(path, &branch_name, params.limit).await?;
+        let commits = commands::get_recent_commits(path, params.limit).await?;
         return Ok(CommitLogResponse {
             commits,
             is_on_base_branch: true,
         });
     }
 
-    let commits = commands::get_commit_log(path, &base_branch, &branch_name).await?;
+    let commits = commands::get_commit_log(path, &base_branch).await?;
     Ok(CommitLogResponse {
         commits,
         is_on_base_branch: false,
@@ -855,5 +876,120 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 3 3
         assert_eq!(lines[2].summary, "first commit");
         assert_eq!(lines[2].line, 3);
         assert_eq!(lines[2].date, lines[0].date);
+    }
+
+    // -----------------------------------------------------------------------
+    // resolve_diff_refs
+    // -----------------------------------------------------------------------
+
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::SqlitePool;
+
+    async fn setup_diff_refs_schema() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    /// An explicit `target_branch` from the caller must win over any fallback.
+    /// Regression test for the bug where the original-branch fallback silently
+    /// overrode the user's explicit pick.
+    #[tokio::test]
+    async fn resolve_diff_refs_honors_explicit_target_branch() {
+        let pool = setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // Configure a worktree branch *and* a different stored target so we
+        // can prove the explicit param is what wins, not either of those.
+        repository::set_feature_setting(&pool, 1, SETTING_WORKTREE_BRANCH, "feature/x")
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, "target_branch", "develop")
+            .await
+            .unwrap();
+
+        let state = AppState::with_pool(pool);
+        let dir = tempfile::tempdir().unwrap();
+
+        let (old_ref, new_ref) =
+            resolve_diff_refs(&state, 1, "target", Some("origin/main"), None, dir.path())
+                .await
+                .unwrap();
+        assert_eq!(old_ref, "origin/main");
+        assert_eq!(new_ref.as_deref(), Some("HEAD"));
+    }
+
+    /// Blank/whitespace `target_branch` from the caller must NOT short-circuit
+    /// the resolver — fall through to `resolve_target_branch`, which will use
+    /// the stored setting.
+    #[tokio::test]
+    async fn resolve_diff_refs_blank_explicit_target_falls_through_to_setting() {
+        let pool = setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, "target_branch", "develop")
+            .await
+            .unwrap();
+
+        let state = AppState::with_pool(pool);
+        let dir = tempfile::tempdir().unwrap();
+
+        let (old_ref, new_ref) =
+            resolve_diff_refs(&state, 1, "target", Some("   "), None, dir.path())
+                .await
+                .unwrap();
+        assert_eq!(old_ref, "develop");
+        assert_eq!(new_ref.as_deref(), Some("HEAD"));
+    }
+
+    /// `mode == "uncommitted"` always means working-tree-vs-HEAD regardless
+    /// of any target-branch arg. Both `"worktree"` and `"uncommitted"` must
+    /// behave the same.
+    #[tokio::test]
+    async fn resolve_diff_refs_uncommitted_mode_uses_head_vs_worktree() {
+        let pool = setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let state = AppState::with_pool(pool);
+        let dir = tempfile::tempdir().unwrap();
+
+        for mode in ["worktree", "uncommitted"] {
+            let (old_ref, new_ref) =
+                resolve_diff_refs(&state, 1, mode, Some("origin/main"), None, dir.path())
+                    .await
+                    .unwrap();
+            assert_eq!(old_ref, "HEAD", "mode={mode} must compare against HEAD");
+            assert!(
+                new_ref.is_none(),
+                "mode={mode} must compare against working tree (None)"
+            );
+        }
     }
 }

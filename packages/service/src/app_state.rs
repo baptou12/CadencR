@@ -1,8 +1,12 @@
+use std::sync::Arc;
+
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
 use crate::domain::custom_actions::scheduler::CustomActionScheduler;
 use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
+use crate::domain::git::push_sessions::PushSessionRegistry;
+use crate::domain::git::watcher::GitWatcherRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 
@@ -41,6 +45,14 @@ pub struct AppState {
     /// Scheduler for periodic custom-action runs. Holds one tokio task per
     /// enabled `custom_action_schedules` row.
     pub custom_action_scheduler: CustomActionScheduler,
+    /// Per-worktree filesystem watchers driving real-time `git.status`
+    /// envelopes. Refcounted by WS subscriptions; see `domain::git::watcher`.
+    pub git_watcher: Arc<GitWatcherRegistry>,
+    /// Active `git push` sessions keyed by feature_id. Lets the
+    /// `POST /api/git/push-input` handler route user-typed bytes
+    /// (passphrase, `yes`/`no`) into the push's PTY stdin while it's
+    /// running. See `domain::git::push_sessions`.
+    pub push_sessions: Arc<PushSessionRegistry>,
 }
 
 impl AppState {
@@ -61,7 +73,11 @@ impl AppState {
     }
 
     /// Create an AppState for tests with a shared pool and default config.
-    #[cfg(test)]
+    /// Intentionally not behind `#[cfg(test)]` so integration tests under
+    /// `tests/` (which compile the crate as a library, *without* `cfg(test)`)
+    /// can build it too. Production code never calls this — the
+    /// `#[allow(dead_code)]` keeps the bin target's `-D dead-code` lint happy.
+    #[allow(dead_code)]
     pub fn with_pool(pool: SqlitePool) -> Self {
         let (session_status_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
@@ -81,6 +97,8 @@ impl AppState {
             frontend_port: 1420,
             port: 0,
             custom_action_scheduler: CustomActionScheduler::new(),
+            git_watcher: Arc::new(GitWatcherRegistry::new()),
+            push_sessions: Arc::new(PushSessionRegistry::new()),
         }
     }
 }

@@ -35,6 +35,13 @@ pub struct CreateFeatureRequest {
     pub title: Option<String>,
     #[serde(rename = "type")]
     pub type_: Option<String>,
+    /// One of `"new"`, `"reuse"`, `"skip"`. When `"reuse"`, `reuse_branch`
+    /// must be set. Persisted to `feature_settings.worktree_mode` before the
+    /// `ensure_worktree` background task is spawned.
+    pub worktree_mode: Option<String>,
+    /// Branch name to attach to when `worktree_mode == "reuse"`. Validated as
+    /// non-empty and non-flag-prefixed in the handler.
+    pub reuse_branch: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -430,6 +437,22 @@ mod tests {
         assert_eq!(req.project_id, 1);
         assert_eq!(req.title.as_deref(), Some("My Feature"));
         assert_eq!(req.type_.as_deref(), Some("ws-feature"));
+        assert!(req.worktree_mode.is_none());
+        assert!(req.reuse_branch.is_none());
+    }
+
+    #[test]
+    fn test_create_feature_request_serde_with_worktree_fields() {
+        let json = r#"{
+            "project_id": 1,
+            "title": "Feat",
+            "type": "ws-feature",
+            "worktree_mode": "reuse",
+            "reuse_branch": "feat/existing"
+        }"#;
+        let req: CreateFeatureRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.worktree_mode.as_deref(), Some("reuse"));
+        assert_eq!(req.reuse_branch.as_deref(), Some("feat/existing"));
     }
 
     #[test]
