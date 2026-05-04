@@ -83,6 +83,10 @@ interface UseWebSocketSessionReturn {
   initSession: (config: SessionConfig) => void;
 }
 
+interface UseWebSocketSessionOptions {
+  loadPersisted?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -90,6 +94,7 @@ interface UseWebSocketSessionReturn {
 export function useWebSocketSession(
   sessionId: string,
   featureId?: number,
+  options?: UseWebSocketSessionOptions,
 ): UseWebSocketSessionReturn {
   // Subscribe to this session's slice only — chunks on other sessions don't
   // re-render the hook.
@@ -110,10 +115,11 @@ export function useWebSocketSession(
   }, [sessionId]);
 
   // Load persisted state from DB when featureId is provided.
+  const loadPersisted = options?.loadPersisted ?? true;
   const persistedLoaded = session?.persistedLoaded ?? false;
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
     query: {
-      enabled: !!featureId && !persistedLoaded,
+      enabled: loadPersisted && !!featureId && !persistedLoaded,
       cacheTime: 0,
     },
   });

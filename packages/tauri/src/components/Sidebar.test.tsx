@@ -54,6 +54,11 @@ vi.mock("../api/generated", () => ({
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
   useGetStats: vi.fn(() => ({ data: undefined })),
+  useGetUnifiedAgents: vi.fn(() => ({
+    data: { agents: [] },
+    isLoading: false,
+    isError: false,
+  })),
 }));
 
 vi.mock("@/hooks/useProjectColor", () => ({

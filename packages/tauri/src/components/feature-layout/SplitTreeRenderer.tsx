@@ -13,6 +13,7 @@ interface SplitTreeRendererProps extends FeatureTabActivationHandlers {
   /** Path from the root split node to the current `node`, in terms of child indices (0 / 1). */
   path: SplitPath;
   tabs: FeatureTabs;
+  splitsEnabled?: boolean;
 }
 
 /**
@@ -27,6 +28,7 @@ export function SplitTreeRenderer({
   tabs,
   onTerminalActivate,
   onEditorActivate,
+  splitsEnabled = true,
 }: SplitTreeRendererProps): ReactNode {
   const setSplitSizes = useFeatureLayoutStore((s) => s.setSplitSizes);
 
@@ -38,6 +40,7 @@ export function SplitTreeRenderer({
         tabs={tabs}
         onTerminalActivate={onTerminalActivate}
         onEditorActivate={onEditorActivate}
+        splitsEnabled={splitsEnabled}
       />
     );
   }
@@ -73,6 +76,7 @@ export function SplitTreeRenderer({
           tabs={tabs}
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
+          splitsEnabled={splitsEnabled}
         />
       </ResizablePanel>
       {/* Transparent handle: the floating-block padding around each pane
@@ -88,6 +92,7 @@ export function SplitTreeRenderer({
           tabs={tabs}
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
+          splitsEnabled={splitsEnabled}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

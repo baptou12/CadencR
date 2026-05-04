@@ -40,6 +40,16 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Unified Agents",
+    shortcuts: [
+      { keys: ["⌘", "⇧", "R"], description: "Open unified agents" },
+      { keys: ["⌘", "⇧", "F"], description: "Search agents" },
+      { keys: ["⌘", "⇧", "P"], description: "Pin / unpin active agent" },
+      { keys: ["⌘", "⌥", "←/→/↑/↓"], description: "Navigate agents" },
+      { keys: ["Enter"], description: "Focus first search match" },
+    ],
+  },
+  {
     title: "Feature / Workflow",
     shortcuts: [
       { keys: ["⌘", "⇧", "A"], description: "Agent tab" },

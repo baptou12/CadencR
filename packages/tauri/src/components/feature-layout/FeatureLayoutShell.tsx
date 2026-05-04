@@ -4,7 +4,16 @@ import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { useFeatureLayoutHotkeys } from "@/hooks/useFeatureLayoutHotkeys";
 import { useFeatureLayoutHydration } from "@/hooks/useFeatureLayoutHydration";
 import { useFeatureLayoutPersistence } from "@/hooks/useFeatureLayoutPersistence";
-import { selectFeatureLayout, useFeatureLayoutStore } from "@/stores/feature-layout-store";
+import {
+  getFocusedTab,
+  selectFeatureLayout,
+  useFeatureLayoutStore,
+} from "@/stores/feature-layout-store";
+import {
+  ALL_TAB_KINDS,
+  ROOT_LEAF_ID,
+  type FeatureLayoutState,
+} from "@/stores/feature-layout-schema";
 
 import { DragChip } from "./DragChip";
 import { SplitTreeRenderer } from "./SplitTreeRenderer";
@@ -15,6 +24,9 @@ import { useFeatureDnd } from "./useFeatureDnd";
 interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
   featureId: number;
   tabs: FeatureTabs;
+  splitsEnabled?: boolean;
+  hotkeysEnabled?: boolean;
+  mountInactiveTabs?: boolean;
 }
 
 /**
@@ -25,17 +37,40 @@ interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
  *   - Keyboard shortcuts (preserves meta+shift+A/T/G/E).
  *   - The split-tree renderer.
  */
+function flatVisibleLayout(state: FeatureLayoutState): FeatureLayoutState {
+  return {
+    version: 1,
+    splitRoot: {
+      type: "leaf",
+      id: ROOT_LEAF_ID,
+      tabIds: [...ALL_TAB_KINDS],
+      activeTabId: getFocusedTab(state) ?? "agent",
+    },
+    focusedPaneId: ROOT_LEAF_ID,
+    appliedLayoutId: null,
+  };
+}
+
 export function FeatureLayoutShell({
   featureId,
   tabs,
   onTerminalActivate,
   onEditorActivate,
+  splitsEnabled = true,
+  hotkeysEnabled = true,
+  mountInactiveTabs = true,
 }: FeatureLayoutShellProps): ReactNode {
-  useFeatureLayoutHydration(featureId);
-  useFeatureLayoutPersistence(featureId);
-  useFeatureLayoutHotkeys(featureId, { onTerminalActivate, onEditorActivate });
+  useFeatureLayoutHydration(featureId, { enabled: splitsEnabled });
+  useFeatureLayoutPersistence(featureId, { enabled: splitsEnabled });
+  useFeatureLayoutHotkeys(featureId, {
+    onTerminalActivate,
+    onEditorActivate,
+    enabled: hotkeysEnabled,
+  });
 
-  const splitRoot = useFeatureLayoutStore((s) => selectFeatureLayout(featureId)(s).splitRoot);
+  const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
+  const effectiveLayout = splitsEnabled ? layoutState : flatVisibleLayout(layoutState);
+  const splitRoot = effectiveLayout.splitRoot;
 
   const [activeSource, setActiveSource] = useState<DragSource | null>(null);
   const dnd = useFeatureDnd({
@@ -52,7 +87,12 @@ export function FeatureLayoutShell({
       onDragEnd={dnd.handleDragEnd}
       onDragCancel={dnd.handleDragCancel}
     >
-      <TabContentRegistry featureId={featureId} tabs={tabs} />
+      <TabContentRegistry
+        featureId={featureId}
+        tabs={tabs}
+        layoutState={effectiveLayout}
+        mountVisibleOnly={!mountInactiveTabs}
+      />
       <div className="relative h-full min-h-0 flex-1 overflow-hidden">
         <SplitTreeRenderer
           featureId={featureId}
@@ -61,6 +101,7 @@ export function FeatureLayoutShell({
           tabs={tabs}
           onTerminalActivate={onTerminalActivate}
           onEditorActivate={onEditorActivate}
+          splitsEnabled={splitsEnabled}
         />
       </div>
       <DragOverlay dropAnimation={null}>

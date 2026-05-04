@@ -40,6 +40,7 @@ interface FeatureEditorTabProps {
   featureId: number;
   projectId: number;
   projectPath: string;
+  focusedOverride?: boolean;
 }
 
 export interface FeatureEditorTabHandle {
@@ -55,7 +56,7 @@ const EDITOR_SIDEBAR_COLLAPSED_SETTING = "editor_sidebar_collapsed";
 
 const FeatureEditorTab = memo(
   forwardRef<FeatureEditorTabHandle, FeatureEditorTabProps>(function FeatureEditorTab(
-    { featureId, projectId, projectPath },
+    { featureId, projectId, projectPath, focusedOverride },
     ref,
   ) {
     const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
@@ -65,9 +66,10 @@ const FeatureEditorTab = memo(
     // The editor's hotkeys (cmd+P, cmd+shift+F, cmd+D, etc.) only fire while
     // the editor tab is the globally focused feature tab. With split panes,
     // the editor can be visible next to the agent without owning keyboard focus.
-    const isEditorFocused = useFeatureLayoutStore(
+    const layoutEditorFocused = useFeatureLayoutStore(
       (s) => getFocusedTab(selectFeatureLayout(featureId)(s)) === "editor",
     );
+    const isEditorFocused = focusedOverride ?? layoutEditorFocused;
     const [fileSearchOpen, setFileSearchOpen] = useState(false);
     const [contentSearchOpen, setContentSearchOpen] = useState(false);
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
@@ -166,6 +168,7 @@ const FeatureEditorTab = memo(
         setFileSearchOpen(true);
       },
       "editor",
+      { enabled: isEditorFocused },
     );
 
     useScopedGlobalShortcut(
@@ -175,6 +178,7 @@ const FeatureEditorTab = memo(
         setContentSearchOpen(true);
       },
       "editor",
+      { enabled: isEditorFocused },
     );
 
     // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
@@ -185,6 +189,7 @@ const FeatureEditorTab = memo(
         splitEditorPane(featureId, activePaneId, "vertical");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
     useScopedHotkeys(
       "meta+shift+d",
@@ -193,6 +198,7 @@ const FeatureEditorTab = memo(
         splitEditorPane(featureId, activePaneId, "horizontal");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
     useScopedHotkeys(
       "meta+alt+left",
@@ -201,6 +207,7 @@ const FeatureEditorTab = memo(
         navigatePane(featureId, "left");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
     useScopedHotkeys(
       "meta+alt+right",
@@ -209,6 +216,7 @@ const FeatureEditorTab = memo(
         navigatePane(featureId, "right");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
     useScopedHotkeys(
       "meta+alt+up",
@@ -217,6 +225,7 @@ const FeatureEditorTab = memo(
         navigatePane(featureId, "up");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
     useScopedHotkeys(
       "meta+alt+down",
@@ -225,6 +234,7 @@ const FeatureEditorTab = memo(
         navigatePane(featureId, "down");
       },
       "editor",
+      { enabled: isEditorFocused },
     );
 
     useEffect(() => {

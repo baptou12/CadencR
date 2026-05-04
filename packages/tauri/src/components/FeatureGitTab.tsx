@@ -10,6 +10,7 @@ import { useSendPendingComments } from "@/hooks/useSendPendingComments";
 interface FeatureGitTabProps {
   featureId: number;
   diffMode?: "worktree" | "branch";
+  hotkeysEnabled?: boolean;
   /**
    * Sends formatted comments to the current agent (ws-session case).
    * Mutually exclusive with `onStartReviewFixer`; if both are supplied the
@@ -25,6 +26,7 @@ interface FeatureGitTabProps {
 export const FeatureGitTab = memo(function FeatureGitTab({
   featureId,
   diffMode = "worktree",
+  hotkeysEnabled = true,
   onSendComments,
   onStartReviewFixer,
 }: FeatureGitTabProps) {
@@ -46,6 +48,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       void send();
     },
     "git",
+    { enabled: hotkeysEnabled },
   );
 
   return (

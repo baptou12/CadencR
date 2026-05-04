@@ -25,10 +25,6 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useTheme } from "@/hooks/useTheme";
 
-// ---------------------------------------------------------------------------
-// Props & handle
-// ---------------------------------------------------------------------------
-
 interface TerminalPanelProps {
   featureId: number;
   projectId: number;
@@ -37,11 +33,9 @@ interface TerminalPanelProps {
   removePane: (paneId: string) => void;
   /** Working directory the feature currently expects (worktree path or project root). */
   expectedCwd: string | null;
+  hotkeysEnabled?: boolean;
 }
 
-// Theme colors come from CSS vars defined per theme in index.css. Tailwind's
-// arbitrary-value `[var(--…)]` syntax keeps the JIT classes stable while still
-// resolving against the active `<html data-theme="…">`.
 const ICON_BTN =
   "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
 
@@ -49,16 +43,8 @@ export interface TerminalPanelHandle {
   focusActivePane: () => void;
 }
 
-// ---------------------------------------------------------------------------
-// Persistent slot management — DOM elements that outlive React reconciliation
-// ---------------------------------------------------------------------------
-
 function createSlotElement(id: string): HTMLDivElement {
   const el = document.createElement("div");
-  // Slot sits inside a flex-column anchor above the optional cwd warning
-  // banner (rendered as a sibling JSX node in PaneSlotPlaceholder). `flex: 1`
-  // lets xterm fill the remaining space; the explicit min-height: 0 prevents
-  // overflow when the warning is present.
   el.style.flex = "1 1 0";
   el.style.minHeight = "0";
   el.style.width = "100%";
@@ -66,12 +52,11 @@ function createSlotElement(id: string): HTMLDivElement {
   return el;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>(
-  function TerminalPanel({ featureId, projectId, state, splitPane, removePane, expectedCwd }, ref) {
+  function TerminalPanel(
+    { featureId, projectId, state, splitPane, removePane, expectedCwd, hotkeysEnabled = true },
+    ref,
+  ) {
     const { isMinimized, root } = state;
     const leaves = useMemo(() => (root ? getLeaves(root) : []), [root]);
     const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
@@ -85,7 +70,6 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     const replaceLeafWithFresh = useTerminalStore((s) => s.replaceLeafWithFresh);
     const clearInitialCommand = useTerminalStore((s) => s.clearInitialCommand);
 
-    // Persistent slot DOM elements — one per leaf, never recreated
     const slotsRef = useRef<Map<string, HTMLDivElement>>(new Map());
     const placeholderRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -98,23 +82,11 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       return slot;
     }, []);
 
-    // Ensure slots exist for current leaves (called during render so portals have targets)
     const activeSlots = leaves.map((leaf) => ({ leaf, slot: getSlot(leaf.id) }));
 
-    // Remove slots for leaves that no longer exist. Note: we deliberately do
-    // NOT have a separate `useEffect(() => return cleanup, [])` that empties
-    // `slotsRef` on unmount. Under React StrictMode (dev) such a cleanup runs
-    // mid-life (mount → cleanup → remount), wiping the Map. A subsequent
-    // re-render — e.g. when the WS sets `ptyId` via `setPtyId` — then walks
-    // an empty Map, creates a *fresh* slot for the same leaf, and React's
-    // `createPortal` unmounts xterm from the old slot and mounts it in the
-    // new one. The old, orphaned slot stays parented under the placeholder
-    // (re-appended by the `useLayoutEffect` re-run), so we end up with two
-    // sibling slots: an empty one (visible) and the live one (overflowed
-    // out of the parent's `overflow-hidden`, invisible). The result is a
-    // blank pane even though xterm is fully wired up. Slots are children
-    // of `placeholder`, so they're cleaned up automatically when this
-    // component unmounts and React removes the placeholder.
+    // Remove slots for leaves that no longer exist. We intentionally avoid an
+    // unmount cleanup that clears the whole Map because StrictMode can run it
+    // mid-life and make React portal xterm into a duplicate blank slot.
     useEffect(() => {
       const activeIds = new Set(leaves.map((l) => l.id));
       for (const [id, el] of slotsRef.current) {
@@ -183,7 +155,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         splitPane(resolvedActivePaneId ?? undefined, "horizontal");
       },
       "terminal",
-      undefined,
+      { enabled: hotkeysEnabled },
       [splitPane, resolvedActivePaneId],
     );
 
@@ -194,7 +166,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         splitPane(resolvedActivePaneId ?? undefined, "vertical");
       },
       "terminal",
-      undefined,
+      { enabled: hotkeysEnabled },
       [splitPane, resolvedActivePaneId],
     );
 
@@ -217,7 +189,7 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         }
       },
       "terminal",
-      undefined,
+      { enabled: hotkeysEnabled },
       [navigatePane],
     );
 

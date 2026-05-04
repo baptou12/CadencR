@@ -1,20 +1,26 @@
 import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { ALL_TAB_KINDS, type TabKind } from "@/stores/feature-layout-schema";
+import {
+  ALL_TAB_KINDS,
+  type FeatureLayoutState,
+  type TabKind,
+} from "@/stores/feature-layout-schema";
 import {
   findHostFor,
   isTabVisible,
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
-import { useTabHostRegistry } from "@/stores/tab-host-registry";
+import { makeTabHostKey, useTabHostRegistry } from "@/stores/tab-host-registry";
 
 import type { FeatureTabs } from "./types";
 
 interface TabContentRegistryProps {
   featureId: number;
   tabs: FeatureTabs;
+  layoutState?: FeatureLayoutState;
+  mountVisibleOnly?: boolean;
 }
 
 /**
@@ -36,7 +42,12 @@ interface TabContentRegistryProps {
  * never sees this; only the DOM tree's parent chain changes. xterm,
  * CodeMirror, and the WS session all survive every drag intact.
  */
-export function TabContentRegistry({ featureId, tabs }: TabContentRegistryProps): ReactNode {
+export function TabContentRegistry({
+  featureId,
+  tabs,
+  layoutState: layoutStateOverride,
+  mountVisibleOnly = false,
+}: TabContentRegistryProps): ReactNode {
   // One stable mount `<div>` per tab kind. Created synchronously on first
   // render via a lazy `useState` initializer so portals always have a target,
   // even before any effect runs.
@@ -64,8 +75,25 @@ export function TabContentRegistry({ featureId, tabs }: TabContentRegistryProps)
     };
   }, [tabMounts]);
 
-  const layoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
+  const storeLayoutState = useFeatureLayoutStore(selectFeatureLayout(featureId));
+  const layoutState = layoutStateOverride ?? storeLayoutState;
   const hosts = useTabHostRegistry((s) => s.hosts);
+  const [visitedTabs, setVisitedTabs] = useState<Partial<Record<TabKind, true>>>({});
+  const visibleTabsKey = ALL_TAB_KINDS.filter((tab) => isTabVisible(layoutState, tab)).join("|");
+
+  useEffect(() => {
+    if (!mountVisibleOnly) return;
+    setVisitedTabs((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const tab of ALL_TAB_KINDS) {
+        if (!isTabVisible(layoutState, tab) || next[tab]) continue;
+        next[tab] = true;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [layoutState, mountVisibleOnly, visibleTabsKey]);
 
   // Move each tab-mount into the host pane currently owning that tab. Runs
   // *synchronously* before paint so the user never sees a flash of misplaced
@@ -80,20 +108,29 @@ export function TabContentRegistry({ featureId, tabs }: TabContentRegistryProps)
     for (const tab of ALL_TAB_KINDS) {
       const mount = tabMounts[tab];
       if (!mount) continue;
-      const hostKey = findHostFor(layoutState, tab);
+      const paneId = findHostFor(layoutState, tab);
+      const hostKey = paneId ? makeTabHostKey(featureId, paneId) : null;
       const host = hostKey ? hosts[hostKey] : undefined;
-      const willBeVisible = !!(host && isTabVisible(layoutState, tab));
+      const isVisible = isTabVisible(layoutState, tab);
+      const shouldMount = !mountVisibleOnly || isVisible || !!visitedTabs[tab];
+      const willBeVisible = !!(host && isVisible);
+      if (!shouldMount) {
+        mount.remove();
+        mount.style.display = "none";
+        continue;
+      }
       const desiredParent = host ?? document.body;
       if (mount.parentNode !== desiredParent) {
         desiredParent.appendChild(mount);
       }
       mount.style.display = willBeVisible ? "" : "none";
     }
-  }, [layoutState, hosts, tabMounts]);
+  }, [featureId, hosts, layoutState, mountVisibleOnly, tabMounts, visitedTabs]);
 
   return (
     <div style={{ display: "contents" }}>
       {(Object.entries(tabs) as Array<[TabKind, (typeof tabs)[TabKind]]>).map(([tab, def]) => {
+        if (mountVisibleOnly && !isTabVisible(layoutState, tab) && !visitedTabs[tab]) return null;
         const mount = tabMounts[tab];
         if (!mount) return null;
         return createPortal(def.content, mount, tab);

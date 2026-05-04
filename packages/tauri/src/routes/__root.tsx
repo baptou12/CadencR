@@ -3,7 +3,6 @@ import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
-import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -20,10 +19,6 @@ import {
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { customInstance } from "@/api/client";
 import { focusZoneByDirection } from "@/lib/focus-zones";
-import { CommandPalette } from "@/components/CommandPalette";
-import { FocusRing } from "@/components/FocusRing";
-import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
@@ -33,6 +28,7 @@ import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
 import { useThemeSync } from "@/hooks/useTheme";
 import UniversalContextMenu from "@/components/UniversalContextMenu";
+import { RootOverlays } from "@/components/RootOverlays";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -55,10 +51,6 @@ function RootLayout() {
   );
   const sidebarPanelRef = useRef<PanelImperativeHandle>(null);
 
-  // The `sidebar_collapsed` setting is the single source of truth; this effect
-  // is the one-way pump that mirrors it onto the imperative panel. The
-  // identity-check makes it self-healing and idempotent — it no-ops whenever
-  // the panel already matches the setting.
   useEffect(() => {
     if (sidebarCollapsed.isLoading) return;
     const panel = sidebarPanelRef.current;
@@ -168,15 +160,22 @@ function RootLayout() {
   });
 
   const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
+  const handleConfirmFeatureAction = useCallback((): void => {
+    if (activeFeatureId == null) return;
+    if (confirmAction === "delete") {
+      deleteFeatureMutation.mutate({ id: activeFeatureId });
+    } else {
+      archiveFeatureMutation.mutate({
+        id: activeFeatureId,
+        data: { status: "archived" },
+      });
+    }
+  }, [activeFeatureId, archiveFeatureMutation, confirmAction, deleteFeatureMutation]);
 
   useZoomHotkeys();
 
   const appClose = useAppClose(queryClient);
 
-  // CMD+B -> toggle sidebar. We only flip the setting; the sync effect above
-  // drives the panel imperatively. Both panels stay mounted so the
-  // PanelGroup's panel count is stable (a hard requirement of
-  // react-resizable-panels' layout validator).
   useHotkeys(
     "meta+b",
     (e) => {
@@ -196,9 +195,6 @@ function RootLayout() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // CMD+/ -> open keyboard shortcuts help modal.
-  // Industry-standard shortcut (Slack, Discord, GitHub) that avoids macOS's
-  // reserved Cmd+Shift+? Help menu accelerator entirely.
   useGlobalShortcut("meta+/", (e) => {
     e.preventDefault();
     setShortcutsHelpOpen((prev) => !prev);
@@ -304,16 +300,6 @@ function RootLayout() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // Persist the sidebar width once the user releases the resize handle
-  // (post-pointer-up). The previous version used `onResize` on the Panel,
-  // which fires *per pointer move* — and the library implements it inside a
-  // ResizeObserver callback that reads `offsetWidth` synchronously, forcing
-  // a full layout pass per pixel of drag. Even though our handler itself is
-  // cheap (it only resets a debounce timer), the library-side forced sync
-  // layout combined with text-reflow in heavy children (the agent stream)
-  // capped the drag at 5–10 fps. `onLayoutChanged` on the Group fires once
-  // when the user releases the pointer — same persistence behavior, none of
-  // the per-pixel cost.
   const handleLayoutChanged = useCallback(() => {
     const size = sidebarPanelRef.current?.getSize();
     if (!size || size.inPixels < 50) return;
@@ -344,7 +330,6 @@ function RootLayout() {
                 tabIndex={0}
                 className="h-full outline-none"
                 onFocus={(e) => {
-                  // When the wrapper itself gets focus via keyboard (not click), move to the first nav item
                   if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
                     const firstItem = e.currentTarget.querySelector(
                       "[data-nav-item]",
@@ -368,7 +353,6 @@ function RootLayout() {
                 tabIndex={0}
                 className="h-full overflow-hidden outline-none"
                 onFocus={(e) => {
-                  // When the wrapper itself gets focus via keyboard (not click), move to the first focusable item
                   if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
                     const firstItem = e.currentTarget.querySelector(
                       "[data-nav-item]",
@@ -376,7 +360,6 @@ function RootLayout() {
                     if (firstItem) {
                       firstItem.focus();
                     } else {
-                      // Fallback for session view: focus the prompt bar textarea
                       const textarea = e.currentTarget.querySelector(
                         "textarea",
                       ) as HTMLElement | null;
@@ -389,51 +372,18 @@ function RootLayout() {
               </main>
             </ResizablePanel>
           </ResizablePanelGroup>
-          <CommandPalette
-            open={commandPaletteOpen}
-            onOpenChange={setCommandPaletteOpen}
+          <RootOverlays
+            commandPaletteOpen={commandPaletteOpen}
+            setCommandPaletteOpen={setCommandPaletteOpen}
             activeProjectId={activeProjectId}
             activeFeatureId={activeFeatureId}
+            shortcutsHelpOpen={shortcutsHelpOpen}
+            setShortcutsHelpOpen={setShortcutsHelpOpen}
+            confirmAction={confirmAction}
+            setConfirmAction={setConfirmAction}
+            onConfirmFeatureAction={handleConfirmFeatureAction}
+            appClose={appClose}
           />
-          <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-          <Toaster position="top-center" richColors />
-          <FocusRing />
-          <ConfirmDialog
-            open={confirmAction != null}
-            onOpenChange={(open) => {
-              if (!open) setConfirmAction(null);
-            }}
-            title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
-            description={confirmAction === "delete" ? "This cannot be undone." : undefined}
-            confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
-            variant={confirmAction === "delete" ? "destructive" : "default"}
-            onConfirm={() => {
-              if (activeFeatureId == null) return;
-              if (confirmAction === "delete") {
-                deleteFeatureMutation.mutate({ id: activeFeatureId });
-              } else {
-                archiveFeatureMutation.mutate({
-                  id: activeFeatureId,
-                  data: { status: "archived" },
-                });
-              }
-            }}
-          />
-          <ConfirmDialog
-            open={appClose.showConfirm}
-            onOpenChange={appClose.setShowConfirm}
-            title="Quit Cadencr?"
-            description="The following agents are still running. They will be stopped and can be resumed next time you open the app."
-            confirmText="Quit"
-            variant="destructive"
-            onConfirm={appClose.confirmAndClose}
-          >
-            <ul className="text-sm text-muted-foreground space-y-1 py-2">
-              {appClose.runningAgents.map((agent) => (
-                <li key={agent.sessionId}>{agent.label}</li>
-              ))}
-            </ul>
-          </ConfirmDialog>
         </div>
       </UniversalContextMenu>
     </SidebarContext.Provider>

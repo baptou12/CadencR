@@ -5,7 +5,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 
 import { ROOT_LEAF_ID, type LayoutLeaf } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
-import { useTabHostRegistry } from "@/stores/tab-host-registry";
+import { makeTabHostKey, useTabHostRegistry } from "@/stores/tab-host-registry";
 
 import { TabPane } from "./TabPane";
 import type { FeatureTabs } from "./types";
@@ -15,6 +15,7 @@ vi.mock("./LayoutMenu", () => ({
 }));
 
 const FEATURE_ID = 7;
+const ROOT_HOST_KEY = makeTabHostKey(FEATURE_ID, ROOT_LEAF_ID);
 
 const leaf: LayoutLeaf = {
   type: "leaf",
@@ -45,11 +46,11 @@ describe("TabPane", () => {
       </DndContext>,
     );
 
-    expect(useTabHostRegistry.getState().hosts.root).toBeInstanceOf(HTMLDivElement);
+    expect(useTabHostRegistry.getState().hosts[ROOT_HOST_KEY]).toBeInstanceOf(HTMLDivElement);
 
     view.unmount();
 
-    expect(useTabHostRegistry.getState().hosts.root).toBeUndefined();
+    expect(useTabHostRegistry.getState().hosts[ROOT_HOST_KEY]).toBeUndefined();
   });
 
   it("calls activation handlers when terminal or editor tabs become active", () => {
@@ -162,7 +163,7 @@ describe("TabPane", () => {
       </DndContext>,
     );
 
-    const host = useTabHostRegistry.getState().hosts[ROOT_LEAF_ID];
+    const host = useTabHostRegistry.getState().hosts[ROOT_HOST_KEY];
     const contentChild = document.createElement("button");
     contentChild.addEventListener("pointerdown", (event) => event.stopPropagation());
     host.appendChild(contentChild);
@@ -192,7 +193,7 @@ describe("TabPane", () => {
       </DndContext>,
     );
 
-    const host = useTabHostRegistry.getState().hosts[ROOT_LEAF_ID];
+    const host = useTabHostRegistry.getState().hosts[ROOT_HOST_KEY];
     const contentChild = document.createElement("button");
     host.appendChild(contentChild);
 
