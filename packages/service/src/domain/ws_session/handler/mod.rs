@@ -1,5 +1,26 @@
+//! WebSocket session handler entry point.
+//!
+//! Production code is split across cohesive submodules:
+//!
+//! - [`types`] — `SdkHandle`, `QueryState`, `SessionConfig`, channel/lock
+//!   type aliases held by `handle_connection`.
+//! - [`helpers`] — small utilities (permission-mode parsing, `send_error`,
+//!   `persist_and_close_query`) shared across handlers.
+//! - [`dispatch`] — domain-level routing of inbound `WsEnvelope`s to the
+//!   matching `session_*` / `workflow` / `app` / `commands` handler.
+//! - [`connection`] — the axum upgrade hook and the per-connection
+//!   inbound/outbound loop, including the disconnect cleanup path.
+//!
+//! The remaining inline-test block exercises the dispatch layer
+//! end-to-end. Per the project's `inline-rust-tests.md` rule, those tests
+//! stay in this file alongside the public surface they cover; the
+//! production code itself is well under the 400-line cap.
+
 mod app;
 mod commands;
+mod connection;
+mod dispatch;
+mod helpers;
 pub(crate) mod mcp_spawn;
 mod session_compact;
 mod session_compact_opencode;
@@ -9,397 +30,50 @@ mod session_control;
 mod session_data;
 mod session_init;
 pub(crate) mod session_prompt;
+mod types;
 pub(crate) mod workflow;
 mod workflow_complex;
 mod workflow_interact;
 
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+pub use connection::ws_handler;
 
-use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{State, WebSocketUpgrade};
-use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
-use futures::StreamExt;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, info};
+// Public type for crate-wide use (referenced via `handler::SdkHandle`).
+pub use types::SdkHandle;
 
-use super::persistence::WsSessionPersistence;
-use super::protocol::*;
-use crate::api::middleware::{validate_ws_origin, validate_ws_token};
-use crate::app_state::AppState;
-use crate::domain::agents::adapter::{
-    RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
+// Bring the cross-submodule helpers and types into mod.rs scope so the
+// inline `tests` module — which still uses `super::*` — can reach them
+// without churning every test. Production code in this file is just the
+// `pub use`s above; these names are wired through for tests only.
+#[allow(unused_imports)]
+use dispatch::dispatch_envelope;
+#[allow(unused_imports)]
+use helpers::{
+    default_permission_mode_wire, parse_permission_mode, parse_session_id, persist_and_close_query,
+    provider_supports_mode, send_error, send_runtime_session_id,
 };
+#[allow(unused_imports)]
+use types::{QueryState, SdkSessions, SessionConfig, WsSender};
 
-/// State of the SDK query for a session.
-pub(super) enum QueryState {
-    /// Session initialized but no prompt sent yet. Stores the runtime config to use when spawning.
-    Pending(RuntimeSpawnConfig),
-    /// Query is active (CLI subprocess running).
-    Active {
-        query: RuntimeSessionHandle,
-        permission_tx: mpsc::Sender<session_prompt::PermissionResponse>,
-    },
-}
-
-/// Serializable session config for respawning with --resume after model change.
-#[derive(Clone)]
-pub(super) struct SessionConfig {
-    pub(super) cwd: PathBuf,
-    /// Pre-canonicalized worktree path for permission checks (avoids repeated syscalls).
-    pub(super) canonical_cwd: PathBuf,
-    pub(super) permission_mode: Option<RuntimePermissionMode>,
-    pub(super) thinking_effort: Option<String>,
-    pub(super) system_prompt: Option<String>,
-    /// Extra env vars to inject when respawning the CLI (e.g. an active
-    /// Claude Code profile). Carried through resume transitions so the
-    /// process always sees the profile the user selected.
-    pub(super) env: Option<std::collections::HashMap<String, String>>,
-}
-
-/// Handle for a running SDK session, stored per-connection.
-/// Keyed by `i64` (agent_sessions.id). DB is the source of truth for session
-/// config; memory holds only live process state and ephemeral tracking.
-pub struct SdkHandle {
-    pub(super) state: QueryState,
-    /// feature_id for persistence lookups.
-    pub(super) feature_id: i64,
-    /// Active runtime provider for this session handle.
-    pub(super) runtime_provider: String,
-    /// The model the user wants for the next turn. Updated by model.set.
-    pub(super) desired_model: Option<String>,
-    /// The model the CLI was actually spawned with.
-    pub(super) spawned_model: Option<String>,
-    /// The permission mode the user wants. Updated by mode.set.
-    pub(super) desired_permission_mode: Option<RuntimePermissionMode>,
-    /// The permission mode the CLI was actually spawned with.
-    pub(super) spawned_permission_mode: Option<RuntimePermissionMode>,
-    /// Thinking effort to apply on the next turn when supported by the model.
-    pub(super) desired_thinking_effort: Option<String>,
-    /// Thinking effort the runtime was last spawned with.
-    pub(super) spawned_thinking_effort: Option<String>,
-    /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
-    /// OpenCode uses this for manual compaction so it can reuse the same
-    /// running server instead of probing/spawning on every compact request.
-    pub(super) runtime_control_endpoint: Option<String>,
-    pub(super) manual_compact_running: Arc<AtomicBool>,
-    /// Session-level cache of approved permission patterns.
-    pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
-    /// Pre-loaded allowed patterns from settings files.
-    pub(super) allowed_patterns: Arc<HashSet<String>>,
-    /// Claude CLI session ID to use for --resume on the first prompt.
-    /// Set from the DB row at init time; consumed (taken) when spawning.
-    pub(super) resume_session_id: Option<String>,
-    /// Config for respawning with --resume after model/mode change.
-    pub(super) config: SessionConfig,
-    pub(super) manual_compact_cancel: Arc<AtomicBool>,
-}
-
-pub(super) type SdkSessions = Arc<Mutex<HashMap<i64, SdkHandle>>>;
-pub(super) type WsSender = mpsc::UnboundedSender<Message>;
-
-/// Parse a permission mode string from the client into a PermissionMode enum value.
-pub(super) fn parse_permission_mode(mode: &str) -> RuntimePermissionMode {
-    match mode {
-        "acceptEdits" => RuntimePermissionMode::AcceptEdits,
-        "bypassPermissions" => RuntimePermissionMode::BypassPermissions,
-        "plan" => RuntimePermissionMode::Plan,
-        "auto" => RuntimePermissionMode::Auto,
-        "dontAsk" => RuntimePermissionMode::DontAsk,
-        _ => RuntimePermissionMode::Default,
-    }
-}
-
-/// Whether a given runtime provider can run a given permission mode.
-/// Dispatches to the adapter so the (provider, mode) matrix lives next to
-/// each adapter's CLI-arg mapping rather than as a switch in shared code.
-/// Mirrored on the frontend by `lib/provider-modes.ts`. Unknown providers
-/// default to allowing the request — a new adapter must be wired into the
-/// registry before its mode policy can be enforced anyway.
-pub(super) fn provider_supports_mode(provider: &str, mode: &RuntimePermissionMode) -> bool {
-    crate::domain::agents::runtime_adapter(provider)
-        .map(|adapter| adapter.supports_permission_mode(mode))
-        .unwrap_or(true)
-}
-
-/// Wire string the chip should land on after a session switches to this
-/// provider. Mirrors `defaultEditModeFor` in `lib/provider-modes.ts`.
-pub(super) fn default_permission_mode_wire(provider: &str) -> &'static str {
-    crate::domain::agents::runtime_adapter(provider)
-        .map(|adapter| adapter.default_permission_mode_wire())
-        .unwrap_or("acceptEdits")
-}
-
-/// Parse a session_id string from client payload into i64 DB key.
-pub(super) fn parse_session_id(s: &str) -> Option<i64> {
-    s.parse::<i64>().ok()
-}
-
-/// Persist the runtime session ID from the active runtime, close it, and return the ID.
-pub(super) async fn persist_and_close_query(
-    query: &RuntimeSessionHandle,
-    pool: &sqlx::SqlitePool,
-    db_session_id: i64,
-    runtime_provider: &str,
-) -> Option<String> {
-    let mut q = query.lock().await;
-    let cli_sid = q.session_id().await;
-    if let Some(ref sid) = cli_sid {
-        debug!(
-            db_session_id,
-            runtime_provider = %runtime_provider,
-            runtime_session_id = %sid,
-            "persist_and_close: saving runtime session_id"
-        );
-        WsSessionPersistence::persist_runtime_session_id_static(
-            pool,
-            db_session_id,
-            runtime_provider,
-            sid,
-        )
-        .await;
-    }
-    q.close().await;
-    cli_sid
-}
-
-/// Send an error envelope back to the client.
-pub(super) fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &str) {
-    let err = WsEnvelope::reply(
-        ref_id,
-        "session",
-        "error",
-        serde_json::to_value(SessionErrorPayload {
-            code: code.into(),
-            message: message.into(),
-        })
-        .unwrap(),
-    );
-    let _ = sender.send(Message::Text(String::from(err).into()));
-}
-
-/// Notify the frontend of the runtime session ID (used for --resume).
-pub(super) fn send_runtime_session_id(sender: &WsSender, cli_sid: &str) {
-    let envelope = WsEnvelope::new(
-        "session",
-        "runtime_session_id",
-        serde_json::json!({ "runtime_session_id": cli_sid }),
-    );
-    let _ = sender.send(Message::Text(String::from(envelope).into()));
-}
-
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(resp) = validate_ws_origin(&headers, state.frontend_port) {
-        return resp;
-    }
-    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
-        Ok(proto) => proto.to_string(),
-        Err(resp) => return resp,
-    };
-    let ws = ws.protocols([selected_proto]);
-    ws.on_upgrade(move |socket| handle_connection(socket, state))
-        .into_response()
-}
-
-/// Runs the WebSocket connection loop after upgrade.
-async fn handle_connection(socket: WebSocket, state: AppState) {
-    let (mut ws_sink, mut ws_stream) = socket.split();
-    let (outbound_tx, mut outbound_rx) = mpsc::unbounded_channel::<Message>();
-    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-
-    // Spawn outbound forwarder: reads from channel, writes to WebSocket sink.
-    // Exits when either the channel is dropped or the sink fails (peer gone).
-    let mut send_task = tokio::spawn(async move {
-        use futures::SinkExt;
-        while let Some(msg) = outbound_rx.recv().await {
-            if ws_sink.send(msg).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    // Inbound loop: read messages from client. We `select!` against the
-    // outbound task so a half-open TCP socket (e.g. laptop sleep, Wi-Fi
-    // change) is detected within ~one outbound send attempt instead of
-    // waiting minutes for OS-level TCP keepalive. Without this, the cleanup
-    // block below — which broadcasts `Idle` for every active session —
-    // never runs, leaving the UI stuck on "agent working" while the
-    // streamed events drop into a subscriber that nobody reads.
-    loop {
-        tokio::select! {
-            biased;
-            _ = &mut send_task => {
-                debug!("ws_sink closed; ending inbound loop");
-                break;
-            }
-            msg = ws_stream.next() => {
-                match msg {
-                    Some(Ok(Message::Text(text))) => {
-                        let text_str: &str = &text;
-                        match WsEnvelope::try_from(text_str.to_string()) {
-                            Ok(envelope) => {
-                                dispatch_envelope(envelope, &outbound_tx, &sdk_sessions, &state)
-                                    .await;
-                            }
-                            Err(e) => {
-                                let err_env = WsEnvelope::new(
-                                    "session",
-                                    "error",
-                                    serde_json::to_value(SessionErrorPayload {
-                                        code: "PARSE_ERROR".into(),
-                                        message: format!("Invalid envelope: {e}"),
-                                    })
-                                    .unwrap(),
-                                );
-                                let _ = outbound_tx
-                                    .send(Message::Text(String::from(err_env).into()));
-                            }
-                        }
-                    }
-                    Some(Ok(Message::Close(_))) => break,
-                    Some(Ok(_)) => {} // ignore binary, ping, pong
-                    Some(Err(_)) | None => break,
-                }
-            }
-        }
-    }
-
-    // Cleanup: mark sessions paused and persist runtime_session_id before dropping
-    let mut sessions = sdk_sessions.lock().await;
-    debug!(count = sessions.len(), "WS cleanup: draining sessions");
-    for (db_session_id, handle) in sessions.drain() {
-        let feature_id = handle.feature_id;
-        let runtime_provider = handle.runtime_provider.clone();
-        if let QueryState::Active { query, .. } = handle.state {
-            persist_and_close_query(&query, &state.write_pool, db_session_id, &runtime_provider)
-                .await;
-        }
-        WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
-        WsSessionPersistence::broadcast_session_status(
-            &state.session_status_tx,
-            db_session_id,
-            feature_id,
-            crate::domain::session_status::AgentStatus::Idle,
-            None,
-        );
-    }
-    drop(sessions);
-
-    // Detach WS sender from workflow engines (keep engines alive for reconnect)
-    for feature_id in workflow::tracked_feature_ids() {
-        debug!(
-            feature_id,
-            "WS cleanup: detaching sender from workflow engine"
-        );
-        workflow::detach_engine_sender(feature_id);
-    }
-
-    send_task.abort();
-}
-
-/// Dispatch an envelope to the appropriate domain handler.
-async fn dispatch_envelope(
-    envelope: WsEnvelope,
-    sender: &WsSender,
-    sdk_sessions: &SdkSessions,
-    app_state: &AppState,
-) {
-    info!(domain = %envelope.domain, action = %envelope.action, id = %envelope.id, "received envelope");
-    match envelope.domain.as_str() {
-        "session" => {
-            handle_session_action(envelope, sender, sdk_sessions, app_state).await;
-        }
-        "commands" => {
-            commands::handle_commands_action(envelope, sender).await;
-        }
-        "workflow" => {
-            workflow::handle_workflow_action(envelope, sender, sdk_sessions, app_state).await;
-        }
-        "app" => {
-            app::handle_app_action(envelope, sender, app_state).await;
-        }
-        unknown => {
-            let err = WsEnvelope::reply(
-                &envelope.id,
-                "session",
-                "error",
-                serde_json::to_value(SessionErrorPayload {
-                    code: "UNKNOWN_DOMAIN".into(),
-                    message: format!("Unknown domain: {unknown}"),
-                })
-                .unwrap(),
-            );
-            let _ = sender.send(Message::Text(String::from(err).into()));
-        }
-    }
-}
-
-/// Handle session domain actions.
-async fn handle_session_action(
-    envelope: WsEnvelope,
-    sender: &WsSender,
-    sdk_sessions: &SdkSessions,
-    app_state: &AppState,
-) {
-    match envelope.action.as_str() {
-        "init" => session_init::handle_init(envelope, sender, sdk_sessions, app_state).await,
-        "prompt.send" => {
-            session_prompt::handle_prompt_send(envelope, sender, sdk_sessions, app_state).await
-        }
-        "permission.respond" => {
-            session_control::handle_permission_respond(envelope, sender, sdk_sessions, app_state)
-                .await
-        }
-        "provider.set" => {
-            session_control::handle_provider_set(envelope, sender, sdk_sessions, app_state).await
-        }
-        "model.set" => {
-            session_control::handle_model_set(envelope, sender, sdk_sessions, app_state).await
-        }
-        "mode.set" => {
-            session_control::handle_mode_set(envelope, sender, sdk_sessions, app_state).await
-        }
-        "effort.set" => {
-            session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
-        }
-        "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
-        "destroy" => {
-            session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await
-        }
-        "compact" => {
-            session_compact::handle_compact(envelope, sender, sdk_sessions, app_state).await
-        }
-        "delete" => session_control::handle_delete(envelope, sender, sdk_sessions, app_state).await,
-        "clear" => session_control::handle_clear(envelope, sender, sdk_sessions, app_state).await,
-        "history.get" => session_data::handle_history_get(envelope, sender, app_state).await,
-        "history.add" => session_data::handle_history_add(envelope, sender, app_state).await,
-        "draft.get" => session_data::handle_draft_get(envelope, sender, app_state).await,
-        "draft.save" => session_data::handle_draft_save(envelope, sender, app_state).await,
-        "retry_worktree_setup" => {
-            session_control::handle_retry_worktree_setup(envelope, sender, app_state).await
-        }
-        unknown => {
-            let err = WsEnvelope::reply(
-                &envelope.id,
-                "session",
-                "error",
-                serde_json::to_value(SessionErrorPayload {
-                    code: "UNKNOWN_ACTION".into(),
-                    message: format!("Unknown session action: {unknown}"),
-                })
-                .unwrap(),
-            );
-            let _ = sender.send(Message::Text(String::from(err).into()));
-        }
-    }
-}
+// Imports that the existing inline test module depends on via `super::*`.
+// They mirror the top-of-file imports the pre-refactor mod.rs carried.
+#[allow(unused_imports)]
+use crate::app_state::AppState;
+#[allow(unused_imports)]
+use crate::domain::ws_session::persistence::WsSessionPersistence;
+#[allow(unused_imports)]
+use crate::domain::ws_session::protocol::*;
+#[allow(unused_imports)]
+use axum::extract::ws::Message;
+#[allow(unused_imports)]
+use std::collections::{HashMap, HashSet};
+#[allow(unused_imports)]
+use std::path::PathBuf;
+#[allow(unused_imports)]
+use std::sync::atomic::AtomicBool;
+#[allow(unused_imports)]
+use std::sync::Arc;
+#[allow(unused_imports)]
+use tokio::sync::{mpsc, Mutex};
 
 #[cfg(test)]
 mod tests {
