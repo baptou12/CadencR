@@ -1,8 +1,8 @@
 use serde_json::{json, Value};
 
 use super::permissions::{
-    available_decisions, codex_decision_from_option_id, supports_accept_for_session,
-    DECISION_CANCEL, DECISION_DECLINE, STRICT_AUTO_REVIEW_OPTION_ID,
+    available_decisions, codex_decision_from_option_id, codex_elicitation_response_from_option_id,
+    supports_accept_for_session, DECISION_CANCEL, DECISION_DECLINE, STRICT_AUTO_REVIEW_OPTION_ID,
 };
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
 
@@ -53,6 +53,9 @@ fn deny_decision(params: &Value) -> &'static str {
 }
 
 fn elicitation_response(response: &RuntimePermissionResponse) -> Value {
+    if let Some(value) = codex_elicitation_response_from_option_id(response.option_id.as_deref()) {
+        return value;
+    }
     match response.decision {
         RuntimePermissionDecision::Deny => {
             json!({ "action": "decline", "content": null, "_meta": null })
@@ -155,6 +158,48 @@ mod tests {
         };
         let value = response_value("item/tool/requestUserInput", &Value::Null, &response);
         assert_eq!(value, json!({ "answers": {} }));
+    }
+
+    #[test]
+    fn elicitation_response_uses_native_option_id() {
+        let response = RuntimePermissionResponse {
+            request_id: "elicitation".to_string(),
+            decision: RuntimePermissionDecision::Deny,
+            option_id: Some(
+                r#"codex_elicitation:{"action":"cancel","content":null,"_meta":null}"#.to_string(),
+            ),
+            feedback: Some("stop".to_string()),
+            updated_input: None,
+        };
+
+        let value = response_value("mcpServer/elicitation/request", &Value::Null, &response);
+        assert_eq!(
+            value,
+            json!({ "action": "cancel", "content": null, "_meta": null })
+        );
+    }
+
+    #[test]
+    fn elicitation_response_preserves_native_persist_meta() {
+        let response = RuntimePermissionResponse {
+            request_id: "elicitation".to_string(),
+            decision: RuntimePermissionDecision::AllowFuture,
+            option_id: Some(
+                r#"codex_elicitation:{"action":"accept","content":{"approved":true},"_meta":{"persist":"session"}}"#.to_string(),
+            ),
+            feedback: None,
+            updated_input: None,
+        };
+
+        let value = response_value("mcpServer/elicitation/request", &Value::Null, &response);
+        assert_eq!(
+            value,
+            json!({
+                "action": "accept",
+                "content": { "approved": true },
+                "_meta": { "persist": "session" }
+            })
+        );
     }
 
     #[test]
