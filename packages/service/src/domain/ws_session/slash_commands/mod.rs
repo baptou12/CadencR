@@ -59,16 +59,50 @@ fn builtin_commands(provider: &str) -> Vec<SlashCommand> {
     let Some(adapter) = runtime_adapter(provider) else {
         return Vec::new();
     };
+    let mut commands = Vec::new();
     if adapter.supports_builtin_compact_command() {
-        return vec![SlashCommand {
-            name: "compact".to_string(),
-            description: Some(
-                "Compact the conversation, freeing context while keeping a summary".to_string(),
-            ),
-            kind: SlashCommandKind::Command,
-        }];
+        commands.push(compact_command());
     }
-    Vec::new()
+    if provider == crate::domain::agents::codex::PROVIDER_ID {
+        commands.extend(codex_app_builtin_commands());
+    }
+    commands
+}
+
+fn compact_command() -> SlashCommand {
+    SlashCommand {
+        name: "compact".to_string(),
+        description: Some(
+            "Compact the conversation, freeing context while keeping a summary".to_string(),
+        ),
+        kind: SlashCommandKind::Command,
+    }
+}
+
+fn codex_app_builtin_commands() -> Vec<SlashCommand> {
+    [
+        (
+            "feedback",
+            "Open a form to send feedback about the current Codex session",
+        ),
+        (
+            "mcp",
+            "Show configured Model Context Protocol servers and tools",
+        ),
+        (
+            "plan-mode",
+            "Ask Codex to plan first and wait for approval before editing",
+        ),
+        ("review", "Review the current code changes"),
+        ("status", "Show Codex session and environment status"),
+    ]
+    .into_iter()
+    .map(|(name, description)| SlashCommand {
+        name: name.to_string(),
+        description: Some(description.to_string()),
+        kind: SlashCommandKind::Command,
+    })
+    .collect()
 }
 
 fn to_slash_commands(commands: Vec<RuntimeSlashCommand>) -> Vec<SlashCommand> {
@@ -115,6 +149,27 @@ mod tests {
     #[test]
     fn builtin_commands_is_empty_for_other_providers() {
         assert!(builtin_commands("openai").is_empty());
+    }
+
+    #[test]
+    fn builtin_commands_injects_codex_app_commands() {
+        let commands = builtin_commands(crate::domain::agents::codex::PROVIDER_ID);
+        let names = commands
+            .iter()
+            .map(|command| command.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                "compact",
+                "feedback",
+                "mcp",
+                "plan-mode",
+                "review",
+                "status"
+            ]
+        );
     }
 
     #[tokio::test]
