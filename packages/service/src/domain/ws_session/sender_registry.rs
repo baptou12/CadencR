@@ -23,7 +23,9 @@ impl WsFeatureSenderRegistry {
     /// Register `sender` for the given `feature_id`.
     pub async fn register(&self, feature_id: i64, sender: mpsc::UnboundedSender<Message>) {
         let mut map = self.inner.lock().await;
-        map.entry(feature_id).or_default().push(sender);
+        let senders = map.entry(feature_id).or_default();
+        senders.retain(|s| !s.same_channel(&sender) && !s.is_closed());
+        senders.push(sender);
     }
 
     /// Remove a specific `sender` for the given `feature_id`.
@@ -68,6 +70,17 @@ mod tests {
         let registry = WsFeatureSenderRegistry::new();
         let (tx, _rx) = mpsc::unbounded_channel::<Message>();
 
+        registry.register(1, tx.clone()).await;
+        let senders = registry.get_senders(1).await;
+        assert_eq!(senders.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn register_replaces_same_sender_for_feature() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (tx, _rx) = mpsc::unbounded_channel::<Message>();
+
+        registry.register(1, tx.clone()).await;
         registry.register(1, tx.clone()).await;
         let senders = registry.get_senders(1).await;
         assert_eq!(senders.len(), 1);

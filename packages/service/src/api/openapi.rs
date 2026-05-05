@@ -14,6 +14,7 @@ use crate::domain::editor::mutation_routes as editor_mutation_routes;
 use crate::domain::editor::routes as editor_routes;
 use crate::domain::feature_layouts::models as feature_layouts_models;
 use crate::domain::feature_layouts::routes as feature_layouts_routes;
+use crate::domain::features::auto_name_route as features_auto_name_route;
 use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
 use crate::domain::git::models;
@@ -107,7 +108,7 @@ use crate::domain::workspace::routes as workspace_routes;
         features_routes::get_feature_provider_settings_handler,
         features_routes::set_feature_provider_setting_handler,
         features_routes::get_working_dir_handler,
-        features_routes::auto_name_feature_handler,
+        features_auto_name_route::auto_name_feature_handler,
         custom_actions_routes::list_actions_handler,
         custom_actions_routes::create_action_handler,
         custom_actions_routes::update_action_handler,

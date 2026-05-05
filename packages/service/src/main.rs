@@ -118,6 +118,9 @@ async fn main() -> anyhow::Result<()> {
                 ),
                 ws_feature_senders:
                     domain::ws_session::sender_registry::WsFeatureSenderRegistry::new(),
+                auto_name_runs: std::sync::Arc::new(
+                    domain::features::run_registry::FeatureRunRegistry::new(),
+                ),
             };
 
             // Push user-selected CLI binary paths into the SDK overrides

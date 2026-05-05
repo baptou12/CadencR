@@ -11,7 +11,6 @@ use crate::domain::features::worktree_settings::{
 };
 use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
-use crate::domain::ws_session::auto_name;
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -297,50 +296,6 @@ pub async fn get_feature_snapshot_handler(
     ))
 }
 
-/// Trigger auto-naming for a feature on demand. Fires `auto_name_feature` in
-/// the background and returns immediately; the result arrives via the
-/// `session.feature.autonaming` / `session.feature.renamed` WS envelopes.
-///
-/// Unlike the first-prompt auto-name, this ignores `has_default_title` — it is
-/// an explicit user action, so it always renames.
-#[utoipa::path(post, path = "/api/features/{id}/auto-name",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn auto_name_feature_handler(
-    State(state): State<AppState>,
-    Path(feature_id): Path<i64>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    // Resolve cwd: use the project path (worktree falls back to project root).
-    let cwd = service::get_feature_cwd(&state.read_pool, feature_id).await?;
-
-    // Use the last user message as naming input; fall back to an empty string
-    // so the model still generates a reasonable generic name.
-    let user_input = auto_name::get_last_user_message(&state.read_pool, feature_id)
-        .await
-        .unwrap_or_default();
-
-    // Collect WS senders for this feature (may be empty if no WS client open).
-    let senders = state.ws_feature_senders.get_senders(feature_id).await;
-
-    tokio::spawn(async move {
-        for sender in senders {
-            auto_name::auto_name_feature(
-                state.write_pool.clone(),
-                feature_id,
-                user_input.clone(),
-                cwd.clone(),
-                sender,
-            )
-            .await;
-            // Only one naming run needed; subsequent senders receive the WS
-            // events from the shared DB update already broadcast by the first.
-            break;
-        }
-    });
-
-    Ok(Json(SuccessResponse { success: true }))
-}
-
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[schema(as = FeaturesSuccessResponse)]
 pub struct SuccessResponse {
@@ -399,6 +354,6 @@ pub fn features_router() -> Router<AppState> {
         )
         .route(
             "/api/features/{id}/auto-name",
-            post(auto_name_feature_handler),
+            post(crate::domain::features::auto_name_route::auto_name_feature_handler),
         )
 }

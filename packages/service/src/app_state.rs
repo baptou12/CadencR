@@ -5,6 +5,7 @@ use tokio::sync::broadcast;
 
 use crate::domain::custom_actions::scheduler::CustomActionScheduler;
 use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
+use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
@@ -57,6 +58,9 @@ pub struct AppState {
     /// Maps feature_id → active WS senders. Lets HTTP handlers push WS
     /// envelopes (e.g. auto-naming events) without holding a socket ref.
     pub ws_feature_senders: WsFeatureSenderRegistry,
+    /// Active explicit auto-rename requests keyed by feature_id. Prevents
+    /// duplicate model runs racing to update the same title.
+    pub auto_name_runs: Arc<FeatureRunRegistry>,
 }
 
 impl AppState {
@@ -104,6 +108,7 @@ impl AppState {
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
+            auto_name_runs: Arc::new(FeatureRunRegistry::new()),
         }
     }
 }

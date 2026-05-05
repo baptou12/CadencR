@@ -35,7 +35,6 @@ vi.mock("@/api/generated", () => ({
     },
   })),
   useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
-  useAutoNameFeature: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
@@ -134,6 +133,19 @@ describe("ProjectFeatures", () => {
     );
     await user.click(screen.getByText("Feature One"));
     expect(onSelectFeature).toHaveBeenCalledWith(1);
+  });
+
+  it("does not render auto-rename controls in the sidebar", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Auto-rename" })).not.toBeInTheDocument();
   });
 
   it("renders status badges for features", () => {

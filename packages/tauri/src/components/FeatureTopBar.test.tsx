@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import { FeatureTopBar } from "./FeatureTopBar";
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -23,6 +23,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
 
 const mockSetFeatureSetting = vi.fn();
+const mockAutoName = vi.fn();
 
 let mockFeatureData: Record<string, unknown> = {
   id: 1,
@@ -40,6 +41,7 @@ vi.mock("@/api/generated", () => ({
   })),
   getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
   useSetFeatureSetting: vi.fn(() => ({ mutate: mockSetFeatureSetting })),
+  useAutoNameFeature: vi.fn(() => ({ mutate: mockAutoName })),
   useGetStats: vi.fn(() => ({
     data: { commits: 3, insertions: 10, deletions: 2 },
     refetch: vi.fn(),
@@ -110,6 +112,7 @@ describe("FeatureTopBar", () => {
     mockSetFeatureSetting.mockClear();
     mockSetAutonomyLevel.mockClear();
     mockSetCollapsed.mockClear();
+    mockAutoName.mockClear();
     mockSidebarCollapsed = false;
     mockFeatureData = {
       id: 1,
@@ -124,6 +127,28 @@ describe("FeatureTopBar", () => {
   it("renders feature title", () => {
     render(<FeatureTopBar featureId={1} projectId={1} />);
     expect(screen.getByText("My Test Feature")).toBeInTheDocument();
+  });
+
+  it("auto-renames from the feature title context menu", async () => {
+    const { user } = render(<FeatureTopBar featureId={1} projectId={1} />);
+
+    fireEvent.contextMenu(screen.getByRole("heading", { name: "My Test Feature" }));
+    await user.click(await screen.findByText("Auto-rename"));
+
+    expect(mockAutoName).toHaveBeenCalledWith({ id: 1 });
+  });
+
+  it("hides auto-rename on default session titles", () => {
+    mockFeatureData = {
+      ...mockFeatureData,
+      title: "Session 3",
+      type: "ws-session",
+    };
+    render(<FeatureTopBar featureId={1} projectId={1} mode="session" />);
+
+    fireEvent.contextMenu(screen.getByRole("heading", { name: "Session 3" }));
+
+    expect(screen.queryByText("Auto-rename")).not.toBeInTheDocument();
   });
 
   it("renders feature status badge", () => {

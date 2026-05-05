@@ -50,7 +50,6 @@ vi.mock("../api/generated", () => ({
   getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
   useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
-  useAutoNameFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
