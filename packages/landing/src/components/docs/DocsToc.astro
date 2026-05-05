@@ -1,0 +1,43 @@
+<aside class="hidden 2xl:block">
+  <div class="sticky top-[76px] rounded-2xl border border-border/70 bg-sidebar/35 p-4">
+    <p class="mb-3 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+      On this page
+    </p>
+    <nav aria-label="Table of contents">
+      <ol class="js-doc-toc space-y-2 text-sm text-muted-foreground"></ol>
+    </nav>
+  </div>
+</aside>
+
+<script>
+  const tocRoot = document.querySelector(".js-doc-toc");
+  const contentRoot = document.querySelector(".js-doc-content");
+
+  if (tocRoot instanceof HTMLElement && contentRoot instanceof HTMLElement) {
+    const headings = Array.from(contentRoot.querySelectorAll("h2, h3")).filter(
+      (heading) => heading.id.length > 0,
+    );
+
+    tocRoot.innerHTML = "";
+
+    for (const heading of headings) {
+      const item = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent ?? "";
+      link.className =
+        heading.tagName === "H3"
+          ? "block pl-3 text-[13px] hover:text-foreground"
+          : "block hover:text-foreground";
+      item.appendChild(link);
+      tocRoot.appendChild(item);
+    }
+
+    if (headings.length === 0) {
+      const empty = document.createElement("li");
+      empty.textContent = "Tiny page. Your scroll wheel may rest.";
+      tocRoot.appendChild(empty);
+    }
+  }
+</script>
+
