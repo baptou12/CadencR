@@ -1,0 +1,113 @@
+name: Bug report
+description: Report broken or unexpected behavior in Cadencr.
+title: "[bug] "
+labels:
+  - Fix
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for maintainers to reproduce it.
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior.
+      placeholder: Cadencr did...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: Describe the behavior you expected instead.
+      placeholder: I expected Cadencr to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, repeatable sequence of steps.
+      placeholder: |
+        1. Open...
+        2. Click...
+        3. See...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Cadencr appears affected?
+      options:
+        - Desktop frontend
+        - Backend service
+        - Sessions
+        - Settings
+        - Worktrees
+        - Permissions
+        - Agent commands
+        - Theming
+        - Landing site
+        - CI / release
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Agent provider
+      description: Select a provider only if the bug appears provider-specific.
+      options:
+        - Not provider-specific / not sure
+        - Claude
+        - Codex
+        - OpenCode
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: macOS 15.4, Windows 11, Ubuntu 24.04, ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Cadencr version or commit SHA
+      placeholder: v0.1.0 or abc1234
+    validations:
+      required: true
+
+  - type: textarea
+    id: tool-versions
+    attributes:
+      label: Relevant tool versions
+      description: For build or agent-CLI issues, include Node, Rust, pnpm, and agent CLI versions.
+      placeholder: |
+        node -v:
+        pnpm -v:
+        rustc -V:
+        claude --version / codex --version / opencode --version:
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Include relevant desktop app or Rust service output. Redact paths, tokens, prompts, and private data.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, screen recordings, links, or other context.

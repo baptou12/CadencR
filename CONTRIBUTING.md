@@ -37,8 +37,38 @@ The full ruleset for code style, file/function size limits, and architectural bo
 The three rules contributors hit most often:
 
 - Use **pnpm**, not `npm` or `yarn`.
-- **Do not run `pnpm orval`.** `packages/tauri/src/api/generated/index.ts` is hand-maintained; add new endpoints manually following the existing patterns.
+- When the Rust API surface changes, regenerate the frontend API client with `pnpm --filter @cadencr/desktop run generate:api` and commit `packages/tauri/src/api/generated/index.ts`.
 - Keep files under **400 lines** and functions under **100 lines**; extract modules before crossing those limits.
+
+---
+
+## Issue and PR Labels
+
+Maintainers keep labels intentionally simple. Contributors do not need to pick every label themselves, but please choose the most specific issue template and fill out the requested fields so maintainers can label quickly.
+
+| Label | Meaning |
+|---|---|
+| `Feature` | New user-visible capability or improvement |
+| `Fix` | Bug fix or regression |
+| `Desktop` | Tauri/React desktop app |
+| `Backend` | Rust service or SDK/backend integration work |
+| `provider:claude` | Claude-specific behavior |
+| `provider:codex` | Codex-specific behavior |
+| `provider:opencode` | OpenCode-specific behavior |
+| `Planned` | Accepted and expected to be worked on |
+| `Will fix` | Confirmed fix for a bug/regression |
+| `Not planned` | Maintainers do not plan to work on this |
+| `Duplicated` | Duplicate of another issue or PR |
+
+Provider labels should be used only when the work is truly provider-specific. Generic frontend/backend code should stay provider-neutral.
+
+## Issue Lifecycle
+
+1. Maintainers label the work as `Feature` or `Fix`.
+2. Maintainers add `Desktop`, `Backend`, and provider labels when relevant.
+3. Accepted work gets `Planned`; confirmed bugs get `Will fix`.
+4. Work that will not be pursued gets `Not planned`; duplicates get `Duplicated`.
+5. Closing PRs should use GitHub keywords such as `Closes #123` so issues close automatically on merge.
 
 ---
 
@@ -69,7 +99,9 @@ Run `git log --oneline` in this repo for a large set of real examples.
 2. **Use the PR template.** It prompts for summary, motivation, and a test plan.
 3. **Keep PRs focused.** A PR should be reviewable in one sitting. Split large changes.
 4. **CI must be green** — lint, typecheck, tests, knip, and format checks all pass.
-5. **Squash on merge.** PRs are squash-merged so `main` stays linear; the squash commit message must itself follow Conventional Commits.
+5. **Link the issue.** Use `Closes #123`, `Fixes #123`, or explain why there is no issue.
+6. **Show visible changes.** Include screenshots or recordings for UI changes.
+7. **Squash on merge.** PRs are squash-merged so `main` stays linear; the squash commit message must itself follow Conventional Commits.
 
 For a bugfix, include a test that fails without the fix. For a feature, include a test that exercises the new behavior end-to-end when practical.
 

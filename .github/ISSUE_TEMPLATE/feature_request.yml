@@ -1,0 +1,104 @@
+name: Feature request
+description: Suggest a new capability or improvement.
+title: "[feat] "
+labels:
+  - Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Focus on the user problem first; maintainers can help refine the implementation.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do today, and why is the current workflow painful?
+      placeholder: I want to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like Cadencr to do?
+      placeholder: Cadencr should...
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: User workflow
+      description: Describe the ideal user flow from start to finish.
+      placeholder: |
+        1. User opens...
+        2. User selects...
+        3. Cadencr shows...
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Cadencr would this touch?
+      options:
+        - Desktop frontend
+        - Backend service
+        - Sessions
+        - Settings
+        - Worktrees
+        - Permissions
+        - Agent commands
+        - Theming
+        - Landing site
+        - CI / release
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Agent provider
+      description: Select a provider only if this is provider-specific.
+      options:
+        - Not provider-specific / not sure
+        - Claude
+        - Codex
+        - OpenCode
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What should be true when this is complete?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+
+  - type: dropdown
+    id: shortcut
+    attributes:
+      label: Does this need a keyboard shortcut?
+      description: Power users rely on keyboard navigation. Choose the best current answer.
+      options:
+        - Not sure
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways this could be solved, and why they fall short.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Mockups, screenshots, references, links, or related issues.
