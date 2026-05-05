@@ -29,6 +29,7 @@ vi.mock("@/components/agent-session", () => ({
 
 function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): UnifiedAgentEntry {
   return {
+    agent_created_at: "2026-05-04T00:00:00Z",
     feature: {
       created_at: "2026-05-04T00:00:00Z",
       id: 7,

@@ -15,6 +15,7 @@ interface AgentOverrides {
   sessionStatus?: string;
   isPinned?: boolean;
   lastActivityAt?: string | null;
+  agentCreatedAt?: string;
   pendingQuestions?: unknown;
   pendingPermission?: unknown;
   pendingPlanApproval?: unknown;
@@ -24,14 +25,17 @@ interface AgentOverrides {
 const ALL_FILTERS: UnifiedAgentFilterArgs = {
   mode: "all",
   freshMinutes: 5,
-  projectId: null,
+  projectIds: [],
   queryText: "",
+  sortOrder: "created_desc",
 };
 
 function buildAgent(overrides: AgentOverrides = {}): UnifiedAgentEntry {
   const id = overrides.id ?? 1;
   const projectId = overrides.projectId ?? 1;
   return {
+    agent_created_at:
+      overrides.agentCreatedAt ?? `2026-03-04T23:${String(id).padStart(2, "0")}:00Z`,
     feature: {
       created_at: "2026-03-04 23:00:00",
       id,
@@ -90,7 +94,42 @@ describe("UnifiedAgentsViewData", () => {
       ALL_FILTERS,
     );
 
-    expect(ids(ordered)).toEqual([2, 4, 1, 5]);
+    expect(ids(ordered)).toEqual([4, 2, 5, 1]);
+  });
+
+  it("can order created agents oldest first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [buildAgent({ id: 1 }), buildAgent({ id: 2 }), buildAgent({ id: 3 })],
+      { ...ALL_FILTERS, sortOrder: "created_asc" },
+    );
+
+    expect(ids(ordered)).toEqual([1, 2, 3]);
+  });
+
+  it("can order agents by latest message first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, lastActivityAt: "2026-03-04T23:20:00Z" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04T23:45:00Z" }),
+        buildAgent({ id: 3, lastActivityAt: "2026-03-04T23:30:00Z" }),
+      ],
+      { ...ALL_FILTERS, sortOrder: "activity_desc" },
+    );
+
+    expect(ids(ordered)).toEqual([2, 3, 1]);
+  });
+
+  it("can order agents by oldest message first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, lastActivityAt: "2026-03-04T23:20:00Z" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04T23:45:00Z" }),
+        buildAgent({ id: 3, lastActivityAt: "2026-03-04T23:30:00Z" }),
+      ],
+      { ...ALL_FILTERS, sortOrder: "activity_asc" },
+    );
+
+    expect(ids(ordered)).toEqual([1, 3, 2]);
   });
 
   it("places pinned extras last when a user project filter is active", () => {
@@ -101,10 +140,10 @@ describe("UnifiedAgentsViewData", () => {
         buildAgent({ id: 3, projectId: 1, isPinned: true }),
         buildAgent({ id: 4, projectId: 3, isPinned: true }),
       ],
-      { ...ALL_FILTERS, projectId: 1 },
+      { ...ALL_FILTERS, projectIds: [1] },
     );
 
-    expect(ids(ordered)).toEqual([3, 2, 1, 4]);
+    expect(ids(ordered)).toEqual([3, 2, 4, 1]);
   });
 
   it("keeps pinned extras visible for text filters while still excluding archived pins", () => {
