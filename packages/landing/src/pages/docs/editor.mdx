@@ -1,0 +1,120 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Editor"
+description: "Browse files, search fast, compare changes, and work next to agents without losing context."
+---
+
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+## What the editor is for
+
+Cadencr’s built-in editor is where you read files, make small manual fixes, and double-check what an agent just changed. It is meant to feel practical, not precious. You do not need to master every panel and tab to use it well.
+
+<DocScreenshotPlaceholder
+  title="Editor inside a feature workspace"
+  caption="The built-in editor can show your file tree, search results, open files, and diffs side by side."
+  hint="Swap this for a real screenshot of the editor with a split view, file tree, and diff tab."
+/>
+
+<DocCallout title="Beginner-friendly truth" variant="tip">
+  You do **not** need to edit everything by hand. The editor is just as useful for reading,
+  reviewing, and sanity-checking agent work as it is for typing.
+</DocCallout>
+
+## Everyday tasks it makes easier
+
+Here is the quick version:
+
+| If you want to...                | Use the editor for...                       |
+| -------------------------------- | ------------------------------------------- |
+| find a file                      | browsing the file tree or using file search |
+| find a word, function, or phrase | content search across the project           |
+| keep two things visible          | split panes and multiple open tabs          |
+| compare what changed             | read-only diffs                             |
+| understand who touched a line    | blame view                                  |
+
+### Browse files without going on a side quest
+
+The file tree is the easiest place to start when you roughly know where something lives.
+
+It is handy for:
+
+- opening a file from the project structure
+- jumping between related files without losing context
+- getting a feel for how a project is organized
+
+If you are newer to code, this is often the least stressful path. You can move one folder at a time instead of pretending you definitely knew the filename all along.
+
+### Search when you do not remember where something lives
+
+When you do **not** know exactly where something lives, search is your friend.
+
+- **File search** helps when you know the file name or part of it.
+- **Content search** helps when you know text that appears inside the file.
+
+A very normal workflow looks like this:
+
+1. search for a filename like `settings` or `login`
+2. open the most likely file
+3. if that guess was wildly optimistic, search for actual text instead
+
+## Working side by side with agents
+
+The editor is at its best when you use it as your "show me the receipts" tool.
+
+A simple rhythm works well:
+
+1. ask the agent to make or explain a change
+2. open the touched files in the editor
+3. keep the relevant files, notes, or prompt nearby in another tab or pane
+4. check the diff before you decide the work is done
+
+This side-by-side setup is especially useful when you want to:
+
+- read the agent’s changes in plain human chunks
+- compare a docs file and the UI file it describes
+- keep instructions open while you review the result
+- make a tiny follow-up fix yourself instead of starting a whole new conversation
+
+<DocCallout title="A good rule of thumb" variant="note">
+  Let the agent do the heavy lifting. Use the editor to verify, compare, and polish the last 5%.
+</DocCallout>
+
+## Multi-pane behavior that is actually useful
+
+You can open more than one thing at once without losing your place.
+
+### Split panes
+
+Use split panes when you want two files visible at the same time.
+
+Common examples:
+
+- source file on one side, diff on the other
+- instructions on one side, implementation on the other
+- old file on one side, related file on the other
+
+### Tabs and subtabs
+
+Tabs help you keep several files open while staying in the same workspace. Subtabs are useful when one main area has a few closely related views and you want to bounce between them without rebuilding your whole layout every five seconds.
+
+In practice, that means you can keep your place instead of repeatedly reopening the same file.
+
+## Nice quality-of-life features
+
+A few editor details quietly do a lot of work:
+
+- **Read-only diffs** let you review changes safely before you edit anything.
+- **Blame support** helps answer, "Why is this line like this?"
+- **Search + open tabs** makes it easy to move from "I think it is in here somewhere" to "okay, found it."
+- **Split panes** make comparison much easier.
+
+The editor tends to help agent work most when the job has a few related files, a change you want to verify, or text you need to search across quickly. If the task is mostly "read, compare, confirm," the editor is doing exactly its thing.
+
+## Related docs
+
+- [Feature workspace](../feature-workspace/) — the bigger home base around the editor
+- [Session view](../session-view/) — follow one agent conversation more closely
+- [Prompting](../prompting/) — ask for clearer edits and explanations
+- [Workspace pages](../workspace-pages/) — get the bigger map of where everything lives

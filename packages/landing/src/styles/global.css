@@ -217,6 +217,44 @@
   .prose li {
     margin: 0.3em 0;
   }
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    margin: 1.2em 0;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+  }
+  .prose thead {
+    background: color-mix(in oklch, var(--color-muted) 35%, transparent);
+  }
+  .prose th,
+  .prose td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+    vertical-align: top;
+  }
+  .prose tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .prose hr {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: 2em 0;
+  }
+  .prose blockquote {
+    margin: 1.2em 0;
+    padding: 0.9em 1em;
+    border-left: 3px solid var(--color-primary);
+    background: color-mix(in oklch, var(--color-muted) 22%, transparent);
+    color: color-mix(in oklch, var(--color-foreground) 88%, transparent);
+    border-radius: 0 12px 12px 0;
+  }
+  .doc-card {
+    box-shadow: var(--shadow-xs);
+  }
 }
 
 /* Cursor blink for placeholder chrome / terminal */

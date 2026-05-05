@@ -1,0 +1,94 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Session view"
+description: "Read a single agent session, follow progress, and jump back in without getting buried in every tiny update."
+---
+
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+## What this page is for
+
+Session view is the close-up view of one agent session.
+
+It helps you:
+
+- follow what the agent is doing right now
+- understand what already happened
+- decide whether to nudge, redirect, or continue the work
+- come back later without needing a memory palace
+
+<DocScreenshotPlaceholder
+  title="Session view"
+  caption="A single session with the conversation, progress, and surrounding context in one place."
+  hint="Swap this for a real screenshot of an active session view."
+/>
+
+<DocCallout title="Good news" variant="tip">
+  You do **not** need to read every token. Most of the time, you can scan for intent, progress, and
+  blockers.
+</DocCallout>
+
+## How to read the session without getting lost
+
+Think of the session as a work log, not a novel.
+
+A good skim usually looks like this:
+
+1. **Start with the latest update.** See what the agent thinks it is doing now.
+2. **Look for visible progress.** Check for completed steps, tool results, edits, or a clear next move.
+3. **Watch for blockers.** Errors, repeated retries, confusion, or "I need input" moments are your cue to jump in.
+4. **Only scroll back when needed.** Go upward if you want the reason behind a change, not because you owe the transcript your full devotion.
+
+### What is worth paying attention to
+
+| If you want to know...           | Look for...                                                         |
+| -------------------------------- | ------------------------------------------------------------------- |
+| What the session is trying to do | The most recent assistant summary or prompt                         |
+| Whether it is making progress    | New files, edits, completed steps, or a concise recap               |
+| Whether it is stuck              | Repeated attempts, errors, or questions waiting on you              |
+| Whether you trust the direction  | Clear reasoning, sensible changes, and results that match your goal |
+
+## Ways to steer or continue the work
+
+You are still in charge here. The agent is helping, not freelancing with your afternoon.
+
+You can step in when you want to:
+
+- **tighten the goal** — "Focus only on the docs page, not the sidebar"
+- **change direction** — "Skip the refactor and just fix the bug"
+- **add context** — "This needs to make sense for beginners"
+- **resume later** — continue from the current thread instead of starting over from scratch
+
+A few practical habits help a lot:
+
+- give one clear instruction at a time when the session starts wobbling
+- mention constraints plainly, like deadlines, file limits, or tone
+- ask for a short summary if the session has become long
+- start a new session when the goal has changed completely
+
+<DocCallout title="When to interrupt" variant="note">
+  Interrupt when the agent is stuck, drifting, or solving the wrong problem. Let it run when the
+  direction is good and the updates are boring in a healthy way.
+</DocCallout>
+
+## When to stay here vs go back to the feature workspace
+
+Use session view when you want to understand or steer **one** thread of work.
+
+Use the feature workspace when you want the wider picture: files, related sessions, Git changes,
+editor context, or the next thing to work on.
+
+| Stay in session view when you need to... | Go back to feature workspace when you need to... |
+| ---------------------------------------- | ------------------------------------------------ |
+| follow one agent conversation            | compare multiple sessions                        |
+| answer a question or give a correction   | browse files or inspect broader changes          |
+| check whether the agent is blocked       | switch tools and work across the whole feature   |
+| resume a paused thread                   | decide what to do next across the feature        |
+
+## Related docs
+
+- [Feature workspace](../feature-workspace/) — your bigger home base around the session
+- [Unified agent list](../unified-agent-list/) — find the right session when you have several going
+- [Prompting](../prompting/) — write clearer requests and guide the agent more effectively
+- [Docs home](../) — the quick product overview if you are still getting oriented
