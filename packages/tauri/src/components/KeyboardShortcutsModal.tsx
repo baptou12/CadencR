@@ -60,7 +60,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["⌥", "P"], description: "Feature settings (alt)" },
       { keys: ["⌘", "⇧", "B"], description: "Start / continue build" },
       { keys: ["⌘", "⇧", "S"], description: "Start session" },
-      { keys: ["⌘", "⇧", "M"], description: "Merge & archive" },
+      { keys: ["⌘", "⇧", "M"], description: "Git actions" },
       { keys: ["⌘", "M"], description: "Mark session agent done" },
       { keys: ["⌘", "1"], description: "Approve plan" },
       { keys: ["⌘", "2"], description: "Request plan changes" },

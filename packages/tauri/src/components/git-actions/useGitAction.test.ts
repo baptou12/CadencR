@@ -35,6 +35,7 @@ describe("deriveGitAction", () => {
     expect(state.disabled.commit).toBe("Loading…");
     expect(state.disabled.push).toBe("Loading…");
     expect(state.disabled.pr).toBe("Loading…");
+    expect(state.disabled.merge).toBe("Loading…");
   });
 
   it("primary=commit when there are uncommitted changes", () => {
@@ -44,6 +45,7 @@ describe("deriveGitAction", () => {
     expect(state.disabled.commit).toBeNull();
     expect(state.disabled.push).toBe("Commit your changes first");
     expect(state.disabled.pr).toBe("Commit your changes first");
+    expect(state.disabled.merge).toBe("Commit your changes first");
   });
 
   it("primary=push when clean but ahead of remote", () => {
@@ -60,6 +62,42 @@ describe("deriveGitAction", () => {
     expect(state.primary).toBe("pr");
     expect(state.label).toBe("Open MR");
     expect(state.disabled.pr).toBeNull();
+    expect(state.disabled.merge).toBeNull();
+  });
+
+  it("primary=merge when compare is unavailable but target has commits to merge", () => {
+    const state = deriveGitAction(
+      snapshot({ ahead_of_target: 4, compare_url: null, action_label: "Open compare" }),
+    );
+    expect(state.primary).toBe("merge");
+    expect(state.label).toBe("Merge");
+    expect(state.disabled.merge).toBeNull();
+  });
+
+  it("merge disabled when current branch and target branch are the same local branch", () => {
+    const state = deriveGitAction(
+      snapshot({
+        current_branch: "main",
+        target_branch: "main",
+        ahead_of_target: 2,
+        compare_url: null,
+      }),
+    );
+    expect(state.primary).toBeNull();
+    expect(state.disabled.merge).toBe("Cannot merge a branch into itself");
+  });
+
+  it("merge disabled when current branch matches an origin-prefixed target", () => {
+    const state = deriveGitAction(
+      snapshot({
+        current_branch: "main",
+        target_branch: "origin/main",
+        ahead_of_target: 2,
+        compare_url: null,
+      }),
+    );
+    expect(state.primary).toBeNull();
+    expect(state.disabled.merge).toBe("Cannot merge a branch into itself");
   });
 
   it("primary=null on a fully clean tree with nothing to push or PR", () => {
@@ -68,13 +106,14 @@ describe("deriveGitAction", () => {
     expect(state.disabled.commit).toBe("No uncommitted changes");
     expect(state.disabled.push).toBe("Nothing to push");
     expect(state.disabled.pr).toBe("Nothing to compare");
+    expect(state.disabled.merge).toBe("Nothing to merge");
   });
 
   it("PR disabled with 'No remote configured' when has_remote=false", () => {
     const state = deriveGitAction(
       snapshot({ ahead_of_target: 1, has_remote: false, compare_url: null, host: null }),
     );
-    expect(state.primary).toBeNull();
+    expect(state.primary).toBe("merge");
     expect(state.disabled.pr).toBe("No remote configured");
   });
 
@@ -87,7 +126,7 @@ describe("deriveGitAction", () => {
         action_label: "Open compare",
       }),
     );
-    expect(state.primary).toBeNull();
+    expect(state.primary).toBe("merge");
     expect(state.disabled.pr).toBe("Compare URL not available for this remote");
     expect(state.compareLabel).toBe("Open compare");
   });
@@ -133,7 +172,7 @@ describe("deriveGitAction", () => {
     const state = deriveGitAction(
       snapshot({ ahead_of_target: 1, host: null, compare_url: null, action_label: null }),
     );
-    expect(state.primary).toBeNull();
+    expect(state.primary).toBe("merge");
     expect(state.disabled.pr).toBe("Compare URL not available for this remote");
   });
 });

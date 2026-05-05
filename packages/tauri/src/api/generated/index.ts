@@ -742,8 +742,8 @@ export type GitStatusSnapshotHost = null | GitHost;
   configured (we can't be "behind" something that doesn't exist).
 - `ahead_of_target` is `git rev-list --count {target}..HEAD` using the
   target ref **verbatim** as picked by the user — local `main` and
-  remote-tracking `origin/main` are different inputs and produce
-  different counts on purpose. Returns `0` if the ref doesn't resolve.
+  remote-tracking `origin/main` are different inputs and produce different
+  counts on purpose. Returns `0` if the ref doesn't resolve.
 - `host` / `compare_url` / `action_label` are populated only when a remote
   exists. The frontend disables the open-PR button when `compare_url` is
   `None`.
@@ -831,10 +831,26 @@ export interface MergeConflictResult {
   has_conflicts: boolean;
 }
 
+export type MergeFeatureBranchBodyMode = null | MergeMode;
+
+export type MergeFeatureBranchBodyProjectId = number | null;
+
 export interface MergeFeatureBranchBody {
   feature_id: number;
-  project_id: number;
+  mode?: MergeFeatureBranchBodyMode;
+  project_id?: MergeFeatureBranchBodyProjectId;
+  save_as_default?: boolean;
 }
+
+export type MergeMode = (typeof MergeMode)[keyof typeof MergeMode];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MergeMode = {
+  default: "default",
+  no_ff: "no_ff",
+  ff_only: "ff_only",
+  squash: "squash",
+} as const;
 
 export type MergeResultError = string | null;
 
@@ -1357,6 +1373,24 @@ export const TriggeredBy = {
   schedule: "schedule",
 } as const;
 
+/**
+ * One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
+`"untracked"`, or `"both"` (staged + further unstaged change). `change_kind`
+is the porcelain v2 letter mapped to a friendly token: `"added"`,
+`"modified"`, `"deleted"`, `"renamed"`, or `"untracked"`.
+
+`additions`/`deletions` are filled from `git diff --numstat` (sum of staged
+and unstaged sides). They are `0` for untracked files (numstat doesn't
+cover them) and for binary files (where numstat reports `-`).
+ */
+export interface UncommittedFile {
+  additions?: number;
+  change_kind: string;
+  deletions?: number;
+  path: string;
+  status: string;
+}
+
 export type UnifiedAgentEntryLastActivityAt = string | null;
 
 export interface UnifiedAgentEntry {
@@ -1391,24 +1425,6 @@ export const UnifiedAgentsMode = {
 
 export interface UnifiedAgentsResponse {
   agents: UnifiedAgentEntry[];
-}
-
-/**
- * One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
-`"untracked"`, or `"both"` (staged + further unstaged change). `change_kind`
-is the porcelain v2 letter mapped to a friendly token: `"added"`,
-`"modified"`, `"deleted"`, `"renamed"`, or `"untracked"`.
-
-`additions`/`deletions` are filled from `git diff --numstat` (sum of staged
-and unstaged sides). They are `0` for untracked files (numstat doesn't
-cover them) and for binary files (where numstat reports `-`).
- */
-export interface UncommittedFile {
-  additions?: number;
-  change_kind: string;
-  deletions?: number;
-  path: string;
-  status: string;
 }
 
 export type UpdateCustomActionRequestCommand = string | null;

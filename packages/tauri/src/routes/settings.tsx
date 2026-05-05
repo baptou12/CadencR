@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "../components/ModelSelector";
 import { ProvidersTab } from "../components/settings/ProvidersTab";
+import { GitSettings } from "@/components/settings/GitSettings";
 import { ThemeSelector } from "../components/settings/ThemeSelector";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
@@ -144,6 +145,16 @@ function GeneralTab() {
           </p>
         </div>
         <LoaderStyleControl />
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Git</h2>
+          <p className="text-sm text-muted-foreground">
+            Configure defaults and behavior for Git actions in the header.
+          </p>
+        </div>
+        <GitSettings />
       </section>
 
       <section className="space-y-4">

@@ -1,6 +1,6 @@
 //! Service layer for the Git workflow overhaul endpoints.
 //!
-//! Split into five sub-modules to stay under the 400-line cap:
+//! Split into sub-modules to stay under the 400-line cap:
 //!
 //! - [`branches`]: `GET /api/git/branches` and the worktree-attachment join.
 //! - [`status`]: `GET /api/git/status`, `GET /api/git/compare-url`, plus the
@@ -10,12 +10,15 @@
 //! - [`commit_push`]: `POST /api/git/commit`, `GET /api/git/uncommitted-files`.
 //! - [`push`]: `POST /api/git/push`, `POST /api/git/push-input` —
 //!   PTY-streamed push with passphrase / yes-no prompt forwarding.
+//! - [`merge`]: `POST /api/git/merge` — merge the feature branch into the
+//!   configured local target branch with user-selected merge options.
 //!
 //! The public surface is preserved by re-exports; callers continue to use
 //! `workflow_service::list_branches(...)`, `workflow_service::commit(...)`, etc.
 
 mod branches;
 mod commit_push;
+mod merge;
 mod push;
 mod status;
 mod streaming;
@@ -23,6 +26,7 @@ mod target_branch;
 
 pub use branches::list_branches;
 pub use commit_push::{commit, get_uncommitted_files};
+pub use merge::{merge_feature_branch, MergeFeatureBranchBody};
 pub use push::{push, push_input};
 pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
 pub use target_branch::{resolve_target_branch, update_target_branch};

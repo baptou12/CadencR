@@ -637,16 +637,6 @@ pub async fn check_merge_conflicts(
     commands::check_merge_conflicts(Path::new(&project_path), &branch, &target).await
 }
 
-pub async fn merge_feature_branch(
-    state: &AppState,
-    body: MergeFeatureBranchBody,
-) -> Result<MergeResult, AppError> {
-    let (project_path, branch) =
-        get_project_and_branch(state, body.project_id, body.feature_id).await?;
-    let target = commands::get_original_branch(Path::new(&project_path), &branch).await?;
-    commands::merge_branch(Path::new(&project_path), &branch, &target).await
-}
-
 pub async fn delete_feature_branch(
     state: &AppState,
     params: DeleteFeatureBranchParams,

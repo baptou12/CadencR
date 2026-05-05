@@ -184,7 +184,7 @@ use crate::domain::workspace::routes as workspace_routes;
         models::CreateWorktreeBody,
         models::RetryWorktreeBody,
         models::RemoveOrphanWorktreeBody,
-        models::MergeFeatureBranchBody,
+        crate::domain::git::workflow_service::MergeFeatureBranchBody,
         models::HasUncommittedChangesResponse,
         models::BlameLine,
         models::BlameResponse,

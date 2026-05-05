@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { Button } from "@/components/ui/button";
 import { Loader2Icon, GitMergeIcon } from "lucide-react";
 import type { AgentStatus } from "@/types/agent";
@@ -121,17 +120,6 @@ export function NextStepsBar({
       requestAnimationFrame(() => sessionPromptRef.current?.focusInput());
     }
   }, [showSessionPrompt]);
-
-  // CMD+SHIFT+M: open merge & archive dialog
-  useScopedGlobalShortcut(
-    "meta+shift+m",
-    (e) => {
-      e.preventDefault();
-      setMergeDialogOpen(true);
-    },
-    "agent",
-    { enabled: canMerge },
-  );
 
   const refineSplitActions: SplitSendAction[] = useMemo(
     () => [
