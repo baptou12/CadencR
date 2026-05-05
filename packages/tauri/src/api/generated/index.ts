@@ -5090,6 +5090,85 @@ export const useDeleteFeature = <TError = ErrorType<unknown>, TContext = unknown
   return useMutation(mutationOptions);
 };
 
+/**
+ * @summary Trigger auto-naming for a feature on demand. Requires an existing
+non-default title and at least one user message, then waits for the rename
+to finish so callers get visible HTTP loading/error state even when no
+WebSocket client is connected.
+ */
+export const autoNameFeature = (id: number, signal?: AbortSignal) => {
+  return customInstance<FeaturesSuccessResponse>({
+    url: `/api/features/${id}/auto-name`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getAutoNameFeatureMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoNameFeature>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof autoNameFeature>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["autoNameFeature"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof autoNameFeature>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return autoNameFeature(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AutoNameFeatureMutationResult = NonNullable<
+  Awaited<ReturnType<typeof autoNameFeature>>
+>;
+
+export type AutoNameFeatureMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Trigger auto-naming for a feature on demand. Requires an existing
+non-default title and at least one user message, then waits for the rename
+to finish so callers get visible HTTP loading/error state even when no
+WebSocket client is connected.
+ */
+export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoNameFeature>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof autoNameFeature>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationOptions = getAutoNameFeatureMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const isFeatureEmpty = (id: number, signal?: AbortSignal) => {
   return customInstance<IsEmptyResponse>({
     url: `/api/features/${id}/empty`,

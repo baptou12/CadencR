@@ -135,6 +135,19 @@ describe("ProjectFeatures", () => {
     expect(onSelectFeature).toHaveBeenCalledWith(1);
   });
 
+  it("does not render auto-rename controls in the sidebar", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Auto-rename" })).not.toBeInTheDocument();
+  });
+
   it("renders status badges for features", () => {
     render(
       <ProjectFeatures

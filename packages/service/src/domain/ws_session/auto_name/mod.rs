@@ -9,6 +9,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
 use crate::domain::agents::providers::runtime_adapter;
+use crate::error::AppError;
 
 use super::protocol::{
     FeatureAutoNamingPayload, FeatureRenamedPayload, FeatureUpdatedPayload, WsEnvelope,
@@ -19,7 +20,7 @@ use drain::drain_text;
 
 /// Send a `feature.updated` envelope over the given WebSocket sender.
 fn send_feature_updated(
-    sender: &mpsc::UnboundedSender<Message>,
+    senders: &[mpsc::UnboundedSender<Message>],
     feature_id: i64,
     changed: &[&str],
 ) {
@@ -33,12 +34,12 @@ fn send_feature_updated(
         serde_json::to_value(&payload).unwrap(),
     );
     let json: String = envelope.into();
-    let _ = sender.send(Message::Text(json.into()));
+    send_to_all(senders, json);
 }
 
 /// Send a `feature.autonaming` envelope so the frontend can toggle the
 /// title-skeleton while naming is in flight.
-fn send_autonaming(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, in_progress: bool) {
+fn send_autonaming(senders: &[mpsc::UnboundedSender<Message>], feature_id: i64, in_progress: bool) {
     let payload = FeatureAutoNamingPayload {
         feature_id,
         in_progress,
@@ -49,26 +50,51 @@ fn send_autonaming(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, in_
         serde_json::to_value(&payload).unwrap(),
     );
     let json: String = envelope.into();
-    let _ = sender.send(Message::Text(json.into()));
+    send_to_all(senders, json);
+}
+
+fn send_to_all(senders: &[mpsc::UnboundedSender<Message>], json: String) {
+    for sender in senders {
+        let _ = sender.send(Message::Text(json.clone().into()));
+    }
 }
 
 const AUTO_NAME_SYSTEM_PROMPT: &str = "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
 
+/// Fetch the most recent user message content for the given feature.
+/// Returns `None` if no user message exists.
+pub async fn get_last_user_message(
+    pool: &SqlitePool,
+    feature_id: i64,
+) -> Result<Option<String>, AppError> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT m.content FROM agent_messages m
+         JOIN agent_sessions s ON s.id = m.session_id
+         WHERE s.feature_id = ? AND m.message_type = 'user_message'
+         ORDER BY m.id DESC LIMIT 1",
+    )
+    .bind(feature_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|(content,)| content))
+}
+
 /// Check if a feature still has its default auto-generated title (e.g. "Session 3" or "Untitled Feature").
-pub async fn has_default_title(pool: &SqlitePool, feature_id: i64) -> bool {
+pub async fn has_default_title(pool: &SqlitePool, feature_id: i64) -> Result<bool, AppError> {
     let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
         .bind(feature_id)
         .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
+        .await?;
 
-    match row {
-        Some((title,)) => {
-            let re = Regex::new(r"(?i)^Session \d+$").unwrap();
-            re.is_match(&title) || title == "Untitled Feature"
-        }
+    Ok(match row {
+        Some((title,)) => is_default_title(&title),
         None => false,
-    }
+    })
+}
+
+fn is_default_title(title: &str) -> bool {
+    let re = Regex::new(r"(?i)^Session \d+$").unwrap();
+    re.is_match(title) || title == "Untitled Feature"
 }
 
 /// Auto-name a feature using the user-selected provider + model.
@@ -83,9 +109,19 @@ pub async fn auto_name_feature(
     cwd: String,
     ws_sender: mpsc::UnboundedSender<Message>,
 ) -> Option<String> {
-    send_autonaming(&ws_sender, feature_id, true);
-    let result = run_auto_name(&pool, feature_id, user_input, cwd, &ws_sender).await;
-    send_autonaming(&ws_sender, feature_id, false);
+    auto_name_feature_for_senders(pool, feature_id, user_input, cwd, vec![ws_sender]).await
+}
+
+pub async fn auto_name_feature_for_senders(
+    pool: SqlitePool,
+    feature_id: i64,
+    user_input: String,
+    cwd: String,
+    ws_senders: Vec<mpsc::UnboundedSender<Message>>,
+) -> Option<String> {
+    send_autonaming(&ws_senders, feature_id, true);
+    let result = run_auto_name(&pool, feature_id, user_input, cwd, &ws_senders).await;
+    send_autonaming(&ws_senders, feature_id, false);
     result
 }
 
@@ -94,7 +130,7 @@ async fn run_auto_name(
     feature_id: i64,
     user_input: String,
     cwd: String,
-    ws_sender: &mpsc::UnboundedSender<Message>,
+    ws_senders: &[mpsc::UnboundedSender<Message>],
 ) -> Option<String> {
     info!(feature_id, "auto-name: starting");
     // Fetch provider + model concurrently — both are independent SQL reads.
@@ -199,8 +235,8 @@ async fn run_auto_name(
         serde_json::to_value(&payload).unwrap(),
     );
     let json: String = envelope.into();
-    let _ = ws_sender.send(Message::Text(json.into()));
-    send_feature_updated(ws_sender, feature_id, &["title"]);
+    send_to_all(ws_senders, json);
+    send_feature_updated(ws_senders, feature_id, &["title"]);
 
     info!(
         feature_id,
@@ -259,7 +295,7 @@ async fn build_spawn_config(
 
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
-        permission_mode: Some(RuntimePermissionMode::AcceptEdits),
+        permission_mode: Some(RuntimePermissionMode::Plan),
         model: Some(model_id.to_string()),
         thinking_effort,
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),

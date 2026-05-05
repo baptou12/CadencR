@@ -102,6 +102,13 @@ pub(super) async fn handle_init(
         }
     };
 
+    // Register the WS sender so HTTP handlers (e.g. auto-rename) can push
+    // envelopes to this connection later.
+    app_state
+        .ws_feature_senders
+        .register(feature_id, sender.clone())
+        .await;
+
     // Find or create DB session row
     info!(
         feature_id,

@@ -1,5 +1,5 @@
 use axum::extract::{Json, Path, Query, State};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::Router;
 use serde::Deserialize;
 
@@ -351,5 +351,9 @@ pub fn features_router() -> Router<AppState> {
         .route(
             "/api/features/{id}/working-dir",
             get(get_working_dir_handler),
+        )
+        .route(
+            "/api/features/{id}/auto-name",
+            post(crate::domain::features::auto_name_route::auto_name_feature_handler),
         )
 }

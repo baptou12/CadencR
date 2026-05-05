@@ -167,17 +167,22 @@ pub(crate) async fn handle_prompt_send(
             let use_worktree = payload.use_worktree.unwrap_or(false);
             if use_worktree {
                 // 1. Synchronous auto-name (need title for branch name)
-                if super::super::super::auto_name::has_default_title(&write_pool, feature_id).await
+                match super::super::super::auto_name::has_default_title(&write_pool, feature_id)
+                    .await
                 {
-                    let result = super::super::super::auto_name::auto_name_feature(
-                        write_pool.clone(),
-                        feature_id,
-                        payload.text.clone(),
-                        config.cwd.to_string_lossy().to_string(),
-                        sender.clone(),
-                    )
-                    .await;
-                    info!(feature_id, name = ?result, "auto-named feature for worktree");
+                    Ok(true) => {
+                        let result = super::super::super::auto_name::auto_name_feature(
+                            write_pool.clone(),
+                            feature_id,
+                            payload.text.clone(),
+                            config.cwd.to_string_lossy().to_string(),
+                            sender.clone(),
+                        )
+                        .await;
+                        info!(feature_id, name = ?result, "auto-named feature for worktree");
+                    }
+                    Ok(false) => {}
+                    Err(error) => warn!(feature_id, %error, "auto-name: failed to check title"),
                 }
 
                 // 2. Create worktree.
@@ -328,21 +333,27 @@ pub(crate) async fn handle_prompt_send(
                         let prompt_text = payload.text.clone();
                         let naming_sender = sender.clone();
                         tokio::spawn(async move {
-                            if super::super::super::auto_name::has_default_title(
+                            match super::super::super::auto_name::has_default_title(
                                 &write_pool,
                                 feature_id,
                             )
                             .await
                             {
-                                let result = super::super::super::auto_name::auto_name_feature(
-                                    write_pool,
-                                    feature_id,
-                                    prompt_text,
-                                    cwd,
-                                    naming_sender,
-                                )
-                                .await;
-                                info!(feature_id, name = ?result, "auto-named feature");
+                                Ok(true) => {
+                                    let result = super::super::super::auto_name::auto_name_feature(
+                                        write_pool,
+                                        feature_id,
+                                        prompt_text,
+                                        cwd,
+                                        naming_sender,
+                                    )
+                                    .await;
+                                    info!(feature_id, name = ?result, "auto-named feature");
+                                }
+                                Ok(false) => {}
+                                Err(error) => {
+                                    warn!(feature_id, %error, "auto-name: failed to check title")
+                                }
                             }
                         });
                     }
