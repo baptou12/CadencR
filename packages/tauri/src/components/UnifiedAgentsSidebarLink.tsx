@@ -9,32 +9,33 @@ import {
 import {
   countRunningAgents,
   getUnifiedAgentsMatchingFilters,
+  UNIFIED_AGENTS_QUERY_OPTIONS,
 } from "@/components/UnifiedAgentsViewData";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { cn } from "@/lib/utils";
 
 export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink(): ReactElement {
   const filters = usePersistedUnifiedAgentsFilters();
-  const routerState = useRouterState();
-  const active = routerState.location.pathname === "/agents";
-  const queryParams = useMemo(() => toUnifiedAgentsQueryParams(filters, 1), [filters]);
-  const agentsQuery = useGetUnifiedAgents(
-    { ...queryParams, project_id: filters.projectId ?? undefined },
-    { query: { refetchInterval: filters.mode === "recent" ? 2_000 : 10_000, staleTime: 0 } },
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const active = pathname === "/agents";
+  const queryParams = useMemo(
+    () => toUnifiedAgentsQueryParams(filters, 1),
+    [filters.freshMinutes, filters.mode],
   );
+  const agentsQuery = useGetUnifiedAgents(queryParams, { query: UNIFIED_AGENTS_QUERY_OPTIONS });
   const matchingAgents = useMemo(
     () =>
       getUnifiedAgentsMatchingFilters(agentsQuery.data?.agents ?? [], {
         mode: filters.mode,
         freshMinutes: filters.freshMinutes,
-        projectId: filters.projectId,
+        projectIds: filters.projectIds,
         queryText: filters.query.trim().toLowerCase(),
       }),
     [
       agentsQuery.data?.agents,
       filters.freshMinutes,
       filters.mode,
-      filters.projectId,
+      filters.projectIds,
       filters.query,
     ],
   );

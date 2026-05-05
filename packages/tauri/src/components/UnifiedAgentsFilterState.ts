@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnifiedAgentsMode } from "@/api/generated";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 
@@ -9,23 +9,34 @@ const FILTER_KEYS = {
   freshMinutes: "unified_agents_fresh_minutes",
   agentsPerRow: "unified_agents_per_row",
   projectId: "unified_agents_project_id",
+  projectIds: "unified_agents_project_ids",
   query: "unified_agents_query",
+  sortOrder: "unified_agents_sort_order",
 } as const;
 
 const FRESH_MINUTES_MIN = 1;
-const FRESH_MINUTES_MAX = 240;
+const FRESH_MINUTES_MAX = 43_200;
 const DEFAULT_FRESH_MINUTES = 5;
 const AGENTS_PER_ROW_MIN = 1;
 const AGENTS_PER_ROW_MAX = 6;
 const DEFAULT_AGENTS_PER_ROW = 3;
 
+export type UnifiedAgentsSortOrder =
+  | "created_desc"
+  | "created_asc"
+  | "activity_desc"
+  | "activity_asc";
+
 export interface PersistedUnifiedAgentsFilters {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
   agentsPerRow: number;
-  projectId: number | null;
+  projectIds: number[];
   query: string;
+  sortOrder: UnifiedAgentsSortOrder;
 }
+
+export type UnifiedAgentsFilterUpdate = Partial<PersistedUnifiedAgentsFilters>;
 
 export function readUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
   return {
@@ -42,31 +53,37 @@ export function readUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
       AGENTS_PER_ROW_MIN,
       AGENTS_PER_ROW_MAX,
     ),
-    projectId: readNullableInt(FILTER_KEYS.projectId),
+    projectIds: readProjectIds(),
     query: window.localStorage.getItem(FILTER_KEYS.query) ?? "",
+    sortOrder: readSortOrder(),
   };
 }
 
-export function useUnifiedAgentsFilterValue<K extends keyof PersistedUnifiedAgentsFilters>(
-  key: K,
-): [PersistedUnifiedAgentsFilters[K], (value: PersistedUnifiedAgentsFilters[K]) => void] {
-  const [value, setValue] = useState<PersistedUnifiedAgentsFilters[K]>(
-    () => readUnifiedAgentsFilters()[key],
-  );
-  useEffect(() => subscribeFilters(() => setValue(readUnifiedAgentsFilters()[key])), [key]);
-  const update = useCallback(
-    (nextValue: PersistedUnifiedAgentsFilters[K]): void => {
-      writeFilterValue(key, nextValue);
-      setValue(nextValue);
-    },
-    [key],
-  );
-  return [value, update];
+function writeUnifiedAgentsFilters(
+  update: UnifiedAgentsFilterUpdate,
+): PersistedUnifiedAgentsFilters {
+  const currentFilters = readUnifiedAgentsFilters();
+  const nextFilters = normalizeFilters({ ...currentFilters, ...update });
+  if (areUnifiedAgentsFiltersEqual(currentFilters, nextFilters)) return currentFilters;
+  writeFiltersToStorage(nextFilters);
+  window.dispatchEvent(new CustomEvent(FILTER_EVENT));
+  return nextFilters;
+}
+
+export function useUnifiedAgentsFilters(): readonly [
+  PersistedUnifiedAgentsFilters,
+  (update: UnifiedAgentsFilterUpdate) => void,
+] {
+  const [filters, setFiltersState] = useState(readUnifiedAgentsFilters);
+  useEffect(() => subscribeFilters(() => setFiltersState(readUnifiedAgentsFilters())), []);
+  const setFilters = useCallback((update: UnifiedAgentsFilterUpdate): void => {
+    writeUnifiedAgentsFilters(update);
+  }, []);
+  return useMemo(() => [filters, setFilters] as const, [filters, setFilters]);
 }
 
 export function usePersistedUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
-  const [filters, setFilters] = useState(readUnifiedAgentsFilters);
-  useEffect(() => subscribeFilters(() => setFilters(readUnifiedAgentsFilters())), []);
+  const [filters] = useUnifiedAgentsFilters();
   return filters;
 }
 
@@ -87,13 +104,65 @@ export function toUnifiedAgentsQueryParams(
   };
 }
 
-function writeFilterValue<K extends keyof PersistedUnifiedAgentsFilters>(
-  key: K,
-  value: PersistedUnifiedAgentsFilters[K],
-): void {
-  if (value === null) window.localStorage.removeItem(FILTER_KEYS[key]);
-  else window.localStorage.setItem(FILTER_KEYS[key], String(value));
-  window.dispatchEvent(new CustomEvent(FILTER_EVENT));
+function normalizeFilters(filters: PersistedUnifiedAgentsFilters): PersistedUnifiedAgentsFilters {
+  return {
+    mode: filters.mode === "all" ? "all" : "recent",
+    freshMinutes: clampInt(
+      filters.freshMinutes,
+      DEFAULT_FRESH_MINUTES,
+      FRESH_MINUTES_MIN,
+      FRESH_MINUTES_MAX,
+    ),
+    agentsPerRow: clampInt(
+      filters.agentsPerRow,
+      DEFAULT_AGENTS_PER_ROW,
+      AGENTS_PER_ROW_MIN,
+      AGENTS_PER_ROW_MAX,
+    ),
+    projectIds: uniquePositiveInts(filters.projectIds),
+    query: filters.query,
+    sortOrder: normalizeSortOrder(filters.sortOrder),
+  };
+}
+
+function areUnifiedAgentsFiltersEqual(
+  a: PersistedUnifiedAgentsFilters,
+  b: PersistedUnifiedAgentsFilters,
+): boolean {
+  return (
+    a.mode === b.mode &&
+    a.freshMinutes === b.freshMinutes &&
+    a.agentsPerRow === b.agentsPerRow &&
+    a.query === b.query &&
+    a.sortOrder === b.sortOrder &&
+    intArraysEqual(a.projectIds, b.projectIds)
+  );
+}
+
+function intArraysEqual(a: number[], b: number[]): boolean {
+  return (
+    a.length === b.length && a.every((value: number, index: number): boolean => value === b[index])
+  );
+}
+
+function writeFiltersToStorage(filters: PersistedUnifiedAgentsFilters): void {
+  window.localStorage.setItem(FILTER_KEYS.mode, filters.mode);
+  window.localStorage.setItem(FILTER_KEYS.freshMinutes, String(filters.freshMinutes));
+  window.localStorage.setItem(FILTER_KEYS.agentsPerRow, String(filters.agentsPerRow));
+  writeOptionalString(FILTER_KEYS.query, filters.query);
+  writeProjectIds(filters.projectIds);
+  window.localStorage.setItem(FILTER_KEYS.sortOrder, filters.sortOrder);
+}
+
+function writeOptionalString(key: string, value: string): void {
+  if (value.length === 0) window.localStorage.removeItem(key);
+  else window.localStorage.setItem(key, value);
+}
+
+function writeProjectIds(projectIds: number[]): void {
+  if (projectIds.length === 0) window.localStorage.removeItem(FILTER_KEYS.projectIds);
+  else window.localStorage.setItem(FILTER_KEYS.projectIds, projectIds.join(","));
+  window.localStorage.removeItem(FILTER_KEYS.projectId);
 }
 
 function subscribeFilters(callback: () => void): () => void {
@@ -114,10 +183,43 @@ function readMode(): UnifiedAgentsFilterMode {
   return value === "all" ? "all" : "recent";
 }
 
+function readSortOrder(): UnifiedAgentsSortOrder {
+  return normalizeSortOrder(window.localStorage.getItem(FILTER_KEYS.sortOrder));
+}
+
+function normalizeSortOrder(value: string | null): UnifiedAgentsSortOrder {
+  if (value === "activity_desc" || value === "activity_asc") return value;
+  return value === "created_asc" ? "created_asc" : "created_desc";
+}
+
 function readBoundedInt(key: string, fallback: number, min: number, max: number): number {
-  const parsed = Number.parseInt(window.localStorage.getItem(key) ?? "", 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(min, Math.min(max, parsed));
+  return clampInt(Number.parseInt(window.localStorage.getItem(key) ?? "", 10), fallback, min, max);
+}
+
+function clampInt(value: number, fallback: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function readProjectIds(): number[] {
+  const storedIds = window.localStorage.getItem(FILTER_KEYS.projectIds);
+  if (storedIds) return parsePositiveIntList(storedIds);
+  const legacyProjectId = readNullableInt(FILTER_KEYS.projectId);
+  return legacyProjectId === null ? [] : [legacyProjectId];
+}
+
+function parsePositiveIntList(value: string): number[] {
+  return uniquePositiveInts(
+    value.split(",").map((part: string): number => Number.parseInt(part, 10)),
+  );
+}
+
+function uniquePositiveInts(values: number[]): number[] {
+  const ids: number[] = [];
+  for (const value of values) {
+    if (Number.isFinite(value) && value > 0 && !ids.includes(value)) ids.push(value);
+  }
+  return ids;
 }
 
 function readNullableInt(key: string): number | null {

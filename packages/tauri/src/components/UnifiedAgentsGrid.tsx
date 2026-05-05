@@ -12,6 +12,7 @@ import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { toast } from "sonner";
 import type { UnifiedAgentEntry } from "@/api/generated";
 import { UnifiedAgentCard } from "@/components/UnifiedAgentCard";
+import { useFocusedUnifiedAgent } from "@/components/UnifiedAgentsGridFocus";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
 import { popResize, pushResize } from "@/lib/resize-coordinator";
@@ -47,16 +48,7 @@ export const UnifiedAgentsGrid = memo(function UnifiedAgentsGrid({
   const { rowWidths, setRowWidthLayout } = useRowWidths();
   const rows = useMemo(() => chunkAgents(agents, columns), [agents, columns]);
   const activeRow = Math.floor(activeIndex / columns);
-
-  useEffect(() => {
-    if (focusVersion === 0) return undefined;
-    virtuosoRef.current?.scrollToIndex({ index: activeRow, align: "center", behavior: "smooth" });
-    const frame = requestAnimationFrame(() => {
-      const selector = `[data-unified-agent-index="${activeIndex}"]`;
-      document.querySelector<HTMLElement>(selector)?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeIndex, activeRow, focusVersion]);
+  useFocusedUnifiedAgent({ activeIndex, activeRow, focusVersion, virtuosoRef });
 
   return (
     <Virtuoso

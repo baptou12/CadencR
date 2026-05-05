@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import {
   markUnifiedAgentsSearchFocusPending,
@@ -7,6 +7,7 @@ import {
 
 export function UnifiedAgentsShortcut(): null {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   useGlobalShortcut("meta+shift+r", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -17,6 +18,10 @@ export function UnifiedAgentsShortcut(): null {
     event.stopPropagation();
     event.stopImmediatePropagation();
     markUnifiedAgentsSearchFocusPending();
+    if (pathname === "/agents") {
+      focusSearchAfterRouteChange();
+      return;
+    }
     void Promise.resolve(navigate({ to: "/agents" })).finally(focusSearchAfterRouteChange);
   });
   return null;
