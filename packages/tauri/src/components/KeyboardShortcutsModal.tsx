@@ -95,11 +95,10 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Questions & Permissions",
     shortcuts: [
-      { keys: ["⌘", "1–9"], description: "Select option" },
-      { keys: ["Enter"], description: "Submit" },
-      { keys: ["⌘", "1"], description: "Allow once" },
-      { keys: ["⌘", "2"], description: "Allow future" },
-      { keys: ["⌘", "3"], description: "Deny" },
+      { keys: ["⌘", "Y"], description: "Allow once" },
+      { keys: ["⌘", "L"], description: "Allow future" },
+      { keys: ["⌘", "N"], description: "Deny" },
+      { keys: ["Enter"], description: "Submit feedback" },
     ],
   },
   {
