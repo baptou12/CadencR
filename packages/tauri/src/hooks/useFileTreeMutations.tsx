@@ -9,20 +9,8 @@ import {
   useTrashEditorPath,
   useGetEditorRoot,
 } from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { invalidateByUrlPrefix, queryClient } from "@/lib/queryClient";
-
-interface ErrorBody {
-  error?: string;
-}
-
-interface AxiosLikeError {
-  response?: { data?: ErrorBody };
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  const e = err as AxiosLikeError | undefined;
-  return e?.response?.data?.error ?? fallback;
-}
 
 export type FileTreeMutations = ReturnType<typeof useFileTreeMutations>;
 
@@ -46,7 +34,7 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
         void invalidateTree();
         toast.success("File created");
       },
-      onError: (err) => toast.error(errorMessage(err, "Failed to create file")),
+      onError: (err) => toast.error(apiErrorMessage(err, "Failed to create file")),
     },
   });
 
@@ -56,7 +44,7 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
         void invalidateTree();
         toast.success("Folder created");
       },
-      onError: (err) => toast.error(errorMessage(err, "Failed to create folder")),
+      onError: (err) => toast.error(apiErrorMessage(err, "Failed to create folder")),
     },
   });
 
@@ -65,7 +53,7 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
       onSuccess: () => {
         void invalidateTree();
       },
-      onError: (err) => toast.error(errorMessage(err, "Failed to rename")),
+      onError: (err) => toast.error(apiErrorMessage(err, "Failed to rename")),
     },
   });
 
@@ -75,7 +63,7 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
         void invalidateTree();
         toast.success("Moved to trash");
       },
-      onError: (err) => toast.error(errorMessage(err, "Failed to move to trash")),
+      onError: (err) => toast.error(apiErrorMessage(err, "Failed to move to trash")),
     },
   });
 

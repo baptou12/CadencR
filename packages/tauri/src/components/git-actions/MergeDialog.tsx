@@ -31,6 +31,7 @@ import {
   parseGitMergeMode,
   type GitMergeMode,
 } from "@/lib/git-merge-mode";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 
 interface MergeDialogProps {
@@ -67,7 +68,7 @@ export default function MergeDialog({
         },
       });
       if (!result.success) {
-        showError(result.error ?? "Merge failed.");
+        showError(formatMergeErrorText(result.error));
         return;
       }
       if (saveAsDefault) {
@@ -78,25 +79,25 @@ export default function MergeDialog({
       toast.success(`Merged with ${gitMergeModeLabel(effectiveMode)}`);
       onOpenChange(false);
     } catch (err) {
-      showError(err instanceof Error ? err.message : "Merge failed.");
+      showError(formatMergeError(err));
     }
   }
 
   function showError(message: string): void {
     setError(message);
-    toast.error(message);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
     if (e.key !== "Enter") return;
     if (!(e.metaKey || e.ctrlKey)) return;
     e.preventDefault();
+    e.stopPropagation();
     void handleMerge();
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onKeyDown={handleKeyDown} className="sm:max-w-lg">
+      <DialogContent onKeyDownCapture={handleKeyDown} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="size-5" />
@@ -158,4 +159,26 @@ export default function MergeDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function formatMergeError(err: unknown): string {
+  return formatMergeErrorText(apiErrorMessage(err, "Merge failed."));
+}
+
+function formatMergeErrorText(message: string | null | undefined): string {
+  const cleaned = message?.replace(/^Bad request:\s*/i, "").trim();
+  if (!cleaned) return "Merge failed.";
+
+  const normalized = cleaned.toLowerCase();
+  if (normalized.includes("target branch worktree") && normalized.includes("uncommitted changes")) {
+    return "Cannot merge because the target branch worktree has uncommitted changes. Commit, stash, or discard those changes, then try again.";
+  }
+  if (
+    normalized.includes("source feature worktree") &&
+    normalized.includes("uncommitted changes")
+  ) {
+    return "Cannot merge because the source feature worktree has uncommitted changes. Commit, stash, or discard those changes, then try again.";
+  }
+
+  return `Merge failed: ${cleaned}`;
 }

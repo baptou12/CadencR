@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { useGitAction, type GitAction } from "./useGitAction";
 import { GitActionPopover, ICONS } from "./GitActionPopover";
 
@@ -111,14 +112,10 @@ export const GitActionButton = memo(function GitActionButton({
     e.preventDefault();
     void runOpenCompare();
   });
-  useHotkeys(
-    "meta+shift+m",
-    (e) => {
-      e.preventDefault();
-      setPopoverOpen(true);
-    },
-    { enableOnFormTags: true },
-  );
+  useGlobalShortcut("meta+shift+m", (e) => {
+    e.preventDefault();
+    setPopoverOpen(true);
+  });
 
   const PrimaryIcon = state.primary ? ICONS[state.primary] : GitCommit;
   const primaryDisabled = state.primary === null;
