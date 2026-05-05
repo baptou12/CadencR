@@ -9,7 +9,10 @@ import { createStreamingState } from "@/stores/ws-session-store";
 import type { AgentBlockData } from "@/components/AgentBlock";
 import type { FeatureAgentStateResponse } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
-import { injectPlanIntoBlocks } from "@/stores/ws-message-processing";
+import {
+  injectPlanIntoBlocks,
+  rebuildDerivedAgentStreamState,
+} from "@/stores/ws-message-processing";
 import {
   type WorkflowState,
   type AgentSessionState,
@@ -70,6 +73,9 @@ export function hydrateFromSnapshotPatch(
 
     const rest = restBlocks.get(session.id);
     const existing = agents.get(key);
+    const blocks = rest?.blocks ?? [];
+    const streamingState = createStreamingState();
+    rebuildDerivedAgentStreamState(streamingState, blocks);
 
     // With WS event buffering during `hydrated === false`, no events can have
     // been applied yet — `existing` should always be undefined here. Keep a
@@ -85,8 +91,8 @@ export function hydrateFromSnapshotPatch(
     agents.set(key, {
       sessionId: session.id,
       agentType,
-      blocks: rest?.blocks ?? [],
-      streamingState: createStreamingState(),
+      blocks,
+      streamingState,
       status: (session.status as AgentSessionState["status"]) ?? "idle",
       pendingPermission: null,
       pendingQuestions: [],

@@ -139,6 +139,39 @@ describe("processSdkMessage – system messages", () => {
 });
 
 describe("processSdkMessage – Bash stream events", () => {
+  it("uses backend agent_message_id as the streamed block id", () => {
+    const state = createStreamingState();
+    const start = processSdkMessage(
+      {
+        type: "stream_event",
+        agent_message_id: 42,
+        session_id: "s1",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "Hel" },
+        },
+      },
+      state,
+    );
+    const delta = processSdkMessage(
+      {
+        type: "stream_event",
+        agent_message_id: 42,
+        session_id: "s1",
+        event: {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "lo" },
+        },
+      },
+      state,
+    );
+
+    expect(start.mutations[0].block).toMatchObject({ id: "msg-42", content: "Hel" });
+    expect(delta.mutations[0].block).toMatchObject({ id: "msg-42", content: "lo" });
+  });
+
   it("keeps the initial Bash command available before output deltas arrive", () => {
     const state = createStreamingState();
     const result = processSdkMessage(

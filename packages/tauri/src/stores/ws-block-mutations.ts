@@ -9,6 +9,11 @@ import type { TodoItem } from "@/types/agent";
 import type { BlockMutation, ParserSignals, StreamingState } from "./ws-message-processing";
 
 export type ParsedTodo = TodoItem;
+type InternalRootMutation =
+  | BlockMutation
+  | { action: "replace_parent"; block: AgentBlockData }
+  | { action: "replace_block"; block: AgentBlockData };
+type DuplicateChildAppendResult = { changed: boolean; parentToolUseId: string } | null;
 
 /** Extract todos from the last TodoWrite block in a block list. */
 export function parseTodosFromBlocks(blocks: AgentBlockData[]): ParsedTodo[] | undefined {
@@ -95,19 +100,32 @@ export function applyMutations(
 ): AgentBlockData[] {
   const dirtyParents = new Set<string>();
   const rootAppends: AgentBlockData[] = [];
-  const rootUpdates: BlockMutation[] = [];
+  const rootUpdates: InternalRootMutation[] = [];
 
   for (const mut of allMutations) {
     if (mut.action === "append") {
+      const existingRoot = rootBlockForId(streamState, mut.block.id);
+      if (existingRoot) {
+        const merged = mergeDuplicateAppend(existingRoot, mut.block);
+        if (merged !== existingRoot) {
+          rootUpdates.push({ action: "replace_block", block: merged });
+        }
+        continue;
+      }
+      const duplicateChild = replaceDuplicateChildAppend(streamState, mut.block);
+      if (duplicateChild) {
+        if (duplicateChild.changed) {
+          dirtyParents.add(duplicateChild.parentToolUseId);
+        }
+        continue;
+      }
       const parentId = mut.block.parentToolUseId;
       if (parentId) {
         const parentBlock = streamState.toolUseIdToBlock.get(parentId);
         if (parentBlock?.childBlocks) {
           parentBlock.childBlocks = [...parentBlock.childBlocks, mut.block];
           dirtyParents.add(parentId);
-          if (mut.block.toolUseId && !streamState.toolUseIdToBlock.has(mut.block.toolUseId)) {
-            streamState.toolUseIdToBlock.set(mut.block.toolUseId, mut.block);
-          }
+          recordDerivedBlock(streamState, mut.block);
           continue;
         }
       }
@@ -123,22 +141,23 @@ export function applyMutations(
     if (parentBlock) {
       const newParent = { ...parentBlock };
       streamState.toolUseIdToBlock.set(parentToolUseId, newParent);
-      rootUpdates.push({ action: "replace_parent" as "replace", block: newParent });
+      rootUpdates.push({ action: "replace_parent", block: newParent });
     }
   }
 
   const result = [...prevBlocks, ...rootAppends];
 
   for (const mut of rootUpdates) {
-    if ((mut.action as string) === "replace_parent") {
-      const idx = result.findIndex((b) => b.toolUseId === mut.block.toolUseId);
+    if (mut.action === "replace_parent" || mut.action === "replace_block") {
+      const idx = rootResultIndexById(result, streamState, mut.block.id);
       if (idx !== -1) {
         result[idx] = mut.block;
         recordRootRefChange(streamState, mut.block.id, mut.block);
+        recordDerivedBlock(streamState, mut.block);
       }
       continue;
     }
-    const idx = result.findIndex((b) => b.id === mut.block.id);
+    const idx = rootResultIndexById(result, streamState, mut.block.id);
     if (idx !== -1) {
       const existing = { ...result[idx] };
       existing.content = mergeToolContent(existing, mut.block.content, mut.action);
@@ -151,6 +170,63 @@ export function applyMutations(
   }
 
   return result;
+}
+
+function rootResultIndexById(
+  blocks: AgentBlockData[],
+  streamState: StreamingState,
+  blockId: string,
+): number {
+  const indexed = streamState.rootBlockPosById.get(blockId);
+  if (indexed !== undefined && blocks[indexed]?.id === blockId) {
+    return indexed;
+  }
+  return blocks.findIndex((block) => block.id === blockId);
+}
+
+function rootBlockForId(streamState: StreamingState, blockId: string): AgentBlockData | undefined {
+  const idx = streamState.rootBlockPosById.get(blockId);
+  return idx === undefined ? undefined : streamState.rootBlocks[idx];
+}
+
+function replaceDuplicateChildAppend(
+  streamState: StreamingState,
+  incoming: AgentBlockData,
+): DuplicateChildAppendResult {
+  const parentToolUseId = incoming.parentToolUseId;
+  if (!parentToolUseId) return null;
+  const parentBlock = streamState.toolUseIdToBlock.get(parentToolUseId);
+  if (!parentBlock?.childBlocks) return null;
+  const childIdx = parentBlock.childBlocks.findIndex((block) => block.id === incoming.id);
+  if (childIdx === -1) return null;
+  const existingChild = parentBlock.childBlocks[childIdx];
+  const merged = mergeDuplicateAppend(existingChild, incoming);
+  if (merged === existingChild) {
+    return { changed: false, parentToolUseId };
+  }
+  parentBlock.childBlocks = parentBlock.childBlocks.map((child, index) =>
+    index === childIdx ? merged : child,
+  );
+  recordDerivedBlock(streamState, merged);
+  return { changed: true, parentToolUseId };
+}
+
+function mergeDuplicateAppend(existing: AgentBlockData, incoming: AgentBlockData): AgentBlockData {
+  const preferExistingContent = existing.content.length >= incoming.content.length;
+  const incomingHasChildren = (incoming.childBlocks?.length ?? 0) > 0;
+  if (preferExistingContent && !incomingHasChildren && !incoming.toolArgs) {
+    return existing;
+  }
+  return {
+    ...(preferExistingContent ? { ...incoming, ...existing } : { ...existing, ...incoming }),
+    content: preferExistingContent ? existing.content : incoming.content,
+    childBlocks: incomingHasChildren
+      ? incoming.childBlocks
+      : (existing.childBlocks ?? incoming.childBlocks),
+    toolArgs: preferExistingContent
+      ? (existing.toolArgs ?? incoming.toolArgs)
+      : (incoming.toolArgs ?? existing.toolArgs),
+  };
 }
 
 /**
@@ -166,14 +242,25 @@ export function rebuildDerivedAgentStreamState(
   streamState.rootBlocks = [];
   streamState.rootBlockPosById = new Map();
   streamState.toolResultMap = new Map();
+  streamState.toolUseIdToBlock = new Map();
   for (const block of blocks) {
     if (!block.parentToolUseId) {
       streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
       streamState.rootBlocks.push(block);
     }
-    if (block.type === "tool_result" && block.toolUseId) {
-      streamState.toolResultMap.set(block.toolUseId, block);
-    }
+    recordDerivedBlock(streamState, block);
+  }
+}
+
+function recordDerivedBlock(streamState: StreamingState, block: AgentBlockData): void {
+  if (block.type === "tool_call" && block.toolUseId) {
+    streamState.toolUseIdToBlock.set(block.toolUseId, block);
+  }
+  if (block.type === "tool_result" && block.toolUseId) {
+    streamState.toolResultMap.set(block.toolUseId, block);
+  }
+  for (const child of block.childBlocks ?? []) {
+    recordDerivedBlock(streamState, child);
   }
 }
 
@@ -206,9 +293,7 @@ export function blocksPatchWithDerived(
 function recordRootAppend(streamState: StreamingState, block: AgentBlockData): void {
   streamState.rootBlockPosById.set(block.id, streamState.rootBlocks.length);
   streamState.rootBlocks.push(block);
-  if (block.type === "tool_result" && block.toolUseId) {
-    streamState.toolResultMap.set(block.toolUseId, block);
-  }
+  recordDerivedBlock(streamState, block);
 }
 
 function recordRootRefChange(

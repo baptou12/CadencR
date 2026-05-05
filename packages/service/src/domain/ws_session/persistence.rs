@@ -42,6 +42,49 @@ struct ToolInputBuffer {
     merge_object_deltas: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PersistedMessageRef {
+    pub id: i64,
+}
+
+pub fn raw_event_with_agent_message_id(
+    raw: &serde_json::Value,
+    persisted: Option<PersistedMessageRef>,
+) -> serde_json::Value {
+    let Some(message_ref) = persisted else {
+        return raw.clone();
+    };
+    let mut value = raw.clone();
+    if let serde_json::Value::Object(object) = &mut value {
+        object.insert(
+            "agent_message_id".to_string(),
+            serde_json::Value::Number(message_ref.id.into()),
+        );
+    }
+    value
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MergeableMessageType {
+    Text,
+    Thinking,
+}
+
+impl MergeableMessageType {
+    fn db_value(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Thinking => "thinking",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingMergeableBlock {
+    row_id: i64,
+    message_type: MergeableMessageType,
+}
+
 pub struct WsSessionPersistence {
     write_pool: SqlitePool,
     session_db_id: Option<i64>,
@@ -51,10 +94,13 @@ pub struct WsSessionPersistence {
     pending_tool_inputs: HashMap<(String, u64), ToolInputBuffer>,
     /// (runtime_session_id, block_index) -> agent_messages.id for the tool_call row
     pending_tool_row_ids: HashMap<(String, u64), i64>,
+    /// (runtime_session_id, block_index) -> merged text/thinking row metadata
+    pending_mergeable_blocks: HashMap<(String, u64), PendingMergeableBlock>,
     file_change_marked: bool,
 }
 
 include!("persistence/session_bootstrap.rs");
+include!("persistence/session_mergeable_blocks.rs");
 include!("persistence/session_events.rs");
 include!("persistence/session_error_messages.rs");
 include!("persistence/session_tool_reconciliation.rs");

@@ -1,25 +1,28 @@
 impl WsSessionPersistence {
     /// Main dispatch for normalized runtime events.
-    pub async fn persist_runtime_event(&mut self, runtime_event: &RuntimeEvent) {
+    pub async fn persist_runtime_event(
+        &mut self,
+        runtime_event: &RuntimeEvent,
+    ) -> Option<PersistedMessageRef> {
         let Some(session_id) = self.session_db_id else {
-            return;
+            return None;
         };
 
         if let Some(event) = runtime_event.stream_event() {
-            self.persist_stream_event(
-                session_id,
-                runtime_event.session_id(),
-                event,
-                runtime_event.parent_tool_use_id(),
-            )
+            return self
+                .persist_stream_event(
+                    session_id,
+                    runtime_event.session_id(),
+                    event,
+                    runtime_event.parent_tool_use_id(),
+                )
                 .await;
-            return;
         }
 
         if let Some(message) = runtime_event.user_message() {
             self.persist_user_tool_results(session_id, message, runtime_event.parent_tool_use_id())
                 .await;
-            return;
+            return None;
         }
 
         if let Some(message) = runtime_event.assistant_message() {
@@ -29,12 +32,12 @@ impl WsSessionPersistence {
             } else {
                 self.reconcile_tool_call_content(session_id, message).await;
             }
-            return;
+            return None;
         }
 
         if runtime_event.is_compact_boundary() {
             let content = serialize_compact_metadata(runtime_event.compact_metadata());
-            let _ = Self::insert_message(
+            let result = Self::insert_message(
                 &self.write_pool,
                 session_id,
                 "system",
@@ -50,7 +53,12 @@ impl WsSessionPersistence {
                 .bind(session_id)
                 .execute(&self.write_pool)
                 .await;
+            return result
+                .ok()
+                .map(|row| PersistedMessageRef { id: row.last_insert_rowid() });
         }
+
+        None
     }
 
     async fn insert_message(
@@ -83,166 +91,43 @@ impl WsSessionPersistence {
         runtime_session_id: Option<&str>,
         event: &RuntimeStreamEvent,
         ptuid: Option<&str>,
-    ) {
+    ) -> Option<PersistedMessageRef> {
         let runtime_key = runtime_stream_key(runtime_session_id);
-        let model = self.current_models.get(&runtime_key).map(String::as_str);
 
         match event {
             RuntimeStreamEvent::MessageStart { model, .. } => {
                 if let Some(model) = model.clone() {
                     self.current_models.insert(runtime_key, model);
                 }
+                None
             }
-            RuntimeStreamEvent::ContentBlockStart { index, block } => match block {
-                RuntimeContentBlock::Text { text } => {
-                    let _ = Self::insert_message(
-                        &self.write_pool,
-                        session_id,
-                        "assistant",
-                        text,
-                        "text",
-                        None,
-                        None,
-                        ptuid,
-                        model,
-                    )
-                    .await;
-                }
-                RuntimeContentBlock::Thinking { thinking } => {
-                    let _ = Self::insert_message(
-                        &self.write_pool,
-                        session_id,
-                        "assistant",
-                        thinking,
-                        "thinking",
-                        None,
-                        None,
-                        ptuid,
-                        model,
-                    )
-                    .await;
-                }
-                RuntimeContentBlock::ToolUse { id, name, input } => {
-                    let content = serde_json::to_string(input).unwrap_or_default();
-                    let result = Self::insert_message(
-                        &self.write_pool,
-                        session_id,
-                        "assistant",
-                        &content,
-                        "tool_call",
-                        Some(name),
-                        Some(id),
-                        ptuid,
-                        model,
-                    )
-                    .await;
-
-                    if let Ok(r) = result {
-                        let row_id = r.last_insert_rowid();
-                        let key = (runtime_key.clone(), *index);
-                        self.pending_tool_row_ids.insert(key.clone(), row_id);
-                        let merge_object_deltas = should_merge_tool_object_deltas(name);
-                        // Most tool streams send JSON fragments, so their
-                        // buffer starts empty. Bash and file-change deltas are
-                        // full object patches (`{"output": "..."}`), so seed
-                        // their buffers with the initial object and merge.
-                        self.pending_tool_inputs.insert(
-                            key,
-                            ToolInputBuffer {
-                                accumulated: if merge_object_deltas {
-                                    content.clone()
-                                } else {
-                                    String::new()
-                                },
-                                replacement_candidate: None,
-                                merge_object_deltas,
-                            },
-                        );
-                    }
-
-                    if !self.file_change_marked && is_file_change_tool_name(name) {
-                        self.mark_has_file_changes(session_id).await;
-                    }
-                }
-                RuntimeContentBlock::Other => {}
-            },
-            RuntimeStreamEvent::ContentBlockDelta { index, delta } => match delta {
-                RuntimeContentDelta::Text { text } => {
-                    let _ = Self::insert_message(
-                        &self.write_pool,
-                        session_id,
-                        "assistant",
-                        text,
-                        "text_delta",
-                        None,
-                        None,
-                        ptuid,
-                        model,
-                    )
-                    .await;
-                }
-                RuntimeContentDelta::Thinking { thinking } => {
-                    let _ = Self::insert_message(
-                        &self.write_pool,
-                        session_id,
-                        "assistant",
-                        thinking,
-                        "thinking_delta",
-                        None,
-                        None,
-                        ptuid,
-                        model,
-                    )
-                    .await;
-                }
-                RuntimeContentDelta::InputJson { partial_json } => {
-                    let key = (runtime_key.clone(), *index);
-                    let parsed = self
-                        .pending_tool_inputs
-                        .get_mut(&key)
-                        .and_then(|buffer| buffer.apply_delta(partial_json));
-
-                    if let Some(parsed) = parsed {
-                        if let Some(&row_id) = self.pending_tool_row_ids.get(&key) {
-                            let content = serde_json::to_string(&parsed).unwrap_or_default();
-                            let _ = sqlx::query("UPDATE agent_messages SET content = ? WHERE id = ?")
-                                .bind(&content)
-                                .bind(row_id)
-                                .execute(&self.write_pool)
-                                .await;
-                        }
-                    }
-                }
-            },
+            RuntimeStreamEvent::ContentBlockStart { index, block } => {
+                let current_model = self.current_models.get(&runtime_key).cloned();
+                self.persist_content_block_start(
+                    session_id,
+                    &runtime_key,
+                    *index,
+                    block,
+                    ptuid,
+                    current_model.as_deref(),
+                )
+                .await
+            }
+            RuntimeStreamEvent::ContentBlockDelta { index, delta } => {
+                self.persist_content_block_delta(
+                    session_id,
+                    &runtime_key,
+                    *index,
+                    delta,
+                    ptuid,
+                )
+                .await
+            }
             RuntimeStreamEvent::ContentBlockStop { index } => {
-                let key = (runtime_key.clone(), *index);
-                if let Some(buffer) = self.pending_tool_inputs.remove(&key) {
-                    if !buffer.accumulated.is_empty() {
-                        if let Some(&row_id) = self.pending_tool_row_ids.get(&key) {
-                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&buffer.accumulated) {
-                                // A trailing `AssistantMessage` may have already
-                                // reconciled the row with the real tool input —
-                                // writing an empty `{}` back here would clobber it.
-                                let is_trivial_object = parsed
-                                    .as_object()
-                                    .map_or(false, |obj| obj.is_empty());
-                                if !is_trivial_object {
-                                    let content = serde_json::to_string(&parsed).unwrap_or_default();
-                                    let _ = sqlx::query(
-                                        "UPDATE agent_messages SET content = ? WHERE id = ?",
-                                    )
-                                    .bind(&content)
-                                    .bind(row_id)
-                                    .execute(&self.write_pool)
-                                    .await;
-                                }
-                            }
-                        }
-                    }
-                }
-                self.pending_tool_row_ids.remove(&key);
+                self.persist_content_block_stop(&runtime_key, *index).await;
+                None
             }
-            RuntimeStreamEvent::Other => {}
+            RuntimeStreamEvent::Other => None,
         }
     }
 
@@ -561,6 +446,50 @@ mod session_events_tests {
                 .expect("valid json"),
             serde_json::json!({ "file_path": "/tmp/test" })
         );
+    }
+
+    #[tokio::test]
+    async fn text_deltas_append_to_the_started_row() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        let start_ref = persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockStart {
+                    index: 0,
+                    block: RuntimeContentBlock::Text {
+                        text: "Hel".to_string(),
+                    },
+                },
+            ))
+            .await
+            .expect("start row id");
+        let delta_ref = persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::ContentBlockDelta {
+                    index: 0,
+                    delta: RuntimeContentDelta::Text {
+                        text: "lo".to_string(),
+                    },
+                },
+            ))
+            .await
+            .expect("delta row id");
+
+        assert_eq!(start_ref.id, delta_ref.id);
+
+        let rows = sqlx::query("SELECT content, message_type FROM agent_messages ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .expect("fetch text rows");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].get::<String, _>("message_type"), "text");
+        assert_eq!(rows[0].get::<String, _>("content"), "Hello");
     }
 
     #[tokio::test]

@@ -10,7 +10,9 @@ use crate::domain::agents::adapter::{RuntimeEvent, RuntimeSessionHandle};
 use crate::domain::features::repository as repo;
 use crate::domain::workflow::agent_errors::persist_and_send_agent_error;
 use crate::domain::workflow::engine::{to_value, AgentSlot, WsSender};
-use crate::domain::ws_session::persistence::WsSessionPersistence;
+use crate::domain::ws_session::persistence::{
+    raw_event_with_agent_message_id, PersistedMessageRef, WsSessionPersistence,
+};
 use crate::domain::ws_session::protocol::*;
 
 /// Check if the expected MCP server is connected. Returns false if not connected
@@ -56,6 +58,7 @@ pub async fn build_stream_envelope(
     completed_ok: &mut bool,
     agent_done_called: &mut bool,
     write_pool: &SqlitePool,
+    persisted_message: Option<PersistedMessageRef>,
 ) -> WsEnvelope {
     if runtime_event.is_result() {
         debug!(slot = %slot, agent_done_called = *agent_done_called, "received SDK Result message");
@@ -73,7 +76,7 @@ pub async fn build_stream_envelope(
             }),
         )
     } else {
-        let block = runtime_event.raw_json().clone();
+        let block = raw_event_with_agent_message_id(runtime_event.raw_json(), persisted_message);
         WsEnvelope::new(
             "workflow",
             "agent_stream",

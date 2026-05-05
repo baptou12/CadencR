@@ -1,6 +1,11 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { normalizeToolName } from "@/lib/tool-adapter";
 import { createToolUseBlock } from "./ws-message-processing-tool-blocks";
+import { processSystemMessage } from "./ws-message-processing-system";
+import { processUserMessage } from "./ws-message-processing-user";
+import { nextSyntheticBlockId } from "./ws-message-processing-utils";
+
+export { isRecord } from "./ws-message-processing-utils";
 
 interface StreamContext {
   model: string | null;
@@ -90,44 +95,6 @@ export function processSdkMessage(
   }
 }
 
-/**
- * Log every system message for runtime tracing; only `compact_boundary`
- * currently produces a block and a `wasCompacted` signal.
- */
-function processSystemMessage(
-  msg: Record<string, unknown>,
-  state: StreamingState,
-  signals: ParserSignals,
-): BlockMutation[] {
-  const subtype = typeof msg.subtype === "string" ? msg.subtype : "(unknown)";
-  console.info(`[AGENT-SYSTEM] ${subtype}`, msg);
-
-  if (subtype !== "compact_boundary") return [];
-
-  signals.compactBoundaryObserved = true;
-
-  const metadata = isRecord(msg.compact_metadata) ? msg.compact_metadata : undefined;
-  signals.compactBoundaryTrigger = typeof metadata?.trigger === "string" ? metadata.trigger : null;
-  const content = metadata ? JSON.stringify(metadata) : "";
-
-  state.counter += 1;
-  return [
-    {
-      action: "append",
-      block: {
-        id: `ws-compact-${state.counter}`,
-        type: "compact_divider",
-        content,
-        createdAt: new Date().toISOString(),
-      },
-    },
-  ];
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === "object";
-}
-
 function processStreamEvent(msg: Record<string, unknown>, state: StreamingState): BlockMutation[] {
   const event = msg.event as Record<string, unknown> | undefined;
   if (!event) return [];
@@ -152,9 +119,15 @@ function processStreamEvent(msg: Record<string, unknown>, state: StreamingState)
       return [];
     }
     case "content_block_start":
-      return processContentBlockStart(event, state, stream, parentToolUseId);
+      return processContentBlockStart(
+        event,
+        state,
+        stream,
+        parentToolUseId,
+        blockIdFromAgentMessage(msg),
+      );
     case "content_block_delta":
-      return processContentBlockDelta(event, stream);
+      return processContentBlockDelta(event, stream, blockIdFromAgentMessage(msg));
     default:
       return [];
   }
@@ -165,13 +138,13 @@ function processContentBlockStart(
   state: StreamingState,
   stream: StreamContext,
   parentToolUseId: string | null,
+  persistedBlockId: string | null,
 ): BlockMutation[] {
   const index = event.index as number;
   const contentBlock = event.content_block as Record<string, unknown> | undefined;
   if (!contentBlock) return [];
 
-  state.counter += 1;
-  const blockId = `ws-${state.counter}`;
+  const blockId = persistedBlockId ?? nextSyntheticBlockId(state);
   stream.contentBlockIds.set(index, blockId);
 
   switch (contentBlock.type as string) {
@@ -196,7 +169,7 @@ function processContentBlockStart(
           block: {
             id: blockId,
             type: "thinking",
-            content: "",
+            content: typeof contentBlock.thinking === "string" ? contentBlock.thinking : "",
             parentToolUseId,
             createdAt: new Date().toISOString(),
           },
@@ -209,7 +182,7 @@ function processContentBlockStart(
           block: {
             id: blockId,
             type: "text",
-            content: "",
+            content: typeof contentBlock.text === "string" ? contentBlock.text : "",
             parentToolUseId,
             model: stream.model ?? undefined,
             createdAt: new Date().toISOString(),
@@ -224,13 +197,17 @@ function processContentBlockStart(
 function processContentBlockDelta(
   event: Record<string, unknown>,
   stream: StreamContext,
+  persistedBlockId: string | null,
 ): BlockMutation[] {
   const index = event.index as number;
   const delta = event.delta as Record<string, unknown> | undefined;
   if (!delta) return [];
 
-  const blockId = stream.contentBlockIds.get(index);
+  const blockId = persistedBlockId ?? stream.contentBlockIds.get(index);
   if (!blockId) return [];
+  if (persistedBlockId) {
+    stream.contentBlockIds.set(index, persistedBlockId);
+  }
 
   switch (delta.type as string) {
     case "text_delta":
@@ -258,6 +235,17 @@ function processContentBlockDelta(
     default:
       return [];
   }
+}
+
+function blockIdFromAgentMessage(msg: Record<string, unknown>): string | null {
+  const rawId = msg.agent_message_id;
+  if (typeof rawId === "number" && Number.isSafeInteger(rawId)) {
+    return `msg-${rawId}`;
+  }
+  if (typeof rawId === "string" && /^\d+$/.test(rawId)) {
+    return `msg-${rawId}`;
+  }
+  return null;
 }
 
 function processAssistantMessage(
@@ -342,8 +330,7 @@ function createAssistantMutation(
   parentToolUseId: string | null,
   createdAt: string,
 ): BlockMutation | null {
-  state.counter += 1;
-  const blockId = `ws-${state.counter}`;
+  const blockId = nextSyntheticBlockId(state);
 
   switch (contentBlock.type as string) {
     case "text":
@@ -380,62 +367,6 @@ function createAssistantMutation(
     default:
       return null;
   }
-}
-
-function processUserMessage(
-  msg: Record<string, unknown>,
-  state: StreamingState,
-  signals: ParserSignals,
-): BlockMutation[] {
-  const message = msg.message as Record<string, unknown> | undefined;
-  const contentArr = message?.content as Array<Record<string, unknown>> | undefined;
-  if (!contentArr || !Array.isArray(contentArr)) return [];
-
-  const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
-  const results: BlockMutation[] = [];
-
-  for (const item of contentArr) {
-    if (item.type === "compaction") {
-      signals.compactBoundaryObserved = true;
-      state.counter += 1;
-      results.push({
-        action: "append",
-        block: {
-          id: `ws-compact-${state.counter}`,
-          type: "compact_divider",
-          content: "",
-          createdAt: new Date().toISOString(),
-        },
-      });
-      continue;
-    }
-
-    if (item.type !== "tool_result") continue;
-
-    const toolUseId = item.tool_use_id as string;
-    const matchingBlock = state.toolUseIdToBlock.get(toolUseId);
-    const sourceToolName = matchingBlock?.toolName ?? "unknown";
-    const isSubagentResult = sourceToolName === "Agent" || sourceToolName === "Task";
-
-    state.counter += 1;
-    results.push({
-      action: "append",
-      block: {
-        id: `ws-${state.counter}`,
-        type: "tool_result",
-        content:
-          typeof item.content === "string" ? item.content : JSON.stringify(item.content ?? ""),
-        isError: item.is_error === true,
-        sourceToolName,
-        toolUseId,
-        parentToolUseId: isSubagentResult
-          ? toolUseId
-          : (matchingBlock?.parentToolUseId ?? parentToolUseId),
-        createdAt: new Date().toISOString(),
-      },
-    });
-  }
-  return results;
 }
 
 function getStreamSessionId(msg: Record<string, unknown>): StreamSessionId {

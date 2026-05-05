@@ -5,7 +5,9 @@ use std::sync::Arc;
 use axum::extract::ws::Message;
 use serde_json::json;
 
-use super::super::persistence::{SessionRow, WsSessionPersistence};
+use super::super::persistence::{
+    raw_event_with_agent_message_id, PersistedMessageRef, SessionRow, WsSessionPersistence,
+};
 use super::super::protocol::*;
 use super::session_compact_opencode_events::summary_stream_events;
 use super::session_compact_opencode_poll::{await_compaction_messages, summary_message_candidate};
@@ -211,12 +213,12 @@ async fn persist_and_forward_compaction(
         Some(db_session_id),
     );
     let boundary = compact_boundary_event(runtime_session_id);
-    persistence.persist_runtime_event(&boundary).await;
-    send_runtime_event(sender, &boundary);
+    let persisted_boundary = persistence.persist_runtime_event(&boundary).await;
+    send_runtime_event(sender, &boundary, persisted_boundary);
 
     for event in summary_stream_events(summary) {
-        persistence.persist_runtime_event(&event).await;
-        send_runtime_event(sender, &event);
+        let persisted_event = persistence.persist_runtime_event(&event).await;
+        send_runtime_event(sender, &event, persisted_event);
     }
 
     Ok(())
@@ -245,12 +247,19 @@ fn compact_boundary_event(runtime_session_id: &str) -> RuntimeEvent {
     )
 }
 
-fn send_runtime_event(sender: &WsSender, runtime_event: &RuntimeEvent) {
+fn send_runtime_event(
+    sender: &WsSender,
+    runtime_event: &RuntimeEvent,
+    persisted_message: Option<PersistedMessageRef>,
+) {
     let envelope = WsEnvelope::new(
         "session",
         "message",
         serde_json::to_value(SessionMessagePayload {
-            blocks: vec![runtime_event.raw_json().clone()],
+            blocks: vec![raw_event_with_agent_message_id(
+                runtime_event.raw_json(),
+                persisted_message,
+            )],
         })
         .unwrap(),
     );
