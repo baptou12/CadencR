@@ -167,6 +167,7 @@ pub struct UnifiedAgentEntry {
     pub project: UnifiedAgentProject,
     pub feature: UnifiedAgentFeature,
     pub session: SessionState,
+    pub agent_created_at: String,
     pub last_activity_at: Option<String>,
     pub is_pinned: bool,
 }

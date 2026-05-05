@@ -9,7 +9,9 @@ const FILTER_KEYS = {
   freshMinutes: "unified_agents_fresh_minutes",
   agentsPerRow: "unified_agents_per_row",
   projectId: "unified_agents_project_id",
+  projectIds: "unified_agents_project_ids",
   query: "unified_agents_query",
+  sortOrder: "unified_agents_sort_order",
 } as const;
 
 describe("UnifiedAgentsFilterState", () => {
@@ -23,29 +25,39 @@ describe("UnifiedAgentsFilterState", () => {
     window.localStorage.setItem(FILTER_KEYS.agentsPerRow, "not-a-number");
     window.localStorage.setItem(FILTER_KEYS.projectId, "-7");
     window.localStorage.setItem(FILTER_KEYS.query, "needle");
+    window.localStorage.setItem(FILTER_KEYS.sortOrder, "message_date");
 
     expect(readUnifiedAgentsFilters()).toEqual({
       mode: "recent",
       freshMinutes: 5,
       agentsPerRow: 3,
-      projectId: null,
+      projectIds: [],
       query: "needle",
+      sortOrder: "created_desc",
     });
   });
 
-  it("clamps persisted bounded numeric filters", () => {
+  it("clamps layout and preserves free freshness values", () => {
     window.localStorage.setItem(FILTER_KEYS.mode, "all");
     window.localStorage.setItem(FILTER_KEYS.freshMinutes, "999");
     window.localStorage.setItem(FILTER_KEYS.agentsPerRow, "0");
-    window.localStorage.setItem(FILTER_KEYS.projectId, "42");
+    window.localStorage.setItem(FILTER_KEYS.projectIds, "42,43,42");
+    window.localStorage.setItem(FILTER_KEYS.sortOrder, "created_asc");
 
     expect(readUnifiedAgentsFilters()).toEqual({
       mode: "all",
-      freshMinutes: 240,
+      freshMinutes: 999,
       agentsPerRow: 1,
-      projectId: 42,
+      projectIds: [42, 43],
       query: "",
+      sortOrder: "created_asc",
     });
+  });
+
+  it("reads persisted activity sort options", () => {
+    window.localStorage.setItem(FILTER_KEYS.sortOrder, "activity_asc");
+
+    expect(readUnifiedAgentsFilters().sortOrder).toBe("activity_asc");
   });
 
   it("never requests archived agents from the unified agents API", () => {

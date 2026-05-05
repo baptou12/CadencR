@@ -23,6 +23,7 @@ struct UnifiedAgentCandidate {
     feature_status: String,
     feature_created_at: String,
     session_id: i64,
+    agent_created_at: String,
     last_activity_at: Option<String>,
     is_pinned: bool,
 }
@@ -79,6 +80,7 @@ pub async fn list_unified_agents(
                 created_at: candidate.feature_created_at,
             },
             session,
+            agent_created_at: candidate.agent_created_at,
             last_activity_at: candidate.last_activity_at,
             is_pinned: candidate.is_pinned,
         });
@@ -102,6 +104,7 @@ async fn load_candidates(
                f.status AS feature_status,
                f.created_at AS feature_created_at,
                s.id AS session_id,
+               strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(s.started_at, f.created_at)) AS agent_created_at,
                strftime(
                    '%Y-%m-%dT%H:%M:%SZ',
                    COALESCE(MAX(am.created_at), s.started_at, f.created_at)
@@ -134,7 +137,7 @@ async fn load_candidates(
                 OR datetime(COALESCE(MAX(am.created_at), s.started_at, f.created_at)) >= datetime('now', ?)"#,
         );
     }
-    sql.push_str(" ORDER BY last_activity_at DESC, s.id DESC");
+    sql.push_str(" ORDER BY agent_created_at DESC, s.id DESC");
 
     let mut q = sqlx::query_as::<_, UnifiedAgentCandidate>(&sql);
     if let Some(project_id) = query.project_id {
@@ -251,20 +254,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recent_mode_includes_running_without_recent_messages() {
+    async fn recent_mode_includes_running_and_orders_by_creation() {
         let pool = setup_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/p')")
             .execute(&pool)
             .await
             .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'old', 'draft', datetime('now', '-1 day'), 'ws-feature'), (2, 1, 'new', 'draft', datetime('now', '-12 hours'), 'ws-feature')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (10, 1, 'plan', 'running', datetime('now', '-1 day')), (20, 2, 'plan', 'running', datetime('now', '-12 hours'))")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'f', 'draft', datetime('now', '-1 day'), 'ws-feature')",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (10, 1, 'plan', 'running', datetime('now', '-1 day'))",
+            "INSERT INTO agent_messages (session_id, role, content, message_type, created_at) VALUES (10, 'assistant', 'fresh', 'text', datetime('now'))",
         )
         .execute(&pool)
         .await
@@ -283,8 +288,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(result.agents.len(), 1);
-        assert_eq!(result.agents[0].session.session_db_id, 10);
+        assert_eq!(result.agents.len(), 2);
+        assert_eq!(result.agents[0].session.session_db_id, 20);
+        assert_eq!(result.agents[1].session.session_db_id, 10);
+        assert!(result.agents[1].agent_created_at.ends_with('Z'));
         assert!(result.agents[0]
             .last_activity_at
             .as_deref()

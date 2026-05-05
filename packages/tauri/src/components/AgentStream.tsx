@@ -156,9 +156,10 @@ export const AgentStream = memo(function AgentStream({
     [isStreaming, basePath, toolResultMap],
   );
 
+  const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
   const computeItemKey = useCallback(
-    (_index: number, block: AgentBlockData): string => block.id,
-    [],
+    (index: number, block: AgentBlockData): string => itemKeys[index] ?? block.id,
+    [itemKeys],
   );
 
   // Read our own auto-scroll ref instead of Virtuoso's `isAtBottom` (which
@@ -224,3 +225,17 @@ export const AgentStream = memo(function AgentStream({
     />
   );
 });
+
+function buildDisplayBlockKeys(blocks: AgentBlockData[]): string[] {
+  const totalById = new Map<string, number>();
+  for (const block of blocks) totalById.set(block.id, (totalById.get(block.id) ?? 0) + 1);
+
+  const seenById = new Map<string, number>();
+  return blocks.map((block: AgentBlockData): string => {
+    const total = totalById.get(block.id) ?? 0;
+    if (total <= 1) return block.id;
+    const seen = seenById.get(block.id) ?? 0;
+    seenById.set(block.id, seen + 1);
+    return `${block.id}#${seen}`;
+  });
+}

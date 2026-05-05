@@ -1,20 +1,22 @@
 import { useCallback, useMemo } from "react";
 import { useGetUnifiedAgents, type UnifiedAgentEntry } from "@/api/generated";
-import { toUnifiedAgentsQueryParams } from "@/components/UnifiedAgentsFilterState";
+import {
+  toUnifiedAgentsQueryParams,
+  type UnifiedAgentsSortOrder,
+} from "@/components/UnifiedAgentsFilterState";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 import { parseUTCDateTime } from "@/lib/date-utils";
 
 interface UseUnifiedAgentsDataArgs {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
-  projectId: number | null;
+  projectIds: number[];
   query: string;
+  sortOrder: UnifiedAgentsSortOrder;
 }
 
 export interface UnifiedAgentsData {
   agents: UnifiedAgentEntry[];
-  countedAgents: UnifiedAgentEntry[];
-  projectCounts: Record<number, number>;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
@@ -22,11 +24,19 @@ export interface UnifiedAgentsData {
   refresh: () => void;
 }
 
+export const UNIFIED_AGENTS_QUERY_OPTIONS = {
+  staleTime: Infinity,
+  refetchOnMount: false,
+  refetchOnReconnect: false,
+  refetchOnWindowFocus: false,
+} as const;
+
 export function useUnifiedAgentsData({
   mode,
   freshMinutes,
-  projectId,
+  projectIds,
   query,
+  sortOrder,
 }: UseUnifiedAgentsDataArgs): UnifiedAgentsData {
   const baseQueryParams = useMemo(
     () => toUnifiedAgentsQueryParams({ mode, freshMinutes }, 100),
@@ -39,85 +49,46 @@ export function useUnifiedAgentsData({
     isError,
     error,
     refetch: refetchAgents,
-  } = useGetUnifiedAgents(
-    { ...baseQueryParams, project_id: projectId ?? undefined },
-    { query: { refetchInterval: mode === "recent" ? 2_000 : 10_000, staleTime: 0 } },
-  );
-  const {
-    data: countsData,
-    isFetching: countsFetching,
-    refetch: refetchCounts,
-  } = useGetUnifiedAgents(
-    { ...baseQueryParams, message_limit: 1 },
-    {
-      query: {
-        enabled: projectId !== null,
-        refetchInterval: mode === "recent" ? 2_000 : 10_000,
-        staleTime: 0,
-      },
-    },
-  );
+  } = useGetUnifiedAgents(baseQueryParams, { query: UNIFIED_AGENTS_QUERY_OPTIONS });
   const queryText = query.trim().toLowerCase();
   const rawAgents = agentsData?.agents ?? [];
-  const countAgents = projectId === null ? rawAgents : (countsData?.agents ?? []);
   const agents = useMemo(
-    () => orderUnifiedAgentsForDisplay(rawAgents, { mode, freshMinutes, projectId, queryText }),
-    [freshMinutes, mode, projectId, queryText, rawAgents],
-  );
-  const countedAgents = useMemo(
     () =>
-      getUnifiedAgentsMatchingFilters(countAgents, {
+      orderUnifiedAgentsForDisplay(rawAgents, {
         mode,
         freshMinutes,
-        projectId: null,
+        projectIds,
         queryText,
+        sortOrder,
       }),
-    [countAgents, freshMinutes, mode, queryText],
+    [freshMinutes, mode, projectIds, queryText, rawAgents, sortOrder],
   );
-  const projectCounts = useMemo(() => countByProject(countedAgents), [countedAgents]);
   const refresh = useCallback((): void => {
     void refetchAgents();
-    if (projectId !== null) void refetchCounts();
-  }, [projectId, refetchAgents, refetchCounts]);
+  }, [refetchAgents]);
 
   return useMemo<UnifiedAgentsData>(
     () => ({
       agents,
-      countedAgents,
-      projectCounts,
       isLoading,
-      isFetching: agentsFetching || countsFetching,
+      isFetching: agentsFetching,
       isError,
       errorMessage: error instanceof Error ? error.message : "Failed to load agents",
       refresh,
     }),
-    [
-      agents,
-      agentsFetching,
-      countedAgents,
-      countsFetching,
-      error,
-      isError,
-      isLoading,
-      projectCounts,
-      refresh,
-    ],
+    [agents, agentsFetching, error, isError, isLoading, refresh],
   );
 }
 
-export function filterUnifiedAgents(
-  entries: UnifiedAgentEntry[],
-  query: string,
-): UnifiedAgentEntry[] {
-  if (!query) return entries;
-  return entries.filter((entry) => matchesAgentQuery(entry, query));
-}
-
-export interface UnifiedAgentFilterArgs {
+export interface UnifiedAgentMatchFilters {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
-  projectId: number | null;
+  projectIds: number[];
   queryText: string;
+}
+
+export interface UnifiedAgentFilterArgs extends UnifiedAgentMatchFilters {
+  sortOrder: UnifiedAgentsSortOrder;
 }
 
 export function orderUnifiedAgentsForDisplay(
@@ -125,28 +96,36 @@ export function orderUnifiedAgentsForDisplay(
   filters: UnifiedAgentFilterArgs,
 ): UnifiedAgentEntry[] {
   if (hasNoActiveFilter(filters)) {
-    return pinFirst(entries.filter(isVisibleAgent));
+    return pinFirst(entries.filter(isVisibleAgent), filters.sortOrder);
   }
   const { matching, pinnedExtras } = splitAgentsByFilterVisibility(entries, filters);
-  const orderedMatches = filters.queryText.length === 0 ? pinFirst(matching) : matching;
-  return [...orderedMatches, ...pinnedExtras];
+  const orderedMatches =
+    filters.queryText.length === 0
+      ? pinFirst(matching, filters.sortOrder)
+      : sortAgentsForDisplay(matching, filters.sortOrder);
+  return [...orderedMatches, ...sortAgentsForDisplay(pinnedExtras, filters.sortOrder)];
 }
 
 export function getUnifiedAgentsMatchingFilters(
   entries: UnifiedAgentEntry[],
-  filters: UnifiedAgentFilterArgs,
+  filters: UnifiedAgentMatchFilters,
 ): UnifiedAgentEntry[] {
   const { matching, pinnedExtras } = splitAgentsByFilterVisibility(entries, filters);
   return [...matching, ...pinnedExtras];
 }
 
-function hasNoActiveFilter(filters: UnifiedAgentFilterArgs): boolean {
-  return filters.mode === "all" && filters.projectId === null && filters.queryText.length === 0;
+function hasNoActiveFilter(filters: UnifiedAgentMatchFilters): boolean {
+  return (
+    filters.mode === "all" && filters.projectIds.length === 0 && filters.queryText.length === 0
+  );
 }
 
-function matchesCurrentFilters(entry: UnifiedAgentEntry, filters: UnifiedAgentFilterArgs): boolean {
+function matchesCurrentFilters(
+  entry: UnifiedAgentEntry,
+  filters: UnifiedAgentMatchFilters,
+): boolean {
   if (!isVisibleAgent(entry)) return false;
-  if (filters.projectId !== null && entry.project.id !== filters.projectId) return false;
+  if (filters.projectIds.length > 0 && !filters.projectIds.includes(entry.project.id)) return false;
   if (filters.queryText && !matchesAgentQuery(entry, filters.queryText)) return false;
   if (filters.mode === "recent") return isFreshOrActive(entry, filters.freshMinutes);
   return true;
@@ -154,16 +133,15 @@ function matchesCurrentFilters(entry: UnifiedAgentEntry, filters: UnifiedAgentFi
 
 function splitAgentsByFilterVisibility(
   entries: UnifiedAgentEntry[],
-  filters: UnifiedAgentFilterArgs,
+  filters: UnifiedAgentMatchFilters,
 ): { matching: UnifiedAgentEntry[]; pinnedExtras: UnifiedAgentEntry[] } {
-  const matching = entries.filter((entry) => matchesCurrentFilters(entry, filters));
-  const matchingIds = new Set(matching.map(agentKey));
-  const pinnedExtras = entries.filter((entry) => isPinnedExtra(entry, matchingIds));
+  const matching: UnifiedAgentEntry[] = [];
+  const pinnedExtras: UnifiedAgentEntry[] = [];
+  for (const entry of entries) {
+    if (matchesCurrentFilters(entry, filters)) matching.push(entry);
+    else if (entry.is_pinned && isVisibleAgent(entry)) pinnedExtras.push(entry);
+  }
   return { matching, pinnedExtras };
-}
-
-function isPinnedExtra(entry: UnifiedAgentEntry, matchingIds: Set<string>): boolean {
-  return entry.is_pinned && isVisibleAgent(entry) && !matchingIds.has(agentKey(entry));
 }
 
 function isVisibleAgent(entry: UnifiedAgentEntry): boolean {
@@ -187,18 +165,70 @@ function isFreshOrActive(entry: UnifiedAgentEntry, freshMinutes: number): boolea
   return Date.now() - activityTime <= Math.max(1, freshMinutes) * 60_000;
 }
 
-function pinFirst(entries: UnifiedAgentEntry[]): UnifiedAgentEntry[] {
+function pinFirst(
+  entries: UnifiedAgentEntry[],
+  sortOrder: UnifiedAgentsSortOrder,
+): UnifiedAgentEntry[] {
   const pinned: UnifiedAgentEntry[] = [];
   const unpinned: UnifiedAgentEntry[] = [];
-  for (const entry of entries) {
+  for (const entry of sortAgentsForDisplay(entries, sortOrder)) {
     if (entry.is_pinned) pinned.push(entry);
     else unpinned.push(entry);
   }
   return [...pinned, ...unpinned];
 }
 
-function agentKey(entry: UnifiedAgentEntry): string {
-  return String(entry.session.sessionDbId);
+interface SortableAgentEntry {
+  entry: UnifiedAgentEntry;
+  createdTime: number;
+  activityTime: number;
+}
+
+function sortAgentsForDisplay(
+  entries: UnifiedAgentEntry[],
+  sortOrder: UnifiedAgentsSortOrder,
+): UnifiedAgentEntry[] {
+  return entries
+    .map(toSortableAgentEntry)
+    .sort((a, b) => compareSortableAgents(a, b, sortOrder))
+    .map((item: SortableAgentEntry): UnifiedAgentEntry => item.entry);
+}
+
+function toSortableAgentEntry(entry: UnifiedAgentEntry): SortableAgentEntry {
+  const createdTime = agentCreatedTime(entry);
+  return {
+    entry,
+    createdTime,
+    activityTime: agentActivityTime(entry, createdTime),
+  };
+}
+
+function compareSortableAgents(
+  a: SortableAgentEntry,
+  b: SortableAgentEntry,
+  sortOrder: UnifiedAgentsSortOrder,
+): number {
+  const direction = sortOrder.endsWith("_asc") ? 1 : -1;
+  const timeDiff = sortTime(a, sortOrder) - sortTime(b, sortOrder);
+  if (timeDiff !== 0) return timeDiff * direction;
+  return (a.entry.session.sessionDbId - b.entry.session.sessionDbId) * direction;
+}
+
+function sortTime(entry: SortableAgentEntry, sortOrder: UnifiedAgentsSortOrder): number {
+  return sortOrder === "activity_asc" || sortOrder === "activity_desc"
+    ? entry.activityTime
+    : entry.createdTime;
+}
+
+function agentActivityTime(entry: UnifiedAgentEntry, fallbackTime: number): number {
+  if (!entry.last_activity_at) return fallbackTime;
+  const time = parseUTCDateTime(entry.last_activity_at).getTime();
+  return Number.isFinite(time) ? time : fallbackTime;
+}
+
+function agentCreatedTime(entry: UnifiedAgentEntry): number {
+  const time = parseUTCDateTime(entry.agent_created_at).getTime();
+  return Number.isFinite(time) ? time : 0;
 }
 
 export function countRunningAgents(entries: UnifiedAgentEntry[]): number {
@@ -206,21 +236,5 @@ export function countRunningAgents(entries: UnifiedAgentEntry[]): number {
 }
 
 function matchesAgentQuery(entry: UnifiedAgentEntry, query: string): boolean {
-  return [
-    entry.feature.title,
-    entry.project.name,
-    entry.session.agentType,
-    entry.session.phaseTitle ?? "",
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(query);
-}
-
-function countByProject(entries: UnifiedAgentEntry[]): Record<number, number> {
-  const counts: Record<number, number> = {};
-  for (const entry of entries) {
-    counts[entry.project.id] = (counts[entry.project.id] ?? 0) + 1;
-  }
-  return counts;
+  return entry.feature.title.toLowerCase().includes(query);
 }

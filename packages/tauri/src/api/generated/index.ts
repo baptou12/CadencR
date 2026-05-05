@@ -1394,6 +1394,7 @@ export interface UncommittedFile {
 export type UnifiedAgentEntryLastActivityAt = string | null;
 
 export interface UnifiedAgentEntry {
+  agent_created_at: string;
   feature: UnifiedAgentFeature;
   is_pinned: boolean;
   last_activity_at?: UnifiedAgentEntryLastActivityAt;

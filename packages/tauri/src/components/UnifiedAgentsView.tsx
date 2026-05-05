@@ -1,20 +1,24 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
+  type Ref,
   type RefObject,
 } from "react";
 import { Loader2Icon } from "lucide-react";
 import { useListProjects, type Project } from "@/api/generated";
-import {
-  UnifiedAgentsFilters,
-  type UnifiedAgentsFilterMode,
-} from "@/components/UnifiedAgentsFilters";
+import { UnifiedAgentsFilters } from "@/components/UnifiedAgentsFilters";
 import { UnifiedAgentsGrid } from "@/components/UnifiedAgentsGrid";
-import { useUnifiedAgentsFilterValue } from "@/components/UnifiedAgentsFilterState";
+import { useUnifiedAgentsFilters } from "@/components/UnifiedAgentsFilterState";
+import {
+  parseUnifiedAgentsFilterText,
+  serializeUnifiedAgentsFilterText,
+} from "@/components/UnifiedAgentsFilterLanguage";
+import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
 import {
   consumeUnifiedAgentsSearchFocusPending,
   FOCUS_UNIFIED_AGENTS_SEARCH_EVENT,
@@ -27,110 +31,67 @@ import {
 } from "@/components/UnifiedAgentsViewData";
 
 export function UnifiedAgentsView(): ReactElement {
-  const [mode, setMode] = useUnifiedAgentsFilterValue("mode");
-  const [freshMinutes, setFreshMinutes] = useUnifiedAgentsFilterValue("freshMinutes");
-  const [agentsPerRow, setAgentsPerRow] = useUnifiedAgentsFilterValue("agentsPerRow");
-  const [projectId, setProjectId] = useUnifiedAgentsFilterValue("projectId");
-  const [query, setQuery] = useUnifiedAgentsFilterValue("query");
-  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
-  const [focusVersion, setFocusVersion] = useState(0);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [filters, setFilters] = useUnifiedAgentsFilters();
+  const searchInputRef = useRef<UnifiedAgentsFilterInputHandle>(null);
   const projectsQuery = useListProjects();
-  const data = useUnifiedAgentsData({ mode, freshMinutes, projectId, query });
-  const columns = Math.max(1, Math.min(6, agentsPerRow));
-  const activeIndex = resolveActiveIndex(data.agents, activeSessionId);
-  const activeAgent = data.agents[activeIndex] ?? null;
+  const projects = projectsQuery.data ?? [];
+  const data = useUnifiedAgentsData(filters);
+  const serializedFilterText = useMemo(
+    () => serializeUnifiedAgentsFilterText(filters, projects),
+    [filters, projects],
+  );
+  const [filterText, setFilterText] = useState(serializedFilterText);
+  const filterTextEditedRef = useRef(false);
+  useEffect((): void => {
+    if (filterTextEditedRef.current) return;
+    setFilterText(serializedFilterText);
+  }, [serializedFilterText]);
+  const columns = Math.max(1, Math.min(6, filters.agentsPerRow));
+  const { activeIndex, activeAgent, setActiveSessionId } = useActiveAgent(data.agents);
   const activePinControls = useUnifiedAgentPinControls(activeAgent, { showProgressToast: true });
-
-  useEffect(() => {
-    if (data.agents.length === 0) {
-      setActiveSessionId(null);
-      return;
-    }
-    if (
-      activeSessionId !== null &&
-      data.agents.some((entry) => entry.session.sessionDbId === activeSessionId)
-    ) {
-      return;
-    }
-    setActiveSessionId(data.agents[0].session.sessionDbId);
-  }, [activeSessionId, data.agents]);
-
-  const focusSearchInput = useCallback((): void => {
-    searchInputRef.current?.focus();
-    searchInputRef.current?.select();
+  const { focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate } =
+    useUnifiedAgentsKeyboard({
+      activeIndex,
+      activePinControls,
+      agents: data.agents,
+      columns,
+      searchInputRef,
+      setActiveSessionId,
+    });
+  const [searchEnterFocusRequest, setSearchEnterFocusRequest] = useState(0);
+  const pendingSearchEnterFocusRef = useRef(false);
+  const commitFilterText = useCallback(
+    (nextText: string): void => {
+      filterTextEditedRef.current = true;
+      setFilterText(nextText);
+      const parsed = parseUnifiedAgentsFilterText(nextText, projects);
+      setFilters(parsed);
+    },
+    [projects, setFilters],
+  );
+  const requestFirstMatchedAgentFocus = useCallback((): void => {
+    pendingSearchEnterFocusRef.current = true;
+    setSearchEnterFocusRequest((current) => current + 1);
   }, []);
 
-  useEffect(() => {
-    const handleFocusSearch = (): void => focusSearchInput();
-    window.addEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
-    if (consumeUnifiedAgentsSearchFocusPending()) requestAnimationFrame(focusSearchInput);
-    return () => window.removeEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
-  }, [focusSearchInput]);
-
-  const focusFirstMatchedAgent = useCallback((): void => {
-    if (data.agents.length === 0) return;
-    setActiveSessionId(data.agents[0].session.sessionDbId);
-    setFocusVersion((current) => current + 1);
-  }, [data.agents]);
-
-  const handleKeyDownCapture = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>): void => {
-      if (isFindShortcut(event)) {
-        event.preventDefault();
-        event.stopPropagation();
-        focusSearchInput();
-        return;
-      }
-      if (isPinShortcut(event)) {
-        event.preventDefault();
-        event.stopPropagation();
-        activePinControls.toggle();
-        return;
-      }
-      if (!event.metaKey || !event.altKey || event.shiftKey || event.ctrlKey) return;
-      const direction = directionFromKey(event.key);
-      if (!direction) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const next = nextAgentIndex(activeIndex, direction, data.agents.length, columns);
-      if (next === activeIndex) return;
-      setActiveSessionId(data.agents[next]?.session.sessionDbId ?? null);
-      setFocusVersion((current) => current + 1);
-    },
-    [activeIndex, activePinControls, data.agents, columns, focusSearchInput],
-  );
-
-  const handleActivate = useCallback(
-    (index: number): void => {
-      setActiveSessionId(data.agents[index]?.session.sessionDbId ?? null);
-    },
-    [data.agents],
-  );
+  useEffect((): void => {
+    if (!pendingSearchEnterFocusRef.current) return;
+    pendingSearchEnterFocusRef.current = false;
+    focusFirstMatchedAgent();
+  }, [data.agents, focusFirstMatchedAgent, searchEnterFocusRequest]);
 
   return (
     <div className="flex h-full flex-col bg-background" onKeyDownCapture={handleKeyDownCapture}>
       <UnifiedAgentsHeader
-        mode={mode}
-        freshMinutes={freshMinutes}
-        agentsPerRow={columns}
-        projectId={projectId}
-        projects={projectsQuery.data ?? []}
-        projectsLoading={projectsQuery.isLoading}
+        projects={projects}
         projectsError={projectsQuery.isError ? projectsQuery.error : null}
         agentsCount={data.agents.length}
         runningAgentsCount={countRunningAgents(data.agents)}
-        totalCount={data.countedAgents.length}
-        projectCounts={data.projectCounts}
-        query={query}
+        filterText={filterText}
         searchInputRef={searchInputRef}
         isFetching={data.isFetching}
-        onModeChange={setMode}
-        onFreshMinutesChange={setFreshMinutes}
-        onAgentsPerRowChange={setAgentsPerRow}
-        onProjectIdChange={setProjectId}
-        onQueryChange={setQuery}
-        onSearchEnter={focusFirstMatchedAgent}
+        onFilterTextChange={commitFilterText}
+        onSearchEnter={requestFirstMatchedAgentFocus}
         onRefresh={data.refresh}
       />
 
@@ -142,6 +103,112 @@ export function UnifiedAgentsView(): ReactElement {
         onActivate={handleActivate}
       />
     </div>
+  );
+}
+
+interface ActiveAgentState {
+  activeIndex: number;
+  activeAgent: UnifiedAgentsData["agents"][number] | null;
+  setActiveSessionId: (sessionId: number | null) => void;
+}
+
+function useActiveAgent(agents: UnifiedAgentsData["agents"]): ActiveAgentState {
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
+  const activeIndex = resolveActiveIndex(agents, activeSessionId);
+  const activeAgent = agents[activeIndex] ?? null;
+
+  useEffect(() => {
+    if (agents.length === 0) {
+      setActiveSessionId(null);
+      return;
+    }
+    if (
+      activeSessionId !== null &&
+      agents.some((entry) => entry.session.sessionDbId === activeSessionId)
+    ) {
+      return;
+    }
+    setActiveSessionId(agents[0].session.sessionDbId);
+  }, [activeSessionId, agents]);
+
+  return useMemo(
+    () => ({ activeIndex, activeAgent, setActiveSessionId }),
+    [activeIndex, activeAgent],
+  );
+}
+
+interface UnifiedAgentsKeyboardArgs {
+  agents: UnifiedAgentsData["agents"];
+  columns: number;
+  activeIndex: number;
+  activePinControls: ReturnType<typeof useUnifiedAgentPinControls>;
+  searchInputRef: RefObject<UnifiedAgentsFilterInputHandle | null>;
+  setActiveSessionId: (sessionId: number | null) => void;
+}
+
+interface UnifiedAgentsKeyboardState {
+  focusVersion: number;
+  focusFirstMatchedAgent: () => void;
+  handleKeyDownCapture: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  handleActivate: (index: number) => void;
+}
+
+function useUnifiedAgentsKeyboard({
+  agents,
+  columns,
+  activeIndex,
+  activePinControls,
+  searchInputRef,
+  setActiveSessionId,
+}: UnifiedAgentsKeyboardArgs): UnifiedAgentsKeyboardState {
+  const [focusVersion, setFocusVersion] = useState(0);
+  const focusSearchInput = useCallback((): void => {
+    searchInputRef.current?.focus();
+  }, [searchInputRef]);
+
+  useEffect(() => {
+    const handleFocusSearch = (): void => focusSearchInput();
+    window.addEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
+    if (consumeUnifiedAgentsSearchFocusPending()) requestAnimationFrame(focusSearchInput);
+    return () => window.removeEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
+  }, [focusSearchInput]);
+
+  const focusFirstMatchedAgent = useCallback((): void => {
+    if (agents.length === 0) return;
+    searchInputRef.current?.blur();
+    setActiveSessionId(agents[0].session.sessionDbId);
+    setFocusVersion((current) => current + 1);
+  }, [agents, searchInputRef, setActiveSessionId]);
+
+  const handleKeyDownCapture = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+      if (isPinShortcut(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        activePinControls.toggle();
+        return;
+      }
+      if (!event.metaKey || !event.altKey || event.shiftKey || event.ctrlKey) return;
+      const direction = directionFromKey(event.key);
+      if (!direction) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const next = nextAgentIndex(activeIndex, direction, agents.length, columns);
+      if (next === activeIndex) return;
+      setActiveSessionId(agents[next]?.session.sessionDbId ?? null);
+      setFocusVersion((current) => current + 1);
+    },
+    [activeIndex, activePinControls, agents, columns, focusSearchInput, setActiveSessionId],
+  );
+
+  const handleActivate = useCallback(
+    (index: number): void => setActiveSessionId(agents[index]?.session.sessionDbId ?? null),
+    [agents, setActiveSessionId],
+  );
+
+  return useMemo(
+    () => ({ focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate }),
+    [focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate],
   );
 }
 
@@ -193,73 +260,40 @@ function UnifiedAgentsContent({
 }
 
 interface UnifiedAgentsHeaderProps {
-  mode: UnifiedAgentsFilterMode;
-  freshMinutes: number;
-  agentsPerRow: number;
-  projectId: number | null;
   projects: Project[];
-  projectsLoading: boolean;
   projectsError: unknown;
   agentsCount: number;
   runningAgentsCount: number;
-  totalCount: number;
-  projectCounts: Record<number, number>;
-  query: string;
-  searchInputRef: RefObject<HTMLInputElement | null>;
+  filterText: string;
+  searchInputRef: Ref<UnifiedAgentsFilterInputHandle>;
   isFetching: boolean;
-  onModeChange: (mode: UnifiedAgentsFilterMode) => void;
-  onFreshMinutesChange: (value: number) => void;
-  onAgentsPerRowChange: (value: number) => void;
-  onProjectIdChange: (projectId: number | null) => void;
-  onQueryChange: (query: string) => void;
+  onFilterTextChange: (value: string) => void;
   onSearchEnter: () => void;
   onRefresh: () => void;
 }
 
 function UnifiedAgentsHeader({
-  mode,
-  freshMinutes,
-  agentsPerRow,
-  projectId,
   projects,
-  projectsLoading,
   projectsError,
   agentsCount,
   runningAgentsCount,
-  totalCount,
-  projectCounts,
-  query,
+  filterText,
   searchInputRef,
   isFetching,
-  onModeChange,
-  onFreshMinutesChange,
-  onAgentsPerRowChange,
-  onProjectIdChange,
-  onQueryChange,
+  onFilterTextChange,
   onSearchEnter,
   onRefresh,
 }: UnifiedAgentsHeaderProps): ReactElement {
   return (
     <header className="shrink-0 border-b bg-background px-4 py-3">
       <UnifiedAgentsFilters
-        mode={mode}
-        freshMinutes={freshMinutes}
-        agentsPerRow={agentsPerRow}
-        projectId={projectId}
+        filterText={filterText}
         projects={projects}
-        projectsLoading={projectsLoading}
         agentsCount={agentsCount}
         runningAgentsCount={runningAgentsCount}
-        totalCount={totalCount}
-        projectCounts={projectCounts}
-        query={query}
         searchInputRef={searchInputRef}
         isFetching={isFetching}
-        onModeChange={onModeChange}
-        onFreshMinutesChange={onFreshMinutesChange}
-        onAgentsPerRowChange={onAgentsPerRowChange}
-        onProjectIdChange={onProjectIdChange}
-        onQueryChange={onQueryChange}
+        onFilterTextChange={onFilterTextChange}
         onSearchEnter={onSearchEnter}
         onRefresh={onRefresh}
       />
@@ -280,17 +314,15 @@ function directionFromKey(key: string): "left" | "right" | "up" | "down" | null 
   return null;
 }
 
-function isFindShortcut(event: KeyboardEvent<HTMLDivElement>): boolean {
-  return (
-    event.metaKey &&
-    event.shiftKey &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    event.key.toLowerCase() === "f"
-  );
+interface UnifiedAgentsShortcutEvent {
+  altKey: boolean;
+  ctrlKey: boolean;
+  key: string;
+  metaKey: boolean;
+  shiftKey: boolean;
 }
 
-function isPinShortcut(event: KeyboardEvent<HTMLDivElement>): boolean {
+function isPinShortcut(event: UnifiedAgentsShortcutEvent): boolean {
   return (
     event.metaKey &&
     event.shiftKey &&
