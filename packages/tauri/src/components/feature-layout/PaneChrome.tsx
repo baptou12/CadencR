@@ -169,24 +169,29 @@ function DraggableTabTrigger({
   });
 
   return (
-    <TabsTrigger
+    <div
       ref={setNodeRef}
-      value={tab}
       style={{
         transform: CSS.Translate.toString(transform),
         opacity: isDragging ? 0.4 : undefined,
       }}
-      {...attributes}
-      {...listeners}
-      onClick={onActivate}
-      className={cn(
-        "group cursor-grab active:cursor-grabbing",
-        !isFocusedPane && "data-[state=active]:after:bg-transparent",
-      )}
+      className="group relative inline-flex shrink-0"
     >
-      <def.Icon className="size-4 shrink-0" />
-      <span>{def.label}</span>
-      {def.badge}
+      <TabsTrigger
+        value={tab}
+        {...attributes}
+        {...listeners}
+        onClick={onActivate}
+        className={cn(
+          "cursor-grab active:cursor-grabbing",
+          !isRootPane && "pr-7",
+          !isFocusedPane && "data-[state=active]:after:bg-transparent",
+        )}
+      >
+        <def.Icon className="size-4 shrink-0" />
+        <span>{def.label}</span>
+        {def.badge}
+      </TabsTrigger>
       {!isRootPane && (
         <button
           type="button"
@@ -194,13 +199,13 @@ function DraggableTabTrigger({
             e.stopPropagation();
             onClose();
           }}
-          className="ml-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+          className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
           aria-label={`Return ${def.label} to the root tab strip`}
         >
           <XIcon className="size-3" />
         </button>
       )}
-    </TabsTrigger>
+    </div>
   );
 }
 

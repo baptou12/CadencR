@@ -93,6 +93,26 @@ describe("TabPane", () => {
     expect(onTerminalActivate).toHaveBeenCalledOnce();
   });
 
+  it("renders the dock action outside the tab trigger button", () => {
+    const splitLeaf: LayoutLeaf = {
+      type: "leaf",
+      id: "split-pane",
+      tabIds: ["terminal"],
+      activeTabId: "terminal",
+    };
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={splitLeaf} tabs={tabs} />
+      </DndContext>,
+    );
+
+    const dockButton = screen.getByRole("button", {
+      name: "Return Terminal to the root tab strip",
+    });
+
+    expect(dockButton.closest("[data-slot='tabs-trigger']")).toBeNull();
+  });
+
   it("only leaves the active underline visible in the focused pane", () => {
     useFeatureLayoutStore.getState().setState(FEATURE_ID, {
       version: 1,
