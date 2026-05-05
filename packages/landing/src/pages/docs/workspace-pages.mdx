@@ -1,0 +1,78 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Workspace pages"
+description: "A quick map of the main pages in Cadencr, what each one is for, and where to go next."
+---
+
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+Cadencr has a few main places you will move between. The structure is simple once you know what each page is for.
+
+<DocScreenshotPlaceholder
+  title="Cadencr workspace map"
+  caption="The main surfaces most people use: Home, Feature workspace, Session view, and the Unified agent list."
+/>
+
+## Fast orientation
+
+Think of the app like this:
+
+- **Home / project picker** is where you choose what to work on.
+- **Feature workspace** is your main work area for a feature or task.
+- **Session view** is where you focus on one agent conversation in detail.
+- **Unified agent list** is where you manage all sessions in the current workspace.
+- **Settings** helps when a feature needs setup, but it is not where you will spend most of your day.
+
+<DocCallout title="Short version" variant="tip">
+  If you only remember one thing: start from **Home**, do most work in the **Feature workspace**,
+  open **Session view** when you want to steer one agent closely, and use the **Unified agent list**
+  when things get busy.
+</DocCallout>
+
+## Main pages and when to use them
+
+| Page                  | What it is                                                                                           | Go here when...                                                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Home / project picker | The starting point for opening or switching projects.                                                | You want to open a repo, return to a recent project, or start fresh without wondering where your stuff went.         |
+| Feature workspace     | The main surface for a piece of work. It brings together files, sessions, terminal, and Git context. | You are actively working on a task and want one place to stay oriented.                                              |
+| Session view          | A focused view of one agent session.                                                                 | You want to read the full conversation, check progress, or guide a single agent step by step.                        |
+| Unified agent list    | A shared list of sessions across the current workspace.                                              | You have more than one session going and need to scan, filter, compare, or jump between them quickly.                |
+| Settings              | App-wide preferences and setup.                                                                      | A feature needs setup, like provider keys or behavior preferences. Think of it as the utility closet, not the stage. |
+
+## How people typically move between them
+
+Most people follow a simple loop:
+
+1. Start on **Home** and choose the project you want to work in.
+2. Land in a **Feature workspace** and use it as your home base.
+3. Open a **Session view** when one agent needs your full attention.
+4. Jump to the **Unified agent list** when you want to compare sessions, resume an older one, or find the least chaotic option.
+5. Return to **Home** when you want to switch projects entirely.
+
+You usually do **not** bounce into **Settings** during normal work. It is there when something needs enabling, connecting, or adjusting.
+
+## Common beginner path
+
+If you are new, this path keeps things simple:
+
+1. Open Cadencr and pick your project from **Home**.
+2. Open or create a **Feature workspace** for the thing you want to change.
+3. Start **one** agent session.
+4. Use **Session view** to read what that agent is doing and nudge it when needed.
+5. Go back to the **Feature workspace** to inspect files, diffs, or terminal output.
+6. Once you have multiple sessions, use the **Unified agent list** to keep them organized.
+
+<DocCallout title="Beginner tip">
+  You do not need to master every page on day one. If you can move between **Home**, **Feature
+  workspace**, and **Session view**, you already know enough to get real work done.
+</DocCallout>
+
+## Related deep dives
+
+- [Getting started](../) for the first-run basics.
+- [Feature workspace](../feature-workspace/) for the main home base.
+- [Session view](../session-view/) for reading and steering a single agent.
+- [Unified agent list](../unified-agent-list/) for managing multiple sessions.
+- [Git in Cadencr](../git/) if you want more confidence around branches, diffs, and worktrees.
+- [Shortcuts](../shortcuts/) if you would like less mouse mileage.

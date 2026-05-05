@@ -1,0 +1,215 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Shortcuts"
+description: "A practical keyboard shortcuts guide for moving around Cadencr with less mouse travel and less hunting around."
+---
+
+import DocCallout from "@/components/docs/DocCallout.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+
+If Cadencr is where you keep work moving, shortcuts help you spend less time reaching for the mouse.
+
+You do **not** need to memorize every key combo on day one. Learn the few that save you the most time, then add more as you go.
+
+<DocCallout title="Quick help" variant="tip">
+  If you forget a shortcut, press <Kbd>⌘</Kbd>
+  <Kbd>/</Kbd> to open the in-app shortcuts help.
+</DocCallout>
+
+## Why shortcuts matter here
+
+Cadencr has a few surfaces you bounce between a lot: the sidebar, feature workspace, agent session, editor, terminal, and unified agent list.
+
+The faster you can move between those places, the easier it is to stay focused on the work itself.
+
+A few good shortcuts help you:
+
+- switch views without losing your train of thought,
+- stop or steer an agent quickly when it gets adventurous,
+- open files and search faster than point-and-click wandering, and
+- keep your hands on the keyboard when you are already in the zone.
+
+## Shortcut table
+
+The app’s built-in help uses Mac-style symbols, so this page does too. A few shortcuts are **context-sensitive**, which is a polite way of saying “the same keys may do different jobs in different views, and that is normal.”
+
+<table>
+  <thead>
+    <tr>
+      <th>Area</th>
+      <th>Shortcut</th>
+      <th>What it does</th>
+      <th>Why you will care</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Anywhere</td>
+      <td>⌘ /</td>
+      <td>Open keyboard shortcuts help</td>
+      <td>Helpful when you need a quick reminder.</td>
+    </tr>
+    <tr>
+      <td>Anywhere</td>
+      <td>⌘ K</td>
+      <td>Open the command palette</td>
+      <td>Great when you know what you want to do, just not where it is hiding.</td>
+    </tr>
+    <tr>
+      <td>Anywhere</td>
+      <td>⌘ B</td>
+      <td>Toggle the sidebar</td>
+      <td>Useful when you want more breathing room for actual work.</td>
+    </tr>
+    <tr>
+      <td>Anywhere</td>
+      <td>⌘ N</td>
+      <td>Create a new feature</td>
+      <td>Start a fresh piece of work without mousing through setup.</td>
+    </tr>
+    <tr>
+      <td>Anywhere</td>
+      <td>⌘ ⇧ N</td>
+      <td>Create a new session</td>
+      <td>Fast way to try another agent run or a cleaner attempt.</td>
+    </tr>
+    <tr>
+      <td>Navigation</td>
+      <td>⌘ ⌥ ← / →</td>
+      <td>Move between focus zones</td>
+      <td>Hop between sidebar, main content, and other keyboard-driven areas.</td>
+    </tr>
+    <tr>
+      <td>Navigation</td>
+      <td>⌘ ⌥ ↑ / ↓</td>
+      <td>Move within the current zone</td>
+      <td>Handy when browsing lists without touching the mouse.</td>
+    </tr>
+    <tr>
+      <td>Navigation</td>
+      <td>Enter</td>
+      <td>Activate the focused item</td>
+      <td>The classic “yes, that one” key.</td>
+    </tr>
+    <tr>
+      <td>Feature workspace</td>
+      <td>⌘ ⇧ A / T / G / E</td>
+      <td>Jump to Agent, Terminal, Git, or Editor</td>
+      <td>
+        Probably the highest-value set to learn after <code>⌘ K</code>.
+      </td>
+    </tr>
+    <tr>
+      <td>Unified agent list</td>
+      <td>⌘ ⇧ R</td>
+      <td>Open unified agents</td>
+      <td>Perfect for “I know I had a session for this somewhere…” moments.</td>
+    </tr>
+    <tr>
+      <td>Unified agent list</td>
+      <td>⌘ ⇧ F</td>
+      <td>Jump to agent search</td>
+      <td>Start filtering instead of visually hunting through a crowded list.</td>
+    </tr>
+    <tr>
+      <td>Unified agent list</td>
+      <td>⌘ ⇧ P</td>
+      <td>Pin or unpin the active agent</td>
+      <td>Keep the important session close and the chaos slightly farther away.</td>
+    </tr>
+    <tr>
+      <td>Agent session</td>
+      <td>Enter</td>
+      <td>Send your message</td>
+      <td>Good for quick back-and-forth once you are already drafting in the prompt box.</td>
+    </tr>
+    <tr>
+      <td>Agent session</td>
+      <td>Esc</td>
+      <td>Stop the current agent</td>
+      <td>Useful when the agent is heading in the wrong direction.</td>
+    </tr>
+    <tr>
+      <td>Agent session</td>
+      <td>⌘ G</td>
+      <td>Open the current agent’s diff</td>
+      <td>Great when you want to inspect the actual change.</td>
+    </tr>
+    <tr>
+      <td>Agent session</td>
+      <td>⌘ Enter</td>
+      <td>Maximize the current agent</td>
+      <td>Helpful when you want to focus on one conversation without visual clutter.</td>
+    </tr>
+    <tr>
+      <td>Editor</td>
+      <td>⌘ P</td>
+      <td>Open fuzzy file search</td>
+      <td>The fastest way to jump to a file when you know part of its name.</td>
+    </tr>
+    <tr>
+      <td>Editor</td>
+      <td>⌘ ⇧ F</td>
+      <td>Search across file contents</td>
+      <td>Use this when you remember text, not the file it lives in.</td>
+    </tr>
+    <tr>
+      <td>Editor / Terminal</td>
+      <td>⌘ D</td>
+      <td>Split vertically</td>
+      <td>Nice when you want side-by-side comparison instead of tab ping-pong.</td>
+    </tr>
+    <tr>
+      <td>Editor / Terminal</td>
+      <td>⌘ ⇧ D</td>
+      <td>Split horizontally</td>
+      <td>Useful when stacking views feels more natural than placing them side by side.</td>
+    </tr>
+  </tbody>
+</table>
+
+## A few habit-building tips
+
+### 1. Learn three anchors first
+
+If you only learn three things this week, make them:
+
+- <Kbd>⌘</Kbd>
+  <Kbd>K</Kbd> for command palette,
+- <Kbd>⌘</Kbd>
+  <Kbd>⇧</Kbd>
+  <Kbd>A</Kbd>, <Kbd>⌘</Kbd>
+  <Kbd>⇧</Kbd>
+  <Kbd>T</Kbd>, <Kbd>⌘</Kbd>
+  <Kbd>⇧</Kbd>
+  <Kbd>G</Kbd>, and <Kbd>⌘</Kbd>
+  <Kbd>⇧</Kbd>
+  <Kbd>E</Kbd> for tab switching, and
+- <Kbd>⌘</Kbd>
+  <Kbd>/</Kbd> for help.
+
+That little trio covers a surprising amount of daily life.
+
+### 2. Use the keyboard to move, not just to type
+
+A lot of people use shortcuts only for search. In Cadencr, the bigger win is navigation.
+
+If you practice moving between areas with <Kbd>⌘</Kbd><Kbd>⌥</Kbd><Kbd>←</Kbd> and <Kbd>⌘</Kbd><Kbd>⌥</Kbd><Kbd>→</Kbd>, the app starts feeling much easier to navigate.
+
+### 3. Keep one "save me time" shortcut in another tab of your brain
+
+When in doubt:
+
+- use <Kbd>⌘</Kbd><Kbd>P</Kbd> to find a file,
+- use <Kbd>⌘</Kbd><Kbd>⇧</Kbd><Kbd>F</Kbd> to find text,
+- use <Kbd>⌘</Kbd><Kbd>G</Kbd> to inspect what the agent changed.
+
+Those three shortcuts solve a lot of common “where is it?” moments.
+
+## Related docs
+
+- [Feature workspace](../feature-workspace/) for the main work area these shortcuts help you move around
+- [Session view](../session-view/) for reading and steering one agent session
+- [Unified agent list](../unified-agent-list/) for the session-heavy view where search and pinning really shine
+- [Workspace pages](../workspace-pages/) for the big-picture map of where everything lives
+- [Prompting](../prompting/) if you want better inputs once you have reached the prompt box at keyboard speed

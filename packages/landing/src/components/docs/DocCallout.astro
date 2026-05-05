@@ -1,0 +1,21 @@
+---
+interface Props {
+  title?: string;
+  variant?: "note" | "tip" | "warning";
+}
+
+const { title = "Note", variant = "note" } = Astro.props;
+
+const variantClass =
+  variant === "tip"
+    ? "border-primary/35 bg-primary/10"
+    : variant === "warning"
+      ? "border-destructive/35 bg-destructive/10"
+      : "border-border/80 bg-sidebar/35";
+---
+<aside class:list={["doc-callout not-prose my-6 rounded-2xl border p-4", variantClass]}>
+  <p class="mb-2 text-sm font-semibold text-foreground">{title}</p>
+  <div class="text-sm text-muted-foreground">
+    <slot />
+  </div>
+</aside>

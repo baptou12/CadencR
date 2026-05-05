@@ -1,0 +1,27 @@
+---
+interface GridItem {
+  title: string;
+  href: string;
+  description: string;
+}
+
+interface Props {
+  items: GridItem[];
+}
+
+const { items } = Astro.props;
+---
+<div class="not-prose grid gap-4 sm:grid-cols-2">
+  {
+    items.map((item) => (
+      <a
+        href={item.href}
+        class="doc-card rounded-2xl border border-border/70 bg-sidebar/30 p-4 transition-transform hover:-translate-y-0.5 hover:border-primary/35"
+      >
+        <p class="mb-2 text-base font-semibold text-foreground">{item.title}</p>
+        <p class="text-sm text-muted-foreground">{item.description}</p>
+      </a>
+    ))
+  }
+</div>
+

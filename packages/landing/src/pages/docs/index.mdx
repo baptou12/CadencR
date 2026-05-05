@@ -1,19 +1,132 @@
 ---
 layout: "@/layouts/DocLayout.astro"
-title: "Getting started"
-description: "Install Cadencr and run your first agent session."
+title: "Docs"
+description: "Your friendly map to Cadencr, from first look to faster daily use."
 ---
 
-Cadencr is a desktop IDE for agent-driven work. It runs locally, reads from your existing provider keys, and never pushes commits on your behalf.
+import DocCallout from "@/components/docs/DocCallout.astro";
+import DocPageGrid from "@/components/docs/DocPageGrid.astro";
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
 
-## Install
+This is the "show me where to click next" part of the website.
 
-Download the latest build for macOS or Linux from the [GitHub releases](https://github.com/rle-mino/cadencr/releases/latest). Source and build-from-source instructions live in the [repository](https://github.com/rle-mino/cadencr).
+If you are brand new, start with [Concept](./concept/) and [Workspace Pages](./workspace-pages/). If you already know what you need, jump straight to that page.
 
-## First session
+<DocScreenshotPlaceholder
+  title="Docs hub overview"
+  caption="The docs section is designed as a short, linked map rather than one giant wall of text."
+  hint="Replace this with a screenshot of the docs home page and sidebar once they are styled exactly how you want."
+/>
 
-1. Open Cadencr and pick a project folder.
-2. Create a new session — Cadencr will create a worktree and a branch for it.
-3. Pick a harness (Claude Code, OpenCode) and start chatting.
+## What you can learn here
 
-Full documentation is coming as this site fills out. Until then, the [GitHub repository](https://github.com/rle-mino/cadencr) is the source of truth.
+These docs are here to help you:
+
+- understand what Cadencr is without learning a pile of jargon first,
+- find your way around the main screens,
+- get more comfortable with agent sessions, Git, the editor, and the terminal,
+- move faster with practical tips like [Shortcuts](./shortcuts/) and [Custom Actions](./custom-actions/).
+
+## How to use these docs
+
+You do not need to read everything in order. Use it like a reference, not a course.
+
+- **Start Here** explains the big picture and the main places you will spend time.
+- **Core Views** helps you stay oriented while work is happening.
+- **Features** covers the tools you will reach for once you are in motion.
+
+## Browse the docs
+
+### Start here
+
+<DocPageGrid
+  items={[
+    {
+      title: "The IDE for the era of agents",
+      href: "./concept/",
+      description:
+        "What Cadencr is, who it is for, and why it feels different from regular chat tools.",
+    },
+    {
+      title: "Workspace pages",
+      href: "./workspace-pages/",
+      description: "A guided tour of the major surfaces you will bounce between while working.",
+    },
+  ]}
+/>
+
+### Core views
+
+<DocPageGrid
+  items={[
+    {
+      title: "Feature workspace",
+      href: "./feature-workspace/",
+      description: "How a feature becomes your home base for files, agents, terminal, and Git.",
+    },
+    {
+      title: "Session view",
+      href: "./session-view/",
+      description: "How to read an agent session, stay oriented, and steer work without chaos.",
+    },
+    {
+      title: "Unified agent list",
+      href: "./unified-agent-list/",
+      description: "Find, filter, scan, and pin agent sessions across your workspace.",
+    },
+  ]}
+/>
+
+### Features
+
+<DocPageGrid
+  items={[
+    {
+      title: "Prompting",
+      href: "./prompting/",
+      description:
+        "How to ask for work clearly without turning every prompt into a tiny legal document.",
+    },
+    {
+      title: "Git in Cadencr",
+      href: "./git/",
+      description:
+        "How Git shows up in the product and how to stay confident instead of git-scared.",
+    },
+    {
+      title: "Editor",
+      href: "./editor/",
+      description:
+        "Browse files, open diffs, split panes, and stay close to the code without getting buried.",
+    },
+    {
+      title: "Terminal",
+      href: "./terminal/",
+      description:
+        "Use the built-in terminal when agent work needs a little human keyboard energy.",
+    },
+    {
+      title: "Custom actions",
+      href: "./custom-actions/",
+      description: "What the plus button does and why it is more helpful than it first looks.",
+    },
+    {
+      title: "Shortcuts",
+      href: "./shortcuts/",
+      description: "A practical keyboard cheat sheet for faster navigation and less mouse mileage.",
+    },
+  ]}
+/>
+
+## Suggested reading paths
+
+| If you are...         | Start with                      | Then read                                                                         |
+| --------------------- | ------------------------------- | --------------------------------------------------------------------------------- |
+| New to Cadencr        | [Concept](./concept/)           | [Workspace Pages](./workspace-pages/) → [Feature Workspace](./feature-workspace/) |
+| Already using the app | [Session View](./session-view/) | [Editor](./editor/) → [Git in Cadencr](./git/)                                    |
+| A keyboard enjoyer    | [Shortcuts](./shortcuts/)       | [Terminal](./terminal/) → [Custom Actions](./custom-actions/)                     |
+
+<DocCallout title="Tiny but important note" variant="tip">
+  The docs are meant to be practical, not mysterious. If a page sounds too abstract, skip to a more
+  concrete one and come back later. Cadencr will not be offended.
+</DocCallout>

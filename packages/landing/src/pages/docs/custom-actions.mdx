@@ -1,0 +1,90 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Custom actions"
+description: "Use the + button to run saved actions in the right context without rewriting the same request over and over."
+---
+
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+The `+` button in a feature or session header is basically your **"do the useful thing again"** button.
+
+It opens your saved custom actions so you can run a workflow you already like without typing the same instructions from scratch every time.
+
+<DocScreenshotPlaceholder
+  title="Custom actions menu"
+  caption="The + button opens saved actions you can run in the current feature or session context."
+  hint="Swap this for a screenshot of the custom actions menu opened from a workspace header."
+/>
+
+## What the plus button really means
+
+A custom action is a **saved prompt or workflow** you can reuse.
+
+Instead of re-explaining yourself every time, you click `+`, choose the action you want, and let Cadencr run it in the place you already are.
+
+That matters because context is doing a lot of the heavy lifting here:
+
+- in a **session**, the action can build on the conversation already happening
+- in a **feature workspace**, the action can help with the work tied to that feature
+- in both cases, you save time and reduce the chance of forgetting your usual instructions
+
+<DocCallout title="Plain-English version" variant="tip">
+  Think of custom actions as reusable shortcuts for jobs you do more than once.
+</DocCallout>
+
+## Why custom actions are useful
+
+Custom actions are handy when you have a task that is:
+
+- common enough to repeat,
+- annoying enough to not want to retype, or
+- important enough that you want it done the same way each time.
+
+| Use a custom action when you want to... | Why it helps                                                                        |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| kick off a familiar workflow            | You start faster and with less repeated setup                                       |
+| summarize what just happened            | You get a clean recap without writing a careful request every time                  |
+| review work in a consistent way         | The checks stay predictable instead of depending on your current caffeine situation |
+| prepare handoff notes or next steps     | The output comes out in a format you already find useful                            |
+
+## Examples of good action types
+
+Good custom actions usually do **one recognizable job**.
+
+A few solid examples:
+
+- **Summarize this session** — handy when the conversation got long and you want a clean recap.
+- **Turn progress into a checklist** — useful for next steps, handoff notes, or personal sanity.
+- **Review the current work for risks** — great before you call something done.
+- **Draft release notes or changelog bullets** — helpful when you want the “what changed?” version.
+- **Create beginner-friendly explanation** — nice when you want technical work translated into human.
+- **Prepare a testing pass** — useful when you want a repeatable QA-style prompt.
+
+If you are not sure whether something deserves to be a custom action, ask yourself:
+
+> "Will I want this again in roughly the same shape?"
+
+If the answer is yes, that is a strong hint.
+
+## Tips for keeping actions understandable
+
+The best custom actions are the ones Future You can still understand.
+
+- **Name them by outcome.** `Summarize session` beats `Action 2`.
+- **Keep each action focused.** One job per action is easier to trust.
+- **Say what kind of result you want.** For example: bullets, checklist, short summary, or handoff note.
+- **Use clear wording.** You do not need overly fancy prompt language.
+- **Retire confusing actions.** If you never remember what one does, that is your clue.
+
+<DocCallout title="A very normal beginner move" variant="note">
+  Start with one or two actions you actually reuse. You do not need to build a giant button zoo on
+  day one.
+</DocCallout>
+
+## Related docs
+
+- [Feature workspace](../feature-workspace/) — where custom actions often help kick off or support a task
+- [Session view](../session-view/) — useful when an action builds on an ongoing conversation
+- [Prompting](../prompting/) — helpful if you want better raw material before saving an action
+- [Workspace pages](../workspace-pages/) — the bigger tour of how these areas fit together

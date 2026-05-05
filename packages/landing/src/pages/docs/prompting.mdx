@@ -1,0 +1,92 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Prompting"
+description: "Understand the prompt bar in Cadencr: where it appears, what it can do, and how it helps you work with agents."
+---
+
+import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+The prompt feature in Cadencr is more than a text box. It is the main control surface for working with an agent: starting work, continuing a session, attaching context, and responding when the agent needs something from you.
+
+<DocScreenshotPlaceholder
+  title="Prompt bar inside a feature or session"
+  caption="The prompt area is where you start work, continue a session, and manage the flow of agent interaction."
+  hint="Replace this with a screenshot of the prompt bar showing a draft, an attachment, and nearby controls."
+/>
+
+<DocCallout title="Simple mental model" variant="tip">
+  Think of the prompt bar as the place where you steer the session, not just where you type.
+</DocCallout>
+
+## What the prompt feature is for
+
+You will usually use the prompt bar to:
+
+- start a new piece of work
+- continue an existing session
+- refine or redirect what the agent is doing
+- attach extra context when the task needs it
+- respond to questions, approvals, or permission requests
+
+In other words, this is not just input. It is the main handoff point between you and the agent.
+
+## Where it appears
+
+You will mainly see the prompt feature in two places:
+
+| Place                 | Why it matters                                                                                                        |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Feature workspace** | Good when you want to work in the broader context of a feature, alongside files, Git, terminal, and multiple sessions |
+| **Session view**      | Good when you want to focus on one specific agent conversation and steer it more closely                              |
+
+The same basic prompt experience follows you in both places, so you do not have to learn two different ways of working.
+
+## What the prompt feature includes
+
+Here are the main capabilities around the prompt bar:
+
+| Feature                    | What it does                                             | Why it is useful                                                                    |
+| -------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Draft saving**           | Keeps your in-progress text around while you work        | Helpful when you switch context or come back later                                  |
+| **Prompt history**         | Lets you return to earlier prompts                       | Useful when you repeat similar actions or want to resend a previous request         |
+| **File mentions**          | Helps you reference project files directly in the prompt | Makes it easier to point the agent at the right place                               |
+| **Slash commands**         | Gives you command-style actions from the prompt area     | Speeds up common workflows without leaving the keyboard                             |
+| **Image attachments**      | Lets you attach screenshots or visual context            | Helpful when the task involves UI, design, or anything easier to show than describe |
+| **Send and stop controls** | Start a request or stop the current run                  | Keeps you in control when the agent is moving too fast or in the wrong direction    |
+
+## What happens around the prompt while you work
+
+The prompt feature also supports the back-and-forth that happens after you send something.
+
+For example, the prompt area may become the place where you:
+
+- answer a question from the agent
+- approve or reject a plan
+- respond to a permission request
+- continue from a paused state
+
+That matters because the prompt feature is built for ongoing work, not just one-shot messages. It helps the session keep moving without making you jump to a completely different part of the app every time the agent needs input.
+
+<DocCallout title="Why this matters" variant="note">
+  The prompt feature is designed to keep the interaction close to the work itself. You can write,
+  review, respond, and continue without constantly rebuilding context.
+</DocCallout>
+
+## When the prompt feature feels most useful
+
+The prompt feature becomes especially helpful when:
+
+- you are working across several sessions and want a consistent control surface
+- you need to attach extra context, like files or screenshots
+- the agent needs follow-up input instead of a full restart
+- you want the app to remember your draft or recent prompt flow
+- you prefer to stay inside the same workspace instead of switching tools
+
+## Related docs
+
+- [Session view](../session-view/) — see how prompting fits into a focused agent conversation
+- [Feature workspace](../feature-workspace/) — understand the bigger home base around the prompt bar
+- [Unified agent list](../unified-agent-list/) — find the session you want to continue
+- [Custom actions](../custom-actions/) — related shortcuts for repeatable actions
+- [Shortcuts](../shortcuts/) — keyboard help for moving quickly around the app

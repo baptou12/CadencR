@@ -1,0 +1,16 @@
+---
+import Placeholder from "@/components/Placeholder.astro";
+
+interface Props {
+  title: string;
+  caption?: string;
+  hint?: string;
+  ratio?: string;
+}
+
+const { title, caption, hint = "Replace with a real screenshot later.", ratio = "16/10" } =
+  Astro.props;
+---
+<div class="my-6">
+  <Placeholder label={title} caption={caption} hint={hint} ratio={ratio} variant="window" />
+</div>
