@@ -125,8 +125,6 @@ pub(crate) async fn handle_prompt_send(
             let spawned_model = handle.desired_model.clone();
             let spawned_thinking_effort = handle.desired_thinking_effort.clone();
             let mut config = handle.config.clone();
-            let session_cache = handle.session_cache.clone();
-            let mut allowed_patterns = handle.allowed_patterns.clone();
             let feature_id = handle.feature_id;
             let provider_id = handle.runtime_provider.clone();
             let mut options = match std::mem::replace(
@@ -150,8 +148,6 @@ pub(crate) async fn handle_prompt_send(
                 }
             }
 
-            let initial_canonical_cwd = handle.config.canonical_cwd.clone();
-
             // Drop lock before spawn (async).
             drop(sessions);
 
@@ -168,7 +164,6 @@ pub(crate) async fn handle_prompt_send(
             }
 
             // Worktree creation (blocking) — must complete before runtime spawn.
-            let mut worktree_path = initial_canonical_cwd;
             let use_worktree = payload.use_worktree.unwrap_or(false);
             if use_worktree {
                 // 1. Synchronous auto-name (need title for branch name)
@@ -220,11 +215,8 @@ pub(crate) async fn handle_prompt_send(
                                 // 4. Override cwd to worktree path.
                                 options.cwd = wt_path.clone();
                                 let canonical = permissions::canonicalize_worktree(&wt_path);
-                                worktree_path = canonical.clone();
                                 config.cwd = wt_path;
                                 config.canonical_cwd = canonical;
-                                allowed_patterns =
-                                    Arc::new(permissions::load_allowed_patterns(&config.cwd));
                             }
                             Err(e) => {
                                 error!(feature_id, error = %e, "worktree creation failed, proceeding with original cwd");
@@ -263,9 +255,6 @@ pub(crate) async fn handle_prompt_send(
             let bridge = WsBridgeCanUseTool {
                 sender: sender.clone(),
                 response_rx: Arc::new(Mutex::new(permission_rx)),
-                worktree_path,
-                session_cache: session_cache.clone(),
-                allowed_patterns: allowed_patterns.clone(),
                 feature_id,
                 db_session_id,
                 write_pool: write_pool.clone(),
@@ -382,8 +371,6 @@ pub(crate) async fn handle_prompt_send(
                             )),
                             resume_session_id: None,
                             config,
-                            session_cache,
-                            allowed_patterns,
                             manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(
                                 false,
                             )),

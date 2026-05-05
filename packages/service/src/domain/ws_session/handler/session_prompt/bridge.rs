@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -10,7 +8,7 @@ use tracing::{debug, info, warn};
 use crate::domain::agents::adapter::{
     RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
-use crate::domain::permission_bridge::{self, ResolvedAction};
+use crate::domain::permission_bridge;
 use crate::domain::ws_session::persistence::{
     PendingUserInput, PendingUserInputKind, WsSessionPersistence,
 };
@@ -65,9 +63,6 @@ pub struct PermissionResponse {
 pub(super) struct WsBridgeCanUseTool {
     pub(super) sender: WsSender,
     pub(super) response_rx: Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
-    pub(super) worktree_path: PathBuf,
-    pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
-    pub(super) allowed_patterns: Arc<HashSet<String>>,
     pub(super) feature_id: i64,
     pub(super) db_session_id: i64,
     pub(super) write_pool: sqlx::SqlitePool,
@@ -104,26 +99,7 @@ impl RuntimeToolPermissionHandler for WsBridgeCanUseTool {
             return self.handle_exit_plan_mode(&request).await;
         }
 
-        // Standard permission resolution via shared bridge
-        let action = permission_bridge::resolve_permission_check(
-            &request,
-            &self.worktree_path,
-            &self.session_cache,
-            &self.allowed_patterns,
-        )
-        .await;
-
-        match action {
-            ResolvedAction::Resolved(result) => result,
-            ResolvedAction::NeedsPrompt {
-                description,
-                pattern,
-                force_prompt,
-            } => {
-                self.handle_needs_prompt(&request, description, pattern, force_prompt)
-                    .await
-            }
-        }
+        self.handle_provider_permission_prompt(&request).await
     }
 }
 
@@ -390,23 +366,22 @@ impl WsBridgeCanUseTool {
             .send(Message::Text(String::from(envelope).into()));
     }
 
-    async fn handle_needs_prompt(
+    async fn handle_provider_permission_prompt(
         &self,
         request: &RuntimeToolPermissionRequest,
-        description: String,
-        pattern: String,
-        force_prompt: bool,
     ) -> RuntimeToolPermissionResult {
-        debug!(tool_name = %request.tool_name, pattern = %pattern, "prompting user");
+        debug!(tool_name = %request.tool_name, "prompting user for provider-native permission");
+        let permission_updates =
+            permission_bridge::persistent_permission_updates(&request.permission_updates);
 
         let payload = PermissionRequestPayload {
             request_id: request.tool_use_id.clone(),
             tool_name: request.tool_name.clone(),
             tool_input: request.input.clone(),
-            description: Some(description),
-            pattern: Some(pattern.clone()),
+            description: Some(permission_bridge::provider_permission_description(request)),
+            pattern: None,
             preview: permission_bridge::extract_permission_preview(&request.input),
-            options: permission_bridge::build_default_permission_options(Some(&pattern)),
+            options: permission_bridge::build_provider_permission_options(&permission_updates),
         };
         WsSessionPersistence::mark_awaiting_user_static(
             &self.write_pool,
@@ -430,10 +405,7 @@ impl WsBridgeCanUseTool {
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
-            &pattern,
-            force_prompt,
-            &self.worktree_path,
-            &self.session_cache,
+            &permission_updates,
             &self.session_status_tx,
             self.feature_id,
             &self.write_pool,

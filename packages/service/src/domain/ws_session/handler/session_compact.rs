@@ -120,7 +120,7 @@ async fn handle_active_runtime_compact(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -144,8 +144,6 @@ mod tests {
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
             manual_compact_running: Arc::new(AtomicBool::new(false)),
-            session_cache: Arc::new(Mutex::new(HashSet::new())),
-            allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::new(),

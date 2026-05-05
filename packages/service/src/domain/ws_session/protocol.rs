@@ -1317,8 +1317,8 @@ mod tests {
             options: vec![PermissionOptionPayload {
                 decision: PermissionDecision::AllowFuture,
                 option_id: None,
-                label: "Allow for future use".into(),
-                description: "Save `Bash(ls:*)` to settings".into(),
+                label: "Allow future requests".into(),
+                description: "Apply the provider's suggested permission update".into(),
                 collect_feedback: false,
             }],
         };

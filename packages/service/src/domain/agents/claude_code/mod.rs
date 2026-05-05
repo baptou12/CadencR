@@ -17,9 +17,9 @@ use self::catalog::fallback_models;
 use self::events::{context_window_for_model_from_raw, normalize_event};
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
-    RuntimeMessageRx, RuntimePermissionMode, RuntimeSlashCommand, RuntimeSlashCommandKind,
-    RuntimeSpawnConfig, RuntimeToolPermissionHandler, RuntimeToolPermissionRequest,
-    RuntimeToolPermissionResult,
+    RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionUpdate, RuntimeSlashCommand,
+    RuntimeSlashCommandKind, RuntimeSpawnConfig, RuntimeToolPermissionHandler,
+    RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -72,6 +72,14 @@ impl claude_agent_sdk_rs::CanUseTool for ClaudeCanUseToolAdapter {
             .can_use_tool(RuntimeToolPermissionRequest {
                 tool_name: request.tool_name,
                 tool_use_id: request.tool_use_id,
+                permission_updates: request
+                    .suggestions
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|update| RuntimePermissionUpdate { data: update.data })
+                    .collect(),
+                blocked_path: request.blocked_path,
+                decision_reason: request.decision_reason,
                 input: request.input,
             })
             .await

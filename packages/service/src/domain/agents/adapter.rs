@@ -222,6 +222,9 @@ pub struct RuntimeToolPermissionRequest {
     pub tool_name: String,
     pub tool_use_id: String,
     pub input: Value,
+    pub permission_updates: Vec<RuntimePermissionUpdate>,
+    pub blocked_path: Option<String>,
+    pub decision_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]

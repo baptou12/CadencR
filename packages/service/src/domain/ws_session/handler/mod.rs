@@ -65,7 +65,7 @@ use crate::domain::ws_session::protocol::*;
 #[allow(unused_imports)]
 use axum::extract::ws::Message;
 #[allow(unused_imports)]
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::path::PathBuf;
 #[allow(unused_imports)]
@@ -1102,8 +1102,6 @@ mod tests {
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
             manual_compact_running: Arc::new(AtomicBool::new(false)),
-            session_cache: Arc::new(Mutex::new(HashSet::new())),
-            allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),
@@ -1135,8 +1133,6 @@ mod tests {
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
             manual_compact_running: Arc::new(AtomicBool::new(false)),
-            session_cache: Arc::new(Mutex::new(HashSet::new())),
-            allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),

@@ -278,7 +278,6 @@ fn send_compact_ok(envelope_id: &str, sender: &WsSender) {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -349,8 +348,6 @@ mod tests {
             spawned_thinking_effort: None,
             runtime_control_endpoint: Some("http://127.0.0.1:4096".to_string()),
             manual_compact_running: Arc::new(AtomicBool::new(false)),
-            session_cache: Arc::new(Mutex::new(HashSet::new())),
-            allowed_patterns: Arc::new(HashSet::new()),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/project"),

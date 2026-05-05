@@ -4,65 +4,62 @@
 //! Used by both the workflow engine (`WorkflowPermissionBridge`) and
 //! the session handler (`WsBridgeCanUseTool`).
 
-use std::collections::HashSet;
-use std::path::Path;
 use std::sync::Arc;
 
-use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error};
-
 use crate::domain::agents::adapter::{
-    RuntimePermissionResponseKind, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+    RuntimePermissionResponseKind, RuntimePermissionUpdate, RuntimeToolPermissionRequest,
+    RuntimeToolPermissionResult,
 };
 use crate::domain::session_status::AgentStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
-use crate::domain::ws_session::permissions::{self, ResolvedPermission};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{PermissionDecision, PermissionOptionPayload};
+use serde_json::Value;
+use tokio::sync::{mpsc, Mutex};
 
-/// Result of server-side permission resolution with pattern checks applied.
-pub enum ResolvedAction {
-    /// Already resolved — return this result directly.
-    Resolved(RuntimeToolPermissionResult),
-    /// Needs user prompt — caller should send a WS envelope and call
-    /// `wait_and_apply_decision` with the response.
-    NeedsPrompt {
-        description: String,
-        pattern: String,
-        force_prompt: bool,
-    },
-}
-
-pub fn build_default_permission_options(pattern: Option<&str>) -> Vec<PermissionOptionPayload> {
-    let allow_future_description = pattern.map_or_else(
-        || "Save this permission for future use".to_string(),
-        |value| format!("Save `{value}` to settings"),
-    );
-
-    vec![
-        PermissionOptionPayload {
-            decision: PermissionDecision::AllowOnce,
-            option_id: None,
-            label: "Allow once".to_string(),
-            description: "Approve this tool call only".to_string(),
-            collect_feedback: false,
-        },
-        PermissionOptionPayload {
+pub fn build_provider_permission_options(
+    permission_updates: &[RuntimePermissionUpdate],
+) -> Vec<PermissionOptionPayload> {
+    let persistent_updates = persistent_permission_updates(permission_updates);
+    let mut options = vec![PermissionOptionPayload {
+        decision: PermissionDecision::AllowOnce,
+        option_id: None,
+        label: "Allow once".to_string(),
+        description: "Approve this tool call only".to_string(),
+        collect_feedback: false,
+    }];
+    if !persistent_updates.is_empty() {
+        options.push(PermissionOptionPayload {
             decision: PermissionDecision::AllowFuture,
             option_id: None,
-            label: "Allow for future use".to_string(),
-            description: allow_future_description,
+            label: "Allow future requests".to_string(),
+            description: "Apply the provider's suggested permission update".to_string(),
             collect_feedback: false,
-        },
-        PermissionOptionPayload {
-            decision: PermissionDecision::Deny,
-            option_id: None,
-            label: "Deny".to_string(),
-            description: "Reject this tool call".to_string(),
-            collect_feedback: true,
-        },
-    ]
+        });
+    }
+    options.push(PermissionOptionPayload {
+        decision: PermissionDecision::Deny,
+        option_id: None,
+        label: "Deny".to_string(),
+        description: "Reject this tool call".to_string(),
+        collect_feedback: true,
+    });
+    options
+}
+
+pub fn persistent_permission_updates(
+    permission_updates: &[RuntimePermissionUpdate],
+) -> Vec<RuntimePermissionUpdate> {
+    permission_updates
+        .iter()
+        .filter(|update| {
+            matches!(
+                update.data.get("destination").and_then(Value::as_str),
+                Some("userSettings" | "projectSettings" | "localSettings")
+            )
+        })
+        .cloned()
+        .collect()
 }
 
 pub fn extract_permission_preview(input: &Value) -> Option<String> {
@@ -120,6 +117,24 @@ pub fn extract_permission_preview(input: &Value) -> Option<String> {
     })
 }
 
+pub fn provider_permission_description(request: &RuntimeToolPermissionRequest) -> String {
+    request
+        .decision_reason
+        .clone()
+        .or_else(|| {
+            request
+                .blocked_path
+                .as_ref()
+                .map(|path| format!("The provider requests permission for `{path}`"))
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "The provider requests permission to use {}",
+                request.tool_name
+            )
+        })
+}
+
 fn extract_preview_from_nested_object(value: Option<&Value>) -> Option<String> {
     value.and_then(|object| {
         [
@@ -141,61 +156,6 @@ fn extract_preview_from_nested_object(value: Option<&Value>) -> Option<String> {
     })
 }
 
-/// Resolve a permission request server-side, checking the session cache
-/// and allowed patterns. Returns `NeedsPrompt` if user interaction is needed.
-pub async fn resolve_permission_check(
-    request: &RuntimeToolPermissionRequest,
-    worktree_path: &Path,
-    session_cache: &Arc<Mutex<HashSet<String>>>,
-    allowed_patterns: &Arc<HashSet<String>>,
-) -> ResolvedAction {
-    let force_prompt = permissions::FRONTEND_PROMPT_TOOLS.contains(&request.tool_name.as_str());
-
-    let cache = session_cache.lock().await;
-    let resolved =
-        permissions::resolve_permission(&request.tool_name, &request.input, worktree_path, &cache);
-    drop(cache);
-
-    match resolved {
-        ResolvedPermission::Allow => {
-            debug!(tool_name = %request.tool_name, "auto-allowed");
-            ResolvedAction::Resolved(RuntimeToolPermissionResult::Allow {
-                updated_input: request.input.clone(),
-                updated_permissions: None,
-                tool_use_id: Some(request.tool_use_id.clone()),
-            })
-        }
-        ResolvedPermission::Deny { reason } => {
-            debug!(tool_name = %request.tool_name, reason = %reason, "auto-denied");
-            ResolvedAction::Resolved(RuntimeToolPermissionResult::Deny {
-                message: reason,
-                interrupt: Some(false),
-                tool_use_id: Some(request.tool_use_id.clone()),
-            })
-        }
-        ResolvedPermission::NeedsPrompt {
-            description,
-            pattern,
-        } => {
-            // Check allowed_patterns from settings files
-            if !force_prompt && allowed_patterns.contains(&pattern) {
-                debug!(tool_name = %request.tool_name, pattern = %pattern, "allowed by settings pattern");
-                session_cache.lock().await.insert(pattern);
-                return ResolvedAction::Resolved(RuntimeToolPermissionResult::Allow {
-                    updated_input: request.input.clone(),
-                    updated_permissions: None,
-                    tool_use_id: Some(request.tool_use_id.clone()),
-                });
-            }
-            ResolvedAction::NeedsPrompt {
-                description,
-                pattern,
-                force_prompt,
-            }
-        }
-    }
-}
-
 /// Wait for a user response on the permission channel, clear the DB gate +
 /// broadcast the next turn, and apply the decision.
 ///
@@ -215,10 +175,7 @@ pub async fn wait_and_apply_decision(
     response_rx: &Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
     tool_use_id: &str,
     original_input: serde_json::Value,
-    pattern: &str,
-    force_prompt: bool,
-    worktree_path: &Path,
-    session_cache: &Arc<Mutex<HashSet<String>>>,
+    permission_updates: &[RuntimePermissionUpdate],
     session_status_tx: &crate::domain::session_status::SessionStatusBroadcaster,
     feature_id: i64,
     write_pool: &sqlx::SqlitePool,
@@ -244,15 +201,11 @@ pub async fn wait_and_apply_decision(
             let input = response.updated_input.unwrap_or(original_input);
             apply_decision(
                 tool_use_id,
-                pattern,
-                force_prompt,
-                worktree_path,
-                session_cache,
                 response.decision,
                 response.feedback,
                 input,
+                permission_updates,
             )
-            .await
         }
         None => {
             // Channel closed before we got a response. Clear the DB gate AND
@@ -332,10 +285,10 @@ pub fn runtime_permission_denial_completes_session(
 #[cfg(test)]
 mod tests {
     use super::{
-        runtime_permission_denial_completes_session, status_after_approval, status_after_decision,
-        status_after_runtime_permission,
+        build_provider_permission_options, runtime_permission_denial_completes_session,
+        status_after_approval, status_after_decision, status_after_runtime_permission,
     };
-    use crate::domain::agents::adapter::RuntimePermissionResponseKind;
+    use crate::domain::agents::adapter::{RuntimePermissionResponseKind, RuntimePermissionUpdate};
     use crate::domain::session_status::AgentStatus;
     use crate::domain::ws_session::protocol::PermissionDecision;
 
@@ -420,38 +373,59 @@ mod tests {
             None,
         ));
     }
+
+    #[test]
+    fn provider_permission_options_only_include_future_for_persistent_updates() {
+        let without_updates = build_provider_permission_options(&[]);
+        assert!(!without_updates
+            .iter()
+            .any(|option| option.decision == PermissionDecision::AllowFuture));
+
+        let session_updates = vec![RuntimePermissionUpdate {
+            data: serde_json::json!({
+                "type": "addRules",
+                "destination": "session",
+            }),
+        }];
+        let with_session_updates = build_provider_permission_options(&session_updates);
+        assert!(!with_session_updates
+            .iter()
+            .any(|option| option.decision == PermissionDecision::AllowFuture));
+
+        let persistent_updates = vec![RuntimePermissionUpdate {
+            data: serde_json::json!({
+                "type": "addRules",
+                "destination": "localSettings",
+            }),
+        }];
+        let with_persistent_updates = build_provider_permission_options(&persistent_updates);
+        assert!(with_persistent_updates
+            .iter()
+            .any(|option| option.decision == PermissionDecision::AllowFuture));
+    }
 }
 
-/// Apply a user's permission decision (AllowOnce/AllowFuture/Deny).
-async fn apply_decision(
+/// Apply a provider-native permission decision. Persistent approvals are only
+/// sent back when the provider supplied explicit permission updates.
+fn apply_decision(
     tool_use_id: &str,
-    pattern: &str,
-    force_prompt: bool,
-    worktree_path: &Path,
-    session_cache: &Arc<Mutex<HashSet<String>>>,
     decision: PermissionDecision,
     feedback: Option<String>,
     input: serde_json::Value,
+    permission_updates: &[RuntimePermissionUpdate],
 ) -> RuntimeToolPermissionResult {
     match decision {
-        PermissionDecision::AllowOnce => {
-            if !force_prompt {
-                session_cache.lock().await.insert(pattern.to_string());
-            }
+        PermissionDecision::AllowOnce | PermissionDecision::AllowFuture => {
+            let updated_permissions = if matches!(decision, PermissionDecision::AllowFuture)
+                && !permission_updates.is_empty()
+            {
+                Some(permission_updates.to_vec())
+            } else {
+                None
+            };
             RuntimeToolPermissionResult::Allow {
                 updated_input: input,
-                updated_permissions: None,
-                tool_use_id: Some(tool_use_id.to_string()),
-            }
-        }
-        PermissionDecision::AllowFuture => {
-            session_cache.lock().await.insert(pattern.to_string());
-            if let Err(e) = permissions::append_to_settings_local(worktree_path, pattern) {
-                error!(error = %e, "failed to persist permission to settings.local.json");
-            }
-            RuntimeToolPermissionResult::Allow {
-                updated_input: input,
-                updated_permissions: None,
+                updated_permissions,
                 tool_use_id: Some(tool_use_id.to_string()),
             }
         }

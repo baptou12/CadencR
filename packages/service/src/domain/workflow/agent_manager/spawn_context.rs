@@ -1,6 +1,5 @@
 //! SpawnContext construction and settings resolution for AgentManager.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -17,7 +16,6 @@ use crate::domain::workflow::engine::AgentSlot;
 use crate::domain::workflow::permission_router::{PermissionRouter, WorkflowPermissionBridge};
 use crate::domain::ws_session::handler::mcp_spawn::build_mcp_server_config;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
-use crate::domain::ws_session::permissions;
 
 use super::{AgentManager, SpawnContext};
 
@@ -214,15 +212,11 @@ impl AgentManager {
         // Permission bridge
         let (perm_tx, perm_rx) = mpsc::channel::<PermissionResponse>(16);
         permissions.register(slot.clone(), perm_tx);
-        let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&cwd));
         let bridge = WorkflowPermissionBridge {
             slot: slot.clone(),
             feature_id: self.feature_id,
             sender: self.ws_sender.clone(),
             response_rx: Arc::new(tokio::sync::Mutex::new(perm_rx)),
-            worktree_path: cwd.clone(),
-            session_cache: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
-            allowed_patterns,
             write_pool: self.write_pool.clone(),
             db_session_id,
             session_status_tx: self.session_status_tx.clone(),
