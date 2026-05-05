@@ -166,12 +166,14 @@ pub async fn check_merge_conflicts_handler(
     Ok(Json(service::check_merge_conflicts(&state, params).await?))
 }
 
-#[utoipa::path(post, path = "/api/git/merge", request_body = MergeFeatureBranchBody, responses((status = 200, body = MergeResult)))]
+#[utoipa::path(post, path = "/api/git/merge", request_body = workflow_service::MergeFeatureBranchBody, responses((status = 200, body = MergeResult)))]
 pub async fn merge_feature_branch_handler(
     State(state): State<AppState>,
-    Json(body): Json<MergeFeatureBranchBody>,
+    Json(body): Json<workflow_service::MergeFeatureBranchBody>,
 ) -> Result<Json<MergeResult>, AppError> {
-    Ok(Json(service::merge_feature_branch(&state, body).await?))
+    Ok(Json(
+        workflow_service::merge_feature_branch(&state, body).await?,
+    ))
 }
 
 #[utoipa::path(delete, path = "/api/git/branch", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = SuccessResponse)))]

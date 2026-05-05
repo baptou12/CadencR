@@ -33,7 +33,7 @@ pub use diff::{get_commit_diff, get_diff, get_stats};
 pub use files::{get_file_content, get_file_content_batch, list_files};
 pub use log::{get_commit_log, get_recent_commits};
 pub use merge::{get_current_branch, get_original_branch};
-pub use merge_ops::{check_merge_conflicts, delete_branch, merge_branch};
+pub use merge_ops::{check_merge_conflicts, delete_branch};
 pub use pty::{commit_streaming, push_streaming};
 pub use worktree_ops::{
     create_worktree, get_worktree_info, has_uncommitted_changes, list_worktree_branches,

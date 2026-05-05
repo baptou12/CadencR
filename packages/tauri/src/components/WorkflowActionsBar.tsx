@@ -1,5 +1,4 @@
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import {
   GitMergeIcon,
   Loader2Icon,
@@ -59,16 +58,6 @@ export function WorkflowActionsBar({
       requestAnimationFrame(() => refinePromptRef.current?.focusInput());
     }
   }, [showRefinePrompt]);
-
-  // CMD+SHIFT+M: open merge dialog
-  useGlobalShortcut(
-    "meta+shift+m",
-    (e) => {
-      e.preventDefault();
-      setMergeDialogOpen(true);
-    },
-    { enabled: canMerge },
-  );
 
   const sessionSplitActions: SplitSendAction[] = useMemo(
     () => [

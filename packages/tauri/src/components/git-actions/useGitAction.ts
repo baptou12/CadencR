@@ -10,7 +10,7 @@
 import { useMemo } from "react";
 import type { GitStatusSnapshot } from "@/api/generated";
 
-export type GitAction = "commit" | "push" | "pr";
+export type GitAction = "commit" | "push" | "pr" | "merge";
 
 export interface GitActionState {
   primary: GitAction | null;
@@ -22,12 +22,12 @@ export interface GitActionState {
   compareLabel: string;
 }
 
-const ORDER: readonly GitAction[] = ["commit", "push", "pr"] as const;
+const ORDER: readonly GitAction[] = ["commit", "push", "pr", "merge"] as const;
 
 const LOADING_STATE: GitActionState = {
   primary: null,
   label: "Loading…",
-  disabled: { commit: "Loading…", push: "Loading…", pr: "Loading…" },
+  disabled: { commit: "Loading…", push: "Loading…", pr: "Loading…", merge: "Loading…" },
   compareLabel: "Open PR",
 };
 
@@ -57,6 +57,23 @@ function derivePrDisabled(snapshot: GitStatusSnapshot): string | null {
   return null;
 }
 
+function deriveMergeDisabled(snapshot: GitStatusSnapshot): string | null {
+  if (snapshot.uncommitted_count > 0) return "Commit your changes first";
+  if (isSameLocalBranch(snapshot.current_branch, snapshot.target_branch)) {
+    return "Cannot merge a branch into itself";
+  }
+  if (snapshot.ahead_of_target <= 0) return "Nothing to merge";
+  return null;
+}
+
+function isSameLocalBranch(currentBranch: string, targetBranch: string): boolean {
+  return currentBranch === localTargetBranchName(targetBranch);
+}
+
+function localTargetBranchName(targetBranch: string): string {
+  return targetBranch.startsWith("origin/") ? targetBranch.slice("origin/".length) : targetBranch;
+}
+
 export function deriveGitAction(snapshot: GitStatusSnapshot | undefined): GitActionState {
   if (!snapshot) return LOADING_STATE;
 
@@ -69,7 +86,7 @@ export function deriveGitAction(snapshot: GitStatusSnapshot | undefined): GitAct
     return {
       primary: null,
       label: reason,
-      disabled: { commit: reason, push: reason, pr: reason },
+      disabled: { commit: reason, push: reason, pr: reason, merge: reason },
       compareLabel: snapshot.action_label ?? "Open PR",
     };
   }
@@ -79,6 +96,7 @@ export function deriveGitAction(snapshot: GitStatusSnapshot | undefined): GitAct
     commit: deriveCommitDisabled(snapshot),
     push: derivePushDisabled(snapshot),
     pr: derivePrDisabled(snapshot),
+    merge: deriveMergeDisabled(snapshot),
   };
 
   const primary = ORDER.find((action) => disabled[action] === null) ?? null;
@@ -89,7 +107,9 @@ export function deriveGitAction(snapshot: GitStatusSnapshot | undefined): GitAct
         ? "Push"
         : primary === "pr"
           ? compareLabel
-          : (disabled.commit ?? "No action");
+          : primary === "merge"
+            ? "Merge"
+            : (disabled.commit ?? "No action");
 
   return { primary, label, disabled, compareLabel };
 }

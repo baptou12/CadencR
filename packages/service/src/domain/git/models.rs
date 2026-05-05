@@ -128,12 +128,6 @@ pub struct CheckMergeConflictsParams {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
-pub struct MergeFeatureBranchBody {
-    pub project_id: i64,
-    pub feature_id: i64,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
 pub struct DeleteFeatureBranchParams {
     pub project_id: i64,
     pub feature_id: i64,

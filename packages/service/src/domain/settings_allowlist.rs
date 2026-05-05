@@ -116,6 +116,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_max_tabs",
     "editor_sidebar_collapsed",
     "git_sidebar_collapsed",
+    "git_merge_mode",
     // Workspace-scope agent defaults (mirror the per-project / per-feature keys)
     "agent_autonomy",
     "parallel_execution",

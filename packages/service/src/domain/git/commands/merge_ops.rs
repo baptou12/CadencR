@@ -1,4 +1,4 @@
-//! `git merge-tree` / `git merge --no-ff` / `git branch -d` orchestration.
+//! `git merge-tree` / `git branch -d` orchestration.
 //! Branch-resolution lives in [`super::merge`].
 
 use std::path::Path;
@@ -7,9 +7,7 @@ use tokio::process::Command;
 
 use crate::domain::git::models::{MergeConflictResult, MergeResult};
 use crate::error::AppError;
-use crate::shared::git_cli::{run_git, run_git_safe_refs};
-
-use super::merge::get_current_branch;
+use crate::shared::git_cli::run_git_safe_refs;
 
 /// Check if merging source_branch into target_branch would produce conflicts.
 ///
@@ -74,50 +72,6 @@ pub async fn check_merge_conflicts(
         has_conflicts: true,
         conflict_files,
     })
-}
-
-/// Merge source_branch into target_branch using --no-ff.
-pub async fn merge_branch(
-    repo_path: &Path,
-    source_branch: &str,
-    target_branch: &str,
-) -> Result<MergeResult, AppError> {
-    // Get current branch to restore later
-    let original_branch = get_current_branch(repo_path).await.ok().flatten();
-
-    // Checkout target and merge
-    let merge_result =
-        match run_git_safe_refs(&["checkout"], &[], &[target_branch], repo_path).await {
-            Ok(_) => match run_git_safe_refs(&["merge"], &["--no-ff"], &[source_branch], repo_path)
-                .await
-            {
-                Ok(_) => MergeResult {
-                    success: true,
-                    error: None,
-                },
-                Err(e) => {
-                    // Abort the merge (no user positionals → plain run_git is fine)
-                    let _ = run_git(&["merge", "--abort"], repo_path).await;
-                    MergeResult {
-                        success: false,
-                        error: Some(e.to_string()),
-                    }
-                }
-            },
-            Err(e) => MergeResult {
-                success: false,
-                error: Some(e.to_string()),
-            },
-        };
-
-    // Restore original branch
-    if let Some(ref orig) = original_branch {
-        if orig != target_branch {
-            let _ = run_git_safe_refs(&["checkout"], &[], &[orig], repo_path).await;
-        }
-    }
-
-    Ok(merge_result)
 }
 
 /// Delete a local branch using -d (safe, only if fully merged).

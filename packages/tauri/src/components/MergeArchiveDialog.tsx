@@ -201,7 +201,7 @@ export function MergeArchiveDialog({
               <Button
                 onClick={() =>
                   mergeMutation.mutate({
-                    data: { project_id: projectId, feature_id: featureId },
+                    data: { project_id: projectId, feature_id: featureId, mode: "no_ff" },
                   })
                 }
                 disabled={

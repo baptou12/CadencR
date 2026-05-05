@@ -70,7 +70,16 @@ describe("SettingsPage route", () => {
   it("renders agent autonomy section", () => {
     render(<SettingsPage />);
     expect(screen.getByText("Agent Autonomy")).toBeInTheDocument();
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getAllByRole("combobox").length).toBeGreaterThan(0);
+  });
+
+  it("renders git settings section", () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole("heading", { name: "Git" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Configure defaults and behavior for Git actions in the header."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("--no-ff")).toBeInTheDocument();
   });
 
   it("renders loader style section", () => {

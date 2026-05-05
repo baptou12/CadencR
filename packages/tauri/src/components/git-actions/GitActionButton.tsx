@@ -30,6 +30,7 @@ const GIT_ACTION_BUTTON_CLASS =
 
 const CommitDialog = lazy(() => import("./CommitDialog"));
 const PushDialog = lazy(() => import("./PushDialog"));
+const MergeDialog = lazy(() => import("./MergeDialog"));
 
 interface GitActionButtonProps {
   featureId: number;
@@ -52,6 +53,7 @@ export const GitActionButton = memo(function GitActionButton({
   const state = useGitAction(snapshot);
   const [commitOpen, setCommitOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
 
   // The push flow now lives in `PushDialog`: ssh prompts (passphrase,
@@ -86,6 +88,7 @@ export const GitActionButton = memo(function GitActionButton({
       if (state.disabled[action] !== null) return;
       if (action === "commit") setCommitOpen(true);
       else if (action === "push") openPush();
+      else if (action === "merge") setMergeOpen(true);
       else void runOpenCompare();
     },
     [state.disabled, openPush, runOpenCompare],
@@ -108,6 +111,14 @@ export const GitActionButton = memo(function GitActionButton({
     e.preventDefault();
     void runOpenCompare();
   });
+  useHotkeys(
+    "meta+shift+m",
+    (e) => {
+      e.preventDefault();
+      setPopoverOpen(true);
+    },
+    { enableOnFormTags: true },
+  );
 
   const PrimaryIcon = state.primary ? ICONS[state.primary] : GitCommit;
   const primaryDisabled = state.primary === null;
@@ -137,7 +148,7 @@ export const GitActionButton = memo(function GitActionButton({
               <ChevronDown className="size-3.5" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-80 p-1">
+          <PopoverContent align="end" className="w-80 p-0">
             <GitActionPopover state={state} onPick={runAction} />
           </PopoverContent>
         </Popover>
@@ -148,6 +159,9 @@ export const GitActionButton = memo(function GitActionButton({
         )}
         {pushOpen && (
           <PushDialog featureId={featureId} open={pushOpen} onOpenChange={setPushOpen} />
+        )}
+        {mergeOpen && (
+          <MergeDialog featureId={featureId} open={mergeOpen} onOpenChange={setMergeOpen} />
         )}
       </Suspense>
     </>
