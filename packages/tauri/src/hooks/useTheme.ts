@@ -1,22 +1,37 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useSystemAppearance } from "@/hooks/useSystemAppearance";
 import {
   applyThemeToDocument,
-  DEFAULT_THEME_ID,
   getTheme,
+  isFollowSystemThemeEnabled,
   parseThemeId,
-  writePersistedTheme,
+  parseSystemDarkThemeId,
+  parseSystemLightThemeId,
+  resolveActiveThemeId,
+  THEME_FOLLOW_SYSTEM_SETTING_KEY,
+  THEME_SETTING_KEY,
+  THEME_SYSTEM_DARK_SETTING_KEY,
+  THEME_SYSTEM_LIGHT_SETTING_KEY,
+  writePersistedThemeSettings,
   type ThemeDefinition,
   type ThemeId,
 } from "@/lib/themes";
 
-const THEME_SETTING_KEY = "theme_current";
-
 interface UseThemeResult {
   themeId: ThemeId;
   theme: ThemeDefinition;
+  manualThemeId: ThemeId;
+  systemLightThemeId: ThemeId;
+  systemDarkThemeId: ThemeId;
+  followSystemTheme: boolean;
   setTheme: (next: ThemeId) => void;
+  setSystemLightTheme: (next: ThemeId) => void;
+  setSystemDarkTheme: (next: ThemeId) => void;
+  setFollowSystemTheme: (next: boolean) => void;
   isLoading: boolean;
+  systemAppearanceError: Error | null;
 }
 
 /**
@@ -29,18 +44,67 @@ interface UseThemeResult {
  * sync with this hook.
  */
 export function useTheme(): UseThemeResult {
-  const setting = useDebouncedSetting(THEME_SETTING_KEY);
-  const themeId = parseThemeId(setting.value ?? DEFAULT_THEME_ID);
+  const manualSetting = useDebouncedSetting(THEME_SETTING_KEY, 0, { immediateCache: false });
+  const followSetting = useDebouncedSetting(THEME_FOLLOW_SYSTEM_SETTING_KEY, 0, {
+    immediateCache: false,
+  });
+  const lightSetting = useDebouncedSetting(THEME_SYSTEM_LIGHT_SETTING_KEY, 0, {
+    immediateCache: false,
+  });
+  const darkSetting = useDebouncedSetting(THEME_SYSTEM_DARK_SETTING_KEY, 0, {
+    immediateCache: false,
+  });
+  const systemAppearance = useSystemAppearance();
+
+  const manualThemeId = parseThemeId(manualSetting.value);
+  const systemLightThemeId = parseSystemLightThemeId(lightSetting.value);
+  const systemDarkThemeId = parseSystemDarkThemeId(darkSetting.value);
+  const followSystemTheme = isFollowSystemThemeEnabled(followSetting.value);
+  const themeId = resolveActiveThemeId({
+    followSystem: followSystemTheme,
+    manualTheme: manualThemeId,
+    systemLightTheme: systemLightThemeId,
+    systemDarkTheme: systemDarkThemeId,
+    systemAppearance: systemAppearance.appearance,
+  });
   const theme = getTheme(themeId);
 
   return useMemo(
     () => ({
       themeId,
       theme,
-      setTheme: setting.setValue,
-      isLoading: setting.isLoading,
+      manualThemeId,
+      systemLightThemeId,
+      systemDarkThemeId,
+      followSystemTheme,
+      setTheme: manualSetting.setValue,
+      setSystemLightTheme: lightSetting.setValue,
+      setSystemDarkTheme: darkSetting.setValue,
+      setFollowSystemTheme: (next: boolean): void => followSetting.setValue(String(next)),
+      isLoading:
+        manualSetting.isLoading ||
+        followSetting.isLoading ||
+        lightSetting.isLoading ||
+        darkSetting.isLoading,
+      systemAppearanceError: systemAppearance.error,
     }),
-    [themeId, theme, setting.setValue, setting.isLoading],
+    [
+      themeId,
+      theme,
+      manualThemeId,
+      systemLightThemeId,
+      systemDarkThemeId,
+      followSystemTheme,
+      manualSetting.setValue,
+      lightSetting.setValue,
+      darkSetting.setValue,
+      followSetting.setValue,
+      manualSetting.isLoading,
+      followSetting.isLoading,
+      lightSetting.isLoading,
+      darkSetting.isLoading,
+      systemAppearance.error,
+    ],
   );
 }
 
@@ -54,9 +118,34 @@ export function useTheme(): UseThemeResult {
  * "cache never refreshed" failure mode if the workspace fetch errors out.
  */
 export function useThemeSync(): void {
-  const { themeId } = useTheme();
+  const theme = useTheme();
+  const didToastSystemThemeErrorRef = useRef(false);
+
   useEffect(() => {
-    applyThemeToDocument(themeId);
-    writePersistedTheme(themeId);
-  }, [themeId]);
+    applyThemeToDocument(theme.themeId);
+    writePersistedThemeSettings({
+      followSystem: theme.followSystemTheme,
+      manualTheme: theme.manualThemeId,
+      systemLightTheme: theme.systemLightThemeId,
+      systemDarkTheme: theme.systemDarkThemeId,
+    });
+  }, [
+    theme.themeId,
+    theme.followSystemTheme,
+    theme.manualThemeId,
+    theme.systemLightThemeId,
+    theme.systemDarkThemeId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !theme.followSystemTheme ||
+      !theme.systemAppearanceError ||
+      didToastSystemThemeErrorRef.current
+    ) {
+      return;
+    }
+    didToastSystemThemeErrorRef.current = true;
+    toast.error(`Could not detect system theme: ${theme.systemAppearanceError.message}`);
+  }, [theme.followSystemTheme, theme.systemAppearanceError]);
 }
