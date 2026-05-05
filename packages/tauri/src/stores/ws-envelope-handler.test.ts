@@ -151,6 +151,35 @@ describe("handleEnvelope provider.set.ok", () => {
   });
 });
 
+describe("handleEnvelope commands.list", () => {
+  it("stores command kind and defaults missing kind to command", () => {
+    const session = createSessionEntry();
+    session.slashCommandsRequestRef = "commands-1";
+    session.slashCommandsLoading = true;
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "commands",
+      action: "list",
+      ref: "commands-1",
+      payload: {
+        commands: [
+          { name: "review", description: "Review code", kind: "command" },
+          { name: "finish-job", description: "Finish safely", kind: "skill" },
+          { name: "compact", description: "Compact context" },
+        ],
+      },
+    });
+
+    expect(ctx.getSession("s1").slashCommands).toEqual([
+      { name: "review", description: "Review code", kind: "command" },
+      { name: "finish-job", description: "Finish safely", kind: "skill" },
+      { name: "compact", description: "Compact context", kind: "command" },
+    ]);
+    expect(ctx.getSession("s1").slashCommandsLoading).toBe(false);
+  });
+});
+
 describe("handleEnvelope workflow worktree events", () => {
   it("bumps the per-feature watcher epoch on worktree.created", () => {
     // The git-status subscription hook listens to this counter so it can

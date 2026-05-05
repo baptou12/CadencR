@@ -51,6 +51,19 @@ pub struct CodexModel {
     pub is_default: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodexCommandKind {
+    Command,
+    Skill,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexCommand {
+    pub name: String,
+    pub description: Option<String>,
+    pub kind: CodexCommandKind,
+}
+
 #[derive(Debug, Clone)]
 pub struct ThreadHandle {
     pub id: String,

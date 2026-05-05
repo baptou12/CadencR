@@ -275,7 +275,7 @@ impl CodexAppServerClient {
         .await
     }
 
-    async fn request(&self, method: &str, params: Value) -> Result<Value, SdkError> {
+    pub(crate) async fn request(&self, method: &str, params: Value) -> Result<Value, SdkError> {
         self.request_with_timeout(method, params, self.inner.request_timeout)
             .await
     }

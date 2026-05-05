@@ -1,9 +1,17 @@
-import { useState, useMemo, useCallback } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  type Dispatch,
+  type KeyboardEvent,
+  type SetStateAction,
+} from "react";
 
 export interface SlashCommand {
   [key: string]: unknown;
   name: string;
   description: string;
+  kind: "command" | "skill";
   argumentHint?: string;
 }
 
@@ -20,8 +28,70 @@ const INITIAL_STATE: SlashCommandState = {
 };
 
 const MAX_RESULTS = 20;
+type SlashCommandKeyDownResult = { newText: string; newCursorPos: number } | true | false;
 
-export function useSlashCommand(commands: SlashCommand[] | undefined) {
+function commandMatchRank(command: SlashCommand, query: string): number | null {
+  const name = command.name.toLowerCase();
+  const description = command.description.toLowerCase();
+  const namespaceName = name.split(":").at(-1) ?? name;
+
+  if (name === query || namespaceName === query) return 0;
+  if (name.startsWith(query)) return 1;
+  if (namespaceName.startsWith(query)) return 2;
+  if (name.includes(query)) return 3;
+  if (description.includes(query)) return 4;
+  return null;
+}
+
+interface OpenKeyDownArgs {
+  e: KeyboardEvent<HTMLTextAreaElement>;
+  filteredItems: SlashCommand[];
+  setState: Dispatch<SetStateAction<SlashCommandState>>;
+  confirm: (text: string) => { newText: string; newCursorPos: number } | null;
+  close: () => void;
+  text: string;
+}
+
+function handleOpenKeyDown({
+  e,
+  filteredItems,
+  setState,
+  confirm,
+  close,
+  text,
+}: OpenKeyDownArgs): SlashCommandKeyDownResult {
+  if (filteredItems.length === 0) return false;
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    setState((s) => ({ ...s, selectedIndex: (s.selectedIndex + 1) % filteredItems.length }));
+    return true;
+  }
+
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    setState((s) => ({
+      ...s,
+      selectedIndex: (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
+    }));
+    return true;
+  }
+
+  if (e.key === "Tab" || e.key === "Enter") {
+    e.preventDefault();
+    return confirm(text) ?? true;
+  }
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    close();
+    return true;
+  }
+
+  return false;
+}
+
+export function useSlashCommand(commands: SlashCommand[] | undefined, triggerChar = "/") {
   const [state, setState] = useState<SlashCommandState>(INITIAL_STATE);
 
   const filteredItems = useMemo(() => {
@@ -29,9 +99,12 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
     const q = state.query.toLowerCase();
     if (!q) return commands.slice(0, MAX_RESULTS);
     return commands
+      .map((cmd, index) => ({ cmd, index, rank: commandMatchRank(cmd, q) }))
       .filter(
-        (cmd) => cmd.name.toLowerCase().includes(q) || cmd.description.toLowerCase().includes(q),
+        (item): item is { cmd: SlashCommand; index: number; rank: number } => item.rank != null,
       )
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map((item) => item.cmd)
       .slice(0, MAX_RESULTS);
   }, [state.isOpen, state.query, commands]);
 
@@ -41,8 +114,7 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
 
   const handleChange = useCallback(
     (newText: string, selectionStart: number) => {
-      // Slash commands only trigger at position 0
-      if (!newText.startsWith("/")) {
+      if (!newText.startsWith(triggerChar)) {
         if (state.isOpen) close();
         return;
       }
@@ -54,7 +126,10 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
         return;
       }
 
-      const query = newText.slice(1, spaceIndex === -1 ? selectionStart : spaceIndex);
+      const query = newText.slice(
+        triggerChar.length,
+        spaceIndex === -1 ? selectionStart : spaceIndex,
+      );
 
       setState({
         isOpen: true,
@@ -62,7 +137,7 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
         selectedIndex: 0,
       });
     },
-    [state.isOpen, close],
+    [state.isOpen, close, triggerChar],
   );
 
   const confirm = useCallback(
@@ -73,54 +148,19 @@ export function useSlashCommand(commands: SlashCommand[] | undefined) {
         : filteredItems[state.selectedIndex];
       if (!item) return null;
 
-      const newText = `/${item.name} `;
+      const newText = `${triggerChar}${item.name} `;
       const newCursorPos = newText.length;
 
       close();
       return { newText, newCursorPos };
     },
-    [state, filteredItems, close],
+    [state, filteredItems, close, triggerChar],
   );
 
   const handleKeyDown = useCallback(
-    (
-      e: React.KeyboardEvent<HTMLTextAreaElement>,
-      text: string,
-    ): { newText: string; newCursorPos: number } | true | false => {
-      if (!state.isOpen || filteredItems.length === 0) return false;
-
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setState((s) => ({
-          ...s,
-          selectedIndex: (s.selectedIndex + 1) % filteredItems.length,
-        }));
-        return true;
-      }
-
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setState((s) => ({
-          ...s,
-          selectedIndex: (s.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
-        }));
-        return true;
-      }
-
-      if (e.key === "Tab" || e.key === "Enter") {
-        e.preventDefault();
-        const result = confirm(text);
-        if (result) return result;
-        return true;
-      }
-
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-        return true;
-      }
-
-      return false;
+    (e: KeyboardEvent<HTMLTextAreaElement>, text: string): SlashCommandKeyDownResult => {
+      if (!state.isOpen) return false;
+      return handleOpenKeyDown({ e, filteredItems, setState, confirm, close, text });
     },
     [state.isOpen, filteredItems, confirm, close],
   );

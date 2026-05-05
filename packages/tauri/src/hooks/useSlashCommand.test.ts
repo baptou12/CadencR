@@ -3,9 +3,9 @@ import { describe, it, expect } from "vitest";
 import { useSlashCommand, type SlashCommand } from "./useSlashCommand";
 
 const commands: SlashCommand[] = [
-  { name: "commit", description: "Create a git commit" },
-  { name: "review", description: "Start a code review" },
-  { name: "plan", description: "Create a development plan" },
+  { name: "commit", description: "Create a git commit", kind: "command" },
+  { name: "review", description: "Start a code review", kind: "command" },
+  { name: "plan", description: "Create a development plan", kind: "skill" },
 ];
 
 describe("useSlashCommand", () => {
@@ -40,6 +40,38 @@ describe("useSlashCommand", () => {
       result.current.handleChange("/git", 4);
     });
     expect(result.current.filteredItems.some((c) => c.name === "commit")).toBe(true);
+  });
+
+  it("ranks exact and prefix name matches before description-only matches", () => {
+    const mixedCommands: SlashCommand[] = [
+      {
+        name: "first-description-hit",
+        description: "Contains brainstorm in description",
+        kind: "command",
+      },
+      {
+        name: "superpowers:brainstorming",
+        description: "Create ideas",
+        kind: "command",
+      },
+      {
+        name: "brainstorm",
+        description: "Best direct match",
+        kind: "command",
+      },
+    ];
+    const { result } = renderHook(() => useSlashCommand(mixedCommands));
+
+    act(() => {
+      result.current.handleChange("/brain", 6);
+    });
+
+    expect(result.current.filteredItems.map((item) => item.name)).toEqual([
+      "brainstorm",
+      "superpowers:brainstorming",
+      "first-description-hit",
+    ]);
+    expect(result.current.selectedIndex).toBe(0);
   });
 
   it("closes when text does not start with /", () => {
@@ -95,6 +127,20 @@ describe("useSlashCommand", () => {
       confirmed = result.current.confirm("/", "review");
     });
     expect(confirmed!.newText).toBe("/review ");
+  });
+
+  it("supports dollar-prefixed skill insertion", () => {
+    const { result } = renderHook(() => useSlashCommand(commands, "$"));
+    act(() => {
+      result.current.handleChange("$plan", 5);
+    });
+
+    let confirmed: { newText: string; newCursorPos: number } | null = null;
+    act(() => {
+      confirmed = result.current.confirm("$plan", "plan");
+    });
+
+    expect(confirmed).toEqual({ newText: "$plan ", newCursorPos: 6 });
   });
 
   it("confirm returns null when not open", () => {

@@ -172,10 +172,17 @@ pub enum RuntimePermissionResponseKind {
     PlanApproval,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSlashCommand {
+    pub name: String,
+    pub description: Option<String>,
+    pub kind: RuntimeSlashCommandKind,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuntimeSlashCommandDiscovery {
-    LocalFilesystem,
-    RuntimeNative,
+pub enum RuntimeSlashCommandKind {
+    Command,
+    Skill,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -615,8 +622,13 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
 
-    fn slash_command_discovery(&self) -> RuntimeSlashCommandDiscovery {
-        RuntimeSlashCommandDiscovery::LocalFilesystem
+    async fn runtime_slash_commands(
+        &self,
+        _cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        Err(RuntimeError::new(
+            "runtime slash command discovery is not supported by this provider",
+        ))
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {

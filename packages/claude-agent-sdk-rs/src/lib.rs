@@ -1,3 +1,4 @@
+pub mod commands;
 pub mod error;
 pub mod mcp;
 pub mod messages;
@@ -8,6 +9,7 @@ pub mod transport;
 pub mod types;
 
 // Re-export key public types for convenient top-level access.
+pub use commands::list_commands;
 pub use error::SdkError;
 pub use mcp::McpServerConfig;
 pub use messages::{

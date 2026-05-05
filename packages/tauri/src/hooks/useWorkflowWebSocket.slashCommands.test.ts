@@ -122,18 +122,23 @@ describe("slash commands", () => {
     expect(ws.sent.length).toBe(sentCount);
   });
 
-  it("does not re-request when commands already loaded", () => {
+  it("re-requests when commands are already loaded for the same target", () => {
     const ws = connectStore();
     useWorkflowStore.setState({
-      slashCommands: [{ name: "clear", description: "Clear" }],
+      slashCommands: [{ name: "clear", description: "Clear", kind: "command" }],
       slashCommandsKey: "opencode::/path",
       slashCommandsRequestRef: "req-1",
     });
 
     useWorkflowStore.getState().requestSlashCommands("/path", "opencode");
-    // Only the feature.start message from connect, no commands.get
-    const msgs = ws.sent.map((s) => JSON.parse(s));
-    expect(msgs.every((m: { domain: string }) => m.domain !== "commands")).toBe(true);
+    const msg = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(msg.domain).toBe("commands");
+    expect(msg.action).toBe("get");
+    expect(msg.payload.provider).toBe("opencode");
+    expect(useWorkflowStore.getState().slashCommands).toEqual([
+      { name: "clear", description: "Clear", kind: "command" },
+    ]);
+    expect(useWorkflowStore.getState().slashCommandsLoading).toBe(true);
   });
 
   it("handles commands.list response and populates slashCommands", () => {
@@ -148,7 +153,11 @@ describe("slash commands", () => {
         domain: "commands",
         action: "list",
         payload: {
-          commands: [{ name: "clear", description: "Clear conversation" }, { name: "compact" }],
+          commands: [
+            { name: "clear", description: "Clear conversation", kind: "command" },
+            { name: "finish-job", description: "Finish safely", kind: "skill" },
+            { name: "compact" },
+          ],
         },
       }),
     });
@@ -156,14 +165,15 @@ describe("slash commands", () => {
     const state = useWorkflowStore.getState();
     expect(state.slashCommandsLoading).toBe(false);
     expect(state.slashCommands).toEqual([
-      { name: "clear", description: "Clear conversation" },
-      { name: "compact", description: "" },
+      { name: "clear", description: "Clear conversation", kind: "command" },
+      { name: "finish-job", description: "Finish safely", kind: "skill" },
+      { name: "compact", description: "", kind: "command" },
     ]);
   });
 
   it("resets slash commands on connect", () => {
     useWorkflowStore.setState({
-      slashCommands: [{ name: "old", description: "stale" }],
+      slashCommands: [{ name: "old", description: "stale", kind: "command" }],
       slashCommandsLoading: true,
       slashCommandsKey: "claude_code::/old",
       slashCommandsRequestRef: "req-old",

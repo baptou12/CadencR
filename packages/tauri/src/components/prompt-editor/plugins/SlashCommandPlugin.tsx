@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
 import { $createSlashCommandNode } from "../nodes/SlashCommandNode";
@@ -13,11 +13,22 @@ import {
 interface SlashCommandPluginProps {
   commands: SlashCommand[] | undefined;
   isLoading?: boolean;
+  commandKind?: SlashCommand["kind"];
+  triggerChar?: "/" | "$";
 }
 
-export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginProps) {
+export function SlashCommandPlugin({
+  commands,
+  isLoading,
+  commandKind,
+  triggerChar = "/",
+}: SlashCommandPluginProps) {
   const [editor] = useLexicalComposerContext();
-  const slash = useSlashCommand(commands);
+  const filteredCommands = useMemo(
+    () => commands?.filter((command) => !commandKind || command.kind === commandKind),
+    [commands, commandKind],
+  );
+  const slash = useSlashCommand(filteredCommands, triggerChar);
   const slashRef = useRef(slash);
   slashRef.current = slash;
   useEffect(() => {
@@ -37,8 +48,8 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
           return;
         }
 
-        const match = getTriggerMatch(node, anchor.offset, "/");
-        // Slash commands only trigger at the very start of the editor
+        const match = getTriggerMatch(node, anchor.offset, triggerChar);
+        // Command/skill triggers only open at the very start of the editor.
         const isFirstNode =
           node.getPreviousSibling() === null && node.getParent() === $getRoot().getFirstChild();
         if (!match || match.triggerOffset !== 0 || !isFirstNode) {
@@ -46,19 +57,23 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
           return;
         }
 
-        const syntheticText = "/" + match.query;
+        const syntheticText = triggerChar + match.query;
         s.handleChange(syntheticText, syntheticText.length);
       });
     });
-  }, [editor]);
+  }, [editor, triggerChar]);
 
   const handleSelect = useCallback(
     (commandName: string) => {
-      replaceTriggerWithNode(editor, "/", $createSlashCommandNode, commandName, () =>
-        slash.close(),
+      replaceTriggerWithNode(
+        editor,
+        triggerChar,
+        (name) => $createSlashCommandNode(name, triggerChar),
+        commandName,
+        () => slash.close(),
       );
     },
-    [editor, slash],
+    [editor, slash, triggerChar],
   );
 
   const getSelectedValue = useCallback(() => {
@@ -68,7 +83,7 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
 
   usePopoverKeyboardCommands(editor, slash.isOpen, slashRef, getSelectedValue, handleSelect);
 
-  if (!slash.isOpen || slash.filteredItems.length === 0) return null;
+  if (!slash.isOpen || (!isLoading && slash.filteredItems.length === 0)) return null;
 
   return (
     <SlashCommandPopover
@@ -77,6 +92,7 @@ export function SlashCommandPlugin({ commands, isLoading }: SlashCommandPluginPr
       selectedIndex={slash.selectedIndex}
       onSelect={handleSelect}
       isLoading={isLoading ?? false}
+      triggerChar={triggerChar}
     >
       <span />
     </SlashCommandPopover>

@@ -1,7 +1,18 @@
 use axum::extract::ws::Message;
 
+use crate::domain::ws_session::slash_commands::SlashCommandKind;
+
 use super::super::protocol::*;
 use super::{send_error, WsSender};
+
+impl From<SlashCommandKind> for SlashCommandKindPayload {
+    fn from(kind: SlashCommandKind) -> Self {
+        match kind {
+            SlashCommandKind::Command => Self::Command,
+            SlashCommandKind::Skill => Self::Skill,
+        }
+    }
+}
 
 /// Handle commands domain actions.
 pub(super) async fn handle_commands_action(envelope: WsEnvelope, sender: &WsSender) {
@@ -25,8 +36,7 @@ pub(super) async fn handle_commands_action(envelope: WsEnvelope, sender: &WsSend
 
 /// Handle commands.get: fetch available slash commands for a given cwd.
 ///
-/// Resolves commands by scanning the filesystem for custom commands/skills
-/// and combining with hardcoded built-in commands. Does NOT spawn a CLI subprocess.
+/// Resolves commands for the requested provider and working directory.
 async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
     let payload: CommandsGetPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -41,15 +51,25 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         }
     };
 
-    let resolved =
-        super::super::slash_commands::resolve_commands(&payload.cwd, payload.provider.as_deref())
-            .await;
+    let provider = payload.provider.trim();
+    if provider.is_empty() {
+        send_error(
+            sender,
+            &envelope.id,
+            "INVALID_PAYLOAD",
+            "Invalid commands.get payload: provider is required",
+        );
+        return;
+    }
+
+    let resolved = super::super::slash_commands::resolve_commands(&payload.cwd, provider).await;
 
     let commands: Vec<SlashCommandPayload> = resolved
         .into_iter()
         .map(|c| SlashCommandPayload {
             name: c.name,
             description: c.description,
+            kind: c.kind.into(),
         })
         .collect();
 
@@ -60,4 +80,99 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         serde_json::to_value(CommandsListPayload { commands }).unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::extract::ws::Message;
+    use tokio::sync::mpsc;
+
+    use crate::domain::ws_session::protocol::{CommandsListPayload, SlashCommandKindPayload};
+
+    use super::{handle_commands_get, SessionErrorPayload, WsEnvelope};
+
+    fn sender() -> (
+        mpsc::UnboundedSender<Message>,
+        mpsc::UnboundedReceiver<Message>,
+    ) {
+        mpsc::unbounded_channel()
+    }
+
+    fn envelope(payload: serde_json::Value) -> WsEnvelope {
+        WsEnvelope {
+            id: "commands-test".to_string(),
+            domain: "commands".to_string(),
+            action: "get".to_string(),
+            r#ref: None,
+            payload,
+        }
+    }
+
+    fn recv_error(rx: &mut mpsc::UnboundedReceiver<Message>) -> SessionErrorPayload {
+        let Message::Text(text) = rx.try_recv().expect("expected error message") else {
+            panic!("expected text message");
+        };
+        let reply: WsEnvelope = serde_json::from_str(&text).unwrap();
+        assert_eq!(reply.action, "error");
+        serde_json::from_value(reply.payload).unwrap()
+    }
+
+    #[tokio::test]
+    async fn commands_get_requires_provider() {
+        let (tx, mut rx) = sender();
+        handle_commands_get(envelope(serde_json::json!({ "cwd": "/repo" })), &tx).await;
+
+        let payload = recv_error(&mut rx);
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+        assert!(payload.message.contains("provider"));
+    }
+
+    #[tokio::test]
+    async fn commands_get_rejects_blank_provider() {
+        let (tx, mut rx) = sender();
+        handle_commands_get(
+            envelope(serde_json::json!({ "cwd": "/repo", "provider": " " })),
+            &tx,
+        )
+        .await;
+
+        let payload = recv_error(&mut rx);
+        assert_eq!(payload.code, "INVALID_PAYLOAD");
+        assert!(payload.message.contains("provider is required"));
+    }
+
+    #[tokio::test]
+    async fn commands_get_returns_command_kind() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".git")).unwrap();
+        let skill_dir = temp.path().join(".agents/skills/finish-job");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: finish-job\ndescription: Finish safely\n---\n",
+        )
+        .unwrap();
+
+        let (tx, mut rx) = sender();
+        handle_commands_get(
+            envelope(serde_json::json!({
+                "cwd": temp.path().to_str().unwrap(),
+                "provider": crate::domain::agents::codex::PROVIDER_ID
+            })),
+            &tx,
+        )
+        .await;
+
+        let Message::Text(text) = rx.try_recv().expect("expected commands reply") else {
+            panic!("expected text message");
+        };
+        let reply: WsEnvelope = serde_json::from_str(&text).unwrap();
+        let payload: CommandsListPayload = serde_json::from_value(reply.payload).unwrap();
+        let skill = payload
+            .commands
+            .iter()
+            .find(|command| command.name == "finish-job")
+            .expect("expected local skill");
+        assert!(matches!(skill.kind, SlashCommandKindPayload::Skill));
+    }
 }

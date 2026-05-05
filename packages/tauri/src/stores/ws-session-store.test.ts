@@ -2058,7 +2058,7 @@ describe("ws-session-store", () => {
 
       useWsSessionStore.setState((state) =>
         updateSession(state, "s1", {
-          slashCommands: [{ name: "compact", description: "Compact" }],
+          slashCommands: [{ name: "compact", description: "Compact", kind: "command" }],
           slashCommandsLoading: false,
           slashCommandsKey: "claude_code::/repo",
           slashCommandsRequestRef: firstRequest.id,
@@ -2076,6 +2076,35 @@ describe("ws-session-store", () => {
       expect(useWsSessionStore.getState().sessions["s1"].slashCommands).toEqual([]);
     });
 
+    it("re-requests slash commands for the same provider and cwd after commands are loaded", async () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      await tick();
+      const ws = getWs();
+
+      useWsSessionStore.setState((state) =>
+        updateSession(state, "s1", {
+          slashCommands: [{ name: "compact", description: "Compact", kind: "command" }],
+          slashCommandsLoading: false,
+          slashCommandsKey: "codex_cli::/repo",
+          slashCommandsRequestRef: "previous-request",
+        }),
+      );
+
+      store.requestSlashCommands("s1", "/repo", "codex_cli");
+
+      const request = JSON.parse(ws.sent[ws.sent.length - 1]);
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(request.domain).toBe("commands");
+      expect(request.action).toBe("get");
+      expect(request.payload.provider).toBe("codex_cli");
+      expect(session.slashCommands).toEqual([
+        { name: "compact", description: "Compact", kind: "command" },
+      ]);
+      expect(session.slashCommandsLoading).toBe(true);
+      expect(session.slashCommandsRequestRef).toBe(request.id);
+    });
+
     it("ignores stale slash command responses for an older provider", async () => {
       const store = useWsSessionStore.getState();
       store.connect("s1");
@@ -2090,7 +2119,7 @@ describe("ws-session-store", () => {
         domain: "commands",
         action: "list",
         payload: {
-          commands: [{ name: "compact", description: "Claude compact" }],
+          commands: [{ name: "compact", description: "Claude compact", kind: "command" }],
         },
       });
 

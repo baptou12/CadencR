@@ -126,12 +126,12 @@ export function createSessionCompact(sessionId: string): WsEnvelope {
   return createEnvelope("session", "compact", { session_id: sessionId });
 }
 
-export function createCommandsGet(cwd: string, provider?: string): WsEnvelope {
-  return createEnvelope("commands", "get", provider ? { cwd, provider } : { cwd });
+export function createCommandsGet(cwd: string, provider: string): WsEnvelope {
+  return createEnvelope("commands", "get", { cwd, provider });
 }
 
 export interface CommandsListPayload {
-  commands: Array<{ name: string; description?: string }>;
+  commands: Array<{ name: string; description?: string; kind?: "command" | "skill" }>;
 }
 
 export function createHistoryGet(projectId: number): WsEnvelope {

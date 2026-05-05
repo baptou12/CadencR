@@ -10,6 +10,7 @@ interface SlashCommandPopoverProps {
   onSelect: (commandName: string) => void;
   /** Whether the commands query is loading */
   isLoading: boolean;
+  triggerChar?: string;
   children: React.ReactNode;
 }
 
@@ -19,6 +20,7 @@ export function SlashCommandPopover({
   selectedIndex,
   onSelect,
   isLoading,
+  triggerChar = "/",
   children,
 }: SlashCommandPopoverProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -60,13 +62,35 @@ export function SlashCommandPopover({
                   onSelect(item.name);
                 }}
               >
-                <TerminalIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                <TerminalIcon
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    i === selectedIndex ? "text-accent-foreground/80" : "text-muted-foreground",
+                  )}
+                />
                 <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                  <span className="shrink-0 font-medium">/{item.name}</span>
-                  <span className="truncate text-xs text-muted-foreground">{item.description}</span>
+                  <span className="shrink-0 font-medium">
+                    {triggerChar}
+                    {item.name}
+                  </span>
+                  <span
+                    className={cn(
+                      "truncate text-xs",
+                      i === selectedIndex ? "text-accent-foreground/80" : "text-muted-foreground",
+                    )}
+                  >
+                    {item.description}
+                  </span>
                 </span>
                 {item.argumentHint && (
-                  <span className="shrink-0 text-xs italic text-muted-foreground/60">
+                  <span
+                    className={cn(
+                      "shrink-0 text-xs italic",
+                      i === selectedIndex
+                        ? "text-accent-foreground/70"
+                        : "text-muted-foreground/60",
+                    )}
+                  >
                     {item.argumentHint}
                   </span>
                 )}

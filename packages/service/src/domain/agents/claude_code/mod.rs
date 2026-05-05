@@ -17,8 +17,9 @@ use self::catalog::fallback_models;
 use self::events::{context_window_for_model_from_raw, normalize_event};
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
-    RuntimeMessageRx, RuntimePermissionMode, RuntimeSpawnConfig, RuntimeToolPermissionHandler,
-    RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+    RuntimeMessageRx, RuntimePermissionMode, RuntimeSlashCommand, RuntimeSlashCommandKind,
+    RuntimeSpawnConfig, RuntimeToolPermissionHandler, RuntimeToolPermissionRequest,
+    RuntimeToolPermissionResult,
 };
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
@@ -218,15 +219,34 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
 
     fn supports_builtin_compact_command(&self) -> bool {
-        true
+        false
+    }
+
+    async fn runtime_slash_commands(
+        &self,
+        cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        let commands = claude_agent_sdk_rs::list_commands(cwd, None)
+            .await
+            .map_err(RuntimeError::from)?;
+        Ok(commands
+            .into_iter()
+            .map(|command| RuntimeSlashCommand {
+                name: command.name,
+                description: command.description,
+                // Claude Code exposes skills and slash commands through the
+                // same init `slash_commands` list, so the backend intentionally
+                // keeps them as `/` commands for this provider.
+                kind: RuntimeSlashCommandKind::Command,
+            })
+            .collect())
     }
 
     fn supports_permission_mode(&self, _mode: &RuntimePermissionMode) -> bool {
         // Claude Code's CLI accepts every variant the SDK exposes.
         true
     }
-    // Default `default_permission_mode_wire` ("acceptEdits") matches Claude Code's
-    // primary edit mode — no override needed.
+    // Default edit mode maps to Claude Code's primary edit mode.
 
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
