@@ -3,8 +3,6 @@
 //! Routes permission requests/responses between the frontend and running agents,
 //! and implements the `CanUseTool` bridge for approval gates (plan/PRD).
 
-use std::collections::HashSet;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -19,7 +17,7 @@ use crate::domain::agents::adapter::{
     RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 use crate::domain::features::repository as repo;
-use crate::domain::permission_bridge::{self, ResolvedAction};
+use crate::domain::permission_bridge;
 use crate::domain::workflow::engine::{AgentSlot, WsSender};
 use crate::domain::workflow::status::WorkflowStatus;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
@@ -78,9 +76,6 @@ pub struct WorkflowPermissionBridge {
     pub feature_id: i64,
     pub sender: WsSender,
     pub response_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<PermissionResponse>>>,
-    pub worktree_path: PathBuf,
-    pub session_cache: Arc<tokio::sync::Mutex<HashSet<String>>>,
-    pub allowed_patterns: Arc<HashSet<String>>,
     pub write_pool: SqlitePool,
     pub db_session_id: i64,
     pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
@@ -102,26 +97,7 @@ impl RuntimeToolPermissionHandler for WorkflowPermissionBridge {
             return self.handle_approval_gate(&request, kind).await;
         }
 
-        // Standard permission resolution via shared bridge
-        let action = permission_bridge::resolve_permission_check(
-            &request,
-            &self.worktree_path,
-            &self.session_cache,
-            &self.allowed_patterns,
-        )
-        .await;
-
-        match action {
-            ResolvedAction::Resolved(result) => result,
-            ResolvedAction::NeedsPrompt {
-                description,
-                pattern,
-                force_prompt,
-            } => {
-                self.handle_needs_prompt(&request, description, pattern, force_prompt)
-                    .await
-            }
-        }
+        self.handle_provider_permission_prompt(&request).await
     }
 }
 
@@ -195,14 +171,13 @@ impl WorkflowPermissionBridge {
     /// Handle a NeedsPrompt result: persist the gate (write + broadcast
     /// askUser), send the workflow envelope, and delegate to
     /// `wait_and_apply_decision` which owns clear + terminal broadcast.
-    async fn handle_needs_prompt(
+    async fn handle_provider_permission_prompt(
         &self,
         request: &RuntimeToolPermissionRequest,
-        description: String,
-        pattern: String,
-        force_prompt: bool,
     ) -> RuntimeToolPermissionResult {
-        debug!(tool_name = %request.tool_name, pattern = %pattern, "workflow prompting user");
+        debug!(tool_name = %request.tool_name, "workflow prompting user for provider-native permission");
+        let permission_updates =
+            permission_bridge::persistent_permission_updates(&request.permission_updates);
         let is_ask_user_question = request.tool_name == "AskUserQuestion";
         let clear_kind = if is_ask_user_question {
             PendingUserInputKind::Question
@@ -219,7 +194,7 @@ impl WorkflowPermissionBridge {
                 "tool_name": &request.tool_name,
                 "tool_input": &request.input,
                 "request_id": &request.tool_use_id,
-                "pattern": &pattern,
+                "pattern": null,
             });
             WsSessionPersistence::mark_awaiting_user_static(
                 &self.write_pool,
@@ -236,10 +211,10 @@ impl WorkflowPermissionBridge {
                 request_id: request.tool_use_id.clone(),
                 tool_name: request.tool_name.clone(),
                 tool_input: request.input.clone(),
-                description: Some(description.clone()),
-                pattern: Some(pattern.clone()),
+                description: Some(permission_bridge::provider_permission_description(request)),
+                pattern: None,
                 preview: permission_bridge::extract_permission_preview(&request.input),
-                options: permission_bridge::build_default_permission_options(Some(&pattern)),
+                options: permission_bridge::build_provider_permission_options(&permission_updates),
             };
             WsSessionPersistence::mark_awaiting_user_static(
                 &self.write_pool,
@@ -258,10 +233,10 @@ impl WorkflowPermissionBridge {
             request_id: request.tool_use_id.clone(),
             tool_name: request.tool_name.clone(),
             tool_input: request.input.clone(),
-            description: Some(description),
-            pattern: Some(pattern.clone()),
+            description: Some(permission_bridge::provider_permission_description(request)),
+            pattern: None,
             preview: permission_bridge::extract_permission_preview(&request.input),
-            options: permission_bridge::build_default_permission_options(Some(&pattern)),
+            options: permission_bridge::build_provider_permission_options(&permission_updates),
         };
         let envelope = WsEnvelope::new(
             "workflow",
@@ -277,10 +252,7 @@ impl WorkflowPermissionBridge {
             &self.response_rx,
             &request.tool_use_id,
             request.input.clone(),
-            &pattern,
-            force_prompt,
-            &self.worktree_path,
-            &self.session_cache,
+            &permission_updates,
             &self.session_status_tx,
             self.feature_id,
             &self.write_pool,

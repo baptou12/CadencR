@@ -1,8 +1,6 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tracing::{debug, info};
 
 use super::super::permissions;
@@ -324,9 +322,6 @@ pub(super) async fn handle_init(
         system_prompt: runtime_config.system_prompt.clone(),
         env: runtime_config.env.clone(),
     };
-    let allowed_patterns = Arc::new(permissions::load_allowed_patterns(&runtime_config.cwd));
-    let session_cache = Arc::new(Mutex::new(HashSet::new()));
-
     let handle = SdkHandle {
         state: QueryState::Pending(runtime_config),
         feature_id,
@@ -341,8 +336,6 @@ pub(super) async fn handle_init(
         manual_compact_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         resume_session_id: resume_session_id.clone(),
         config,
-        session_cache,
-        allowed_patterns,
         manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 

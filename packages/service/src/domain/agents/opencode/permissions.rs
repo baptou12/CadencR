@@ -28,8 +28,8 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
         RuntimePermissionOption {
             decision: RuntimePermissionDecision::AllowFuture,
             option_id: None,
-            label: "Always allow".to_string(),
-            description: "Let OpenCode allow similar requests automatically".to_string(),
+            label: "Allow for this session".to_string(),
+            description: "Let OpenCode allow similar requests during this session".to_string(),
             collect_feedback: false,
         },
         RuntimePermissionOption {
@@ -187,9 +187,9 @@ mod tests {
     }
 
     #[test]
-    fn opencode_permission_options_include_always_allow() {
+    fn opencode_permission_options_label_always_as_session_scoped() {
         let options = permission_options();
-        assert_eq!(options[1].label, "Always allow");
+        assert_eq!(options[1].label, "Allow for this session");
     }
 
     #[test]

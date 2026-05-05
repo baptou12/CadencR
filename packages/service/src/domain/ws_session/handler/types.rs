@@ -2,7 +2,7 @@
 //! WebSocket session, the runtime-session state machine, and the small
 //! type aliases that wrap the channels and locks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -68,10 +68,6 @@ pub struct SdkHandle {
     /// running server instead of probing/spawning on every compact request.
     pub(super) runtime_control_endpoint: Option<String>,
     pub(super) manual_compact_running: Arc<AtomicBool>,
-    /// Session-level cache of approved permission patterns.
-    pub(super) session_cache: Arc<Mutex<HashSet<String>>>,
-    /// Pre-loaded allowed patterns from settings files.
-    pub(super) allowed_patterns: Arc<HashSet<String>>,
     /// Claude CLI session ID to use for --resume on the first prompt.
     /// Set from the DB row at init time; consumed (taken) when spawning.
     pub(super) resume_session_id: Option<String>,

@@ -36,6 +36,49 @@ const permission: PendingPermission = {
   ],
 };
 
+const codexMcpPermission: PendingPermission = {
+  ...permission,
+  options: [
+    {
+      decision: "allow_once",
+      optionId: 'codex_elicitation:{"action":"accept","content":{"approved":true}}',
+      label: "Approve",
+      description: "Accept this MCP elicitation",
+      collectFeedback: false,
+    },
+    {
+      decision: "allow_future",
+      optionId:
+        'codex_elicitation:{"action":"accept","content":{"approved":true},"_meta":{"persist":"session"}}',
+      label: "Approve for session",
+      description: "Accept matching MCP approvals for this Codex session",
+      collectFeedback: false,
+    },
+    {
+      decision: "allow_future",
+      optionId:
+        'codex_elicitation:{"action":"accept","content":{"approved":true},"_meta":{"persist":"always"}}',
+      label: "Always approve",
+      description: "Accept and let Codex persist this MCP approval",
+      collectFeedback: false,
+    },
+    {
+      decision: "deny",
+      optionId: 'codex_elicitation:{"action":"decline","content":null}',
+      label: "Deny and continue",
+      description: "Decline this MCP elicitation",
+      collectFeedback: false,
+    },
+    {
+      decision: "deny",
+      optionId: 'codex_elicitation:{"action":"cancel","content":null}',
+      label: "Cancel",
+      description: "Cancel this MCP elicitation",
+      collectFeedback: true,
+    },
+  ],
+};
+
 describe("ToolPermissionPrompt", () => {
   beforeEach(() => {
     mockedUseHotkeys.mockClear();
@@ -152,10 +195,11 @@ describe("ToolPermissionPrompt", () => {
     expect(screen.getByText("/etc/hosts")).toBeInTheDocument();
   });
 
-  it("registers meta+y and meta+n hotkeys (no cmd+digit)", () => {
+  it("registers meta+y, meta+l, and meta+n hotkeys (no cmd+digit)", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
     const hotkeyStrings = mockedUseHotkeys.mock.calls.map((call) => call[0]);
     expect(hotkeyStrings).toContain("meta+y");
+    expect(hotkeyStrings).toContain("meta+l");
     expect(hotkeyStrings).toContain("meta+n");
     // cmd+digit shortcuts must be gone — they're reserved for the sidebar.
     expect(hotkeyStrings.some((s) => /^meta\+\d$/.test(String(s)))).toBe(false);
@@ -176,6 +220,36 @@ describe("ToolPermissionPrompt", () => {
     }
   });
 
+  it("invoking meta+l handler approves with allow_future", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
+      const lCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+l")!;
+      const handler = lCall[1] as (e: { preventDefault: () => void }) => void;
+      handler({ preventDefault: vi.fn() });
+      vi.runAllTimers();
+      expect(onDecision).toHaveBeenCalledWith("allow_future");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("invoking shifted meta+y handler does not approve with allow_once", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
+      const yCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+y")!;
+      const handler = yCall[1] as (e: { preventDefault: () => void; shiftKey: boolean }) => void;
+      handler({ preventDefault: vi.fn(), shiftKey: true });
+      vi.runAllTimers();
+      expect(onDecision).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("invoking meta+n handler triggers deny flow", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
@@ -191,7 +265,7 @@ describe("ToolPermissionPrompt", () => {
     }
   });
 
-  it("renders cmd+Y badge on Allow once and cmd+N on Deny, no badge on others", () => {
+  it("renders cmd+Y, cmd+L, and cmd+N shortcut badges", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
     const allowOnceBtn = screen.getByText("Allow once").closest("button")!;
     const alwaysAllowBtn = screen.getByText("Always allow").closest("button")!;
@@ -201,7 +275,65 @@ describe("ToolPermissionPrompt", () => {
     expect(allowOnceBtn.textContent).toContain("Y");
     expect(denyBtn.querySelector("kbd")).not.toBeNull();
     expect(denyBtn.textContent).toContain("N");
-    // "Always allow" (allow_future) gets no shortcut badge
-    expect(alwaysAllowBtn.querySelector("kbd")).toBeNull();
+    expect(alwaysAllowBtn.querySelector("kbd")).not.toBeNull();
+    expect(alwaysAllowBtn.textContent).toContain("L");
+  });
+
+  it("only shortcuts persistent Codex MCP approval when session and always are both present", () => {
+    render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={vi.fn()} />);
+    const sessionBtn = screen.getByText("Approve for session").closest("button")!;
+    const alwaysBtn = screen.getByText("Always approve").closest("button")!;
+
+    expect(sessionBtn.querySelector("kbd")).toBeNull();
+    expect(alwaysBtn.querySelector("kbd")).not.toBeNull();
+    expect(alwaysBtn.textContent).toContain("L");
+  });
+
+  it("invoking meta+l uses the persistent Codex MCP approval option", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={onDecision} />);
+      const lCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+l")!;
+      const handler = lCall[1] as (e: { preventDefault: () => void }) => void;
+      handler({ preventDefault: vi.fn() });
+      vi.runAllTimers();
+      expect(onDecision).toHaveBeenCalledWith(
+        "allow_future",
+        undefined,
+        'codex_elicitation:{"action":"accept","content":{"approved":true},"_meta":{"persist":"always"}}',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("only shortcuts Deny and continue, not Cancel, for Codex MCP options", () => {
+    render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={vi.fn()} />);
+    const denyAndContinueBtn = screen.getByText("Deny and continue").closest("button")!;
+    const cancelBtn = screen.getByText("Cancel").closest("button")!;
+
+    expect(denyAndContinueBtn.querySelector("kbd")).not.toBeNull();
+    expect(denyAndContinueBtn.textContent).toContain("N");
+    expect(cancelBtn.querySelector("kbd")).toBeNull();
+  });
+
+  it("invoking meta+n uses Deny and continue instead of Cancel for Codex MCP options", () => {
+    const onDecision = vi.fn();
+    vi.useFakeTimers();
+    try {
+      render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={onDecision} />);
+      const nCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+n")!;
+      const handler = nCall[1] as (e: { preventDefault: () => void }) => void;
+      handler({ preventDefault: vi.fn() });
+      vi.runAllTimers();
+      expect(onDecision).toHaveBeenCalledWith(
+        "deny",
+        undefined,
+        'codex_elicitation:{"action":"decline","content":null}',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

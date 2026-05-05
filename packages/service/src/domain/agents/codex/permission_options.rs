@@ -4,6 +4,7 @@ use super::permissions::{DECISION_ACCEPT_FOR_SESSION, DECISION_CANCEL, DECISION_
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 
 const CODEX_OPTION_PREFIX: &str = "codex:";
+const CODEX_ELICITATION_OPTION_PREFIX: &str = "codex_elicitation:";
 pub(super) const STRICT_AUTO_REVIEW_OPTION_ID: &str = "codex_permissions_strict_auto_review";
 
 pub(super) fn permission_options(
@@ -20,6 +21,7 @@ pub(super) fn permission_options(
         }
         "item/fileChange/requestApproval" => file_permission_options(),
         "item/permissions/requestApproval" => permissions_request_options(),
+        "mcpServer/elicitation/request" => elicitation_permission_options(params),
         _ => fallback_permission_options(supports_allow_future),
     }
 }
@@ -186,6 +188,102 @@ fn permissions_request_options() -> Vec<RuntimePermissionOption> {
     ]
 }
 
+fn elicitation_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
+    let mut options = vec![elicitation_option(
+        RuntimePermissionDecision::AllowOnce,
+        "accept",
+        serde_json::json!({ "approved": true }),
+        Value::Null,
+        "Approve",
+        "Accept this MCP elicitation",
+        false,
+    )];
+
+    for persist in elicitation_persist_values(params) {
+        let (label, description) = match persist {
+            "always" => (
+                "Always approve",
+                "Accept and let Codex persist this MCP approval",
+            ),
+            "session" => (
+                "Approve for session",
+                "Accept matching MCP approvals for this Codex session",
+            ),
+            _ => continue,
+        };
+        options.push(elicitation_option(
+            RuntimePermissionDecision::AllowFuture,
+            "accept",
+            serde_json::json!({ "approved": true }),
+            serde_json::json!({ "persist": persist }),
+            label,
+            description,
+            false,
+        ));
+    }
+
+    options.push(elicitation_option(
+        RuntimePermissionDecision::Deny,
+        DECISION_DECLINE,
+        Value::Null,
+        Value::Null,
+        "Deny and continue",
+        "Decline this MCP elicitation",
+        false,
+    ));
+    options.push(elicitation_option(
+        RuntimePermissionDecision::Deny,
+        DECISION_CANCEL,
+        Value::Null,
+        Value::Null,
+        "Cancel",
+        "Cancel this MCP elicitation",
+        true,
+    ));
+    options
+}
+
+fn elicitation_option(
+    decision: RuntimePermissionDecision,
+    action: &str,
+    content: Value,
+    meta: Value,
+    label: &str,
+    description: &str,
+    collect_feedback: bool,
+) -> RuntimePermissionOption {
+    RuntimePermissionOption {
+        decision,
+        option_id: Some(format!(
+            "{CODEX_ELICITATION_OPTION_PREFIX}{}",
+            serde_json::json!({
+                "action": action,
+                "content": content,
+                "_meta": meta,
+            })
+        )),
+        label: label.to_string(),
+        description: description.to_string(),
+        collect_feedback,
+    }
+}
+
+fn elicitation_persist_values(params: &Value) -> Vec<&'static str> {
+    let persist = params
+        .get("_meta")
+        .or_else(|| params.get("meta"))
+        .and_then(|meta| meta.get("persist"));
+    match persist {
+        Some(Value::String(value)) => persist_value(value).into_iter().collect(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(Value::as_str)
+            .filter_map(persist_value)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn native_option(
     decision: RuntimePermissionDecision,
     codex_decision: Value,
@@ -236,6 +334,11 @@ pub(super) fn codex_decision_from_option_id(option_id: Option<&str>) -> Option<V
     serde_json::from_str(raw).ok()
 }
 
+pub(super) fn codex_elicitation_response_from_option_id(option_id: Option<&str>) -> Option<Value> {
+    let raw = option_id?.strip_prefix(CODEX_ELICITATION_OPTION_PREFIX)?;
+    serde_json::from_str(raw).ok()
+}
+
 pub(super) fn permission_option_values(options: &[RuntimePermissionOption]) -> Vec<Value> {
     options
         .iter()
@@ -257,4 +360,12 @@ pub(super) fn permission_option_values(options: &[RuntimePermissionOption]) -> V
 
 fn available_decision_values(params: &Value) -> Option<Vec<Value>> {
     Some(params.get("availableDecisions")?.as_array()?.clone())
+}
+
+fn persist_value(value: &str) -> Option<&'static str> {
+    match value {
+        "session" => Some("session"),
+        "always" => Some("always"),
+        _ => None,
+    }
 }

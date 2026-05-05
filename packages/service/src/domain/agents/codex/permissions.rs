@@ -2,7 +2,8 @@ use serde_json::Value;
 
 use super::permission_details::permission_details;
 pub(super) use super::permission_options::{
-    codex_decision_from_option_id, permission_option_values, STRICT_AUTO_REVIEW_OPTION_ID,
+    codex_decision_from_option_id, codex_elicitation_response_from_option_id,
+    permission_option_values, STRICT_AUTO_REVIEW_OPTION_ID,
 };
 use super::permission_options::{fallback_permission_options, permission_options};
 use crate::domain::agents::adapter::{
@@ -327,5 +328,46 @@ mod tests {
             }),
         );
         assert_eq!(canonical.tool_name, "mcp__cadence-plan__show_plan");
+    }
+
+    #[test]
+    fn elicitation_options_include_native_cancel_and_provider_persist_hints() {
+        let request = permission_request(
+            &json!("approval-7"),
+            "mcpServer/elicitation/request",
+            &json!({
+                "serverName": "remote",
+                "_meta": {
+                    "persist": ["session", "always"]
+                }
+            }),
+        );
+
+        assert!(request
+            .options
+            .iter()
+            .any(|option| option.label == "Approve for session"));
+        assert!(request
+            .options
+            .iter()
+            .any(|option| option.label == "Always approve"));
+        assert!(request
+            .options
+            .iter()
+            .any(|option| option.label == "Cancel"));
+
+        let session_option = request
+            .options
+            .iter()
+            .find(|option| option.label == "Approve for session")
+            .expect("session persist option");
+        assert_eq!(
+            super::codex_elicitation_response_from_option_id(session_option.option_id.as_deref()),
+            Some(json!({
+                "action": "accept",
+                "content": { "approved": true },
+                "_meta": { "persist": "session" }
+            }))
+        );
     }
 }

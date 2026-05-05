@@ -43,12 +43,6 @@ const FALLBACK_OPTIONS: PermissionOption[] = [
     collectFeedback: false,
   },
   {
-    decision: "allow_future",
-    label: "Allow for future use",
-    description: "Save this permission for future use",
-    collectFeedback: false,
-  },
-  {
     decision: "deny",
     label: "Deny",
     description: "Reject this tool call",
@@ -67,21 +61,53 @@ interface PermissionOptionButtonProps {
   index: number;
   highlighted: boolean;
   onClick: (index: number) => void;
+  options: PermissionOption[];
 }
 
-/** Decisions that get a keyboard shortcut badge. Other decisions render no badge. */
-const DECISION_SHORTCUT_KEYS: Partial<Record<PermissionDecisionValue, string[]>> = {
-  allow_once: ["cmd", "Y"],
-  deny: ["cmd", "N"],
-};
+const ALLOW_ONCE_SHORTCUT = ["cmd", "Y"];
+const ALLOW_FUTURE_SHORTCUT = ["cmd", "L"];
+const DENY_SHORTCUT = ["cmd", "N"];
+
+function optionLabel(option: PermissionOption): string {
+  return option.label.trim().toLowerCase();
+}
+
+function isAlwaysApprovalOption(option: PermissionOption): boolean {
+  return optionLabel(option).includes("always");
+}
+
+function shouldShortcutAllowFuture(option: PermissionOption, options: PermissionOption[]): boolean {
+  if (option.decision !== "allow_future") return false;
+  const hasAlwaysApproval = options.some(
+    (candidate) => candidate.decision === "allow_future" && isAlwaysApprovalOption(candidate),
+  );
+  return hasAlwaysApproval ? isAlwaysApprovalOption(option) : true;
+}
+
+function shouldShortcutDeny(option: PermissionOption): boolean {
+  if (option.decision !== "deny") return false;
+  const label = optionLabel(option);
+  return label === "deny" || label.includes("deny and continue");
+}
+
+function shortcutKeysForOption(
+  option: PermissionOption,
+  options: PermissionOption[],
+): string[] | undefined {
+  if (option.decision === "allow_once") return ALLOW_ONCE_SHORTCUT;
+  if (shouldShortcutAllowFuture(option, options)) return ALLOW_FUTURE_SHORTCUT;
+  if (shouldShortcutDeny(option)) return DENY_SHORTCUT;
+  return undefined;
+}
 
 function PermissionOptionButton({
   option,
   index,
   highlighted,
   onClick,
+  options,
 }: PermissionOptionButtonProps) {
-  const shortcutKeys = DECISION_SHORTCUT_KEYS[option.decision];
+  const shortcutKeys = shortcutKeysForOption(option, options);
   return (
     <button
       type="button"
@@ -140,19 +166,33 @@ function usePermissionHotkeys({
   onTrigger,
 }: PermissionHotkeysArgs): void {
   const allowOnceIndex = options.findIndex((o) => o.decision === "allow_once");
-  const denyIndex = options.findIndex((o) => o.decision === "deny");
+  const allowFutureIndex = options.findIndex((o) => shouldShortcutAllowFuture(o, options));
+  const denyIndex = options.findIndex(shouldShortcutDeny);
 
   // cmd+Y → approve (allow_once)
   useScopedHotkeys(
     "meta+y",
     (e) => {
-      if (allowOnceIndex < 0) return;
+      if (allowOnceIndex < 0 || e.shiftKey) return;
       e.preventDefault();
       onTrigger(allowOnceIndex);
     },
     "agent",
     { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
     [onTrigger, allowOnceIndex],
+  );
+
+  // cmd+L → approve future requests when the provider exposes that option
+  useScopedHotkeys(
+    "meta+l",
+    (e) => {
+      if (allowFutureIndex < 0) return;
+      e.preventDefault();
+      onTrigger(allowFutureIndex);
+    },
+    "agent",
+    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
+    [onTrigger, allowFutureIndex],
   );
 
   // cmd+N → reject (deny)
@@ -275,6 +315,7 @@ export function ToolPermissionPrompt({
             index={index}
             highlighted={highlightedIndex === index}
             onClick={handleOption}
+            options={options}
           />
         ))}
       </div>
