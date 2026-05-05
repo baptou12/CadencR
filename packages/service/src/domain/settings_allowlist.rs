@@ -107,6 +107,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_right_collapsed",
     "loader_style",
     "zoom_global",
+    "unified_agents_per_row",
     // Active theme (id from packages/tauri/src/lib/themes/registry.ts)
     "theme_current",
     // Editor preferences
@@ -336,6 +337,7 @@ mod tests {
     fn workspace_accepts_ui_collapse_settings() {
         assert!(is_workspace_key_allowed("editor_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("git_sidebar_collapsed"));
+        assert!(is_workspace_key_allowed("unified_agents_per_row"));
     }
 
     #[test]

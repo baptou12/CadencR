@@ -6,6 +6,8 @@ import {
   type UnifiedAgentsFilterInputHandle,
 } from "@/components/UnifiedAgentsDynamicFilter";
 import { UnifiedAgentsCounterPill } from "@/components/UnifiedAgentsCounterPill";
+import { UnifiedAgentsPerRowStepper } from "@/components/UnifiedAgentsPerRowStepper";
+import type { UnifiedAgentsPerRowSetting } from "@/components/UnifiedAgentsPerRowSetting";
 import { Button } from "@/components/ui/button";
 
 export type UnifiedAgentsFilterMode = "recent" | "all";
@@ -15,6 +17,7 @@ interface UnifiedAgentsFiltersProps {
   projects: Project[];
   agentsCount: number;
   runningAgentsCount: number;
+  agentsPerRowSetting: UnifiedAgentsPerRowSetting;
   searchInputRef?: Ref<UnifiedAgentsFilterInputHandle>;
   isFetching: boolean;
   onFilterTextChange: (value: string) => void;
@@ -27,6 +30,7 @@ export const UnifiedAgentsFilters = memo(function UnifiedAgentsFilters({
   projects,
   agentsCount,
   runningAgentsCount,
+  agentsPerRowSetting,
   searchInputRef,
   isFetching,
   onFilterTextChange,
@@ -34,7 +38,7 @@ export const UnifiedAgentsFilters = memo(function UnifiedAgentsFilters({
   onRefresh,
 }: UnifiedAgentsFiltersProps): ReactElement {
   return (
-    <div className="grid grid-cols-[auto_minmax(260px,1fr)_auto] items-center gap-3">
+    <div className="grid grid-cols-[auto_minmax(260px,1fr)_auto_auto] items-center gap-3">
       <div className="justify-self-start">
         <UnifiedAgentsHeaderCounters
           agentsCount={agentsCount}
@@ -47,6 +51,12 @@ export const UnifiedAgentsFilters = memo(function UnifiedAgentsFilters({
         inputRef={searchInputRef}
         onValueChange={onFilterTextChange}
         onEnter={onSearchEnter}
+      />
+      <UnifiedAgentsPerRowStepper
+        value={agentsPerRowSetting.value}
+        isLoading={agentsPerRowSetting.isLoading}
+        isSaving={agentsPerRowSetting.isSaving}
+        onChange={agentsPerRowSetting.setValue}
       />
       <RefreshButton isFetching={isFetching} onRefresh={onRefresh} />
     </div>

@@ -15,6 +15,10 @@ import { UnifiedAgentsFilters } from "@/components/UnifiedAgentsFilters";
 import { UnifiedAgentsGrid } from "@/components/UnifiedAgentsGrid";
 import { useUnifiedAgentsFilters } from "@/components/UnifiedAgentsFilterState";
 import {
+  useUnifiedAgentsPerRowSetting,
+  type UnifiedAgentsPerRowSetting,
+} from "@/components/UnifiedAgentsPerRowSetting";
+import {
   parseUnifiedAgentsFilterText,
   serializeUnifiedAgentsFilterText,
 } from "@/components/UnifiedAgentsFilterLanguage";
@@ -42,11 +46,12 @@ export function UnifiedAgentsView(): ReactElement {
   );
   const [filterText, setFilterText] = useState(serializedFilterText);
   const filterTextEditedRef = useRef(false);
+  const agentsPerRow = useUnifiedAgentsPerRowSetting();
   useEffect((): void => {
     if (filterTextEditedRef.current) return;
     setFilterText(serializedFilterText);
   }, [serializedFilterText]);
-  const columns = Math.max(1, Math.min(6, filters.agentsPerRow));
+  const columns = agentsPerRow.value;
   const { activeIndex, activeAgent, setActiveSessionId } = useActiveAgent(data.agents);
   const activePinControls = useUnifiedAgentPinControls(activeAgent, { showProgressToast: true });
   const { focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate } =
@@ -87,6 +92,7 @@ export function UnifiedAgentsView(): ReactElement {
         projectsError={projectsQuery.isError ? projectsQuery.error : null}
         agentsCount={data.agents.length}
         runningAgentsCount={countRunningAgents(data.agents)}
+        agentsPerRowSetting={agentsPerRow}
         filterText={filterText}
         searchInputRef={searchInputRef}
         isFetching={data.isFetching}
@@ -264,6 +270,7 @@ interface UnifiedAgentsHeaderProps {
   projectsError: unknown;
   agentsCount: number;
   runningAgentsCount: number;
+  agentsPerRowSetting: UnifiedAgentsPerRowSetting;
   filterText: string;
   searchInputRef: Ref<UnifiedAgentsFilterInputHandle>;
   isFetching: boolean;
@@ -277,6 +284,7 @@ function UnifiedAgentsHeader({
   projectsError,
   agentsCount,
   runningAgentsCount,
+  agentsPerRowSetting,
   filterText,
   searchInputRef,
   isFetching,
@@ -291,6 +299,7 @@ function UnifiedAgentsHeader({
         projects={projects}
         agentsCount={agentsCount}
         runningAgentsCount={runningAgentsCount}
+        agentsPerRowSetting={agentsPerRowSetting}
         searchInputRef={searchInputRef}
         isFetching={isFetching}
         onFilterTextChange={onFilterTextChange}

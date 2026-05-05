@@ -7,7 +7,6 @@ const FILTER_EVENT = "cadencr:unified-agents-filters-changed";
 const FILTER_KEYS = {
   mode: "unified_agents_mode",
   freshMinutes: "unified_agents_fresh_minutes",
-  agentsPerRow: "unified_agents_per_row",
   projectId: "unified_agents_project_id",
   projectIds: "unified_agents_project_ids",
   query: "unified_agents_query",
@@ -17,9 +16,6 @@ const FILTER_KEYS = {
 const FRESH_MINUTES_MIN = 1;
 const FRESH_MINUTES_MAX = 43_200;
 const DEFAULT_FRESH_MINUTES = 5;
-const AGENTS_PER_ROW_MIN = 1;
-const AGENTS_PER_ROW_MAX = 6;
-const DEFAULT_AGENTS_PER_ROW = 3;
 
 export type UnifiedAgentsSortOrder =
   | "created_desc"
@@ -30,7 +26,6 @@ export type UnifiedAgentsSortOrder =
 export interface PersistedUnifiedAgentsFilters {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
-  agentsPerRow: number;
   projectIds: number[];
   query: string;
   sortOrder: UnifiedAgentsSortOrder;
@@ -46,12 +41,6 @@ export function readUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
       DEFAULT_FRESH_MINUTES,
       FRESH_MINUTES_MIN,
       FRESH_MINUTES_MAX,
-    ),
-    agentsPerRow: readBoundedInt(
-      FILTER_KEYS.agentsPerRow,
-      DEFAULT_AGENTS_PER_ROW,
-      AGENTS_PER_ROW_MIN,
-      AGENTS_PER_ROW_MAX,
     ),
     projectIds: readProjectIds(),
     query: window.localStorage.getItem(FILTER_KEYS.query) ?? "",
@@ -113,12 +102,6 @@ function normalizeFilters(filters: PersistedUnifiedAgentsFilters): PersistedUnif
       FRESH_MINUTES_MIN,
       FRESH_MINUTES_MAX,
     ),
-    agentsPerRow: clampInt(
-      filters.agentsPerRow,
-      DEFAULT_AGENTS_PER_ROW,
-      AGENTS_PER_ROW_MIN,
-      AGENTS_PER_ROW_MAX,
-    ),
     projectIds: uniquePositiveInts(filters.projectIds),
     query: filters.query,
     sortOrder: normalizeSortOrder(filters.sortOrder),
@@ -132,7 +115,6 @@ function areUnifiedAgentsFiltersEqual(
   return (
     a.mode === b.mode &&
     a.freshMinutes === b.freshMinutes &&
-    a.agentsPerRow === b.agentsPerRow &&
     a.query === b.query &&
     a.sortOrder === b.sortOrder &&
     intArraysEqual(a.projectIds, b.projectIds)
@@ -148,7 +130,6 @@ function intArraysEqual(a: number[], b: number[]): boolean {
 function writeFiltersToStorage(filters: PersistedUnifiedAgentsFilters): void {
   window.localStorage.setItem(FILTER_KEYS.mode, filters.mode);
   window.localStorage.setItem(FILTER_KEYS.freshMinutes, String(filters.freshMinutes));
-  window.localStorage.setItem(FILTER_KEYS.agentsPerRow, String(filters.agentsPerRow));
   writeOptionalString(FILTER_KEYS.query, filters.query);
   writeProjectIds(filters.projectIds);
   window.localStorage.setItem(FILTER_KEYS.sortOrder, filters.sortOrder);

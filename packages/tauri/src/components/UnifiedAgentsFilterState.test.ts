@@ -7,7 +7,6 @@ import {
 const FILTER_KEYS = {
   mode: "unified_agents_mode",
   freshMinutes: "unified_agents_fresh_minutes",
-  agentsPerRow: "unified_agents_per_row",
   projectId: "unified_agents_project_id",
   projectIds: "unified_agents_project_ids",
   query: "unified_agents_query",
@@ -22,7 +21,6 @@ describe("UnifiedAgentsFilterState", () => {
   it("falls back for invalid localStorage values", () => {
     window.localStorage.setItem(FILTER_KEYS.mode, "everything");
     window.localStorage.setItem(FILTER_KEYS.freshMinutes, "not-a-number");
-    window.localStorage.setItem(FILTER_KEYS.agentsPerRow, "not-a-number");
     window.localStorage.setItem(FILTER_KEYS.projectId, "-7");
     window.localStorage.setItem(FILTER_KEYS.query, "needle");
     window.localStorage.setItem(FILTER_KEYS.sortOrder, "message_date");
@@ -30,24 +28,21 @@ describe("UnifiedAgentsFilterState", () => {
     expect(readUnifiedAgentsFilters()).toEqual({
       mode: "recent",
       freshMinutes: 5,
-      agentsPerRow: 3,
       projectIds: [],
       query: "needle",
       sortOrder: "created_desc",
     });
   });
 
-  it("clamps layout and preserves free freshness values", () => {
+  it("preserves free freshness values and project filters", () => {
     window.localStorage.setItem(FILTER_KEYS.mode, "all");
     window.localStorage.setItem(FILTER_KEYS.freshMinutes, "999");
-    window.localStorage.setItem(FILTER_KEYS.agentsPerRow, "0");
     window.localStorage.setItem(FILTER_KEYS.projectIds, "42,43,42");
     window.localStorage.setItem(FILTER_KEYS.sortOrder, "created_asc");
 
     expect(readUnifiedAgentsFilters()).toEqual({
       mode: "all",
       freshMinutes: 999,
-      agentsPerRow: 1,
       projectIds: [42, 43],
       query: "",
       sortOrder: "created_asc",
