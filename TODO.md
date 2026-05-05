@@ -2,7 +2,6 @@
 - [ ] [opencode] Not sync on command updates
 - [ ] [opencode] inline diff broken sometimes
 - [ ] [codex] sub-agents outputs on main agent
-- [~] [codex] no slash commands
 - [ ] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
 - [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
 - [~] [agent] scroll is not smooth, still jumps
@@ -10,6 +9,7 @@
 - [ ] [copy] mrkd for slack don't handle \n and lists
 - [ ] [prompt] missing shortcut popover on auto-scroll
 - [ ] [unified] wrong border for focused agent
+- [ ] [editor] cannot create file / folder
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
