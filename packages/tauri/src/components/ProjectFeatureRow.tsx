@@ -5,6 +5,7 @@ import {
   BotIcon,
   MessageCircleQuestionIcon,
   GitBranchIcon,
+  RefreshCwIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ interface ProjectFeatureRowProps {
   onNavigate: (feature: Feature) => void;
   onStatusChange: (featureId: number, status: FeatureStatus) => void;
   onArchiveOrDelete: (featureId: number) => void;
+  onAutoRename: (featureId: number) => void;
 }
 
 export function ProjectFeatureRow({
@@ -53,6 +55,7 @@ export function ProjectFeatureRow({
   onNavigate,
   onStatusChange,
   onArchiveOrDelete,
+  onAutoRename,
 }: ProjectFeatureRowProps): ReactElement {
   // Live status is the canonical 3-value enum: per-session entries pushed
   // by the backend, aggregated here per-feature. `useShallow` inside the
@@ -172,6 +175,19 @@ export function ProjectFeatureRow({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isAutoNaming}
+              className="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground opacity-0 group-hover/feature:opacity-100 transition-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAutoRename(feature.id);
+              }}
+            >
+              <RefreshCwIcon className="size-3.5" />
+              <span className="sr-only">Auto-rename</span>
+            </Button>
             <Button
               size="sm"
               variant="ghost"

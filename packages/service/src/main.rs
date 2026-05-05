@@ -116,6 +116,8 @@ async fn main() -> anyhow::Result<()> {
                 push_sessions: std::sync::Arc::new(
                     domain::git::push_sessions::PushSessionRegistry::new(),
                 ),
+                ws_feature_senders:
+                    domain::ws_session::sender_registry::WsFeatureSenderRegistry::new(),
             };
 
             // Push user-selected CLI binary paths into the SDK overrides

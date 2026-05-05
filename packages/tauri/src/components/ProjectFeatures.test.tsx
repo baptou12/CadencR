@@ -35,6 +35,7 @@ vi.mock("@/api/generated", () => ({
     },
   })),
   useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useAutoNameFeature: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),

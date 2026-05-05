@@ -141,5 +141,11 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     // catches half-open shutdowns where the explicit unsubscribe never arrived.
     state.git_watcher.unsubscribe_sender(&outbound_tx).await;
 
+    // Remove this connection's sender from every feature it was registered under.
+    state
+        .ws_feature_senders
+        .unregister_sender(&outbound_tx)
+        .await;
+
     send_task.abort();
 }

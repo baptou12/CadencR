@@ -187,3 +187,17 @@ pub async fn get_feature_snapshot(
 ) -> Result<FeatureSnapshotResponse, AppError> {
     repository::get_feature_snapshot(pool, feature_id).await
 }
+
+/// Resolve the working directory for a feature without requiring the caller to
+/// know the `project_id`. Falls back to the project root if no worktree is set.
+pub async fn get_feature_cwd(pool: &SqlitePool, feature_id: i64) -> Result<String, AppError> {
+    let row: Option<(i64,)> = sqlx::query_as("SELECT project_id FROM features WHERE id = ?")
+        .bind(feature_id)
+        .fetch_optional(pool)
+        .await?;
+    let project_id = row
+        .ok_or_else(|| AppError::NotFound(format!("feature {feature_id} not found")))?
+        .0;
+    let path = repository::resolve_working_dir(pool, feature_id, project_id).await?;
+    path.ok_or_else(|| AppError::NotFound(format!("no working dir for feature {feature_id}")))
+}

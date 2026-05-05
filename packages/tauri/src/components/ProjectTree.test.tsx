@@ -48,6 +48,7 @@ vi.mock("../api/generated", () => ({
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
+  useAutoNameFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),

@@ -12,6 +12,7 @@ import {
   useDeleteFeature,
   useIsFeatureEmpty,
   useListFeatureWorktrees,
+  useAutoNameFeature,
   type Feature,
 } from "@/api/generated";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
@@ -131,6 +132,12 @@ export function ProjectFeatures({
     updateStatusMutation.mutate({ id: featureId, data: { status } });
   };
 
+  const autoNameMutation = useAutoNameFeature();
+
+  const handleAutoRename = (featureId: number) => {
+    autoNameMutation.mutate({ id: featureId });
+  };
+
   const renderFeature = (feature: Feature) => (
     <ProjectFeatureRow
       key={feature.id}
@@ -144,6 +151,7 @@ export function ProjectFeatures({
       onNavigate={handleNavigate}
       onStatusChange={handleStatusChange}
       onArchiveOrDelete={setConfirmFeatureId}
+      onAutoRename={handleAutoRename}
     />
   );
 

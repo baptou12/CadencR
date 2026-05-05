@@ -54,6 +54,22 @@ fn send_autonaming(sender: &mpsc::UnboundedSender<Message>, feature_id: i64, in_
 
 const AUTO_NAME_SYSTEM_PROMPT: &str = "You are a feature naming assistant. Your ONLY job is to output a short name (3-7 words) for a coding session. ALWAYS output a name, even if the input is vague — just pick a reasonable generic name. Examples: 'hi' → 'General Coding Session', 'fix the login bug' → 'Fix Login Bug', 'I want to add dark mode' → 'Add Dark Mode Support'.";
 
+/// Fetch the most recent user message content for the given feature.
+/// Returns `None` if no user message exists.
+pub async fn get_last_user_message(pool: &SqlitePool, feature_id: i64) -> Option<String> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT m.content FROM agent_messages m
+         JOIN agent_sessions s ON s.id = m.session_id
+         WHERE s.feature_id = ? AND m.message_type = 'user_message'
+         ORDER BY m.id DESC LIMIT 1",
+    )
+    .bind(feature_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    row.map(|(content,)| content)
+}
+
 /// Check if a feature still has its default auto-generated title (e.g. "Session 3" or "Untitled Feature").
 pub async fn has_default_title(pool: &SqlitePool, feature_id: i64) -> bool {
     let row: Option<(String,)> = sqlx::query_as("SELECT title FROM features WHERE id = ?")
