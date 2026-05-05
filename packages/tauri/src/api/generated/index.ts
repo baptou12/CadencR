@@ -5091,11 +5091,10 @@ export const useDeleteFeature = <TError = ErrorType<unknown>, TContext = unknown
 };
 
 /**
- * Unlike the first-prompt auto-name, this ignores `has_default_title` — it is
-an explicit user action, so it always renames.
- * @summary Trigger auto-naming for a feature on demand. Fires `auto_name_feature` in
-the background and returns immediately; the result arrives via the
-`session.feature.autonaming` / `session.feature.renamed` WS envelopes.
+ * @summary Trigger auto-naming for a feature on demand. Requires an existing
+non-default title and at least one user message, then waits for the rename
+to finish so callers get visible HTTP loading/error state even when no
+WebSocket client is connected.
  */
 export const autoNameFeature = (id: number, signal?: AbortSignal) => {
   return customInstance<FeaturesSuccessResponse>({
@@ -5147,9 +5146,10 @@ export type AutoNameFeatureMutationResult = NonNullable<
 export type AutoNameFeatureMutationError = ErrorType<unknown>;
 
 /**
- * @summary Trigger auto-naming for a feature on demand. Fires `auto_name_feature` in
-the background and returns immediately; the result arrives via the
-`session.feature.autonaming` / `session.feature.renamed` WS envelopes.
+ * @summary Trigger auto-naming for a feature on demand. Requires an existing
+non-default title and at least one user message, then waits for the rename
+to finish so callers get visible HTTP loading/error state even when no
+WebSocket client is connected.
  */
 export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<

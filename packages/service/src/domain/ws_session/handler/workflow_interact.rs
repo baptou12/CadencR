@@ -381,18 +381,22 @@ pub(super) async fn prepare_worktree(
     let project_id = worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await?;
     let project_dir = worktree::get_project_directory(&app_state.read_pool, project_id).await?;
 
-    if auto_name::has_default_title(&app_state.read_pool, feature_id).await {
-        info!(feature_id, "auto-naming feature before worktree creation");
-        if let Some(raw) = engine_sender.raw_clone() {
-            let _ = auto_name::auto_name_feature(
-                app_state.write_pool.clone(),
-                feature_id,
-                description.to_string(),
-                project_dir.clone(),
-                raw,
-            )
-            .await;
+    match auto_name::has_default_title(&app_state.read_pool, feature_id).await {
+        Ok(true) => {
+            info!(feature_id, "auto-naming feature before worktree creation");
+            if let Some(raw) = engine_sender.raw_clone() {
+                let _ = auto_name::auto_name_feature(
+                    app_state.write_pool.clone(),
+                    feature_id,
+                    description.to_string(),
+                    project_dir.clone(),
+                    raw,
+                )
+                .await;
+            }
         }
+        Ok(false) => {}
+        Err(error) => warn!(feature_id, %error, "auto-name: failed to check title"),
     }
 
     let worktree_path = worktree::ensure_worktree(

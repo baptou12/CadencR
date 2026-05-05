@@ -1,7 +1,8 @@
 import { useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { useGetFeature } from "@/api/generated";
+import { useAutoNameFeature, useGetFeature } from "@/api/generated";
 import { CustomActionsBar } from "./CustomActionsBar";
 import { EmbeddedSessionHeader } from "./FeatureTopBarEmbedded";
 import { GitActionButton } from "./git-actions/GitActionButton";
@@ -17,6 +18,13 @@ import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
+import { apiErrorMessage } from "@/lib/api-errors";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 interface FeatureTopBarProps {
   featureId: number;
@@ -125,8 +133,20 @@ function StandardFeatureTopBar({
   useFeatureSettingsShortcuts(isSession, setSettingsOpen);
 
   const title = wsTitle ?? feature?.title ?? titleOverride;
+  const autoNameMutation = useAutoNameFeature({
+    mutation: {
+      onError: (error) => {
+        toast.error(apiErrorMessage(error, "Auto-rename failed"));
+      },
+    },
+  });
 
   if (!feature) return null;
+  const canAutoRename = title != null && !isDefaultFeatureTitle(title);
+  const handleAutoRename = (): void => {
+    if (autoNameMutation.isPending) return;
+    autoNameMutation.mutate({ id: featureId });
+  };
 
   return (
     <FeatureHeaderChrome
@@ -136,7 +156,10 @@ function StandardFeatureTopBar({
       featureTitle={title ?? feature.title}
       featureStatus={feature.status as FeatureStatus}
       isSession={isSession}
-      isAutoNaming={isAutoNaming}
+      isAutoNaming={isAutoNaming || autoNameMutation.isPending}
+      canAutoRename={canAutoRename}
+      isAutoRenamePending={autoNameMutation.isPending}
+      onAutoRename={handleAutoRename}
       draggable={draggable}
       showCustomActions={showCustomActions}
       showSidebarChrome={showSidebarChrome}
@@ -161,6 +184,9 @@ interface FeatureHeaderChromeProps {
   featureStatus: FeatureStatus;
   isSession: boolean;
   isAutoNaming: boolean;
+  canAutoRename: boolean;
+  isAutoRenamePending: boolean;
+  onAutoRename: () => void;
   draggable: boolean;
   showCustomActions: boolean;
   showSidebarChrome: boolean;
@@ -183,6 +209,9 @@ function FeatureHeaderChrome({
   featureStatus,
   isSession,
   isAutoNaming,
+  canAutoRename,
+  isAutoRenamePending,
+  onAutoRename,
   draggable,
   showCustomActions,
   showSidebarChrome,
@@ -215,7 +244,12 @@ function FeatureHeaderChrome({
         {isAutoNaming ? (
           <Skeleton className="h-5 w-40" />
         ) : (
-          <h1 className="text-lg font-semibold">{featureTitle}</h1>
+          <FeatureTitleMenu
+            title={featureTitle}
+            canAutoRename={canAutoRename}
+            isAutoRenamePending={isAutoRenamePending}
+            onAutoRename={onAutoRename}
+          />
         )}
         <div className="flex-1" />
         {showCustomActions && <CustomActionsBar featureId={featureId} projectId={projectId} />}
@@ -250,4 +284,35 @@ function FeatureHeaderChrome({
       />
     </>
   );
+}
+
+interface FeatureTitleMenuProps {
+  title: string;
+  canAutoRename: boolean;
+  isAutoRenamePending: boolean;
+  onAutoRename: () => void;
+}
+
+function FeatureTitleMenu({
+  title,
+  canAutoRename,
+  isAutoRenamePending,
+  onAutoRename,
+}: FeatureTitleMenuProps): ReactElement {
+  const heading = <h1 className="text-lg font-semibold">{title}</h1>;
+  if (!canAutoRename) return heading;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{heading}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem disabled={isAutoRenamePending} onSelect={onAutoRename}>
+          Auto-rename
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function isDefaultFeatureTitle(title: string): boolean {
+  return /^Session \d+$/i.test(title) || title === "Untitled Feature";
 }
