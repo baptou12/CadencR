@@ -110,6 +110,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "unified_agents_per_row",
     // Active theme (id from packages/tauri/src/lib/themes/registry.ts)
     "theme_current",
+    // System-theme sync. When enabled, the frontend resolves the active theme
+    // from the current OS appearance plus the two appearance-specific theme ids.
+    "theme_follow_system",
+    "theme_system_light",
+    "theme_system_dark",
     // Editor preferences
     "editor_vim_mode",
     "editor_auto_save",
@@ -309,6 +314,9 @@ mod tests {
         // packages/tauri/src/lib/themes/registry.ts). Workspace-scoped so it
         // mirrors every other UI-chrome setting.
         assert!(is_workspace_key_allowed("theme_current"));
+        assert!(is_workspace_key_allowed("theme_follow_system"));
+        assert!(is_workspace_key_allowed("theme_system_light"));
+        assert!(is_workspace_key_allowed("theme_system_dark"));
     }
 
     #[test]

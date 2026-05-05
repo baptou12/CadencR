@@ -1,5 +1,10 @@
-import { DEFAULT_THEME_ID, parseThemeId } from "./registry";
+import { DEFAULT_THEME_ID } from "./registry";
 import type { ThemeId } from "./types";
+import {
+  isFollowSystemThemeEnabled,
+  readBrowserSystemAppearance,
+  resolveActiveThemeId,
+} from "./system";
 
 /**
  * Theme bootstrap helpers.
@@ -13,6 +18,9 @@ import type { ThemeId } from "./types";
  */
 
 const STORAGE_KEY = "cadencr.theme";
+const FOLLOW_SYSTEM_STORAGE_KEY = "cadencr.theme.followSystem";
+const SYSTEM_LIGHT_STORAGE_KEY = "cadencr.theme.systemLight";
+const SYSTEM_DARK_STORAGE_KEY = "cadencr.theme.systemDark";
 
 /** Sets the document's active theme attribute. Idempotent. */
 export function applyThemeToDocument(themeId: ThemeId): void {
@@ -29,20 +37,45 @@ export function applyThemeToDocument(themeId: ThemeId): void {
 export function readPersistedTheme(): ThemeId {
   if (typeof window === "undefined") return DEFAULT_THEME_ID;
   try {
-    return parseThemeId(window.localStorage.getItem(STORAGE_KEY));
+    return resolveActiveThemeId({
+      followSystem: isFollowSystemThemeEnabled(
+        window.localStorage.getItem(FOLLOW_SYSTEM_STORAGE_KEY),
+      ),
+      manualTheme: window.localStorage.getItem(STORAGE_KEY),
+      systemLightTheme: window.localStorage.getItem(SYSTEM_LIGHT_STORAGE_KEY),
+      systemDarkTheme: window.localStorage.getItem(SYSTEM_DARK_STORAGE_KEY),
+      systemAppearance: readCachedSystemAppearance(),
+    });
   } catch {
     // localStorage may throw in some sandboxed environments. Fall back silently.
     return DEFAULT_THEME_ID;
   }
 }
 
-/** Update the localStorage paint hint. Called by `useThemeSync` after the
- *  server-confirmed value changes. */
-export function writePersistedTheme(themeId: ThemeId): void {
+interface PersistedThemeSettings {
+  followSystem: boolean;
+  manualTheme: ThemeId;
+  systemLightTheme: ThemeId;
+  systemDarkTheme: ThemeId;
+}
+
+export function writePersistedThemeSettings(settings: PersistedThemeSettings): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, themeId);
+    writeStorageValue(FOLLOW_SYSTEM_STORAGE_KEY, String(settings.followSystem));
+    writeStorageValue(STORAGE_KEY, settings.manualTheme);
+    writeStorageValue(SYSTEM_LIGHT_STORAGE_KEY, settings.systemLightTheme);
+    writeStorageValue(SYSTEM_DARK_STORAGE_KEY, settings.systemDarkTheme);
   } catch {
     // Same: ignore localStorage failures.
   }
+}
+
+function writeStorageValue(key: string, value: string): void {
+  if (window.localStorage.getItem(key) === value) return;
+  window.localStorage.setItem(key, value);
+}
+
+function readCachedSystemAppearance(): "light" | "dark" {
+  return readBrowserSystemAppearance();
 }
