@@ -24,7 +24,7 @@ use self::session::OpenCodeSession;
 use self::session_resolution::resolve_session_id;
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimeSlashCommandDiscovery, RuntimeSpawnConfig,
+    RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeSpawnConfig,
 };
 use super::response_style::rich_markdown_system_prompt;
 
@@ -82,8 +82,26 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         });
     }
 
-    fn slash_command_discovery(&self) -> RuntimeSlashCommandDiscovery {
-        RuntimeSlashCommandDiscovery::RuntimeNative
+    async fn runtime_slash_commands(
+        &self,
+        cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        let client = opencode_sdk_rs::OpenCodeClient::init()
+            .await
+            .map_err(RuntimeError::from)?;
+        let commands = client
+            .list_commands_in_directory(Some(cwd))
+            .await
+            .map_err(RuntimeError::from)?;
+
+        Ok(commands
+            .into_iter()
+            .map(|command| RuntimeSlashCommand {
+                name: command.name,
+                description: command.description,
+                kind: RuntimeSlashCommandKind::Command,
+            })
+            .collect())
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {

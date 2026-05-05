@@ -6,6 +6,7 @@ import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
 import { capitalize, cn } from "@/lib/utils";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { useSessionStatusStore } from "@/stores/session-status-store";
+import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ReactElement, ReactNode } from "react";
 
 /**
@@ -61,7 +62,7 @@ interface WorkflowAgentGridProps {
   ) => void;
   handleDeleteAgent: (entry: FeatureSession) => void;
   onViewDiff: (entry: FeatureSession) => void;
-  slashCommands: { name: string; description: string }[];
+  slashCommands: SlashCommand[];
   slashCommandsLoading: boolean;
 }
 

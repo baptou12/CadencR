@@ -120,6 +120,7 @@ function handleCommandsDomain(
     const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
       name: c.name,
       description: c.description ?? "",
+      kind: c.kind ?? "command",
     }));
     ctx.set(
       updateSession(ctx.get(), sessionId, {

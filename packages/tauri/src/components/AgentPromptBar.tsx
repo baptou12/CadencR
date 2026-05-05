@@ -344,7 +344,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               placeholder={
                 isPaused
                   ? "Send a message to resume…"
-                  : "Send a message… (@ to mention files, / for commands)"
+                  : "Send a message… (@ files, / commands, $ skills)"
               }
               className="max-h-32 min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
               mentionFiles={filesQuery.data}

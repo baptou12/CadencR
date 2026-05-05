@@ -8,22 +8,27 @@ import {
   type Spread,
 } from "lexical";
 
-type SerializedSlashCommandNode = Spread<{ commandName: string }, SerializedTextNode>;
+type SerializedSlashCommandNode = Spread<
+  { commandName: string; prefix?: string },
+  SerializedTextNode
+>;
 
 export class SlashCommandNode extends TextNode {
   __commandName: string;
+  __prefix: string;
 
   static getType(): string {
     return "slash-command";
   }
 
   static clone(node: SlashCommandNode): SlashCommandNode {
-    return new SlashCommandNode(node.__commandName, node.__text, node.__key);
+    return new SlashCommandNode(node.__commandName, node.__prefix, node.__text, node.__key);
   }
 
-  constructor(commandName: string, text?: string, key?: NodeKey) {
-    super(text ?? `/${commandName}`, key);
+  constructor(commandName: string, prefix = "/", text?: string, key?: NodeKey) {
+    super(text ?? `${prefix}${commandName}`, key);
     this.__commandName = commandName;
+    this.__prefix = prefix;
   }
 
   getCommandName(): string {
@@ -54,7 +59,7 @@ export class SlashCommandNode extends TextNode {
   }
 
   static importJSON(serializedNode: SerializedSlashCommandNode): SlashCommandNode {
-    return $createSlashCommandNode(serializedNode.commandName);
+    return $createSlashCommandNode(serializedNode.commandName, serializedNode.prefix ?? "/");
   }
 
   exportJSON(): SerializedSlashCommandNode {
@@ -62,11 +67,12 @@ export class SlashCommandNode extends TextNode {
       ...super.exportJSON(),
       type: "slash-command",
       commandName: this.__commandName,
+      prefix: this.__prefix,
     };
   }
 
   getTextContent(): string {
-    return `/${this.__commandName}`;
+    return `${this.__prefix}${this.__commandName}`;
   }
 
   canInsertTextBefore(): boolean {
@@ -82,8 +88,8 @@ export class SlashCommandNode extends TextNode {
   }
 }
 
-export function $createSlashCommandNode(commandName: string): SlashCommandNode {
-  const node = new SlashCommandNode(commandName);
+export function $createSlashCommandNode(commandName: string, prefix = "/"): SlashCommandNode {
+  const node = new SlashCommandNode(commandName, prefix);
   node.setMode("token");
   return node;
 }

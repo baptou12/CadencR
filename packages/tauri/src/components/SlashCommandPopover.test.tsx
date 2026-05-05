@@ -3,8 +3,18 @@ import { render, screen } from "@/test-utils";
 import { SlashCommandPopover } from "./SlashCommandPopover";
 
 const commands = [
-  { name: "commit", description: "Commit changes", argumentHint: undefined },
-  { name: "plan", description: "Create a plan", argumentHint: "[description]" },
+  {
+    name: "commit",
+    description: "Commit changes",
+    kind: "command" as const,
+    argumentHint: undefined,
+  },
+  {
+    name: "plan",
+    description: "Create a plan",
+    kind: "skill" as const,
+    argumentHint: "[description]",
+  },
 ];
 
 describe("SlashCommandPopover", () => {
@@ -52,6 +62,55 @@ describe("SlashCommandPopover", () => {
     );
     expect(screen.getByText("/commit")).toBeInTheDocument();
     expect(screen.getByText("/plan")).toBeInTheDocument();
+  });
+
+  it("does not render command kind badges", () => {
+    render(
+      <SlashCommandPopover
+        open={true}
+        items={commands}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+      >
+        <input />
+      </SlashCommandPopover>,
+    );
+    expect(screen.queryByText("command")).not.toBeInTheDocument();
+    expect(screen.queryByText("skill")).not.toBeInTheDocument();
+  });
+
+  it("uses selected-item contrast for selected command descriptions", () => {
+    render(
+      <SlashCommandPopover
+        open={true}
+        items={commands}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+      >
+        <input />
+      </SlashCommandPopover>,
+    );
+
+    expect(screen.getByText("Commit changes")).toHaveClass("text-accent-foreground/80");
+    expect(screen.getByText("Create a plan")).toHaveClass("text-muted-foreground");
+  });
+
+  it("renders skill trigger prefix when provided", () => {
+    render(
+      <SlashCommandPopover
+        open={true}
+        items={[commands[1]]}
+        selectedIndex={0}
+        onSelect={vi.fn()}
+        isLoading={false}
+        triggerChar="$"
+      >
+        <input />
+      </SlashCommandPopover>,
+    );
+    expect(screen.getByText("$plan")).toBeInTheDocument();
   });
 
   it("shows loading state", () => {

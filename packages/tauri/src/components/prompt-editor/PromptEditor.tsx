@@ -148,7 +148,18 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
         <HistoryPlugin />
         <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
         <MentionPlugin files={mentionFiles} />
-        <SlashCommandPlugin commands={slashCommands} isLoading={slashCommandsLoading} />
+        <SlashCommandPlugin
+          commands={slashCommands}
+          isLoading={slashCommandsLoading}
+          commandKind="command"
+          triggerChar="/"
+        />
+        <SlashCommandPlugin
+          commands={slashCommands}
+          isLoading={slashCommandsLoading}
+          commandKind="skill"
+          triggerChar="$"
+        />
         <KeyboardShortcutsPlugin
           onEnterSend={onEnterSend}
           onArrowUp={onArrowUp}

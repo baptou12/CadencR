@@ -33,18 +33,34 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
   const commands = optionalArray(record, "commands");
   if (!commands) return { commands: [] };
   const parsed = commands
-    .map((entry): { name: string; description?: string } | null => {
+    .map((entry): { name: string; description?: string; kind: "command" | "skill" } | null => {
       const item = asRecord(entry);
       if (!item) return null;
       const name = optionalString(item, "name");
       if (!name) return null;
       const description = optionalString(item, "description");
-      return description ? { name, description } : { name };
+      const kind = optionalCommandKind(item, "kind");
+      return {
+        name,
+        ...(description ? { description } : {}),
+        kind: kind ?? "command",
+      };
     })
-    .filter((entry): entry is { name: string; description?: string } => entry !== null);
+    .filter(
+      (entry): entry is { name: string; description?: string; kind: "command" | "skill" } =>
+        entry !== null,
+    );
   return {
     commands: parsed,
   };
+}
+
+function optionalCommandKind(
+  record: Record<string, unknown>,
+  key: string,
+): "command" | "skill" | undefined {
+  const value = record[key];
+  return value === "command" || value === "skill" ? value : undefined;
 }
 
 export function parseRuntimeSessionIdPayload(

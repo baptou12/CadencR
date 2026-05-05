@@ -4,6 +4,7 @@ import {
   parseEnvelope,
   createSessionInit,
   createPromptSend,
+  createCommandsGet,
   createPermissionRespond,
   createInterrupt,
   createDestroy,
@@ -62,6 +63,13 @@ describe("ws-envelope", () => {
       expect(env.domain).toBe("session");
       expect(env.action).toBe("prompt.send");
       expect(env.payload).toEqual({ session_id: "s1", text: "hello" });
+    });
+
+    it("createCommandsGet includes provider", () => {
+      const env = createCommandsGet("/repo", "codex_cli");
+      expect(env.domain).toBe("commands");
+      expect(env.action).toBe("get");
+      expect(env.payload).toEqual({ cwd: "/repo", provider: "codex_cli" });
     });
 
     it("createPermissionRespond", () => {

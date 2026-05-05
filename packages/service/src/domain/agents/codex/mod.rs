@@ -1,3 +1,4 @@
+mod commands;
 mod event_command_actions;
 mod event_inputs;
 mod event_items;
@@ -34,15 +35,13 @@ use self::model::{approval_policy, sandbox_mode};
 use self::session::CodexSession;
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
-    RuntimePermissionRequest, RuntimeSpawnConfig,
+    RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSpawnConfig,
 };
 use super::response_style::{rich_markdown_system_prompt, RICH_MARKDOWN_INSTRUCTION};
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct CodexAdapter;
-
 pub static CODEX_ADAPTER: CodexAdapter = CodexAdapter;
-
 pub const PROVIDER_ID: &str = "codex_cli";
 const PROVIDER_LABEL: &str = "Codex CLI";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -194,7 +193,6 @@ async fn start_thread(
     .await?
     .id)
 }
-
 fn thread_start_params(config: &RuntimeSpawnConfig, mcp_config: &Value) -> Value {
     let mut params = base_thread_params(config);
     params["experimentalRawEvents"] = Value::Bool(true);
@@ -204,7 +202,6 @@ fn thread_start_params(config: &RuntimeSpawnConfig, mcp_config: &Value) -> Value
     }
     params
 }
-
 fn thread_resume_params(thread_id: &str, config: &RuntimeSpawnConfig, mcp_config: &Value) -> Value {
     let mut params = base_thread_params(config);
     params["threadId"] = Value::String(thread_id.to_string());
@@ -213,7 +210,6 @@ fn thread_resume_params(thread_id: &str, config: &RuntimeSpawnConfig, mcp_config
     }
     params
 }
-
 fn base_thread_params(config: &RuntimeSpawnConfig) -> Value {
     let mut params = json!({
         "cwd": config.cwd.to_string_lossy(),
@@ -256,6 +252,13 @@ impl AgentRuntimeAdapter for CodexAdapter {
         tokio::spawn(async {
             let _ = live_catalog().await;
         });
+    }
+
+    async fn runtime_slash_commands(
+        &self,
+        cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        commands::runtime_slash_commands(cwd).await
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
@@ -323,13 +326,10 @@ mod tests {
     use crate::domain::agents::adapter::{
         AgentRuntimeAdapter, RuntimePermissionMode, RuntimeSpawnConfig,
     };
-    use crate::domain::agents::response_style::{
-        rich_markdown_system_prompt, RICH_MARKDOWN_INSTRUCTION,
-    };
+    use crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION;
     use serde_json::json;
     use std::collections::HashMap;
     use std::path::PathBuf;
-
     #[test]
     fn accepts_bare_codex_and_gpt_models() {
         let adapter = CodexAdapter;
@@ -370,7 +370,6 @@ mod tests {
                 Some(RICH_MARKDOWN_INSTRUCTION),
             ),
         );
-
         assert_eq!(params["threadId"], json!("thread-1"));
         assert_eq!(params["cwd"], json!("/tmp/project"));
         assert_eq!(params["model"], json!("gpt-5.5"));
@@ -392,10 +391,5 @@ mod tests {
         );
         assert!(params.get("approvalPolicy").is_some());
         assert!(params.get("sandbox").is_some());
-    }
-
-    #[test]
-    fn base_thread_params_uses_markdown_instruction_without_base_prompt() {
-        assert_eq!(rich_markdown_system_prompt(None), RICH_MARKDOWN_INSTRUCTION);
     }
 }

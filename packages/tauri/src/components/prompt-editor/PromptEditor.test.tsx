@@ -104,4 +104,38 @@ describe("PromptEditor", () => {
     const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0];
     expect(lastCall).toBe("first line\nsecond line");
   });
+
+  it("shows slash command loading state before commands arrive", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    render(<PromptEditor ref={ref} slashCommands={[]} slashCommandsLoading />);
+
+    await act(async () => {
+      ref.current!.setText("/");
+    });
+
+    expect(screen.getByText(/loading commands/i)).toBeInTheDocument();
+  });
+
+  it("shows matching custom commands beyond the builtin result cap", async () => {
+    const ref = createRef<PromptEditorHandle>();
+    const slashCommands = [
+      ...Array.from({ length: 25 }, (_, index) => ({
+        name: `builtin-${index}`,
+        description: "Builtin command",
+        kind: "command" as const,
+      })),
+      {
+        name: "superpowers:brainstorming",
+        description: "Brainstorm with superpowers",
+        kind: "command" as const,
+      },
+    ];
+    render(<PromptEditor ref={ref} slashCommands={slashCommands} slashCommandsLoading={false} />);
+
+    await act(async () => {
+      ref.current!.setText("/brain");
+    });
+
+    expect(screen.getByText("/superpowers:brainstorming")).toBeInTheDocument();
+  });
 });

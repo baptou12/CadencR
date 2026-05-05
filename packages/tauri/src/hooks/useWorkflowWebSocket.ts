@@ -7,14 +7,11 @@ import { createCommandsGet } from "@/lib/ws-envelope";
 import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
 import { hydrateFromSnapshotPatch } from "@/hooks/workflow-store-helpers";
 import { type WorkflowState, slotKeyToAgentSlot } from "@/types/workflow";
+import { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
-
-function buildSlashCommandsKey(cwd: string, provider?: string): string {
-  return `${provider ?? ""}::${cwd}`;
-}
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -60,11 +57,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     bufferedEvents: [],
     isReconnecting: false,
 
-    requestSlashCommands(cwd: string, provider?: string) {
+    requestSlashCommands(cwd: string, provider: string) {
       const { conn, slashCommands, slashCommandsLoading, slashCommandsKey } = get();
       const nextKey = buildSlashCommandsKey(cwd, provider);
       const sameTarget = slashCommandsKey === nextKey;
-      if ((sameTarget && slashCommands.length > 0) || (sameTarget && slashCommandsLoading)) return;
+      if (sameTarget && slashCommandsLoading) return;
       if (!conn?.isOpen()) return;
       const envelope = createCommandsGet(cwd, provider);
       set({

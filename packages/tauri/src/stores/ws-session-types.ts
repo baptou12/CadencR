@@ -214,7 +214,7 @@ export interface WsSessionStore {
   sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
 
   retryWorktreeSetup: (sessionId: string) => void;
-  requestSlashCommands: (sessionId: string, cwd: string, provider?: string) => void;
+  requestSlashCommands: (sessionId: string, cwd: string, provider: string) => void;
 
   markPersistedLoaded: (sessionId: string) => void;
   setPersistedState: (

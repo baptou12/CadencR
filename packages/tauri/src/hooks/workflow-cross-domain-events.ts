@@ -43,6 +43,7 @@ export function handleWorkflowCrossDomainEvent(
     const cmds: SlashCommand[] = (p.commands ?? []).map((c) => ({
       name: c.name,
       description: c.description ?? "",
+      kind: c.kind ?? "command",
     }));
     set({
       slashCommands: cmds,

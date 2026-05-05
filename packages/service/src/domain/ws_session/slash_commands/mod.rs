@@ -1,42 +1,53 @@
-mod local;
-
 use std::collections::HashSet;
 
 use tracing::{debug, warn};
 
-use crate::domain::agents::adapter::RuntimeSlashCommandDiscovery;
+use crate::domain::agents::adapter::{RuntimeSlashCommand, RuntimeSlashCommandKind};
 use crate::domain::agents::runtime_adapter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
+    pub kind: SlashCommandKind,
 }
 
-pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCommand> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlashCommandKind {
+    Command,
+    Skill,
+}
+
+impl From<RuntimeSlashCommandKind> for SlashCommandKind {
+    fn from(kind: RuntimeSlashCommandKind) -> Self {
+        match kind {
+            RuntimeSlashCommandKind::Command => Self::Command,
+            RuntimeSlashCommandKind::Skill => Self::Skill,
+        }
+    }
+}
+
+pub async fn resolve_commands(cwd: &str, provider: &str) -> Vec<SlashCommand> {
     let mut commands = Vec::new();
     let mut seen = HashSet::new();
 
     merge_commands(&mut commands, &mut seen, builtin_commands(provider));
 
-    match slash_discovery(provider) {
-        RuntimeSlashCommandDiscovery::LocalFilesystem => {
-            merge_commands(&mut commands, &mut seen, local::collect_local_commands(cwd));
+    let Some(adapter) = runtime_adapter(provider) else {
+        return commands;
+    };
+
+    match adapter.runtime_slash_commands(cwd).await {
+        Ok(native_commands) => {
+            merge_commands(&mut commands, &mut seen, to_slash_commands(native_commands));
         }
-        RuntimeSlashCommandDiscovery::RuntimeNative => match opencode_commands(cwd).await {
-            Ok(native_commands) => {
-                merge_commands(&mut commands, &mut seen, native_commands);
-                merge_commands(
-                    &mut commands,
-                    &mut seen,
-                    local::collect_local_skill_commands(cwd),
-                );
-            }
-            Err(error) => {
-                warn!(cwd, error = %error, "failed to load commands from OpenCode; falling back to local discovery");
-                merge_commands(&mut commands, &mut seen, local::collect_local_commands(cwd));
-            }
-        },
+        Err(error) => {
+            warn!(
+                cwd,
+                error = %error,
+                "failed to load commands from runtime provider"
+            );
+        }
     }
     commands
 }
@@ -44,10 +55,7 @@ pub async fn resolve_commands(cwd: &str, provider: Option<&str>) -> Vec<SlashCom
 /// Provider-specific built-in slash commands that aren't discovered through
 /// filesystem scanning. Kept isolated per provider to avoid spreading
 /// provider-specific branching through the generic resolver.
-fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
-    let Some(provider) = provider else {
-        return Vec::new();
-    };
+fn builtin_commands(provider: &str) -> Vec<SlashCommand> {
     let Some(adapter) = runtime_adapter(provider) else {
         return Vec::new();
     };
@@ -57,29 +65,21 @@ fn builtin_commands(provider: Option<&str>) -> Vec<SlashCommand> {
             description: Some(
                 "Compact the conversation, freeing context while keeping a summary".to_string(),
             ),
+            kind: SlashCommandKind::Command,
         }];
     }
     Vec::new()
 }
 
-fn slash_discovery(provider: Option<&str>) -> RuntimeSlashCommandDiscovery {
-    provider
-        .and_then(runtime_adapter)
-        .map(|adapter| adapter.slash_command_discovery())
-        .unwrap_or(RuntimeSlashCommandDiscovery::LocalFilesystem)
-}
-
-async fn opencode_commands(cwd: &str) -> Result<Vec<SlashCommand>, opencode_sdk_rs::SdkError> {
-    let client = opencode_sdk_rs::OpenCodeClient::init().await?;
-    let commands = client.list_commands_in_directory(Some(cwd)).await?;
-
-    Ok(commands
+fn to_slash_commands(commands: Vec<RuntimeSlashCommand>) -> Vec<SlashCommand> {
+    commands
         .into_iter()
         .map(|command| SlashCommand {
             name: command.name,
             description: command.description,
+            kind: command.kind.into(),
         })
-        .collect())
+        .collect()
 }
 
 fn merge_commands(
@@ -99,24 +99,56 @@ fn merge_commands(
 mod tests {
     use std::collections::HashSet;
 
-    use super::{builtin_commands, merge_commands, SlashCommand};
+    use super::{builtin_commands, merge_commands, SlashCommand, SlashCommandKind};
 
     #[test]
     fn builtin_commands_injects_compact_for_supported_providers() {
         for provider in [
-            crate::domain::agents::claude_code::PROVIDER_ID,
             crate::domain::agents::opencode::PROVIDER_ID,
             crate::domain::agents::codex::PROVIDER_ID,
         ] {
-            let commands = builtin_commands(Some(provider));
+            let commands = builtin_commands(provider);
             assert!(commands.iter().any(|command| command.name == "compact"));
         }
     }
 
     #[test]
     fn builtin_commands_is_empty_for_other_providers() {
-        assert!(builtin_commands(Some("openai")).is_empty());
-        assert!(builtin_commands(None).is_empty());
+        assert!(builtin_commands("openai").is_empty());
+    }
+
+    #[tokio::test]
+    async fn unknown_provider_does_not_use_local_filesystem_discovery() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let commands_dir = temp.path().join(".opencode/commands");
+        std::fs::create_dir_all(&commands_dir).unwrap();
+        std::fs::write(
+            commands_dir.join("leaked.md"),
+            "---\ndescription: leaked\n---\n",
+        )
+        .unwrap();
+
+        let commands = super::resolve_commands(temp.path().to_str().unwrap(), "unknown").await;
+
+        assert!(commands.is_empty());
+    }
+
+    #[tokio::test]
+    async fn codex_provider_does_not_scan_foreign_local_command_roots() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".git")).unwrap();
+        let opencode_commands = temp.path().join(".opencode/commands");
+        std::fs::create_dir_all(&opencode_commands).unwrap();
+        std::fs::write(opencode_commands.join("item-add.md"), "OpenCode only").unwrap();
+
+        let commands = super::resolve_commands(
+            temp.path().to_str().unwrap(),
+            crate::domain::agents::codex::PROVIDER_ID,
+        )
+        .await;
+
+        assert!(commands.iter().any(|command| command.name == "compact"));
+        assert!(!commands.iter().any(|command| command.name == "item-add"));
     }
 
     #[test]
@@ -124,6 +156,7 @@ mod tests {
         let mut resolved = vec![SlashCommand {
             name: "review".to_string(),
             description: Some("OpenCode review".to_string()),
+            kind: SlashCommandKind::Command,
         }];
         let mut seen = HashSet::from(["review".to_string()]);
 
@@ -133,6 +166,7 @@ mod tests {
             vec![SlashCommand {
                 name: "review".to_string(),
                 description: Some("Fallback review".to_string()),
+                kind: SlashCommandKind::Skill,
             }],
         );
 

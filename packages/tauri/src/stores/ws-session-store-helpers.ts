@@ -4,10 +4,7 @@ import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
-
-export function buildSlashCommandsKey(cwd: string, provider?: string): string {
-  return `${provider ?? ""}::${cwd}`;
-}
+export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 export function appendLocalUserMessage(
   session: SessionEntry,

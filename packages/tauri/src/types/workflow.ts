@@ -167,7 +167,7 @@ export interface WorkflowState {
   slashCommandsLoading: boolean;
   slashCommandsKey: string | null;
   slashCommandsRequestRef: string | null;
-  requestSlashCommands: (cwd: string, provider?: string) => void;
+  requestSlashCommands: (cwd: string, provider: string) => void;
 
   // Worktree state
   worktreeStatus: WorktreeStatus;

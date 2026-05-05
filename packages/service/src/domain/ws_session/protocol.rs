@@ -294,10 +294,9 @@ pub struct FeatureUpdatedPayload {
 pub struct CommandsGetPayload {
     pub cwd: String,
     /// Runtime provider for the active session (e.g. `"claude_code"`,
-    /// `"opencode"`). Lets the resolver inject provider-specific built-in
-    /// slash commands that aren't discovered through filesystem scanning.
-    #[serde(default)]
-    pub provider: Option<String>,
+    /// `"opencode"`). Required so command discovery is scoped to the active
+    /// provider instead of falling back to shared filesystem scans.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -305,6 +304,14 @@ pub struct SlashCommandPayload {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    pub kind: SlashCommandKindPayload,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SlashCommandKindPayload {
+    Command,
+    Skill,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -771,6 +778,14 @@ mod tests {
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
+
+        // CommandsGetPayload
+        let p = CommandsGetPayload {
+            cwd: "/tmp".into(),
+            provider: "codex_cli".into(),
+        };
+        let v = serde_json::to_value(&p).unwrap();
+        let _: CommandsGetPayload = serde_json::from_value(v).unwrap();
 
         // PermissionRespondPayload
         let p = PermissionRespondPayload {
@@ -1403,6 +1418,15 @@ mod tests {
         assert_eq!(parsed.action, "skip_item");
         let inner: WorkflowSkipItemPayload = serde_json::from_value(parsed.payload).unwrap();
         assert_eq!(inner.item_id, 5);
+    }
+
+    #[test]
+    fn commands_get_payload_requires_provider() {
+        let error =
+            serde_json::from_value::<CommandsGetPayload>(serde_json::json!({"cwd": "/tmp"}))
+                .expect_err("provider should be required");
+
+        assert!(error.to_string().contains("provider"));
     }
 
     #[test]

@@ -458,18 +458,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         });
     },
 
-    requestSlashCommands(sessionId: string, cwd: string, provider?: string) {
+    requestSlashCommands(sessionId: string, cwd: string, provider: string) {
       const session = getSession(sessionId);
-      const resolvedProvider = provider ?? session.runtimeProvider ?? session.currentProviderId;
-      const nextKey = buildSlashCommandsKey(cwd, resolvedProvider);
+      const nextKey = buildSlashCommandsKey(cwd, provider);
       const sameTarget = session.slashCommandsKey === nextKey;
-      if (
-        (sameTarget && session.slashCommands.length > 0) ||
-        (sameTarget && session.slashCommandsLoading)
-      ) {
+      if (sameTarget && session.slashCommandsLoading) {
         return;
       }
-      const envelope = createCommandsGet(cwd, resolvedProvider);
+      const envelope = createCommandsGet(cwd, provider);
       set(
         updateSession(get(), sessionId, {
           slashCommands: sameTarget ? session.slashCommands : [],
