@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_THEME_ID, THEME_LIST, getTheme, isThemeId, parseThemeId } from "./registry";
+
+vi.mock("../../../assets/cadencr-logo3.svg", () => ({ default: "cadencr-logo3.svg" }));
+vi.mock("../../../assets/cadencr-logo3-light.svg", () => ({
+  default: "cadencr-logo3-light.svg",
+}));
 
 describe("theme registry", () => {
   it("ships at least dracula and aurora", () => {
@@ -28,5 +33,20 @@ describe("theme registry", () => {
     expect(aurora.label).toBe("Aurora");
     expect(aurora.appearance).toBe("light");
     expect(aurora.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+  });
+
+  it("declares appearance and logo choices per theme", () => {
+    const dracula = getTheme("dracula");
+    const aurora = getTheme("aurora");
+
+    expect(dracula.appearance).toBe("dark");
+    expect(dracula.logo.variant).toBe("dark");
+    expect(dracula.logo.src).toContain("cadencr-logo3.svg");
+    expect(dracula.logo.displayScale).toBeCloseTo(1.24);
+
+    expect(aurora.appearance).toBe("light");
+    expect(aurora.logo.variant).toBe("light");
+    expect(aurora.logo.src).toContain("cadencr-logo3-light.svg");
+    expect(aurora.logo.displayScale).toBe(dracula.logo.displayScale);
   });
 });

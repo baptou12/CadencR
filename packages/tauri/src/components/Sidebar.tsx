@@ -2,10 +2,10 @@ import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import { Settings, PanelLeftClose } from "lucide-react";
-import logoSvg from "@/logo.svg";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
+import { CadencrLogo } from "@/components/CadencrLogo";
 import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
@@ -143,7 +143,7 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
   return (
     <div className="group relative h-16" onMouseDown={startDragging} onDoubleClick={toggleMaximize}>
       <div className="absolute inset-0 flex items-center justify-center">
-        <img src={logoSvg} alt="Cadencr" className="size-11 mr-2 shrink-0 -translate-y-px" />
+        <CadencrLogo className="size-11 mr-2 shrink-0 -translate-y-px" />
         <span
           className="text-2xl font-bold uppercase tracking-widest leading-none"
           style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}

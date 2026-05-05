@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from "./types";
+import { CADENCR_THEME_LOGOS } from "./logos";
 
 /**
  * Dracula — Cadencr's vibrant dark theme. The current default look.
@@ -12,6 +13,7 @@ export const DRACULA_THEME: ThemeDefinition = {
   id: "dracula",
   label: "Dracula",
   appearance: "dark",
+  logo: CADENCR_THEME_LOGOS.dark,
   swatch: {
     background: "#282a36",
     foreground: "#f8f8f2",

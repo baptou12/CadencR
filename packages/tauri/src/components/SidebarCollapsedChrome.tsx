@@ -2,8 +2,8 @@ import type { ReactElement } from "react";
 import { Link } from "@tanstack/react-router";
 import { PanelLeft, Settings } from "lucide-react";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
+import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
-import logoSvg from "@/logo.svg";
 
 export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): ReactElement {
   return (
@@ -18,7 +18,7 @@ export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): 
         >
           <PanelLeft className="size-4" />
         </Button>
-        <img src={logoSvg} alt="Cadencr" className="size-9 shrink-0 -translate-y-px" />
+        <CadencrLogo className="size-9 shrink-0 -translate-y-px" />
         <span
           className="text-xl font-bold uppercase leading-none tracking-widest"
           style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}

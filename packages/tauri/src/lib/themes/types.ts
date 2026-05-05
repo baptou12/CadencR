@@ -15,6 +15,15 @@
 
 export const THEME_IDS = ["dracula", "aurora"] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
+export type ThemeAppearance = "light" | "dark";
+export type ThemeLogoVariant = "light" | "dark";
+
+export interface ThemeLogo {
+  src: string;
+  alt: string;
+  variant: ThemeLogoVariant;
+  displayScale: number;
+}
 
 /**
  * xterm.js ITheme — duplicated locally to keep this module dependency-free
@@ -52,7 +61,9 @@ export interface ThemeDefinition {
   /** Hint for CodeMirror's `{ dark }` flag. Light themes still get the
    *  Cadencr palette via CSS variables — this only switches CM's built-in
    *  fallback styling for things we don't override. */
-  appearance: "light" | "dark";
+  appearance: ThemeAppearance;
+  /** Logo chosen by this theme. Light themes may still opt into a dark logo. */
+  logo: ThemeLogo;
   /** Used by the settings picker to render a small swatch preview. */
   swatch: {
     background: string;

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   applyThemeToDocument,
@@ -31,12 +31,17 @@ interface UseThemeResult {
 export function useTheme(): UseThemeResult {
   const setting = useDebouncedSetting(THEME_SETTING_KEY);
   const themeId = parseThemeId(setting.value ?? DEFAULT_THEME_ID);
-  return {
-    themeId,
-    theme: getTheme(themeId),
-    setTheme: setting.setValue,
-    isLoading: setting.isLoading,
-  };
+  const theme = getTheme(themeId);
+
+  return useMemo(
+    () => ({
+      themeId,
+      theme,
+      setTheme: setting.setValue,
+      isLoading: setting.isLoading,
+    }),
+    [themeId, theme, setting.setValue, setting.isLoading],
+  );
 }
 
 /**

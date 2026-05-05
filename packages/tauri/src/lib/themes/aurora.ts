@@ -1,4 +1,5 @@
 import type { ThemeDefinition } from "./types";
+import { CADENCR_THEME_LOGOS } from "./logos";
 
 /**
  * Aurora — a white version of the vibrant Dracula theme.
@@ -12,6 +13,7 @@ export const AURORA_THEME: ThemeDefinition = {
   id: "aurora",
   label: "Aurora",
   appearance: "light",
+  logo: CADENCR_THEME_LOGOS.light,
   swatch: {
     background: "oklch(0.985 0.004 290)",
     foreground: "oklch(0.205 0.040 285)",

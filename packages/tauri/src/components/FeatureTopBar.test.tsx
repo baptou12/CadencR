@@ -20,7 +20,21 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
+vi.mock("@/hooks/useTheme", () => ({
+  useTheme: () => ({
+    themeId: "dracula",
+    theme: {
+      logo: {
+        src: "dracula-logo.svg",
+        alt: "Cadencr",
+        variant: "dark",
+        displayScale: 1.24,
+      },
+    },
+    setTheme: vi.fn(),
+    isLoading: false,
+  }),
+}));
 
 const mockSetFeatureSetting = vi.fn();
 

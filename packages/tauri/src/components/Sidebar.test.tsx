@@ -30,7 +30,23 @@ vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
 }));
 
-vi.mock("@/logo.svg", () => ({ default: "logo.svg" }));
+let mockLogoSrc = "dracula-logo.svg";
+
+vi.mock("@/hooks/useTheme", () => ({
+  useTheme: () => ({
+    themeId: "dracula",
+    theme: {
+      logo: {
+        src: mockLogoSrc,
+        alt: "Cadencr",
+        variant: "dark",
+        displayScale: 1.24,
+      },
+    },
+    setTheme: vi.fn(),
+    isLoading: false,
+  }),
+}));
 
 vi.mock("../api/generated", () => ({
   useListProjects: vi.fn(() => ({
@@ -84,6 +100,7 @@ describe("Sidebar", () => {
   beforeEach(() => {
     mockNavigate.mockClear();
     mockSetCollapsed.mockClear();
+    mockLogoSrc = "dracula-logo.svg";
     mockLocation = { pathname: "/" };
   });
 
@@ -95,6 +112,12 @@ describe("Sidebar", () => {
   it("renders the logo", () => {
     render(<Sidebar />);
     expect(screen.getByAltText("Cadencr")).toBeInTheDocument();
+  });
+
+  it("renders the logo selected by the active theme", () => {
+    mockLogoSrc = "aurora-light-logo.svg";
+    render(<Sidebar />);
+    expect(screen.getByAltText("Cadencr")).toHaveAttribute("src", "aurora-light-logo.svg");
   });
 
   it("renders settings link", () => {

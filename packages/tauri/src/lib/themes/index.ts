@@ -7,5 +7,12 @@ export {
   isThemeId,
   parseThemeId,
 } from "./registry";
-export type { ThemeDefinition, ThemeId, XTermPalette } from "./types";
+export type {
+  ThemeAppearance,
+  ThemeDefinition,
+  ThemeId,
+  ThemeLogo,
+  ThemeLogoVariant,
+  XTermPalette,
+} from "./types";
 export { THEME_IDS } from "./types";
