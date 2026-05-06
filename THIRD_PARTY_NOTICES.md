@@ -10,7 +10,6 @@ This is a curated, human-maintained summary focused on frameworks users see or i
 
 | Component | Upstream | License |
 | --- | --- | --- |
-| Tauri (v2) — desktop shell | https://tauri.app | Apache-2.0 OR MIT |
 | React — UI framework | https://react.dev | MIT |
 | Tailwind CSS — styling | https://tailwindcss.com | MIT |
 | Radix UI — headless primitives | https://www.radix-ui.com | MIT |
@@ -38,14 +37,6 @@ Cadencr also uses component patterns from **shadcn/ui** (https://ui.shadcn.com, 
 | portable-pty — PTY wrapper | https://github.com/wez/wezterm | MIT |
 | ignore / nucleo-matcher | https://github.com/BurntSushi/ripgrep, https://github.com/helix-editor/nucleo | Unlicense OR MIT, MIT |
 
-## Tauri desktop crate
-
-| Component | Upstream | License |
-| --- | --- | --- |
-| tauri / tauri-plugin-shell / tauri-plugin-dialog | https://tauri.app | Apache-2.0 OR MIT |
-| tauri-plugin-mcp-bridge | https://crates.io/crates/tauri-plugin-mcp-bridge | Apache-2.0 OR MIT |
-| objc2 family + block2 (macOS notifications) | https://github.com/madsmtm/objc2 | MIT |
-
 ## Tooling (dev-only)
 
 | Component | Upstream | License |
@@ -62,13 +53,13 @@ Cadencr also uses component patterns from **shadcn/ui** (https://ui.shadcn.com, 
 
 Cadencr bundles third-party logos to identify the coding agents and tools it integrates with. These marks are the property of their respective owners. Their inclusion in the UI is a reference to the corresponding product — it is not a claim of ownership, affiliation, partnership, or endorsement.
 
-Files under `packages/tauri/assets/providers/`:
+Files under `packages/desktop/assets/providers/`:
 
 - **`claude.png`** — Anthropic "Claude" mark. © Anthropic. Used here solely to label the Claude Code integration.
 - **`codex.png`** — OpenAI "Codex" mark. © OpenAI. Used here solely to label the Codex integration.
 - **`opencode.png`** — OpenCode project mark. © OpenCode authors. Used here solely to label the OpenCode integration.
 
-Files under `packages/tauri/assets/`:
+Files under `packages/desktop/assets/`:
 
 - **`zed-logo.png`** — Zed Industries mark. © Zed Industries. Used here solely to label the Zed integration where applicable.
 
@@ -76,4 +67,4 @@ If you own one of these marks and want the asset removed or replaced, please ope
 
 ## Cadencr-original assets
 
-The Cadencr name, the Cadencr logo (`packages/tauri/assets/cadencr-logo3.png`, `cadencr-logo3.svg`, `icon.icns`, `icon.ico`, `icon.png`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.
+The Cadencr name, the Cadencr logo (`packages/desktop/assets/cadencr-logo3.png`, `cadencr-logo3.svg`, `icon.icns`, `icon.ico`, `icon.png`), and the marketing content under `packages/landing/` are original works © 2026 Raphael Le Minor, released under the Apache License 2.0 together with the rest of this repository.

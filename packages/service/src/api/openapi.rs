@@ -311,7 +311,7 @@ struct ApiDoc;
 #[derive(Serialize, utoipa::ToSchema)]
 struct HealthResponse {
     status: String,
-    /// Fixed identifier; the Tauri shell checks this to reject an imposter
+    /// Fixed identifier; the desktop shell checks this to reject an imposter
     /// that grabbed our port before we could bind.
     service: &'static str,
 }

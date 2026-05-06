@@ -1,6 +1,6 @@
 //! Hydrate the process env from the user's login shell.
 //!
-//! When Cadencr is launched from a GUI (Finder, Spotlight, dock icon, Tauri
+//! When Cadencr is launched from a GUI (Finder, Spotlight, dock icon, Electron
 //! sidecar), it inherits the **launchd** environment — a minimal `PATH` of
 //! `/usr/bin:/bin:/usr/sbin:/sbin`, no `GPG_TTY`, no `SSH_AUTH_SOCK`, no
 //! `GNUPGHOME`, no Homebrew prefix on `PATH`. The same `git commit` that

@@ -28,7 +28,7 @@ A desktop application that provides a fully-fledged UI for local AI coding agent
 
 | Layer           | Technology                              |
 | --------------- | --------------------------------------- |
-| Desktop shell   | Tauri v2 (Rust)                         |
+| Desktop shell   | Electron + React                         |
 | Backend service | Rust (Axum, Tokio) — spawned as sidecar |
 | UI framework    | React 19                                |
 | Styling         | Tailwind CSS + shadcn/ui                |

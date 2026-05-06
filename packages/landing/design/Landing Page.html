@@ -556,7 +556,7 @@
           <span class="sep">·</span>
           <span>bring your own keys</span>
           <span class="sep">·</span>
-          <span>built on Tauri</span>
+          <span>built on Electron</span>
         </div>
       </div>
 
@@ -689,7 +689,7 @@
               <div class="diff">
                 <div class="diff-head">
                   <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h16"/></svg>
-                  <span class="path">packages/tauri/src/components/editor/editor-theme.ts</span>
+                  <span class="path">packages/desktop/src/components/editor/editor-theme.ts</span>
                   <span class="stats"><span class="add">+4</span> <span class="del">-0</span></span>
                 </div>
                 <div class="diff-body">
@@ -816,9 +816,9 @@
        "&.cm-merge-b .cm-changedText": {
          backgroundColor: "#00990033"
        },
-<span class="hd">● Read(packages/tauri/src/editor-theme.ts)</span>
+<span class="hd">● Read(packages/desktop/src/editor-theme.ts)</span>
   ⎿  Read 142 lines (ctrl+r to expand)
-<span class="hd">● Edit(packages/tauri/src/editor-theme.ts)</span>
+<span class="hd">● Edit(packages/desktop/src/editor-theme.ts)</span>
   ⎿  Updated with 4 additions
       42   }
       43 + ".cm-mergeView & .cm-changedLine": {
@@ -1003,7 +1003,7 @@
             <div class="gl-row">
               <div class="gl-graph"><div class="node" style="background:var(--drac-purple)"></div></div>
               <span class="gl-sha">0af43b</span>
-              <span class="gl-msg">docs: add AGENTS.md to tauri/src</span>
+              <span class="gl-msg">docs: add AGENTS.md to desktop/src</span>
               <span class="gl-tag main">main</span>
               <span class="gl-meta">3d</span>
             </div>
@@ -1035,7 +1035,7 @@
           </div>
           <div class="term-body"><span class="tl-prompt">~/cadencr</span> <span class="tl-path">(<span class="tl-branch">codemirror-theme</span>)</span> <span class="tl-prompt">❯</span> <span class="tl-cmd">pnpm dev</span>
 <span class="tl-dim">&gt; <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="9af9fbfefff4f9ffdaaab4a3b4a8">[email&#160;protected]</a> dev /Users/you/code/cadencr</span>
-<span class="tl-dim">&gt; tauri dev</span>
+<span class="tl-dim">&gt; electron-vite dev</span>
 
 <span class="tl-ok">  VITE v6.2.1</span>  ready in <span class="tl-ok">412 ms</span>
 
@@ -1043,7 +1043,7 @@
   <span class="tl-ok">➜</span>  Network: use <span class="tl-cmd">--host</span> to expose
   <span class="tl-ok">➜</span>  press <span class="tl-cmd">h + enter</span> to show help
 
-<span class="tl-warn">    Compiling</span> cadencr v0.9.2 (/Users/you/code/cadencr/src-tauri)
+<span class="tl-warn">    Compiling</span> cadencr v0.9.2 (/Users/you/code/cadencr/packages/desktop/electron)
 <span class="tl-ok">     Finished</span> dev [unoptimized + debuginfo] in 18.4s
 
 <span class="tl-prompt">~/cadencr</span> <span class="tl-path">(<span class="tl-branch">codemirror-theme</span>)</span> <span class="tl-prompt">❯</span> <span class="tl-cmd">git status</span>
@@ -1111,7 +1111,7 @@
         <div>
           <span class="eyebrow">06 · Install</span>
           <h2 class="section">Local, fast, open.</h2>
-          <p class="lede">Cadencr is a Tauri binary &mdash; ~24 MB, runs offline, no background services. Source under MIT on GitHub.</p>
+          <p class="lede">Cadencr is an Electron desktop app, runs offline, and talks to a local sidecar service. Source under MIT on GitHub.</p>
           <div style="margin-top:18px; display:flex; gap:8px; flex-wrap:wrap">
             <button class="btn btn-primary btn-lg">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
@@ -1168,7 +1168,7 @@
             </div>
             <div class="cmd-body" style="display:flex; flex-direction:column; align-items:stretch; gap:6px">
               <div style="display:flex; gap:10px; align-items:center"><span class="p">$</span><span class="c">git clone https://github.com/cadencr-ide/cadencr</span></div>
-              <div style="display:flex; gap:10px; align-items:center"><span class="p">$</span><span class="c">cd cadencr &amp;&amp; pnpm i &amp;&amp; pnpm tauri build</span></div>
+              <div style="display:flex; gap:10px; align-items:center"><span class="p">$</span><span class="c">cd cadencr &amp;&amp; pnpm i &amp;&amp; pnpm --filter @cadencr/desktop build</span></div>
             </div>
           </div>
         </div>

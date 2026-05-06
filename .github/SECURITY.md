@@ -24,7 +24,7 @@ Expect an acknowledgement within a few days.
 Cadencr is a local-first desktop app. The most relevant attack surfaces are:
 
 - The local Rust service (HTTP + WebSocket) and its auth-token handling.
-- The Tauri shell and any filesystem / IPC boundary it exposes.
+- The Electron shell and any filesystem / IPC boundary it exposes.
 - The bundled agent SDKs (`claude-agent-sdk-rs`, `opencode-sdk-rs`) and how they spawn and stream local CLI processes.
 - Handling of user-provided project paths, prompts, and agent output.
 

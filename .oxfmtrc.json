@@ -1,9 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxfmt/schema.json",
   "ignorePatterns": [
-    "packages/tauri/src/routeTree.gen.ts",
+    "packages/desktop/src/routeTree.gen.ts",
     ".claude/",
-    "packages/tauri/src-tauri/target/",
     "target/",
     "packages/landing/dist/",
     "packages/landing/.astro/",

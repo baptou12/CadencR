@@ -1,6 +1,6 @@
 ---
 paths:
-  - "packages/tauri/src/**"
+  - "packages/desktop/src/**"
 ---
 
 Do NOT use optimistic updates in the frontend. Everything runs locally — there is no latency to hide. Optimistic updates create multiple sources of truth and add unnecessary complexity.

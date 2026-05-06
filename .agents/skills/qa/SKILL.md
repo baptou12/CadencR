@@ -28,7 +28,7 @@ Check if they're already up and healthy:
 # Load local overrides from the package env files when present
 set -a
 [ -f packages/service/.env ] && . ./packages/service/.env
-[ -f packages/tauri/.env ] && . ./packages/tauri/.env
+[ -f packages/desktop/.env ] && . ./packages/desktop/.env
 set +a
 
 FRONTEND_PORT="${VITE_FRONTEND_PORT:-1420}"

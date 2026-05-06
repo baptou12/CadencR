@@ -37,7 +37,7 @@ The full ruleset for code style, file/function size limits, and architectural bo
 The three rules contributors hit most often:
 
 - Use **pnpm**, not `npm` or `yarn`.
-- When the Rust API surface changes, regenerate the frontend API client with `pnpm --filter @cadencr/desktop run generate:api` and commit `packages/tauri/src/api/generated/index.ts`.
+- When the Rust API surface changes, regenerate the frontend API client with `pnpm --filter @cadencr/desktop run generate:api` and commit `packages/desktop/src/api/generated/index.ts`.
 - Keep files under **400 lines** and functions under **100 lines**; extract modules before crossing those limits.
 
 ---
@@ -50,7 +50,7 @@ Maintainers keep labels intentionally simple. Contributors do not need to pick e
 |---|---|
 | `Feature` | New user-visible capability or improvement |
 | `Fix` | Bug fix or regression |
-| `Desktop` | Tauri/React desktop app |
+| `Desktop` | Electron/React desktop app |
 | `Backend` | Rust service or SDK/backend integration work |
 | `provider:claude` | Claude-specific behavior |
 | `provider:codex` | Codex-specific behavior |
@@ -75,7 +75,7 @@ Provider labels should be used only when the work is truly provider-specific. Ge
 ## Branching
 
 - **`main`** is the integration branch.
-- Work on short-lived feature branches named with a scope prefix and a short slug — for example `feat/desktop-sidebar-redesign`, `fix/session-runtime-status`, `chore/bump-tauri`.
+- Work on short-lived feature branches named with a scope prefix and a short slug — for example `feat/desktop-sidebar-redesign`, `fix/session-runtime-status`, `chore/bump-electron`.
 - Rebase onto the latest `main` before opening a pull request.
 
 ## Commit Convention
