@@ -59,6 +59,7 @@ vi.mock("../api/generated", () => ({
   useCreateFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
+  useUpdateFeatureLabel: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
   getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],

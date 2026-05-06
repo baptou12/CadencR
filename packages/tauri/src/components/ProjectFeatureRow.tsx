@@ -21,11 +21,24 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useGetStats, type Feature } from "@/api/generated";
+import { FeatureLabelChip } from "@/components/FeatureLabelChip";
+import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 
 export type { FeatureStatus };
+
+const ROW_KEYDOWN_IGNORED_SELECTOR = [
+  "input",
+  "textarea",
+  "select",
+  "button",
+  '[contenteditable="true"]',
+  '[role="textbox"]',
+  '[role="combobox"]',
+  "[data-ignore-feature-row-keydown]",
+].join(", ");
 
 interface ProjectFeatureRowProps {
   feature: Feature;
@@ -37,8 +50,16 @@ interface ProjectFeatureRowProps {
   hasWorktree: boolean;
   /** True only when the worktree directory still exists on disk (stats query). */
   hasLiveWorktree: boolean;
+  isEditingLabel: boolean;
+  labelDraft: string;
+  labelSuggestions: readonly string[];
+  isSavingLabel: boolean;
   onNavigate: (feature: Feature) => void;
   onStatusChange: (featureId: number, status: FeatureStatus) => void;
+  onStartLabelEdit: (feature: Feature) => void;
+  onLabelDraftChange: (value: string) => void;
+  onSaveLabel: (featureId: number) => void;
+  onCancelLabelEdit: () => void;
   onArchiveOrDelete: (featureId: number) => void;
 }
 
@@ -50,8 +71,16 @@ export function ProjectFeatureRow({
   isAutoNaming,
   hasWorktree,
   hasLiveWorktree,
+  isEditingLabel,
+  labelDraft,
+  labelSuggestions,
+  isSavingLabel,
   onNavigate,
   onStatusChange,
+  onStartLabelEdit,
+  onLabelDraftChange,
+  onSaveLabel,
+  onCancelLabelEdit,
   onArchiveOrDelete,
 }: ProjectFeatureRowProps): ReactElement {
   // Live status is the canonical 3-value enum: per-session entries pushed
@@ -77,6 +106,11 @@ export function ProjectFeatureRow({
   );
 
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
+  const hasLabel = !!feature.label;
+  const showMetaLine = isEditingLabel || hasLabel || hasStats || feature.type !== "ws-session";
+  const startLabelEditAfterMenuClose = (): void => {
+    window.setTimeout(() => onStartLabelEdit(feature), 0);
+  };
 
   return (
     <ContextMenu>
@@ -91,10 +125,16 @@ export function ProjectFeatureRow({
           className={`group/feature flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none hover:bg-accent ${
             activeFeatureId === feature.id ? "bg-accent" : ""
           } ${feature.status === "archived" ? "opacity-50" : ""}`}
-          onClick={() => {
+          onClick={(e) => {
+            if (isActive || e.detail > 1) return;
             onNavigate(feature);
           }}
+          onDoubleClick={(e) => {
+            e.preventDefault();
+            onStartLabelEdit(feature);
+          }}
           onKeyDown={(e) => {
+            if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
               onNavigate(feature);
@@ -130,8 +170,29 @@ export function ProjectFeatureRow({
                 </span>
               )}
             </div>
-            {(hasStats || feature.type !== "ws-session") && (
+            {showMetaLine && (
               <div className="flex items-center gap-2 text-[11px] leading-tight">
+                {isEditingLabel ? (
+                  <FeatureLabelEditor
+                    value={labelDraft}
+                    suggestions={labelSuggestions}
+                    isSaving={isSavingLabel}
+                    trigger={
+                      feature.label ? (
+                        <FeatureLabelChip label={feature.label} />
+                      ) : (
+                        <span className="rounded border border-dashed border-border px-1.5 py-0 font-mono text-[10.5px] leading-4 text-muted-foreground">
+                          Set label
+                        </span>
+                      )
+                    }
+                    onChange={onLabelDraftChange}
+                    onSave={() => onSaveLabel(feature.id)}
+                    onCancel={onCancelLabelEdit}
+                  />
+                ) : (
+                  <FeatureLabelChip label={feature.label} />
+                )}
                 {hasStats && (
                   <NumStat
                     additions={gitStats.insertions}
@@ -195,6 +256,7 @@ export function ProjectFeatureRow({
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onSelect={() => onNavigate(feature)}>Open</ContextMenuItem>
+        <ContextMenuItem onSelect={startLabelEditAfterMenuClose}>Set label</ContextMenuItem>
         {feature.type !== "ws-session" && (
           <>
             <ContextMenuSub>
@@ -219,4 +281,9 @@ export function ProjectFeatureRow({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return target.closest(ROW_KEYDOWN_IGNORED_SELECTOR) !== null;
 }

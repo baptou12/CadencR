@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { ProjectFeatures } from "./ProjectFeatures";
+import { shouldIgnoreFeatureRowKeyDown } from "./ProjectFeatureRow";
 import { resetMockIds } from "@/test-fixtures";
 
 const mockNavigate = vi.fn();
 const _mockInvalidate = vi.fn();
 const mockUpdateStatus = vi.fn();
+const mockUpdateLabel = vi.fn();
 const mockDelete = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
@@ -14,8 +16,22 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const mockFeatures = [
-  { id: 1, title: "Feature One", type: "ws-feature", status: "draft", project_id: 1 },
-  { id: 2, title: "Feature Two", type: "ws-feature", status: "in-progress", project_id: 1 },
+  {
+    id: 1,
+    title: "Feature One",
+    label: "Review",
+    type: "ws-feature",
+    status: "draft",
+    project_id: 1,
+  },
+  {
+    id: 2,
+    title: "Feature Two",
+    label: "Blocked",
+    type: "ws-feature",
+    status: "in-progress",
+    project_id: 1,
+  },
   { id: 3, title: "Session One", type: "ws-session", status: "draft", project_id: 1 },
   { id: 4, title: "Archived Feature", type: "ws-feature", status: "archived", project_id: 1 },
 ];
@@ -28,6 +44,15 @@ vi.mock("@/api/generated", () => ({
       opts?.onSuccess?.();
     },
   })),
+  useUpdateFeatureLabel: vi.fn(
+    (opts?: { onSuccess?: (data: unknown, variables: unknown) => void }) => ({
+      mutate: (data: unknown) => {
+        mockUpdateLabel(data);
+        opts?.onSuccess?.({}, data);
+      },
+      isPending: false,
+    }),
+  ),
   useDeleteFeature: vi.fn((opts?: { onSuccess?: () => void }) => ({
     mutate: (data: unknown) => {
       mockDelete(data);
@@ -36,6 +61,11 @@ vi.mock("@/api/generated", () => ({
   })),
   useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
+  getGetFeatureQueryKey: vi.fn((id: number) => ["features", "detail", id]),
+  getGetFeaturePrdQueryKey: vi.fn((id: number) => ["features", "prd", id]),
+  getGetFeaturePlanQueryKey: vi.fn((id: number) => ["features", "plan", id]),
+  getGetFeaturePlanProgressQueryKey: vi.fn((id: number) => ["features", "plan-progress", id]),
+  getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
   useGetStats: vi.fn(() => ({ data: undefined })),
@@ -59,6 +89,7 @@ describe("ProjectFeatures", () => {
     resetMockIds();
     mockNavigate.mockClear();
     mockUpdateStatus.mockClear();
+    mockUpdateLabel.mockClear();
     mockDelete.mockClear();
   });
 
@@ -159,5 +190,138 @@ describe("ProjectFeatures", () => {
     );
     // Features with different statuses render without crashing
     expect(screen.getByText("Feature Two")).toBeInTheDocument();
+  });
+
+  it("renders feature labels in the sidebar metadata line", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+  });
+
+  it("opens the label editor popover on double click and saves with Enter", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(screen.getByText("Feature One"));
+    expect(screen.getByText("Set feature label")).toBeInTheDocument();
+    const input = screen.getByDisplayValue("Review");
+    await user.clear(input);
+    await user.type(input, "QA{Enter}");
+
+    expect(mockUpdateLabel).toHaveBeenCalledWith({ id: 1, data: { label: "QA" } });
+  });
+
+  it("opens the active feature label editor with Cmd+Shift+L", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(window, { code: "KeyL", key: "L", metaKey: true, shiftKey: true });
+
+    expect(screen.getByText("Set feature label")).toBeInTheDocument();
+  });
+
+  it("does not save when the label is unchanged", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(screen.getByText("Feature One"));
+    await user.keyboard("{Enter}");
+
+    expect(mockUpdateLabel).not.toHaveBeenCalled();
+  });
+
+  it("opens the label editor popover from the context menu", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    const featureRow = screen.getByText("Feature One").closest("[role=button]");
+    expect(featureRow).not.toBeNull();
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    await user.click(await screen.findByText("Set label"));
+
+    expect(screen.getByText("Set feature label")).toBeInTheDocument();
+  });
+
+  it("does not re-navigate the active feature before opening its label editor", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(screen.getByText("Feature One"));
+
+    expect(screen.getByText("Set feature label")).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when typing spaces in the label editor", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.dblClick(screen.getByText("Feature One"));
+    const callsBeforeTyping = mockNavigate.mock.calls.length;
+    const input = screen.getByDisplayValue("Review");
+    await user.clear(input);
+    await user.type(input, "In progress");
+
+    expect(mockNavigate).toHaveBeenCalledTimes(callsBeforeTyping);
+  });
+
+  it("ignores row keyboard navigation from interactive descendants", () => {
+    const input = document.createElement("input");
+    const textbox = document.createElement("div");
+    const plainRowTarget = document.createElement("div");
+    textbox.setAttribute("role", "textbox");
+
+    expect(shouldIgnoreFeatureRowKeyDown(input)).toBe(true);
+    expect(shouldIgnoreFeatureRowKeyDown(textbox)).toBe(true);
+    expect(shouldIgnoreFeatureRowKeyDown(plainRowTarget)).toBe(false);
   });
 });

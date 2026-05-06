@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
@@ -9,13 +10,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFeatures,
   useUpdateFeatureStatus,
+  useUpdateFeatureLabel,
   useDeleteFeature,
   useIsFeatureEmpty,
   useListFeatureWorktrees,
   type Feature,
 } from "@/api/generated";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { ProjectFeatureRow, type FeatureStatus } from "@/components/ProjectFeatureRow";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 
 export function ProjectFeatures({
   projectId,
@@ -32,6 +37,8 @@ export function ProjectFeatures({
   const queryClient = useQueryClient();
   const [showArchived, setShowArchived] = useState(false);
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
+  const [editingLabelFeatureId, setEditingLabelFeatureId] = useState<number | null>(null);
+  const [labelDraft, setLabelDraft] = useState("");
   const { data: features = [] } = useListFeatures({ project_id: projectId });
   const { data: featureWorktrees = [] } = useListFeatureWorktrees(
     { project_id: projectId },
@@ -68,6 +75,11 @@ export function ProjectFeatures({
 
   const activeFeatures = features.filter((f) => f.status !== "archived");
   const archivedFeatures = features.filter((f) => f.status === "archived");
+  const labelSuggestions = useMemo(() => uniqueLabels(features), [features]);
+  const activeFeature = useMemo(
+    () => features.find((feature) => feature.id === activeFeatureId),
+    [activeFeatureId, features],
+  );
 
   const invalidateFeatures = () => {
     // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
@@ -104,6 +116,19 @@ export function ProjectFeatures({
     },
   });
 
+  const updateLabelMutation = useUpdateFeatureLabel({
+    mutation: {
+      onSuccess: (_data, variables) => {
+        setEditingLabelFeatureId(null);
+        setLabelDraft("");
+        invalidateFeatureQueries(variables.id, ["label"]);
+      },
+      onError: (error) => {
+        toast.error(apiErrorMessage(error, "Failed to update feature label"));
+      },
+    },
+  });
+
   const handleNavigate = (feature: Feature) => {
     onSelectFeature(feature.id);
     if (feature.type === "ws-session") {
@@ -131,6 +156,39 @@ export function ProjectFeatures({
     updateStatusMutation.mutate({ id: featureId, data: { status } });
   };
 
+  const handleStartLabelEdit = (feature: Feature): void => {
+    setEditingLabelFeatureId(feature.id);
+    setLabelDraft(feature.label ?? "");
+  };
+
+  const handleActiveFeatureLabelShortcut = useCallback(
+    (event: KeyboardEvent): void => {
+      if (!activeFeature) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleStartLabelEdit(activeFeature);
+    },
+    [activeFeature],
+  );
+
+  useGlobalShortcut("meta+shift+l", handleActiveFeatureLabelShortcut, {
+    enabled: activeFeature != null,
+  });
+
+  const handleSaveLabel = (featureId: number): void => {
+    const normalized = normalizeLabel(labelDraft);
+    const current = features.find((feature) => feature.id === featureId);
+    if (current && normalizeLabel(current.label ?? "") === normalized) {
+      setEditingLabelFeatureId(null);
+      setLabelDraft("");
+      return;
+    }
+    updateLabelMutation.mutate({
+      id: featureId,
+      data: { label: normalized },
+    });
+  };
+
   const renderFeature = (feature: Feature) => (
     <ProjectFeatureRow
       key={feature.id}
@@ -141,8 +199,16 @@ export function ProjectFeatures({
       isAutoNaming={isAutoNaming(feature.id)}
       hasWorktree={worktreeFeatureIds.has(feature.id)}
       hasLiveWorktree={liveWorktreeFeatureIds.has(feature.id)}
+      isEditingLabel={editingLabelFeatureId === feature.id}
+      labelDraft={editingLabelFeatureId === feature.id ? labelDraft : ""}
+      labelSuggestions={labelSuggestions}
+      isSavingLabel={updateLabelMutation.isPending && editingLabelFeatureId === feature.id}
       onNavigate={handleNavigate}
       onStatusChange={handleStatusChange}
+      onStartLabelEdit={handleStartLabelEdit}
+      onLabelDraftChange={setLabelDraft}
+      onSaveLabel={handleSaveLabel}
+      onCancelLabelEdit={() => setEditingLabelFeatureId(null)}
       onArchiveOrDelete={setConfirmFeatureId}
     />
   );
@@ -205,4 +271,18 @@ export function ProjectFeatures({
       )}
     </div>
   );
+}
+
+function uniqueLabels(features: readonly Feature[]): string[] {
+  const labels = new Set<string>();
+  for (const feature of features) {
+    const label = normalizeLabel(feature.label ?? "");
+    if (label) labels.add(label);
+  }
+  return [...labels].sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeLabel(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

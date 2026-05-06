@@ -13,10 +13,19 @@ import {
 } from "@/api/generated";
 
 /** Valid values for the `changed` array in a `feature.updated` payload. */
-type FeatureChangedField = "title" | "plan" | "prd" | "phases" | "progress" | "settings" | "status";
+type FeatureChangedField =
+  | "title"
+  | "label"
+  | "plan"
+  | "prd"
+  | "phases"
+  | "progress"
+  | "settings"
+  | "status";
 
 const FIELD_TO_QUERY_KEY: Record<FeatureChangedField, (id: number) => readonly unknown[]> = {
   title: getGetFeatureQueryKey,
+  label: getGetFeatureQueryKey,
   plan: getGetFeaturePlanQueryKey,
   prd: getGetFeaturePrdQueryKey,
   phases: getGetFeaturePlanQueryKey,
@@ -45,7 +54,7 @@ export function invalidateFeatureQueries(featureId: number, changed: string[]): 
   // this, the live workflow store can hold a fresh title only for the active
   // feature — navigating away drops it and the sidebar falls back to the
   // stale cached list entry.
-  const LIST_RELEVANT: FeatureChangedField[] = ["status", "title"];
+  const LIST_RELEVANT: FeatureChangedField[] = ["status", "title", "label"];
   if (changed.some((f) => LIST_RELEVANT.includes(f as FeatureChangedField))) {
     // `getListFeaturesQueryKey()` (no args) returns `["/api/features"]` — a
     // 1-element prefix that matches every per-project list query under React

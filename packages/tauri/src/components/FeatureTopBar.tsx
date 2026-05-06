@@ -8,6 +8,7 @@ import { EmbeddedSessionHeader } from "./FeatureTopBarEmbedded";
 import { GitActionButton } from "./git-actions/GitActionButton";
 import { BranchChip } from "./branch-chip/BranchChip";
 import { FeatureSettingsPopover } from "./FeatureSettingsPopover";
+import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { WorktreeStatus } from "@/types/workflow";
@@ -41,6 +42,7 @@ interface FeatureTopBarProps {
   draggable?: boolean;
   projectName?: string;
   titleOverride?: string;
+  labelOverride?: string | null;
   lastActivityAt?: string | null;
   isPinned?: boolean;
   isPinPending?: boolean;
@@ -82,6 +84,7 @@ function EmbeddedFeatureTopBar({
   onRetryWorktreeSetup,
   projectName,
   titleOverride,
+  labelOverride,
   lastActivityAt,
   isPinned,
   isPinPending,
@@ -94,6 +97,7 @@ function EmbeddedFeatureTopBar({
       projectId={projectId}
       projectName={projectName}
       title={titleOverride ?? ""}
+      label={labelOverride}
       lastActivityAt={lastActivityAt}
       isPinned={isPinned}
       isPinPending={isPinPending}
@@ -123,6 +127,7 @@ function StandardFeatureTopBar({
   showSidebarChrome = true,
   draggable = true,
   titleOverride,
+  labelOverride,
 }: FeatureTopBarProps): ReactElement | null {
   const isSession = mode === "session";
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
@@ -154,6 +159,7 @@ function StandardFeatureTopBar({
       projectId={projectId}
       className={className}
       featureTitle={title ?? feature.title}
+      featureLabel={labelOverride !== undefined ? labelOverride : feature.label}
       featureStatus={feature.status as FeatureStatus}
       isSession={isSession}
       isAutoNaming={isAutoNaming || autoNameMutation.isPending}
@@ -181,6 +187,7 @@ interface FeatureHeaderChromeProps {
   projectId: number;
   className?: string;
   featureTitle: string;
+  featureLabel?: string | null;
   featureStatus: FeatureStatus;
   isSession: boolean;
   isAutoNaming: boolean;
@@ -206,6 +213,7 @@ function FeatureHeaderChrome({
   projectId,
   className,
   featureTitle,
+  featureLabel,
   featureStatus,
   isSession,
   isAutoNaming,
@@ -251,6 +259,7 @@ function FeatureHeaderChrome({
             onAutoRename={onAutoRename}
           />
         )}
+        <FeatureLabelChip label={featureLabel} />
         <div className="flex-1" />
         {showCustomActions && <CustomActionsBar featureId={featureId} projectId={projectId} />}
 

@@ -4,6 +4,7 @@ import { AlertTriangleIcon, GitBranchIcon, Loader2Icon, PinIcon } from "lucide-r
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Button } from "@/components/ui/button";
+import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { cn } from "@/lib/utils";
 import type { WorktreeStatus } from "@/types/workflow";
 
@@ -12,6 +13,7 @@ interface EmbeddedFeatureHeaderProps {
   projectId: number;
   projectName?: string;
   title: string;
+  label?: string | null;
   lastActivityAt?: string | null;
   className?: string;
   isPinned?: boolean;
@@ -26,6 +28,7 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
   projectId,
   projectName,
   title,
+  label,
   lastActivityAt,
   className,
   isPinned = false,
@@ -61,6 +64,7 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
           </>
         )}
         <span className="min-w-0 truncate font-semibold leading-none">{title}</span>
+        <FeatureLabelChip label={label} className="max-w-24 leading-3" />
         <WorktreeIndicator status={worktreeStatus} branch={worktreeBranch} />
       </div>
       {activityLabel && (
