@@ -30,7 +30,7 @@ use crate::domain::mcp::tools::{
     update_plan::UpdatePlanTool,
 };
 
-use super::{server_info, tool_catalog::tool_definitions_for_agent, AgentType};
+use super::{mcp_server_name, server_info, tool_catalog::tool_definitions_for_agent, AgentType};
 
 pub struct SessionServer {
     ctx: Arc<McpContext>,
@@ -180,7 +180,7 @@ impl ServerHandler for SessionServer {
                     "show_plan" => {
                         super::approval_elicitation::maybe_elicit_tool_approval(
                             &context,
-                            "cadence-session",
+                            &mcp_server_name(AgentType::Session),
                             "show_plan",
                             &args,
                         )

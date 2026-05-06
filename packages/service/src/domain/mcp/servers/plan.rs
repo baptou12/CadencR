@@ -28,7 +28,7 @@ use crate::domain::mcp::tools::{
     update_plan::UpdatePlanTool,
 };
 
-use super::{server_info, tool_catalog::tool_definitions_for_agent, AgentType};
+use super::{mcp_server_name, server_info, tool_catalog::tool_definitions_for_agent, AgentType};
 
 pub struct PlanServer {
     ctx: Arc<McpContext>,
@@ -173,7 +173,7 @@ impl ServerHandler for PlanServer {
                     "show_plan" => {
                         super::approval_elicitation::maybe_elicit_tool_approval(
                             &context,
-                            "cadence-plan",
+                            &mcp_server_name(AgentType::Plan),
                             "show_plan",
                             &args,
                         )
