@@ -45,6 +45,14 @@ Tauri v2 desktop shell with a React frontend. The backend is the Rust API server
 
 Frontend path alias: `@` → `packages/tauri/src/` (for example `import { foo } from "@/lib/foo"`).
 
+## Design System
+
+`DESIGN.md` is the source of truth for Cadencr Desktop visual design: tokens, themes, typography, layout states, component anatomy, iconography, and UI self-audit checks.
+
+- Before changing frontend UI, layout, styling, design tokens, icons, or user-facing visual behavior, read `DESIGN.md` and preserve its constraints.
+- Do not load or summarize `DESIGN.md` for backend-only, SDK-only, migration-only, or non-visual documentation work.
+- If implementation and `DESIGN.md` conflict, pause and surface the mismatch instead of silently inventing a new visual rule.
+
 ## Project-specific workflows
 
 **Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/tauri/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/tauri/orval.transformer.cjs`.
