@@ -78,6 +78,10 @@ pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(),
     repository::update_title(pool, id, title).await
 }
 
+pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Result<(), AppError> {
+    repository::update_label(pool, id, label).await
+}
+
 pub async fn get_prd(pool: &SqlitePool, id: i64) -> Result<PrdResponse, AppError> {
     let prd = repository::get_prd(pool, id).await?;
     Ok(PrdResponse { prd })

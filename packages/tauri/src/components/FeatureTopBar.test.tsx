@@ -143,6 +143,12 @@ describe("FeatureTopBar", () => {
     expect(screen.getByText("My Test Feature")).toBeInTheDocument();
   });
 
+  it("renders the feature label next to the title", () => {
+    mockFeatureData = { ...mockFeatureData, label: "Review" };
+    render(<FeatureTopBar featureId={1} projectId={1} />);
+    expect(screen.getByText("Review")).toBeInTheDocument();
+  });
+
   it("auto-renames from the feature title context menu", async () => {
     const { user } = render(<FeatureTopBar featureId={1} projectId={1} />);
 

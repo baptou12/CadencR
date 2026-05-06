@@ -159,6 +159,7 @@ pub struct UnifiedAgentFeature {
     #[serde(rename = "type")]
     pub type_: String,
     pub status: String,
+    pub label: Option<String>,
     pub created_at: String,
 }
 

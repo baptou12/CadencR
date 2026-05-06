@@ -54,6 +54,49 @@ async fn test_openapi_includes_workflow_paths() {
 }
 
 #[tokio::test]
+async fn test_feature_label_can_be_set_and_cleared() {
+    let server = start_test_server().await;
+
+    let set_resp = server
+        .client
+        .put(format!("{}/api/features/1/label", server.base_url))
+        .json(&serde_json::json!({ "label": "  Review  " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(set_resp.status(), 200);
+
+    let feature_resp = server
+        .client
+        .get(format!("{}/api/features/1", server.base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(feature_resp.status(), 200);
+    let feature: serde_json::Value = feature_resp.json().await.unwrap();
+    assert_eq!(feature["label"], "Review");
+
+    let clear_resp = server
+        .client
+        .put(format!("{}/api/features/1/label", server.base_url))
+        .json(&serde_json::json!({ "label": "   " }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(clear_resp.status(), 200);
+
+    let cleared_resp = server
+        .client
+        .get(format!("{}/api/features/1", server.base_url))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(cleared_resp.status(), 200);
+    let cleared: serde_json::Value = cleared_resp.json().await.unwrap();
+    assert!(cleared["label"].is_null());
+}
+
+#[tokio::test]
 async fn test_get_branch() {
     let server = start_test_server().await;
     let resp = server

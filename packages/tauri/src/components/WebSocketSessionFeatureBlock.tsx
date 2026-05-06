@@ -31,6 +31,7 @@ export interface WebSocketSessionFeatureBlockProps {
   onActivate?: () => void;
   projectName?: string;
   featureTitle?: string;
+  featureLabel?: string | null;
   lastActivityAt?: string | null;
   isPinned?: boolean;
   isPinPending?: boolean;
@@ -127,6 +128,7 @@ function WebSocketSessionFeatureBody(
         data={data}
         projectName={props.projectName}
         featureTitle={props.featureTitle}
+        featureLabel={props.featureLabel}
         lastActivityAt={props.lastActivityAt}
         isPinned={props.isPinned}
         isPinPending={props.isPinPending}
@@ -224,6 +226,7 @@ interface SessionFeatureTopBarProps {
   data: ReturnType<typeof useSessionFeatureData>;
   projectName?: string;
   featureTitle?: string;
+  featureLabel?: string | null;
   lastActivityAt?: string | null;
   isPinned?: boolean;
   isPinPending?: boolean;
@@ -237,6 +240,7 @@ function SessionFeatureTopBar({
   data,
   projectName,
   featureTitle,
+  featureLabel,
   lastActivityAt,
   isPinned,
   isPinPending,
@@ -258,6 +262,7 @@ function SessionFeatureTopBar({
       draggable={!embedded}
       projectName={projectName}
       titleOverride={featureTitle}
+      labelOverride={featureLabel}
       lastActivityAt={lastActivityAt}
       isPinned={isPinned}
       isPinPending={isPinPending}

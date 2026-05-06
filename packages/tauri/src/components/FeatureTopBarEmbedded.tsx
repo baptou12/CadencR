@@ -8,6 +8,7 @@ interface EmbeddedSessionHeaderProps {
   projectId: number;
   projectName?: string;
   title: string;
+  label?: string | null;
   lastActivityAt?: string | null;
   isPinned?: boolean;
   isPinPending?: boolean;
@@ -26,6 +27,7 @@ export function EmbeddedSessionHeader({
   projectId,
   projectName,
   title,
+  label,
   lastActivityAt,
   isPinned,
   isPinPending,
@@ -45,6 +47,7 @@ export function EmbeddedSessionHeader({
         projectId={projectId}
         projectName={projectName}
         title={title}
+        label={label}
         lastActivityAt={lastActivityAt}
         isPinned={isPinned}
         isPinPending={isPinPending}
