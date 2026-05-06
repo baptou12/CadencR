@@ -1,0 +1,194 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { UnifiedAgentEntry } from "@/api/generated";
+import {
+  getUnifiedAgentsMatchingFilters,
+  orderUnifiedAgentsForDisplay,
+  type UnifiedAgentFilterArgs,
+} from "@/components/UnifiedAgentsViewData";
+
+interface AgentOverrides {
+  id?: number;
+  projectId?: number;
+  projectName?: string;
+  title?: string;
+  featureStatus?: string;
+  sessionStatus?: string;
+  isPinned?: boolean;
+  lastActivityAt?: string | null;
+  agentCreatedAt?: string;
+  pendingQuestions?: unknown;
+  pendingPermission?: unknown;
+  pendingPlanApproval?: unknown;
+  pendingPrdApproval?: unknown;
+}
+
+const ALL_FILTERS: UnifiedAgentFilterArgs = {
+  mode: "all",
+  freshMinutes: 5,
+  projectIds: [],
+  queryText: "",
+  sortOrder: "created_desc",
+};
+
+function buildAgent(overrides: AgentOverrides = {}): UnifiedAgentEntry {
+  const id = overrides.id ?? 1;
+  const projectId = overrides.projectId ?? 1;
+  return {
+    agent_created_at:
+      overrides.agentCreatedAt ?? `2026-03-04T23:${String(id).padStart(2, "0")}:00Z`,
+    feature: {
+      created_at: "2026-03-04 23:00:00",
+      id,
+      status: overrides.featureStatus ?? "active",
+      title: overrides.title ?? `Agent ${id}`,
+      type: "feature",
+    },
+    is_pinned: overrides.isPinned ?? false,
+    last_activity_at: overrides.lastActivityAt ?? "2026-03-04 23:20:00",
+    project: {
+      id: projectId,
+      name: overrides.projectName ?? `Project ${projectId}`,
+      path: `/tmp/project-${projectId}`,
+    },
+    session: {
+      agentType: "codex",
+      blocks: [],
+      hasFileChanges: false,
+      hasMore: false,
+      inputTokens: 0,
+      isIncremental: false,
+      maxMessageId: 0,
+      outputTokens: 0,
+      pendingPermission: overrides.pendingPermission,
+      pendingPlanApproval: overrides.pendingPlanApproval,
+      pendingPrdApproval: overrides.pendingPrdApproval,
+      pendingQuestions: overrides.pendingQuestions,
+      permissionMode: "default",
+      phaseTitle: "Build",
+      resumable: false,
+      sessionDbId: id,
+      status: overrides.sessionStatus ?? "completed",
+      wasCompacted: false,
+    },
+  };
+}
+
+function ids(entries: UnifiedAgentEntry[]): number[] {
+  return entries.map((entry: UnifiedAgentEntry): number => entry.session.sessionDbId);
+}
+
+describe("UnifiedAgentsViewData", () => {
+  afterEach((): void => {
+    vi.useRealTimers();
+  });
+
+  it("orders pinned agents first without user filters and excludes archived pins", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1 }),
+        buildAgent({ id: 2, isPinned: true }),
+        buildAgent({ id: 3, isPinned: true, featureStatus: "archived" }),
+        buildAgent({ id: 4, isPinned: true }),
+        buildAgent({ id: 5 }),
+      ],
+      ALL_FILTERS,
+    );
+
+    expect(ids(ordered)).toEqual([4, 2, 5, 1]);
+  });
+
+  it("can order created agents oldest first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [buildAgent({ id: 1 }), buildAgent({ id: 2 }), buildAgent({ id: 3 })],
+      { ...ALL_FILTERS, sortOrder: "created_asc" },
+    );
+
+    expect(ids(ordered)).toEqual([1, 2, 3]);
+  });
+
+  it("can order agents by latest message first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, lastActivityAt: "2026-03-04T23:20:00Z" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04T23:45:00Z" }),
+        buildAgent({ id: 3, lastActivityAt: "2026-03-04T23:30:00Z" }),
+      ],
+      { ...ALL_FILTERS, sortOrder: "activity_desc" },
+    );
+
+    expect(ids(ordered)).toEqual([2, 3, 1]);
+  });
+
+  it("can order agents by oldest message first", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, lastActivityAt: "2026-03-04T23:20:00Z" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04T23:45:00Z" }),
+        buildAgent({ id: 3, lastActivityAt: "2026-03-04T23:30:00Z" }),
+      ],
+      { ...ALL_FILTERS, sortOrder: "activity_asc" },
+    );
+
+    expect(ids(ordered)).toEqual([1, 3, 2]);
+  });
+
+  it("places pinned extras last when a user project filter is active", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, projectId: 2, isPinned: true }),
+        buildAgent({ id: 2, projectId: 1 }),
+        buildAgent({ id: 3, projectId: 1, isPinned: true }),
+        buildAgent({ id: 4, projectId: 3, isPinned: true }),
+      ],
+      { ...ALL_FILTERS, projectIds: [1] },
+    );
+
+    expect(ids(ordered)).toEqual([3, 2, 4, 1]);
+  });
+
+  it("keeps pinned extras visible for text filters while still excluding archived pins", () => {
+    const visible = getUnifiedAgentsMatchingFilters(
+      [
+        buildAgent({ id: 1, title: "Matches query" }),
+        buildAgent({ id: 2, title: "Pinned extra", isPinned: true }),
+        buildAgent({ id: 3, title: "Archived pinned", isPinned: true, featureStatus: "archived" }),
+        buildAgent({ id: 4, title: "Other" }),
+      ],
+      { ...ALL_FILTERS, queryText: "matches" },
+    );
+
+    expect(ids(visible)).toEqual([1, 2]);
+  });
+
+  it("includes recent running, pending, and fresh completed sessions", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-04T23:30:00.000Z"));
+
+    const visible = getUnifiedAgentsMatchingFilters(
+      [
+        buildAgent({ id: 1, sessionStatus: "running", lastActivityAt: "2026-03-04 20:00:00" }),
+        buildAgent({ id: 2, pendingPermission: { id: 10 }, lastActivityAt: "2026-03-04 20:00:00" }),
+        buildAgent({ id: 3, lastActivityAt: "2026-03-04 23:26:00" }),
+        buildAgent({ id: 4, lastActivityAt: "2026-03-04 23:20:00" }),
+      ],
+      { ...ALL_FILTERS, mode: "recent", freshMinutes: 5 },
+    );
+
+    expect(ids(visible)).toEqual([1, 2, 3]);
+  });
+
+  it("parses SQLite UTC timestamps consistently for recent filtering", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-04T23:30:00.000Z"));
+
+    const visible = getUnifiedAgentsMatchingFilters(
+      [
+        buildAgent({ id: 1, lastActivityAt: "2026-03-04 23:25:33" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04T23:24:59.000Z" }),
+      ],
+      { ...ALL_FILTERS, mode: "recent", freshMinutes: 5 },
+    );
+
+    expect(ids(visible)).toEqual([1]);
+  });
+});

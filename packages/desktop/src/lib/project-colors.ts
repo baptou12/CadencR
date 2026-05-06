@@ -1,0 +1,55 @@
+// 50 visually distinct Tailwind CSS colors (hex, no # prefix). No black or white.
+export const PROJECT_COLORS = [
+  "ef4444", // red-500
+  "f97316", // orange-500
+  "f59e0b", // amber-500
+  "eab308", // yellow-500
+  "84cc16", // lime-500
+  "22c55e", // green-500
+  "10b981", // emerald-500
+  "14b8a6", // teal-500
+  "06b6d4", // cyan-500
+  "0ea5e9", // sky-500
+  "3b82f6", // blue-500
+  "6366f1", // indigo-500
+  "8b5cf6", // violet-500
+  "a855f7", // purple-500
+  "d946ef", // fuchsia-500
+  "ec4899", // pink-500
+  "f43f5e", // rose-500
+  "dc2626", // red-600
+  "ea580c", // orange-600
+  "d97706", // amber-600
+  "ca8a04", // yellow-600
+  "65a30d", // lime-600
+  "16a34a", // green-600
+  "059669", // emerald-600
+  "0d9488", // teal-600
+  "0891b2", // cyan-600
+  "0284c7", // sky-600
+  "2563eb", // blue-600
+  "4f46e5", // indigo-600
+  "7c3aed", // violet-600
+  "9333ea", // purple-600
+  "c026d3", // fuchsia-600
+  "db2777", // pink-600
+  "e11d48", // rose-600
+  "b91c1c", // red-700
+  "c2410c", // orange-700
+  "b45309", // amber-700
+  "a16207", // yellow-700
+  "4d7c0f", // lime-700
+  "15803d", // green-700
+  "047857", // emerald-700
+  "0f766e", // teal-700
+  "0e7490", // cyan-700
+  "0369a1", // sky-700
+  "1d4ed8", // blue-700
+  "4338ca", // indigo-700
+  "6d28d9", // violet-700
+  "7e22ce", // purple-700
+  "a21caf", // fuchsia-700
+  "be185d", // pink-700
+] as const;
+
+export const DEFAULT_PROJECT_COLOR = "3b82f6";
