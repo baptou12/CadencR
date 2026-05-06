@@ -8,9 +8,9 @@ allowed-tools: Bash(sqlite3 *)
 # Cadencr Database
 
 Run queries against the Cadencr SQLite database at:
-`~/Library/Application Support/cadencr/cadencr.db`
+`packages/service/cadencr.local.db`
 
-Use `sqlite3` for all operations. Always wrap the DB path in double quotes (`"`) to avoid backslash escaping — e.g. `sqlite3 "$HOME/Library/Application Support/cadencr/cadencr.db"`.
+Use `sqlite3` for all operations from the repository root. Always wrap the DB path in double quotes (`"`) — e.g. `sqlite3 "packages/service/cadencr.local.db"`.
 
 ## Tables
 
