@@ -44,6 +44,7 @@ mod tests {
                 title TEXT,
                 status TEXT DEFAULT 'active',
                 type TEXT DEFAULT 'feature',
+                label TEXT,
                 prd TEXT,
                 workflow_step TEXT,
                 workflow_config TEXT,

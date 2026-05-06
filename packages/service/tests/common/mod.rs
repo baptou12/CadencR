@@ -115,6 +115,7 @@ async fn create_schema(pool: &SqlitePool) {
         r#"CREATE TABLE features (
         id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT,
         status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature',
+        label TEXT,
         workflow_status TEXT DEFAULT 'idle',
         model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
         model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
@@ -122,7 +123,9 @@ async fn create_schema(pool: &SqlitePool) {
         agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
         agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
         agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT,
-        agent_autonomy TEXT, parallel_execution TEXT
+        agent_autonomy TEXT, parallel_execution TEXT,
+        prd TEXT, workflow_step TEXT, workflow_config TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
     )"#,
     )
     .execute(pool)

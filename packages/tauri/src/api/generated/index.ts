@@ -508,6 +508,8 @@ shell operations such as "Reveal in Finder". */
 
 export type FeatureAgentAutonomy = string | null;
 
+export type FeatureLabel = string | null;
+
 export type FeatureModelExecute = string | null;
 
 export type FeatureModelPlan = string | null;
@@ -538,6 +540,7 @@ export interface Feature {
   agent_autonomy?: FeatureAgentAutonomy;
   created_at: string;
   id: number;
+  label?: FeatureLabel;
   model_execute?: FeatureModelExecute;
   model_plan?: FeatureModelPlan;
   model_prd?: FeatureModelPrd;
@@ -1402,9 +1405,12 @@ export interface UnifiedAgentEntry {
   session: SessionState;
 }
 
+export type UnifiedAgentFeatureLabel = string | null;
+
 export interface UnifiedAgentFeature {
   created_at: string;
   id: number;
+  label?: UnifiedAgentFeatureLabel;
   status: string;
   title: string;
   type: string;
@@ -1464,6 +1470,12 @@ export type UpdateFeatureLayoutRequestName = string | null;
 export interface UpdateFeatureLayoutRequest {
   config?: UpdateFeatureLayoutRequestConfig;
   name?: UpdateFeatureLayoutRequestName;
+}
+
+export type UpdateLabelRequestLabel = string | null;
+
+export interface UpdateLabelRequest {
+  label?: UpdateLabelRequestLabel;
 }
 
 export interface UpdateStatusRequest {
@@ -5220,6 +5232,74 @@ export function useIsFeatureEmpty<
 
   return query;
 }
+
+export const updateFeatureLabel = (id: number, updateLabelRequest: UpdateLabelRequest) => {
+  return customInstance<FeaturesSuccessResponse>({
+    url: `/api/features/${id}/label`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: updateLabelRequest,
+  });
+};
+
+export const getUpdateFeatureLabelMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFeatureLabel>>,
+    TError,
+    { id: number; data: UpdateLabelRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFeatureLabel>>,
+  TError,
+  { id: number; data: UpdateLabelRequest },
+  TContext
+> => {
+  const mutationKey = ["updateFeatureLabel"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFeatureLabel>>,
+    { id: number; data: UpdateLabelRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateFeatureLabel(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFeatureLabelMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFeatureLabel>>
+>;
+export type UpdateFeatureLabelMutationBody = UpdateLabelRequest;
+export type UpdateFeatureLabelMutationError = ErrorType<unknown>;
+
+export const useUpdateFeatureLabel = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFeatureLabel>>,
+    TError,
+    { id: number; data: UpdateLabelRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFeatureLabel>>,
+  TError,
+  { id: number; data: UpdateLabelRequest },
+  TContext
+> => {
+  const mutationOptions = getUpdateFeatureLabelMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getFeatureModelSettings = (id: number, signal?: AbortSignal) => {
   return customInstance<FeatureModelSettings>({

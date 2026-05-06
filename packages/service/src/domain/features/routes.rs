@@ -11,6 +11,7 @@ use crate::domain::features::worktree_settings::{
 };
 use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
+use crate::domain::workflow::engine::{send_feature_updated_envelope, WsSender};
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -111,6 +112,31 @@ pub async fn update_feature_title_handler(
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::update_title(&state.write_pool, id, &body.title).await?;
     Ok(Json(SuccessResponse { success: true }))
+}
+
+#[utoipa::path(put, path = "/api/features/{id}/label",
+    params(("id" = i64, Path,)),
+    request_body = UpdateLabelRequest,
+    responses((status = 200, body = SuccessResponse)))]
+pub async fn update_feature_label_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateLabelRequest>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    let normalized = body
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|label| !label.is_empty());
+    service::update_label(&state.write_pool, id, normalized).await?;
+    broadcast_label_update(&state, id).await;
+    Ok(Json(SuccessResponse { success: true }))
+}
+
+async fn broadcast_label_update(state: &AppState, feature_id: i64) {
+    for sender in state.ws_feature_senders.get_senders(feature_id).await {
+        send_feature_updated_envelope(&WsSender::new(sender), feature_id, &["label"]);
+    }
 }
 
 #[utoipa::path(get, path = "/api/features/{id}/prd",
@@ -319,6 +345,10 @@ pub fn features_router() -> Router<AppState> {
         .route(
             "/api/features/{id}/title",
             put(update_feature_title_handler),
+        )
+        .route(
+            "/api/features/{id}/label",
+            put(update_feature_label_handler),
         )
         .route("/api/features/{id}/prd", get(get_prd_handler))
         .route("/api/features/{id}/empty", get(is_empty_handler))

@@ -11,6 +11,7 @@ pub struct Feature {
     #[serde(rename = "type")]
     pub type_: String,
     pub status: String,
+    pub label: Option<String>,
     pub prd: Option<String>,
     pub workflow_step: Option<String>,
     pub workflow_config: Option<String>,
@@ -52,6 +53,11 @@ pub struct UpdateStatusRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateTitleRequest {
     pub title: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateLabelRequest {
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
@@ -277,6 +283,7 @@ mod tests {
             title: "Test Feature".to_string(),
             type_: "ws-feature".to_string(),
             status: "active".to_string(),
+            label: Some("Review".to_string()),
             prd: Some("prd content".to_string()),
             workflow_step: Some("step1".to_string()),
             workflow_config: Some("{}".to_string()),
@@ -303,6 +310,7 @@ mod tests {
         assert_eq!(deserialized["type"], "ws-feature");
         assert_eq!(deserialized["model_review-fixer"], "claude-fixer");
         assert_eq!(deserialized["title"], "Test Feature");
+        assert_eq!(deserialized["label"], "Review");
     }
 
     #[test]

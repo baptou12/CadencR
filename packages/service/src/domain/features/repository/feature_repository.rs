@@ -5,7 +5,7 @@ use crate::error::AppError;
 
 pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
     let rows = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status,
+        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status, label,
            prd, workflow_step, workflow_config,
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
@@ -21,7 +21,7 @@ pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<F
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
     let row = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status,
+        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status, label,
            prd, workflow_step, workflow_config,
            model_plan, model_prd, model_execute, model_risk, model_review,
            "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
@@ -111,6 +111,18 @@ pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(),
         .bind(id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Result<(), AppError> {
+    let result = sqlx::query("UPDATE features SET label = ? WHERE id = ?")
+        .bind(label)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("feature {id} not found")));
+    }
     Ok(())
 }
 
@@ -339,6 +351,7 @@ mod tests {
                 project_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 status TEXT NOT NULL,
+                label TEXT,
                 type TEXT NOT NULL
             )"#,
         )
