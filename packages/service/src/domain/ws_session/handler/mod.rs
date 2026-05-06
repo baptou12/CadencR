@@ -48,8 +48,8 @@ pub use types::SdkHandle;
 use dispatch::dispatch_envelope;
 #[allow(unused_imports)]
 use helpers::{
-    default_permission_mode_wire, parse_permission_mode, parse_session_id, persist_and_close_query,
-    provider_supports_mode, send_error, send_runtime_session_id,
+    default_permission_mode, default_permission_mode_wire, parse_permission_mode, parse_session_id,
+    persist_and_close_query, provider_supports_mode, send_error, send_runtime_session_id,
 };
 #[allow(unused_imports)]
 use types::{QueryState, SdkSessions, SessionConfig, WsSender};
@@ -1762,11 +1762,16 @@ mod tests {
         }
 
         // Sanity: the in-memory handle's desired mode wasn't poisoned by the
-        // failed request.
+        // failed request. session.init seeds the active provider's default
+        // when the client doesn't supply one; a rejected mode.set must leave
+        // that untouched.
         let sessions = sdk_sessions.lock().await;
         let db_id: i64 = session_id.parse().unwrap();
         let handle = sessions.get(&db_id).unwrap();
-        assert!(handle.desired_permission_mode.is_none());
+        assert_eq!(
+            handle.desired_permission_mode,
+            Some(default_permission_mode("opencode"))
+        );
     }
 
     // ----- handle_provider_set: mode reset + mode.changed broadcast -----

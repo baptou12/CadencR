@@ -42,6 +42,13 @@ pub(super) fn default_permission_mode_wire(provider: &str) -> &'static str {
         .unwrap_or("acceptEdits")
 }
 
+/// Parsed counterpart of [`default_permission_mode_wire`]. Use this from
+/// runtime-spawn paths that need a `RuntimePermissionMode`; the wire variant
+/// stays for DB persistence and `mode.changed` broadcasts.
+pub(super) fn default_permission_mode(provider: &str) -> RuntimePermissionMode {
+    parse_permission_mode(default_permission_mode_wire(provider))
+}
+
 /// Parse a session_id string from client payload into i64 DB key.
 pub(super) fn parse_session_id(s: &str) -> Option<i64> {
     s.parse::<i64>().ok()

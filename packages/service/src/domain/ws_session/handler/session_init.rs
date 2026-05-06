@@ -7,8 +7,8 @@ use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
 use super::{
-    parse_permission_mode, send_error, send_runtime_session_id, QueryState, SdkHandle, SdkSessions,
-    SessionConfig, WsSender,
+    default_permission_mode, parse_permission_mode, send_error, send_runtime_session_id,
+    QueryState, SdkHandle, SdkSessions, SessionConfig, WsSender,
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
@@ -274,34 +274,40 @@ pub(super) async fn handle_init(
         runtime_config.model = Some(model.clone());
     }
     runtime_config.thinking_effort = effective_thinking_effort.clone();
-    if let Some(ref pm) = payload.permission_mode {
-        // `bypassPermissions` is the agent-equivalent of running as root. We
-        // require an explicit project-level acknowledgement stored in
-        // settings so a prompt-injected client can't flip it on its own —
-        // writes to `bypass_acknowledged` are gated by the settings
-        // allowlist.
-        if pm == "bypassPermissions" {
-            let ack = settings::resolve_setting(
-                &app_state.read_pool,
-                "bypass_acknowledged",
-                Some(feature_id),
-                project_id,
-                Some("false"),
-            )
-            .await
-            .unwrap_or_else(|| "false".to_string());
-            if ack != "true" {
-                send_error(
-                    sender,
-                    &envelope.id,
-                    "BYPASS_NOT_ACKED",
-                    "bypassPermissions requires bypass_acknowledged=true in project settings",
-                );
-                return;
-            }
+    // `bypassPermissions` is the agent-equivalent of running as root. We
+    // require an explicit project-level acknowledgement stored in settings so
+    // a prompt-injected client can't flip it on its own — writes to
+    // `bypass_acknowledged` are gated by the settings allowlist.
+    if payload.permission_mode.as_deref() == Some("bypassPermissions") {
+        let ack = settings::resolve_setting(
+            &app_state.read_pool,
+            "bypass_acknowledged",
+            Some(feature_id),
+            project_id,
+            Some("false"),
+        )
+        .await
+        .unwrap_or_else(|| "false".to_string());
+        if ack != "true" {
+            send_error(
+                sender,
+                &envelope.id,
+                "BYPASS_NOT_ACKED",
+                "bypassPermissions requires bypass_acknowledged=true in project settings",
+            );
+            return;
         }
-        runtime_config.permission_mode = Some(parse_permission_mode(pm));
     }
+    // Honor the client's choice when supplied; otherwise fall back to the
+    // active provider's default. The DB-read and provider-switch paths
+    // already apply this default — session.init was the missing site.
+    runtime_config.permission_mode = Some(
+        payload
+            .permission_mode
+            .as_deref()
+            .map(parse_permission_mode)
+            .unwrap_or_else(|| default_permission_mode(&effective_provider)),
+    );
     runtime_config.system_prompt = payload.system_prompt.clone();
     if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
         let (_, profile_env) =
