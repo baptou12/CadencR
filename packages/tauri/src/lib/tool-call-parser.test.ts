@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseToolCall, getToolActivityLabel, parseCadencrMcpTool } from "./tool-call-parser";
+import {
+  getToolActivityLabel,
+  isCadencrPlanPresentationTool,
+  parseCadencrMcpTool,
+  parseToolCall,
+} from "./tool-call-parser";
 
 describe("parseToolCall", () => {
   it("returns undefined for unknown tool", () => {
@@ -194,6 +199,7 @@ describe("parseCadencrMcpTool", () => {
   it("returns undefined for non-cadencr tool", () => {
     expect(parseCadencrMcpTool("Read")).toBeUndefined();
     expect(parseCadencrMcpTool("mcp__chrome-devtools__click")).toBeUndefined();
+    expect(parseCadencrMcpTool("mcp__chrome_devtools____click")).toBeUndefined();
   });
 
   it("parses server and tool from cadencr MCP tool name", () => {
@@ -203,10 +209,32 @@ describe("parseCadencrMcpTool", () => {
     expect(result!.tool).toBe("create_phase");
   });
 
+  it("parses Cadencr MCP tool names", () => {
+    const result = parseCadencrMcpTool("mcp__cadencr-plan__show_plan");
+    expect(result).toBeDefined();
+    expect(result!.server).toBe("plan");
+    expect(result!.tool).toBe("show_plan");
+    expect(result!.label).toBe("Showing plan");
+  });
+
+  it("parses Codex namespace MCP tool names as Cadencr tools", () => {
+    const result = parseCadencrMcpTool("mcp__cadencr_plan____read_plan");
+    expect(result).toBeDefined();
+    expect(result!.server).toBe("plan");
+    expect(result!.tool).toBe("read_plan");
+    expect(result!.label).toBe("Reading plan");
+  });
+
   it("returns known human-readable label", () => {
     expect(parseCadencrMcpTool("mcp__cadencr-plan__create_phase")!.label).toBe("Creating phase");
     expect(parseCadencrMcpTool("mcp__cadencr-prd__show_prd")!.label).toBe("Showing PRD");
     expect(parseCadencrMcpTool("mcp__cadencr-common__mark_agent_done")!.label).toBe("Marking done");
+  });
+
+  it("identifies only Cadencr plan presentation tools", () => {
+    expect(isCadencrPlanPresentationTool("mcp__cadencr-plan__show_plan")).toBe(true);
+    expect(isCadencrPlanPresentationTool("mcp__cadencr_prd____show_prd")).toBe(true);
+    expect(isCadencrPlanPresentationTool("mcp__chrome_devtools____show_plan")).toBe(false);
   });
 
   it("title-cases unknown tool names as fallback", () => {
