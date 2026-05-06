@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <g transform="translate(512 512) scale(8.24) translate(-50 -50)">
+    <!-- Centre : Violet Dracula (assombri pour le contraste, dérivé du #bd93f9) -->
+    <circle cx="50" cy="50" r="16" fill="#895df0"/>
+    
+    <g transform="rotate(-90 50 50)">
+      <!-- Cercle en pointillé : Bleu gris (La couleur exacte des 'Commentaires' Dracula : #6272a4) -->
+      <circle cx="50" cy="50" r="28" pathLength="360" stroke="#6272a4" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 20" fill="none"/>
+      
+      <!-- Arc 1 : Rose Dracula (assombri pour le contraste, dérivé du #ff79c6) -->
+      <circle cx="50" cy="50" r="28" pathLength="360" stroke="#e046a3" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(240 50 50)"/>
+      
+      <!-- Arc 2 : Cyan Dracula (assombri pour le contraste, dérivé du #8be9fd) -->
+      <circle cx="50" cy="50" r="28" pathLength="360" stroke="#0096b0" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(60 50 50)"/>
+    </g>
+  </g>
+</svg>

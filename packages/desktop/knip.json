@@ -1,0 +1,44 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "electron.vite.config.ts",
+    "electron/main/index.ts",
+    "electron/preload/index.ts",
+    "src/App.tsx",
+    "src/routes/**/*.tsx"
+  ],
+  "project": [
+    "electron/**/*.{ts,tsx}",
+    "src/**/*.{ts,tsx}"
+  ],
+  "ignoreBinaries": [
+    "oxlint",
+    "oxfmt",
+    "vitest",
+    "tsc",
+    "knip",
+    "orval",
+    "electron-vite",
+    "electron-builder"
+  ],
+  "ignoreDependencies": [
+    "autoprefixer",
+    "postcss",
+    "oxlint",
+    "tailwindcss",
+    "@vitest/coverage-v8",
+    "orval",
+    "@fontsource-variable/inter",
+    "electron-builder"
+  ],
+  "tags": [
+    "+@public"
+  ],
+  "vitest": {
+    "entry": [
+      "src/**/*.test.{ts,tsx}",
+      "src/test-utils.tsx",
+      "src/test-fixtures.ts"
+    ]
+  }
+}
