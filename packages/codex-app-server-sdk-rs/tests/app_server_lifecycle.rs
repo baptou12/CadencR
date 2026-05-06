@@ -84,8 +84,8 @@ async fn mock_app_server_lifecycle_supports_handshake_model_list_and_requests() 
 
     let client = CodexAppServerClient::spawn_with_options(AppServerSpawnOptions {
         client_info: AppServerClientInfo {
-            name: "cadence-test".to_string(),
-            title: "Cadence Test".to_string(),
+            name: "cadencr-test".to_string(),
+            title: "Cadencr Test".to_string(),
             version: "0.0.0".to_string(),
         },
         request_timeout: Some(Duration::from_secs(2)),

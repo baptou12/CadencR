@@ -30,7 +30,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
           discoveryKey="claude"
           description={
             <>
-              Every <strong>claude</strong> install Cadence found on disk. The selected one is what
+              Every <strong>claude</strong> install Cadencr found on disk. The selected one is what
               gets spawned. To override, set a path during onboarding.
             </>
           }
@@ -71,8 +71,8 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
         discoveryKey="opencode"
         description={
           <>
-            Every <strong>opencode</strong> install Cadence found on disk. Override via onboarding
-            or the legacy <strong>CADENCE_OPENCODE_BIN</strong> env var.
+            Every <strong>opencode</strong> install Cadencr found on disk. Override via onboarding
+            or the legacy <strong>CADENCR_OPENCODE_BIN</strong> env var.
           </>
         }
       />
@@ -86,7 +86,7 @@ const PROVIDER_CONFIGS: ProviderConfig[] = [
           discoveryKey="codex"
           description={
             <>
-              Every <strong>codex</strong> install Cadence found on disk. The selected one is used
+              Every <strong>codex</strong> install Cadencr found on disk. The selected one is used
               to start <strong>codex app-server</strong>; override via onboarding or the{" "}
               <strong>codex_cli_path</strong> workspace setting.
             </>

@@ -14,7 +14,7 @@ use super::truncate_for_log;
 const AUTO_NAME_DEADLINE: Duration = Duration::from_secs(30);
 
 /// Poll interval for the fallback "session finished" reconciler — matches the
-/// cadence used by stream_reader so OpenCode short-turn completions get picked
+/// polling interval used by stream_reader so OpenCode short-turn completions get picked
 /// up when no explicit Result event arrives.
 const AUTO_NAME_RECV_TIMEOUT: Duration = Duration::from_millis(500);
 
