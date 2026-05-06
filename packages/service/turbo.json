@@ -1,6 +1,8 @@
 {
   "$schema": "https://v2-9-9.turborepo.dev/schema.json",
-  "extends": ["//"],
+  "extends": [
+    "//"
+  ],
   "tasks": {
     "build": {
       "inputs": [
@@ -12,7 +14,8 @@
         "$TURBO_ROOT$/Cargo.lock"
       ],
       "outputs": [
-        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadencr-service-*"
+        "$TURBO_ROOT$/packages/desktop/resources/bin/cadencr-service",
+        "$TURBO_ROOT$/packages/desktop/resources/bin/cadencr-service.exe"
       ]
     },
     "build:debug": {
@@ -25,7 +28,8 @@
         "$TURBO_ROOT$/Cargo.lock"
       ],
       "outputs": [
-        "$TURBO_ROOT$/packages/tauri/src-tauri/binaries/cadencr-service-*"
+        "$TURBO_ROOT$/packages/desktop/resources/bin/cadencr-service",
+        "$TURBO_ROOT$/packages/desktop/resources/bin/cadencr-service.exe"
       ]
     }
   }

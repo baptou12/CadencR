@@ -1,23 +1,20 @@
+use crate::error::SdkError;
+use crate::server_health::{fetch_server_health, ServerHealth};
+use cli_discovery::{query_version, DiscoverySpec, VersionKey};
+use once_cell::sync::Lazy;
+use regex_lite::Regex;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::RwLock;
 use std::time::Duration;
-
-use cli_discovery::{query_version, DiscoverySpec, VersionKey};
-use once_cell::sync::Lazy;
-use regex_lite::Regex;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tracing::{info, warn};
-
-use crate::error::SdkError;
-use crate::server_health::{fetch_server_health, ServerHealth};
-
 const DEFAULT_OPENCODE_PORT: u16 = 4096;
 const DEFAULT_OPENCODE_BASE_URL: &str = "http://127.0.0.1:4096";
-
 /// Provider-neutral spec for finding the `opencode` binary.
 ///
 /// Exposed publicly so the host app can call `cli_discovery::discover_all`
@@ -31,7 +28,6 @@ pub fn opencode_discovery_spec() -> DiscoverySpec {
         version_args: &["--version"],
     }
 }
-
 /// Globally-set override for the `opencode` binary path.
 ///
 /// Set once by the host app at startup (e.g. read from settings). The
@@ -39,7 +35,6 @@ pub fn opencode_discovery_spec() -> DiscoverySpec {
 /// the app's lifetime — so a `RwLock<Option<PathBuf>>` is enough; changes
 /// after first spawn require an app restart.
 static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
-
 /// Set (or clear, with `None`) the override path for the `opencode` binary.
 ///
 /// Wins over `CADENCR_OPENCODE_BIN` and discovery. The host app should call
@@ -49,11 +44,9 @@ pub fn set_binary_override(path: Option<PathBuf>) {
         *guard = path;
     }
 }
-
 fn current_binary_override() -> Option<PathBuf> {
     BINARY_OVERRIDE.read().ok().and_then(|guard| guard.clone())
 }
-
 #[derive(Debug, Clone)]
 pub struct OpenCodeServerInfo {
     pub base_url: String,
@@ -62,7 +55,8 @@ pub struct OpenCodeServerInfo {
 }
 
 pub struct OpenCodeServer {
-    child: Option<Child>,
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    monitor_task: Option<JoinHandle<()>>,
     info: OpenCodeServerInfo,
 }
 
@@ -76,6 +70,7 @@ impl OpenCodeServer {
             if server.is_compatible_with(opencode_command.version).await {
                 return Ok(server.info.clone());
             }
+            server.request_shutdown().await;
             *guard = None;
         }
         let server = Self::spawn(opencode_command).await?;
@@ -87,9 +82,7 @@ impl OpenCodeServer {
     pub async fn shutdown() -> Result<(), SdkError> {
         let mut guard = SERVER.lock().await;
         if let Some(server) = guard.as_mut() {
-            if let Some(child) = server.child.as_mut() {
-                child.kill().await?;
-            }
+            server.request_shutdown().await;
         }
         *guard = None;
         Ok(())
@@ -98,7 +91,8 @@ impl OpenCodeServer {
     async fn spawn(opencode_command: ResolvedOpenCodeCommand) -> Result<Self, SdkError> {
         if can_attach_to_default_server(opencode_command.version).await {
             return Ok(Self {
-                child: None,
+                shutdown_tx: None,
+                monitor_task: None,
                 info: OpenCodeServerInfo {
                     base_url: DEFAULT_OPENCODE_BASE_URL.to_string(),
                     port: DEFAULT_OPENCODE_PORT,
@@ -141,9 +135,13 @@ impl OpenCodeServer {
         let base_url = format!("http://127.0.0.1:{discovered_port}");
         wait_for_matching_health(&base_url, opencode_command.version).await?;
 
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let monitor_task = monitor_child(child, shutdown_rx, pid);
+
         info!(port = discovered_port, pid = ?pid, "opencode server started");
         Ok(Self {
-            child: Some(child),
+            shutdown_tx: Some(shutdown_tx),
+            monitor_task: Some(monitor_task),
             info: OpenCodeServerInfo {
                 base_url,
                 port: discovered_port,
@@ -153,15 +151,39 @@ impl OpenCodeServer {
     }
 
     async fn is_compatible_with(&mut self, expected_version: VersionKey) -> bool {
-        if let Some(child) = self.child.as_mut() {
-            match child.try_wait() {
-                Ok(Some(_)) => return false,
-                Ok(None) => {}
-                Err(_) => return false,
-            }
-        }
         server_matches_version(&self.info.base_url, expected_version).await
     }
+
+    async fn request_shutdown(&mut self) {
+        if let Some(tx) = self.shutdown_tx.take() {
+            let _ = tx.send(());
+        }
+        if let Some(task) = self.monitor_task.take() {
+            let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
+        }
+    }
+}
+
+fn monitor_child(
+    mut child: Child,
+    mut shutdown_rx: oneshot::Receiver<()>,
+    pid: Option<u32>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        tokio::select! {
+            status = child.wait() => {
+                match status {
+                    Ok(status) => info!(pid = ?pid, exit_status = %status, "opencode server exited"),
+                    Err(error) => warn!(pid = ?pid, error = %error, "failed to wait for opencode server"),
+                }
+            }
+            _ = &mut shutdown_rx => {
+                if let Err(error) = child.kill().await {
+                    warn!(pid = ?pid, error = %error, "failed to kill opencode server");
+                }
+            }
+        }
+    })
 }
 
 #[derive(Debug, Clone)]

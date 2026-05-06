@@ -2,18 +2,20 @@
   "name": "@cadencr/service",
   "private": true,
   "version": "0.1.0",
-  "description": "Cadencr Rust backend service — HTTP/WebSocket API powering the desktop app.",
+  "description": "Cadencr Rust backend service \u2014 HTTP/WebSocket API powering the desktop app.",
   "license": "Apache-2.0",
   "dependencies": {
     "@cadencr/claude-agent-sdk-rs": "workspace:*"
   },
   "scripts": {
-    "build": "cargo build --release && cp ../../target/release/cadencr-service ../tauri/src-tauri/binaries/cadencr-service-$(rustc -vV | sed -n 's/host: //p')",
-    "build:debug": "cargo build && cp ../../target/debug/cadencr-service ../tauri/src-tauri/binaries/cadencr-service-$(rustc -vV | sed -n 's/host: //p')",
+    "build": "cargo build --release && pnpm copy:release",
+    "build:debug": "cargo build && pnpm copy:debug",
     "dev": "cargo watch -w src -w .env -x 'run --bin cadencr-service'",
     "test": "cargo test",
     "lint": "cargo check",
     "format": "cargo fmt",
-    "format:check": "cargo fmt -- --check"
+    "format:check": "cargo fmt -- --check",
+    "copy:release": "node ./scripts/copy-service-binary.mjs release",
+    "copy:debug": "node ./scripts/copy-service-binary.mjs debug"
   }
 }

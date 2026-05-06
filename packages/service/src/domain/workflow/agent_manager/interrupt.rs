@@ -123,9 +123,14 @@ impl AgentManager {
                         paused_session_ids.push(db_session_id);
                     }
                 }
-                // Interrupt the process
+                // Interrupt and close the runtime process. We already persisted
+                // the runtime_session_id above, so the next app start can resume
+                // while the local provider subprocess is fully stopped.
                 let _ = q.interrupt().await;
                 drop(q);
+                if let Some(query_arc) = self.queries.get(&slot) {
+                    query_arc.lock().await.close().await;
+                }
             }
             // Also mark queue items as paused in workflow_queue
             if let AgentSlot::QueueItem(item_id) = &slot {
