@@ -402,7 +402,7 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadence-plan",
+                    "server": "cadencr-plan",
                     "tool": "show_plan",
                     "error": null,
                     "result": { "ok": true }

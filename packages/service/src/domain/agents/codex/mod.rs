@@ -4,6 +4,7 @@ mod event_inputs;
 mod event_items;
 mod event_json;
 mod event_loop;
+mod event_mcp_items;
 mod event_plan;
 mod event_raw;
 mod event_state;
@@ -11,11 +12,14 @@ mod event_system;
 mod event_usage;
 mod events;
 mod input;
+mod instructions;
 mod mcp;
+mod mcp_status;
 mod model;
 mod permission_details;
 mod permission_options;
 mod permissions;
+mod raw_tool_names;
 mod responses;
 mod session;
 mod turn_start;
@@ -30,14 +34,15 @@ use codex_app_server_sdk_rs::{AppServerSpawnOptions, CodexAppServerClient, Codex
 use serde_json::{json, Value};
 use tokio::sync::{Mutex, RwLock};
 
-use self::mcp::{mcp_server_names, mcp_server_statuses, thread_config};
+use self::instructions::{codex_developer_instructions, codex_system_prompt};
+use self::mcp::{mcp_server_names, thread_config};
+use self::mcp_status::mcp_server_statuses;
 use self::model::{approval_policy, sandbox_mode};
 use self::session::CodexSession;
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
     RuntimePermissionRequest, RuntimeSlashCommand, RuntimeSpawnConfig,
 };
-use super::response_style::{rich_markdown_system_prompt, RICH_MARKDOWN_INSTRUCTION};
 use super::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
 pub struct CodexAdapter;
@@ -222,7 +227,7 @@ fn base_thread_params(config: &RuntimeSpawnConfig) -> Value {
         params["model"] = Value::String(model.clone());
     }
     params["baseInstructions"] =
-        Value::String(rich_markdown_system_prompt(config.system_prompt.as_deref()));
+        Value::String(codex_system_prompt(config.system_prompt.as_deref()));
     params
 }
 
@@ -298,11 +303,12 @@ impl AgentRuntimeAdapter for CodexAdapter {
                 .await?;
         client.initialize_with_timeout(PROBE_TIMEOUT).await?;
         let event_rx = client.subscribe();
-        let mcp_config =
-            thread_config(config.mcp_servers.as_ref(), Some(RICH_MARKDOWN_INSTRUCTION));
+        let mut mcp_status_rx = client.subscribe();
+        let developer_instructions = codex_developer_instructions();
+        let mcp_config = thread_config(config.mcp_servers.as_ref(), Some(&developer_instructions));
         let mcp_server_names = mcp_server_names(&mcp_config);
         let thread_id = start_or_resume_thread(&client, &config, &mcp_config).await?;
-        let mcp_servers = mcp_server_statuses(&client, &mcp_server_names).await;
+        let mcp_servers = mcp_server_statuses(&client, &mut mcp_status_rx, &mcp_server_names).await;
         let session = CodexSession::new(
             client,
             thread_id,
@@ -360,7 +366,7 @@ mod tests {
             &config,
             &thread_config(
                 Some(&HashMap::from([(
-                    "cadence-plan".to_string(),
+                    "cadencr-plan".to_string(),
                     crate::domain::agents::adapter::RuntimeMcpServerConfig::Stdio {
                         command: "svc".to_string(),
                         args: None,
@@ -373,20 +379,14 @@ mod tests {
         assert_eq!(params["threadId"], json!("thread-1"));
         assert_eq!(params["cwd"], json!("/tmp/project"));
         assert_eq!(params["model"], json!("gpt-5.5"));
-        assert!(params["baseInstructions"]
+        let base_instructions = params["baseInstructions"]
             .as_str()
-            .expect("base instructions")
-            .starts_with(RICH_MARKDOWN_INSTRUCTION));
-        assert!(params["baseInstructions"]
-            .as_str()
-            .expect("base instructions")
-            .ends_with("Be useful"));
+            .expect("base instructions");
+        assert!(base_instructions.starts_with(RICH_MARKDOWN_INSTRUCTION));
+        assert!(base_instructions.contains("Be useful"));
+        assert!(base_instructions.contains("mcp__cadencr_plan____update_plan"));
         assert_eq!(
-            params["config"]["developer_instructions"],
-            json!(RICH_MARKDOWN_INSTRUCTION)
-        );
-        assert_eq!(
-            params["config"]["mcp_servers"]["cadence-plan"]["command"],
+            params["config"]["mcp_servers"]["cadencr-plan"]["command"],
             json!("svc")
         );
         assert!(params.get("approvalPolicy").is_some());

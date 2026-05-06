@@ -3,9 +3,10 @@ use serde_json::Value;
 use super::event_command_actions::{command_action_events, has_exploring_command_actions};
 use super::event_inputs::{
     collab_tool_input, collab_tool_name, command_input, dynamic_tool_input, dynamic_tool_name,
-    file_input, mcp_input, mcp_tool_name, patch_from_changes,
+    file_input, patch_from_changes,
 };
 use super::event_json::{compact_event, metadata, stream_event_raw, thread_id, user_raw};
+use super::event_mcp_items::mcp_tool_item;
 use super::event_state::IndexState;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
@@ -58,10 +59,7 @@ pub(super) fn item_events(
             tool_item(params, "Bash", command_input, completed, index_state)
         }
         Some("fileChange") => tool_item(params, "ApplyPatch", file_input, completed, index_state),
-        Some("mcpToolCall") => {
-            let name = mcp_tool_name(item);
-            tool_item(params, &name, mcp_input, completed, index_state)
-        }
+        Some("mcpToolCall") => mcp_tool_item(params, completed, index_state),
         Some("dynamicToolCall") => {
             let name = dynamic_tool_name(item);
             tool_item(params, &name, dynamic_tool_input, completed, index_state)

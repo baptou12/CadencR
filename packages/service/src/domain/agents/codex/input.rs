@@ -78,7 +78,7 @@ fn text_input(text: String) -> Value {
 }
 
 fn write_temp_image(base64_data: &str, mime: &str) -> Result<TempPath, RuntimeError> {
-    let dir = std::env::temp_dir().join("cadence-codex-images");
+    let dir = std::env::temp_dir().join("cadencr-codex-images");
     std::fs::create_dir_all(&dir).map_err(|e| {
         RuntimeError::new(format!(
             "failed to create Codex image temp directory {}: {e}",
