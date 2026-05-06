@@ -10,6 +10,11 @@
 - [ ] [prompt] missing shortcut popover on auto-scroll
 - [ ] [unified] wrong border for focused agent
 - [ ] [editor] cannot create file / folder
+- [x] [feature] cannot change thinking level on initial prompt
+- [x] [feature] cmd+t don't change thinking level
+- [ ] [git] adding a comment on a changing line should remove the comment
+- [ ] [feature] Once a plan agent shows the plan, it goes to idle (that's ok), but it collapses
+
 
 ## FEAT
 - [ ] [service/sdks] Use `bon` builder pattern for nammed parameters
