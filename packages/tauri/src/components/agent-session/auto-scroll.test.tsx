@@ -1,11 +1,3 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  type ReactNode,
-  type Ref,
-} from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { act, render, screen, waitFor } from "@/test-utils";
@@ -13,74 +5,31 @@ import { AgentSession } from "./AgentSession";
 import type { AgentBlockData } from "../AgentBlock";
 import { toast } from "sonner";
 
-interface VirtuosoMockProps {
-  data?: AgentBlockData[];
-  firstItemIndex?: number;
-  itemContent?: (index: number, block: AgentBlockData) => ReactNode;
-  components?: {
-    Header?: () => ReactNode;
-    Footer?: () => ReactNode;
+// Replace the global IntersectionObserver mock with one that does NOT
+// auto-fire, so prepend tests have explicit control over the "user reached
+// the top" signal.
+let lastTopObserver: { fire: () => void } | null = null;
+class TopSentinelObserverMock {
+  private target: Element | null = null;
+  observe = (el: Element): void => {
+    this.target = el;
   };
-  atBottomStateChange?: (atBottom: boolean) => void;
-  startReached?: (index: number) => void;
-  followOutput?: (isAtBottom: boolean) => "auto" | "smooth" | false;
-  scrollerRef?: (el: HTMLElement | null | Window) => void;
+  disconnect = (): void => {
+    lastTopObserver = null;
+  };
+  unobserve = (): void => {};
+  constructor(cb: IntersectionObserverCallback) {
+    lastTopObserver = {
+      fire: () => {
+        if (!this.target) return;
+        cb(
+          [{ isIntersecting: true, target: this.target } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      },
+    };
+  }
 }
-
-interface VirtuosoMockHandle {
-  scrollToIndex: ReturnType<typeof vi.fn>;
-}
-
-// Captured by the Virtuoso mock so tests can simulate scroll events.
-let lastVirtuosoProps: VirtuosoMockProps | null = null;
-// Captured scroller element so tests can dispatch real DOM events on it
-// (wheel / touchmove / pointerdown) — this is how the scroll hook detects
-// user-driven scroll intent.
-let lastScrollerEl: HTMLElement | null = null;
-// Each render appends the firstItemIndex value seen by Virtuoso so tests can
-// observe the decrement that happens after older history is prepended.
-let firstItemIndexHistory: number[] = [];
-const scrollToIndexMock = vi.fn();
-
-vi.mock("react-virtuoso", () => ({
-  Virtuoso: forwardRef(function VirtuosoMock(
-    props: VirtuosoMockProps,
-    ref: Ref<VirtuosoMockHandle>,
-  ) {
-    lastVirtuosoProps = props;
-    if (typeof props.firstItemIndex === "number") {
-      firstItemIndexHistory.push(props.firstItemIndex);
-    }
-    useImperativeHandle(ref, () => ({ scrollToIndex: scrollToIndexMock }), []);
-    // Hand the scroller element back to the parent's `scrollerRef` callback
-    // exactly like real Virtuoso does, so the scroll hook can attach its
-    // user-input listeners. The real component does this in an effect once
-    // the scrolling DOM node is mounted; we mirror that timing.
-    const scrollerElRef = useRef<HTMLDivElement | null>(null);
-    const { scrollerRef } = props;
-    useEffect(() => {
-      const el = scrollerElRef.current;
-      if (!scrollerRef) return;
-      scrollerRef(el);
-      lastScrollerEl = el;
-      return () => {
-        scrollerRef(null);
-        lastScrollerEl = null;
-      };
-    }, [scrollerRef]);
-    return (
-      <div data-testid="virtuoso-mock" ref={scrollerElRef}>
-        {props.components?.Header ? <props.components.Header /> : null}
-        {props.data?.map((item, i) => (
-          <div key={item.id} data-testid={`virtuoso-item-${item.id}`}>
-            {props.itemContent?.(i, item)}
-          </div>
-        ))}
-        {props.components?.Footer ? <props.components.Footer /> : null}
-      </div>
-    );
-  }),
-}));
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
@@ -149,42 +98,38 @@ function getAutoScrollButton(): HTMLElement {
   return screen.getByRole("button", { name: /auto-scroll/i });
 }
 
-/** Simulate Virtuoso reporting a change in bottom-state (user scrolled up/down). */
-function fireAtBottomChange(atBottom: boolean): void {
-  const cb = lastVirtuosoProps?.atBottomStateChange;
-  if (!cb) throw new Error("atBottomStateChange not wired");
-  act(() => cb(atBottom));
+function getScroller(): HTMLElement {
+  return screen.getByTestId("agent-stream-scroller");
 }
 
-/** Simulate Virtuoso firing startReached (user near top → load older). */
-function fireStartReached(): void {
-  const cb = lastVirtuosoProps?.startReached;
-  if (!cb) throw new Error("startReached not wired");
-  act(() => cb(0));
+function stubGeometry(el: HTMLElement, scrollHeight: number, clientHeight: number): void {
+  Object.defineProperty(el, "scrollHeight", { configurable: true, get: () => scrollHeight });
+  Object.defineProperty(el, "clientHeight", { configurable: true, get: () => clientHeight });
 }
 
-/** Read what `followOutput` returns for a given Virtuoso-side at-bottom state. */
-function callFollowOutput(virtuosoAtBottom: boolean): "auto" | "smooth" | false {
-  const cb = lastVirtuosoProps?.followOutput;
-  if (!cb) throw new Error("followOutput not wired");
-  return cb(virtuosoAtBottom);
-}
-
-/** Dispatch a real DOM event on the captured scroller element. */
-function dispatchOnScroller(event: Event): void {
-  if (!lastScrollerEl) throw new Error("scroller element not captured");
+function dispatchScroll(el: HTMLElement, scrollTop: number): void {
+  el.scrollTop = scrollTop;
   act(() => {
-    lastScrollerEl?.dispatchEvent(event);
+    el.dispatchEvent(new Event("scroll", { bubbles: true }));
   });
+}
+
+/** Simulate a real wheel-up: wheel listener disengages stick synchronously. */
+function userWheelUp(el: HTMLElement, scrollTop: number): void {
+  act(() => {
+    el.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+  });
+  dispatchScroll(el, scrollTop);
 }
 
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    lastVirtuosoProps = null;
-    lastScrollerEl = null;
-    firstItemIndexHistory = [];
-    scrollToIndexMock.mockClear();
+    lastTopObserver = null;
+    Object.defineProperty(window, "IntersectionObserver", {
+      writable: true,
+      value: TopSentinelObserverMock,
+    });
   });
 
   it("shows the auto-scroll chip and scrolls to bottom on click", async () => {
@@ -199,23 +144,19 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    const button = getAutoScrollButton();
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
 
-    // The chip is a "scroll to bottom" button — clicking it always asks
-    // Virtuoso to scroll to the last item. The pressed state then mirrors
-    // whatever atBottom Virtuoso reports.
-    await user.click(button);
-    expect(scrollToIndexMock).toHaveBeenCalledWith({
-      index: "LAST",
-      align: "end",
-      behavior: "auto",
-    });
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    scroller.scrollTop = 0;
+
+    await user.click(getAutoScrollButton());
+    expect(scroller.scrollTop).toBe(1000);
   });
 
-  // Rule 2: a real wheel-up on the scroller disables auto-scroll. No need
-  // for an `atBottomStateChange` round-trip — the input itself is enough.
-  it("rule 2: wheel-up on the scroller disables auto-scroll", () => {
+  // Rule 2: a real wheel-up disables auto-scroll synchronously, before the
+  // next streaming layout effect can re-anchor.
+  it("rule 2: wheel-up disables auto-scroll", () => {
     render(
       <AgentSession
         agentType="session"
@@ -226,14 +167,41 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+
+    userWheelUp(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
-    expect(callFollowOutput(true)).toBe(false);
   });
 
-  // Wheel-down (scrolling toward the bottom) must NOT disable. Otherwise
-  // any natural read-along scroll would knock follow-mode off.
+  // Regression: wheeling up on a short / empty conversation (content fits
+  // in the viewport, nothing to scroll) must NOT disable auto-scroll. The
+  // earlier behavior killed stick on the very first idle wheel, so by the
+  // time the chat grew past the viewport new tokens landed off-screen.
+  it("rule 2: wheel-up does not disable auto-scroll when content fits in the viewport", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    // Content fits — scrollHeight <= clientHeight, no scrolling possible.
+    stubGeometry(scroller, 200, 400);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+
+    act(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    });
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  // Wheel-down (scrolling toward the bottom) must NOT disable.
   it("rule 2: wheel-down does not disable auto-scroll", () => {
     render(
       <AgentSession
@@ -245,13 +213,16 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: 50, bubbles: true }));
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    act(() => {
+      scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: 50, bubbles: true }));
+    });
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
-  // Rule 1: when Virtuoso reports we're at the bottom, auto-scroll re-engages.
-  // This is what the chip-click path also relies on (after the scroll lands).
-  it("rule 1: atBottom=true re-enables auto-scroll", () => {
+  // Rule 1: scrolling back into the bottom band re-enables auto-scroll.
+  it("rule 1: scrolling back into the bottom band re-enables auto-scroll", () => {
     render(
       <AgentSession
         agentType="session"
@@ -262,10 +233,13 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
-    fireAtBottomChange(true);
+    // 1000 - 590 - 400 = 10px from bottom < 16 threshold → re-engages.
+    dispatchScroll(scroller, 590);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -281,41 +255,16 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
     await user.click(screen.getByRole("textbox"));
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
   });
 
-  // The headline bug fix: a content re-measure (Read/Glob/Grep tool result
-  // lands → displayBlocks rebuilds → scrollHeight grows before Virtuoso
-  // re-anchors) makes Virtuoso emit a phantom `atBottomStateChange(false)`.
-  // We must ignore it — only real user input (rule 2) disables follow-mode.
-  it("ignores atBottom=false (Virtuoso wobble) entirely", () => {
-    render(
-      <AgentSession
-        agentType="session"
-        blocks={[makeBlock("1", "Hello")]}
-        status="agent"
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-      />,
-    );
-
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
-
-    fireAtBottomChange(false);
-
-    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
-    // followOutput must still tell Virtuoso to follow even when Virtuoso
-    // itself thinks we're not at the bottom — that's how rule 1 keeps the
-    // stream anchored across re-measure wobbles.
-    expect(callFollowOutput(false)).toBe("auto");
-  });
-
-  // Rule 3: chip click. Re-engages follow-mode synchronously and asks
-  // Virtuoso to scroll to the last item.
+  // Rule 3: chip click re-engages follow-mode and scrolls to bottom.
   it("rule 3: chip click re-engages follow-mode and scrolls to bottom", async () => {
     const user = userEvent.setup();
     render(
@@ -328,25 +277,18 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
-    expect(callFollowOutput(false)).toBe(false);
 
     await user.click(getAutoScrollButton());
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
-    expect(callFollowOutput(false)).toBe("auto");
-    expect(scrollToIndexMock).toHaveBeenCalledWith({
-      index: "LAST",
-      align: "end",
-      behavior: "auto",
-    });
+    expect(scroller.scrollTop).toBe(1000);
   });
 
-  // The "scroll jumps" case the user reported: a single markdown block grows
-  // token-by-token. Virtuoso's `followOutput` only fires on count changes,
-  // not on in-place content updates that change the last item's *height*. We
-  // re-anchor imperatively in a `useLayoutEffect` keyed on the last block's
-  // content length.
+  // Headline bug: the last block grows token-by-token. The scroll hook
+  // re-anchors via `useLayoutEffect` keyed on the last block's content length.
   it("re-anchors at the bottom when the last block's content grows in place", () => {
     const baseProps = {
       agentType: "session" as const,
@@ -356,22 +298,16 @@ describe("AgentSession auto-scroll", () => {
     };
     const { rerender } = render(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello")]} />);
 
-    // Drop the initial-mount scroll so the assertion targets the streaming
-    // re-anchor specifically.
-    scrollToIndexMock.mockClear();
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    scroller.scrollTop = 0;
 
     rerender(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello world")]} />);
-
-    expect(scrollToIndexMock).toHaveBeenCalledWith({
-      index: "LAST",
-      align: "end",
-      behavior: "auto",
-    });
+    expect(scroller.scrollTop).toBe(1000);
   });
 
   // Conversely, if the user has scrolled away (rule 2), an in-place content
-  // update must NOT yank the view back down — the chip is the only way back
-  // (rule 3).
+  // update must NOT yank the view back down — the chip is the only way back.
   it("does not re-anchor when the user has scrolled up", () => {
     const baseProps = {
       agentType: "session" as const,
@@ -381,16 +317,17 @@ describe("AgentSession auto-scroll", () => {
     };
     const { rerender } = render(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello")]} />);
 
-    dispatchOnScroller(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
-    scrollToIndexMock.mockClear();
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 50);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
     rerender(<AgentSession {...baseProps} blocks={[makeBlock("1", "Hello world")]} />);
-
-    expect(scrollToIndexMock).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(50);
   });
 
-  it("loads older history when Virtuoso reports the start was reached", async () => {
-    const onLoadOlder = vi.fn(async () => {});
+  it("loads older history when the top sentinel becomes visible", async () => {
+    const onLoadOlder = vi.fn(async () => 0);
     render(
       <AgentSession
         agentType="session"
@@ -403,12 +340,15 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    fireStartReached();
+    stubGeometry(getScroller(), 1000, 400);
+    expect(lastTopObserver).not.toBeNull();
+    act(() => lastTopObserver!.fire());
+
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
   });
 
   it("does not call onLoadOlder when there is no more history", () => {
-    const onLoadOlder = vi.fn(async () => {});
+    const onLoadOlder = vi.fn(async () => 0);
     render(
       <AgentSession
         agentType="session"
@@ -421,11 +361,12 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    fireStartReached();
+    expect(lastTopObserver).not.toBeNull();
+    act(() => lastTopObserver!.fire());
     expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
-  it("shows the loading-older spinner via the Virtuoso header while a fetch is in flight", async () => {
+  it("shows the loading-older spinner while a fetch is in flight", async () => {
     let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
@@ -446,9 +387,10 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
+    stubGeometry(getScroller(), 1000, 400);
     expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
 
-    fireStartReached();
+    act(() => lastTopObserver!.fire());
     await waitFor(() => {
       expect(container.querySelector(".animate-spin")).toBeInTheDocument();
     });
@@ -474,49 +416,61 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    fireStartReached();
+    stubGeometry(getScroller(), 1000, 400);
+    act(() => lastTopObserver!.fire());
+
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
   });
 
-  it("decrements firstItemIndex by the number of prepended blocks", async () => {
-    let resolveLoad: (count: number) => void = () => {};
+  // The chat-app prepend-restore pattern: capture scrollHeight/scrollTop
+  // when the loader fires, then after the prepended blocks render, restore
+  // anchor via `newScrollHeight − prevScrollHeight + prevScrollTop`. The
+  // user stays glued to the same content.
+  it("preserves the user's scroll position after older messages are prepended", async () => {
+    let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
-        new Promise<number>((resolve) => {
+        new Promise<void>((resolve) => {
           resolveLoad = resolve;
         }),
     );
+    const baseProps = {
+      agentType: "session" as const,
+      status: "agent" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+      hasMore: true,
+      onLoadOlder,
+    };
 
-    render(
+    const { rerender } = render(<AgentSession {...baseProps} blocks={[makeBlock("1", "Old")]} />);
+    const scroller = getScroller();
+    // Reading 80px from the top of a 600px-tall list. WheelUp also disengages
+    // stick so the layout effect doesn't pull us back to the bottom on the
+    // next render.
+    stubGeometry(scroller, 600, 200);
+    userWheelUp(scroller, 80);
+
+    act(() => lastTopObserver!.fire());
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+
+    // Older blocks land at the front. scrollHeight grows from 600 to 1000.
+    // newScrollTop = 1000 − 600 + 80 = 480.
+    act(() => resolveLoad());
+    stubGeometry(scroller, 1000, 200);
+    rerender(
       <AgentSession
-        agentType="session"
-        blocks={[makeBlock("1", "Hello")]}
-        status="agent"
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-        hasMore
-        onLoadOlder={onLoadOlder}
+        {...baseProps}
+        blocks={[makeBlock("0a", ""), makeBlock("0b", ""), makeBlock("1", "Old")]}
       />,
     );
 
-    // Capture the index Virtuoso saw before any prepend.
-    const initialIndex = firstItemIndexHistory.at(-1);
-    expect(typeof initialIndex).toBe("number");
-
-    fireStartReached();
-    expect(onLoadOlder).toHaveBeenCalledTimes(1);
-
-    // Resolve with the prepended count: the hook decrements firstItemIndex
-    // by exactly that delta, no rerender or rAF needed.
-    act(() => resolveLoad(3));
-
     await waitFor(() => {
-      const latest = firstItemIndexHistory.at(-1);
-      expect(latest).toBe((initialIndex as number) - 3);
+      expect(scroller.scrollTop).toBe(480);
     });
   });
 
-  it("ignores concurrent startReached calls while a load is in flight", async () => {
+  it("collapses concurrent intersection fires while a load is in flight", async () => {
     let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
@@ -537,13 +491,11 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    // Two consecutive startReached events while the first fetch is still in
-    // flight must collapse into a single onLoadOlder call.
-    fireStartReached();
-    fireStartReached();
+    stubGeometry(getScroller(), 1000, 400);
+    act(() => lastTopObserver!.fire());
+    act(() => lastTopObserver!.fire());
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
 
-    // Resolve the gate so the test does not leak a pending promise.
     act(() => resolveLoad());
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
   });

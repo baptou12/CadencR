@@ -140,19 +140,13 @@ export const AgentSession = memo(
     const isOpen = isControlled ? controlledOpen : internalOpen;
 
     const {
-      virtuosoRef,
-      autoScrollEnabledRef,
-      handleScrollerRef,
-      firstItemIndex,
-      handleAtBottomChange,
-      handleStartReached,
+      scrollContainerRef,
+      topSentinelRef,
+      scrollContentRef,
       autoScrollEnabled,
       isLoadingOlder,
       scrollToBottom,
-    } = useAgentSessionScroll({
-      hasMore,
-      onLoadOlder,
-    });
+    } = useAgentSessionScroll({ blocks, hasMore, onLoadOlder });
 
     useAutoScrollShortcut({
       enabled: agentTabActive && !disableShortcuts,
@@ -326,12 +320,9 @@ export const AgentSession = memo(
           isStreaming={isStreaming}
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}
-          virtuosoRef={virtuosoRef}
-          autoScrollEnabledRef={autoScrollEnabledRef}
-          scrollerRef={handleScrollerRef}
-          firstItemIndex={firstItemIndex}
-          onAtBottomChange={handleAtBottomChange}
-          onStartReached={handleStartReached}
+          scrollContainerRef={scrollContainerRef}
+          topSentinelRef={topSentinelRef}
+          scrollContentRef={scrollContentRef}
           isLoadingOlder={isLoadingOlder}
         />
       ) : null;
