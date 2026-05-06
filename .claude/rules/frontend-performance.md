@@ -1,4 +1,4 @@
-These rules apply to frontend code under `packages/tauri/src/`. The app is an IDE; technical users expect IDE-level responsiveness. Performance is a hard constraint, not an afterthought — think about render cost, subscription scope, and main-thread work *before* writing the change. The existing generic `performance.md` rule still applies; this one is the detailed, mandatory version for frontend code.
+These rules apply to frontend code under `packages/desktop/src/`. The app is an IDE; technical users expect IDE-level responsiveness. Performance is a hard constraint, not an afterthought — think about render cost, subscription scope, and main-thread work *before* writing the change. The existing generic `performance.md` rule still applies; this one is the detailed, mandatory version for frontend code.
 
 ## Mandatory practices
 

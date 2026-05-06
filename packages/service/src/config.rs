@@ -16,7 +16,7 @@ pub struct Config {
     pub frontend_port: u16,
 
     /// Per-launch bearer token. Required when running the HTTP server; unused
-    /// in `mcp-serve` mode. The Tauri shell mints one at launch; dev runs read
+    /// in `mcp-serve` mode. The desktop shell mints one at launch; dev runs read
     /// it from `packages/service/.env`.
     #[arg(long, env = "CADENCR_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,

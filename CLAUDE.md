@@ -10,8 +10,8 @@ pnpm workspaces + Turborepo. TypeScript frontend, Rust backend, and several Rust
 
 | Package | Stack | Purpose |
 |---|---|---|
-| `packages/tauri/` | Tauri v2 + React | Desktop shell and frontend (`@cadencr/desktop`) |
-| `packages/service/` | Rust (axum, utoipa) | Backend API server; runs as Tauri sidecar in prod |
+| `packages/desktop/` | Electron + React | Desktop shell and frontend (`@cadencr/desktop`) |
+| `packages/service/` | Rust (axum, utoipa) | Backend API server; runs as Electron sidecar in packaged builds |
 | `packages/claude-agent-sdk-rs/` | Rust | SDK for Claude Code agents |
 | `packages/codex-app-server-sdk-rs/` | Rust | SDK for Codex agents |
 | `packages/opencode-sdk-rs/` | Rust | SDK for OpenCode agents |
@@ -37,14 +37,14 @@ pnpm --filter @cadencr/desktop ts-check   # TypeScript type-check
 pnpm --filter @cadencr/desktop knip       # unused-export detection
 ```
 
-Target a single package: `pnpm --filter @cadencr/desktop <task>`. Frontend/service ports are configured via `packages/tauri/.env` and `packages/service/.env` (defaults `1420` / `5005`).
+Target a single package: `pnpm --filter @cadencr/desktop <task>`. Frontend/service ports are configured via `packages/desktop/.env` and `packages/service/.env` (defaults `1420` / `5005`).
 
 ## Architecture
 
-Tauri v2 desktop shell with a React frontend. The backend is the Rust API server in `packages/service/`, spawned as a sidecar in production; in dev `pnpm dev` runs it alongside the frontend via Turborepo. Frontend ↔ backend communication is HTTP (Axios) for requests and WebSocket (Zustand store) for streaming updates. Folder selection uses `@tauri-apps/plugin-dialog`.
+Electron desktop shell with a React frontend. The backend is the Rust API server in `packages/service/`, spawned as a sidecar in production; in dev `pnpm dev` runs it alongside the frontend via Turborepo. Frontend ↔ backend communication is HTTP (Axios) for requests and WebSocket (Zustand store) for streaming updates. Folder selection uses Electron native dialogs through the preload bridge.
 
-Frontend path alias: `@` → `packages/tauri/src/` (for example `import { foo } from "@/lib/foo"`).
+Frontend path alias: `@` → `packages/desktop/src/` (for example `import { foo } from "@/lib/foo"`).
 
 ## Project-specific workflows
 
-**Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/tauri/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/tauri/orval.transformer.cjs`.
+**Regenerating the API client.** After changing the Rust API surface (utoipa attributes / new handlers), run `pnpm --filter @cadencr/desktop run generate:api`. This re-emits `packages/service/openapi.json` (gitignored, derived from utoipa) and regenerates `packages/desktop/src/api/generated/index.ts` via orval — commit the regenerated TS file. Naming overrides for hooks live in `packages/desktop/orval.transformer.cjs`.

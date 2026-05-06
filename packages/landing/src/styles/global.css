@@ -7,7 +7,7 @@
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --default-font-family: var(--font-sans);
 
-  /* Palette — mirrors packages/tauri/src/index.css. Keep in sync. */
+  /* Palette — mirrors packages/desktop/src/index.css. Keep in sync. */
   --color-background: oklch(0.22 0.022 277.497);
   --color-foreground: oklch(0.977 0.008 106.793);
   --color-primary: oklch(0.742 0.149 301.871);
@@ -37,7 +37,7 @@
   --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35);
   --shadow-lg: 0 24px 60px rgb(0 0 0 / 0.45);
 
-  /* Radius — mirrors packages/tauri/src/index.css (derived from --radius: 0.625rem) */
+  /* Radius — mirrors packages/desktop/src/index.css (derived from --radius: 0.625rem) */
   --radius: 0.625rem;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

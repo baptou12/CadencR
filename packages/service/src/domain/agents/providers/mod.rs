@@ -98,6 +98,12 @@ pub fn spawn_runtime_startup_warmups() {
     }
 }
 
+pub async fn shutdown_runtime_servers() {
+    if let Err(error) = opencode_sdk_rs::OpenCodeServer::shutdown().await {
+        tracing::warn!(error = %error, "failed to shut down opencode server");
+    }
+}
+
 pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &str) -> bool {
     let Some(adapter) = runtime_adapter(provider_id) else {
         return false;

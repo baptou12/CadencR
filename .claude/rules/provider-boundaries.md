@@ -1,7 +1,7 @@
 ---
 paths:
   - "packages/service/src/**"
-  - "packages/tauri/src/**"
+  - "packages/desktop/src/**"
   - "packages/*-sdk-rs/src/**"
 ---
 

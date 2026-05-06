@@ -94,7 +94,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "codex_cli_path",
     // Per-provider opt-in for the dangerous "skip every check" mode. Mirrored
     // by CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY / CODEX_FULL_ACCESS_SETTING_KEY
-    // in packages/tauri/src/shared/permission-mode-settings.ts. Stored as
+    // in packages/desktop/src/shared/permission-mode-settings.ts. Stored as
     // "true" / "false"; when "true" the matching mode joins the Shift+Tab
     // cycle for that provider's chip.
     "claude_bypass_permissions_enabled",
@@ -108,7 +108,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "loader_style",
     "zoom_global",
     "unified_agents_per_row",
-    // Active theme (id from packages/tauri/src/lib/themes/registry.ts)
+    // Active theme (id from packages/desktop/src/lib/themes/registry.ts)
     "theme_current",
     // System-theme sync. When enabled, the frontend resolves the active theme
     // from the current OS appearance plus the two appearance-specific theme ids.
@@ -151,7 +151,7 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "agent_runtime_brainstorm",
     // First-run onboarding overlay state.
     // `onboarding_step` is one of the values defined in
-    // packages/tauri/src/lib/onboarding-step.ts; missing/unset is treated as
+    // packages/desktop/src/lib/onboarding-step.ts; missing/unset is treated as
     // step "welcome" by the frontend so existing installs see the overlay
     // until they dismiss or complete it.
     // `default_agent_provider` is set during the onboarding's "pick agent"
@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn workspace_accepts_theme_current() {
         // Theme picker writes the active theme id (see
-        // packages/tauri/src/lib/themes/registry.ts). Workspace-scoped so it
+        // packages/desktop/src/lib/themes/registry.ts). Workspace-scoped so it
         // mirrors every other UI-chrome setting.
         assert!(is_workspace_key_allowed("theme_current"));
         assert!(is_workspace_key_allowed("theme_follow_system"));

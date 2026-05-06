@@ -1707,7 +1707,7 @@ mod tests {
     #[test]
     fn default_permission_mode_wire_matches_frontend_catalog() {
         // These wire strings must match `defaultEditModeFor` in
-        // packages/tauri/src/lib/provider-modes.ts. Drift between BE/FE here
+        // packages/desktop/src/lib/provider-modes.ts. Drift between BE/FE here
         // would silently put the chip in a state the backend never wrote.
         assert_eq!(default_permission_mode_wire("claude_code"), "acceptEdits");
         assert_eq!(default_permission_mode_wire("opencode"), "acceptEdits");

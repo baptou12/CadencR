@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
             // Hydrate process env from the user's login shell BEFORE any
             // subprocesses (git, gpg, ssh, agent CLIs, PTY shells) get
-            // spawned. Without this, a Tauri/launchd-launched binary
+            // spawned. Without this, a Electron/launchd-launched binary
             // inherits a stripped-down env (`PATH=/usr/bin:/bin:...`, no
             // `GPG_TTY`, no `SSH_AUTH_SOCK`) and `git commit -S` fails for
             // anyone who configured signing or agent sockets in their
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
                 anyhow::anyhow!(
                     "CADENCR_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
                      var. Dev runs: set it in `packages/service/.env`. \
-                     Production runs: the Tauri shell generates one per launch and passes it \
+                     Production runs: the desktop shell generates one per launch and passes it \
                      as a CLI flag."
                 )
             })?;
@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
             // Resume periodic custom-action schedules from a previous launch.
             state.custom_action_scheduler.bootstrap(&state).await;
 
+            let pty_manager = state.pty_manager.clone();
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
@@ -144,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
             // a real-time WebSocket stream (commit output, agent output) into
             // a "dump everything at the end" feed. We never want that here.
             axum::serve(NoDelayListener(listener), app)
-                .with_graceful_shutdown(shutdown_signal())
+                .with_graceful_shutdown(shutdown_signal(pty_manager))
                 .await?;
         }
     }
@@ -317,7 +318,7 @@ mod tests {
 }
 
 fn build_cors_layer(frontend_port: u16) -> CorsLayer {
-    let mut origins = vec!["tauri://localhost".parse().expect("static origin")];
+    let mut origins = vec!["null".parse().expect("static origin")];
     if cfg!(debug_assertions) {
         origins.push(
             format!("http://localhost:{frontend_port}")
@@ -361,7 +362,7 @@ fn init_tracing(to_stderr: bool) {
     }
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -383,8 +384,9 @@ async fn shutdown_signal() {
     }
     tracing::info!("Shutdown signal received, shutting down gracefully...");
 
-    // Pause all workflow agents so they can resume on next start
     crate::domain::ws_session::handler::workflow::pause_all_engines().await;
+    pty_manager.kill_all();
+    crate::domain::agents::shutdown_runtime_servers().await;
 
-    tracing::info!("All workflow agents paused.");
+    tracing::info!("All workflow agents paused and runtime servers stopped.");
 }

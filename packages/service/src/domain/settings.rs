@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 
 /// Workspace setting key holding the last-used thinking effort for a given
 /// provider/model pair. Mirrors the frontend helper in
-/// `packages/tauri/src/shared/thinking-effort.ts`.
+/// `packages/desktop/src/shared/thinking-effort.ts`.
 pub fn thinking_effort_model_key(provider_id: &str, model_id: &str) -> String {
     format!("thinking_effort_model_{provider_id}_{model_id}")
 }

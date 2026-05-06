@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use dashmap::DashMap;
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::{broadcast, watch};
-use tracing::info;
+use tracing::{info, warn};
 
 const SCROLLBACK_CAP: usize = 50 * 1024; // 50KB
 
@@ -205,6 +205,19 @@ impl PtyManager {
             .kill()
             .map_err(|e| anyhow::anyhow!("Failed to kill PTY: {e}"))?;
         Ok(())
+    }
+
+    pub fn kill_all(&self) {
+        let pty_ids = self
+            .terminals
+            .iter()
+            .map(|entry| entry.key().clone())
+            .collect::<Vec<_>>();
+        for pty_id in pty_ids {
+            if let Err(error) = self.kill_pty(&pty_id) {
+                warn!(pty_id = %pty_id, error = %error, "Failed to kill PTY during shutdown");
+            }
+        }
     }
 
     pub fn get_scrollback(&self, pty_id: &str) -> Option<(bool, String)> {
