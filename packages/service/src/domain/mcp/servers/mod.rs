@@ -67,29 +67,27 @@ impl std::str::FromStr for AgentType {
     }
 }
 
-pub fn cadence_mcp_uses_approval_elicitation(server_name: &str) -> bool {
-    cadence_agent_type_from_server_name(server_name)
+pub fn cadencr_mcp_uses_approval_elicitation(server_name: &str) -> bool {
+    cadencr_agent_type_from_server_name(server_name)
         .is_some_and(|agent_type| !approval_elicitation_tool_names_for_agent(agent_type).is_empty())
 }
 
-pub fn cadence_mcp_tool_requires_approval_elicitation(server_name: &str, tool_name: &str) -> bool {
-    cadence_agent_type_from_server_name(server_name).is_some_and(|agent_type| {
+pub fn cadencr_mcp_tool_requires_approval_elicitation(server_name: &str, tool_name: &str) -> bool {
+    cadencr_agent_type_from_server_name(server_name).is_some_and(|agent_type| {
         approval_elicitation_tool_names_for_agent(agent_type)
             .iter()
             .any(|name| name == tool_name)
     })
 }
 
-pub fn cadence_mcp_required_tools(server_name: &str) -> Vec<String> {
-    cadence_agent_type_from_server_name(server_name)
+pub fn cadencr_mcp_required_tools(server_name: &str) -> Vec<String> {
+    cadencr_agent_type_from_server_name(server_name)
         .map(required_tool_names_for_agent)
         .unwrap_or_default()
 }
 
-fn cadence_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
-    let short_name = server_name
-        .strip_prefix("cadencr-")
-        .or_else(|| server_name.strip_prefix("cadence-"))?;
+fn cadencr_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
+    let short_name = server_name.strip_prefix("cadencr-")?;
     short_name.parse().ok()
 }
 
@@ -127,8 +125,8 @@ fn server_info(name: &str) -> ServerInfo {
 #[cfg(test)]
 mod tests {
     use super::{
-        cadence_mcp_required_tools, cadence_mcp_tool_requires_approval_elicitation,
-        cadence_mcp_uses_approval_elicitation, mcp_server_name, AgentType,
+        cadencr_mcp_required_tools, cadencr_mcp_tool_requires_approval_elicitation,
+        cadencr_mcp_uses_approval_elicitation, mcp_server_name, AgentType,
     };
 
     #[test]
@@ -137,30 +135,31 @@ mod tests {
     }
 
     #[test]
-    fn cadence_mcp_metadata_is_derived_from_server_tool_catalog() {
-        let plan_tools = cadence_mcp_required_tools("cadencr-plan");
+    fn cadencr_mcp_metadata_is_derived_from_server_tool_catalog() {
+        let plan_tools = cadencr_mcp_required_tools("cadencr-plan");
         assert!(plan_tools.contains(&"show_plan".to_string()));
         assert!(plan_tools.contains(&"mark_agent_done".to_string()));
-        assert!(cadence_mcp_uses_approval_elicitation("cadencr-plan"));
-        assert!(cadence_mcp_tool_requires_approval_elicitation(
+        assert!(cadencr_mcp_uses_approval_elicitation("cadencr-plan"));
+        assert!(cadencr_mcp_tool_requires_approval_elicitation(
             "cadencr-plan",
             "show_plan"
         ));
-        assert!(!cadence_mcp_tool_requires_approval_elicitation(
+        assert!(!cadencr_mcp_tool_requires_approval_elicitation(
             "cadencr-plan",
             "read_plan"
         ));
 
-        let prd_tools = cadence_mcp_required_tools("cadencr-prd");
+        let prd_tools = cadencr_mcp_required_tools("cadencr-prd");
         assert!(prd_tools.contains(&"show_prd".to_string()));
-        assert!(cadence_mcp_tool_requires_approval_elicitation(
+        assert!(cadencr_mcp_tool_requires_approval_elicitation(
             "cadencr-prd",
             "show_prd"
         ));
     }
 
     #[test]
-    fn cadence_mcp_metadata_accepts_legacy_cadence_prefix() {
-        assert!(cadence_mcp_required_tools("cadence-plan").contains(&"show_plan".to_string()));
+    fn cadencr_mcp_metadata_rejects_legacy_prefix() {
+        assert!(cadencr_mcp_required_tools("legacy-plan").is_empty());
+        assert!(cadencr_mcp_required_tools("cadencr-plan").contains(&"show_plan".to_string()));
     }
 }

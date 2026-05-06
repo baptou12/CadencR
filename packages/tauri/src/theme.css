@@ -174,7 +174,7 @@
 
 /* Aurora — a white version of the vibrant Dracula theme.
  * Tailwind tokens follow the design source-of-truth in
- * `Cadence Desktop v1 - Standalone.html` (`:root[data-theme="light"]`).
+ * `Cadencr Desktop v1 - Standalone.html` (`:root[data-theme="light"]`).
  * Code surface and terminal go light too so the theme reads as a coherent
  * white IDE, not a hybrid white-chrome / dark-editor split. */
 :root[data-theme="aurora"] {

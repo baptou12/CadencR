@@ -34,7 +34,7 @@ pub fn codex_discovery_spec() -> DiscoverySpec {
 
 /// Set or clear the global override path for the `codex` binary.
 ///
-/// The Cadence service applies this once at startup from the persisted
+/// The Cadencr service applies this once at startup from the persisted
 /// workspace setting. It wins over PATH and well-known directory discovery.
 pub fn set_binary_override(path: Option<PathBuf>) {
     if let Ok(mut guard) = BINARY_OVERRIDE.write() {

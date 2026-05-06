@@ -6,7 +6,7 @@ use rmcp::{
 };
 use serde_json::{json, Value};
 
-use super::cadence_mcp_tool_requires_approval_elicitation;
+use super::cadencr_mcp_tool_requires_approval_elicitation;
 
 pub async fn maybe_elicit_tool_approval(
     context: &RequestContext<RoleServer>,
@@ -17,7 +17,7 @@ pub async fn maybe_elicit_tool_approval(
     if !approval_elicitation_enabled() {
         return Ok(());
     }
-    if !cadence_mcp_tool_requires_approval_elicitation(server_name, tool_name) {
+    if !cadencr_mcp_tool_requires_approval_elicitation(server_name, tool_name) {
         return Ok(());
     }
 
@@ -44,7 +44,7 @@ pub async fn maybe_elicit_tool_approval(
 fn approval_elicitation_enabled() -> bool {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| {
-        std::env::var("CADENCE_MCP_APPROVAL_MODE").ok().as_deref() == Some("elicitation")
+        std::env::var("CADENCR_MCP_APPROVAL_MODE").ok().as_deref() == Some("elicitation")
     })
 }
 
@@ -55,6 +55,6 @@ fn meta(server_name: &str, tool_name: &str, tool_input: &Value) -> Meta {
         Value::String(format!("mcp__{server_name}__{tool_name}")),
     );
     meta.insert("tool_input".to_string(), tool_input.clone());
-    meta.insert("requested_by".to_string(), json!("cadence"));
+    meta.insert("requested_by".to_string(), json!("cadencr"));
     Meta(meta)
 }

@@ -6,6 +6,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { isCadencrPlanPresentationTool } from "@/lib/tool-call-parser";
 
 export { createStreamingState, isRecord, processSdkMessage } from "./ws-message-processing-core";
 export type {
@@ -32,9 +33,7 @@ export type { MessagePatch, ParsedTodo } from "./ws-block-mutations";
 function isPlanToolCall(block: AgentBlockData): boolean {
   return (
     block.type === "tool_call" &&
-    (block.toolName === "ExitPlanMode" ||
-      !!block.toolName?.endsWith("__show_plan") ||
-      !!block.toolName?.endsWith("__show_prd"))
+    (block.toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(block.toolName))
   );
 }
 

@@ -62,7 +62,7 @@ function ProviderCard({ provider }: { provider: ProviderDiscovery }) {
           label={
             <>
               No <strong>{provider.bin_name}</strong> installations found. Set an override path in
-              onboarding to point Cadence at the binary.
+              onboarding to point Cadencr at the binary.
             </>
           }
         />

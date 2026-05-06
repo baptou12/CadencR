@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
+use super::instructions::codex_developer_instructions;
 use super::model::{approval_policy, sandbox_policy};
 use crate::domain::agents::adapter::RuntimePermissionMode;
 
@@ -48,12 +49,13 @@ fn collaboration_mode(
     } else {
         "default"
     };
+    let developer_instructions = codex_developer_instructions();
     Some(json!({
         "mode": mode,
         "settings": {
             "model": model,
             "reasoning_effort": effort,
-            "developer_instructions": null
+            "developer_instructions": developer_instructions
         }
     }))
 }
@@ -96,7 +98,14 @@ mod tests {
             params["collaborationMode"]["settings"]["reasoning_effort"],
             "high"
         );
-        assert!(params["collaborationMode"]["settings"]["developer_instructions"].is_null());
+        let instructions = params["collaborationMode"]["settings"]["developer_instructions"]
+            .as_str()
+            .expect("developer instructions");
+        assert!(instructions
+            .starts_with(crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION));
+        assert!(instructions.contains("mcp__cadencr-plan__update_plan"));
+        assert!(instructions.contains("mcp__cadencr_plan____update_plan"));
+        assert!(instructions.contains("Do not use Codex-native `update_plan`"));
     }
 
     #[test]

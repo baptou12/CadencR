@@ -3,6 +3,7 @@ use serde_json::Value;
 use super::event_items::{stream_start_event, tool_result_event_with_error};
 use super::event_json::thread_id;
 use super::event_state::IndexState;
+use super::raw_tool_names::{canonical_tool_name, function_tool_name, string_field};
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEvent};
 
 pub(super) fn raw_response_item_events(
@@ -100,31 +101,6 @@ fn tool_result_event(
     Some(tool_result_event_with_error(params, id, content, is_error))
 }
 
-fn function_tool_name(item: &Value) -> String {
-    let raw_name = string_field(item, "name", "function_call");
-    let canonical = canonical_tool_name(&raw_name);
-    if canonical != raw_name {
-        return canonical;
-    }
-    match item.get("namespace").and_then(Value::as_str) {
-        Some(namespace) if !namespace.is_empty() => format!("{namespace}__{raw_name}"),
-        _ => raw_name,
-    }
-}
-
-fn canonical_tool_name(name: &str) -> String {
-    match name {
-        "read" | "read_file" | "fs_read" | "fs_read_file" => "Read".to_string(),
-        "glob" | "file_glob" | "find_files" => "Glob".to_string(),
-        "grep" | "search" | "search_files" | "code_search" => "Grep".to_string(),
-        "bash" | "shell" | "exec" | "exec_command" => "Bash".to_string(),
-        "web_search" | "web_search_preview" => "WebSearch".to_string(),
-        "web_fetch" | "webfetch" | "fetch" => "WebFetch".to_string(),
-        "tool_search" => "ToolSearch".to_string(),
-        _ => name.to_string(),
-    }
-}
-
 fn args(item: &Value, field: &str) -> Value {
     let mut input = match item.get(field) {
         Some(Value::String(raw)) if raw.trim().is_empty() => serde_json::json!({}),
@@ -188,14 +164,6 @@ fn response_item_id(params: &Value, item: &Value, fallback_name: &str) -> String
                 .unwrap_or_else(|| thread_id(params));
             format!("codex_raw_{turn_id}_{fallback_name}")
         })
-}
-
-fn string_field(item: &Value, field: &str, fallback: &str) -> String {
-    item.get(field)
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(fallback)
-        .to_string()
 }
 
 #[cfg(test)]
@@ -390,5 +358,32 @@ mod tests {
         };
         assert_eq!(name, "Glob");
         assert_eq!(input["pattern"], json!("**/*.rs"));
+    }
+
+    #[test]
+    fn canonicalizes_cadencr_mcp_namespace_tool_names() {
+        let mut indexes = IndexState::default();
+        let events = raw_response_item_events(
+            json!({
+                "threadId": "thread",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call_plan",
+                    "namespace": "mcp__cadencr_plan__",
+                    "name": "read_plan",
+                    "arguments": "{\"feature_id\":1086}"
+                }
+            }),
+            &mut indexes,
+        );
+
+        let Some(RuntimeStreamEvent::ContentBlockStart { block, .. }) = events[0].stream_event()
+        else {
+            panic!("expected tool start");
+        };
+        let RuntimeContentBlock::ToolUse { name, .. } = block else {
+            panic!("expected tool use");
+        };
+        assert_eq!(name, "mcp__cadencr-plan__read_plan");
     }
 }

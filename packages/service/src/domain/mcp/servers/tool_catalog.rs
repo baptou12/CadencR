@@ -4,7 +4,7 @@ use serde_json::json;
 use super::{tool_specs::tool_keys_for_agent, tool_specs::ToolKey, AgentType};
 
 const FEATURE_ID_DESCRIPTION: &str =
-    "The feature this call operates on. Required on every Cadence MCP tool call — agents must pass the feature_id from their system prompt.";
+    "The feature this call operates on. Required on every Cadencr MCP tool call — agents must pass the feature_id from their system prompt.";
 
 pub(super) fn tool_definitions_for_agent(agent_type: AgentType) -> Vec<Tool> {
     tool_keys_for_agent(agent_type)

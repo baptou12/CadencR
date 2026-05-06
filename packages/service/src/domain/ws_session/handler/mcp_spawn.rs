@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::env;
+use std::path::{Path, PathBuf};
 
 use tracing::info;
 
@@ -22,7 +23,9 @@ pub fn build_mcp_server_config(
         .to_string_lossy()
         .to_string();
 
-    let db_path = env::var("CADENCR_DB_PATH").ok();
+    let db_path = env::var("CADENCR_DB_PATH")
+        .ok()
+        .map(|path| absolute_db_path(&path));
     let env_vars = db_path
         .as_ref()
         .map(|path| HashMap::from([("CADENCR_DB_PATH".to_string(), path.clone())]));
@@ -55,4 +58,56 @@ pub fn build_mcp_server_config(
     };
 
     HashMap::from([(server_name, config)])
+}
+
+fn absolute_db_path(path: &str) -> String {
+    let db_path = Path::new(path);
+    if db_path.is_absolute() {
+        return db_path.to_string_lossy().to_string();
+    }
+    env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(db_path)
+        .to_string_lossy()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::sync::{Mutex, OnceLock};
+
+    use crate::domain::agents::adapter::RuntimeMcpServerConfig;
+    use crate::domain::mcp::servers::AgentType;
+
+    use super::build_mcp_server_config;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn mcp_config_passes_absolute_db_path_to_subprocess() {
+        let _guard = env_lock().lock().unwrap();
+        env::set_var("CADENCR_DB_PATH", "./cadencr.local.db");
+
+        let config = build_mcp_server_config(AgentType::Plan, 42);
+        let RuntimeMcpServerConfig::Stdio { args, env, .. } = config
+            .get("cadencr-plan")
+            .expect("plan server config")
+            .clone();
+        let expected = env::current_dir()
+            .unwrap()
+            .join("./cadencr.local.db")
+            .to_string_lossy()
+            .to_string();
+
+        assert!(args
+            .expect("args")
+            .windows(2)
+            .any(|pair| pair[0] == "--db-path" && pair[1] == expected));
+        assert_eq!(env.expect("env").get("CADENCR_DB_PATH"), Some(&expected));
+        env::remove_var("CADENCR_DB_PATH");
+    }
 }

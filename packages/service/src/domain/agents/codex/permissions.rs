@@ -321,13 +321,13 @@ mod tests {
             &json!("approval-6"),
             "mcpServer/elicitation/request",
             &json!({
-                "serverName": "cadence-plan",
+                "serverName": "cadencr-plan",
                 "_meta": {
-                    "tool_name": "mcp__cadence-plan__show_plan"
+                    "tool_name": "mcp__cadencr-plan__show_plan"
                 }
             }),
         );
-        assert_eq!(canonical.tool_name, "mcp__cadence-plan__show_plan");
+        assert_eq!(canonical.tool_name, "mcp__cadencr-plan__show_plan");
     }
 
     #[test]

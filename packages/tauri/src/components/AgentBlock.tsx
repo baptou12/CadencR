@@ -1,7 +1,11 @@
 import { useState, useCallback, memo, useMemo } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, CopyIcon, CheckIcon } from "lucide-react";
-import { parseToolCall, parseCadencrMcpTool } from "@/lib/tool-call-parser";
+import {
+  isCadencrPlanPresentationTool,
+  parseCadencrMcpTool,
+  parseToolCall,
+} from "@/lib/tool-call-parser";
 import {
   extractBashCommand,
   extractBashOutput,
@@ -22,6 +26,7 @@ import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CompactDivider, ClearDivider } from "@/components/StreamDividers";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
+import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 
 /** Block types that the agent stream can produce */
 export type BlockType =
@@ -114,8 +119,7 @@ export const AgentBlock = memo(function AgentBlock({
       }
       if (
         block.toolName === "ExitPlanMode" ||
-        block.toolName?.endsWith("__show_plan") ||
-        block.toolName?.endsWith("__show_prd")
+        (isPlanPresentationTool(block.toolName) && hasAttachedPlanContent(block.toolArgs))
       ) {
         return <PlanBlock args={block.toolArgs} approvalStatus={block.planApprovalStatus} />;
       }
@@ -186,6 +190,14 @@ export const AgentBlock = memo(function AgentBlock({
 
 function bashResultOutput(content: string): string | undefined {
   return extractBashOutput(content) ?? (isStructuredBashPayload(content) ? undefined : content);
+}
+
+function isPlanPresentationTool(toolName: string | undefined): boolean {
+  return toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(toolName);
+}
+
+function hasAttachedPlanContent(args: string | undefined): boolean {
+  return !!stringArg(parseToolArgsObject(args), "plan");
 }
 
 /** Render the final text output from an Agent/Task tool_result (JSON content blocks). */

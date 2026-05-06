@@ -16,8 +16,8 @@ pub struct AppServerClientInfo {
 impl Default for AppServerClientInfo {
     fn default() -> Self {
         Self {
-            name: "cadence".into(),
-            title: "Cadence".into(),
+            name: "cadencr".into(),
+            title: "Cadencr".into(),
             version: env!("CARGO_PKG_VERSION").into(),
         }
     }

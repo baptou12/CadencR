@@ -3,6 +3,7 @@
  */
 
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { isCadencrPlanPresentationTool } from "@/lib/tool-call-parser";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
@@ -271,7 +272,7 @@ export function markLastPlanBlock(
   const lastIdx = blocks.findLastIndex(
     (b) =>
       b.type === "tool_call" &&
-      (b.toolName === "ExitPlanMode" || b.toolName?.endsWith("__show_plan")),
+      (b.toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(b.toolName)),
   );
   if (lastIdx === -1) return blocks;
   const updated = [...blocks];

@@ -97,18 +97,25 @@ fn codex_question_answers(params: &Value, raw_answers: &Value) -> Value {
         let Some(question_id) = question.get("id").and_then(Value::as_str) else {
             continue;
         };
+        let question_text = question.get("question").and_then(Value::as_str);
         mapped.insert(
             question_id.to_string(),
-            json!({ "answers": answer_values(raw_answers, index, question_id) }),
+            json!({ "answers": answer_values(raw_answers, index, question_id, question_text) }),
         );
     }
     Value::Object(mapped)
 }
 
-fn answer_values(raw_answers: &Value, index: usize, question_id: &str) -> Vec<String> {
+fn answer_values(
+    raw_answers: &Value,
+    index: usize,
+    question_id: &str,
+    question_text: Option<&str>,
+) -> Vec<String> {
     let index_key = index.to_string();
     let value = raw_answers
         .get(question_id)
+        .or_else(|| question_text.and_then(|text| raw_answers.get(text)))
         .or_else(|| raw_answers.get(index_key.as_str()))
         .or_else(|| raw_answers.as_array().and_then(|items| items.get(index)));
     match value {
@@ -244,6 +251,27 @@ mod tests {
         assert_eq!(
             value,
             json!({ "answers": { "q1": { "answers": ["already mapped"] } } })
+        );
+    }
+
+    #[test]
+    fn user_input_answers_accept_frontend_question_text_keys() {
+        let question = "Where should the new One dark theme apply?";
+        let response = RuntimePermissionResponse {
+            request_id: "question".to_string(),
+            decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
+            feedback: None,
+            updated_input: Some(
+                json!({ "answers": { question: "K7Notes app only (Recommended)" } }),
+            ),
+        };
+        let params = json!({ "questions": [{ "id": "theme_scope", "question": question }] });
+
+        let value = response_value("item/tool/requestUserInput", &params, &response);
+        assert_eq!(
+            value,
+            json!({ "answers": { "theme_scope": { "answers": ["K7Notes app only (Recommended)"] } } })
         );
     }
 

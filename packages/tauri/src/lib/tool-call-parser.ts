@@ -28,7 +28,8 @@ export interface CadencrMcpTool {
   detail?: string;
 }
 
-const CADENCR_MCP_PREFIX = "mcp__cadencr-";
+const CADENCR_MCP_HYPHEN_PREFIX = "mcp__cadencr-";
+const CADENCR_MCP_NAMESPACE_PREFIX = "mcp__cadencr_";
 
 /** Human-readable labels for known Cadencr MCP tools. Falls back to title-casing the tool name. */
 const cadencrToolLabels: Record<string, string> = {
@@ -90,29 +91,63 @@ function snakeToLabel(name: string): string {
 }
 
 /**
- * Try to parse a tool name as a Cadencr MCP tool (mcp__cadencr-<server>__<tool>).
- * Returns undefined if the tool name doesn't match.
+ * Try to parse a tool name as a Cadencr MCP tool.
+ *
+ * Supported names:
+ * - canonical Cadencr app server: mcp__cadencr-<server>__<tool>
+ * - Codex raw MCP namespace form: mcp__cadencr_<server>____<tool>
  */
 export function parseCadencrMcpTool(
   toolName: string,
   toolArgs?: string,
 ): CadencrMcpTool | undefined {
-  if (!toolName.startsWith(CADENCR_MCP_PREFIX)) return undefined;
-  const rest = toolName.slice(CADENCR_MCP_PREFIX.length);
-  const sep = rest.indexOf("__");
-  if (sep === -1) return undefined;
-
-  const server = rest.slice(0, sep);
-  const tool = rest.slice(sep + 2);
+  const parsed = parseCadencrMcpToolName(toolName);
+  if (!parsed) return undefined;
 
   const args = parseToolArgsObject(toolArgs) ?? {};
 
   return {
-    server,
-    tool,
-    label: cadencrToolLabels[tool] ?? snakeToLabel(tool),
-    detail: cadencrDetail(tool, args),
+    server: parsed.server,
+    tool: parsed.tool,
+    label: cadencrToolLabels[parsed.tool] ?? snakeToLabel(parsed.tool),
+    detail: cadencrDetail(parsed.tool, args),
   };
+}
+
+export function isCadencrPlanPresentationTool(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  const parsed = parseCadencrMcpToolName(toolName);
+  return parsed?.tool === "show_plan" || parsed?.tool === "show_prd";
+}
+
+function parseCadencrMcpToolName(toolName: string): { server: string; tool: string } | undefined {
+  if (toolName.startsWith(CADENCR_MCP_HYPHEN_PREFIX)) {
+    return parseMcpNameRest(toolName.slice(CADENCR_MCP_HYPHEN_PREFIX.length), "__");
+  }
+
+  if (!toolName.startsWith(CADENCR_MCP_NAMESPACE_PREFIX)) return undefined;
+  return parseMcpNameRest(toolName.slice(CADENCR_MCP_NAMESPACE_PREFIX.length), "____");
+}
+
+function parseMcpNameRest(
+  rest: string,
+  preferredSeparator: string,
+): { server: string; tool: string } | undefined {
+  const sep = rest.indexOf(preferredSeparator);
+  if (sep !== -1) return parsedMcpParts(rest, sep, preferredSeparator.length);
+  if (preferredSeparator !== "__") return parseMcpNameRest(rest, "__");
+  return undefined;
+}
+
+function parsedMcpParts(
+  rest: string,
+  sep: number,
+  separatorLength: number,
+): { server: string; tool: string } | undefined {
+  const server = rest.slice(0, sep);
+  const tool = rest.slice(sep + separatorLength);
+  if (!server || !tool) return undefined;
+  return { server, tool };
 }
 
 type ToolParser = (args: Record<string, unknown>) => ToolSummary;
