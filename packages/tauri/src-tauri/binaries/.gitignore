@@ -1,3 +1,0 @@
-# Sidecar binaries are built and placed here by scripts/copy-sidecar.sh
-# Do not commit actual binaries
-cadencr-service-*

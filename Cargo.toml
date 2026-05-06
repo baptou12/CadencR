@@ -6,7 +6,6 @@ members = [
     "packages/codex-app-server-sdk-rs",
     "packages/opencode-sdk-rs",
     "packages/loc",
-    "packages/tauri/src-tauri",
 ]
 resolver = "2"
 
