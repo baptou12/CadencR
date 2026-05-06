@@ -26,7 +26,11 @@ pub fn validate_ws_origin(headers: &HeaderMap, frontend_port: u16) -> Result<(),
 }
 
 fn is_allowed_ws_origin(origin: &str, frontend_port: u16) -> bool {
-    if origin == "tauri://localhost" {
+    // Packaged Electron renderers connect from file:// and may present a
+    // serialized `null` origin. This broadens origin acceptance only for the
+    // local desktop shell; the per-launch WebSocket token remains the real
+    // authorization gate.
+    if origin == "file://" || origin == "null" {
         return true;
     }
     if !cfg!(debug_assertions) {
@@ -77,9 +81,11 @@ mod tests {
     }
 
     #[test]
-    fn origin_accepts_tauri_webview() {
-        let h = make_headers(&[("origin", "tauri://localhost")]);
-        assert!(validate_ws_origin(&h, 1420).is_ok());
+    fn origin_accepts_desktop_webviews() {
+        for origin in ["file://", "null"] {
+            let h = make_headers(&[("origin", origin)]);
+            assert!(validate_ws_origin(&h, 1420).is_ok());
+        }
     }
 
     #[test]
