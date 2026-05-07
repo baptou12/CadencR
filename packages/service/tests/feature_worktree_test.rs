@@ -172,3 +172,48 @@ async fn ensure_worktree_skip_does_not_set_worktree_path_setting() {
         "skip mode must not persist worktree_path; got {row:?}"
     );
 }
+
+#[tokio::test]
+async fn ensure_worktree_new_copies_provider_config_before_returning() {
+    let pool = worktree_pool().await;
+    let tmp_home = tempfile::tempdir().unwrap();
+    let _guard = HomeGuard::set(tmp_home.path());
+
+    let project = tempfile::tempdir().unwrap();
+    init_git_repo(project.path());
+    std::fs::create_dir_all(project.path().join(".claude")).unwrap();
+    std::fs::create_dir_all(project.path().join(".codex/agents")).unwrap();
+    std::fs::write(
+        project.path().join(".gitignore"),
+        ".claude/settings.local.json\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join(".claude/settings.local.json"),
+        "{\"permissions\":{}}",
+    )
+    .unwrap();
+    std::fs::write(project.path().join(".codex/agents/reviewer.md"), "reviewer").unwrap();
+    git_in(project.path(), &["add", ".gitignore"]);
+    git_in(
+        project.path(),
+        &["commit", "-q", "-m", "ignore provider config"],
+    );
+
+    insert_project_and_feature(&pool, "copyproj", project.path()).await;
+    set_feature_setting(&pool, 1, "worktree_mode", "new").await;
+
+    let (sender, _rx) = fresh_ws_sender();
+    let wt_path = ensure_worktree(&pool, &pool, 1, 1, &sender).await.unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join(".claude/settings.local.json")).unwrap(),
+        "{\"permissions\":{}}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join(".codex/agents/reviewer.md")).unwrap(),
+        "reviewer"
+    );
+
+    worktree_remove(project.path(), &wt_path);
+}

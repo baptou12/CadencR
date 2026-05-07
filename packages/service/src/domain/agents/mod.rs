@@ -1,6 +1,7 @@
 pub mod adapter;
 pub mod claude_code;
 pub mod codex;
+pub mod config_migration;
 pub mod discovery;
 pub mod model_refs;
 pub mod opencode;

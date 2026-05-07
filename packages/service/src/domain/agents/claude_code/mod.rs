@@ -3,10 +3,8 @@ pub mod custom_models;
 mod events;
 pub mod profiles;
 pub mod routes;
+mod worktree_config;
 
-/// Provider ID used to look up the Claude Code adapter in the provider
-/// registry. Centralised so the string doesn't get sprinkled across the
-/// codebase.
 pub const PROVIDER_ID: &str = "claude_code";
 
 use async_trait::async_trait;
@@ -218,12 +216,13 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
 
     fn spawn_startup_warmup(&self) {
-        // Prime the model cache on startup so the `/api/agent-catalog`
-        // endpoint serves the live CLI list on first call without paying the
-        // probe latency inline.
         tokio::spawn(async {
             let _ = CLAUDE_CODE_ADAPTER.load_models().await;
         });
+    }
+
+    fn worktree_config_paths(&self) -> &'static [&'static str] {
+        worktree_config::CONFIG_PATHS
     }
 
     fn supports_builtin_compact_command(&self) -> bool {

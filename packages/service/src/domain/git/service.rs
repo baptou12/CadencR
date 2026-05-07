@@ -21,6 +21,18 @@ const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
 // Helpers
 // ---------------------------------------------------------------------------
 
+async fn migrate_provider_config_into_worktree(
+    project_path: &str,
+    worktree_path: &str,
+) -> Result<(), AppError> {
+    crate::domain::agents::providers::notify_worktree_created_for_all_providers(
+        Path::new(project_path),
+        Path::new(worktree_path),
+    )
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))
+}
+
 /// Resolve the git directory for a feature.
 /// Uses worktree_path if available, otherwise project path.
 pub async fn resolve_feature_git_path(
@@ -378,6 +390,7 @@ pub async fn create_worktree(
 
     let (worktree_path, branch) =
         commands::create_worktree(Path::new(&project_path), &branch_name, &project_name).await?;
+    migrate_provider_config_into_worktree(&project_path, &worktree_path).await?;
 
     repository::set_feature_setting(
         &state.write_pool,
@@ -492,6 +505,7 @@ pub async fn retry_worktree_setup(
 
     let (worktree_path, branch) =
         commands::create_worktree(Path::new(&project_path), &branch_name, &project_name).await?;
+    migrate_provider_config_into_worktree(&project_path, &worktree_path).await?;
 
     repository::set_feature_setting(
         &state.write_pool,

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -624,6 +624,29 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 
     /// Called once at startup for background warmup (e.g. starting sidecar processes).
     fn spawn_startup_warmup(&self) {}
+
+    fn worktree_config_paths(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    async fn on_worktree_created(
+        &self,
+        source_project_path: &Path,
+        worktree_path: &Path,
+    ) -> Result<(), RuntimeError> {
+        let paths = self.worktree_config_paths();
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let label = self.catalog_entry().label;
+        crate::domain::agents::config_migration::copy_provider_config_paths(
+            &label,
+            source_project_path,
+            worktree_path,
+            paths,
+        )
+        .await
+    }
 
     async fn runtime_slash_commands(
         &self,

@@ -19,7 +19,7 @@ use tokio::fs;
 
 use crate::domain::agents::adapter::RuntimeMcpServerConfig;
 
-const CONFIG_FILE: &str = "opencode.json";
+pub(super) const CONFIG_FILE: &str = "opencode.json";
 
 /// Cadencr tools that gate on user approval. OpenCode evaluates these against
 /// the permission map in `opencode.json` and emits `permission.asked` when the
