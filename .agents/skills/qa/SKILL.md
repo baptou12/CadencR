@@ -12,7 +12,7 @@ allowed-tools: Bash(*), mcp__chrome-devtools__*
 
 # QA Testing
 
-Test Cadencr features by running the app in a browser and verifying behavior interactively.
+Test Cadencr features by driving the app in Chrome via the `chrome-devtools` MCP server and verifying behavior interactively.
 
 The argument (`$ARGUMENTS`) describes the feature to test. If empty, infer the feature from the current session context (recent file changes, active branch, conversation history).
 
@@ -91,19 +91,16 @@ Before touching the browser, think about what to test. Based on the feature desc
 
 Keep test cases focused and practical — test what the user built, not the entire app.
 
-## Step 3: Open the App in cmux Browser
+## Step 3: Open the App in Chrome
 
-```bash
-cmux browser open "$FRONTEND_URL"
-```
+Use the `chrome-devtools` MCP tools. There is no "surface ID" — pages are tracked by the MCP server; use `list_pages` / `select_page` if you need to switch among tabs.
 
-Store the surface ID from the output (e.g., `surface:22`) and use it for all subsequent commands.
-
-Wait for the page to load:
-
-```bash
-cmux browser surface:ID wait --load-state complete --timeout-ms 10000
-```
+1. Open a new tab on the frontend URL:
+   - `mcp__chrome-devtools__new_page` with `url = $FRONTEND_URL`
+2. Wait for first paint / a known root element:
+   - `mcp__chrome-devtools__wait_for` with a stable selector (e.g. the app root or sidebar)
+3. Take an initial snapshot to anchor your interactions:
+   - `mcp__chrome-devtools__take_snapshot`
 
 ## Step 4: Execute Test Cases
 
@@ -114,31 +111,38 @@ For each test case, follow this loop:
 3. **Verify** — take a snapshot or screenshot and check the result against expectations
 4. **Record** — note pass/fail and any unexpected behavior
 
-### Key cmux browser commands
+### chrome-devtools MCP tool map
 
-| Action | Command |
-|--------|---------|
-| Take DOM snapshot | `cmux browser snapshot` |
-| Take screenshot | `cmux browser screenshot --out /tmp/qa-<name>.png` |
-| Click element | `cmux browser click "<css-selector>"` |
-| Type text | `cmux browser fill "<css-selector>" --text "value"` |
-| Wait for element | `cmux browser wait --selector "<css-selector>" --timeout 5` |
-| Read text | `cmux browser get text --selector "<css-selector>"` |
-| Check visibility | `cmux browser is visible "<css-selector>"` |
-| Navigate | `cmux browser goto "$FRONTEND_URL/#/path"` |
-| Check console errors | `cmux browser console list` |
-| Check JS errors | `cmux browser errors list` |
+| Action | Tool |
+|--------|------|
+| Open new tab at URL | `mcp__chrome-devtools__new_page` |
+| Navigate current tab | `mcp__chrome-devtools__navigate_page` |
+| List / switch tabs | `mcp__chrome-devtools__list_pages`, `mcp__chrome-devtools__select_page` |
+| DOM snapshot (text) | `mcp__chrome-devtools__take_snapshot` |
+| Screenshot (file) | `mcp__chrome-devtools__take_screenshot` |
+| Click element | `mcp__chrome-devtools__click` |
+| Type into focused input | `mcp__chrome-devtools__type_text` |
+| Set a single field | `mcp__chrome-devtools__fill` |
+| Set multiple fields | `mcp__chrome-devtools__fill_form` |
+| Hover | `mcp__chrome-devtools__hover` |
+| Drag | `mcp__chrome-devtools__drag` |
+| Press a key | `mcp__chrome-devtools__press_key` |
+| Wait for selector / state | `mcp__chrome-devtools__wait_for` |
+| Run JS in page | `mcp__chrome-devtools__evaluate_script` |
+| Console messages | `mcp__chrome-devtools__list_console_messages`, `mcp__chrome-devtools__get_console_message` |
+| Network requests | `mcp__chrome-devtools__list_network_requests`, `mcp__chrome-devtools__get_network_request` |
+| Native dialogs (alert/confirm) | `mcp__chrome-devtools__handle_dialog` |
+| Resize viewport | `mcp__chrome-devtools__resize_page` |
 
-Use `snapshot` liberally to understand the current page state before interacting. Snapshots are cheap and prevent blind clicking.
+Use `take_snapshot` liberally to understand current page state before interacting. Snapshots are cheap and prevent blind clicking.
 
-After all interactions, always check for console errors — they often reveal issues that aren't visible in the UI:
+After all interactions, always check the console — issues often surface there even when the UI looks fine:
 
-```bash
-cmux browser errors list
-cmux browser console list
+```text
+mcp__chrome-devtools__list_console_messages
 ```
 
-If the app behaved unexpectedly during startup or while testing, inspect the dev log too:
+If something behaved unexpectedly during startup or while testing, inspect the dev log too:
 
 ```bash
 tail -n 200 /tmp/cadencr-qa/dev.log
@@ -146,32 +150,32 @@ tail -n 200 /tmp/cadencr-qa/dev.log
 
 ### React controlled inputs
 
-`cmux browser fill` and `type` set the DOM value but do **not** trigger React's synthetic `onChange` on controlled inputs (`value={state}`). The input appears updated but React's internal state is stale, so blur/submit handlers use the old value.
+`fill` / `type_text` set the DOM value but do **not** always trigger React's synthetic `onChange` on controlled inputs (`value={state}`). The input looks updated but React's internal state is stale, so blur/submit handlers see the old value.
 
-**Workaround** — use `eval` with the native value setter to fire a React-compatible `input` event:
+**Workaround** — use `evaluate_script` with the native value setter to fire a React-compatible `input` event:
 
-```bash
-cmux browser surface:ID eval --script "
+```js
+// mcp__chrome-devtools__evaluate_script
 const input = document.querySelector('YOUR_SELECTOR');
-const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value').set;
 nativeSetter.call(input, 'NEW_VALUE');
 input.dispatchEvent(new Event('input', { bubbles: true }));
-"
 ```
 
-Then trigger blur/submit as needed:
-```bash
-cmux browser surface:ID eval --script "document.querySelector('YOUR_SELECTOR').blur()"
+Then trigger blur/submit via another `evaluate_script` if needed:
+
+```js
+document.querySelector('YOUR_SELECTOR').blur();
 ```
 
 ### Tips
 
-- Cadencr uses **hash routing** (`/#/...`), so URLs look like `$FRONTEND_URL/#/projects/1/features`
-- All `cmux browser` commands need the surface ID: `cmux browser surface:ID <command>`
-- Use `snapshot --compact` for a quick overview, full `snapshot` when you need element details
-- Use `--snapshot-after` on interaction commands (click, goto, fill) to see the result immediately
-- If a click doesn't seem to work, take a snapshot to verify the selector matches the right element
-- Take screenshots of interesting states (failures especially) — save to `/tmp/qa-*.png` and mention the paths in the report
+- Cadencr uses **hash routing** (`/#/...`), so URLs look like `$FRONTEND_URL/#/projects/1/features`.
+- Prefer `take_snapshot` for structured DOM context; reach for `take_screenshot` (saved to e.g. `/tmp/qa-*.png`) when the bug is visual or when documenting failures.
+- If a click "doesn't work," snapshot first — selectors drift as the UI changes.
+- Use `wait_for` between an action and the assertion that follows it; do not rely on implicit timing.
+- `evaluate_script` returns the value of the last expression, so it doubles as a read primitive (e.g. `document.querySelector(sel)?.textContent`).
 
 ## Step 5: Report Results
 
@@ -209,5 +213,7 @@ if [ -f /tmp/cadencr-qa/dev.pgid ]; then
   kill -KILL -- "-$DEV_PGID" 2>/dev/null || true
 fi
 ```
+
+Close any QA-opened tabs with `mcp__chrome-devtools__close_page` if they would otherwise clutter the user's browser.
 
 Mention the log path in the final report if startup or runtime issues required inspection.
