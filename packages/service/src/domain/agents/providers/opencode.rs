@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use opencode_sdk_rs::{Message, MessageRole, OpenCodeClient};
+use opencode_sdk_rs::{Message, MessagePart, MessageRole, OpenCodeClient};
 use serde_json::Value;
 
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
@@ -249,15 +249,64 @@ fn latest_message_is_final_stop(messages: &[Message]) -> bool {
     })
 }
 
+/// OpenCode override for `AgentRuntimeAdapter::session_finished_text`.
+/// Reuses the same probe as `session_finished` but also returns the latest
+/// assistant message's text so the auto-name drain can recover when SSE
+/// didn't flush Text events before the short turn ended.
+pub(crate) async fn session_finished_text(runtime_session_id: &str) -> Option<String> {
+    let probe = async {
+        let client = OpenCodeClient::init().await.ok()?;
+        let messages = client.list_messages(runtime_session_id).await.ok()?;
+        if !latest_message_is_final_stop(&messages) {
+            return None;
+        }
+        Some(latest_assistant_text(&messages))
+    };
+    tokio::time::timeout(SESSION_FINISHED_PROBE_TIMEOUT, probe)
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Concatenate the `Text` parts of the latest message. Caller verifies the
+/// terminal-turn gate; this only walks `parts`. Non-`Text` parts are
+/// skipped — only `Text` carries the model's user-visible reply.
+fn latest_assistant_text(messages: &[Message]) -> String {
+    let Some(last) = messages.last() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for part in &last.parts {
+        if let MessagePart::Text { text, .. } = part {
+            out.push_str(text);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_catalog_entry, catalog_entry, default_model_id, model_context_window,
-        models_from_providers, parse_warmup_flag, supported_effort_levels, OpencodeModel,
-        OPENCODE_FALLBACK_CONTEXT_WINDOW,
+        build_catalog_entry, catalog_entry, default_model_id, latest_assistant_text,
+        model_context_window, models_from_providers, parse_warmup_flag, supported_effort_levels,
+        OpencodeModel, OPENCODE_FALLBACK_CONTEXT_WINDOW,
     };
     use crate::domain::agents::runtime::ProviderStatus;
-    use serde_json::json;
+    use opencode_sdk_rs::{Message, MessagePart, MessageRole};
+    use serde_json::{json, Value};
+
+    fn assistant_message(parts: Vec<MessagePart>) -> Message {
+        Message {
+            id: "msg".to_string(),
+            session_id: "sess".to_string(),
+            role: MessageRole::Assistant,
+            parts,
+            created_at: None,
+            model: None,
+            tokens: None,
+            finished: true,
+        }
+    }
 
     #[test]
     fn fallback_catalog_entry_is_available() {
@@ -384,5 +433,62 @@ mod tests {
         assert!(!parse_warmup_flag(Some("false")));
         assert!(!parse_warmup_flag(Some("no")));
         assert!(!parse_warmup_flag(Some("off")));
+    }
+
+    #[test]
+    fn latest_assistant_text_concatenates_text_parts_in_order() {
+        // Multi-delta turns split the reply across parts; the join must be
+        // in document order so the name delimiters span cleanly.
+        let messages = vec![assistant_message(vec![
+            MessagePart::Text {
+                id: "p1".into(),
+                text: "__FEATURE_NAME_START__Add Dark".into(),
+            },
+            MessagePart::Text {
+                id: "p2".into(),
+                text: " Mode__FEATURE_NAME_END__".into(),
+            },
+        ])];
+        assert_eq!(
+            latest_assistant_text(&messages),
+            "__FEATURE_NAME_START__Add Dark Mode__FEATURE_NAME_END__"
+        );
+    }
+
+    #[test]
+    fn latest_assistant_text_skips_non_text_parts() {
+        let messages = vec![assistant_message(vec![
+            MessagePart::Thinking {
+                id: "t1".into(),
+                thinking: "internal".into(),
+            },
+            MessagePart::Text {
+                id: "p1".into(),
+                text: "Visible".into(),
+            },
+            MessagePart::ToolUse {
+                id: "u1".into(),
+                tool_id: "tu".into(),
+                name: "Bash".into(),
+                input: Value::Null,
+            },
+            MessagePart::StepFinish {
+                id: "s1".into(),
+                reason: "stop".into(),
+            },
+            MessagePart::Other(Value::Null),
+        ])];
+        assert_eq!(latest_assistant_text(&messages), "Visible");
+    }
+
+    #[test]
+    fn latest_assistant_text_returns_empty_for_empty_or_textless_messages() {
+        // Empty `""` is the "no recovery available" signal drain expects.
+        assert_eq!(latest_assistant_text(&[]), "");
+        let messages = vec![assistant_message(vec![MessagePart::Thinking {
+            id: "t1".into(),
+            thinking: "only thinking".into(),
+        }])];
+        assert_eq!(latest_assistant_text(&messages), "");
     }
 }

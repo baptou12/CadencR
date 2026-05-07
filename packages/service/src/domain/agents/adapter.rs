@@ -715,6 +715,23 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         false
     }
 
+    /// If the runtime session has reached a terminal state, return the text
+    /// of the latest assistant message. May be empty when the provider can't
+    /// expose final text or the message contains only non-text parts. Return
+    /// `None` if the session is still running.
+    ///
+    /// Default delegates to `session_finished` and returns no text — adapters
+    /// whose drain loop can race ahead of SSE (e.g. OpenCode short turns)
+    /// should override to return the actual text so callers can recover from
+    /// a probe-wins-the-race exit.
+    async fn session_finished_text(&self, runtime_session_id: &str) -> Option<String> {
+        if self.session_finished(runtime_session_id).await {
+            Some(String::new())
+        } else {
+            None
+        }
+    }
+
     async fn spawn(
         &self,
         content: Value,
@@ -891,6 +908,38 @@ mod tests {
             query.lock().await.session_id().await.as_deref(),
             Some("dummy")
         );
+    }
+
+    struct FinishedAdapter;
+
+    #[async_trait]
+    impl AgentRuntimeAdapter for FinishedAdapter {
+        fn catalog_entry(&self) -> crate::domain::agents::runtime::ProviderCatalogEntry {
+            DummyAdapter.catalog_entry()
+        }
+
+        async fn spawn(
+            &self,
+            _content: serde_json::Value,
+            _config: RuntimeSpawnConfig,
+        ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+            Ok(Box::new(DummySession))
+        }
+
+        async fn session_finished(&self, _runtime_session_id: &str) -> bool {
+            true
+        }
+    }
+
+    #[tokio::test]
+    async fn session_finished_text_default_returns_empty_when_finished() {
+        // Default delegate: `Some("")` when finished (drain still exits via
+        // the reconciler), `None` otherwise (drain keeps polling).
+        assert_eq!(
+            FinishedAdapter.session_finished_text("sid").await,
+            Some(String::new())
+        );
+        assert_eq!(DummyAdapter.session_finished_text("sid").await, None);
     }
 
     #[tokio::test]

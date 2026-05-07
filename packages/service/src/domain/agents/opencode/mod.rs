@@ -134,6 +134,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         crate::domain::agents::providers::opencode::session_finished(runtime_session_id).await
     }
 
+    async fn session_finished_text(&self, runtime_session_id: &str) -> Option<String> {
+        crate::domain::agents::providers::opencode::session_finished_text(runtime_session_id).await
+    }
+
     async fn init(&self) -> Result<(), RuntimeError> {
         let _ = opencode_sdk_rs::OpenCodeClient::init()
             .await
