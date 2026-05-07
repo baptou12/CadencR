@@ -8,6 +8,7 @@ mod event_mcp_items;
 mod event_plan;
 mod event_raw;
 mod event_state;
+mod event_subagents;
 mod event_system;
 mod event_usage;
 mod events;

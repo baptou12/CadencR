@@ -44,6 +44,14 @@ pub(super) fn canonical_tool_name(name: &str) -> String {
         "web_search" | "web_search_preview" => "WebSearch".to_string(),
         "web_fetch" | "webfetch" | "fetch" => "WebFetch".to_string(),
         "tool_search" => "ToolSearch".to_string(),
+        // Codex's `spawn_agent` is the only collab op that creates a new
+        // sub-agent. Normalize to the provider-neutral `Agent` name so the
+        // frontend's existing sub-agent UI (used by Claude's `Task` and
+        // OpenCode's `Agent` tools) creates the wrapping block with
+        // `childBlocks` and nests downstream events inside it. Other collab
+        // ops (`wait_agent`, `send_input`, `resume_agent`, `close_agent`)
+        // act on existing sub-agents and keep their literal names.
+        "spawn_agent" => "Agent".to_string(),
         _ => name.to_string(),
     }
 }
@@ -61,6 +69,26 @@ mod tests {
         }));
 
         assert_eq!(name, "mcp__cadencr-plan__read_plan");
+    }
+
+    #[test]
+    fn spawn_agent_function_name_normalizes_to_agent() {
+        // Codex's `spawn_agent` is the only collab op that creates a new
+        // sub-agent thread; we normalize it to the provider-neutral `Agent`
+        // name so the frontend's existing sub-agent UI applies without any
+        // codex-specific branch.
+        let name = function_tool_name(&json!({ "name": "spawn_agent" }));
+        assert_eq!(name, "Agent");
+    }
+
+    #[test]
+    fn other_collab_function_names_keep_their_literal_name() {
+        // wait/send/resume/close act on existing sub-agents and shouldn't
+        // be folded into the same UI bucket as the spawning call.
+        for raw in ["wait_agent", "send_input", "resume_agent", "close_agent"] {
+            let name = function_tool_name(&json!({ "name": raw }));
+            assert_eq!(name, raw, "expected pass-through for {raw}");
+        }
     }
 
     #[test]
