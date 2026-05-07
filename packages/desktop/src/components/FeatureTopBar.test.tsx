@@ -148,7 +148,7 @@ describe("FeatureTopBar", () => {
     expect(mockAutoName).toHaveBeenCalledWith({ id: 1 });
   });
 
-  it("hides auto-rename on default session titles", () => {
+  it("shows auto-rename on default session titles so users can retry after a silent failure", async () => {
     mockFeatureData = {
       ...mockFeatureData,
       title: "Session 3",
@@ -158,7 +158,7 @@ describe("FeatureTopBar", () => {
 
     fireEvent.contextMenu(screen.getByRole("heading", { name: "Session 3" }));
 
-    expect(screen.queryByText("Auto-rename")).not.toBeInTheDocument();
+    expect(await screen.findByText("Auto-rename")).toBeInTheDocument();
   });
 
   it("renders feature status badge", () => {

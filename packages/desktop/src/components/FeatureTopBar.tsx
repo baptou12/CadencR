@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -19,12 +19,15 @@ import { STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { FeatureRenameForm } from "./FeatureRenamePopover";
 
 interface FeatureTopBarProps {
   featureId: number;
@@ -146,7 +149,10 @@ function StandardFeatureTopBar({
   });
 
   if (!feature) return null;
-  const canAutoRename = title != null && !isDefaultFeatureTitle(title);
+  // Auto-rename is allowed even when the title is still default ("Session N",
+  // "Untitled Feature") — that's exactly the case where the implicit naming
+  // silently failed and the user wants to retry from the title context menu.
+  const canAutoRename = title != null;
   const handleAutoRename = (): void => {
     if (autoNameMutation.isPending) return;
     autoNameMutation.mutate({ id: featureId });
@@ -250,6 +256,7 @@ function FeatureHeaderChrome({
           <Skeleton className="h-5 w-40" />
         ) : (
           <FeatureTitleMenu
+            featureId={featureId}
             title={featureTitle}
             canAutoRename={canAutoRename}
             isAutoRenamePending={isAutoRenamePending}
@@ -293,6 +300,7 @@ function FeatureHeaderChrome({
 }
 
 interface FeatureTitleMenuProps {
+  featureId: number;
   title: string;
   canAutoRename: boolean;
   isAutoRenamePending: boolean;
@@ -300,25 +308,72 @@ interface FeatureTitleMenuProps {
 }
 
 function FeatureTitleMenu({
+  featureId,
   title,
   canAutoRename,
   isAutoRenamePending,
   onAutoRename,
 }: FeatureTitleMenuProps): ReactElement {
-  const heading = <h1 className="text-lg font-semibold">{title}</h1>;
-  if (!canAutoRename) return heading;
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{heading}</ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem disabled={isAutoRenamePending} onSelect={onAutoRename}>
-          Auto-rename
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
+  const [renameOpen, setRenameOpen] = useState(false);
+  // Track whether the popover was just opened via the context menu so we can
+  // suppress the stale pointer event that Radix fires during menu teardown.
+  const suppressNextOutsideRef = useRef(false);
 
-function isDefaultFeatureTitle(title: string): boolean {
-  return /^Session \d+$/i.test(title) || title === "Untitled Feature";
+  const handleCopy = (): void => {
+    void copyToClipboard(title, "Copied feature name");
+  };
+
+  // Radix DismissableLayer race: defer popover mount past menu teardown, then
+  // suppress the first onInteractOutside because the menu close sequence
+  // dispatches a synthetic pointerup that arrives even after the timeout.
+  const handleRenameSelect = (): void => {
+    setTimeout(() => {
+      suppressNextOutsideRef.current = true;
+      setRenameOpen(true);
+    }, 0);
+  };
+
+  const handleInteractOutside = (e: Event): void => {
+    if (suppressNextOutsideRef.current) {
+      suppressNextOutsideRef.current = false;
+      e.preventDefault();
+    }
+  };
+
+  // Compose ContextMenuTrigger + PopoverAnchor on the same heading so the
+  // popover appears in-place. Double-click is a power-user shortcut; the
+  // context menu is the discoverable affordance.
+  return (
+    <Popover open={renameOpen} onOpenChange={setRenameOpen}>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <PopoverAnchor asChild>
+            <h1
+              className="cursor-default text-lg font-semibold"
+              onDoubleClick={() => setRenameOpen(true)}
+            >
+              {title}
+            </h1>
+          </PopoverAnchor>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={handleCopy}>Copy</ContextMenuItem>
+          <ContextMenuItem onSelect={handleRenameSelect}>Rename…</ContextMenuItem>
+          {canAutoRename && (
+            <ContextMenuItem disabled={isAutoRenamePending} onSelect={onAutoRename}>
+              Auto-rename
+            </ContextMenuItem>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
+      <PopoverContent align="start" className="w-80" onInteractOutside={handleInteractOutside}>
+        <FeatureRenameForm
+          featureId={featureId}
+          currentTitle={title}
+          open={renameOpen}
+          onClose={() => setRenameOpen(false)}
+        />
+      </PopoverContent>
+    </Popover>
+  );
 }
