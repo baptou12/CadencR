@@ -15,11 +15,11 @@ describe("Resizable", () => {
     expect(screen.getByText("Right panel")).toBeInTheDocument();
   });
 
-  it("renders handle with grip icon when withHandle is true", () => {
+  it("renders handle element with data-slot", () => {
     const { container } = render(
       <ResizablePanelGroup {...({ direction: "horizontal" } as Record<string, string>)}>
         <ResizablePanel defaultSize={50}>Left</ResizablePanel>
-        <ResizableHandle withHandle />
+        <ResizableHandle />
         <ResizablePanel defaultSize={50}>Right</ResizablePanel>
       </ResizablePanelGroup>,
     );

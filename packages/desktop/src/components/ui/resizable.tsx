@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-import { GripVertical } from "lucide-react";
+import { useEffect, useRef } from "react";
 import {
   Group,
   Panel,
@@ -12,7 +11,7 @@ import {
 } from "react-resizable-panels";
 
 import { cn } from "@/lib/utils";
-import { popResize, pushResize } from "@/lib/resize-coordinator";
+import { registerHandle, unregisterHandle } from "@/lib/resize-coordinator";
 
 function ResizablePanelGroup({ className, ...props }: GroupProps) {
   return (
@@ -28,56 +27,23 @@ function ResizablePanel({ ...props }: PanelProps) {
   return <Panel data-slot="resizable-panel" {...props} />;
 }
 
-function ResizableHandle({
-  withHandle,
-  className,
-  onPointerDown,
-  ...props
-}: SeparatorProps & {
-  withHandle?: boolean;
-}) {
-  // Global resize-active flag: heavy `ResizeObserver` consumers (agent stream
-  // auto-scroll, xterm refit, …) gate their work on this so a manual drag
-  // doesn't trigger a per-frame cascade of forced sync layouts. Each
-  // pointerdown opens a window; we close it on the next pointerup/cancel
-  // anywhere on the page. Refcounted so concurrent handles are safe even if
-  // a future feature adds touch-multitouch resize.
-  //
-  // The `endRef` lets the unmount cleanup release the global flag if the
-  // handle disappears mid-drag (layout change, route swap, …) — otherwise
-  // the count would leak and observers would stay throttled forever.
-  const endRef = useRef<(() => void) | null>(null);
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      pushResize();
-      const handle = e.currentTarget;
-      const onEnd = (): void => {
-        endRef.current = null;
-        popResize();
-        // react-resizable-panels programmatically focuses the separator on
-        // pointerdown to enable arrow-key resize. After a mouse drag the
-        // handle keeps focus, which fires the `focus-visible` ring (~3px
-        // light bar) and reads as a thick white line until the user clicks
-        // elsewhere. Blur explicitly so pointer-driven resizes leave the
-        // handle in its resting state.
-        handle.blur();
-        window.removeEventListener("pointerup", onEnd);
-        window.removeEventListener("pointercancel", onEnd);
-      };
-      endRef.current = onEnd;
-      window.addEventListener("pointerup", onEnd);
-      window.addEventListener("pointercancel", onEnd);
-      onPointerDown?.(e);
-    },
-    [onPointerDown],
-  );
-
-  useEffect(
-    () => () => {
-      endRef.current?.();
-    },
-    [],
-  );
+function ResizableHandle({ className, ...props }: SeparatorProps) {
+  // Hand the handle element to the resize-coordinator. It maintains a single
+  // document-level capture-phase pointerdown listener that uses geometric
+  // proximity to detect drag starts, mirroring react-resizable-panels' own
+  // hit detection. See `lib/resize-coordinator.ts` for the rationale —
+  // briefly: the library accepts clicks within ~5 px of a 1 px handle (its
+  // `resizeTargetMinimumSize.fine` minimum), but DOM hit-testing routes
+  // those clicks to whichever element wins CSS stacking, which is often
+  // *not* the handle. A per-element pointerdown listener therefore misses
+  // a meaningful fraction of real drags.
+  const handleElRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = handleElRef.current;
+    if (!el) return;
+    registerHandle(el);
+    return () => unregisterHandle(el);
+  }, []);
 
   // react-resizable-panels v4 emits `aria-orientation` on the Separator (the
   // line direction — opposite of the group's resize axis). We drive sizing and
@@ -91,7 +57,7 @@ function ResizableHandle({
   return (
     <Separator
       data-slot="resizable-handle"
-      onPointerDown={handlePointerDown}
+      elementRef={handleElRef}
       className={cn(
         "group relative flex items-center justify-center transition-opacity",
         // Line size per orientation.
@@ -123,15 +89,10 @@ function ResizableHandle({
         aria-hidden
         className={cn(
           "pointer-events-none z-10 rounded-full bg-foreground/40 opacity-0 transition-opacity duration-150 group-hover:opacity-100",
-          "group-aria-[orientation=vertical]:h-8 group-aria-[orientation=vertical]:w-1",
-          "group-aria-[orientation=horizontal]:h-1 group-aria-[orientation=horizontal]:w-8",
+          "group-aria-[orientation=vertical]:h-8 group-aria-[orientation=vertical]:w-1.5",
+          "group-aria-[orientation=horizontal]:h-1.5 group-aria-[orientation=horizontal]:w-8",
         )}
       />
-      {withHandle && (
-        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border group-aria-[orientation=horizontal]:rotate-90">
-          <GripVertical className="size-2.5" />
-        </div>
-      )}
     </Separator>
   );
 }

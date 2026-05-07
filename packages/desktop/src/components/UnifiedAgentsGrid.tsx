@@ -228,7 +228,7 @@ function RowPanel({
       <ResizablePanel id={panelId} defaultSize={defaultSize} minSize={12} className="min-w-0 px-3">
         <UnifiedAgentCard entry={entry} index={index} isActive={isActive} onActivate={onActivate} />
       </ResizablePanel>
-      {!isLast && <ResizableHandle withHandle className="bg-transparent" />}
+      {!isLast && <ResizableHandle className="bg-transparent" />}
     </>
   );
 }
