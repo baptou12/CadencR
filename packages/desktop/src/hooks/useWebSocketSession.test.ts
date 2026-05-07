@@ -245,6 +245,7 @@ describe("useWebSocketSession", () => {
       pattern: "",
       preview: undefined,
       options: [],
+      requestId: "r1",
     });
     expect(result.current.status).toBe("question");
   });

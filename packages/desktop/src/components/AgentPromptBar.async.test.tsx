@@ -13,8 +13,8 @@
  * Mock setup mirrors the sibling test file.
  */
 import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
-import { beforeEach, describe, it, expect, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 
 const attachmentMocks = vi.hoisted(() => ({
@@ -94,11 +94,13 @@ vi.mock("./prompt-editor/PromptEditor", () => {
       onChange,
       placeholder,
       disabled,
+      onEnterSend,
     }: {
       initialText?: string;
       onChange?: (text: string) => void;
       placeholder?: string;
       disabled?: boolean;
+      onEnterSend?: () => boolean;
     },
     ref: ForwardedRef<{
       focus: () => void;
@@ -137,6 +139,11 @@ vi.mock("./prompt-editor/PromptEditor", () => {
         }}
         placeholder={placeholder}
         disabled={disabled}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.shiftKey || !onEnterSend) return;
+          const consumed = onEnterSend();
+          if (consumed) event.preventDefault();
+        }}
       />
     );
   });
@@ -148,11 +155,23 @@ import { AgentPromptBar } from "./AgentPromptBar";
 
 describe("AgentPromptBar async onSend", () => {
   const onStop = vi.fn();
+  const pendingPermission = {
+    toolName: "Bash",
+    input: { command: "ls /tmp" },
+    description: "Run a bash command",
+    pattern: "Bash(/tmp:*)",
+    requestId: "req-1",
+  };
 
   beforeEach(() => {
     attachmentMocks.attachments = [];
     attachmentMocks.clearAttachments.mockClear();
     attachmentMocks.restoreAttachments.mockClear();
+    vi.useRealTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("restores the draft when async onSend rejects (so the user can retry)", async () => {
@@ -228,5 +247,66 @@ describe("AgentPromptBar async onSend", () => {
       revokeObjectUrls: false,
     });
     expect(attachmentMocks.restoreAttachments).toHaveBeenCalledWith([image]);
+  });
+
+  it("keeps the prompt visible and blocks Enter while delaying a permission request", async () => {
+    vi.useFakeTimers();
+    const onSend = vi.fn();
+    const onPermissionDecision = vi.fn();
+    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Keep typing" } });
+    rerender(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="agent"
+        pendingPermission={pendingPermission}
+        onPermissionDecision={onPermissionDecision}
+      />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("Keep typing");
+    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Permission Required/i)).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(999));
+    expect(screen.getByRole("textbox")).toHaveValue("Keep typing");
+    expect(screen.queryByText(/Permission Required/i)).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText(/Permission Required/i)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("restarts the permission delay when typing continues", () => {
+    vi.useFakeTimers();
+    const onSend = vi.fn();
+    const onPermissionDecision = vi.fn();
+    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Still" } });
+    rerender(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="agent"
+        pendingPermission={pendingPermission}
+        onPermissionDecision={onPermissionDecision}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(700));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Still typing" } });
+    act(() => vi.advanceTimersByTime(999));
+
+    expect(screen.getByRole("textbox")).toHaveValue("Still typing");
+    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Permission Required/i)).not.toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.getByText(/Permission Required/i)).toBeInTheDocument();
   });
 });

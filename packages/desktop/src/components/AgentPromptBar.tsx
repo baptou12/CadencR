@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
+import { PermissionRequestPendingIndicator } from "./PermissionRequestPendingIndicator";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
 import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { SplitSendActions } from "./SplitSendActions";
@@ -17,14 +18,13 @@ import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import { useAgentPromptSend } from "./agent-prompt-send";
+import { useDeferredPermissionPrompt } from "./useDeferredPermissionPrompt";
 import type {
   AgentPromptBarHandle,
   AgentPromptBarProps,
   SplitSendAction,
 } from "./agent-prompt-bar-types";
-
 export type { AgentPromptBarHandle, SplitSendAction } from "./agent-prompt-bar-types";
-
 export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarProps>(
   function AgentPromptBar(
     {
@@ -71,25 +71,25 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const navigatingHistoryRef = useRef(false);
     const hadSpecialStateRef = useRef(false);
     const shouldRestoreFocusRef = useRef(false);
-
     const { initialDraft: restoredDraft, saveDraft } = usePromptDraft({
       sessionId,
       wsSessionId,
       initialDraft: initialDraft ?? null,
     });
-
     useEffect(() => {
       if (restoredDraft && !textRef.current) {
         setText(restoredDraft);
         editorRef.current?.setText(restoredDraft);
       }
     }, [restoredDraft]);
-
+    const { visiblePermission, permissionDeferred } = useDeferredPermissionPrompt({
+      pendingPermission,
+      promptText: text,
+    });
     const hasSpecialState =
-      !!pendingPermission ||
+      !!visiblePermission ||
       !!pendingPlanApproval ||
       (!!pendingQuestions && pendingQuestions.length > 0);
-
     useEffect(() => {
       if (hasSpecialState) {
         hadSpecialStateRef.current = true;
@@ -102,7 +102,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       shouldRestoreFocusRef.current = false;
       requestAnimationFrame(() => editorRef.current?.focus());
     }, [hasSpecialState]);
-
     const history = usePromptHistory(projectId ?? 0, wsSessionId);
     const {
       attachments,
@@ -113,21 +112,13 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       dragHandlers,
       isDragging,
     } = useImageAttachments();
-
     const filesQuery = useListFiles(
       { feature_id: featureId! },
       { query: { enabled: !!featureId && agentTabActive && !disabled } },
     );
-
     useImperativeHandle(ref, () => ({
       focusInput: () => editorRef.current?.focus(),
     }));
-
-    // Map the canonical 3-value status onto the legacy boolean flags the
-    // rest of this file uses. `agent` is the working state (analogous to
-    // the old "running"); `question` is a pause that the user must answer
-    // (analogous to the old "paused"). `idle` covers everything else
-    // (completed/error/never-started — all UI-equivalent here).
     const isRunning = status === "agent";
     const isPaused = status === "question";
     const getAttachments = useCallback(() => attachments, [attachments]);
@@ -137,11 +128,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       },
       [projectId, history],
     );
-    // `useAgentPromptSend` owns the await-and-restore-on-failure dance plus
-    // the `sending` busy flag. Per `explicit-state.md`, the busy flag drives
-    // a visible spinner on the send button so the user never stares at a
-    // frozen prompt while async pre-send work (e.g. saving worktree
-    // settings) is in flight.
     const { sending, runSend } = useAgentPromptSend({
       editorRef,
       setText,
@@ -151,33 +137,38 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       addHistoryEntry,
       getAttachments,
     });
-    const canSend = (text.trim().length > 0 || attachments.length > 0) && !disabled && !sending;
-
+    const canSend =
+      (text.trim().length > 0 || attachments.length > 0) &&
+      !disabled &&
+      !sending &&
+      !permissionDeferred;
     const handleSend = useCallback(() => {
+      if (permissionDeferred) return;
       const trimmed = textRef.current.trim();
       if (!trimmed && attachments.length === 0) return;
       void runSend(onSend, trimmed);
-    }, [attachments, onSend, runSend]);
+    }, [attachments, onSend, permissionDeferred, runSend]);
     const handleSplitAction = useCallback(
       (action: SplitSendAction) => {
+        if (permissionDeferred) return;
         const trimmed = textRef.current.trim();
         if (!trimmed && attachments.length === 0) return;
         void runSend(action.onClick, trimmed);
       },
-      [attachments, runSend],
+      [attachments, permissionDeferred, runSend],
     );
     const handleEnterSend = useCallback(() => {
+      if (permissionDeferred) return true;
       const trimmed = textRef.current.trim();
       const hasContent = trimmed.length > 0 || attachments.length > 0;
-      if (!hasContent || disabledRef.current || sending) return true; // consume but don't send
+      if (!hasContent || disabledRef.current || sending) return true;
       if (splitSendActions && splitSendActions.length > 0) {
         handleSplitAction(splitSendActions[0]);
       } else {
         handleSend();
       }
       return true;
-    }, [attachments, sending, splitSendActions, handleSplitAction, handleSend]);
-
+    }, [attachments, sending, splitSendActions, permissionDeferred, handleSplitAction, handleSend]);
     const handleEditorChange = useCallback(
       (newText: string) => {
         setText(newText);
@@ -212,13 +203,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       [],
     );
 
-    // Agent-menu shortcuts. `useScopedHotkeys` gates them on the active tab
-    // when rendered inside a FeatureLayoutProvider; otherwise it's a no-op
-    // gate (used by tests / standalone usage). The legacy `agentTabActive`
-    // prop is composed via `enabled` so existing parents that haven't yet
-    // adopted the context still get correct gating. `enableOnFormTags` /
-    // `enableOnContentEditable` keep them firing while the user is typing in
-    // the prompt editor (a contenteditable) — its primary trigger surface.
     const hotkeyOpts = {
       enabled: agentTabActive,
       enableOnFormTags: true as const,
@@ -281,9 +265,13 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     );
 
     const specialPrompt =
-      pendingPermission && onPermissionDecision ? (
+      visiblePermission && onPermissionDecision ? (
         <ToolPermissionPrompt
-          permission={pendingPermission}
+          key={
+            visiblePermission.requestId ??
+            `${visiblePermission.toolName}:${visiblePermission.pattern}`
+          }
+          permission={visiblePermission}
           onDecision={onPermissionDecision}
           disableShortcuts={disableShortcuts}
         />
@@ -309,7 +297,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
 
     return (
       <>
-        {specialPrompt && <div data-question-area>{specialPrompt}</div>}
+        {permissionDeferred && pendingPermission && (
+          <PermissionRequestPendingIndicator toolName={pendingPermission.toolName} />
+        )}
+        {specialPrompt && (
+          <div data-permission-area={!!visiblePermission} data-question-area>
+            {specialPrompt}
+          </div>
+        )}
         <div
           ref={wrapperRef}
           data-agent-prompt-bar="true"

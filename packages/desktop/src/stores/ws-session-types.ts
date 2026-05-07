@@ -87,6 +87,7 @@ export interface SessionEntry {
    */
   toolResultMap: Map<string, AgentBlockData>;
   pendingPermission: PendingPermission | null;
+  pendingPermissionQueue: PendingPermission[];
   pendingRequestId: string;
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
@@ -138,6 +139,7 @@ export function createSessionEntry(): SessionEntry {
     rootBlocks: [],
     toolResultMap: new Map(),
     pendingPermission: null,
+    pendingPermissionQueue: [],
     pendingRequestId: "",
     pendingQuestions: [],
     pendingQuestionToolInput: {},

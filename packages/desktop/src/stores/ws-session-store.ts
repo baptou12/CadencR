@@ -50,6 +50,7 @@ import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
+import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 
 import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -304,10 +305,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           optionId,
         }),
       );
+      const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
       set(
         updateSession(get(), sessionId, {
-          pendingPermission: null,
-          pendingRequestId: "",
+          ...permissionPatch,
+          pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
         }),
       );
     },

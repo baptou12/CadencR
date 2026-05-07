@@ -2766,6 +2766,53 @@ describe("useWorkflowStore", () => {
       });
     });
 
+    it("shows multiple permission requests one at a time for a workflow agent", () => {
+      const ws = connectStore();
+      setAgent("qi:7", makeAgentSession({ sessionId: 100 }));
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "permission.request",
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 7 },
+          request_id: "req-1",
+          tool_name: "Bash",
+          tool_input: { command: "ls" },
+          description: "Run ls",
+        },
+      });
+      dispatch(ws, {
+        domain: "workflow",
+        action: "permission.request",
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "queue_item", id: 7 },
+          request_id: "req-2",
+          tool_name: "Bash",
+          tool_input: { command: "pwd" },
+          description: "Run pwd",
+        },
+      });
+
+      let agent = getAgent("qi:7")!;
+      expect(agent.pendingPermission?.requestId).toBe("req-1");
+      expect(agent.pendingPermissionQueue?.map((permission) => permission.requestId)).toEqual([
+        "req-2",
+      ]);
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "pending_cleared",
+        payload: { feature_id: 1, agent_slot: { type: "queue_item", id: 7 } },
+      });
+
+      agent = getAgent("qi:7")!;
+      expect(agent.pendingPermission?.requestId).toBe("req-2");
+      expect(agent.pendingPermission?.input).toEqual({ command: "pwd" });
+      expect(agent.pendingPermissionQueue).toEqual([]);
+    });
+
     it("respondToPermission sends envelope without optimistic clear; pending_cleared event clears it", () => {
       const ws = connectStore();
       setAgent(

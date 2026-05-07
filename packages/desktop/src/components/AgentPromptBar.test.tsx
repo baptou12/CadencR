@@ -244,10 +244,9 @@ describe("AgentPromptBar", () => {
   });
 
   it("restores unsent text after a permission prompt closes", async () => {
-    const user = userEvent.setup();
     const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
-    await user.type(screen.getByRole("textbox"), "Keep this draft");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Keep this draft" } });
 
     rerender(
       <AgentPromptBar
@@ -265,11 +264,12 @@ describe("AgentPromptBar", () => {
       />,
     );
 
-    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("Keep this draft");
+    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
 
     rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
-    expect(screen.getByRole("textbox")).toHaveTextContent("Keep this draft");
+    expect(screen.getByRole("textbox")).toHaveValue("Keep this draft");
   });
 
   it("restores unsent text after plan approval closes", async () => {
