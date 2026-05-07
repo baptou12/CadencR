@@ -1,17 +1,13 @@
 ## FIX
 - [ ] [opencode] Not sync on command updates
 - [ ] [opencode] inline diff broken sometimes
-- [ ] [codex] sub-agents outputs on main agent
 - [ ] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
 - [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
-- [~] [agent] scroll is not smooth, still jumps
-- [ ] [permissions] typing keys should not select options
+- [~] [permissions] typing keys should not select options
 - [ ] [copy] mrkd for slack don't handle \n and lists
 - [ ] [prompt] missing shortcut popover on auto-scroll
 - [ ] [unified] wrong border for focused agent
 - [ ] [editor] cannot create file / folder
-- [x] [feature] cannot change thinking level on initial prompt
-- [x] [feature] cmd+t don't change thinking level
 - [ ] [git] adding a comment on a changing line should remove the comment
 - [ ] [feature] Once a plan agent shows the plan, it goes to idle (that's ok), but it collapses
 
