@@ -24,6 +24,7 @@ mod raw_tool_names;
 mod responses;
 mod session;
 mod turn_start;
+mod worktree_config;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -258,6 +259,10 @@ impl AgentRuntimeAdapter for CodexAdapter {
         tokio::spawn(async {
             let _ = live_catalog().await;
         });
+    }
+
+    fn worktree_config_paths(&self) -> &'static [&'static str] {
+        worktree_config::CONFIG_PATHS
     }
 
     async fn runtime_slash_commands(

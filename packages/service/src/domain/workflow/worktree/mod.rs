@@ -187,6 +187,7 @@ async fn ensure_new(
     );
 
     new_branch::add_new_worktree(&project_dir, &branch, &path_str, base_branch.as_deref()).await?;
+    notify_provider_worktree_created(&project_dir, &path_str).await?;
     persist_and_announce(write_pool, feature_id, &path_str, &branch, ws_sender).await?;
     Ok(PathBuf::from(path_str))
 }
@@ -239,11 +240,22 @@ async fn ensure_reuse(
             "worktree.ready",
             serde_json::json!({ "feature_id": feature_id }),
         );
+    } else {
+        notify_provider_worktree_created(&project_dir, &attached.worktree_path).await?;
     }
     // Else: caller (workflow_complex / prompt_send) spawns `run_setup_commands`
     // exactly as it does for the `New` path.
 
     Ok(PathBuf::from(attached.worktree_path))
+}
+
+async fn notify_provider_worktree_created(project_dir: &str, path_str: &str) -> Result<(), String> {
+    crate::domain::agents::providers::notify_worktree_created_for_all_providers(
+        std::path::Path::new(project_dir),
+        std::path::Path::new(path_str),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Persist worktree path + branch to `feature_settings` and emit

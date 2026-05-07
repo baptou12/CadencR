@@ -98,6 +98,19 @@ pub fn spawn_runtime_startup_warmups() {
     }
 }
 
+pub async fn notify_worktree_created_for_all_providers(
+    source_project_path: &std::path::Path,
+    worktree_path: &std::path::Path,
+) -> Result<(), super::adapter::RuntimeError> {
+    futures::future::try_join_all(
+        ADAPTERS
+            .iter()
+            .map(|(_, adapter)| adapter.on_worktree_created(source_project_path, worktree_path)),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn shutdown_runtime_servers() {
     if let Err(error) = opencode_sdk_rs::OpenCodeServer::shutdown().await {
         tracing::warn!(error = %error, "failed to shut down opencode server");
@@ -115,8 +128,8 @@ pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &st
 #[cfg(test)]
 mod tests {
     use super::{
-        adapter_for_model, merge_extra_models, resolve_effective_provider, runtime_adapter,
-        ADAPTERS,
+        adapter_for_model, merge_extra_models, notify_worktree_created_for_all_providers,
+        resolve_effective_provider, runtime_adapter, ADAPTERS,
     };
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
@@ -194,5 +207,61 @@ mod tests {
     fn resolve_effective_provider_without_model_is_passthrough() {
         let routed = resolve_effective_provider("claude_code".to_string(), None);
         assert_eq!(routed, "claude_code");
+    }
+
+    #[tokio::test]
+    async fn notify_worktree_created_runs_all_provider_copy_policies() {
+        let source = tempfile::tempdir().unwrap();
+        let worktree = tempfile::tempdir().unwrap();
+        tokio::fs::create_dir_all(source.path().join(".claude"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source.path().join(".codex/agents"))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(source.path().join(".opencode/commands"))
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".claude/settings.local.json"), "claude")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".codex/agents/reviewer.md"), "codex")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join(".opencode/commands/qa.md"), "open")
+            .await
+            .unwrap();
+        tokio::fs::write(source.path().join("opencode.json"), r#"{"theme":"system"}"#)
+            .await
+            .unwrap();
+
+        notify_worktree_created_for_all_providers(source.path(), worktree.path())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".claude/settings.local.json"))
+                .await
+                .unwrap(),
+            "claude"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".codex/agents/reviewer.md"))
+                .await
+                .unwrap(),
+            "codex"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join(".opencode/commands/qa.md"))
+                .await
+                .unwrap(),
+            "open"
+        );
+        assert_eq!(
+            tokio::fs::read_to_string(worktree.path().join("opencode.json"))
+                .await
+                .unwrap(),
+            r#"{"theme":"system"}"#
+        );
     }
 }

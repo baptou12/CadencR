@@ -11,6 +11,7 @@ mod stream_state;
 mod stream_supervisor;
 mod stream_synthesizer;
 mod tool_names;
+mod worktree_config;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -80,6 +81,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
                 tracing::info!("opencode startup warmup completed");
             }
         });
+    }
+
+    fn worktree_config_paths(&self) -> &'static [&'static str] {
+        worktree_config::CONFIG_PATHS
     }
 
     async fn runtime_slash_commands(

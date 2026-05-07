@@ -4,9 +4,51 @@
 
 mod common;
 
+use common::worktree::{worktree_remove, HomeGuard};
 use common::{
     find_file_row, git_capture, git_in, stage_file, start_test_server, write_unstaged, TestServer,
 };
+
+// ---------------------------------------------------------------------------
+// POST /api/git/worktree
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn create_worktree_copies_provider_config_before_returning() {
+    let tmp_home = tempfile::tempdir().unwrap();
+    let _guard = HomeGuard::set(tmp_home.path());
+    let server = start_test_server().await;
+    let repo = server.repo_path();
+
+    std::fs::create_dir_all(repo.join(".claude")).unwrap();
+    std::fs::write(
+        repo.join(".claude/settings.local.json"),
+        r#"{"permissions":{}}"#,
+    )
+    .unwrap();
+
+    let resp = server
+        .client
+        .post(format!("{}/api/git/worktree", server.base_url))
+        .json(&serde_json::json!({
+            "project_id": 1,
+            "feature_id": 1,
+            "feature_title": "copy provider config"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let wt_path = std::path::PathBuf::from(body["worktree_path"].as_str().unwrap());
+
+    assert_eq!(
+        std::fs::read_to_string(wt_path.join(".claude/settings.local.json")).unwrap(),
+        r#"{"permissions":{}}"#
+    );
+
+    worktree_remove(&repo, &wt_path);
+}
 
 // ---------------------------------------------------------------------------
 // PATCH /api/features/{id}/target-branch
