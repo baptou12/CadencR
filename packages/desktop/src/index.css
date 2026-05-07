@@ -47,15 +47,18 @@
 /*
  * `titlebar-drag` makes a region act as a window-drag handle.
  *
- * Use sparingly. On macOS, right-clicking anywhere inside a
- * `-webkit-app-region: drag` element crashes the Electron renderer
- * (electron/electron#40805) before the DOM `contextmenu` event fires —
- * neither a renderer-level `preventDefault` nor a per-child `no-drag`
- * carve-out can intercept it. Only host this on small, dedicated drag
- * strips that don't need a context menu (e.g. the Sidebar's top strip).
- * The selectors below mark common interactive children as `no-drag` so
- * they remain clickable; they do *not* save you from bare drag-region
- * background being right-clicked.
+ * Right-clicking a `-webkit-app-region: drag` element on macOS 26 (Tahoe)
+ * triggers AppKit's native window-controls context menu. In Electron 42
+ * that path null-deref's the browser process inside
+ * `-[NSApplication sendEvent:]`. The fix is to install a main-process
+ * `webContents.on("context-menu", ...)` handler that calls
+ * `event.preventDefault()` AND immediately shows our own menu via
+ * `Menu.popup({ window })` — see `electron/main/context-menu.ts`. That
+ * call consumes the AppKit event before the native window menu code can
+ * run, which is what stops the crash.
+ *
+ * The carve-out below also marks common interactive children `no-drag`
+ * so their click and right-click keep working inside drag regions.
  */
 @utility titlebar-drag {
   -webkit-app-region: drag;

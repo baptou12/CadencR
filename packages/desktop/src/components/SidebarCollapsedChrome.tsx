@@ -8,7 +8,9 @@ import { Button } from "@/components/ui/button";
 export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): ReactElement {
   return (
     <>
-      <div className="group/logo -ml-2 flex shrink-0 items-center gap-0.5">
+      {/* `mt-2` keeps the logo clear of the macOS traffic-light buttons,
+          which sit at ~y=12 inside `titleBarStyle: "hiddenInset"`. */}
+      <div className="group/logo -ml-2 mt-2 flex shrink-0 items-center gap-0.5">
         <Button
           variant="ghost"
           size="icon"

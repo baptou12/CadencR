@@ -141,7 +141,9 @@ function useSidebarKeyboardNavigation(
 function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement {
   return (
     <div className="titlebar-drag group relative h-16">
-      <div className="absolute inset-0 flex items-center justify-center">
+      {/* `pt-3` keeps the logo clear of the macOS traffic-light buttons,
+          which sit at ~y=12 inside `titleBarStyle: "hiddenInset"`. */}
+      <div className="absolute inset-x-0 bottom-0 top-3 flex items-center justify-center">
         <CadencrLogo className="size-11 mr-2 shrink-0 -translate-y-px" />
         <span
           className="text-2xl font-bold uppercase tracking-widest leading-none"

@@ -38,6 +38,7 @@ interface FeatureTopBarProps {
   onRetryWorktreeSetup?: () => void;
   showCustomActions?: boolean;
   showSidebarChrome?: boolean;
+  draggable?: boolean;
   projectName?: string;
   titleOverride?: string;
   labelOverride?: string | null;
@@ -123,6 +124,7 @@ function StandardFeatureTopBar({
   onRetryWorktreeSetup,
   showCustomActions = true,
   showSidebarChrome = true,
+  draggable = true,
   titleOverride,
   labelOverride,
 }: FeatureTopBarProps): ReactElement | null {
@@ -163,6 +165,7 @@ function StandardFeatureTopBar({
       canAutoRename={canAutoRename}
       isAutoRenamePending={autoNameMutation.isPending}
       onAutoRename={handleAutoRename}
+      draggable={draggable}
       showCustomActions={showCustomActions}
       showSidebarChrome={showSidebarChrome}
       sidebarCollapsed={sidebarCollapsed}
@@ -190,6 +193,7 @@ interface FeatureHeaderChromeProps {
   canAutoRename: boolean;
   isAutoRenamePending: boolean;
   onAutoRename: () => void;
+  draggable: boolean;
   showCustomActions: boolean;
   showSidebarChrome: boolean;
   sidebarCollapsed: boolean;
@@ -215,6 +219,7 @@ function FeatureHeaderChrome({
   canAutoRename,
   isAutoRenamePending,
   onAutoRename,
+  draggable,
   showCustomActions,
   showSidebarChrome,
   sidebarCollapsed,
@@ -230,9 +235,7 @@ function FeatureHeaderChrome({
   return (
     <>
       <div
-        // Not `titlebar-drag`: see the rationale on `@utility titlebar-drag`
-        // in index.css. Window-drag is provided by the Sidebar's drag area.
-        className={cn("flex items-center gap-3 px-6 py-3", className)}
+        className={cn(draggable && "titlebar-drag", "flex items-center gap-3 px-6 py-3", className)}
       >
         {showSidebarChrome && sidebarCollapsed && (
           <SidebarCollapsedChrome onExpand={onExpandSidebar} />

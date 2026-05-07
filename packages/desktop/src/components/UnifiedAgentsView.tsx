@@ -11,6 +11,8 @@ import {
 } from "react";
 import { Loader2Icon } from "lucide-react";
 import { useListProjects, type Project } from "@/api/generated";
+import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
+import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { UnifiedAgentsFilters } from "@/components/UnifiedAgentsFilters";
 import { UnifiedAgentsGrid } from "@/components/UnifiedAgentsGrid";
 import { useUnifiedAgentsFilters } from "@/components/UnifiedAgentsFilterState";
@@ -292,20 +294,26 @@ function UnifiedAgentsHeader({
   onSearchEnter,
   onRefresh,
 }: UnifiedAgentsHeaderProps): ReactElement {
+  const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   return (
-    <header className="shrink-0 border-b bg-background px-4 py-3">
-      <UnifiedAgentsFilters
-        filterText={filterText}
-        projects={projects}
-        agentsCount={agentsCount}
-        runningAgentsCount={runningAgentsCount}
-        agentsPerRowSetting={agentsPerRowSetting}
-        searchInputRef={searchInputRef}
-        isFetching={isFetching}
-        onFilterTextChange={onFilterTextChange}
-        onSearchEnter={onSearchEnter}
-        onRefresh={onRefresh}
-      />
+    <header className="titlebar-drag shrink-0 border-b bg-background px-4 py-3">
+      <div className="flex items-center gap-3">
+        {sidebarCollapsed && <SidebarCollapsedChrome onExpand={() => setSidebarCollapsed(false)} />}
+        <div className="min-w-0 flex-1">
+          <UnifiedAgentsFilters
+            filterText={filterText}
+            projects={projects}
+            agentsCount={agentsCount}
+            runningAgentsCount={runningAgentsCount}
+            agentsPerRowSetting={agentsPerRowSetting}
+            searchInputRef={searchInputRef}
+            isFetching={isFetching}
+            onFilterTextChange={onFilterTextChange}
+            onSearchEnter={onSearchEnter}
+            onRefresh={onRefresh}
+          />
+        </div>
+      </div>
       {projectsError ? (
         <p className="mt-2 px-1 text-xs text-destructive">
           {projectsError instanceof Error ? projectsError.message : "Failed to load projects."}

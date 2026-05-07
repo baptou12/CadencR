@@ -7,6 +7,7 @@ import { installApplicationMenu } from "./menu";
 import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { setRuntimeConfig } from "./runtime-config";
 import { createDevSidecarHandle, spawnProductionSidecar, type SidecarHandle } from "./sidecar";
+import { installContextMenu } from "./context-menu";
 
 let mainWindow: BrowserWindow | null = null;
 let sidecar: SidecarHandle | null = null;
@@ -88,6 +89,7 @@ function createWindow(): BrowserWindow {
     },
   });
   secureWebContents(win.webContents);
+  installContextMenu(win, win.webContents);
 
   win.on("close", (event) => {
     if (allowClose) return;
