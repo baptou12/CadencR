@@ -3,13 +3,11 @@
 - [ ] [opencode] inline diff broken sometimes
 - [ ] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
 - [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
-- [~] [permissions] typing keys should not select options
-- [ ] [copy] mrkd for slack don't handle \n and lists
-- [ ] [prompt] missing shortcut popover on auto-scroll
+- [ ] [git] once pushed, cannot merge a branch
+- [ ] [terminal] disconnected after the computer goes to sleep
 - [ ] [unified] wrong border for focused agent
-- [ ] [editor] cannot create file / folder
 - [ ] [git] adding a comment on a changing line should remove the comment
-- [ ] [feature] Once a plan agent shows the plan, it goes to idle (that's ok), but it collapses
+- [~] [feature] Once a plan agent shows the plan, it goes to idle (that's ok), but it collapses
 
 
 ## FEAT
