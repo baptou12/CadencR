@@ -5,7 +5,7 @@ use tracing::{debug, info, warn};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeContentBlock, RuntimeContentDelta, RuntimeStreamEvent,
 };
-use crate::domain::agents::providers::runtime_session_finished;
+use crate::domain::agents::providers::runtime_session_finished_text;
 
 use super::truncate_for_log;
 
@@ -47,6 +47,12 @@ impl std::fmt::Display for DrainExit {
 /// short timeout and fall back to the provider's `session_finished` reconciler.
 /// An overall deadline prevents the UI skeleton from hanging indefinitely
 /// if everything misbehaves.
+///
+/// The reconciler probe also returns the latest assistant text so we can
+/// recover when SSE hadn't yet flushed Text events into the channel before
+/// the run finished — without that recovery, OpenCode short turns can race
+/// past the 500 ms recv window with `accumulated_text` still empty, which
+/// leaves the feature stuck on its default "Session N" title.
 pub(super) async fn drain_text(
     feature_id: i64,
     provider_id: &str,
@@ -119,11 +125,22 @@ pub(super) async fn drain_text(
                 break;
             }
             Err(_) => {
-                // No event this tick — ask the provider whether the session
-                // is already done (OpenCode often finishes without a Result
-                // event for short turns).
+                // No event this tick — ask the provider whether the
+                // session is done. The probe also returns the latest
+                // assistant text so we can recover from the SSE-vs-finish
+                // race; the `is_empty()` guard keeps SSE-delivered text
+                // winning so partial SSE + fallback can't duplicate.
                 if let Some(sid) = runtime_session_id.as_deref() {
-                    if runtime_session_finished(provider_id, sid).await {
+                    if let Some(final_text) = runtime_session_finished_text(provider_id, sid).await
+                    {
+                        if accumulated_text.is_empty() && !final_text.is_empty() {
+                            debug!(
+                                feature_id,
+                                fallback_text_len = final_text.len(),
+                                "auto-name: recovered final text via http probe"
+                            );
+                            accumulated_text = final_text;
+                        }
                         exit_reason = DrainExit::SessionFinishedReconciler;
                         break;
                     }

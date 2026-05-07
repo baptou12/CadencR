@@ -125,6 +125,17 @@ pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &st
     adapter.session_finished(runtime_session_id).await
 }
 
+/// Free-function dispatch for `AgentRuntimeAdapter::session_finished_text`.
+/// See the trait doc for the `None` / `Some("")` / `Some(text)` semantics.
+pub async fn runtime_session_finished_text(
+    provider_id: &str,
+    runtime_session_id: &str,
+) -> Option<String> {
+    runtime_adapter(provider_id)?
+        .session_finished_text(runtime_session_id)
+        .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
