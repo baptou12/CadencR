@@ -175,8 +175,8 @@ export function ProjectFeatures({
     enabled: activeFeature != null,
   });
 
-  const handleSaveLabel = (featureId: number): void => {
-    const normalized = normalizeLabel(labelDraft);
+  const handleSaveLabel = (featureId: number, override?: string): void => {
+    const normalized = normalizeLabel(override ?? labelDraft);
     const current = features.find((feature) => feature.id === featureId);
     if (current && normalizeLabel(current.label ?? "") === normalized) {
       setEditingLabelFeatureId(null);

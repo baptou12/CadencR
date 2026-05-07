@@ -42,42 +42,26 @@ interface TreeNodeProps {
  * and on a file row — the input always shows up as a new tree row at
  * `dirPath`'s level, never as a popover.
  */
-function InlineCreateRow({
-  projectId,
-  featureId,
-  dirPath,
-  depth,
-}: {
-  projectId: number;
-  featureId: number;
-  dirPath: string;
-  depth: number;
-}) {
+function InlineCreateRow({ dirPath, depth }: { dirPath: string; depth: number }) {
   // Narrow selector: only this dirPath's row re-renders when `creating` flips
   // in or out of matching state. Returning the same `null` keeps the
   // subscription quiet for every non-matching node.
+  //
+  // The inline row is only used when no anchor row exists (the root context
+  // menu); when `anchorPath` is set, `FileTreeItem` renders a popover at
+  // that row instead.
   const creating = useFileTreeEditStore((s) =>
-    s.creating?.parentDir === dirPath ? s.creating : null,
+    s.creating?.parentDir === dirPath && s.creating.anchorPath === undefined ? s.creating : null,
   );
-  const { createFile, createFolder } = useFileTreeMutationsContext();
+  const { createFile, createFolder, submitCreate } = useFileTreeMutationsContext();
 
   if (!creating) return null;
 
   function handleSubmit(name: string) {
     if (!creating) return;
-    const childPath = creating.parentDir ? `${creating.parentDir}/${name}` : name;
-    const onSuccess = () => useFileTreeEditStore.getState().cancel();
-    if (creating.kind === "file") {
-      createFile.mutate(
-        { data: { project_id: projectId, feature_id: featureId, file_path: childPath } },
-        { onSuccess },
-      );
-    } else {
-      createFolder.mutate(
-        { data: { project_id: projectId, feature_id: featureId, dir_path: childPath } },
-        { onSuccess },
-      );
-    }
+    submitCreate(creating.kind, creating.parentDir, name, () =>
+      useFileTreeEditStore.getState().cancel(),
+    );
   }
 
   return (
@@ -113,9 +97,7 @@ function TreeNode({
 
   // Render the inline create row even during loading/error states so the
   // user can keep typing while the tree refetches.
-  const inlineCreate = (
-    <InlineCreateRow projectId={projectId} featureId={featureId} dirPath={dirPath} depth={depth} />
-  );
+  const inlineCreate = <InlineCreateRow dirPath={dirPath} depth={depth} />;
 
   if (isLoading) {
     return (
@@ -290,7 +272,14 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
               <div className="min-h-[200px]" aria-hidden />
             </div>
           </ContextMenuTrigger>
-          <ContextMenuContent>
+          <ContextMenuContent
+            // The selected item opens an inline-input row whose `onBlur`
+            // cancels editing. Radix's default focus restoration would
+            // immediately steal focus from that input back to the trigger
+            // (the tree div), firing the cancel. Skip focus restoration —
+            // the inline row focuses its own input.
+            onCloseAutoFocus={(event) => event.preventDefault()}
+          >
             <ContextMenuItem onSelect={() => startRootCreate("file")}>New File…</ContextMenuItem>
             <ContextMenuItem onSelect={() => startRootCreate("folder")}>
               New Folder…

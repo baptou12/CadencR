@@ -17,7 +17,12 @@ interface FeatureLabelEditorProps {
   isSaving: boolean;
   trigger: ReactNode;
   onChange: (value: string) => void;
-  onSave: () => void;
+  /**
+   * Save the current draft. Accepts an optional `override` so a suggestion
+   * can be picked and saved in one step without waiting for the parent's
+   * `value` prop to round-trip through React state.
+   */
+  onSave: (override?: string) => void;
   onCancel: () => void;
 }
 
@@ -40,23 +45,34 @@ export function FeatureLabelEditor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    event.stopPropagation();
-    if (event.key === "Enter") {
-      event.preventDefault();
-      onSave();
-    }
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       onCancel();
+      return;
     }
+    if (event.key === "Enter") {
+      // Defer to cmdk's own Enter handler (which fires onSelect on the
+      // highlighted item) when a suggestion is highlighted. Otherwise save
+      // the typed value directly.
+      const root = event.currentTarget.closest<HTMLElement>("[cmdk-root]");
+      const highlighted = root?.querySelector(
+        '[cmdk-item][data-selected="true"], [cmdk-item][aria-selected="true"]',
+      );
+      if (highlighted) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onSave();
+      return;
+    }
+    // Don't stopPropagation for the rest — cmdk listens on the Command root
+    // and needs to receive arrow keys to navigate the suggestions list.
   }
 
   function handleSuggestionSelect(label: string): void {
     onChange(label);
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    });
+    // Save in the same gesture so arrow-down + Enter is a single step.
+    onSave(label);
   }
 
   return (
@@ -120,7 +136,7 @@ export function FeatureLabelEditor({
           )}
           <div className="flex items-center justify-between gap-2 border-t p-2">
             <span className="text-[10.5px] text-muted-foreground">Enter saves · Esc cancels</span>
-            <Button type="button" size="xs" disabled={isSaving} onClick={onSave}>
+            <Button type="button" size="xs" disabled={isSaving} onClick={() => onSave()}>
               {isSaving && (
                 <Loader2Icon aria-label="Saving label" className="size-3 animate-spin" />
               )}
