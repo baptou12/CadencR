@@ -6,10 +6,13 @@ use crate::domain::features::service;
 use crate::domain::ws_session::auto_name;
 use crate::error::AppError;
 
-/// Trigger auto-naming for a feature on demand. Requires an existing
-/// non-default title and at least one user message, then waits for the rename
-/// to finish so callers get visible HTTP loading/error state even when no
-/// WebSocket client is connected.
+/// Trigger auto-naming for a feature on demand. Requires at least one user
+/// message, then waits for the rename to finish so callers get visible HTTP
+/// loading/error state even when no WebSocket client is connected.
+///
+/// We deliberately allow this on default titles ("Session N", "Untitled
+/// Feature") — that's the exact case where the initial implicit auto-naming
+/// silently failed and the user wants to retry from the title context menu.
 #[utoipa::path(post, path = "/api/features/{id}/auto-name",
     params(("id" = i64, Path,)),
     responses((status = 200, body = SuccessResponse)))]
@@ -17,11 +20,6 @@ pub async fn auto_name_feature_handler(
     State(state): State<AppState>,
     Path(feature_id): Path<i64>,
 ) -> Result<Json<SuccessResponse>, AppError> {
-    if auto_name::has_default_title(&state.read_pool, feature_id).await? {
-        return Err(AppError::BadRequest(
-            "auto-rename is only available after the session has a name".to_string(),
-        ));
-    }
     if !state.auto_name_runs.register(feature_id).await {
         return Err(AppError::Conflict(format!(
             "auto-rename is already running for feature {feature_id}"

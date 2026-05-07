@@ -283,21 +283,18 @@ async fn build_spawn_config(
     } else {
         None
     };
-    // Per-model workspace default: same key the WS session handler writes to
-    // when the user adjusts effort in any conversation on this model.
-    let thinking_effort = crate::domain::workspace::repository::get_setting(
-        pool,
-        &crate::domain::settings::thinking_effort_model_key(provider_id, model_id),
-    )
-    .await
-    .ok()
-    .flatten();
+    // Auto-naming is a tiny "produce 3-7 words" task — extended thinking adds
+    // latency and is a known silent-failure mode here: the 30s drain deadline
+    // (drain::AUTO_NAME_DEADLINE) can fire mid-thinking before any text block
+    // is emitted, leaving `accumulated_text` empty and the feature stuck on
+    // its default "Session N" title. Force thinking off regardless of the
+    // user's per-model preference for the naming spawn only.
 
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
         permission_mode: Some(RuntimePermissionMode::Plan),
         model: Some(model_id.to_string()),
-        thinking_effort,
+        thinking_effort: None,
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),
         resume_session_id: None,
         mcp_servers: None,
