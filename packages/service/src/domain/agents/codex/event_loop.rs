@@ -27,8 +27,17 @@ pub(super) fn spawn_event_loop(
             match source_rx.recv().await {
                 Ok(AppServerEvent::Notification { method, mut params }) => {
                     if method == "turn/started" {
-                        index_state.reset();
-                        command_outputs.clear();
+                        let thread_id = params
+                            .get("threadId")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or("");
+                        // Codex multiplexes every thread (root + each
+                        // sub-agent) onto one stream; sub-agent turn/starteds
+                        // must not clobber the root's per-turn caches.
+                        if index_state.should_reset_for_turn_started(thread_id) {
+                            index_state.reset();
+                            command_outputs.clear();
+                        }
                     }
                     update_turn_state(&method, &params, &active_turn_id).await;
                     clear_resolved_request(&method, &params, &pending_requests).await;

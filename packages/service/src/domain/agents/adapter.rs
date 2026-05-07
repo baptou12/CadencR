@@ -452,6 +452,34 @@ impl RuntimeEvent {
         }
     }
 
+    /// Override the event's `parent_tool_use_id` on both the typed kind and
+    /// the raw JSON envelope shipped to the frontend. Provider adapters use
+    /// this to nest sub-agent events under a parent tool_use without having
+    /// to thread the id through every event-builder helper.
+    pub fn set_parent_tool_use_id(&mut self, parent: Option<String>) {
+        match &mut self.kind {
+            RuntimeEventKind::AssistantMessage {
+                parent_tool_use_id, ..
+            }
+            | RuntimeEventKind::UserMessage {
+                parent_tool_use_id, ..
+            }
+            | RuntimeEventKind::StreamEvent {
+                parent_tool_use_id, ..
+            } => {
+                *parent_tool_use_id = parent.clone();
+            }
+            _ => {}
+        }
+        if let Value::Object(map) = &mut self.metadata.raw {
+            let value = match parent {
+                Some(id) => Value::String(id),
+                None => Value::Null,
+            };
+            map.insert("parent_tool_use_id".to_string(), value);
+        }
+    }
+
     pub fn stream_event(&self) -> Option<&RuntimeStreamEvent> {
         match &self.kind {
             RuntimeEventKind::StreamEvent { event, .. } => Some(event),
@@ -678,9 +706,83 @@ mod tests {
     use tokio::sync::{mpsc, Mutex};
 
     use super::{
-        AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeMessageRx,
+        AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAssistantMessage, RuntimeContentBlock,
+        RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeMessageRx,
         RuntimePermissionDecision, RuntimePermissionResponse, RuntimeSpawnConfig,
+        RuntimeStreamEvent,
     };
+
+    fn assistant_event_with_raw() -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some("root".into()),
+                usage: None,
+                context_window: None,
+                raw: json!({
+                    "type": "assistant",
+                    "session_id": "root",
+                    "parent_tool_use_id": null,
+                }),
+            },
+            RuntimeEventKind::AssistantMessage {
+                message: RuntimeAssistantMessage {
+                    model: None,
+                    content: vec![RuntimeContentBlock::Text { text: "hi".into() }],
+                },
+                parent_tool_use_id: None,
+            },
+        )
+    }
+
+    #[test]
+    fn set_parent_tool_use_id_updates_kind_and_raw_envelope() {
+        let mut event = assistant_event_with_raw();
+        assert!(event.parent_tool_use_id().is_none());
+
+        event.set_parent_tool_use_id(Some("toolu_parent".into()));
+        assert_eq!(event.parent_tool_use_id(), Some("toolu_parent"));
+        // Raw envelope is what the WS bridge ships to the frontend; it must
+        // mirror the typed value so the FE's `parent_tool_use_id` lookup
+        // sees the override too.
+        assert_eq!(
+            event.raw_json()["parent_tool_use_id"],
+            json!("toolu_parent")
+        );
+
+        // Clearing it is also reflected on the raw envelope (becomes null,
+        // not removed, so the FE still sees the field).
+        event.set_parent_tool_use_id(None);
+        assert!(event.parent_tool_use_id().is_none());
+        assert!(event.raw_json()["parent_tool_use_id"].is_null());
+    }
+
+    #[test]
+    fn set_parent_tool_use_id_is_a_noop_for_kinds_without_parent_field() {
+        // Result events don't carry parent_tool_use_id in their kind, but the
+        // mutator must still leave them in a valid state without panicking.
+        let mut event =
+            RuntimeEvent::new(RuntimeEventMetadata::default(), RuntimeEventKind::Result);
+        event.set_parent_tool_use_id(Some("toolu_x".into()));
+        assert!(event.parent_tool_use_id().is_none());
+    }
+
+    #[test]
+    fn set_parent_tool_use_id_propagates_to_stream_event_kind() {
+        let mut event = RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some("root".into()),
+                usage: None,
+                context_window: None,
+                raw: json!({ "type": "stream_event", "parent_tool_use_id": null }),
+            },
+            RuntimeEventKind::StreamEvent {
+                event: RuntimeStreamEvent::Other,
+                parent_tool_use_id: None,
+            },
+        );
+        event.set_parent_tool_use_id(Some("toolu_spawn".into()));
+        assert_eq!(event.parent_tool_use_id(), Some("toolu_spawn"));
+    }
 
     struct DummySession;
 

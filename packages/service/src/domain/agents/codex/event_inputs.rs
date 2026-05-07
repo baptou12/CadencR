@@ -102,10 +102,19 @@ fn canonical_dynamic_tool_name(tool: &str) -> Option<&'static str> {
 }
 
 pub(super) fn collab_tool_name(item: &Value) -> String {
-    item.get("tool")
+    let tool = item
+        .get("tool")
         .and_then(Value::as_str)
-        .unwrap_or("spawn_agent")
-        .to_string()
+        .unwrap_or("spawnAgent");
+    // Codex's `spawn_agent` (raw OpenAI fn name) / `spawnAgent` (collab item
+    // `tool` field) is the only collab op that creates a new sub-agent.
+    // Normalize both casings to the provider-neutral `Agent` so the shared
+    // sub-agent UI (parent block with `childBlocks`, used by Claude's `Task`
+    // and OpenCode's `Agent`) handles it without provider branches.
+    match tool {
+        "spawn_agent" | "spawnAgent" => "Agent".to_string(),
+        other => other.to_string(),
+    }
 }
 
 pub(super) fn plan_todos(params: &Value) -> Value {
@@ -200,8 +209,32 @@ fn append_delete_patch(lines: &mut Vec<String>, path: &str, diff: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{dynamic_tool_input, dynamic_tool_name, file_input, patch_from_changes};
+    use super::{
+        collab_tool_name, dynamic_tool_input, dynamic_tool_name, file_input, patch_from_changes,
+    };
     use serde_json::json;
+
+    #[test]
+    fn collab_tool_name_normalizes_both_casings_of_spawn_agent_to_agent() {
+        // Codex's collab item uses camelCase `spawnAgent` for `tool`, while
+        // the raw OpenAI function_call uses snake_case `spawn_agent`. Both
+        // must collapse to the provider-neutral `Agent` block name.
+        assert_eq!(collab_tool_name(&json!({ "tool": "spawnAgent" })), "Agent");
+        assert_eq!(collab_tool_name(&json!({ "tool": "spawn_agent" })), "Agent");
+        assert_eq!(collab_tool_name(&json!({})), "Agent");
+    }
+
+    #[test]
+    fn collab_tool_name_preserves_non_spawn_collab_operations() {
+        assert_eq!(
+            collab_tool_name(&json!({ "tool": "send_input" })),
+            "send_input",
+        );
+        assert_eq!(
+            collab_tool_name(&json!({ "tool": "close_agent" })),
+            "close_agent",
+        );
+    }
 
     #[test]
     fn file_change_input_exposes_apply_patch_text() {

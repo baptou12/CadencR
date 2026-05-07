@@ -8,6 +8,9 @@ use super::event_inputs::{
 use super::event_json::{compact_event, metadata, stream_event_raw, thread_id, user_raw};
 use super::event_mcp_items::mcp_tool_item;
 use super::event_state::IndexState;
+use super::event_subagents::{
+    agent_tool_input, synthesize_subagent_messages, synthesize_subagent_prompt,
+};
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
     RuntimeUserContentBlock, RuntimeUserMessage,
@@ -66,7 +69,34 @@ pub(super) fn item_events(
         }
         Some("collabAgentToolCall") => {
             let name = collab_tool_name(item);
-            tool_item(params, &name, collab_tool_input, completed, index_state)
+            // Record the new sub-agent thread BEFORE delegating, so that any
+            // events that arrive for the spawned thread between `item/started`
+            // and `item/completed` get their `parent_tool_use_id` stamped via
+            // `notification_events`' post-processing.
+            record_subagent_thread_for_collab_call(item, &name, index_state);
+            if name == "Agent" {
+                return spawn_agent_collab_events(params, completed, index_state);
+            }
+            // Snapshot params/item before consuming `params` for `tool_item`
+            // so we can extract any agentsStates messages on completion (the
+            // wait/close collab tool_results carry the sub-agent's final
+            // output here, not on a separate stream).
+            let params_snapshot = if completed {
+                Some(params.clone())
+            } else {
+                None
+            };
+            let mut events = tool_item(params, &name, collab_tool_input, completed, index_state);
+            if let Some(params_snapshot) = params_snapshot {
+                if let Some(item_snapshot) = params_snapshot.get("item") {
+                    events.extend(synthesize_subagent_messages(
+                        &params_snapshot,
+                        item_snapshot,
+                        index_state,
+                    ));
+                }
+            }
+            events
         }
         Some("contextCompaction") => {
             if completed {
@@ -357,6 +387,100 @@ pub(super) fn tool_result_event_with_error(
             parent_tool_use_id: None,
         },
     )
+}
+
+/// Specialized handler for the `spawn_agent` collab item. Diverges from
+/// the generic `tool_item` path in two ways:
+///   1. The tool_use input is the cleaned `{description, prompt}` shape so
+///      the Agent block's header is meaningful and we don't ship a JSON
+///      bag of bookkeeping fields to the FE.
+///   2. We deliberately suppress the tool_result event. Its content would
+///      be the raw item (`agentsStates`, `senderThreadId`, ...) which the
+///      frontend's `AgentResultBlock` can't decode as content blocks and
+///      would dump as a literal JSON string inside the Agent block. The
+///      sub-agent's actual output flows in later via wait_agent /
+///      close_agent and is rendered by `synthesize_subagent_messages`.
+///
+/// On completion we still mark the canonical id as "result recorded" so a
+/// late-arriving raw `function_call_output` for the same call_id can't
+/// re-emit the suppressed JSON dump through the raw path.
+fn spawn_agent_collab_events(
+    params: Value,
+    completed: bool,
+    index_state: &mut IndexState,
+) -> Vec<RuntimeEvent> {
+    let Some(item) = item(&params) else {
+        return Vec::new();
+    };
+    let item_id = item_id(item);
+    let canonical_id = index_state.canonical_id(&item_id);
+    let session_id = thread_id(&params).to_string();
+
+    let mut events = Vec::new();
+    if !index_state.has_index(&item_id) {
+        let block = RuntimeContentBlock::ToolUse {
+            id: canonical_id.clone(),
+            name: "Agent".to_string(),
+            input: agent_tool_input(item),
+        };
+        events.push(stream_start_event(
+            &session_id,
+            index_state.index_for(&item_id),
+            block,
+        ));
+    }
+    if let Some(prompt_event) =
+        synthesize_subagent_prompt(&session_id, &canonical_id, item, index_state)
+    {
+        events.push(prompt_event);
+    }
+    if completed {
+        // Lock the canonical id so a late raw function_call_output (which
+        // arrives on the same call_id) can't sneak the bookkeeping JSON
+        // back in through the raw path's tool_result emission.
+        index_state.record_result(&canonical_id);
+        events.extend(synthesize_subagent_messages(&params, item, index_state));
+    }
+    events
+}
+
+/// When a `collabAgentToolCall` is the `spawn_agent` op (normalized to
+/// `Agent`), record every spawned threadId under the spawning call's
+/// `tool_use_id`. The codex docs reference `newThreadId` as the canonical
+/// field, but the actual wire JSON uses `receiverThreadIds` (array) plus
+/// `agentsStates` (object whose keys are threadIds). We harvest from all
+/// three so we don't break if Codex's schema shifts.
+fn record_subagent_thread_for_collab_call(
+    item: &Value,
+    canonical_tool_name: &str,
+    index_state: &mut IndexState,
+) {
+    if canonical_tool_name != "Agent" {
+        return;
+    }
+    let raw_id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("codex_item");
+    // Pre-resolve the canonical id so every harvested threadId points at
+    // the same tool_use_id the frontend uses to nest child blocks.
+    let canonical = index_state.canonical_id(raw_id);
+
+    if let Some(new_thread_id) = item.get("newThreadId").and_then(Value::as_str) {
+        index_state.record_subagent_thread(new_thread_id, &canonical);
+    }
+    if let Some(receivers) = item.get("receiverThreadIds").and_then(Value::as_array) {
+        for receiver in receivers {
+            if let Some(tid) = receiver.as_str() {
+                index_state.record_subagent_thread(tid, &canonical);
+            }
+        }
+    }
+    if let Some(states) = item.get("agentsStates").and_then(Value::as_object) {
+        for tid in states.keys() {
+            index_state.record_subagent_thread(tid, &canonical);
+        }
+    }
 }
 
 fn input_json_delta_event(
