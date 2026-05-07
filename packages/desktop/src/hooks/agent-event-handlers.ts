@@ -23,8 +23,10 @@ import {
   PLAN_KEY,
   PRD_KEY,
 } from "@/types/workflow";
-
-// -- Agent session factory --
+import {
+  advancePendingPermissionQueue,
+  upsertPendingPermission,
+} from "@/lib/pending-permission-queue";
 
 export function createAgentSession(sessionId: number, agentType = "execute"): AgentSessionState {
   return {
@@ -34,6 +36,7 @@ export function createAgentSession(sessionId: number, agentType = "execute"): Ag
     streamingState: createStreamingState(),
     status: "running",
     pendingPermission: null,
+    pendingPermissionQueue: [],
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     pendingQuestionRequestId: "",
@@ -283,9 +286,6 @@ export function handleAgentUserMessage(payload: Record<string, unknown>, set: Se
     const key = resolveSlotKey(state.agents, umSlot);
     const existing = state.agents.get(key);
     const agent = existing ?? createAgentSession(0, umSlot.type);
-    // A user_message always resolves a pending gate (answered question, plan
-    // approval/rejection, prompt send). Clearing all pending-* here replaces
-    // the old optimistic client-side writes in the store dispatchers.
     const updated = {
       ...agent,
       blocks: [...agent.blocks, userBlock],
@@ -293,6 +293,7 @@ export function handleAgentUserMessage(payload: Record<string, unknown>, set: Se
       pendingQuestionToolInput: {},
       pendingQuestionRequestId: "",
       pendingPermission: null,
+      pendingPermissionQueue: [],
       pendingPlanApproval: null,
     };
     const agents = new Map(state.agents);
@@ -301,21 +302,20 @@ export function handleAgentUserMessage(payload: Record<string, unknown>, set: Se
   });
 }
 
-/** Frontend receives `workflow.pending_cleared` when a permission respond
- *  succeeds server-side — clears every pending-* state on the target slot. */
 export function handlePendingCleared(payload: Record<string, unknown>, set: SetFn): void {
   const slot = parseAgentSlot(payload);
   set((state) => {
     const key = resolveSlotKey(state.agents, slot);
     const agent = state.agents.get(key);
     if (!agent) return {};
+    const permissionPatch = advancePendingPermissionQueue(agent.pendingPermissionQueue ?? []);
     const agents = new Map(state.agents);
     agents.set(key, {
       ...agent,
       pendingQuestions: [],
       pendingQuestionToolInput: {},
       pendingQuestionRequestId: "",
-      pendingPermission: null,
+      ...permissionPatch,
       pendingPlanApproval: null,
     });
     return { agents };
@@ -353,6 +353,7 @@ export function handlePermissionRequest(payload: Record<string, unknown>, set: S
       pendingQuestionToolInput: toolInput,
       pendingQuestionRequestId: requestId,
       pendingPermission: null,
+      pendingPermissionQueue: [],
     };
     set((state) => {
       const key = resolveSlotKey(state.agents, permSlot);
@@ -381,7 +382,7 @@ export function handlePermissionRequest(payload: Record<string, unknown>, set: S
     const agent = state.agents.get(key);
     if (!agent) return {};
     const agents = new Map(state.agents);
-    agents.set(key, { ...agent, pendingPermission: permission });
+    agents.set(key, { ...agent, ...upsertPendingPermission(agent, permission) });
     return { agents };
   });
 }

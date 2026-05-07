@@ -65,6 +65,7 @@ export interface AgentSessionState {
   streamingState: StreamingState;
   status: AgentStatus;
   pendingPermission: PendingPermission | null;
+  pendingPermissionQueue?: PendingPermission[];
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   pendingQuestionRequestId: string;

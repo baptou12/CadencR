@@ -41,6 +41,7 @@ import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
 import { findProviderMode } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
+import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 
 // Types for the store accessors we need
 
@@ -405,17 +406,23 @@ function handlePermissionRequest(ctx: StoreAccessors, sessionId: string, payload
       }),
     );
   } else {
+    const pendingPermission = {
+      toolName: p.tool_name,
+      input: p.tool_input ?? {},
+      description: p.description ?? "",
+      pattern: p.pattern ?? "",
+      preview: p.preview,
+      options: p.options,
+      requestId: p.request_id,
+    };
+    const permissionPatch = upsertPendingPermission(
+      session ?? { pendingPermission: null, pendingPermissionQueue: [] },
+      pendingPermission,
+    );
     ctx.set(
       updateSession(ctx.get(), sessionId, {
-        pendingRequestId: p.request_id,
-        pendingPermission: {
-          toolName: p.tool_name,
-          input: p.tool_input ?? {},
-          description: p.description ?? "",
-          pattern: p.pattern ?? "",
-          preview: p.preview,
-          options: p.options,
-        },
+        ...permissionPatch,
+        pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
         lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
           type: "permission_requested",
         }),
@@ -487,6 +494,7 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
       lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
       streamingState: freshState,
       pendingPermission: null,
+      pendingPermissionQueue: [],
       pendingRequestId: "",
       pendingQuestions: [],
       pendingPlanApproval: null,
