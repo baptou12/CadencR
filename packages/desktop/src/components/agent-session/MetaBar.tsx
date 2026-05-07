@@ -235,21 +235,26 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
       }
     >
       {showAutoScrollChip && !secondaryBelow && (
-        <button
-          type="button"
-          aria-pressed={autoScrollEnabled}
-          onClick={onToggleAutoScroll}
-          className={cn(
-            META_BAR_CHIP,
-            autoScrollEnabled
-              ? AUTO_SCROLL_ACTIVE_CHIP
-              : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
-          )}
+        <ShortcutTooltip
+          label={autoScrollEnabled ? "Disable auto-scroll" : "Enable auto-scroll"}
+          keys={["cmd", "shift", "S"]}
         >
-          <ArrowDownIcon className="size-3" />
-          Auto-scroll
-          {autoScrollEnabled ? <CheckIcon className="size-3" /> : <span>Off</span>}
-        </button>
+          <button
+            type="button"
+            aria-pressed={autoScrollEnabled}
+            onClick={onToggleAutoScroll}
+            className={cn(
+              META_BAR_CHIP,
+              autoScrollEnabled
+                ? AUTO_SCROLL_ACTIVE_CHIP
+                : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
+            )}
+          >
+            <ArrowDownIcon className="size-3" />
+            Auto-scroll
+            {autoScrollEnabled ? <CheckIcon className="size-3" /> : <span>Off</span>}
+          </button>
+        </ShortcutTooltip>
       )}
 
       {/* Mode chip — labels/colors driven by the per-provider catalog. */}

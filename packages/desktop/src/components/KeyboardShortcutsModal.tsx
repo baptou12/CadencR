@@ -77,6 +77,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["⌘", "Enter"], description: "Maximize agent" },
       { keys: ["⌘", "⇧", "Z"], description: "Collapse agent" },
       { keys: ["⇧", "Tab"], description: "Toggle permission mode" },
+      { keys: ["⌘", "⇧", "S"], description: "Enable auto-scroll" },
       { keys: ["Esc"], description: "Stop agent" },
       { keys: ["Enter"], description: "Send message" },
     ],
