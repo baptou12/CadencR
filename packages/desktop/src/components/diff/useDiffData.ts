@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   useGetFileBlobShas,
   useGetCommitLog,
@@ -21,7 +22,15 @@ import {
   getListDiffCommentsQueryKey,
 } from "@/api/generated";
 import { parseUnifiedDiff, countHunkStats } from "@/lib/parse-unified-diff";
+import { findStalePendingCommentIds } from "@/lib/diff-comment-validity";
 import type { CommitEntry } from "./DiffFileTree";
+
+// Module-scoped dedupe state for the auto-invalidation effect below. Multiple
+// `DiffViewer`s can mount simultaneously (e.g. the Git tab plus a modal); using
+// hook-local refs would let each instance fire its own delete + toast for the
+// same stale batch. A shared set + per-feature last-batch key collapses both.
+const inFlightStaleDeleteIds = new Set<number>();
+const lastToastedStaleBatchKeys = new Map<number, string>();
 
 /**
  * Seed individual `useGetFileContent` caches from a batch response. Keys are
@@ -248,6 +257,43 @@ export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: st
         queryClient.invalidateQueries({ queryKey: getListDiffCommentsQueryKey(featureId) }),
     },
   });
+
+  // ---- Auto-invalidate pending comments on changed files ----
+  // Product rule: if any pending comment on a file is stale (its recorded
+  // `original_blob_sha` no longer matches the file's current SHA), drop *all*
+  // pending comments on that file. State below is module-scoped so two
+  // simultaneously-mounted `DiffViewer`s (e.g. tab + modal) don't double-fire
+  // deletes or double-toast for the same batch.
+  const deleteCommentMutate = deleteComment.mutate;
+  useEffect(() => {
+    if (comments.length === 0) return;
+    const staleIds = findStalePendingCommentIds(comments, blobShas).filter(
+      (id) => !inFlightStaleDeleteIds.has(id),
+    );
+    if (staleIds.length === 0) return;
+
+    // Sorted-id key dedupes re-renders within a batch and across hook instances.
+    const batchKey = [...staleIds].sort((a, b) => a - b).join(",");
+    if (lastToastedStaleBatchKeys.get(featureId) !== batchKey) {
+      lastToastedStaleBatchKeys.set(featureId, batchKey);
+      const noun = staleIds.length === 1 ? "comment" : "comments";
+      toast.info(`Removed ${staleIds.length} ${noun} on changed files`);
+    }
+
+    for (const id of staleIds) {
+      inFlightStaleDeleteIds.add(id);
+      deleteCommentMutate(
+        { id },
+        {
+          onSettled: () => inFlightStaleDeleteIds.delete(id),
+          onError: (err: unknown) => {
+            const message = err instanceof Error ? err.message : "Unknown error";
+            toast.error(`Failed to remove stale comment: ${message}`);
+          },
+        },
+      );
+    }
+  }, [featureId, comments, blobShas, deleteCommentMutate]);
 
   // ---- Auto-collapse viewed files ----
   const hasInitializedCollapse = useRef(false);

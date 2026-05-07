@@ -9,31 +9,13 @@ pub async fn list_by_feature(
     pool: &SqlitePool,
     feature_id: i64,
 ) -> Result<Vec<DiffComment>, AppError> {
-    let rows: Vec<(i64, i64, String, i64, String, String, String, String)> = sqlx::query_as(
-        "SELECT id, feature_id, file_path, line_number, side, content, status, created_at
+    Ok(sqlx::query_as::<_, DiffComment>(
+        "SELECT id, feature_id, file_path, line_number, side, content, status, created_at, original_blob_sha
          FROM diff_comments WHERE feature_id = ? ORDER BY file_path, line_number ASC",
     )
     .bind(feature_id)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(
-            |(id, feature_id, file_path, line_number, side, content, status, created_at)| {
-                DiffComment {
-                    id,
-                    feature_id,
-                    file_path,
-                    line_number,
-                    side,
-                    content,
-                    status,
-                    created_at,
-                }
-            },
-        )
-        .collect())
+    .await?)
 }
 
 pub async fn create(
@@ -41,36 +23,26 @@ pub async fn create(
     req: &CreateDiffCommentRequest,
 ) -> Result<DiffComment, AppError> {
     let id = sqlx::query(
-        "INSERT INTO diff_comments (feature_id, file_path, line_number, side, content, status)
-         VALUES (?, ?, ?, ?, ?, 'pending')",
+        "INSERT INTO diff_comments (feature_id, file_path, line_number, side, content, status, original_blob_sha)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?)",
     )
     .bind(req.feature_id)
     .bind(&req.file_path)
     .bind(req.line_number)
     .bind(&req.side)
     .bind(&req.content)
+    .bind(req.original_blob_sha.as_deref())
     .execute(pool)
     .await?
     .last_insert_rowid();
 
-    let row: (i64, i64, String, i64, String, String, String, String) = sqlx::query_as(
-        "SELECT id, feature_id, file_path, line_number, side, content, status, created_at
+    Ok(sqlx::query_as::<_, DiffComment>(
+        "SELECT id, feature_id, file_path, line_number, side, content, status, created_at, original_blob_sha
          FROM diff_comments WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool)
-    .await?;
-
-    Ok(DiffComment {
-        id: row.0,
-        feature_id: row.1,
-        file_path: row.2,
-        line_number: row.3,
-        side: row.4,
-        content: row.5,
-        status: row.6,
-        created_at: row.7,
-    })
+    .await?)
 }
 
 pub async fn update(pool: &SqlitePool, id: i64, content: &str) -> Result<(), AppError> {
@@ -220,7 +192,8 @@ mod tests {
                 side TEXT NOT NULL,
                 content TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                original_blob_sha TEXT
             )",
         )
         .execute(&pool)
@@ -268,6 +241,7 @@ mod tests {
             line_number: 10,
             side: "RIGHT".to_string(),
             content: content.to_string(),
+            original_blob_sha: None,
         };
         create(pool, &req).await.unwrap()
     }
@@ -350,6 +324,36 @@ mod tests {
         assert!(comments.iter().all(|c| c.status == "sent"));
 
         let _ = pending;
+    }
+
+    #[tokio::test]
+    async fn test_create_and_list_preserves_original_blob_sha() {
+        let pool = setup_test_db().await;
+        let req = CreateDiffCommentRequest {
+            feature_id: 1,
+            file_path: "src/main.rs".to_string(),
+            line_number: 5,
+            side: "RIGHT".to_string(),
+            content: "with sha".to_string(),
+            original_blob_sha: Some("abc123sha".to_string()),
+        };
+        let created = create(&pool, &req).await.unwrap();
+        assert_eq!(created.original_blob_sha.as_deref(), Some("abc123sha"));
+
+        let comments = list_by_feature(&pool, 1).await.unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].original_blob_sha.as_deref(), Some("abc123sha"));
+    }
+
+    #[tokio::test]
+    async fn test_create_without_blob_sha_stores_null() {
+        let pool = setup_test_db().await;
+        let comment = create_comment(&pool, 1, "src/main.rs", "no sha").await;
+        assert!(comment.original_blob_sha.is_none());
+
+        let comments = list_by_feature(&pool, 1).await.unwrap();
+        assert_eq!(comments.len(), 1);
+        assert!(comments[0].original_blob_sha.is_none());
     }
 
     #[tokio::test]
