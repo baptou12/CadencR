@@ -4,12 +4,25 @@
 
 use std::path::Path;
 
+use regex_lite::Regex;
 use sqlx::SqlitePool;
 
 use crate::shared::git_cli::run_git_safe_refs;
 
 use super::branch::build_branch_name;
 use super::db::{get_setting, set_setting};
+
+/// Mirror of `auto_name::is_default_title`. We don't import it to keep the
+/// workflow module independent of `ws_session`. When the feature title is
+/// still the auto-incremented placeholder (e.g. "Session 5") — typically
+/// because auto-naming failed silently — using it as a branch slug yields
+/// `feature/session-5-xxxx`, which is misleading (the number is a per-project
+/// counter, not the feature_id) and collides across projects. Detecting it
+/// here lets us fall back to a stable, feature-scoped slug.
+fn is_default_title(title: &str) -> bool {
+    let re = Regex::new(r"(?i)^Session \d+$").unwrap();
+    re.is_match(title) || title == "Untitled Feature"
+}
 
 /// Get-or-derive the new branch name for the `New` mode. Persists the
 /// generated name immediately so retries don't make a fresh one each time.
@@ -41,7 +54,20 @@ pub(super) async fn ensure_new_branch_name(
         .map(|r| r.0)
         .unwrap_or_else(|| format!("feature-{feature_id}"));
 
-    let name = build_branch_name(&prefix, &title);
+    // Auto-naming runs synchronously before this on the prompt-send path, but
+    // the LLM step can silently return `None` (timeout, empty extraction,
+    // provider error). When that happens the title is still the
+    // per-project counter "Session N" — slugifying that produces
+    // `feature/session-N-xxxx`, which is meaningless and collides across
+    // projects. Fall back to a stable feature-scoped slug instead so the
+    // branch name doesn't lock in a bad value that the user has to manually
+    // fix later.
+    let slug_source = if is_default_title(&title) {
+        format!("feature-{feature_id}")
+    } else {
+        title
+    };
+    let name = build_branch_name(&prefix, &slug_source);
     let _ = set_setting(write_pool, feature_id, "worktree_branch", &name).await;
     Ok(name)
 }
@@ -92,6 +118,15 @@ pub(super) async fn add_new_worktree(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_default_title_matches_session_n_and_untitled() {
+        assert!(is_default_title("Session 1"));
+        assert!(is_default_title("session 42"));
+        assert!(is_default_title("Untitled Feature"));
+        assert!(!is_default_title("Fix Login Bug"));
+        assert!(!is_default_title("Session about logins"));
+    }
 
     async fn init_repo(dir: &Path) {
         let _ = tokio::process::Command::new("git")
