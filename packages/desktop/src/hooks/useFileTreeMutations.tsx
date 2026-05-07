@@ -94,11 +94,34 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
     [rootQuery.data?.root],
   );
 
+  /**
+   * Submit a "create file"/"create folder" with a name typed into either the
+   * inline tree row or the popover. Centralized here so the two callers
+   * (`InlineCreateRow`, `FileTreeItem`) stay in sync.
+   */
+  const submitCreate = useCallback(
+    (kind: "file" | "folder", parentDir: string, name: string, onSuccess: () => void) => {
+      const childPath = parentDir ? `${parentDir}/${name}` : name;
+      if (kind === "file") {
+        createFile.mutate(
+          { data: { project_id: projectId, feature_id: featureId, file_path: childPath } },
+          { onSuccess },
+        );
+      } else {
+        createFolder.mutate(
+          { data: { project_id: projectId, feature_id: featureId, dir_path: childPath } },
+          { onSuccess },
+        );
+      }
+    },
+    [createFile, createFolder, projectId, featureId],
+  );
+
   // Memoize the return so consumers (FileTreeItem, InlineCreateRow) get stable
   // refs and downstream `React.memo` actually short-circuits.
   return useMemo(
-    () => ({ createFile, createFolder, rename, trash, reveal }),
-    [createFile, createFolder, rename, trash, reveal],
+    () => ({ createFile, createFolder, rename, trash, reveal, submitCreate }),
+    [createFile, createFolder, rename, trash, reveal, submitCreate],
   );
 }
 

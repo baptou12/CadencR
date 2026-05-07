@@ -33,7 +33,13 @@ export default function FileTreeItemMenu({
   onNewFolder,
 }: FileTreeItemMenuProps) {
   return (
-    <ContextMenuContent>
+    <ContextMenuContent
+      // Several items open a popover anchored on the row that triggered
+      // the menu. Letting Radix restore focus to that trigger after close
+      // would race with the popover/input's own focus management and risk
+      // an immediate blur-driven cancel. The popover focuses itself.
+      onCloseAutoFocus={(event) => event.preventDefault()}
+    >
       <ContextMenuItem onSelect={onNewFile}>New File…</ContextMenuItem>
       <ContextMenuItem onSelect={onNewFolder}>New Folder…</ContextMenuItem>
       <ContextMenuSeparator />

@@ -58,7 +58,7 @@ interface ProjectFeatureRowProps {
   onStatusChange: (featureId: number, status: FeatureStatus) => void;
   onStartLabelEdit: (feature: Feature) => void;
   onLabelDraftChange: (value: string) => void;
-  onSaveLabel: (featureId: number) => void;
+  onSaveLabel: (featureId: number, override?: string) => void;
   onCancelLabelEdit: () => void;
   onArchiveOrDelete: (featureId: number) => void;
 }
@@ -187,7 +187,7 @@ export function ProjectFeatureRow({
                       )
                     }
                     onChange={onLabelDraftChange}
-                    onSave={() => onSaveLabel(feature.id)}
+                    onSave={(override) => onSaveLabel(feature.id, override)}
                     onCancel={onCancelLabelEdit}
                   />
                 ) : (
@@ -254,7 +254,12 @@ export function ProjectFeatureRow({
           </div>
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent
+        // "Set label" opens a popover that manages its own focus; letting
+        // Radix restore focus to the trigger row would race with that and
+        // can dismiss the editor immediately.
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
         <ContextMenuItem onSelect={() => onNavigate(feature)}>Open</ContextMenuItem>
         <ContextMenuItem onSelect={startLabelEditAfterMenuClose}>Set label</ContextMenuItem>
         {feature.type !== "ws-session" && (

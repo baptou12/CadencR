@@ -16,14 +16,19 @@
  */
 import { create } from "zustand";
 
+/**
+ * Active "create file/folder" intent. The UI shape depends on `anchorPath`:
+ *
+ * - `anchorPath` set → popover anchored on that row (right-click on a row).
+ * - `anchorPath` undefined → inline input row inside the matching `parentDir`
+ *   `TreeNode` (root context menu, no row to anchor to).
+ */
 export interface CreatingState {
-  /**
-   * Directory the new entry will be created in (server-side `dir_path`).
-   * The inline input is rendered inside the `TreeNode` whose `dirPath`
-   * matches this value — root uses `""`.
-   */
+  /** Directory the new entry will be created in (server-side `dir_path`). */
   parentDir: string;
   kind: "file" | "folder";
+  /** Path of the row the popover should anchor to; undefined for inline. */
+  anchorPath?: string;
 }
 
 export interface ConfirmingState {

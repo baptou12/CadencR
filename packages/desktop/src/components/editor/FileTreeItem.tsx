@@ -42,12 +42,16 @@ function FileTreeItem({
   onOpenFile,
   onWillCreate,
 }: FileTreeItemProps) {
-  // Narrow selectors: only the matching row re-renders when rename/delete
-  // state changes anywhere in the tree.
+  // Narrow selectors: only the matching row re-renders when rename/delete/
+  // create state changes anywhere in the tree.
   const isRenaming = useFileTreeEditStore((s) => s.editingPath === entry.path);
   const isConfirmingDelete = useFileTreeEditStore((s) => s.confirming?.path === entry.path);
+  const creatingHere = useFileTreeEditStore((s) =>
+    s.creating?.anchorPath === entry.path ? s.creating : null,
+  );
 
-  const { rename, trash, reveal } = useFileTreeMutationsContext();
+  const { rename, trash, reveal, createFile, createFolder, submitCreate } =
+    useFileTreeMutationsContext();
 
   function handleClick() {
     if (entry.is_dir) {
@@ -67,14 +71,23 @@ function FileTreeItem({
   function openCreate(kind: "file" | "folder") {
     const { startCreate } = useFileTreeEditStore.getState();
     if (entry.is_dir) {
-      // Create inside this folder; auto-expand so the inline input shows.
+      // Create inside this folder; auto-expand so the new entry will be
+      // visible once the popover submits.
       if (!isExpanded) onToggle(entry.path);
       onWillCreate?.(entry.path);
-      startCreate({ parentDir: entry.path, kind });
+      startCreate({ parentDir: entry.path, kind, anchorPath: entry.path });
     } else {
-      // Create a sibling of this file in its parent dir.
-      startCreate({ parentDir: parentDirOf(entry.path), kind });
+      // Create a sibling of this file in its parent dir, anchor popover on
+      // the file row itself.
+      startCreate({ parentDir: parentDirOf(entry.path), kind, anchorPath: entry.path });
     }
+  }
+
+  function handleCreateSubmit(name: string) {
+    if (!creatingHere) return;
+    submitCreate(creatingHere.kind, creatingHere.parentDir, name, () =>
+      useFileTreeEditStore.getState().cancel(),
+    );
   }
 
   function handleRenameSubmit(newName: string) {
@@ -136,10 +149,24 @@ function FileTreeItem({
     </div>
   );
 
-  // Wrap row in the active popover (rename or confirm-delete). Only one is
-  // active at a time; otherwise just the context menu wrapper.
+  // Wrap row in the active popover (rename, create, or confirm-delete).
+  // Only one is active at a time; otherwise just the context menu wrapper.
   let wrapped = row;
-  if (isRenaming) {
+  if (creatingHere) {
+    wrapped = (
+      <FileTreeInputPopover
+        open
+        onOpenChange={(o) => {
+          if (!o) useFileTreeEditStore.getState().cancel();
+        }}
+        mode={creatingHere.kind === "file" ? "create-file" : "create-folder"}
+        pending={createFile.isPending || createFolder.isPending}
+        onSubmit={handleCreateSubmit}
+      >
+        {row}
+      </FileTreeInputPopover>
+    );
+  } else if (isRenaming) {
     wrapped = (
       <FileTreeInputPopover
         open
