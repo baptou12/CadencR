@@ -6,6 +6,7 @@ import {
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
 import { makeTabHostKey, useTabHostRegistry } from "@/stores/tab-host-registry";
+import { useFreezeWidthDuringResize } from "@/lib/use-freeze-width-during-resize";
 import { PaneChrome } from "./PaneChrome";
 import type { FeatureTabActivationHandlers, FeatureTabs } from "./types";
 
@@ -48,18 +49,30 @@ export function TabPane({
     setFocusedPane(featureId, leaf.id);
   }, [featureId, leaf.id, setFocusedPane]);
 
+  // Tab-resize perf: lock the pane's content host width for the duration of
+  // any panel-resize drag. This single freeze covers every tab (terminal,
+  // editor, agent, diff) because their roots fill the host, so they inherit
+  // the locked width and skip per-pointer-move reflow. Without this, dragging
+  // the global sidebar would still feel sluggish whenever the pane held heavy
+  // content (xterm, dozens of CodeMirror instances in a diff, etc.) — the
+  // AgentStream-only freeze covered just one tab kind.
+  const freezeWidthRef = useFreezeWidthDuringResize<HTMLDivElement>();
+
   const setContentRef = useCallback(
     (el: HTMLDivElement | null): (() => void) | undefined => {
+      freezeWidthRef.current = el;
       if (!el) return undefined;
       registerHost(hostKey, el);
       el.addEventListener("pointerdown", markPaneFocused, { capture: true });
       el.addEventListener("focusin", markPaneFocused, { capture: true });
       return () => {
+        freezeWidthRef.current = null;
         el.removeEventListener("pointerdown", markPaneFocused, { capture: true });
         el.removeEventListener("focusin", markPaneFocused, { capture: true });
         unregisterHost(hostKey, el);
       };
     },
+    // `freezeWidthRef` is a stable ref object — intentionally omitted from deps.
     [hostKey, markPaneFocused, registerHost, unregisterHost],
   );
 
