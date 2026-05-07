@@ -44,6 +44,19 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/*
+ * `titlebar-drag` makes a region act as a window-drag handle.
+ *
+ * Use sparingly. On macOS, right-clicking anywhere inside a
+ * `-webkit-app-region: drag` element crashes the Electron renderer
+ * (electron/electron#40805) before the DOM `contextmenu` event fires —
+ * neither a renderer-level `preventDefault` nor a per-child `no-drag`
+ * carve-out can intercept it. Only host this on small, dedicated drag
+ * strips that don't need a context menu (e.g. the Sidebar's top strip).
+ * The selectors below mark common interactive children as `no-drag` so
+ * they remain clickable; they do *not* save you from bare drag-region
+ * background being right-clicked.
+ */
 @utility titlebar-drag {
   -webkit-app-region: drag;
 }
@@ -62,6 +75,7 @@
 .titlebar-drag [role="alertdialog"],
 .titlebar-drag [role="menu"],
 .titlebar-drag [role="listbox"],
-.titlebar-drag [role="tooltip"] {
+.titlebar-drag [role="tooltip"],
+.titlebar-drag [data-slot="context-menu-trigger"] {
   -webkit-app-region: no-drag;
 }

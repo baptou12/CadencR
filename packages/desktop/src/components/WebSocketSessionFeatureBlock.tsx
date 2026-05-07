@@ -259,7 +259,6 @@ function SessionFeatureTopBar({
       onRetryWorktreeSetup={data.handleRetryWorktreeSetup}
       showCustomActions={!embedded}
       showSidebarChrome={!embedded}
-      draggable={!embedded}
       projectName={projectName}
       titleOverride={featureTitle}
       labelOverride={featureLabel}
