@@ -7,6 +7,12 @@
       ],
       "outputs": []
     },
+    "build:local": {
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": []
+    },
     "dev": {
       "dependsOn": [
         "^build"
@@ -26,6 +32,17 @@
       "persistent": true
     },
     "@cadencr/desktop#build": {
+      "dependsOn": [
+        "^build",
+        "@cadencr/service#build"
+      ],
+      "outputs": [
+        "out/**",
+        "dist-electron/**"
+      ],
+      "cache": false
+    },
+    "@cadencr/desktop#build:local": {
       "dependsOn": [
         "^build",
         "@cadencr/service#build"

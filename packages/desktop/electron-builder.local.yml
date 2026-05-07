@@ -1,0 +1,28 @@
+appId: com.cadencr.desktop
+productName: Cadencr
+icon: icons/icon
+directories:
+  output: dist-electron
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/bin/cadencr-service
+    to: cadencr-service
+mac:
+  identity: null
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  # We notarize with notarytool; electron-builder's legacy Gatekeeper precheck is intentionally disabled.
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  signIgnore:
+    - Contents/Resources/cadencr-service$
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
