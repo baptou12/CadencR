@@ -64,7 +64,15 @@ function secureWebContents(webContents: WebContents): void {
     event.preventDefault();
     void openApprovedExternalUrl(url);
   });
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    // The renderer's async Clipboard API (`navigator.clipboard.writeText` /
+    // `.write`) requires `clipboard-sanitized-write` to be granted; without
+    // it the write rejects with `NotAllowedError`. Sanitized writes only
+    // emit standard MIME types, so granting this is safe.
+    if (permission === "clipboard-sanitized-write") {
+      callback(true);
+      return;
+    }
     callback(false);
   });
 }

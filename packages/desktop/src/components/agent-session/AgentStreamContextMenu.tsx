@@ -10,6 +10,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { copyAs, type ExportFormat } from "@/lib/markdown-export";
+import { fragmentToMarkdown } from "@/lib/selection-to-markdown";
 import type { AgentBlockData } from "../AgentBlock";
 
 type CopyScope = "selection-or-block" | "block";
@@ -41,7 +42,7 @@ interface AgentStreamContextMenuProps {
  * outer trigger would drift across blocks during scroll.
  */
 function AgentStreamContextMenu({ block, children }: AgentStreamContextMenuProps) {
-  const selectionRef = useRef<string>("");
+  const selectionMarkdownRef = useRef<string>("");
   const savedRangesRef = useRef<Range[] | null>(null);
   const isRestoringRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -65,15 +66,23 @@ function AgentStreamContextMenu({ block, children }: AgentStreamContextMenuProps
     if (e.button !== 2) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed) {
-      selectionRef.current = "";
+      selectionMarkdownRef.current = "";
       savedRangesRef.current = null;
       return;
     }
-    selectionRef.current = sel.toString();
+    // Reconstruct markdown from the selected DOM fragment so that list
+    // bullets, headings, code fences, link URLs, emphasis markers etc. are
+    // preserved (Selection.toString() drops all of them).
     const ranges: Range[] = [];
+    let markdown = "";
     for (let i = 0; i < sel.rangeCount; i++) {
-      ranges.push(sel.getRangeAt(i).cloneRange());
+      const range = sel.getRangeAt(i);
+      ranges.push(range.cloneRange());
+      markdown += fragmentToMarkdown(range.cloneContents());
     }
+    // `fragmentToMarkdown` already trims; fall back to plain selection text
+    // only when the walker produced nothing (e.g. selection of a bare <hr>).
+    selectionMarkdownRef.current = markdown || sel.toString();
     savedRangesRef.current = ranges;
     // Initial restore after WebKit's default deselection on right-click.
     requestAnimationFrame(applySavedRanges);
@@ -97,7 +106,7 @@ function AgentStreamContextMenu({ block, children }: AgentStreamContextMenuProps
   }, [menuOpen]);
 
   function copy(format: ExportFormat, scope: CopyScope) {
-    const sel = selectionRef.current.trim();
+    const sel = selectionMarkdownRef.current.trim();
     const text = scope === "block" || !sel ? block.content : sel;
     return copyAs(format, text);
   }

@@ -53,8 +53,23 @@ describe("toSlackMrkdwn", () => {
     expect(toSlackMrkdwn("~~bye~~")).toBe("~bye~");
   });
 
-  it("converts unordered bullets to •", () => {
-    expect(toSlackMrkdwn("- one\n- two")).toBe("•  one\n•  two");
+  it("preserves dash bullets as Slack-native list markers", () => {
+    expect(toSlackMrkdwn("- one\n- two")).toBe("- one\n- two");
+  });
+
+  it("rewrites asterisk bullets as dashes so they don't collide with bold", () => {
+    expect(toSlackMrkdwn("* one\n* two")).toBe("- one\n- two");
+  });
+
+  it("collapses blank lines between consecutive list items", () => {
+    expect(toSlackMrkdwn("- one\n\n- two\n\n- three")).toBe("- one\n- two\n- three");
+    expect(toSlackMrkdwn("1. a\n\n2. b")).toBe("1. a\n2. b");
+  });
+
+  it("keeps blank lines around lists when adjacent to non-list paragraphs", () => {
+    expect(toSlackMrkdwn("intro\n\n- one\n\n- two\n\noutro")).toBe(
+      "intro\n\n- one\n- two\n\noutro",
+    );
   });
 
   it("preserves fenced and inline code", () => {

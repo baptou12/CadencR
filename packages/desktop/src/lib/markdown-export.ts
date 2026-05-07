@@ -62,7 +62,7 @@ export function toSlackMrkdwn(md: string): string {
   //    output of the bold conversion would otherwise be re-matched as italic.
   //    Slack italics use underscores in the final output. The sentinel uses
   //    SOH (U+0001) bookends around "ITAL" so user text can't collide with it.
-  const ITAL = "ITAL";
+  const ITAL = "ITAL";
   out = out.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, `$1${ITAL}$2${ITAL}`);
   out = out.replace(/(^|[^_\w])_([^_\n]+)_(?!_)/g, `$1${ITAL}$2${ITAL}`);
   // 2. Bold → single asterisk.
@@ -77,28 +77,50 @@ export function toSlackMrkdwn(md: string): string {
   out = out.replace(/~~([^~]+)~~/g, "~$1~");
   // 6. Links.
   out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>");
-  // 7. Unordered bullets.
-  out = out.replace(/^(\s*)[-+]\s+/gm, "$1•  ");
-  // (Asterisk bullets `* item` would collide with bold; handle them after
-  // bold is fully converted by re-checking at line start.)
-  out = out.replace(/^(\s*)\*\s+/gm, "$1•  ");
+  // Unordered bullets: keep `-` and `+` as-is (Slack supports `-` lists
+  // natively in its compose box). Convert `*` bullets to `-` so they don't
+  // get re-interpreted as bold.
+  out = out.replace(/^(\s*)\*\s+/gm, "$1- ");
+  // Collapse blank lines between consecutive list items. GFM allows "loose"
+  // lists with blank-line separators, but Slack's compose box treats each
+  // separated line as its own paragraph — breaking the visual list. Tighten
+  // them so Slack renders a single contiguous bulleted/numbered list.
+  // The lookbehind/lookahead match the boundary itself without consuming
+  // either list line, so a single global pass collapses chains.
+  out = out.replace(
+    /(?<=(?:^|\n)[ \t]*(?:[-+]|\d+\.)[ \t]+[^\n]*)\n{2,}(?=[ \t]*(?:[-+]|\d+\.)[ \t]+)/g,
+    "\n",
+  );
   return out;
 }
 
 /**
  * Convert markdown source to the requested format and write to the system
  * clipboard. On success shows a sonner toast; on failure surfaces the error
- * (per `error-handling.md` rule).
+ * (per `error-handling.md` rule). Always writes plain text — Slack
+ * specifically expects plain mrkdwn (`*bold*`, `\n- item`, …) on paste.
  */
 export async function copyAs(format: ExportFormat, source: string): Promise<void> {
-  const payload =
-    format === "plain" ? toPlainText(source) : format === "slack" ? toSlackMrkdwn(source) : source;
-
   try {
+    const payload =
+      format === "plain"
+        ? toPlainText(source)
+        : format === "slack"
+          ? toSlackMrkdwn(source)
+          : source;
+    // For Slack we deliberately write plain text only — never HTML. Slack's
+    // own formatting docs say lists are "regular text and line breaks"
+    // (e.g. `- item\n- item`); a `text/html` payload makes Slack's compose
+    // box treat each line as a styled paragraph and strips the bullet
+    // markers. Plain text lets `*bold*`, `_italic_`, `~strike~`, `> quote`,
+    // `\n- item`, fenced code, etc. render natively on paste.
+    //   https://api.slack.com/reference/surfaces/formatting
     await navigator.clipboard.writeText(payload);
     toast.success(formatLabel(format));
-  } catch {
-    toast.error("Failed to copy to clipboard");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[markdown-export] copy failed", error);
+    toast.error(`Failed to copy to clipboard: ${message}`);
   }
 }
 
