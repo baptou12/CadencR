@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { scheduleReconnect, resetReconnectDelay, clearReconnect } from "./ws-reconnect";
+import {
+  scheduleReconnect,
+  resetReconnectDelay,
+  clearReconnect,
+  registerReconnector,
+  unregisterReconnector,
+  forceReconnect,
+  forceReconnectAll,
+} from "./ws-reconnect";
 
 describe("ws-reconnect", () => {
   beforeEach(() => {
@@ -95,5 +103,66 @@ describe("ws-reconnect", () => {
 
     expect(connectA).not.toHaveBeenCalled();
     expect(connectB).toHaveBeenCalledOnce();
+  });
+
+  describe("forceReconnect / registerReconnector", () => {
+    afterEach(() => {
+      clearReconnect("force-a");
+      clearReconnect("force-b");
+    });
+
+    it("forceReconnect invokes the registered connector immediately", () => {
+      const connect = vi.fn();
+      registerReconnector("force-a", connect);
+      forceReconnect("force-a");
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it("forceReconnect cancels a pending scheduled timer", () => {
+      const connect = vi.fn();
+      scheduleReconnect("force-a", connect);
+      forceReconnect("force-a");
+      expect(connect).toHaveBeenCalledTimes(1);
+      // Pending timer should not fire a second time.
+      vi.advanceTimersByTime(2000);
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it("forceReconnect resets backoff to base", () => {
+      const connect = vi.fn();
+      // Push delay up to 2s.
+      scheduleReconnect("force-a", connect);
+      vi.advanceTimersByTime(1000);
+      scheduleReconnect("force-a", connect);
+      vi.advanceTimersByTime(2000);
+      expect(connect).toHaveBeenCalledTimes(2);
+
+      forceReconnect("force-a"); // also resets to base.
+      scheduleReconnect("force-a", connect);
+      vi.advanceTimersByTime(1000);
+      expect(connect).toHaveBeenCalledTimes(4);
+    });
+
+    it("forceReconnect on an unknown key is a no-op", () => {
+      expect(() => forceReconnect("missing")).not.toThrow();
+    });
+
+    it("forceReconnectAll triggers every registered connector once", () => {
+      const a = vi.fn();
+      const b = vi.fn();
+      registerReconnector("force-a", a);
+      registerReconnector("force-b", b);
+      forceReconnectAll();
+      expect(a).toHaveBeenCalledTimes(1);
+      expect(b).toHaveBeenCalledTimes(1);
+    });
+
+    it("unregisterReconnector removes a key from forceReconnectAll", () => {
+      const a = vi.fn();
+      registerReconnector("force-a", a);
+      unregisterReconnector("force-a");
+      forceReconnectAll();
+      expect(a).not.toHaveBeenCalled();
+    });
   });
 });

@@ -23,6 +23,7 @@ import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
+import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
 import { initNotificationPermission, listenForNotificationClicks } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
@@ -37,6 +38,7 @@ export const Route = createRootRoute({
 function RootLayout() {
   useOperationToasts();
   useThemeSync();
+  useConnectionWatchdog();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();

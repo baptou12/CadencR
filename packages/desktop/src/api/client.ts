@@ -106,4 +106,37 @@ export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> 
   return response.data;
 }
 
+/**
+ * Lightweight backend liveness probe. Used by the connection-status store
+ * (periodic poll) and the connection watchdog (post-wake / post-online check).
+ *
+ * Resolves with `{ ok: true }` on a 2xx, `{ ok: false, reason }` otherwise.
+ * Never throws — callers always receive a verdict so the status state machine
+ * can stay in a known shape (no orphaned promises after a wake/sleep).
+ *
+ * The 5 s timeout is shorter than the default 30 s on purpose: a hung backend
+ * should flip the indicator within a few seconds, not half a minute.
+ */
+export async function pingHealth(): Promise<{ ok: true } | { ok: false; reason: string }> {
+  try {
+    await axiosInstance.get("/api/health", { timeout: 5000 });
+    return { ok: true };
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    if (axiosErr.code === "ECONNABORTED") {
+      return { ok: false, reason: "Backend not responding (timed out)" };
+    }
+    if (axiosErr.code === "ERR_NETWORK") {
+      return { ok: false, reason: "Backend unreachable" };
+    }
+    if (axiosErr.response) {
+      return {
+        ok: false,
+        reason: `Backend returned ${axiosErr.response.status} ${axiosErr.response.statusText}`,
+      };
+    }
+    return { ok: false, reason: axiosErr.message ?? "Backend unreachable" };
+  }
+}
+
 export type ErrorType<T> = AxiosError<T>;

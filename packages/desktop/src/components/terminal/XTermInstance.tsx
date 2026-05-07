@@ -156,6 +156,10 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         }
         const id = ptyIdRef.current;
         if (id) onPtyReady?.(id, cwd);
+        // Visible "we recovered" marker before re-applying scrollback so the
+        // user sees that the prior "Connection lost. Reconnecting…" line
+        // produced a successful reattach rather than a silent comeback.
+        terminalRef.current?.write("\r\n\x1b[32m[Terminal reconnected]\x1b[0m\r\n");
         if (scrollback) terminalRef.current?.write(scrollback);
         // Sync size after reconnect
         try {
