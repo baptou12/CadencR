@@ -79,7 +79,8 @@ use tokio::sync::{mpsc, Mutex};
 mod tests {
     use super::*;
     use crate::domain::agents::adapter::{
-        AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMessageRx, RuntimePermissionMode,
+        AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeMessageRx,
+        RuntimePermissionMode,
     };
     use crate::domain::agents::claude_code::ClaudeCodeSession;
     use claude_agent_sdk_rs::{Query, SdkError};
@@ -1384,6 +1385,63 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_stream_reader_result_keeps_pending_user_input_status() {
+        let app_state = make_test_app_state().await;
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+        let mut status_rx = app_state.session_status_tx.subscribe();
+        let db_session_id = 78i64;
+        let feature_id = 1i64;
+
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, pending_permission) VALUES (?, ?, 'session', 'running', '{}')",
+        )
+        .bind(db_session_id)
+        .bind(feature_id)
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+
+        let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+        msg_tx
+            .send(Ok(RuntimeEvent::new(
+                crate::domain::agents::adapter::RuntimeEventMetadata::default(),
+                RuntimeEventKind::Result,
+            )))
+            .await
+            .unwrap();
+        drop(msg_tx);
+
+        session_prompt::spawn_stream_reader(
+            db_session_id,
+            feature_id,
+            msg_rx,
+            ws_tx,
+            app_state.write_pool.clone(),
+            app_state.session_status_tx.clone(),
+            sdk_sessions,
+            "codex".to_string(),
+            None,
+            None,
+        );
+
+        while let Some(Message::Text(text)) = ws_rx.recv().await {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            if env.action == "ended" {
+                break;
+            }
+        }
+
+        assert!(
+            matches!(
+                status_rx.try_recv(),
+                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+            ),
+            "turn result must not broadcast idle while permission/question/plan/prd input is pending"
+        );
     }
 
     #[tokio::test]

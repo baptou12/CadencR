@@ -34,7 +34,6 @@ pub(crate) fn spawn_stream_reader(
 ) {
     tokio::spawn(async move {
         info!(db_session_id, "stream reader started");
-        // Seed from provider or persisted session; `None` means unknown.
         let initial_context_window: Option<u64> = match provider_context_window {
             Some(cw) if cw > 0 => Some(cw),
             _ => WsSessionPersistence::get_session_row(&write_pool, db_session_id)
@@ -54,7 +53,6 @@ pub(crate) fn spawn_stream_reader(
         let mut usage_state = RuntimeUsageState::new(initial_context_window);
         let mut last_runtime_activity = Instant::now();
         let mut last_provider_reconcile = Instant::now();
-        // Avoid rebroadcasting Agent on every ContentBlockDelta.
         let mut last_signal_status: Option<crate::domain::session_status::AgentStatus> = None;
 
         loop {
@@ -65,7 +63,6 @@ pub(crate) fn spawn_stream_reader(
             let msg = match recv_result {
                 Ok(msg) => msg,
                 Err(_) => {
-                    // Timeout: check if WS sender is still alive.
                     if sender.send(Message::Ping(vec![].into())).is_err() {
                         debug!(
                             db_session_id,
@@ -118,7 +115,6 @@ pub(crate) fn spawn_stream_reader(
                 Some(Ok(runtime_event)) => {
                     last_runtime_activity = Instant::now();
 
-                    // Transport health events only drive the reconnecting UI banner.
                     if let Some(status) = runtime_event.stream_status() {
                         let payload = match status {
                             RuntimeStreamStatus::Degraded { reason } => {
@@ -210,7 +206,6 @@ pub(crate) fn spawn_stream_reader(
                         send_runtime_session_id(&sender, &runtime_sid);
                     }
 
-                    // Result-derived signals are handled below so plan gates stay in Question.
                     if !runtime_event.is_result() {
                         if let Some(signal) =
                             crate::domain::session_status::provider_signal_for_event(&runtime_event)
@@ -265,12 +260,11 @@ pub(crate) fn spawn_stream_reader(
                     let envelope = if runtime_event.is_result() {
                         WsSessionPersistence::mark_completed_static(&write_pool, db_session_id)
                             .await;
-                        let has_pending_plan_approval =
+                        let has_pending_user_input =
                             WsSessionPersistence::get_session_row(&write_pool, db_session_id)
                                 .await
-                                .and_then(|row| row.pending_plan_approval)
-                                .is_some();
-                        if !has_pending_plan_approval {
+                                .is_some_and(|row| row.has_pending_user_input());
+                        if !has_pending_user_input {
                             WsSessionPersistence::broadcast_session_status(
                                 &session_status_tx,
                                 db_session_id,
@@ -361,7 +355,6 @@ pub(crate) fn spawn_stream_reader(
             }
         }
 
-        // Next prompt.send resumes in a fresh runtime instead of dead stdin.
         let mut sessions = sdk_sessions.lock().await;
         if let Some(handle) = sessions.get_mut(&db_session_id) {
             if let QueryState::Active { ref query, .. } = handle.state {
