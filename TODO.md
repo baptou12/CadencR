@@ -1,12 +1,13 @@
 ## FIX
-- [ ] [opencode] Not sync on command updates
-- [ ] [opencode] inline diff broken sometimes
-- [ ] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
+- [~] [opencode] Not sync on command updates
+- [~] [opencode] inline diff broken sometimes
+- [~] [codex] when plan is available, we don't show "awaiting user" icon in the sidebar
 - [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
 - [ ] [git] once pushed, cannot merge a branch
 - [ ] [terminal] disconnected after the computer goes to sleep
 - [ ] [unified] wrong border for focused agent
 - [ ] [git] adding a comment on a changing line should remove the comment
+- [ ] [git] when selecting a branch without worktree, we don't checkout the branch 
 - [~] [feature] Once a plan agent shows the plan, it goes to idle (that's ok), but it collapses
 
 
