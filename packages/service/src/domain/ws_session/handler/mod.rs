@@ -49,7 +49,8 @@ use dispatch::dispatch_envelope;
 #[allow(unused_imports)]
 use helpers::{
     default_permission_mode, default_permission_mode_wire, parse_permission_mode, parse_session_id,
-    persist_and_close_query, provider_supports_mode, send_error, send_runtime_session_id,
+    persist_and_close_query, post_plan_approval_mode_wire, provider_supports_mode, send_error,
+    send_runtime_session_id,
 };
 #[allow(unused_imports)]
 use types::{QueryState, SdkSessions, SessionConfig, WsSender};
@@ -1771,6 +1772,31 @@ mod tests {
         assert_eq!(default_permission_mode_wire("opencode"), "acceptEdits");
         assert_eq!(default_permission_mode_wire("codex_cli"), "default");
         assert_eq!(default_permission_mode_wire("__unknown__"), "acceptEdits");
+    }
+
+    #[test]
+    fn post_plan_approval_mode_wire_matches_frontend_catalog() {
+        // OpenCode + Codex inherit their `default_permission_mode_wire` since
+        // they don't have a classifier-backed mode. The Claude branch is
+        // exercised by adapter-level tests with a seeded model catalog —
+        // here we just confirm the dispatch + non-Claude fallbacks.
+        assert_eq!(
+            post_plan_approval_mode_wire("opencode", None),
+            "acceptEdits"
+        );
+        assert_eq!(
+            post_plan_approval_mode_wire("opencode", Some("opencode-default")),
+            "acceptEdits"
+        );
+        assert_eq!(post_plan_approval_mode_wire("codex_cli", None), "default");
+        assert_eq!(
+            post_plan_approval_mode_wire("codex_cli", Some("gpt-5")),
+            "default"
+        );
+        assert_eq!(
+            post_plan_approval_mode_wire("__unknown__", None),
+            "acceptEdits"
+        );
     }
 
     // ----- handle_mode_set integration: provider/mode validation -----

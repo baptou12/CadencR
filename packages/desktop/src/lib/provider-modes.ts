@@ -170,8 +170,14 @@ export function findProviderMode(
 
 /**
  * The "primary edit" mode for a provider — used as the default at session
- * start, on provider switch, and after a plan is approved (replaces the
- * previous hard-coded `"acceptEdits"`).
+ * start and on provider switch.
+ *
+ * The post-plan-approval target is intentionally backend-owned: the
+ * bridge resolves it from the live model catalog (Claude's classifier-
+ * backed `auto` only when the model supports it) and broadcasts the
+ * outcome via `mode.changed`. Don't add an FE preview helper unless
+ * something actually consumes it — drift between FE guess and BE truth
+ * is exactly the bug class this code path is trying to eliminate.
  */
 export function defaultEditModeFor(providerId: string | null | undefined): PermissionMode {
   return getProviderModes(providerId)[0]?.id ?? "acceptEdits";

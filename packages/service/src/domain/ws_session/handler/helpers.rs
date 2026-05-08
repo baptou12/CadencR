@@ -49,6 +49,16 @@ pub(super) fn default_permission_mode(provider: &str) -> RuntimePermissionMode {
     parse_permission_mode(default_permission_mode_wire(provider))
 }
 
+/// Wire string the chip should land on after a plan is approved
+/// (post-`ExitPlanMode`). Dispatches to the adapter so the per-provider
+/// matrix lives next to the rest of each adapter's mode policy. Mirrored on
+/// the frontend by `postPlanApprovalModeFor` in `lib/provider-modes.ts`.
+pub(super) fn post_plan_approval_mode_wire(provider: &str, model: Option<&str>) -> &'static str {
+    crate::domain::agents::runtime_adapter(provider)
+        .map(|adapter| adapter.post_plan_approval_mode_wire(model))
+        .unwrap_or("acceptEdits")
+}
+
 /// Parse a session_id string from client payload into i64 DB key.
 pub(super) fn parse_session_id(s: &str) -> Option<i64> {
     s.parse::<i64>().ok()

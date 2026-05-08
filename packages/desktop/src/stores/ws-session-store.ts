@@ -440,8 +440,17 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     setPermissionMode(sessionId: string, mode: PermissionMode) {
       const session = getSession(sessionId);
       if (session.serverSessionId) {
+        // Live session: backend owns the truth. Send `mode.set` and let
+        // the resulting `mode.changed` envelope drive the chip — that's
+        // the only signal that the live CLI actually accepted the new
+        // mode (vs. e.g. MODE_NOT_SUPPORTED rejection). No optimistic
+        // local write here (see no-optimistic-updates.md).
         sendRaw(sessionId, createModeSet(session.serverSessionId, mode));
+        return;
       }
+      // Pre-init: there's no CLI to be out of sync with. Hold the
+      // selection locally so `buildQueuedInitEnvelopes` can replay it as
+      // a `mode.set` once the backend session comes up.
       set(updateSession(get(), sessionId, { permissionMode: mode }));
     },
 

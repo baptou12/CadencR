@@ -44,6 +44,33 @@ pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
     probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
 };
 
+impl ClaudeCodeAdapter {
+    /// Whether the active model can run Claude's classifier-backed `auto`
+    /// mode (Sonnet 4.6+ / Opus 4.6+).
+    ///
+    /// Non-obvious: the live CLI catalog only sets `supportsAutoMode: true`
+    /// on the `default` row; aliases like `sonnet` / `opus` ship with the
+    /// flag unset even though they resolve to auto-capable models. So we
+    /// trust those modern aliases when *any* catalog entry advertises auto
+    /// (proof this CLI version knows about the mode). `haiku` is excluded
+    /// because Haiku 4.5 doesn't support it. Behaviour matrix lives in the
+    /// `post_plan_approval_mode_*` tests below.
+    pub(super) fn model_supports_auto(&self, model_id: &str) -> bool {
+        let Ok(models) = self.models_cell().read() else {
+            return false;
+        };
+        if let Some(Some(flag)) = models
+            .iter()
+            .find(|m| m.id == model_id)
+            .map(|m| m.supports_auto_mode)
+        {
+            return flag;
+        }
+        let is_modern_alias = matches!(model_id, "default" | "sonnet" | "opus");
+        is_modern_alias && models.iter().any(|m| m.supports_auto_mode == Some(true))
+    }
+}
+
 pub struct ClaudeCodeSession {
     query: claude_agent_sdk_rs::Query,
 }
@@ -255,6 +282,22 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
     }
     // Default edit mode maps to Claude Code's primary edit mode.
 
+    /// Post-plan-approval target: prefer the classifier-backed `auto` mode
+    /// when the active model can run it (Sonnet 4.6+ / Opus 4.6+), fall back
+    /// to `acceptEdits` otherwise. We consult the live model catalog
+    /// (`supports_auto_mode`) so the gate stays in sync with whatever the
+    /// CLI advertises rather than baking model-id substrings here.
+    fn post_plan_approval_mode_wire(&self, model: Option<&str>) -> &'static str {
+        if model
+            .map(|id| self.model_supports_auto(id))
+            .unwrap_or(false)
+        {
+            "auto"
+        } else {
+            "acceptEdits"
+        }
+    }
+
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
         let default_model = Self::default_model_from(&models);
@@ -353,11 +396,31 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 mod tests {
     use super::{map_permission_mode, ClaudeCodeAdapter, ProbeState};
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimePermissionMode};
+    use crate::domain::agents::runtime::ModelCatalogEntry;
 
     fn new_test_adapter() -> ClaudeCodeAdapter {
         ClaudeCodeAdapter {
             cached_models: std::sync::OnceLock::new(),
             probe_state: tokio::sync::Mutex::new(ProbeState::default()),
+        }
+    }
+
+    fn seed_models(adapter: &ClaudeCodeAdapter, models: Vec<ModelCatalogEntry>) {
+        let cell = adapter.models_cell();
+        let mut guard = cell.write().expect("cache lock");
+        *guard = models;
+    }
+
+    fn model_with_auto(id: &str, supports_auto: Option<bool>) -> ModelCatalogEntry {
+        ModelCatalogEntry {
+            id: id.to_string(),
+            label: id.to_string(),
+            description: None,
+            supports_effort: None,
+            supported_effort_levels: None,
+            supports_adaptive_thinking: None,
+            supports_fast_mode: None,
+            supports_auto_mode: supports_auto,
         }
     }
 
@@ -394,5 +457,202 @@ mod tests {
         let adapter = new_test_adapter();
         assert!(adapter.is_valid_resume_session_id("11111111-1111-4111-8111-111111111111"));
         assert!(!adapter.is_valid_resume_session_id("ses_27f586910ffeUNaKL2l5UARerl"));
+    }
+
+    #[test]
+    fn post_plan_approval_mode_returns_auto_when_model_supports_it() {
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![model_with_auto("claude-sonnet-4-6", Some(true))],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("claude-sonnet-4-6")),
+            "auto"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_falls_back_to_accept_edits_when_model_does_not_support_auto() {
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![model_with_auto("claude-sonnet-4-5", Some(false))],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("claude-sonnet-4-5")),
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_trusts_modern_aliases_when_catalog_advertises_auto_elsewhere() {
+        // Reproduces the real CLI shape we saw in the wild: only the
+        // `default` row carries `supportsAutoMode: true`; the `sonnet` /
+        // `opus` aliases ship with the flag unset even though they
+        // resolve to auto-capable models at runtime.
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![
+                model_with_auto("default", Some(true)),
+                model_with_auto("sonnet", None),
+                model_with_auto("opus", None),
+                model_with_auto("haiku", None),
+            ],
+        );
+        assert_eq!(adapter.post_plan_approval_mode_wire(Some("sonnet")), "auto");
+        assert_eq!(adapter.post_plan_approval_mode_wire(Some("opus")), "auto");
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("default")),
+            "auto"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_matches_live_cli_catalog_shape_for_sonnet_alias() {
+        // Regression: production hit `target_mode="acceptEdits"` for a
+        // session running model="sonnet" because the live CLI catalog
+        // ships the alias rows without `supportsAutoMode`. The shape
+        // below is taken verbatim from the SDK's live-CLI mock at
+        // `claude-agent-sdk-rs/src/query.rs::supported_models_extracts_models_from_control_response`
+        // — if that wire format ever changes, this test catches it
+        // before the bug returns.
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![
+                ModelCatalogEntry {
+                    id: "default".to_string(),
+                    label: "Default (recommended)".to_string(),
+                    description: Some("Opus 4.7 with 1M context".to_string()),
+                    supports_effort: Some(true),
+                    supported_effort_levels: Some(vec![
+                        "low".to_string(),
+                        "medium".to_string(),
+                        "high".to_string(),
+                        "xhigh".to_string(),
+                        "max".to_string(),
+                    ]),
+                    supports_adaptive_thinking: Some(true),
+                    supports_fast_mode: None,
+                    supports_auto_mode: Some(true),
+                },
+                ModelCatalogEntry {
+                    id: "sonnet".to_string(),
+                    label: "Sonnet".to_string(),
+                    description: Some("Sonnet 4.6".to_string()),
+                    supports_effort: None,
+                    supported_effort_levels: None,
+                    supports_adaptive_thinking: None,
+                    supports_fast_mode: None,
+                    supports_auto_mode: None,
+                },
+                ModelCatalogEntry {
+                    id: "haiku".to_string(),
+                    label: "Haiku".to_string(),
+                    description: Some("Haiku 4.5".to_string()),
+                    supports_effort: None,
+                    supported_effort_levels: None,
+                    supports_adaptive_thinking: None,
+                    supports_fast_mode: None,
+                    supports_auto_mode: None,
+                },
+            ],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("sonnet")),
+            "auto",
+            "sonnet alias must resolve to `auto` post-plan-approval — \
+             this is the production regression"
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("default")),
+            "auto"
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("haiku")),
+            "acceptEdits",
+            "haiku 4.5 doesn't support auto mode"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_does_not_trust_haiku_alias() {
+        // Haiku 4.5 doesn't support the classifier-backed mode — the alias
+        // must NOT be trusted into `auto` even when the catalog has
+        // auto-capable peers.
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![
+                model_with_auto("default", Some(true)),
+                model_with_auto("haiku", None),
+            ],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("haiku")),
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_does_not_trust_aliases_when_cli_lacks_auto_support() {
+        // Older CLI catalog where no model advertises auto: the alias
+        // shouldn't be promoted to `auto` since the CLI itself wouldn't
+        // honor it.
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![
+                model_with_auto("default", None),
+                model_with_auto("sonnet", None),
+            ],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("sonnet")),
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_respects_explicit_false_on_alias_row() {
+        // If the CLI ever sets `supports_auto_mode: false` explicitly on
+        // an alias, that wins over the alias-trust fallback.
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![
+                model_with_auto("default", Some(true)),
+                model_with_auto("sonnet", Some(false)),
+            ],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("sonnet")),
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_falls_back_for_unknown_model_id() {
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![model_with_auto("claude-sonnet-4-6", Some(true))],
+        );
+        assert_eq!(
+            adapter.post_plan_approval_mode_wire(Some("not-a-real-model")),
+            "acceptEdits"
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_mode_falls_back_when_no_model_provided() {
+        let adapter = new_test_adapter();
+        seed_models(
+            &adapter,
+            vec![model_with_auto("claude-sonnet-4-6", Some(true))],
+        );
+        assert_eq!(adapter.post_plan_approval_mode_wire(None), "acceptEdits");
     }
 }

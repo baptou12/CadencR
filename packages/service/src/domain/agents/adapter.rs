@@ -711,6 +711,16 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         "acceptEdits"
     }
 
+    /// Wire string the chip should land on after a plan is approved
+    /// (post-`ExitPlanMode`). Mirrors `postPlanApprovalModeFor` in
+    /// `lib/provider-modes.ts`. The `model` hint lets adapters pick a
+    /// classifier-backed mode only when the active model can actually run
+    /// it. Defaults to `default_permission_mode_wire` so adapters opt in
+    /// explicitly to a plan-approval-specific override.
+    fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> &'static str {
+        self.default_permission_mode_wire()
+    }
+
     async fn session_finished(&self, _runtime_session_id: &str) -> bool {
         false
     }

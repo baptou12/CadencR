@@ -1,7 +1,6 @@
-import { createModeSet, createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
+import { createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
-import { defaultEditModeFor } from "@/lib/provider-modes";
 import {
   blocksPatchWithDerived,
   injectPlanIntoBlocks,
@@ -54,15 +53,14 @@ export function applyApprovePlan(
 
   const blocksPatch = blocksPatchWithDerived(session.streamingState, updatedBlocks);
 
-  // After approving a plan, switch back to the active provider's primary
-  // edit mode (Claude → acceptEdits, Codex → default, OpenCode → build).
-  // Hard-coded "acceptEdits" used to break Codex/OpenCode where that value
-  // either does nothing useful or doesn't exist in the per-provider catalog.
-  const exitMode = defaultEditModeFor(session.currentProviderId || session.runtimeProvider);
+  // The post-plan-approval mode change is owned by the backend bridge: it
+  // calls `Query::set_permission_mode` on the live CLI atomically with
+  // returning `Allow`, then broadcasts `mode.changed`. Any local write
+  // here would race the CLI and let the chip lie about CLI state, so the
+  // chip waits for that envelope instead (see no-optimistic-updates.md).
 
   if (session.pendingRequestId) {
     const isRestored = session.pendingRequestId.startsWith(planRestorePrefix);
-    sendRaw(sessionId, createModeSet(session.serverSessionId, exitMode));
     sendRaw(
       sessionId,
       createPermissionRespond(session.serverSessionId, session.pendingRequestId, "allow_once"),
@@ -77,7 +75,6 @@ export function applyApprovePlan(
       updateSession(ctx.get(), sessionId, {
         pendingRequestId: "",
         pendingPlanApproval: null,
-        permissionMode: exitMode,
         ...blocksPatch,
         lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),
       }),
@@ -85,7 +82,6 @@ export function applyApprovePlan(
     return;
   }
 
-  sendRaw(sessionId, createModeSet(session.serverSessionId, exitMode));
   sendRaw(
     sessionId,
     createPromptSend(
@@ -95,7 +91,6 @@ export function applyApprovePlan(
   );
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      permissionMode: exitMode,
       pendingPlanApproval: null,
       ...blocksPatch,
       lifecycle: transitionTurn(session.lifecycle, { type: "plan_approved" }),

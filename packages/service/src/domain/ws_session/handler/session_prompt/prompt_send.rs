@@ -264,6 +264,7 @@ pub(crate) async fn handle_prompt_send(
                 db_session_id,
                 write_pool: write_pool.clone(),
                 session_status_tx: app_state.session_status_tx.clone(),
+                sdk_sessions: sdk_sessions.clone(),
             };
             options.permission_handler = Some(Arc::new(bridge));
             if let Some(ref sid) = options.resume_session_id {

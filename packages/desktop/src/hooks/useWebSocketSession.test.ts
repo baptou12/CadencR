@@ -748,7 +748,7 @@ describe("useWebSocketSession", () => {
     expect(result.current.status).toBe("idle");
   });
 
-  it("approvePlan clears approval, sends mode.set + prompt, sets running", async () => {
+  it("approvePlan clears approval, sends permission.respond, defers mode change to backend", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
@@ -786,19 +786,34 @@ describe("useWebSocketSession", () => {
     });
 
     expect(result.current.pendingPlanApproval).toBeNull();
+    // Chip stays at the pre-approval mode (the FE never observed an
+    // EnterPlanMode signal in this test, so it's the post-init default
+    // `acceptEdits`) — the backend bridge owns the post-approval mode
+    // transition and will broadcast `mode.changed` once the live CLI has
+    // accepted the new mode.
     expect(result.current.permissionMode).toBe("acceptEdits");
     expect(result.current.status).toBe("agent");
 
-    // Should have sent mode.set and permission.respond
+    // FE must NOT send `mode.set` — backend bridge does it atomically
+    // with returning Allow on the can_use_tool callback.
     const sentMessages = ws.sent.map((s) => JSON.parse(s));
     const modeSet = sentMessages.find((m) => m.action === "mode.set");
-    expect(modeSet).toBeDefined();
-    expect(modeSet.payload.mode).toBe("acceptEdits");
+    expect(modeSet).toBeUndefined();
 
     const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
     expect(permissionRespond).toBeDefined();
     expect(permissionRespond.payload.request_id).toBe("req-plan-1");
     expect(permissionRespond.payload.decision).toBe("allow_once");
+
+    // Once backend confirms, the chip flips.
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "mode.changed",
+        payload: { mode: "auto" },
+      });
+    });
+    expect(result.current.permissionMode).toBe("auto");
   });
 
   it("requestPlanChanges clears approval, echoes feedback, sends prompt", async () => {
@@ -853,7 +868,7 @@ describe("useWebSocketSession", () => {
     expect(permissionRespond.payload.feedback).toBe("Use a different approach");
   });
 
-  it("setPermissionMode sends mode.set envelope and updates state", async () => {
+  it("setPermissionMode sends mode.set envelope and waits for mode.changed", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
@@ -869,14 +884,28 @@ describe("useWebSocketSession", () => {
       });
     });
 
+    const initialMode = result.current.permissionMode;
+
     act(() => {
       result.current.setPermissionMode("plan");
     });
 
-    expect(result.current.permissionMode).toBe("plan");
+    // Chip does NOT flip immediately — backend may reject (e.g.
+    // MODE_NOT_SUPPORTED) and we'd be lying about CLI state otherwise.
+    expect(result.current.permissionMode).toBe(initialMode);
     const sent = JSON.parse(ws.sent[0]);
     expect(sent.action).toBe("mode.set");
     expect(sent.payload.mode).toBe("plan");
+
+    // Backend confirms → chip flips.
+    act(() => {
+      ws.simulateMessage({
+        domain: "session",
+        action: "mode.changed",
+        payload: { mode: "plan" },
+      });
+    });
+    expect(result.current.permissionMode).toBe("plan");
   });
 
   it("mode.changed envelope updates permissionMode state", async () => {

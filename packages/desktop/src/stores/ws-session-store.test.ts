@@ -1199,35 +1199,52 @@ describe("ws-session-store", () => {
       expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
     });
 
-    it("approvePlan sends permission.respond and mode.set, switches to acceptEdits", async () => {
+    it("approvePlan sends permission.respond and waits for backend mode.changed", async () => {
       const { ws } = await setupWithInit();
       streamExitPlanMode(ws);
       sendPlanPermissionRequest(ws);
 
+      const modeBeforeApproval = useWsSessionStore.getState().sessions["s1"].permissionMode;
+
       useWsSessionStore.getState().approvePlan("s1");
 
-      const session = useWsSessionStore.getState().sessions["s1"];
+      // Approval clears the gate immediately, but the chip is unchanged
+      // until the backend bridge has actually pushed
+      // `set_permission_mode` to the CLI and broadcast `mode.changed`.
+      // Anything else would let the chip lie about CLI state.
+      let session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toBeNull();
       expect(session.pendingRequestId).toBe("");
-      expect(session.permissionMode).toBe("acceptEdits");
+      expect(session.permissionMode).toBe(modeBeforeApproval);
       expect(session.lifecycle).toEqual({ phase: "active" });
 
-      // Should have sent mode.set and permission.respond
+      // FE must NOT race-send `mode.set` itself — the backend bridge owns
+      // the post-approval mode transition (atomic with returning Allow).
       const sent = ws.sent.map((s) => JSON.parse(s));
       const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
-      expect(modeSet).toBeDefined();
-      expect(modeSet.payload.mode).toBe("acceptEdits");
+      expect(modeSet).toBeUndefined();
 
       const permResp = sent.find((m: Record<string, unknown>) => m.action === "permission.respond");
       expect(permResp).toBeDefined();
       expect(permResp.payload.request_id).toBe("req-plan-1");
       expect(permResp.payload.decision).toBe("allow_once");
+
+      // Backend confirms post-plan mode → chip flips.
+      ws.simulateMessage({
+        domain: "session",
+        action: "mode.changed",
+        payload: { mode: "auto" },
+      });
+      session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.permissionMode).toBe("auto");
     });
 
-    it("approvePlan exits to the active provider's primary edit mode (Codex → default)", async () => {
+    it("approvePlan does not optimistically write the chip mode (backend wins)", async () => {
       const { ws } = await setupWithInit();
-      // Switch the session to Codex before approving — exit mode must follow
-      // the catalog, not be hard-coded to Claude's "acceptEdits".
+      // Switch the session to Codex before approving — even though the FE
+      // catalog has its own per-provider primary, the FE must not guess at
+      // the post-approval mode anymore. The backend resolves it from its
+      // own adapter matrix and broadcasts via `mode.changed`.
       useWsSessionStore.setState((state) =>
         updateSession(state, "s1", { currentProviderId: "codex_cli" }),
       );
@@ -1236,30 +1253,16 @@ describe("ws-session-store", () => {
 
       useWsSessionStore.getState().approvePlan("s1");
 
+      const sent = ws.sent.map((s) => JSON.parse(s));
+      expect(sent.find((m: Record<string, unknown>) => m.action === "mode.set")).toBeUndefined();
+
+      ws.simulateMessage({
+        domain: "session",
+        action: "mode.changed",
+        payload: { mode: "default" },
+      });
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.permissionMode).toBe("default");
-
-      const sent = ws.sent.map((s) => JSON.parse(s));
-      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
-      expect(modeSet?.payload.mode).toBe("default");
-    });
-
-    it("approvePlan exits to the active provider's primary edit mode (OpenCode → acceptEdits/build)", async () => {
-      const { ws } = await setupWithInit();
-      useWsSessionStore.setState((state) =>
-        updateSession(state, "s1", { currentProviderId: "opencode" }),
-      );
-      streamExitPlanMode(ws);
-      sendPlanPermissionRequest(ws);
-
-      useWsSessionStore.getState().approvePlan("s1");
-
-      const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.permissionMode).toBe("acceptEdits");
-
-      const sent = ws.sent.map((s) => JSON.parse(s));
-      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
-      expect(modeSet?.payload.mode).toBe("acceptEdits");
     });
 
     it("approvePlan adds 'Plan approved.' user message and marks plan block approved", async () => {
