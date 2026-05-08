@@ -167,6 +167,17 @@ function closeSplash(): void {
   splash = null;
 }
 
+// Give the dev build its own identity so it can run side-by-side with the
+// installed production Cadencr without colliding on Electron's
+// single-instance lock (the lock is keyed on `userData`). Without this,
+// `pnpm dev` exits with `second instance — exiting` whenever the released
+// app is also open. Must run before `requestSingleInstanceLock()`.
+if (!app.isPackaged) {
+  app.setName("Cadencr Dev");
+  const devUserData = path.join(app.getPath("appData"), "@cadencr", "desktop-dev");
+  app.setPath("userData", devUserData);
+}
+
 // Refuse a second launch instead of racing port 5004 and stranding a
 // second splash window the user can't dismiss. Returning short-circuits
 // the rest of this module so the second process doesn't register handlers
