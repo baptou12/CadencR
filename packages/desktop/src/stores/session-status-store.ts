@@ -21,7 +21,9 @@
  *   overwritten if its current seq is <= the snapshot's seq, so a fresh
  *   live update can't be wiped by a lag-recovery snapshot.
  *
- * Kept deliberately small (one entry shape, two reducers, two hooks).
+ * Reducers and validators live in `./session-status-handlers` to keep
+ * this file focused on the WS lifecycle and Zustand wiring.
+ *
  * Conforms to `frontend-performance.md`: every consumer reads via a
  * narrow selector and never subscribes to the whole store.
  */
@@ -29,12 +31,17 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
-import { queryClient } from "@/lib/queryClient";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
-import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
-import { invalidateByUrlPrefix } from "@/lib/queryClient";
-import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
-import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
+import { useConnectionStatusStore } from "@/stores/connection-status-store";
+import { registerReconnector, unregisterReconnector } from "@/lib/ws-reconnect";
+import {
+  applySnapshot,
+  applyUpdate,
+  handleAppEnvelope,
+  notifyTransition,
+} from "@/stores/session-status-handlers";
+
+const APP_WS_SOURCE = "app-ws";
 
 export type { LiveAgentStatus, PendingKind };
 
@@ -56,56 +63,10 @@ interface SessionStatusState {
   disconnect: () => void;
 }
 
-const STATUS_VALUES: LiveAgentStatus[] = ["idle", "agent", "question"];
-const PENDING_KIND_VALUES: PendingKind[] = [
-  "permission",
-  "question",
-  "plan-approval",
-  "prd-approval",
-];
-
-function isStatus(val: unknown): val is LiveAgentStatus {
-  return typeof val === "string" && (STATUS_VALUES as string[]).includes(val);
-}
-
-function isPendingKind(val: unknown): val is PendingKind {
-  return typeof val === "string" && (PENDING_KIND_VALUES as string[]).includes(val);
-}
-
-function lookupFeature(featureId: number): Feature | undefined {
-  // Prefix-match all per-project listFeatures caches via the orval-generated key.
-  const queries = queryClient.getQueriesData<Feature[]>({ queryKey: getListFeaturesQueryKey() });
-  if (!queries) return undefined;
-  for (const [, data] of queries) {
-    const feature = data?.find((f) => f.id === featureId);
-    if (feature) return feature;
-  }
-  return undefined;
-}
-
-function notifyTransition(
-  featureId: number,
-  prevStatus: LiveAgentStatus | undefined,
-  nextStatus: LiveAgentStatus,
-): void {
-  const feature = lookupFeature(featureId);
-  if (!feature) return;
-  const routeType = feature.type === "ws-session" ? ("session" as const) : ("workflow" as const);
-  const opts = {
-    featureTitle: feature.title,
-    featureId,
-    projectId: feature.project_id,
-    routeType,
-  };
-  if (nextStatus === "question" && prevStatus !== "question") {
-    notifyAgentNeedsInput(opts);
-  } else if (nextStatus === "idle" && prevStatus === "agent") {
-    notifyAgentDone({ ...opts, status: "completed" });
-  }
-}
-
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
+
+type IntentionalCloseWebSocket = WebSocket & { __intentionalClose?: () => void };
 
 export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -120,111 +81,24 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
     reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
   }
 
-  function handleSnapshot(payload: Record<string, unknown>): void {
-    const rawStates = (payload.states ?? {}) as Record<string, unknown>;
-    const snapshotSeq = typeof payload.seq === "number" ? payload.seq : 0;
-    const prev = get().bySession;
-
-    const next: Record<number, SessionStatusEntry> = {};
-
-    for (const [idKey, entryRaw] of Object.entries(rawStates)) {
-      const sessionId = Number(idKey);
-      if (!Number.isFinite(sessionId)) continue;
-      if (!entryRaw || typeof entryRaw !== "object") continue;
-      const obj = entryRaw as Record<string, unknown>;
-      const featureId = typeof obj.feature_id === "number" ? obj.feature_id : null;
-      if (featureId == null) continue;
-      const status = isStatus(obj.status) ? obj.status : null;
-      if (!status) continue;
-      const kind = isPendingKind(obj.kind) ? obj.kind : null;
-
-      // Preserve a more recent live entry if it has overtaken the snapshot.
-      const existing = prev[sessionId];
-      if (existing && existing.seq > snapshotSeq) {
-        next[sessionId] = existing;
-        continue;
-      }
-      next[sessionId] = { status, kind, featureId, seq: snapshotSeq };
-
-      if (status === "question" && existing?.status !== "question") {
-        notifyTransition(featureId, existing?.status, status);
-      }
-    }
-
-    // Carry over live entries with seq > snapshotSeq that the snapshot
-    // didn't include (the backend filters Idle entries from snapshots, so
-    // a live "agent" event arriving just before the snapshot must be
-    // preserved here).
-    for (const [idKey, entry] of Object.entries(prev)) {
-      const sessionId = Number(idKey);
-      if (!Number.isFinite(sessionId)) continue;
-      if (sessionId in next) continue;
-      if (entry.seq > snapshotSeq) {
-        next[sessionId] = entry;
-      }
-    }
-
-    set({ bySession: next });
-  }
-
-  function handleUpdate(payload: Record<string, unknown>): void {
-    const sessionId = typeof payload.session_id === "number" ? payload.session_id : null;
-    const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
-    const seq = typeof payload.seq === "number" ? payload.seq : 0;
-    if (sessionId == null || featureId == null) return;
-    if (!isStatus(payload.status)) return;
-    const kind = isPendingKind(payload.kind) ? payload.kind : null;
-
-    const prev = get().bySession[sessionId];
-    if (prev && seq <= prev.seq) {
-      // Out-of-order — drop.
-      return;
-    }
-
-    const sameValue =
-      prev?.status === payload.status &&
-      (prev?.kind ?? null) === kind &&
-      prev?.featureId === featureId;
-
-    if (sameValue) {
-      // No-op: seq is global-monotonic so the next event is still > prev.seq.
-      // Skipping the `set` keeps every selector subscribed to `bySession`
-      // referentially stable through the long Agent-streaming runs.
-      return;
-    }
-
-    set((state) => ({
-      bySession: {
-        ...state.bySession,
-        [sessionId]: { status: payload.status as LiveAgentStatus, kind, featureId, seq },
-      },
-    }));
-
-    notifyTransition(featureId, prev?.status, payload.status as LiveAgentStatus);
-  }
-
-  function handleEnvelope(domain: string, action: string, payload: Record<string, unknown>): void {
-    if (domain === "editor" && action === "file_tree.changed") {
-      // Fold the editor + git-stats + git-diff invalidations into a single
-      // cache walk. Same logic the legacy app-ws-store had — moved here
-      // so we keep one app-level WS connection for the whole frontend.
-      void invalidateByUrlPrefix(queryClient, [
-        "/api/editor/tree",
-        "/api/editor/search",
-        "/api/git/stats",
-        "/api/git/diff",
-      ]);
-      return;
-    }
-
-    if (domain === "git") {
-      handleGitEnvelope(action, payload);
-      return;
-    }
-
+  function dispatchEnvelope(
+    domain: string,
+    action: string,
+    payload: Record<string, unknown>,
+  ): void {
+    if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
-    if (action === "session_status.snapshot") handleSnapshot(payload);
-    else if (action === "session_status.update") handleUpdate(payload);
+    if (action === "session_status.snapshot") {
+      set({ bySession: applySnapshot(get().bySession, payload) });
+      return;
+    }
+    if (action === "session_status.update") {
+      const result = applyUpdate(get().bySession, payload);
+      if (result.next) set({ bySession: result.next });
+      if (result.featureId != null && result.nextStatus) {
+        notifyTransition(result.featureId, result.prevStatus, result.nextStatus);
+      }
+    }
   }
 
   return {
@@ -233,6 +107,18 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
     bySession: {},
 
     connect() {
+      // Register so the connection watchdog can force-reconnect us on
+      // wake/online without us having to wait for a TCP-level close.
+      registerReconnector(APP_WS_SOURCE, () => {
+        const live = get().ws;
+        if (live && live.readyState !== WebSocket.CLOSED) {
+          (live as IntentionalCloseWebSocket).__intentionalClose?.();
+          live.close();
+        }
+        set({ ws: null, isConnected: false });
+        get().connect();
+      });
+
       const existing = get().ws;
       if (
         existing &&
@@ -246,50 +132,48 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
       // `intentionalClose` flips to true in `disconnect()` *before* we call
       // `ws.close()`. The close handler then knows not to schedule a
       // reconnect and not to scribble on the current `store.ws` (which may
-      // already be a freshly-created replacement — see the React Strict
-      // Mode race below).
+      // already be a freshly-created replacement — see Strict Mode race).
       let intentionalClose = false;
 
       ws.addEventListener("open", () => {
         reconnectDelay = RECONNECT_BASE_MS;
         // Preserve `bySession` so sidebar icons don't blink during the
-        // 100–300 ms window before the snapshot arrives. `handleSnapshot`
+        // 100–300 ms window before the snapshot arrives. `applySnapshot`
         // reconciles per-session via the seq, so any stale entries
         // self-correct (older entries get overwritten; newer ones survive).
         set({ isConnected: true });
+        useConnectionStatusStore.getState().reportSource(APP_WS_SOURCE, "connected");
+        // The watchdog already calls `probeHealth()` from `forceReconnectAll`
+        // on wake, and the periodic 15 s poll covers the standalone case.
+        // Reporting `connected` here is sufficient to clear the indicator.
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
       });
 
-      // The close handler must guard against two failure modes that *both*
-      // produce duplicate live connections in dev (React Strict Mode):
-      //
-      //  1. After `disconnect()` is called (Strict cleanup), the WS we just
-      //     closed will fire `close`. By then `connect()` has already run
-      //     a second time and `store.ws` points at a *different* socket —
-      //     blindly setting `ws: null` here would null that out and the
-      //     subscribe-effects bound to it would silently stop working.
-      //
-      //  2. `scheduleReconnect()` will fire `connect()` again ~1 s after
-      //     close. Combined with #1 we get two open sockets at once, and
-      //     only one of them carries the `subscribe.git_status` registered
-      //     by `useGitStatusSubscription` — the other receives no
-      //     `commit.output` envelopes, which looks exactly like "streaming
-      //     is broken".
-      //
-      // Both paths are skipped on intentional close, and the store mutation
-      // is gated by an instance check so a stale socket can't clobber the
-      // current one.
+      // Guard against React Strict Mode double-mount races: a closing
+      // socket may fire `close` after `connect()` has already replaced
+      // `store.ws` with a new instance. Both store mutations are gated
+      // by an instance check (`get().ws === ws`).
       ws.addEventListener("close", () => {
         if (get().ws === ws) {
           set({ isConnected: false, ws: null });
         }
         if (!intentionalClose) {
+          useConnectionStatusStore
+            .getState()
+            .reportSource(APP_WS_SOURCE, "reconnecting", "App WebSocket dropped");
           scheduleReconnect();
+        } else {
+          useConnectionStatusStore.getState().clearSource(APP_WS_SOURCE);
         }
       });
 
       ws.addEventListener("error", () => {
         if (get().ws === ws) set({ isConnected: false });
+        if (!intentionalClose) {
+          useConnectionStatusStore
+            .getState()
+            .reportSource(APP_WS_SOURCE, "reconnecting", "App WebSocket error");
+        }
       });
 
       ws.addEventListener("message", (event) => {
@@ -300,19 +184,17 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
           return; // unparseable — skip
         }
         try {
-          handleEnvelope(
+          dispatchEnvelope(
             envelope.domain,
             envelope.action,
             envelope.payload as Record<string, unknown>,
           );
         } catch (err) {
-          console.error("[session-status] handleEnvelope error:", err);
+          console.error("[session-status] dispatchEnvelope error:", err);
         }
       });
 
-      // Stash the flag-setter on the socket so `disconnect()` can flip it
-      // without us having to expose another store field.
-      (ws as WebSocket & { __intentionalClose?: () => void }).__intentionalClose = () => {
+      (ws as IntentionalCloseWebSocket).__intentionalClose = () => {
         intentionalClose = true;
       };
 
@@ -324,14 +206,11 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
       }
+      unregisterReconnector(APP_WS_SOURCE);
+      useConnectionStatusStore.getState().clearSource(APP_WS_SOURCE);
       const ws = get().ws;
       if (ws) {
-        // Mark this close as intentional *before* closing, so the close
-        // handler skips both the store wipe (it's already a no-op via the
-        // instance check) and — crucially — `scheduleReconnect`. Without
-        // this, every Strict-Mode unmount kicks off a reconnect that
-        // silently spawns a parallel socket.
-        (ws as WebSocket & { __intentionalClose?: () => void }).__intentionalClose?.();
+        (ws as IntentionalCloseWebSocket).__intentionalClose?.();
         ws.close();
       }
       set({ ws: null, isConnected: false });

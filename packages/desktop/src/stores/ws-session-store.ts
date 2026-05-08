@@ -2,7 +2,16 @@ import { create } from "zustand";
 import { buildUserMessageContent } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
-import { scheduleReconnect, resetReconnectDelay, clearReconnect } from "@/lib/ws-reconnect";
+import {
+  scheduleReconnect,
+  resetReconnectDelay,
+  clearReconnect,
+  registerReconnector,
+  unregisterReconnector,
+} from "@/lib/ws-reconnect";
+import { useConnectionStatusStore } from "@/stores/connection-status-store";
+
+const wsSessionSourceKey = (sessionId: string): string => `ws-session:${sessionId}`;
 import {
   type SessionConfig,
   type WsEnvelope,
@@ -108,12 +117,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }
 
       const entry = existing ?? createSessionEntry();
+      registerReconnector(wsSessionSourceKey(sessionId), () => get().connect(sessionId));
       const conn = createWsConnection({
         url: getWsUrl(),
         protocols: getWsProtocols(),
         onOpen: () => {
           resetReconnectDelay(sessionId);
           set(updateSession(get(), sessionId, { isConnected: true }));
+          useConnectionStatusStore
+            .getState()
+            .reportSource(wsSessionSourceKey(sessionId), "connected");
         },
         onClose: () => {
           const session = get().sessions[sessionId];
@@ -151,6 +164,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               ...closedDerived,
             }),
           );
+          useConnectionStatusStore
+            .getState()
+            .reportSource(wsSessionSourceKey(sessionId), "reconnecting", "Session WebSocket lost");
           scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
         onError: () => {
@@ -170,6 +186,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               }),
             }),
           );
+          useConnectionStatusStore
+            .getState()
+            .reportSource(wsSessionSourceKey(sessionId), "reconnecting", "Session WebSocket error");
           scheduleReconnect(sessionId, () => get().connect(sessionId));
         },
         onMessage: (data) => {
@@ -222,6 +241,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     disconnect(sessionId: string) {
       clearReconnect(sessionId);
+      unregisterReconnector(wsSessionSourceKey(sessionId));
+      useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 
@@ -356,6 +377,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     destroy(sessionId: string) {
       clearReconnect(sessionId);
+      unregisterReconnector(wsSessionSourceKey(sessionId));
+      useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       const session = get().sessions[sessionId];
       if (!session?.conn) return;
 

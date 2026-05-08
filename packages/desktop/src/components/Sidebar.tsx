@@ -7,6 +7,7 @@ import { ProjectTree } from "@/components/ProjectTree";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
+import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicator";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
@@ -174,16 +175,20 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
 
 function SidebarSettingsLink(): ReactElement {
   return (
-    <Link
-      to="/settings"
-      data-nav-item
-      className="flex items-center justify-between gap-2 px-3 py-2 text-xs border-t border-border/40 text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
-    >
-      <span className="flex items-center gap-2">
-        <Settings className="size-4" />
-        <span>Settings</span>
-      </span>
-      <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
-    </Link>
+    <div className="border-t border-border/40 flex items-center">
+      <Link
+        to="/settings"
+        data-nav-item
+        className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-xs text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
+      >
+        <span className="flex items-center gap-2">
+          <Settings className="size-4" />
+          <span>Settings</span>
+        </span>
+        <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
+      </Link>
+      {/* Hidden when healthy; renders a status pill + popover otherwise. */}
+      <ConnectionStatusIndicator className="mr-2" />
+    </div>
   );
 }

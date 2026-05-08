@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}));
 
 vi.mock("@/lib/ws-url", () => ({
   getWsUrl: () => "ws://localhost:5005/ws",
@@ -246,7 +252,7 @@ describe("useTerminalWebSocket", () => {
       expect(onError).not.toHaveBeenCalled();
     });
 
-    it("does not fire toast.error when WS errors due to unmount", () => {
+    it("does not fire toast on unmount-driven WS error", () => {
       const { unmount } = renderAndConnect();
       const ws = lastWs();
       unmount();
@@ -255,20 +261,12 @@ describe("useTerminalWebSocket", () => {
       expect(toast.error).not.toHaveBeenCalled();
     });
 
-    it("fires onError for unexpected close (server disconnect)", () => {
+    it("writes a 'Reconnecting…' message on unexpected close (server disconnect)", () => {
       const onError = vi.fn();
       renderAndConnect({ onError });
       act(() => lastWs().simulateOpen());
       act(() => lastWs().simulateClose(1006));
-      expect(onError).toHaveBeenCalledWith(
-        "Connection lost. Terminal may still be running — reopen to reconnect.",
-      );
-    });
-
-    it("fires toast.error for unexpected WS error", () => {
-      renderAndConnect();
-      act(() => lastWs().simulateError());
-      expect(toast.error).toHaveBeenCalledWith("Terminal WebSocket connection failed");
+      expect(onError).toHaveBeenCalledWith("Connection lost. Reconnecting…");
     });
   });
 

@@ -8,6 +8,10 @@ import { createWorkflowMessageHandler } from "@/hooks/workflow-event-handlers";
 import { hydrateFromSnapshotPatch } from "@/hooks/workflow-store-helpers";
 import { type WorkflowState, slotKeyToAgentSlot } from "@/types/workflow";
 import { buildSlashCommandsKey } from "@/lib/slash-command-key";
+import { useConnectionStatusStore } from "@/stores/connection-status-store";
+import { registerReconnector, unregisterReconnector, scheduleReconnect } from "@/lib/ws-reconnect";
+
+const workflowSourceKey = (featureId: number): string => `workflow:${featureId}`;
 
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
@@ -93,11 +97,21 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         prev.featureId === featureId && prev.projectId === projectId && prev.hydrated;
 
       prev.conn?.close();
+      // Clean up any prior workflow source from a different feature.
+      if (prev.featureId != null && prev.featureId !== featureId) {
+        unregisterReconnector(workflowSourceKey(prev.featureId));
+        useConnectionStatusStore.getState().clearSource(workflowSourceKey(prev.featureId));
+      }
+
+      registerReconnector(workflowSourceKey(featureId), () => get().connect(featureId, projectId));
 
       const conn = createWsConnection({
         url: getWsUrl(),
         protocols: getWsProtocols(),
         onOpen: () => {
+          useConnectionStatusStore
+            .getState()
+            .reportSource(workflowSourceKey(featureId), "connected");
           conn.sendJson({
             id: crypto.randomUUID(),
             domain: "workflow",
@@ -116,8 +130,25 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           }
           handleMessage(evt);
         },
-        onClose: () => {
+        onClose: (intentional) => {
           if (get().conn === conn) set({ conn: null });
+          if (!intentional) {
+            useConnectionStatusStore
+              .getState()
+              .reportSource(
+                workflowSourceKey(featureId),
+                "reconnecting",
+                "Workflow WebSocket dropped",
+              );
+            // Auto-reconnect with exponential backoff so backend restarts
+            // recover even when the user is sitting on the feature page.
+            // The watchdog can short-circuit this on wake events.
+            scheduleReconnect(workflowSourceKey(featureId), () =>
+              get().connect(featureId, projectId),
+            );
+          } else {
+            useConnectionStatusStore.getState().clearSource(workflowSourceKey(featureId));
+          }
         },
       });
 
@@ -150,6 +181,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     disconnect() {
+      const featureId = get().featureId;
+      if (featureId != null) {
+        unregisterReconnector(workflowSourceKey(featureId));
+        useConnectionStatusStore.getState().clearSource(workflowSourceKey(featureId));
+      }
       get().conn?.close();
       set({ conn: null });
     },
