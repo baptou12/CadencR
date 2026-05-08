@@ -10,6 +10,8 @@ const SIDECAR_PORT = 5004;
 const HEALTH_RETRIES = 60;
 const HEALTH_INTERVAL_MS = 500;
 const DEFAULT_DEV_API_BASE_URL = "http://127.0.0.1:5005";
+const STDERR_TAIL_LINES = 12;
+const PHASE_PREFIX = "CADENCR_PHASE ";
 
 interface HealthBody {
   service?: string;
@@ -17,10 +19,27 @@ interface HealthBody {
 
 type ServiceProcess = ChildProcessByStdio<null, Readable, Readable>;
 
+export type SidecarPhase =
+  | "starting_service"
+  | "backing_up"
+  | "backup_failed"
+  | "migrating"
+  | "loading_app";
+
+export interface SidecarStatusUpdate {
+  phase: SidecarPhase;
+  detail?: string;
+}
+
 export interface SidecarHandle {
   baseUrl: string;
   authToken: string | null;
   stop: () => Promise<void>;
+}
+
+export interface SpawnProductionSidecarOptions {
+  appVersion?: string;
+  onStatus?: (update: SidecarStatusUpdate) => void;
 }
 
 function normalizeBaseUrl(key: string, value: string): string {
@@ -61,18 +80,43 @@ function generateAuthToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-export async function spawnProductionSidecar(): Promise<SidecarHandle> {
+export async function spawnProductionSidecar(
+  options: SpawnProductionSidecarOptions = {},
+): Promise<SidecarHandle> {
   const baseUrl = `http://127.0.0.1:${SIDECAR_PORT}`;
   const authToken = generateAuthToken();
+  const onStatus = options.onStatus ?? (() => {});
+
   await assertPortAvailable(SIDECAR_PORT);
-  const child = spawnService(productionBinaryPath(), productionDbPath(), authToken);
+  onStatus({ phase: "starting_service" });
+
+  const child = spawnService(
+    productionBinaryPath(),
+    productionDbPath(),
+    authToken,
+    options.appVersion,
+  );
   let exited = false;
+  let exitCode: number | null = null;
+  let exitSignal: NodeJS.Signals | null = null;
+  const stderrTail: string[] = [];
+
   child.on("exit", (code, signal) => {
     exited = true;
+    exitCode = code;
+    exitSignal = signal;
     console.info(`[cadencr-service] exited code=${code ?? "null"} signal=${signal ?? "null"}`);
   });
-  pumpLogs(child);
-  await waitForHealthy(baseUrl, authToken, () => exited);
+  pumpLogs(child, onStatus, stderrTail);
+
+  try {
+    await waitForHealthy(baseUrl, authToken, () => exited);
+  } catch (error) {
+    const detail = describeServiceFailure(stderrTail, exitCode, exitSignal);
+    const baseMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(detail ? `${baseMessage}\n\n${detail}` : baseMessage);
+  }
+  onStatus({ phase: "loading_app" });
   return {
     baseUrl,
     authToken,
@@ -80,15 +124,38 @@ export async function spawnProductionSidecar(): Promise<SidecarHandle> {
   };
 }
 
-function spawnService(binary: string, dbPath: string, authToken: string): ServiceProcess {
-  return spawn(binary, serviceArgs(dbPath), {
+function spawnService(
+  binary: string,
+  dbPath: string,
+  authToken: string,
+  appVersion: string | undefined,
+): ServiceProcess {
+  return spawn(binary, serviceArgs(dbPath, appVersion), {
     env: { ...process.env, CADENCR_AUTH_TOKEN: authToken },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
 
-export function serviceArgs(dbPath: string): string[] {
-  return ["--db-path", dbPath, "--port", String(SIDECAR_PORT)];
+export function serviceArgs(dbPath: string, appVersion?: string): string[] {
+  const args = ["--db-path", dbPath, "--port", String(SIDECAR_PORT)];
+  if (appVersion) args.push("--app-version", appVersion);
+  return args;
+}
+
+function describeServiceFailure(
+  stderrTail: string[],
+  exitCode: number | null,
+  exitSignal: NodeJS.Signals | null,
+): string {
+  const parts: string[] = [];
+  if (exitCode !== null || exitSignal !== null) {
+    parts.push(`Service exit: code=${exitCode ?? "null"} signal=${exitSignal ?? "null"}.`);
+  }
+  if (stderrTail.length > 0) {
+    parts.push("Last log lines:");
+    parts.push(stderrTail.slice(-STDERR_TAIL_LINES).join("\n"));
+  }
+  return parts.join("\n");
 }
 
 async function assertPortAvailable(port: number): Promise<void> {
@@ -109,13 +176,67 @@ function isPortAvailable(port: number): Promise<boolean> {
   });
 }
 
-function pumpLogs(child: ServiceProcess): void {
-  child.stdout.on("data", (chunk: Buffer) => {
-    console.info(`[cadencr-service] ${chunk.toString("utf8").trimEnd()}`);
+function pumpLogs(
+  child: ServiceProcess,
+  onStatus: (update: SidecarStatusUpdate) => void,
+  stderrTail: string[],
+): void {
+  forwardStream(child.stdout, "info", (line) => {
+    const phaseUpdate = parsePhaseLine(line);
+    if (phaseUpdate) onStatus(phaseUpdate);
   });
-  child.stderr.on("data", (chunk: Buffer) => {
-    console.warn(`[cadencr-service] ${chunk.toString("utf8").trimEnd()}`);
+  forwardStream(child.stderr, "warn", (line) => {
+    stderrTail.push(line);
+    if (stderrTail.length > STDERR_TAIL_LINES * 2) {
+      stderrTail.splice(0, stderrTail.length - STDERR_TAIL_LINES);
+    }
   });
+}
+
+function forwardStream(
+  stream: Readable,
+  level: "info" | "warn",
+  onLine: (line: string) => void,
+): void {
+  const log = level === "info" ? console.info : console.warn;
+  let buffer = "";
+  stream.on("data", (chunk: Buffer) => {
+    buffer += chunk.toString("utf8");
+    let newlineIndex = buffer.indexOf("\n");
+    while (newlineIndex !== -1) {
+      const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+      buffer = buffer.slice(newlineIndex + 1);
+      if (line.length > 0) {
+        log(`[cadencr-service] ${line}`);
+        onLine(line);
+      }
+      newlineIndex = buffer.indexOf("\n");
+    }
+  });
+  stream.on("end", () => {
+    if (buffer.length > 0) {
+      log(`[cadencr-service] ${buffer}`);
+      onLine(buffer);
+    }
+  });
+}
+
+export function parsePhaseLine(line: string): SidecarStatusUpdate | null {
+  if (!line.startsWith(PHASE_PREFIX)) return null;
+  const rest = line.slice(PHASE_PREFIX.length).trim();
+  const spaceIdx = rest.indexOf(" ");
+  const name = spaceIdx === -1 ? rest : rest.slice(0, spaceIdx);
+  const detail = spaceIdx === -1 ? "" : rest.slice(spaceIdx + 1).trim();
+  switch (name) {
+    case "backing_up":
+      return { phase: "backing_up", detail: detail || undefined };
+    case "backup_failed":
+      return { phase: "backup_failed", detail: detail || undefined };
+    case "migrating":
+      return { phase: "migrating", detail: detail || undefined };
+    default:
+      return null;
+  }
 }
 
 async function stopChild(child: ServiceProcess): Promise<void> {

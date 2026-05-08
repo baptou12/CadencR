@@ -6,10 +6,17 @@ import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ip
 import { installApplicationMenu } from "./menu";
 import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { setRuntimeConfig } from "./runtime-config";
-import { createDevSidecarHandle, spawnProductionSidecar, type SidecarHandle } from "./sidecar";
+import {
+  createDevSidecarHandle,
+  spawnProductionSidecar,
+  type SidecarHandle,
+  type SidecarStatusUpdate,
+} from "./sidecar";
+import { createSplashWindow, type SplashHandle } from "./splash";
 import { installContextMenu } from "./context-menu";
 
 let mainWindow: BrowserWindow | null = null;
+let splash: SplashHandle | null = null;
 let sidecar: SidecarHandle | null = null;
 let allowClose = false;
 let pendingQuit = false;
@@ -26,7 +33,10 @@ function installCsp(): void {
 
 async function prepareRuntime(): Promise<void> {
   if (app.isPackaged) {
-    sidecar = await spawnProductionSidecar();
+    sidecar = await spawnProductionSidecar({
+      appVersion: app.getVersion(),
+      onStatus: (update: SidecarStatusUpdate) => splash?.setPhase(update.phase, update.detail),
+    });
   } else {
     const dotenvPath = loadDevEnv();
     console.info(`Loaded env from ${dotenvPath}`);
@@ -136,18 +146,55 @@ function wireMainProcess(): void {
 async function bootstrap(): Promise<void> {
   installCsp();
   installApplicationMenu(requestQuit);
+  splash = createSplashWindow(app.getVersion());
+  splash.setPhase("starting");
+  // Cmd+W (or any user-driven close on the splash) means "I want out" — the
+  // main window may not exist yet, so the regular close-confirm flow can't
+  // run. Quit immediately and let `before-quit` clean up the sidecar.
+  splash.onUserClose(() => {
+    splash = null;
+    app.quit();
+  });
   await prepareRuntime();
   mainWindow = createWindow();
+  mainWindow.webContents.once("did-finish-load", closeSplash);
   wireMainProcess();
 }
+
+function closeSplash(): void {
+  if (!splash) return;
+  splash.close();
+  splash = null;
+}
+
+// Refuse a second launch instead of racing port 5004 and stranding a
+// second splash window the user can't dismiss. Returning short-circuits
+// the rest of this module so the second process doesn't register handlers
+// or schedule bootstrap before Electron tears it down.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+  throw new Error("second instance — exiting");
+}
+app.on("second-instance", () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  } else if (splash) {
+    splash.window.focus();
+  }
+});
 
 app
   .whenReady()
   .then(() => bootstrap())
   .catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    dialog.showErrorBox("Cadencr failed to start", message);
-    app.quit();
+    if (splash) {
+      splash.setError("Cadencr couldn't start", message);
+    } else {
+      dialog.showErrorBox("Cadencr failed to start", message);
+      app.quit();
+    }
   });
 
 app.on("before-quit", (event) => {
