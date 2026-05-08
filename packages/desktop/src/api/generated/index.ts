@@ -275,11 +275,20 @@ export interface CreateCustomActionRequest {
   scope: Scope;
 }
 
+/**
+ * Blob SHA of the file at submission time. Used by the frontend's
+stale-comment auto-cleanup. Optional so older clients still work.
+ */
+export type CreateDiffCommentRequestOriginalBlobSha = string | null;
+
 export interface CreateDiffCommentRequest {
   content: string;
   feature_id: number;
   file_path: string;
   line_number: number;
+  /** Blob SHA of the file at submission time. Used by the frontend's
+stale-comment auto-cleanup. Optional so older clients still work. */
+  original_blob_sha?: CreateDiffCommentRequestOriginalBlobSha;
   side: string;
 }
 
@@ -437,6 +446,14 @@ export interface DeletedResponse {
   deleted: number;
 }
 
+/**
+ * Blob SHA of the file at the time the comment was created. The frontend
+compares this to the current blob SHA so it can auto-delete pending
+comments whose underlying file has since changed. Optional for legacy
+rows created before this column existed.
+ */
+export type DiffCommentOriginalBlobSha = string | null;
+
 export interface DiffComment {
   content: string;
   created_at: string;
@@ -444,6 +461,11 @@ export interface DiffComment {
   file_path: string;
   id: number;
   line_number: number;
+  /** Blob SHA of the file at the time the comment was created. The frontend
+compares this to the current blob SHA so it can auto-delete pending
+comments whose underlying file has since changed. Optional for legacy
+rows created before this column existed. */
+  original_blob_sha?: DiffCommentOriginalBlobSha;
   side: string;
   status: string;
 }
@@ -5103,10 +5125,12 @@ export const useDeleteFeature = <TError = ErrorType<unknown>, TContext = unknown
 };
 
 /**
- * @summary Trigger auto-naming for a feature on demand. Requires an existing
-non-default title and at least one user message, then waits for the rename
-to finish so callers get visible HTTP loading/error state even when no
-WebSocket client is connected.
+ * We deliberately allow this on default titles ("Session N", "Untitled
+Feature") — that's the exact case where the initial implicit auto-naming
+silently failed and the user wants to retry from the title context menu.
+ * @summary Trigger auto-naming for a feature on demand. Requires at least one user
+message, then waits for the rename to finish so callers get visible HTTP
+loading/error state even when no WebSocket client is connected.
  */
 export const autoNameFeature = (id: number, signal?: AbortSignal) => {
   return customInstance<FeaturesSuccessResponse>({
@@ -5158,10 +5182,9 @@ export type AutoNameFeatureMutationResult = NonNullable<
 export type AutoNameFeatureMutationError = ErrorType<unknown>;
 
 /**
- * @summary Trigger auto-naming for a feature on demand. Requires an existing
-non-default title and at least one user message, then waits for the rename
-to finish so callers get visible HTTP loading/error state even when no
-WebSocket client is connected.
+ * @summary Trigger auto-naming for a feature on demand. Requires at least one user
+message, then waits for the rename to finish so callers get visible HTTP
+loading/error state even when no WebSocket client is connected.
  */
 export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
   mutation?: UseMutationOptions<

@@ -11,6 +11,12 @@ pub struct DiffComment {
     pub content: String,
     pub status: String,
     pub created_at: String,
+    /// Blob SHA of the file at the time the comment was created. The frontend
+    /// compares this to the current blob SHA so it can auto-delete pending
+    /// comments whose underlying file has since changed. Optional for legacy
+    /// rows created before this column existed.
+    #[serde(default)]
+    pub original_blob_sha: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -20,6 +26,10 @@ pub struct CreateDiffCommentRequest {
     pub line_number: i64,
     pub side: String,
     pub content: String,
+    /// Blob SHA of the file at submission time. Used by the frontend's
+    /// stale-comment auto-cleanup. Optional so older clients still work.
+    #[serde(default)]
+    pub original_blob_sha: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -70,11 +80,30 @@ mod tests {
             content: "Test comment".to_string(),
             status: "pending".to_string(),
             created_at: "2024-01-01T00:00:00".to_string(),
+            original_blob_sha: Some("abc123".to_string()),
         };
         let json = serde_json::to_string(&comment).unwrap();
         assert!(json.contains("\"feature_id\":42"));
         assert!(json.contains("\"file_path\":\"src/main.rs\""));
         assert!(json.contains("\"status\":\"pending\""));
+        assert!(json.contains("\"original_blob_sha\":\"abc123\""));
+    }
+
+    #[test]
+    fn test_diff_comment_serde_null_blob_sha() {
+        let comment = DiffComment {
+            id: 1,
+            feature_id: 42,
+            file_path: "src/main.rs".to_string(),
+            line_number: 10,
+            side: "RIGHT".to_string(),
+            content: "Test comment".to_string(),
+            status: "pending".to_string(),
+            created_at: "2024-01-01T00:00:00".to_string(),
+            original_blob_sha: None,
+        };
+        let json = serde_json::to_string(&comment).unwrap();
+        assert!(json.contains("\"original_blob_sha\":null"));
     }
 
     #[test]
@@ -100,6 +129,14 @@ mod tests {
         assert_eq!(req.line_number, 20);
         assert_eq!(req.side, "LEFT");
         assert_eq!(req.content, "A comment");
+        assert_eq!(req.original_blob_sha, None);
+    }
+
+    #[test]
+    fn test_create_diff_comment_request_with_blob_sha() {
+        let json = r#"{"feature_id":5,"file_path":"src/foo.rs","line_number":20,"side":"LEFT","content":"A comment","original_blob_sha":"deadbeef"}"#;
+        let req: CreateDiffCommentRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.original_blob_sha.as_deref(), Some("deadbeef"));
     }
 
     #[test]

@@ -113,6 +113,9 @@ export function DiffViewer({
             line_number: lineNumber,
             side: "new",
             content,
+            // Snapshotted so `useDiffData`'s auto-invalidation can drop this
+            // comment if the file changes before it's sent.
+            original_blob_sha: d.blobShas[activeWidget.filePath] ?? null,
           },
         });
         setActiveCommentWidget(null);
