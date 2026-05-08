@@ -1,9 +1,7 @@
 //! Permission-response helpers for `OpenCodeAcpSession`.
 
-use serde_json::Value;
-
 use crate::domain::agents::adapter::{
-    AgentRuntimeSession, RuntimeError, RuntimePermissionDecision, RuntimePermissionResponse,
+    RuntimeError, RuntimePermissionDecision, RuntimePermissionResponse,
 };
 use crate::domain::agents::opencode::acp::permissions::{
     acp_permission_cancel_payload, acp_permission_response_payload,
@@ -18,7 +16,7 @@ pub(super) async fn respond_permission(
     let mut pending = session.pending_permissions.write().await;
     let Some(server_id) = pending.remove(&response.request_id) else {
         drop(pending);
-        return respond_question_via_prompt(session, response).await;
+        return respond_question_via_sidecar(session, response).await;
     };
     drop(pending);
     let payload = acp_permission_response_payload(
@@ -66,7 +64,7 @@ pub(super) async fn cancel_pending_permission(
         .map_err(|e| RuntimeError::new(format!("cancel permission write failed: {e}")))
 }
 
-async fn respond_question_via_prompt(
+async fn respond_question_via_sidecar(
     session: &OpenCodeAcpSession,
     response: RuntimePermissionResponse,
 ) -> Result<(), RuntimeError> {
@@ -77,22 +75,23 @@ async fn respond_question_via_prompt(
         )));
     }
     if matches!(response.decision, RuntimePermissionDecision::Deny) {
-        return session.interrupt().await;
+        return session
+            .question_sidecar
+            .reject_tool_call(&response.request_id)
+            .await;
     }
     let answers = extract_question_answers(
         response.updated_input.as_ref(),
         response.feedback.as_deref(),
     );
-    let text = answers
-        .into_iter()
-        .map(|group| group.join(", "))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if text.trim().is_empty() {
+    if answers.iter().all(Vec::is_empty) {
         return Err(RuntimeError::new(format!(
             "no pending ACP permission for request_id {}",
             response.request_id
         )));
     }
-    session.stream_input(Value::String(text)).await
+    session
+        .question_sidecar
+        .reply_tool_call(&response.request_id, answers)
+        .await
 }

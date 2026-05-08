@@ -1,18 +1,6 @@
-//! `OpenCodeAcpSession` — `AgentRuntimeSession` impl backed by ACP.
-//!
-//! Owns the `AcpClient` plus per-session state and translates trait
-//! methods into ACP requests/notifications. Helpers split into
-//! `session_permissions` (deny/cancel/drain) and `session_prompt`
-//! (`build_prompt_params`, `emit_turn_result`) to stay under 400 lines.
-
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-use async_trait::async_trait;
-use serde_json::{json, Value};
-use tokio::sync::{mpsc, RwLock};
-use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
@@ -21,9 +9,14 @@ use crate::domain::agents::adapter::{
 };
 use crate::domain::agents::opencode::acp::event_loop::PendingPermissions;
 use crate::domain::agents::opencode::acp::input::acp_prompt_blocks_from_content;
+use crate::domain::agents::opencode::acp::question_sidecar::QuestionSidecar;
 use crate::domain::agents::opencode::acp::session_permissions;
 use crate::domain::agents::opencode::acp::session_prompt::{build_prompt_params, emit_turn_result};
 use crate::domain::agents::opencode::acp::terminal_registry::TerminalRegistry;
+use async_trait::async_trait;
+use serde_json::{json, Value};
+use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinHandle;
 
 pub(super) struct OpenCodeAcpSession {
     pub(super) client: AcpClient,
@@ -38,11 +31,9 @@ pub(super) struct OpenCodeAcpSession {
     pub(super) context_window: Option<u64>,
     pub(super) message_rx: Option<RuntimeMessageRx>,
     pub(super) loop_task: Option<JoinHandle<()>>,
-    /// Shared with the event loop; ties the loop's lifetime to the session.
     pub(super) terminals_for_loop: Arc<TerminalRegistry>,
-    /// Same channel `take_message_rx` returns — used by the session to
-    /// emit synthetic events (e.g. `Result` on `stopReason`).
     pub(super) local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    pub(super) question_sidecar: QuestionSidecar,
 }
 
 impl OpenCodeAcpSession {
@@ -188,6 +179,7 @@ mod tests {
         AgentRuntimeSession, RuntimePermissionDecision, RuntimePermissionMode,
         RuntimePermissionResponse,
     };
+    use crate::domain::agents::opencode::acp::question_sidecar::QuestionSidecar;
     use serde_json::{json, Value};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicBool;
@@ -224,6 +216,7 @@ mod tests {
             loop_task: None,
             terminals_for_loop: Arc::new(super::TerminalRegistry::default()),
             local_tx,
+            question_sidecar: QuestionSidecar::new(9, std::path::Path::new("/tmp")),
         };
         (
             session,
@@ -245,8 +238,6 @@ mod tests {
         reply_ok(out, id, json!({ "stopReason": "end_turn" })).await;
     }
 
-    /// Build a parallel session sharing all `Arc`s — `RuntimeMessageRx`
-    /// is not `Send`, so tests rebuild a stub before `tokio::spawn`.
     fn stub_from(session: &OpenCodeAcpSession) -> OpenCodeAcpSession {
         OpenCodeAcpSession {
             client: session.client.clone(),
@@ -263,6 +254,7 @@ mod tests {
             loop_task: None,
             terminals_for_loop: session.terminals_for_loop.clone(),
             local_tx: session.local_tx.clone(),
+            question_sidecar: session.question_sidecar.clone(),
         }
     }
 

@@ -25,11 +25,13 @@ mod fs_handler;
 mod init;
 pub(super) mod input;
 mod permissions;
+mod question_sidecar;
 mod session;
 mod session_permissions;
 mod session_prompt;
 mod terminal_registry;
 
+use std::net::TcpListener;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -49,6 +51,7 @@ use crate::domain::agents::adapter::{
 
 use self::event_loop::{spawn_event_loop, EventLoopConfig};
 use self::init::negotiate_session;
+use self::question_sidecar::QuestionSidecar;
 use self::session::OpenCodeAcpSession;
 use self::terminal_registry::TerminalRegistry;
 
@@ -78,13 +81,21 @@ pub(super) async fn spawn_acp_session(
     content: Value,
     config: RuntimeSpawnConfig,
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
-    let client = build_acp_client(&config).await?;
+    let (client, question_sidecar) = build_acp_client(&config).await?;
     let pid = client.pid();
     let event_rx = client.subscribe();
     let negotiated = negotiate_session(&client, &config).await?;
 
     let (tx, rx) = mpsc::channel(MESSAGE_CHANNEL_CAPACITY);
-    let mut session = assemble_session(&client, &negotiated, &config, pid, rx, tx.clone());
+    let mut session = assemble_session(
+        &client,
+        &negotiated,
+        &config,
+        pid,
+        rx,
+        tx.clone(),
+        question_sidecar,
+    );
 
     emit_init_event(&tx, &negotiated).await;
     let handles = spawn_event_loop(
@@ -140,15 +151,25 @@ pub(super) async fn spawn_acp_session(
 
 /// Build the `tokio::process::Command` for `opencode acp --cwd <cwd>` and
 /// hand it to `AcpClient::spawn`. Honors `config.env` overrides.
-async fn build_acp_client(config: &RuntimeSpawnConfig) -> Result<AcpClient, RuntimeError> {
+async fn build_acp_client(
+    config: &RuntimeSpawnConfig,
+) -> Result<(AcpClient, QuestionSidecar), RuntimeError> {
     let binary = resolve_opencode_binary().await?;
     let mut command = Command::new(&binary);
-    command.arg("acp").arg("--cwd").arg(config.cwd.as_path());
+    let question_port = reserve_local_port()?;
+    command
+        .arg("acp")
+        .arg("--cwd")
+        .arg(config.cwd.as_path())
+        .arg("--hostname")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(question_port.to_string());
     // Opt into OpenCode's interactive `question` tool. Disabled by default
     // in ACP mode (PR opencode#11379) because some clients can't render
     // multi-option prompts. Cadencr DOES — we route the tool_call through
-    // `events_tool_call::question_permission_event` and answer it via the
-    // next `session/prompt` text. Caller-supplied env overrides win.
+    // `events_tool_call::question_permission_event` and reply through the
+    // same ACP sidecar's scoped question endpoint. Caller env wins.
     let caller_overrides_question_tool = config
         .env
         .as_ref()
@@ -162,14 +183,25 @@ async fn build_acp_client(config: &RuntimeSpawnConfig) -> Result<AcpClient, Runt
             command.env(key, value);
         }
     }
-    AcpClient::spawn(AcpSpawnOptions {
+    let client = AcpClient::spawn(AcpSpawnOptions {
         command,
         client_info: AcpClientInfo::default(),
         request_timeout: None,
         max_line_bytes: None,
     })
     .await
-    .map_err(|e| RuntimeError::new(format!("failed to spawn opencode acp: {e}")))
+    .map_err(|e| RuntimeError::new(format!("failed to spawn opencode acp: {e}")))?;
+    Ok((client, QuestionSidecar::new(question_port, &config.cwd)))
+}
+
+fn reserve_local_port() -> Result<u16, RuntimeError> {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
+        RuntimeError::new(format!("failed to reserve ACP sidecar port: {error}"))
+    })?;
+    listener
+        .local_addr()
+        .map(|addr| addr.port())
+        .map_err(|error| RuntimeError::new(format!("failed to read ACP sidecar port: {error}")))
 }
 
 /// Construct the session struct. The event-loop task slot is filled in by
@@ -181,6 +213,7 @@ fn assemble_session(
     pid: Option<u32>,
     rx: mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>,
     local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    question_sidecar: QuestionSidecar,
 ) -> OpenCodeAcpSession {
     let session_id = Arc::new(RwLock::new(Some(negotiated.session_id.clone())));
     let current_model = Arc::new(RwLock::new(negotiated.model.clone()));
@@ -204,6 +237,7 @@ fn assemble_session(
         loop_task: None,
         terminals_for_loop: terminals,
         local_tx,
+        question_sidecar,
     }
 }
 
