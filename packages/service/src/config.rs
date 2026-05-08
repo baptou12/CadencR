@@ -21,6 +21,11 @@ pub struct Config {
     #[arg(long, env = "CADENCR_AUTH_TOKEN", hide_env_values = true)]
     pub auth_token: Option<String>,
 
+    /// Version string used to name pre-migration backups. The desktop shell
+    /// passes its `package.json` version; dev runs leave it unset.
+    #[arg(long, env = "CADENCR_APP_VERSION")]
+    pub app_version: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

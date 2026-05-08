@@ -27,7 +27,15 @@ const REQUIRED_DEV_ENV_KEYS: [&str; 4] = [
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let dotenv_path = load_optional_package_dotenv(env!("CARGO_MANIFEST_DIR"))?;
+    // Only debug builds touch the dev `.env`. Release binaries shipped inside
+    // the desktop app must not pick up whatever happens to live next to the
+    // source tree on the developer machine — that is exactly how the prod
+    // database used to get repointed at the dev DB on the user's laptop.
+    let dotenv_path = if cfg!(debug_assertions) {
+        load_optional_package_dotenv(env!("CARGO_MANIFEST_DIR"))?
+    } else {
+        None
+    };
 
     let config = Config::parse();
 
@@ -70,11 +78,17 @@ async fn main() -> anyhow::Result<()> {
                 .clone()
                 .expect("--db-path or CADENCR_DB_PATH env var required");
 
-            // Set env var so MCP subprocesses inherit it
-            std::env::set_var("CADENCR_DB_PATH", &db_path);
+            // Publish the DB path in-process so MCP-spawn can read it back
+            // without a leaky `env::set_var`. See `mcp_spawn.rs` for the why.
+            domain::ws_session::handler::mcp_spawn::set_db_path(db_path.clone());
 
             let write_pool = db::create_write_pool(&db_path).await?;
-            shared::migrate::run_migrations(&write_pool).await?;
+            shared::migrate::run_migrations(&shared::migrate::MigrationContext {
+                pool: &write_pool,
+                db_path: Some(std::path::Path::new(&db_path)),
+                app_version: config.app_version.as_deref(),
+            })
+            .await?;
             let read_pool = db::create_read_pool(&db_path).await?;
 
             // Mark any sessions left as 'running' from a previous crash as 'paused'
@@ -202,7 +216,10 @@ fn load_optional_package_dotenv(manifest_dir: impl AsRef<Path>) -> anyhow::Resul
         return Ok(None);
     }
 
-    dotenvy::from_path(&dotenv_path).map_err(|error| {
+    // `from_path_override` so a parent process leaking CADENCR_* vars (the
+    // most common case: an in-app agent shell running `cargo run` from a
+    // worktree) cannot shadow the dev defaults declared in `.env`.
+    dotenvy::from_path_override(&dotenv_path).map_err(|error| {
         anyhow::anyhow!("Failed to load `{SERVICE_DOTENV_DISPLAY_PATH}`: {error}")
     })?;
 

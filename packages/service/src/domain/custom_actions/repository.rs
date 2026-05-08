@@ -398,7 +398,11 @@ mod tests {
 
     async fn pool_with_project_and_feature() -> (SqlitePool, i64, i64) {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        crate::shared::migrate::run_migrations(&pool).await.unwrap();
+        crate::shared::migrate::run_migrations(
+            &crate::shared::migrate::MigrationContext::pool_only(&pool),
+        )
+        .await
+        .unwrap();
         let project_id: i64 =
             sqlx::query_scalar("INSERT INTO projects (name, path) VALUES (?, ?) RETURNING id")
                 .bind("p")

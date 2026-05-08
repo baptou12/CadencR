@@ -7,11 +7,43 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use tracing::info;
 
 use crate::domain::agents::adapter::RuntimeMcpServerConfig;
 use crate::domain::mcp::servers::{mcp_server_name, AgentType};
+
+/// Process-local store for the canonical DB path.
+///
+/// The HTTP-server mode used to publish this via `CADENCR_DB_PATH` so
+/// `build_mcp_server_config` could read it back when building MCP subprocess
+/// configs. That export silently leaked into every PTY shell, agent CLI, and
+/// nested `cargo run` the user (or an agent inside Cadencr) launched — and a
+/// dev service started from a worktree happily ran its new migration against
+/// the desktop shell's production DB. Keep the path in-process only.
+static DB_PATH: OnceLock<String> = OnceLock::new();
+
+#[allow(dead_code)] // called from `main.rs` (bin), not visible to the lib build
+pub fn set_db_path(path: String) {
+    let _ = DB_PATH.set(path);
+}
+
+fn current_db_path() -> Option<String> {
+    if let Some(path) = DB_PATH.get() {
+        return Some(path.clone());
+    }
+    // Tests set CADENCR_DB_PATH directly to exercise this without going
+    // through main.rs. Production never reaches this branch — main.rs sets
+    // DB_PATH before any consumer fires — so the env var stays untrusted in
+    // release builds, which is the whole point of the in-process store.
+    #[cfg(test)]
+    {
+        return env::var("CADENCR_DB_PATH").ok();
+    }
+    #[cfg(not(test))]
+    None
+}
 
 pub fn build_mcp_server_config(
     agent_type: AgentType,
@@ -23,9 +55,7 @@ pub fn build_mcp_server_config(
         .to_string_lossy()
         .to_string();
 
-    let db_path = env::var("CADENCR_DB_PATH")
-        .ok()
-        .map(|path| absolute_db_path(&path));
+    let db_path = current_db_path().map(|path| absolute_db_path(&path));
     let env_vars = db_path
         .as_ref()
         .map(|path| HashMap::from([("CADENCR_DB_PATH".to_string(), path.clone())]));
