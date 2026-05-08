@@ -1,3 +1,4 @@
+mod acp;
 mod events;
 mod mcp_config;
 mod model;
@@ -12,6 +13,51 @@ mod stream_supervisor;
 mod stream_synthesizer;
 mod tool_names;
 mod worktree_config;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenCodeTransport {
+    Http,
+    Acp,
+}
+
+/// Default transport when `CADENCR_OPENCODE_TRANSPORT` is unset or
+/// unrecognised. `cfg!(debug_assertions)` is `true` for `cargo run` /
+/// `pnpm dev` builds and `false` for `cargo build --release` / packaged
+/// Electron sidecars — same convention used elsewhere in the service
+/// (`main.rs`, `api/middleware/ws.rs`) to gate dev-only behaviour.
+fn default_transport() -> OpenCodeTransport {
+    if cfg!(debug_assertions) {
+        OpenCodeTransport::Acp
+    } else {
+        OpenCodeTransport::Http
+    }
+}
+
+fn opencode_transport_env() -> OpenCodeTransport {
+    // TEMP-ACP-FORCE: hardcoded to ACP while we debug the new transport.
+    // The env-var indirection (and the HTTP fallback) lives behind this
+    // early return so tests + future toggles stay intact. Remove together
+    // with the wire-trace logs once ACP parity is verified.
+    return OpenCodeTransport::Acp;
+    #[allow(unreachable_code)]
+    match std::env::var("CADENCR_OPENCODE_TRANSPORT")
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("acp") => OpenCodeTransport::Acp,
+        Some("http") => OpenCodeTransport::Http,
+        None | Some("") => default_transport(),
+        Some(other) => {
+            tracing::warn!(
+                value = other,
+                default = ?default_transport(),
+                "unrecognised CADENCR_OPENCODE_TRANSPORT value; using default for build"
+            );
+            default_transport()
+        }
+    }
+}
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -49,7 +95,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
             description: request.description,
             pattern: None,
             preview: request.preview,
-            options: permission_options(),
+            options: request.options.unwrap_or_else(permission_options),
         })
     }
 
@@ -131,7 +177,18 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     // `build` agent in the adapter — see `permission_mode_agent` in model.rs.
 
     async fn session_finished(&self, runtime_session_id: &str) -> bool {
-        crate::domain::agents::providers::opencode::session_finished(runtime_session_id).await
+        // Dispatch to the transport-owning module. Each transport answers
+        // for itself — the HTTP module probes OpenCode's HTTP server, the
+        // ACP module returns false since process exit is signalled via
+        // `AcpEvent::ProcessExited`. When the HTTP transport is removed,
+        // the `Http` arm goes with it; the ACP arm is untouched.
+        match opencode_transport_env() {
+            OpenCodeTransport::Acp => acp::session_finished(runtime_session_id).await,
+            OpenCodeTransport::Http => {
+                crate::domain::agents::providers::opencode::session_finished(runtime_session_id)
+                    .await
+            }
+        }
     }
 
     async fn session_finished_text(&self, runtime_session_id: &str) -> Option<String> {
@@ -150,6 +207,12 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         content: Value,
         config: RuntimeSpawnConfig,
     ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+        let transport = opencode_transport_env();
+        tracing::info!(?transport, "selecting opencode transport");
+        if matches!(transport, OpenCodeTransport::Acp) {
+            return acp::spawn_acp_session(content, config).await;
+        }
+
         // OpenCode can't attach MCP servers per-session like the Claude CLI can —
         // it reads them from opencode.json under the request directory, so the
         // entries must be on disk before `ensure_running` caches the config.
@@ -218,9 +281,69 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
 
-    use super::{decorate_system_prompt, session::OpenCodeSession, OpenCodeAdapter};
+    use super::{
+        decorate_system_prompt, default_transport, opencode_transport_env,
+        session::OpenCodeSession, OpenCodeAdapter, OpenCodeTransport,
+    };
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, AgentRuntimeSession};
     use crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION;
+
+    static TRANSPORT_ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_transport_env<F: FnOnce()>(value: Option<&str>, f: F) {
+        let _g = TRANSPORT_ENV_GUARD
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let prev = std::env::var("CADENCR_OPENCODE_TRANSPORT").ok();
+        match value {
+            Some(v) => std::env::set_var("CADENCR_OPENCODE_TRANSPORT", v),
+            None => std::env::remove_var("CADENCR_OPENCODE_TRANSPORT"),
+        }
+        f();
+        match prev {
+            Some(v) => std::env::set_var("CADENCR_OPENCODE_TRANSPORT", v),
+            None => std::env::remove_var("CADENCR_OPENCODE_TRANSPORT"),
+        }
+    }
+
+    #[test]
+    fn default_transport_is_acp_in_debug_builds() {
+        // Tests always run in debug mode (`cargo test` keeps
+        // `debug_assertions = true`), so this asserts the dev default.
+        assert_eq!(default_transport(), OpenCodeTransport::Acp);
+    }
+
+    #[test]
+    fn transport_env_defaults_to_build_default_when_unset() {
+        with_transport_env(None, || {
+            assert_eq!(opencode_transport_env(), default_transport());
+        });
+    }
+
+    #[test]
+    fn transport_env_acp_is_recognised_case_insensitively() {
+        with_transport_env(Some("ACP"), || {
+            assert_eq!(opencode_transport_env(), OpenCodeTransport::Acp);
+        });
+        with_transport_env(Some("acp"), || {
+            assert_eq!(opencode_transport_env(), OpenCodeTransport::Acp);
+        });
+    }
+
+    #[test]
+    #[ignore = "TEMP-ACP-FORCE: opencode_transport_env is hardcoded to Acp while we debug the ACP transport; re-enable once the early return is removed"]
+    fn transport_env_explicit_http_overrides_dev_default() {
+        with_transport_env(Some("http"), || {
+            assert_eq!(opencode_transport_env(), OpenCodeTransport::Http);
+        });
+    }
+
+    #[test]
+    fn transport_env_unknown_value_falls_back_to_build_default() {
+        with_transport_env(Some("websocket"), || {
+            assert_eq!(opencode_transport_env(), default_transport());
+        });
+    }
 
     #[test]
     fn adapter_parses_opencode_permission_request() {
