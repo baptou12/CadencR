@@ -21,6 +21,7 @@ mod events_stream_blocks;
 mod events_tool_call;
 mod events_tool_call_input;
 mod events_tool_call_normalize;
+mod events_tool_call_question;
 mod fs_handler;
 mod init;
 pub(super) mod input;

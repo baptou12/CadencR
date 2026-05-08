@@ -13,7 +13,7 @@
 //! `ws-block-mutations` parser. Earlier the ACP path passed the raw ACP
 //! `session/update` params through, which the FE didn't know how to render.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent};
 use crate::domain::agents::opencode::events::{
@@ -44,6 +44,7 @@ pub(super) struct EventIndexer {
     /// or a tool call. The FE relies on this envelope to allocate a new
     /// chat bubble.
     pub(super) message_started: bool,
+    question_prompt_ids: HashSet<String>,
 }
 
 impl EventIndexer {
@@ -75,6 +76,10 @@ impl EventIndexer {
 
     pub(super) fn tool_name_for(&self, tool_call_id: &str) -> Option<&str> {
         self.tool_names.get(tool_call_id).map(String::as_str)
+    }
+
+    pub(super) fn mark_question_prompt_emitted(&mut self, tool_call_id: &str) -> bool {
+        self.question_prompt_ids.insert(tool_call_id.to_string())
     }
 
     /// Allocate (or reuse) the index for the currently-open text block.

@@ -1,6 +1,6 @@
 //! Tool-call mapping helpers for ACP `tool_call` / `tool_call_update`.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent,
@@ -10,6 +10,9 @@ use crate::domain::agents::opencode::acp::events::{other_event, EventIndexer, Ma
 use crate::domain::agents::opencode::acp::events_tool_call_input::synthesize_input_delta_event;
 use crate::domain::agents::opencode::acp::events_tool_call_normalize::{
     flatten_tool_result_content, normalize_edit_input,
+};
+use crate::domain::agents::opencode::acp::events_tool_call_question::{
+    question_start_event, question_update_event,
 };
 use crate::domain::agents::opencode::tool_names::{
     canonical_acp_tool_name, canonical_cadencr_tool_name,
@@ -53,14 +56,15 @@ pub(super) fn map_tool_call_start(
         // subsequent `tool_call_update`. Defer permission emission to the
         // update — `map_tool_call_update` will see the recorded tool name
         // and re-fire `question_permission_event` once the payload is real.
-        if input_has_questions(&input) {
+        if let Some(event) = question_start_event(
+            tool_call_id,
+            input,
+            metadata,
+            parent_tool_use_id(body),
+            indexer,
+        ) {
             return MappedUpdate {
-                events: vec![question_permission_event(
-                    tool_call_id,
-                    input,
-                    metadata,
-                    parent_tool_use_id(body),
-                )],
+                events: vec![event],
             };
         }
         // Swallow the empty-payload start so the FE doesn't render a
@@ -88,46 +92,6 @@ pub(super) fn map_tool_call_start(
     }
 }
 
-/// True when an AskUserQuestion `toolInput` actually carries a question
-/// the FE drawer can render — either the canonical OpenCode shape
-/// `{ questions: [{ question, options? }] }` or the legacy
-/// `{ question, options? }` flat shape we also accept.
-fn input_has_questions(input: &Value) -> bool {
-    if let Some(arr) = input.get("questions").and_then(Value::as_array) {
-        return !arr.is_empty();
-    }
-    input
-        .get("question")
-        .and_then(Value::as_str)
-        .map(|s| !s.is_empty())
-        .unwrap_or(false)
-}
-
-fn question_permission_event(
-    tool_call_id: &str,
-    tool_input: Value,
-    metadata: RuntimeEventMetadata,
-    parent: Option<String>,
-) -> RuntimeEvent {
-    let mut event = RuntimeEvent::new(
-        RuntimeEventMetadata {
-            raw: json!({
-                "type": "opencode_permission_request",
-                "transport": "acp",
-                "request_id": tool_call_id,
-                "call_id": tool_call_id,
-                "tool_name": "AskUserQuestion",
-                "tool_input": tool_input,
-                "description": "OpenCode question",
-            }),
-            ..metadata
-        },
-        RuntimeEventKind::Other,
-    );
-    event.set_parent_tool_use_id(parent);
-    event
-}
-
 pub(super) fn map_tool_call_update(
     body: &Value,
     indexer: &mut EventIndexer,
@@ -151,19 +115,16 @@ pub(super) fn map_tool_call_update(
     // FE has nothing to render for the empty-payload start, so we never
     // emitted a tool block — emit just the permission envelope.
     if indexer.tool_name_for(tool_call_id) == Some("AskUserQuestion") {
-        let raw_input = body
-            .get("toolInput")
-            .or_else(|| body.get("rawInput"))
-            .cloned()
-            .unwrap_or(Value::Null);
-        if input_has_questions(&raw_input) {
+        if let Some(event) = question_update_event(
+            tool_call_id,
+            body,
+            status,
+            metadata.clone(),
+            parent_tool_use_id(body),
+            indexer,
+        ) {
             return MappedUpdate {
-                events: vec![question_permission_event(
-                    tool_call_id,
-                    raw_input,
-                    metadata,
-                    parent_tool_use_id(body),
-                )],
+                events: vec![event],
             };
         }
     }
@@ -256,7 +217,6 @@ mod tests {
             ..RuntimeEventMetadata::default()
         }
     }
-
     #[test]
     fn start_emits_content_block_start_with_tool_use() {
         let mut idx = EventIndexer::default();
@@ -330,7 +290,6 @@ mod tests {
 
     #[test]
     fn edit_tool_input_normalizes_acp_keys_via_map_tool_call_start() {
-        // Pure-helper coverage lives in `events_tool_call_normalize.rs`.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -384,7 +343,6 @@ mod tests {
             &mut idx,
             metadata(),
         );
-
         assert_eq!(result.events[0].parent_tool_use_id(), Some("parent-1"));
         assert_eq!(
             result.events[0].raw_json()["parent_tool_use_id"],
@@ -393,69 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn ask_user_question_start_with_empty_input_is_swallowed() {
-        // OpenCode's first `tool_call(question)` carries `rawInput: {}` —
-        // emitting a permission event here would render an empty drawer.
-        // The deferred update is the canonical place to emit it.
-        let mut idx = EventIndexer::default();
-        let result = map_tool_call_start(
-            &json!({
-                "toolCallId": "q-1",
-                "title": "question",
-                "rawInput": {}
-            }),
-            &mut idx,
-            metadata(),
-        );
-        assert!(result.events.is_empty());
-    }
-
-    #[test]
-    fn ask_user_question_update_emits_permission_event_with_real_payload() {
-        let mut idx = EventIndexer::default();
-        let _ = map_tool_call_start(
-            &json!({
-                "toolCallId": "q-2",
-                "title": "question",
-                "rawInput": {}
-            }),
-            &mut idx,
-            metadata(),
-        );
-        let update = map_tool_call_update(
-            &json!({
-                "toolCallId": "q-2",
-                "status": "in_progress",
-                "title": "question",
-                "rawInput": {
-                    "questions": [{
-                        "question": "Pick a primary color",
-                        "options": [
-                            { "label": "Red" },
-                            { "label": "Green" },
-                            { "label": "Blue" }
-                        ]
-                    }]
-                }
-            }),
-            &mut idx,
-            metadata(),
-        );
-        assert_eq!(update.events.len(), 1);
-        let raw = update.events[0].raw_json();
-        assert_eq!(raw["type"], "opencode_permission_request");
-        assert_eq!(raw["tool_name"], "AskUserQuestion");
-        assert_eq!(raw["request_id"], "q-2");
-        assert_eq!(
-            raw["tool_input"]["questions"][0]["question"],
-            "Pick a primary color"
-        );
-    }
-
-    #[test]
     fn lowercase_acp_tool_kinds_are_canonicalized_to_pascal_case() {
-        // OpenCode emits `write` / `edit` / `bash`; without canonicalisation
-        // the FE's `isFileChangeTool` set never matches.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({ "toolCallId": "w", "toolName": "write", "toolInput": {} }),
@@ -473,9 +369,6 @@ mod tests {
 
     #[test]
     fn update_emits_input_delta_when_tool_input_arrives_post_start() {
-        // OpenCode's start carries an empty `toolInput`; the update fills in
-        // file_path + content, which we must surface as an input_json_delta
-        // so the FE's tool block populates and the diff renderer fires.
         let mut idx = EventIndexer::default();
         let _ = map_tool_call_start(
             &json!({ "toolCallId": "w-1", "toolName": "write", "toolInput": {} }),

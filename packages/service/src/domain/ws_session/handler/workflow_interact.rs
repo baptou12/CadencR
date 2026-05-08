@@ -31,14 +31,12 @@ pub(super) async fn handle_permission_respond(
         return;
     };
 
-    persist_qa_answer(&payload, &engine, app_state, sender).await;
-
     let response = super::session_prompt::PermissionResponse {
         request_id: payload.request_id.clone(),
-        decision: payload.decision,
-        option_id: payload.option_id,
-        feedback: payload.feedback,
-        updated_input: payload.updated_input,
+        decision: payload.decision.clone(),
+        option_id: payload.option_id.clone(),
+        feedback: payload.feedback.clone(),
+        updated_input: payload.updated_input.clone(),
         is_approval_gate: false,
     };
 
@@ -47,6 +45,7 @@ pub(super) async fn handle_permission_respond(
         .await
     {
         Ok(()) => {
+            persist_qa_answer(&payload, &engine, app_state, sender).await;
             // Tell the frontend to clear any pending question/permission state
             // for this slot. Without this event the UI would need an optimistic
             // client-side clear to avoid showing a stale prompt while the

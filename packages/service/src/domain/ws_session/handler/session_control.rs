@@ -49,6 +49,19 @@ fn provider_for_model(current_provider: &str, model: &str) -> String {
         })
 }
 
+async fn persist_question_answer(
+    pool: sqlx::SqlitePool,
+    feature_id: i64,
+    db_session_id: i64,
+    updated_input: Option<&serde_json::Value>,
+) {
+    let Some(answer_text) = updated_input.and_then(format_answers_plain_text) else {
+        return;
+    };
+    let p = WsSessionPersistence::with_session_id(pool, feature_id, Some(db_session_id));
+    p.persist_user_message(&answer_text).await;
+}
+
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -179,17 +192,7 @@ pub(super) async fn handle_permission_respond(
         permission_tx,
     } = extracted.active.expect("active presence checked above");
 
-    // Persist user answer for AskUserQuestion so it survives app restart.
-    if let Some(ref updated_input) = payload.updated_input {
-        if let Some(answer_text) = format_answers_plain_text(updated_input) {
-            let p = WsSessionPersistence::with_session_id(
-                app_state.write_pool.clone(),
-                extracted.feature_id,
-                Some(db_session_id),
-            );
-            p.persist_user_message(&answer_text).await;
-        }
-    }
+    let answer_to_persist = payload.updated_input.clone();
 
     let runtime_response = RuntimePermissionResponse {
         request_id: payload.request_id.clone(),
@@ -269,6 +272,13 @@ pub(super) async fn handle_permission_respond(
                 db_session_id,
             )
             .await;
+            persist_question_answer(
+                app_state.write_pool.clone(),
+                extracted.feature_id,
+                db_session_id,
+                answer_to_persist.as_ref(),
+            )
+            .await;
             WsSessionPersistence::broadcast_session_status(
                 &app_state.session_status_tx,
                 db_session_id,
@@ -312,6 +322,14 @@ pub(super) async fn handle_permission_respond(
             "CHANNEL_ERROR",
             "Permission channel closed",
         );
+    } else {
+        persist_question_answer(
+            app_state.write_pool.clone(),
+            extracted.feature_id,
+            db_session_id,
+            answer_to_persist.as_ref(),
+        )
+        .await;
     }
 }
 
