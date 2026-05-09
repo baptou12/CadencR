@@ -5,10 +5,12 @@
 //! out of the provider-neutral runtime.
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
-use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
+use crate::domain::agents::acp::runtime::provider_hooks::{
+    flatten_tool_result_content_with, AcpProviderHooks,
+};
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
     RuntimePermissionMode, RuntimePermissionResponse,
@@ -162,22 +164,13 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
 /// envelope rather than the bare `{type:"text", text}` ACP defines, so we
 /// unwrap recursively before deciding whether the array is text-only.
 pub fn flatten_tool_result_content(content: &[Value]) -> Value {
-    let texts: Option<Vec<String>> = content.iter().map(unwrap_text_block).collect();
-    if let Some(texts) = texts {
-        if !texts.is_empty() {
-            return Value::String(texts.join("\n"));
-        }
-    }
-    json!(content)
+    flatten_tool_result_content_with(content, unwrap_text_block)
 }
 
-fn unwrap_text_block(block: &Value) -> Option<String> {
+fn unwrap_text_block(block: &Value) -> Option<&str> {
     let kind = block.get("type").and_then(Value::as_str)?;
     match kind {
-        "text" => block
-            .get("text")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
+        "text" => block.get("text").and_then(Value::as_str),
         "content" => block
             .get("content")
             .and_then(|inner| unwrap_text_block(inner)),

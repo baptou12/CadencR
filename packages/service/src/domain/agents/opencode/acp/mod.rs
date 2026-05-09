@@ -50,7 +50,8 @@ pub(super) async fn spawn_acp_session(
     config: RuntimeSpawnConfig,
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
     let binary = resolve_opencode_binary().await?;
-    let question_port = reserve_local_port()?;
+    let reserved_question_port = reserve_local_port()?;
+    let question_port = reserved_question_port.port();
     let mut command = Command::new(&binary);
     command
         .arg("acp")
@@ -87,6 +88,7 @@ pub(super) async fn spawn_acp_session(
     };
     spawn_acp_runtime_session(AcpRuntimeSpawnArgs {
         command,
+        spawn_guard: Some(Box::new(reserved_question_port)),
         client_info: AcpClientInfo::default(),
         config,
         initial_content: content,
@@ -96,14 +98,29 @@ pub(super) async fn spawn_acp_session(
     .await
 }
 
-fn reserve_local_port() -> Result<u16, RuntimeError> {
+struct ReservedLocalPort {
+    _listener: TcpListener,
+    port: u16,
+}
+
+impl ReservedLocalPort {
+    fn port(&self) -> u16 {
+        self.port
+    }
+}
+
+fn reserve_local_port() -> Result<ReservedLocalPort, RuntimeError> {
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
         RuntimeError::new(format!("failed to reserve ACP sidecar port: {error}"))
     })?;
-    listener
+    let port = listener
         .local_addr()
         .map(|addr| addr.port())
-        .map_err(|error| RuntimeError::new(format!("failed to read ACP sidecar port: {error}")))
+        .map_err(|error| RuntimeError::new(format!("failed to read ACP sidecar port: {error}")))?;
+    Ok(ReservedLocalPort {
+        _listener: listener,
+        port,
+    })
 }
 
 /// Resolve the `opencode` binary path. Honors the existing override via
