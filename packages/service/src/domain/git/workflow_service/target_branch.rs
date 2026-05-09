@@ -280,6 +280,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_target_branch_ignores_pushed_feature_self_upstream() {
+        let pool = setup_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        run_git_for_test(dir.path(), &["init", "-q", "-b", "main"]);
+        run_git_for_test(dir.path(), &["config", "user.email", "t@t"]);
+        run_git_for_test(dir.path(), &["config", "user.name", "T"]);
+        run_git_for_test(dir.path(), &["commit", "--allow-empty", "-q", "-m", "init"]);
+        run_git_for_test(
+            dir.path(),
+            &["update-ref", "refs/remotes/origin/main", "HEAD"],
+        );
+        run_git_for_test(
+            dir.path(),
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+        );
+        run_git_for_test(dir.path(), &["checkout", "-q", "-b", "feature/x"]);
+        run_git_for_test(dir.path(), &["config", "branch.feature/x.remote", "origin"]);
+        run_git_for_test(
+            dir.path(),
+            &["config", "branch.feature/x.merge", "refs/heads/feature/x"],
+        );
+
+        let state = AppState::with_pool(pool);
+        let target = resolve_target_branch(&state, 1, dir.path()).await.unwrap();
+        assert_eq!(target, "origin/main");
+    }
+
+    #[tokio::test]
     async fn resolve_target_branch_falls_back_to_master_when_main_missing() {
         // Real git repo with `master` but no `main`. The fallback chain
         // `setting → original-branch → main → master → main` should land on

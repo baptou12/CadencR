@@ -30,7 +30,8 @@ pub async fn get_current_branch(repo_path: &Path) -> Result<Option<String>, AppE
 /// tip — never a stale local copy. The chain:
 ///
 ///   1. tracking config: if `branch.<branch>.remote == origin` and
-///      `branch.<branch>.merge == refs/heads/<name>`, return `origin/<name>`,
+///      `branch.<branch>.merge == refs/heads/<name>` for a different branch,
+///      return `origin/<name>`,
 ///   2. `origin/HEAD` symbolic ref → `origin/<name>`,
 ///   3. `origin/main` then `origin/master` if either exists,
 ///   4. local `main`, `master`, `develop`, `trunk` as a last resort.
@@ -92,9 +93,9 @@ pub async fn get_original_branch(
 }
 
 /// If `branch.<branch>.remote == origin` and `branch.<branch>.merge` resolves
-/// to a `refs/heads/<name>`, return `origin/<name>`. Returns `None` for any
-/// other configuration (including a non-origin remote, where we don't know
-/// what ref to compare against).
+/// to a different `refs/heads/<name>`, return `origin/<name>`. Returns `None`
+/// for any other configuration (including a non-origin remote, where we don't
+/// know what ref to compare against).
 async fn tracking_remote_ref(repo_path: &Path, branch: &str) -> Option<String> {
     let remote_key = format!("branch.{branch}.remote");
     let merge_key = format!("branch.{branch}.merge");
@@ -113,6 +114,9 @@ async fn tracking_remote_ref(repo_path: &Path, branch: &str) -> Option<String> {
         .map(|s| s.trim().to_string())?;
     let short = merge.strip_prefix("refs/heads/").unwrap_or(&merge);
     if short.is_empty() {
+        return None;
+    }
+    if short == branch {
         return None;
     }
     Some(format!("origin/{short}"))
@@ -267,6 +271,42 @@ mod tests {
             .unwrap();
         run_git(
             &["config", "branch.feature/x.merge", "refs/heads/main"],
+            path,
+        )
+        .await
+        .unwrap();
+
+        let resolved = get_original_branch(path, "feature/x").await.unwrap();
+        assert_eq!(resolved, "origin/main");
+    }
+
+    #[tokio::test]
+    async fn get_original_branch_ignores_self_tracking_feature_upstream() {
+        let dir = init_test_repo().await;
+        let path = dir.path();
+        let _ = run_git(&["branch", "-M", "main"], path).await;
+        run_git(&["update-ref", "refs/remotes/origin/main", "HEAD"], path)
+            .await
+            .unwrap();
+        run_git(
+            &[
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+            ],
+            path,
+        )
+        .await
+        .unwrap();
+
+        run_git(&["checkout", "-q", "-b", "feature/x"], path)
+            .await
+            .unwrap();
+        run_git(&["config", "branch.feature/x.remote", "origin"], path)
+            .await
+            .unwrap();
+        run_git(
+            &["config", "branch.feature/x.merge", "refs/heads/feature/x"],
             path,
         )
         .await

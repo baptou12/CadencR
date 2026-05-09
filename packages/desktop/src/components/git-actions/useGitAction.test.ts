@@ -74,6 +74,21 @@ describe("deriveGitAction", () => {
     expect(state.disabled.merge).toBeNull();
   });
 
+  it("keeps merge enabled after a pushed feature branch is ahead of target", () => {
+    const state = deriveGitAction(
+      snapshot({
+        ahead_of_remote: 0,
+        ahead_of_target: 1,
+        current_branch: "feature/x",
+        target_branch: "origin/main",
+        compare_url: null,
+        action_label: "Open compare",
+      }),
+    );
+    expect(state.primary).toBe("merge");
+    expect(state.disabled.merge).toBeNull();
+  });
+
   it("merge disabled when current branch and target branch are the same local branch", () => {
     const state = deriveGitAction(
       snapshot({

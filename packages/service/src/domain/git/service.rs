@@ -8,6 +8,7 @@ use crate::domain::git::commands;
 use crate::domain::git::file_size::classify_content;
 use crate::domain::git::models::*;
 use crate::domain::git::repository;
+use crate::domain::git::workflow_service;
 use crate::error::AppError;
 
 // ---------------------------------------------------------------------------
@@ -16,6 +17,7 @@ use crate::error::AppError;
 
 const SETTING_WORKTREE_PATH: &str = "worktree_path";
 const SETTING_WORKTREE_BRANCH: &str = "worktree_branch";
+const SETTING_TARGET_BRANCH: &str = "target_branch";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -647,8 +649,31 @@ pub async fn check_merge_conflicts(
 ) -> Result<MergeConflictResult, AppError> {
     let (project_path, branch) =
         get_project_and_branch(state, params.project_id, params.feature_id).await?;
-    let target = commands::get_original_branch(Path::new(&project_path), &branch).await?;
-    commands::check_merge_conflicts(Path::new(&project_path), &branch, &target).await
+    let (repo_path, target) =
+        resolve_merge_conflict_repo_and_target(state, params.feature_id, project_path).await?;
+    commands::check_merge_conflicts(Path::new(&repo_path), &branch, &target).await
+}
+
+async fn resolve_merge_conflict_repo_and_target(
+    state: &AppState,
+    feature_id: i64,
+    fallback_project_path: String,
+) -> Result<(String, String), AppError> {
+    if let Some(stored) =
+        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_TARGET_BRANCH).await?
+    {
+        let target = stored.trim();
+        if !target.is_empty() {
+            return Ok((fallback_project_path, target.to_string()));
+        }
+    }
+
+    let git_path = resolve_feature_git_path(state, feature_id)
+        .await?
+        .unwrap_or(fallback_project_path);
+    let target =
+        workflow_service::resolve_target_branch(state, feature_id, Path::new(&git_path)).await?;
+    Ok((git_path, target))
 }
 
 pub async fn delete_feature_branch(
@@ -944,6 +969,26 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 3 3
                 .unwrap();
         assert_eq!(old_ref, "origin/main");
         assert_eq!(new_ref.as_deref(), Some("HEAD"));
+    }
+
+    #[tokio::test]
+    async fn resolve_merge_conflict_target_honors_stored_target_branch() {
+        let pool = setup_diff_refs_schema().await;
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, "target_branch", "develop")
+            .await
+            .unwrap();
+
+        let state = AppState::with_pool(pool);
+        let (repo_path, target) =
+            resolve_merge_conflict_repo_and_target(&state, 1, "/tmp/project".to_string())
+                .await
+                .unwrap();
+        assert_eq!(repo_path, "/tmp/project");
+        assert_eq!(target, "develop");
     }
 
     /// Blank/whitespace `target_branch` from the caller must NOT short-circuit
