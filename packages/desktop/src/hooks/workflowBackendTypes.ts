@@ -8,6 +8,7 @@ import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import type { AgentStatus } from "@/types/agent";
 import type { WorkflowStatus, WorktreeStatus, QueueItem, AutonomyLevel } from "@/types/workflow";
 import type { ActionAvailability } from "./useFeatureState";
+import type { PermissionMode } from "@/types/permission-mode";
 
 // ---------------------------------------------------------------------------
 // View state
@@ -124,7 +125,8 @@ export interface WorkflowBackend {
     optionId?: string,
   ): void;
   submitAnswers(entry: FeatureSession, response: AgentQuestionAnswers): void;
-  startSession(prompt: string, images?: string[]): void;
+  startSession(prompt: string, images?: string[], permissionMode?: PermissionMode): void;
+  setAgentPermissionMode?(entry: FeatureSession, mode: PermissionMode): void;
   startRefine(description: string, images?: string[]): void;
   startRisk(): void;
   startReview(): void;

@@ -27,6 +27,7 @@ import {
   advancePendingPermissionQueue,
   upsertPendingPermission,
 } from "@/lib/pending-permission-queue";
+import { parsePermissionMode } from "@/types/permission-mode";
 
 export function createAgentSession(sessionId: number, agentType = "execute"): AgentSessionState {
   return {
@@ -42,6 +43,9 @@ export function createAgentSession(sessionId: number, agentType = "execute"): Ag
     pendingQuestionRequestId: "",
     historyLoaded: false,
     runtimeSessionId: null,
+    runtimeProvider: null,
+    model: null,
+    permissionMode: "acceptEdits",
     inputTokens: 0,
     outputTokens: 0,
     contextWindow: null,
@@ -241,12 +245,17 @@ export function handleAgentPaused(payload: Record<string, unknown>, set: SetFn):
 export function handleAgentRunning(payload: Record<string, unknown>, set: SetFn): void {
   const runSlot = parseAgentSlot(payload);
   const runSessionId = payload.session_id as number;
+  const runtimeProvider =
+    typeof payload.runtime_provider === "string" ? payload.runtime_provider : undefined;
+  const model = typeof payload.model === "string" ? payload.model : undefined;
   set((state) => {
     const key = slotKeyForEvent(runSlot, runSessionId);
     const agentPatch = upsertAgent(state, key, runSessionId, {
       sessionId: runSessionId,
       status: "running",
       agentType: runSlot.type,
+      ...(runtimeProvider ? { runtimeProvider } : {}),
+      ...(model ? { model } : {}),
     });
     // Update queue item if this is a queue_item slot
     if (runSlot.type === "queue_item") {
@@ -275,6 +284,10 @@ export function handleAgentUserMessage(payload: Record<string, unknown>, set: Se
   const umSlot = parseAgentSlot(payload);
   const umContent = payload.content as string;
   if (!umContent) return;
+  const runtimeProvider =
+    typeof payload.runtime_provider === "string" ? payload.runtime_provider : undefined;
+  const model = typeof payload.model === "string" ? payload.model : undefined;
+  const permissionMode = parsePermissionMode(payload.permission_mode);
   const userBlock = {
     id: `ws-user-${Date.now()}`,
     type: "user_message" as const,
@@ -295,6 +308,9 @@ export function handleAgentUserMessage(payload: Record<string, unknown>, set: Se
       pendingPermission: null,
       pendingPermissionQueue: [],
       pendingPlanApproval: null,
+      ...(runtimeProvider ? { runtimeProvider } : {}),
+      ...(model ? { model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
     };
     const agents = new Map(state.agents);
     agents.set(key, updated);

@@ -93,6 +93,7 @@ impl WorkflowEngine {
         &self,
         prompt: &str,
         images: &[ImagePayload],
+        permission_mode: Option<&str>,
     ) -> Result<i64, String> {
         let enriched_prompt = feature_build_session_review::build_session_prompt(
             &self.read_pool,
@@ -108,6 +109,7 @@ impl WorkflowEngine {
                 Prompts::session(),
                 &enriched_prompt,
                 Some(prompt),
+                permission_mode,
                 images,
                 |id| AgentSlot::Session(id),
                 &self.permissions,

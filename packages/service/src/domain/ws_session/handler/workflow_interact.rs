@@ -163,6 +163,38 @@ pub(super) async fn handle_prompt_send(
     }
 }
 
+pub(super) async fn handle_mode_set(envelope: WsEnvelope, sender: &WsSender) {
+    let Some((payload, engine)) = parse_and_get_engine::<WorkflowModeSetPayload>(&envelope, sender)
+    else {
+        return;
+    };
+
+    match engine
+        .agent_manager
+        .set_permission_mode(payload.agent_slot.clone(), &payload.mode)
+        .await
+    {
+        Ok(session_id) => {
+            let changed = WsEnvelope::reply(
+                &envelope.id,
+                "workflow",
+                "mode.changed",
+                serde_json::json!({
+                    "feature_id": payload.feature_id,
+                    "agent_slot": payload.agent_slot,
+                    "session_id": session_id,
+                    "mode": payload.mode,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(changed).into()));
+        }
+        Err(e) => {
+            warn!(feature_id = payload.feature_id, agent_slot = %payload.agent_slot, error = %e, "mode.set failed");
+            send_workflow_error(sender, &envelope.id, "MODE_SET_FAILED", &e);
+        }
+    }
+}
+
 pub(super) async fn handle_interrupt(
     envelope: WsEnvelope,
     sender: &WsSender,

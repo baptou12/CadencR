@@ -118,6 +118,8 @@ export interface AgentSessionProps {
   onModelChange?: (providerId: string, modelId: string) => void;
   /** Current thinking effort override for this live session (unvalidated from the store). */
   currentThinkingEffort?: string;
+  /** Show a non-interactive model chip even when model changes are disabled. */
+  showReadOnlyModel?: boolean;
   /** Called when the user changes live thinking effort */
   onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
   /** Feature ID for file mention and slash command support in the prompt bar */

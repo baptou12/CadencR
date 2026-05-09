@@ -7,6 +7,9 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { MergeArchiveDialog } from "@/components/MergeArchiveDialog";
 import type { SplitSendAction, AgentPromptBarHandle } from "@/components/AgentPromptBar";
 import { PromptWithModelPicker } from "@/components/PromptWithModelPicker";
+import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
+import { nextProviderMode, defaultEditModeFor } from "@/lib/provider-modes";
+import type { PermissionMode } from "@/types/permission-mode";
 
 interface NextStepsBarProps {
   show: boolean;
@@ -28,12 +31,14 @@ interface NextStepsBarProps {
   onStartWorkflowSession?: (
     prompt: string,
     images?: Array<{ base64: string; mimeType: string }>,
+    permissionMode?: PermissionMode,
   ) => void;
   isStartingWorkflowSession?: boolean;
   noExecuteAgentRunning?: boolean;
   projectId?: number;
   featureId?: number;
   featureType?: string;
+  sessionProviderId: string;
   canStartRefine?: boolean;
   onStartRefinePlan?: (
     description: string,
@@ -71,6 +76,7 @@ export function NextStepsBar({
   projectId,
   featureId,
   featureType,
+  sessionProviderId,
   canStartRefine,
   onStartRefinePlan,
   isStartingRefinePlan,
@@ -83,7 +89,9 @@ export function NextStepsBar({
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [showRefinePrompt, setShowRefinePrompt] = useState(false);
   const [showSessionPrompt, setShowSessionPrompt] = useState(false);
+  const [sessionPermissionMode, setSessionPermissionMode] = useState<PermissionMode>("acceptEdits");
   const sessionPromptRef = useRef<AgentPromptBarHandle>(null);
+  const enabledOptInModes = useEnabledOptInModes(sessionProviderId);
 
   const canMerge =
     noExecuteAgentRunning &&
@@ -106,6 +114,10 @@ export function NextStepsBar({
       setShowSessionPrompt(false);
     }
   }, [isStartingWorkflowSession]);
+
+  useEffect(() => {
+    setSessionPermissionMode(defaultEditModeFor(sessionProviderId));
+  }, [sessionProviderId]);
 
   // Open session prompt when triggered externally (e.g. keyboard shortcut)
   useEffect(() => {
@@ -154,12 +166,18 @@ export function NextStepsBar({
         kbdShortcut: ["enter"],
         onClick: (text: string, images?: Array<{ base64: string; mimeType: string }>) => {
           setShowSessionPrompt(false);
-          onStartWorkflowSession?.(text, images);
+          onStartWorkflowSession?.(text, images, sessionPermissionMode);
         },
       },
     ],
-    [isStartingWorkflowSession, onStartWorkflowSession],
+    [isStartingWorkflowSession, onStartWorkflowSession, sessionPermissionMode],
   );
+
+  const handleSessionPermissionModeToggle = (): void => {
+    setSessionPermissionMode((current) =>
+      nextProviderMode(sessionProviderId, current, enabledOptInModes),
+    );
+  };
 
   if (!show && !canStartRefine) return null;
 
@@ -325,6 +343,9 @@ export function NextStepsBar({
             featureId={featureId}
             projectId={projectId}
             agentType="session"
+            permissionMode={sessionPermissionMode}
+            onPermissionModeToggle={handleSessionPermissionModeToggle}
+            enabledOptInModes={enabledOptInModes}
             disabled={isStartingWorkflowSession}
             splitSendActions={sessionSplitActions}
             promptBarRef={sessionPromptRef}

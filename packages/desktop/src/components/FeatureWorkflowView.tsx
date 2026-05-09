@@ -390,10 +390,11 @@ function FeatureWorkflowViewBody({
                   isContinuingBuild={backend.isContinuingBuild}
                   nextStepNumber={backend.executeWaitingNextStep}
                   canStartWorkflowSession={actions.canStartWorkflowSession}
-                  onStartWorkflowSession={(prompt, images) => {
+                  onStartWorkflowSession={(prompt, images, permissionMode) => {
                     backend.startSession(
                       prompt,
                       images?.map((i: { base64: string }) => i.base64),
+                      permissionMode,
                     );
                   }}
                   isStartingWorkflowSession={backend.isStartingWorkflowSession}
@@ -401,6 +402,7 @@ function FeatureWorkflowViewBody({
                   projectId={projectId}
                   featureId={featureId}
                   featureType={feature?.type}
+                  sessionProviderId={slashCommandProviderId}
                   canStartRefine={actions.canStartRefine}
                   onStartRefinePlan={(description, images) => {
                     backend.startRefine(

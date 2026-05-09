@@ -65,6 +65,9 @@ describe("findSlotKey", () => {
           outputTokens: 0,
           contextWindow: 0,
           hasFileChanges: false,
+          runtimeProvider: null,
+          model: null,
+          permissionMode: "acceptEdits",
         },
       ],
     ]);
@@ -84,7 +87,7 @@ describe("findSlotKey", () => {
 });
 
 function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionState {
-  return {
+  const defaults: AgentSessionState = {
     sessionId: 1,
     agentType: "execute",
     blocks: [],
@@ -104,7 +107,16 @@ function makeAgentState(overrides?: Partial<AgentSessionState>): AgentSessionSta
     outputTokens: 0,
     contextWindow: 200_000,
     hasFileChanges: false,
-    ...overrides,
+    runtimeProvider: null,
+    model: null,
+    permissionMode: "acceptEdits",
+  };
+  const state = { ...defaults, ...overrides };
+  return {
+    ...state,
+    runtimeProvider: state.runtimeProvider ?? null,
+    model: state.model ?? null,
+    permissionMode: state.permissionMode ?? "acceptEdits",
   };
 }
 
@@ -361,6 +373,29 @@ describe("buildSessionEntries", () => {
     expect(sessions).toHaveLength(3);
     expect(sessions.map((s) => s.agentType)).toEqual(["session", "session", "risk"]);
     expect(sessions.map((s) => s.sessionDbId)).toEqual([50, 51, 52]);
+  });
+
+  it("maps workflow session permission mode and runtime metadata into FeatureSession", () => {
+    const agents = new Map<string, AgentSessionState>([
+      [
+        "session:50",
+        makeAgentState({
+          sessionId: 50,
+          agentType: "session",
+          status: "running",
+          permissionMode: "plan",
+          runtimeProvider: "opencode",
+          model: "openai/gpt-5.3-codex",
+        }),
+      ],
+    ]);
+
+    const { sessions } = buildSessionEntries([], agents, "building");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].permissionMode).toBe("plan");
+    expect(sessions[0].runtimeProvider).toBe("opencode");
+    expect(sessions[0].model).toBe("openai/gpt-5.3-codex");
   });
 
   it("orders plan and prd sessions by sessionId (creation order), not hardcoded order", () => {

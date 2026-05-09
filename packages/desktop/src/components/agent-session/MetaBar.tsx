@@ -1,49 +1,21 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import {
-  ArrowDownIcon,
-  ChevronDownIcon,
-  CheckIcon,
-  FileEditIcon,
-  GitBranchIcon,
-} from "lucide-react";
+import { ArrowDownIcon, CheckIcon, FileEditIcon, GitBranchIcon } from "lucide-react";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
 import { SessionInfoChip } from "./SessionInfoChip";
 import { WorktreeButtonGroup } from "./WorktreePopover";
 import type { TodoItem } from "@/types/agent";
-import { ProviderIcon } from "@/lib/provider-icons";
-import { ThinkingEffortBars } from "@/components/ThinkingEffortBars";
-import {
-  RuntimeModelPicker,
-  type RuntimeModelPickerProvider,
-} from "@/components/RuntimeModelPicker";
-import {
-  THINKING_EFFORT_LABELS,
-  nextThinkingEffort,
-  type ThinkingEffortLevel,
-} from "@/shared/thinking-effort";
+import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
+import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
 import {
   AUTO_SCROLL_ACTIVE_CHIP,
   META_BAR_CHIP,
   REVIEW_CHANGES_CHIP,
   WORKTREE_ACTIVE_CHIP,
 } from "./meta-bar-chip-styles";
-
-interface Model {
-  id: string;
-  label: string;
-  description?: string;
-}
-
-interface Provider {
-  id: string;
-  label: string;
-  disabled?: boolean;
-  models: Model[];
-}
 
 export interface MetaBarProps {
   showAutoScrollChip: boolean;
@@ -85,6 +57,7 @@ export interface MetaBarProps {
   currentThinkingEffort?: ThinkingEffortLevel;
   supportedThinkingEfforts?: ThinkingEffortLevel[];
   onThinkingEffortChange?: (thinkingEffort?: ThinkingEffortLevel) => void;
+  showReadOnlyModel?: boolean;
   currentModelId?: string;
   currentModelLabel: string;
   models: Model[];
@@ -119,16 +92,6 @@ export interface MetaBarHandle {
   openModelPicker: () => void;
 }
 
-// Theme-aware model picker pill. The original (pre-refactor) look stacked
-// three violet shades — saturated mid (500) for the bg, lighter mid (400)
-// for the border, lightest (300) for the text. Each comes from the theme:
-//   --chip-violet-bg   ≈ violet-500
-//   --chip-violet-fg   ≈ violet-400
-//   --chip-violet-soft ≈ violet-300
-const MODEL_GROUP =
-  "inline-flex h-8 items-stretch rounded-md border border-[var(--chip-violet-fg)]/15 bg-[var(--chip-violet-bg)]/12 text-[11px] font-medium text-[var(--chip-violet-soft)] shadow-sm";
-const MODEL_SEGMENT = "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors";
-
 export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   {
     showAutoScrollChip,
@@ -150,6 +113,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     currentThinkingEffort,
     supportedThinkingEfforts = [],
     onThinkingEffortChange,
+    showReadOnlyModel = false,
     currentModelId,
     currentModelLabel,
     models,
@@ -179,12 +143,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     }),
     [],
   );
-  const selectedThinkingEffort =
-    currentThinkingEffort && supportedThinkingEfforts.includes(currentThinkingEffort)
-      ? currentThinkingEffort
-      : undefined;
-  const displayedThinkingEffort = selectedThinkingEffort ?? supportedThinkingEfforts[0];
-  const pickerProviders = useMemo<RuntimeModelPickerProvider[]>(() => {
+  const pickerProviders = useMemo(() => {
     if (providers.length > 0) {
       return providers.map((provider) => ({
         id: provider.id,
@@ -204,11 +163,6 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     ];
   }, [displayProviderId, models, providers]);
 
-  const handleThinkingEffortCycle = (): void => {
-    if (!supportedThinkingEfforts.length || !onThinkingEffortChange) return;
-    onThinkingEffortChange(nextThinkingEffort(supportedThinkingEfforts, currentThinkingEffort));
-  };
-
   // Hide the chip when the provider can't cycle (< 2 visible modes).
   const activeMode = useMemo(() => {
     if (!onPermissionModeToggle || !permissionMode) return null;
@@ -218,6 +172,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
   }, [displayProviderId, enabledOptInModes, onPermissionModeToggle, permissionMode]);
 
   const isStandalone = variant === "standalone";
+  const shouldShowModel = !!onModelChange || showReadOnlyModel;
 
   return (
     <div
@@ -303,74 +258,22 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         ))}
 
       {/* Model chip */}
-      {onModelChange && (
-        <div className={MODEL_GROUP}>
-          <ShortcutTooltip
-            label="Open model picker"
-            keys={["cmd", "P"]}
-            disabled={internalModelPickerOpen}
-          >
-            <RuntimeModelPicker
-              open={internalModelPickerOpen}
-              onOpenChange={setInternalModelPickerOpen}
-              providers={pickerProviders}
-              selectedProviderId={displayProviderId}
-              selectedModelId={currentModelId}
-              onAfterSelectClose={onModelSelected}
-              onSelect={(providerId, modelId) => {
-                if (canChangeProvider && onProviderChange && providerId !== displayProviderId) {
-                  onProviderChange(providerId);
-                }
-                onModelChange(providerId, modelId);
-              }}
-              trigger={
-                <button
-                  type="button"
-                  className={cn(
-                    MODEL_SEGMENT,
-                    "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16",
-                  )}
-                >
-                  <ProviderIcon
-                    providerId={displayProviderId}
-                    alt={currentModelLabel}
-                    className="size-3.5 rounded-sm shrink-0"
-                  />
-                  <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
-                  <ChevronDownIcon className="size-3 shrink-0" />
-                </button>
-              }
-            />
-          </ShortcutTooltip>
-
-          {supportedThinkingEfforts.length > 0 &&
-            onThinkingEffortChange &&
-            displayedThinkingEffort && (
-              <>
-                <div className="w-px bg-[var(--chip-violet-soft)]/15" aria-hidden="true" />
-                <ShortcutTooltip
-                  label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
-                  keys={["cmd", "T"]}
-                >
-                  <button
-                    type="button"
-                    onClick={handleThinkingEffortCycle}
-                    className={cn(
-                      MODEL_SEGMENT,
-                      "rounded-r-md px-2 text-[var(--chip-violet-soft)] hover:bg-[var(--chip-violet-bg)]/10",
-                    )}
-                    aria-label="Cycle thinking effort"
-                  >
-                    <ThinkingEffortBars
-                      levels={supportedThinkingEfforts}
-                      value={selectedThinkingEffort}
-                      compact
-                    />
-                  </button>
-                </ShortcutTooltip>
-              </>
-            )}
-        </div>
+      {shouldShowModel && (
+        <ModelMetaChip
+          open={internalModelPickerOpen}
+          onOpenChange={setInternalModelPickerOpen}
+          currentProviderId={displayProviderId}
+          currentModelId={currentModelId}
+          currentModelLabel={currentModelLabel}
+          pickerProviders={pickerProviders}
+          canChangeProvider={canChangeProvider}
+          onProviderChange={onProviderChange}
+          onModelChange={onModelChange}
+          currentThinkingEffort={currentThinkingEffort}
+          supportedThinkingEfforts={supportedThinkingEfforts}
+          onThinkingEffortChange={onThinkingEffortChange}
+          onModelSelected={onModelSelected}
+        />
       )}
 
       {/* Review Changes chip */}

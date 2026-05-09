@@ -6,6 +6,9 @@ use tracing::{error, info};
 
 use super::super::persistence::{PendingUserInputKind, WsSessionPersistence};
 use super::super::protocol::*;
+use super::post_plan_mode::{
+    should_transition_after_plan_approval, transition_session_to_post_plan_mode,
+};
 use super::session_prompt::PermissionResponse;
 use super::{
     default_permission_mode_wire, parse_permission_mode, parse_session_id, persist_and_close_query,
@@ -199,12 +202,31 @@ pub(super) async fn handle_permission_respond(
         feedback: payload.feedback.clone(),
         updated_input: payload.updated_input.clone(),
     };
-    let (permission_kind, respond_result) = {
+    let permission_kind = {
         let q = query.lock().await;
-        (
-            q.permission_response_kind(&payload.request_id),
-            q.respond_permission(runtime_response).await,
+        q.permission_response_kind(&payload.request_id)
+    };
+    if should_transition_after_plan_approval(permission_kind, runtime_response.decision) {
+        if let Err(error) = transition_session_to_post_plan_mode(
+            sdk_sessions,
+            db_session_id,
+            &app_state.write_pool,
+            sender,
         )
+        .await
+        {
+            send_error(
+                sender,
+                &envelope.id,
+                "SDK_ERROR",
+                &format!("Failed to apply post-plan permission mode: {error}"),
+            );
+            return;
+        }
+    }
+    let respond_result = {
+        let q = query.lock().await;
+        q.respond_permission(runtime_response).await
     };
     let is_plan_approval = permission_kind == RuntimePermissionResponseKind::PlanApproval;
     match respond_result {

@@ -428,6 +428,13 @@ pub struct WorkflowPromptSendPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowModeSetPayload {
+    pub feature_id: i64,
+    pub agent_slot: AgentSlot,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowSetAutonomyPayload {
     pub feature_id: i64,
     pub level: u8,
@@ -450,6 +457,7 @@ pub struct WorkflowStartSessionPayload {
     pub feature_id: i64,
     pub prompt: String,
     pub images: Option<Vec<ImagePayload>>,
+    pub permission_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -490,6 +498,7 @@ impl_has_feature_id!(
     WorkflowRetryItemPayload,
     WorkflowPermissionRespondPayload,
     WorkflowPromptSendPayload,
+    WorkflowModeSetPayload,
     WorkflowSetAutonomyPayload,
     WorkflowSetParallelPayload,
     WorkflowInterruptPayload,
@@ -521,6 +530,12 @@ pub struct WorkflowAgentStartedPayload {
     pub agent_slot: AgentSlot,
     pub session_id: i64,
     pub agent_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -652,6 +667,12 @@ pub struct WorkflowAgentStreamErrorPayload {
 pub struct WorkflowFeatureIdSessionPayload {
     pub feature_id: i64,
     pub session_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runtime_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1097,11 +1118,13 @@ mod tests {
             feature_id: 1,
             prompt: "fix the bug".into(),
             images: None,
+            permission_mode: Some("plan".into()),
         };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowStartSessionPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.prompt, "fix the bug");
         assert!(d.images.is_none());
+        assert_eq!(d.permission_mode.as_deref(), Some("plan"));
     }
 
     #[test]
@@ -1175,11 +1198,15 @@ mod tests {
             agent_slot: AgentSlot::QueueItem(2),
             session_id: 100,
             agent_type: "execute".into(),
+            runtime_provider: Some("opencode".into()),
+            model: Some("openai/gpt-5.3-codex".into()),
+            permission_mode: Some("plan".into()),
         };
         let v = serde_json::to_value(&p).unwrap();
         let d: WorkflowAgentStartedPayload = serde_json::from_value(v).unwrap();
         assert_eq!(d.session_id, 100);
         assert_eq!(d.agent_type, "execute");
+        assert_eq!(d.permission_mode.as_deref(), Some("plan"));
     }
 
     #[test]

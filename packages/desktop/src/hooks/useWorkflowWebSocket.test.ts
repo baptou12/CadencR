@@ -149,9 +149,12 @@ function makeAgentSession(overrides?: Record<string, unknown>): AgentSessionStat
     inputTokens: 0,
     outputTokens: 0,
     contextWindow: 0,
+    runtimeProvider: null,
+    model: null,
+    permissionMode: "acceptEdits",
     hasFileChanges: false,
     ...overrides,
-  } as AgentSessionState;
+  } satisfies AgentSessionState;
 }
 
 /** Helper to set a single agent in the store */
@@ -1834,6 +1837,30 @@ describe("useWorkflowStore", () => {
       expect(agent!.blocks[0]).toMatchObject({ type: "user_message", content: "Execute phase" });
     });
 
+    it("applies session runtime metadata from the initial backend user message", () => {
+      const ws = connectStore();
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "agent_user_message",
+        payload: {
+          feature_id: 1,
+          agent_slot: { type: "session", id: 77 },
+          session_id: 77,
+          content: "Plan this before editing",
+          permission_mode: "plan",
+          runtime_provider: "claude_code",
+          model: "opus",
+        },
+      });
+
+      const agent = getAgent("session:77");
+      expect(agent).toBeDefined();
+      expect(agent!.permissionMode).toBe("plan");
+      expect(agent!.runtimeProvider).toBe("claude_code");
+      expect(agent!.model).toBe("opus");
+    });
+
     it("ignores agent_user_message with empty content", () => {
       const ws = connectStore();
       setAgent(PLAN_KEY, makeAgentSession());
@@ -2523,9 +2550,37 @@ describe("useWorkflowStore", () => {
     });
 
     it("startSession sets startingSession flag", () => {
-      connectStore();
-      useWorkflowStore.getState().startSession("do something", undefined);
+      const ws = connectStore();
+      ws.sent.length = 0;
+      useWorkflowStore.getState().startSession("do something", undefined, "plan");
       expect(useWorkflowStore.getState().startingSession).toBe(true);
+      const envelope = JSON.parse(ws.sent[0]);
+      expect(envelope.action).toBe("start_session");
+      expect(envelope.payload.permission_mode).toBe("plan");
+    });
+
+    it("workflow mode.changed updates a session agent permission mode", () => {
+      const ws = connectStore();
+      setAgent(
+        "session:77",
+        makeAgentSession({
+          sessionId: 77,
+          agentType: "session",
+          permissionMode: "plan",
+        }),
+      );
+
+      dispatch(ws, {
+        domain: "workflow",
+        action: "mode.changed",
+        payload: {
+          agent_slot: { type: "session", id: 77 },
+          session_id: 77,
+          mode: "default",
+        },
+      });
+
+      expect(getAgent("session:77")?.permissionMode).toBe("default");
     });
   });
 

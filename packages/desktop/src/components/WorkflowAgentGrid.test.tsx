@@ -94,6 +94,7 @@ function makeBackend(session: FeatureSession): WorkflowBackend {
     submitPermission: vi.fn(),
     submitAnswers: vi.fn(),
     startSession: vi.fn(),
+    setAgentPermissionMode: vi.fn(),
     startRefine: vi.fn(),
     startRisk: vi.fn(),
     startReview: vi.fn(),
@@ -157,5 +158,17 @@ describe("WorkflowAgentGrid", () => {
     renderGrid(makeBackend(makeSession(todos)), false);
 
     expect(lastAgentSessionProps().todos).toBeNull();
+  });
+
+  it("passes permission mode controls for workflow session agents", () => {
+    const session = makeSession(null);
+    session.agentType = "session";
+    session.permissionMode = "plan";
+
+    renderGrid(makeBackend(session), true);
+
+    const props = lastAgentSessionProps();
+    expect(props.permissionMode).toBe("plan");
+    expect(props.onPermissionModeToggle).toEqual(expect.any(Function));
   });
 });

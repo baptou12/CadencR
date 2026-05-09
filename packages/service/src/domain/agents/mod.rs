@@ -5,6 +5,7 @@ pub mod config_migration;
 pub mod discovery;
 pub mod model_refs;
 pub mod opencode;
+pub mod permission_modes;
 pub mod providers;
 pub mod response_style;
 pub mod runtime;

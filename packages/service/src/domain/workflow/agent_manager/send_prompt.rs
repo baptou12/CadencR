@@ -10,9 +10,11 @@ use crate::domain::agents::runtime_adapter;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
 
+use crate::domain::agents::permission_modes::parse_permission_mode;
 use crate::domain::workflow::engine::{to_value, AgentSlot};
 use crate::domain::workflow::permission_router::PermissionRouter;
 use crate::domain::workflow::stream_reader::spawn_workflow_stream_reader;
+use crate::domain::ws_session::handler::post_plan_mode::should_transition_after_plan_approval;
 use crate::domain::ws_session::handler::session_prompt::build_content_value;
 use crate::domain::ws_session::handler::session_prompt::PermissionResponse;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -46,6 +48,15 @@ impl AgentManager {
             feedback: response.feedback.clone(),
             updated_input: response.updated_input.clone(),
         };
+
+        let permission_kind = {
+            let q = query.lock().await;
+            q.permission_response_kind(&response.request_id)
+        };
+        if should_transition_after_plan_approval(permission_kind, runtime_response.decision) {
+            self.transition_runtime_query_to_post_plan_mode(slot, &query)
+                .await?;
+        }
 
         let q = query.lock().await;
         let result = q.respond_permission(runtime_response).await;
@@ -280,6 +291,11 @@ impl AgentManager {
         let agent_type = agent_type_str
             .parse::<AgentType>()
             .unwrap_or(AgentType::Execute);
+        let permission_mode = self.persisted_permission_mode(db_session_id).await;
+        let permission_mode_wire = permission_mode
+            .as_ref()
+            .map(super::permission_mode_wire)
+            .map(str::to_string);
 
         // Build spawn context with --resume
         let ctx = self
@@ -292,6 +308,7 @@ impl AgentManager {
                 Some(runtime_session_id),
                 false,
                 permissions,
+                permission_mode,
                 None,
             )
             .await?;
@@ -367,6 +384,9 @@ impl AgentManager {
                         agent_slot: slot.clone(),
                         session_id: db_session_id,
                         agent_type: agent_type_str.clone(),
+                        runtime_provider: Some(ctx.provider.clone()),
+                        model: Some(ctx.model.clone()),
+                        permission_mode: permission_mode_wire.clone(),
                     }),
                 );
                 let _ = self
@@ -390,5 +410,21 @@ impl AgentManager {
                 Err(message)
             }
         }
+    }
+
+    async fn persisted_permission_mode(
+        &self,
+        db_session_id: i64,
+    ) -> Option<crate::domain::agents::adapter::RuntimePermissionMode> {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT permission_mode FROM agent_sessions WHERE id = ?",
+        )
+        .bind(db_session_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()
+        .flatten()
+        .flatten()
+        .map(|mode| parse_permission_mode(&mode))
     }
 }

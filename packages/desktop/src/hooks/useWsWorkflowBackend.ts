@@ -14,6 +14,7 @@ import { useGetFeatureAgentState } from "@/api/generated";
 import { customInstance } from "@/api/client";
 import { deriveViewState, type WorkflowBackend } from "./workflowBackendTypes";
 import type { FeatureStatus } from "./useFeatureState";
+import type { PermissionMode } from "@/types/permission-mode";
 
 // ---------------------------------------------------------------------------
 // Mappers
@@ -47,11 +48,12 @@ function toFeatureSession(
     phaseId: item?.phase_id ?? null,
     phaseTitle: item?.phase_title ?? null,
     subprocessId: null,
-    model: null,
+    model: agent?.model ?? null,
     runId: null,
     todos: null,
+    runtimeProvider: agent?.runtimeProvider ?? null,
     runtimeSessionId: agent?.runtimeSessionId ?? null,
-    permissionMode: "acceptEdits",
+    permissionMode: agent?.permissionMode ?? "acceptEdits",
     pendingPlanApproval: agent?.pendingPlanApproval ?? null,
     inputTokens: agent?.inputTokens ?? 0,
     outputTokens: agent?.outputTokens ?? 0,
@@ -363,11 +365,16 @@ export function useWsWorkflowBackend(
       const slotKey = findSlotKey(entry, store.queue, store.agents);
       store.respondToQuestion(slotKey, response);
     },
-    startSession: (prompt, images) =>
+    startSession: (prompt, images, permissionMode) =>
       store.startSession(
         prompt,
         images?.map((i) => ({ base64: i, mimeType: "image/png" })),
+        permissionMode,
       ),
+    setAgentPermissionMode: (entry, mode: PermissionMode) => {
+      const slotKey = findSlotKey(entry, store.queue, store.agents);
+      store.setAgentPermissionMode(slotKey, mode);
+    },
     startRefine: (description, images) =>
       store.startRefine(
         description,

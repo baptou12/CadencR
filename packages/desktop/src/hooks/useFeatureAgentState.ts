@@ -20,6 +20,7 @@ import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import { injectPlanIntoBlocks } from "@/stores/ws-message-processing";
+import { parsePermissionMode, type PermissionMode } from "@/types/permission-mode";
 
 /** Number of messages to fetch per session on initial load */
 const INITIAL_MESSAGE_LIMIT = 100;
@@ -209,7 +210,7 @@ export interface FeatureSession {
   phaseId: number | null;
   phaseTitle: string | null;
   todos: TodoItem[] | null;
-  permissionMode: string;
+  permissionMode: PermissionMode;
   pendingPlanApproval: {
     allowedPrompts?: Array<{ tool: string; prompt: string }>;
     plan?: string;
@@ -382,7 +383,7 @@ export function useFeatureAgentState(featureId: number) {
         phaseId: s.phaseId ?? null,
         phaseTitle: s.phaseTitle ?? null,
         todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
-        permissionMode: s.permissionMode ?? "acceptEdits",
+        permissionMode: parsePermissionMode(s.permissionMode) ?? "acceptEdits",
         pendingPlanApproval: (s.pendingPlanApproval ??
           null) as FeatureSession["pendingPlanApproval"],
         pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,

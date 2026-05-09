@@ -36,6 +36,8 @@ pub async fn get_feature_snapshot(
                   NULL as updated_at,
                   s.runtime_provider,
                   s.runtime_session_id,
+                  s.model,
+                  s.permission_mode,
                   s.input_tokens,
                   s.output_tokens,
                   s.context_window

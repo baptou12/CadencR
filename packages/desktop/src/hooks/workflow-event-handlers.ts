@@ -28,6 +28,7 @@ import {
   handlePermissionRequest,
   handlePendingCleared,
 } from "@/hooks/agent-event-handlers";
+import { parsePermissionMode } from "@/types/permission-mode";
 
 export function createWorkflowMessageHandler(
   set: SetFn,
@@ -294,6 +295,10 @@ export function createWorkflowMessageHandler(
       case "session.started": {
         const startedSessionId = payload.session_id as number;
         const targetKey = `session:${startedSessionId}`;
+        const permissionMode = parsePermissionMode(payload.permission_mode);
+        const runtimeProvider =
+          typeof payload.runtime_provider === "string" ? payload.runtime_provider : null;
+        const model = typeof payload.model === "string" ? payload.model : null;
         set((state) => {
           const agents = new Map(state.agents);
           const placeholder = agents.get(SESSION_PLACEHOLDER_KEY);
@@ -303,9 +308,22 @@ export function createWorkflowMessageHandler(
             ...(existing ?? createAgentSession(startedSessionId, "session")),
             sessionId: startedSessionId,
             blocks: [...(placeholder?.blocks ?? []), ...(existing?.blocks ?? [])],
+            ...(permissionMode ? { permissionMode } : {}),
+            ...(runtimeProvider ? { runtimeProvider } : {}),
+            ...(model ? { model } : {}),
           };
           agents.set(targetKey, session);
           return { agents, startingSession: false };
+        });
+        break;
+      }
+      case "mode.changed": {
+        const slot = parseAgentSlot(payload);
+        const mode = parsePermissionMode(payload.mode);
+        if (!mode) break;
+        set((state) => {
+          const key = resolveSlotKey(state.agents, slot);
+          return patchAgent(state, key, { permissionMode: mode });
         });
         break;
       }

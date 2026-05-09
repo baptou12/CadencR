@@ -198,6 +198,9 @@ pub(super) async fn handle_start_agent_with_worktree<T, F, Fut>(
                 to_value(WorkflowFeatureIdSessionPayload {
                     feature_id,
                     session_id,
+                    runtime_provider: None,
+                    model: None,
+                    permission_mode: None,
                 }),
             );
             let _ = sender.send(Message::Text(String::from(ack).into()));

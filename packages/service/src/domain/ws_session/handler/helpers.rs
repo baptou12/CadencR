@@ -4,60 +4,15 @@
 use axum::extract::ws::Message;
 use tracing::debug;
 
-use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSessionHandle};
+use crate::domain::agents::adapter::RuntimeSessionHandle;
+pub(crate) use crate::domain::agents::permission_modes::{
+    default_permission_mode, default_permission_mode_wire, parse_permission_mode,
+    post_plan_approval_mode_wire, provider_supports_mode,
+};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
 
 use super::types::WsSender;
-
-/// Parse a permission mode string from the client into a PermissionMode enum value.
-pub(super) fn parse_permission_mode(mode: &str) -> RuntimePermissionMode {
-    match mode {
-        "acceptEdits" => RuntimePermissionMode::AcceptEdits,
-        "bypassPermissions" => RuntimePermissionMode::BypassPermissions,
-        "plan" => RuntimePermissionMode::Plan,
-        "auto" => RuntimePermissionMode::Auto,
-        "dontAsk" => RuntimePermissionMode::DontAsk,
-        _ => RuntimePermissionMode::Default,
-    }
-}
-
-/// Whether a given runtime provider can run a given permission mode.
-/// Dispatches to the adapter so the (provider, mode) matrix lives next to
-/// each adapter's CLI-arg mapping rather than as a switch in shared code.
-/// Mirrored on the frontend by `lib/provider-modes.ts`. Unknown providers
-/// default to allowing the request — a new adapter must be wired into the
-/// registry before its mode policy can be enforced anyway.
-pub(super) fn provider_supports_mode(provider: &str, mode: &RuntimePermissionMode) -> bool {
-    crate::domain::agents::runtime_adapter(provider)
-        .map(|adapter| adapter.supports_permission_mode(mode))
-        .unwrap_or(true)
-}
-
-/// Wire string the chip should land on after a session switches to this
-/// provider. Mirrors `defaultEditModeFor` in `lib/provider-modes.ts`.
-pub(super) fn default_permission_mode_wire(provider: &str) -> &'static str {
-    crate::domain::agents::runtime_adapter(provider)
-        .map(|adapter| adapter.default_permission_mode_wire())
-        .unwrap_or("acceptEdits")
-}
-
-/// Parsed counterpart of [`default_permission_mode_wire`]. Use this from
-/// runtime-spawn paths that need a `RuntimePermissionMode`; the wire variant
-/// stays for DB persistence and `mode.changed` broadcasts.
-pub(super) fn default_permission_mode(provider: &str) -> RuntimePermissionMode {
-    parse_permission_mode(default_permission_mode_wire(provider))
-}
-
-/// Wire string the chip should land on after a plan is approved
-/// (post-`ExitPlanMode`). Dispatches to the adapter so the per-provider
-/// matrix lives next to the rest of each adapter's mode policy. Mirrored on
-/// the frontend by `postPlanApprovalModeFor` in `lib/provider-modes.ts`.
-pub(super) fn post_plan_approval_mode_wire(provider: &str, model: Option<&str>) -> &'static str {
-    crate::domain::agents::runtime_adapter(provider)
-        .map(|adapter| adapter.post_plan_approval_mode_wire(model))
-        .unwrap_or("acceptEdits")
-}
 
 /// Parse a session_id string from client payload into i64 DB key.
 pub(super) fn parse_session_id(s: &str) -> Option<i64> {

@@ -14,7 +14,6 @@ import { useAgentCatalog } from "@/api/agentRuntime";
 import {
   useGetBranch,
   useGetFeatureSettings,
-  useGetWorkspaceSetting,
   useListProjects,
   useGetGitStatus,
 } from "@/api/generated";
@@ -23,13 +22,9 @@ import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
+import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
 import { nextProviderMode } from "@/lib/provider-modes";
-import { PROVIDER_IDS } from "@/lib/providers";
 import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
-import {
-  CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
-  CODEX_FULL_ACCESS_SETTING_KEY,
-} from "@/shared/permission-mode-settings";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import type { PermissionMode } from "@/types/permission-mode";
@@ -237,27 +232,6 @@ export function useSessionControls(
       ws,
     ],
   );
-}
-
-function useEnabledOptInModes(activeProviderId: string): PermissionMode[] {
-  const claudeBypassSetting = useGetWorkspaceSetting(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY);
-  const codexFullAccessSetting = useGetWorkspaceSetting(CODEX_FULL_ACCESS_SETTING_KEY);
-  return useMemo<PermissionMode[]>(() => {
-    const out: PermissionMode[] = [];
-    if (
-      activeProviderId === PROVIDER_IDS.CLAUDE_CODE &&
-      claudeBypassSetting.data?.value === "true"
-    ) {
-      out.push("bypassPermissions");
-    }
-    if (
-      activeProviderId === PROVIDER_IDS.CODEX_CLI &&
-      codexFullAccessSetting.data?.value === "true"
-    ) {
-      out.push("bypassPermissions");
-    }
-    return out;
-  }, [activeProviderId, claudeBypassSetting.data?.value, codexFullAccessSetting.data?.value]);
 }
 
 function usePermissionModeToggle(
