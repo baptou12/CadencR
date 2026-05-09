@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import type { Ref } from "react";
+import { fireEvent, render, screen } from "@/test-utils";
 import { UnifiedAgentsView } from "@/components/UnifiedAgentsView";
 import { UNIFIED_AGENTS_PER_ROW_SETTING_KEY } from "@/components/UnifiedAgentsPerRowSetting";
 
 const refetchAgents = vi.fn();
 const setWorkspaceSettingMutate = vi.fn();
+const focusFilterMock = vi.hoisted(() => vi.fn());
 let workspaceSettingValue: string | null = null;
 
 vi.mock("@/api/generated", async (importOriginal) => {
@@ -42,18 +44,24 @@ vi.mock("@/api/generated", async (importOriginal) => {
 vi.mock("@/components/UnifiedAgentsDynamicFilter", () => ({
   UnifiedAgentsDynamicFilter: ({
     value,
+    inputRef,
     onValueChange,
   }: {
     value: string;
+    inputRef?: Ref<{ focus: () => void; blur: () => void }>;
     onValueChange: (value: string) => void;
-  }) => (
-    <div>
-      <span data-testid="filter-value">{value}</span>
-      <button type="button" onClick={() => onValueChange("/sort:")}>
-        Insert incomplete sort
-      </button>
-    </div>
-  ),
+  }) => {
+    if (typeof inputRef === "function") inputRef({ focus: focusFilterMock, blur: vi.fn() });
+    else if (inputRef) inputRef.current = { focus: focusFilterMock, blur: vi.fn() };
+    return (
+      <div>
+        <span data-testid="filter-value">{value}</span>
+        <button type="button" onClick={() => onValueChange("/sort:")}>
+          Insert incomplete sort
+        </button>
+      </div>
+    );
+  },
 }));
 
 describe("UnifiedAgentsView filter prompt", () => {
@@ -61,6 +69,7 @@ describe("UnifiedAgentsView filter prompt", () => {
     window.localStorage.clear();
     workspaceSettingValue = null;
     setWorkspaceSettingMutate.mockClear();
+    focusFilterMock.mockClear();
   });
 
   it("keeps incomplete filter text visible after parsed filters update", async () => {
@@ -69,6 +78,25 @@ describe("UnifiedAgentsView filter prompt", () => {
     await user.click(screen.getByRole("button", { name: "Insert incomplete sort" }));
 
     expect(screen.getByTestId("filter-value")).toHaveTextContent("/sort:");
+  });
+
+  it("focuses the filter on Cmd+Shift+F while already on unified agents", () => {
+    render(<UnifiedAgentsView />);
+
+    fireEvent.keyDown(window, { key: "F", code: "KeyF", metaKey: true, shiftKey: true });
+
+    expect(focusFilterMock).toHaveBeenCalledOnce();
+  });
+
+  it("stops duplicate global Cmd+Shift+F handlers after focusing the filter", () => {
+    const downstream = vi.fn();
+    render(<UnifiedAgentsView />);
+    window.addEventListener("keydown", downstream, true);
+
+    fireEvent.keyDown(window, { key: "F", code: "KeyF", metaKey: true, shiftKey: true });
+
+    expect(downstream).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", downstream, true);
   });
 
   it("renders the agents-per-row stepper between the filter and refresh controls", async () => {

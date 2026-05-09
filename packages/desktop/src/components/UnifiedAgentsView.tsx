@@ -20,15 +20,12 @@ import {
   useUnifiedAgentsPerRowSetting,
   type UnifiedAgentsPerRowSetting,
 } from "@/components/UnifiedAgentsPerRowSetting";
+import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import {
   parseUnifiedAgentsFilterText,
   serializeUnifiedAgentsFilterText,
 } from "@/components/UnifiedAgentsFilterLanguage";
 import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
-import {
-  consumeUnifiedAgentsSearchFocusPending,
-  FOCUS_UNIFIED_AGENTS_SEARCH_EVENT,
-} from "@/components/unified-agents-events";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import {
   countRunningAgents,
@@ -39,6 +36,12 @@ import {
 export function UnifiedAgentsView(): ReactElement {
   const [filters, setFilters] = useUnifiedAgentsFilters();
   const searchInputRef = useRef<UnifiedAgentsFilterInputHandle>(null);
+  useGlobalShortcut("meta+shift+f", (event: KeyboardEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    searchInputRef.current?.focus();
+  });
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
   const data = useUnifiedAgentsData(filters);
@@ -170,17 +173,6 @@ function useUnifiedAgentsKeyboard({
   setActiveSessionId,
 }: UnifiedAgentsKeyboardArgs): UnifiedAgentsKeyboardState {
   const [focusVersion, setFocusVersion] = useState(0);
-  const focusSearchInput = useCallback((): void => {
-    searchInputRef.current?.focus();
-  }, [searchInputRef]);
-
-  useEffect(() => {
-    const handleFocusSearch = (): void => focusSearchInput();
-    window.addEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
-    if (consumeUnifiedAgentsSearchFocusPending()) requestAnimationFrame(focusSearchInput);
-    return () => window.removeEventListener(FOCUS_UNIFIED_AGENTS_SEARCH_EVENT, handleFocusSearch);
-  }, [focusSearchInput]);
-
   const focusFirstMatchedAgent = useCallback((): void => {
     if (agents.length === 0) return;
     searchInputRef.current?.blur();
@@ -206,7 +198,7 @@ function useUnifiedAgentsKeyboard({
       setActiveSessionId(agents[next]?.session.sessionDbId ?? null);
       setFocusVersion((current) => current + 1);
     },
-    [activeIndex, activePinControls, agents, columns, focusSearchInput, setActiveSessionId],
+    [activeIndex, activePinControls, agents, columns, setActiveSessionId],
   );
 
   const handleActivate = useCallback(

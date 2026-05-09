@@ -88,6 +88,24 @@ describe("UnifiedAgentsDynamicFilter", () => {
     );
   });
 
+  it("focuses the filter editor when the surrounding filter bar is clicked", async () => {
+    render(<UnifiedAgentsDynamicFilter value="agent" projects={[]} onValueChange={vi.fn()} />);
+
+    const textbox = screen.getByRole("textbox");
+    const shell = textbox.parentElement;
+    expect(shell).not.toBeNull();
+
+    fireEvent.mouseDown(shell!);
+
+    await waitFor(() => expect(document.activeElement).toBe(textbox));
+  });
+
+  it("marks the filter bar as a no-drag island inside the titlebar", () => {
+    render(<UnifiedAgentsDynamicFilter value="" projects={[]} onValueChange={vi.fn()} />);
+
+    expect(screen.getByRole("textbox").parentElement).toHaveClass("titlebar-no-drag");
+  });
+
   it("does not refocus the editor when Enter commits to normalized filter text", async () => {
     render(<NormalizingFilterHarness />);
 

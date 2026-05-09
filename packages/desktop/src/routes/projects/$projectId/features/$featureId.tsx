@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { isAxiosError } from "axios";
 import { useGetFeature, useListProjects } from "@/api/generated";
+import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
@@ -54,13 +55,16 @@ function FeaturePage() {
   }
 
   return (
-    <FeatureWorkflowView
-      featureId={numericFeatureId}
-      projectId={numericProjectId}
-      feature={feature}
-      featureQuery={featureQuery}
-      initialDescription={initialDescription}
-    />
+    <>
+      <FeatureContentSearchShortcut featureId={numericFeatureId} projectId={numericProjectId} />
+      <FeatureWorkflowView
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+        feature={feature}
+        featureQuery={featureQuery}
+        initialDescription={initialDescription}
+      />
+    </>
   );
 }
 

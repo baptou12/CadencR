@@ -22,6 +22,7 @@ interface ContentSearchDialogProps {
   featureId: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onResultOpen?: () => void;
 }
 
 const DEBOUNCE_MS = 300;
@@ -54,6 +55,7 @@ export default function ContentSearchDialog({
   featureId,
   open,
   onOpenChange,
+  onResultOpen,
 }: ContentSearchDialogProps) {
   const { activePaneId, openFile } = useEditorState(featureId);
   const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
@@ -137,8 +139,9 @@ export default function ContentSearchDialog({
     setExcludePattern(restored.excludePattern);
   }, [open, featureId]);
 
-  function handleSelect(filePath: string, lineNumber?: number) {
+  function handleSelect(filePath: string, lineNumber?: number): void {
     openFile(activePaneId ?? "main", filePath, maxTabs, lineNumber);
+    onResultOpen?.();
     onOpenChange(false);
   }
 

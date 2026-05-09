@@ -42,6 +42,7 @@ import {
   replaceUnifiedAgentsFilterActiveToken,
   setUnifiedAgentsFilterEditorText,
 } from "@/components/UnifiedAgentsFilterEditorText";
+import { useUnifiedAgentsFilterShellFocus } from "@/components/UnifiedAgentsFilterFocus";
 import { Button } from "@/components/ui/button";
 import {
   UnifiedAgentsFilterSuggestionsMenu,
@@ -169,6 +170,7 @@ function UnifiedAgentsDynamicFilterInner({
     onDismiss: () => setDismissedDraft(draft),
   });
 
+  const handleShellMouseDown = useUnifiedAgentsFilterShellFocus(editor);
   const clearFilter = useCallback((): void => {
     dirtyRef.current = false;
     setDraft("");
@@ -180,10 +182,11 @@ function UnifiedAgentsDynamicFilterInner({
     <div className="relative min-w-0 flex-1">
       <div
         className={cn(
-          "flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-border/80 bg-background/90 px-2.5",
+          "titlebar-no-drag flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-border/80 bg-background/90 px-2.5",
           "shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04)] transition-[border-color,box-shadow]",
           "focus-within:border-primary/70 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),inset_0_1px_0_hsl(var(--foreground)/0.05)]",
         )}
+        onMouseDown={handleShellMouseDown}
       >
         <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
         <FilterEditorShell

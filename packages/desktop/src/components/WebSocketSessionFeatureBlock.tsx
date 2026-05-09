@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
@@ -155,6 +156,14 @@ function WebSocketSessionFeatureBody(
       onPointerDownCapture={onActivate}
       className="flex h-full min-h-0 flex-col outline-none"
     >
+      {!embedded && (
+        <FeatureContentSearchShortcut
+          featureId={featureId}
+          projectId={projectId}
+          layoutFeatureId={layoutFeatureId}
+          enabled={hotkeysEnabled}
+        />
+      )}
       <SessionFeatureTopBar
         featureId={featureId}
         projectId={projectId}

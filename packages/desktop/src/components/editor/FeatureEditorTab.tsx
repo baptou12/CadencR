@@ -31,7 +31,6 @@ import { Button } from "@/components/ui/button";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
 import FileSearchDialog from "./FileSearchDialog";
-import ContentSearchDialog from "./ContentSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
@@ -63,7 +62,7 @@ const FeatureEditorTab = memo(
       useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
-    // The editor's hotkeys (cmd+P, cmd+shift+F, cmd+D, etc.) only fire while
+    // The editor's hotkeys (cmd+P, cmd+D, etc.) only fire while
     // the editor tab is the globally focused feature tab. With split panes,
     // the editor can be visible next to the agent without owning keyboard focus.
     const layoutEditorFocused = useFeatureLayoutStore(
@@ -71,7 +70,6 @@ const FeatureEditorTab = memo(
     );
     const isEditorFocused = focusedOverride ?? layoutEditorFocused;
     const [fileSearchOpen, setFileSearchOpen] = useState(false);
-    const [contentSearchOpen, setContentSearchOpen] = useState(false);
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
     const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
     const [isSavingAll, setIsSavingAll] = useState(false);
@@ -171,16 +169,6 @@ const FeatureEditorTab = memo(
       { enabled: isEditorFocused },
     );
 
-    useScopedGlobalShortcut(
-      "meta+shift+f",
-      (e) => {
-        e.preventDefault();
-        setContentSearchOpen(true);
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-
     // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
     useScopedHotkeys(
       "meta+d",
@@ -271,12 +259,6 @@ const FeatureEditorTab = memo(
           featureId={featureId}
           open={fileSearchOpen}
           onOpenChange={setFileSearchOpen}
-        />
-        <ContentSearchDialog
-          projectId={projectId}
-          featureId={featureId}
-          open={contentSearchOpen}
-          onOpenChange={setContentSearchOpen}
         />
 
         <Dialog
