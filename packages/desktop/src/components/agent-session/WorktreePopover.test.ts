@@ -6,7 +6,7 @@
  * The reuse-vs-new decision turns on `BranchInfo.attached_worktree_path`:
  * if the picked branch is already checked out in another worktree we
  * attach to it (mode=reuse); otherwise the picked branch becomes the base
- * for a fresh feature-named branch (mode=new).
+ * for a fresh feature-named branch only when the worktree toggle is on.
  */
 import { describe, expect, it } from "vitest";
 import type { BranchInfo } from "@/api/generated";
@@ -24,7 +24,7 @@ function branch(name: string, attached?: string): BranchInfo {
 }
 
 describe("resolveWorktreeChoice", () => {
-  it("returns off when the toggle is off, regardless of branch pick", () => {
+  it("returns off when the toggle is off and no attached worktree branch is picked", () => {
     expect(
       resolveWorktreeChoice({ useWorktree: false, selectedBranch: null, branches: [] }),
     ).toEqual({ kind: "off" });
@@ -57,6 +57,16 @@ describe("resolveWorktreeChoice", () => {
     expect(
       resolveWorktreeChoice({
         useWorktree: true,
+        selectedBranch: "feat/foo",
+        branches: [branch("feat/foo", "/tmp/feat-foo-wt")],
+      }),
+    ).toEqual({ kind: "reuse", branch: "feat/foo" });
+  });
+
+  it("enforces reuse for an attached branch even when the toggle is off", () => {
+    expect(
+      resolveWorktreeChoice({
+        useWorktree: false,
         selectedBranch: "feat/foo",
         branches: [branch("feat/foo", "/tmp/feat-foo-wt")],
       }),

@@ -6,15 +6,14 @@ import React from "react";
 const mocks = vi.hoisted(() => {
   const mockUseParams = vi.fn(() => ({ sessionId: "ws-feature-35" }));
   const mockUseSearch = vi.fn(() => ({ cwd: "/test/path", featureId: 35, projectId: 1 }));
-  // Default: agent tab is the visible/active root tab.
   const mockAgentVisible = vi.fn(() => true);
   const mockSplitEditorFocused = vi.fn(() => false);
   const mockFocusPromptBar = vi.fn();
   const mockFocusActiveInput = vi.fn();
-  // Default: succeeds. Tests can replace per-call behavior via mockRejected.
   const mockSetFeatureSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
   const mockSendPrompt = vi.fn();
   const mockToastError = vi.fn();
+  const mockListBranches = vi.fn().mockResolvedValue([]);
   return {
     mockUseParams,
     mockUseSearch,
@@ -25,6 +24,7 @@ const mocks = vi.hoisted(() => {
     mockSetFeatureSettingMutateAsync,
     mockSendPrompt,
     mockToastError,
+    mockListBranches,
   };
 });
 
@@ -52,8 +52,6 @@ vi.mock("@/components/FeatureTopBar", () => ({
 }));
 
 vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({
-  // Render every tab's content in a flat container so the test can assert
-  // each tab's body without driving DnD/portal infrastructure.
   FeatureLayoutShell: ({ tabs }: { tabs: Record<string, { content: React.ReactNode }> }) => (
     <div data-testid="feature-layout-shell">
       <div data-testid="agent-pane">{tabs.agent.content}</div>
@@ -248,17 +246,13 @@ vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: vi.fn(() => ({ data: [] })),
   useGetGitStatus: vi.fn(() => ({ data: undefined })),
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
-  // The route reads two opt-in mode toggles (Claude bypass, Codex full-access)
-  // via useGetWorkspaceSetting. Default both off so the chip shows the
-  // standard cycle.
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
-  // Used by the first-prompt worktree-mode persistence (writes
-  // `worktree_mode` / `worktree_reuse_branch` / `worktree_base_branch`
-  // before sending the prompt).
   useSetFeatureSetting: vi.fn(() => ({ mutateAsync: mocks.mockSetFeatureSettingMutateAsync })),
-  // The route's resolver (`resolveWorktreeChoice`) consults the branch
-  // list to pick reuse-vs-new at send-time. The popover's lazy fetch
-  // also runs through this hook.
+  getListBranchesQueryKey: vi.fn((params: { project_id: number }) => [
+    "listBranches",
+    params.project_id,
+  ]),
+  listBranches: mocks.mockListBranches,
   useListBranches: vi.fn(() => ({ data: undefined, isLoading: false, isError: false })),
 }));
 
@@ -282,6 +276,17 @@ function lastAgentSessionProps(): Record<string, unknown> {
   return calls[calls.length - 1]?.[0] as unknown as Record<string, unknown>;
 }
 
+async function selectBranchAndSend(branch: string): Promise<void> {
+  render(<WsSessionPage />);
+  await act(async () => {
+    (lastAgentSessionProps().onWorktreeBranchChange as (branch: string | null) => void)(branch);
+  });
+  const onSend = lastAgentSessionProps().onSend as (text: string) => Promise<void>;
+  await act(async () => {
+    await onSend("hello");
+  });
+}
+
 describe("WsSessionPage route", () => {
   beforeEach(() => {
     vi.mocked(AgentSession).mockClear();
@@ -289,6 +294,8 @@ describe("WsSessionPage route", () => {
     mocks.mockFocusActiveInput.mockClear();
     mocks.mockSendPrompt.mockClear();
     mocks.mockToastError.mockClear();
+    mocks.mockListBranches.mockReset();
+    mocks.mockListBranches.mockResolvedValue([]);
     mocks.mockSetFeatureSettingMutateAsync.mockReset();
     mocks.mockSetFeatureSettingMutateAsync.mockResolvedValue(undefined);
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
@@ -299,8 +306,6 @@ describe("WsSessionPage route", () => {
 
   it("mounts every tab body via the layout shell", async () => {
     render(<WsSessionPage />);
-    // All tabs are always mounted now — visibility is handled by the
-    // (mocked-out) layout shell. Editor is lazy-loaded so we await it.
     expect(screen.getByTestId("agent-session")).toBeInTheDocument();
     expect(screen.getByTestId("terminal-tab")).toBeInTheDocument();
     expect(screen.getByTestId("git-tab")).toBeInTheDocument();
@@ -338,48 +343,69 @@ describe("WsSessionPage route", () => {
 
   it("focuses the agent prompt on mount only when the agent tab owns focus", async () => {
     render(<WsSessionPage />);
-
     await waitFor(() => expect(mocks.mockFocusPromptBar).toHaveBeenCalled());
   });
 
   it("does not steal focus back to the agent prompt when the editor tab owns focus", async () => {
     mocks.mockSplitEditorFocused.mockReturnValue(true);
-
     render(<WsSessionPage />);
     await new Promise((resolve) => window.setTimeout(resolve, 20));
-
     expect(mocks.mockFocusPromptBar).not.toHaveBeenCalled();
   });
 
   it("toasts and aborts the send when saving worktree settings fails (does not call sendPrompt)", async () => {
-    // Reproduce the bug: the user toggled "Use worktree", typed a prompt,
-    // hit send, and `setFeatureSetting.mutateAsync` rejects (e.g. backend
-    // returned 500). Before the fix, the prompt was already cleared by the
-    // prompt bar before the await — losing the text. After the fix, the
-    // route still rejects (so the bar restores the draft) and never calls
-    // `ws.sendPrompt`.
     mocks.mockSetFeatureSettingMutateAsync.mockRejectedValueOnce(new Error("disk full"));
 
     render(<WsSessionPage />);
     const props = lastAgentSessionProps();
-    // Flip "use worktree" on so the route's first-prompt branch runs.
-    // Wrap in `act` so the setState flushes before we re-read props for
-    // the latest `onSend` closure (it depends on `useWorktree`).
     await act(async () => {
       (props.onToggleWorktree as () => void)();
     });
-
     const propsAfterToggle = lastAgentSessionProps();
     const onSend = propsAfterToggle.onSend as (text: string) => Promise<void>;
-
-    // `AgentPromptBar` restores the cleared draft only when `onSend` rejects.
-    // The route still owns the toast, but must rethrow the settings failure.
     await act(async () => {
       await expect(onSend("hello")).rejects.toThrow("disk full");
     });
-
     expect(mocks.mockToastError).toHaveBeenCalledTimes(1);
     expect(mocks.mockToastError.mock.calls[0][0]).toMatch(/worktree settings/i);
     expect(mocks.mockSendPrompt).not.toHaveBeenCalled();
+  });
+
+  it("reuses an attached selected branch on the first prompt even when the worktree toggle is off", async () => {
+    mocks.mockListBranches.mockResolvedValue([
+      {
+        name: "feat/attached",
+        is_local: true,
+        attached_worktree_path: "/tmp/wt",
+        attached_feature_id: 99,
+      },
+    ]);
+    await selectBranchAndSend("feat/attached");
+    expect(mocks.mockListBranches).toHaveBeenCalledTimes(1);
+    expect(mocks.mockSetFeatureSettingMutateAsync).toHaveBeenCalledTimes(2);
+    expect(mocks.mockSetFeatureSettingMutateAsync).toHaveBeenNthCalledWith(1, {
+      id: 35,
+      data: { key: "worktree_reuse_branch", value: "feat/attached" },
+    });
+    expect(mocks.mockSetFeatureSettingMutateAsync).toHaveBeenNthCalledWith(2, {
+      id: 35,
+      data: { key: "worktree_mode", value: "reuse" },
+    });
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, true);
+  });
+
+  it("does not persist worktree settings or start a worktree for an unattached selected branch when the toggle is off", async () => {
+    mocks.mockListBranches.mockResolvedValue([
+      {
+        name: "feat/unattached",
+        is_local: true,
+        attached_worktree_path: null,
+        attached_feature_id: null,
+      },
+    ]);
+    await selectBranchAndSend("feat/unattached");
+    expect(mocks.mockListBranches).toHaveBeenCalledTimes(1);
+    expect(mocks.mockSetFeatureSettingMutateAsync).not.toHaveBeenCalled();
+    expect(mocks.mockSendPrompt).toHaveBeenCalledWith("hello", undefined, undefined);
   });
 });

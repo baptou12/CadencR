@@ -12,7 +12,7 @@
  *
  *   • Worktree chip — boolean toggle. When ON the agent will run in a
  *                     worktree; when OFF it runs in the project directory
- *                     as-is.
+ *                     unless the picked branch already has a worktree.
  *
  * The resolved `WorktreeChoice` is the parent's responsibility: the route
  * layer combines the two chips, looks up whether the picked branch is
@@ -23,13 +23,12 @@
  */
 import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import { CheckIcon, ChevronDownIcon, GitBranchIcon, Loader2 } from "lucide-react";
-import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useListBranches, type BranchInfo } from "@/api/generated";
-import { useBranchListKeyboard } from "@/components/branch-chip/useBranchListKeyboard";
+import { useBranchList, type BranchListRowContext } from "@/components/branch-chip/BranchList";
 
 /**
  * Resolved worktree choice as fed to the route's prompt-send handler. The
@@ -81,12 +80,7 @@ const SEGMENT =
   "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors text-foreground hover:bg-accent";
 const SEGMENT_ACTIVE =
   "inline-flex h-full items-center gap-1.5 px-2.5 transition-colors bg-[var(--chip-worktree-bg)] text-[var(--chip-worktree-fg)] hover:bg-[var(--chip-worktree-bg-hover)]";
-
-function filterBranches(branches: BranchInfo[], query: string): BranchInfo[] {
-  if (!query) return branches;
-  const needle = query.toLowerCase();
-  return branches.filter((b) => b.name.toLowerCase().includes(needle));
-}
+const EMPTY_BRANCHES: BranchInfo[] = [];
 
 export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
   projectId,
@@ -104,23 +98,70 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
     // the picker. The chip text only needs the name we already track.
     { query: { enabled: open } },
   );
-  const filtered = useMemo(
-    () => filterBranches(branchesQuery.data ?? [], query),
-    [branchesQuery.data, query],
+  const branches = branchesQuery.data ?? EMPTY_BRANCHES;
+  const selectedBranchChoice = useMemo(
+    () =>
+      resolveWorktreeChoice({
+        useWorktree: true,
+        selectedBranch,
+        branches,
+      }),
+    [branches, selectedBranch],
   );
+  const lockedWorktreeToggle = selectedBranchChoice.kind === "reuse";
 
   const handlePick = useCallback(
     (branch: BranchInfo) => {
       onSelectedBranchChange(branch.name);
+      if (branch.attached_worktree_path && !useWorktree) {
+        onToggleWorktree();
+      }
       setOpen(false);
     },
-    [onSelectedBranchChange],
+    [onSelectedBranchChange, onToggleWorktree, useWorktree],
   );
-  const { activeIndex, virtuosoRef, onKeyDown } = useBranchListKeyboard(filtered, handlePick);
+  const handleToggleWorktree = useCallback((): void => {
+    if (lockedWorktreeToggle) return;
+    onToggleWorktree();
+  }, [lockedWorktreeToggle, onToggleWorktree]);
+  const renderBranchRow = useCallback(
+    (ctx: BranchListRowContext) => (
+      <BranchRow
+        branch={ctx.branch}
+        isActive={ctx.isActive}
+        isDefault={defaultBranch === ctx.branch.name}
+        isSelected={selectedBranch === ctx.branch.name}
+        onPick={handlePick}
+      />
+    ),
+    [defaultBranch, handlePick, selectedBranch],
+  );
+  const branchList = useBranchList({
+    branches,
+    query,
+    onPick: handlePick,
+    renderRow: renderBranchRow,
+    height: 240,
+    emptyState: (
+      <p className="text-sm text-muted-foreground p-3 text-center">No matching branches.</p>
+    ),
+  });
 
   // What label shows in the chip when the user hasn't picked anything yet.
   const effectiveBranch = selectedBranch ?? defaultBranch ?? null;
   const branchLabel = effectiveBranch ?? "branch";
+  const worktreeToggleButton = (
+    <button
+      type="button"
+      onClick={handleToggleWorktree}
+      aria-pressed={useWorktree || lockedWorktreeToggle}
+      className={cn(useWorktree || lockedWorktreeToggle ? SEGMENT_ACTIVE : SEGMENT, "rounded-r-md")}
+    >
+      <GitBranchIcon className="size-3" />
+      Use worktree
+      {(useWorktree || lockedWorktreeToggle) && <CheckIcon className="size-3" />}
+    </button>
+  );
 
   return (
     <div className={GROUP}>
@@ -145,7 +186,7 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
                 placeholder="Search branches…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={onKeyDown}
+                onKeyDown={branchList.onKeyDown}
                 className="h-7"
               />
             </div>
@@ -177,15 +218,7 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
               isLoading={branchesQuery.isLoading}
               isError={branchesQuery.isError}
               error={branchesQuery.error}
-              branches={filtered}
-              selectedBranch={selectedBranch}
-              defaultBranch={defaultBranch}
-              activeIndex={activeIndex}
-              virtuosoRef={virtuosoRef}
-              onPick={(branch) => {
-                onSelectedBranchChange(branch);
-                setOpen(false);
-              }}
+              list={branchList.list}
             />
           </div>
         </PopoverContent>
@@ -195,16 +228,21 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
       <div className="w-px bg-border" aria-hidden="true" />
 
       {/* Worktree toggle segment. */}
-      <button
-        type="button"
-        onClick={onToggleWorktree}
-        aria-pressed={useWorktree}
-        className={cn(useWorktree ? SEGMENT_ACTIVE : SEGMENT, "rounded-r-md")}
-      >
-        <GitBranchIcon className="size-3" />
-        Use worktree
-        {useWorktree && <CheckIcon className="size-3" />}
-      </button>
+      {lockedWorktreeToggle ? (
+        <Popover>
+          <PopoverTrigger asChild>{worktreeToggleButton}</PopoverTrigger>
+          <PopoverContent align="end" side="top" className="w-72 space-y-2 p-3 text-xs">
+            <div className="font-medium text-foreground">Existing worktree selected</div>
+            <p className="text-muted-foreground">
+              <span className="font-mono text-foreground">{selectedBranch}</span> is already checked
+              out in a worktree. Cadencr will reuse that existing worktree.
+            </p>
+            <p className="text-muted-foreground">No new branch will be created.</p>
+          </PopoverContent>
+        </Popover>
+      ) : (
+        worktreeToggleButton
+      )}
     </div>
   );
 });
@@ -213,25 +251,10 @@ interface BranchListProps {
   isLoading: boolean;
   isError: boolean;
   error: unknown;
-  branches: BranchInfo[];
-  selectedBranch: string | null;
-  defaultBranch: string | undefined;
-  activeIndex: number;
-  virtuosoRef: React.RefObject<VirtuosoHandle | null>;
-  onPick: (branch: string) => void;
+  list: ReactElement;
 }
 
-function BranchList({
-  isLoading,
-  isError,
-  error,
-  branches,
-  selectedBranch,
-  defaultBranch,
-  activeIndex,
-  virtuosoRef,
-  onPick,
-}: BranchListProps): ReactElement {
+function BranchList({ isLoading, isError, error, list }: BranchListProps): ReactElement {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
@@ -247,83 +270,82 @@ function BranchList({
       </p>
     );
   }
-  if (branches.length === 0) {
-    return <p className="text-sm text-muted-foreground p-3 text-center">No matching branches.</p>;
-  }
+  return list;
+}
+
+interface BranchRowProps {
+  branch: BranchInfo;
+  isActive: boolean;
+  isDefault: boolean;
+  isSelected: boolean;
+  onPick: (branch: BranchInfo) => void;
+}
+
+function BranchRow({
+  branch,
+  isActive,
+  isDefault,
+  isSelected,
+  onPick,
+}: BranchRowProps): ReactElement {
   return (
-    <Virtuoso
-      ref={virtuosoRef}
-      style={{ height: 240 }}
-      totalCount={branches.length}
-      itemContent={(index) => {
-        const branch = branches[index];
-        if (!branch) return null;
-        const isSelected = selectedBranch === branch.name;
-        const isDefault = defaultBranch === branch.name;
-        const isActive = index === activeIndex;
-        return (
-          <button
-            type="button"
-            onClick={() => onPick(branch.name)}
-            className={cn(
-              "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-accent",
-              isSelected && "bg-accent/50",
-              isActive && "bg-accent",
-            )}
-          >
-            {/* Leading worktree icon mirrors the sidebar's "has worktree"
-                affordance (see ProjectFeatureRow). Picking such a branch
-                routes through the `reuse` mode — no fresh worktree is
-                created; the conversation lands on the existing one. */}
-            {branch.attached_worktree_path ? (
-              <GitBranchIcon
-                className="size-3 shrink-0 text-[var(--chip-worktree-fg)]"
-                aria-label="Has worktree"
-              />
-            ) : (
-              <span className="size-3 shrink-0" aria-hidden="true" />
-            )}
-            <span className="flex-1 truncate font-mono text-xs">{branch.name}</span>
-            {isDefault && (
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                default
-              </span>
-            )}
-            {!branch.is_local && (
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wide">
-                remote
-              </span>
-            )}
-            {branch.attached_feature_id != null && (
-              <span className="text-[10px] text-muted-foreground">
-                in use by feature #{branch.attached_feature_id}
-              </span>
-            )}
-            {isSelected && <CheckIcon className="size-3 shrink-0 text-[var(--chip-worktree-fg)]" />}
-          </button>
-        );
-      }}
-    />
+    <button
+      type="button"
+      onClick={() => onPick(branch)}
+      className={cn(
+        "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left hover:bg-accent",
+        isSelected && "bg-accent/50",
+        isActive && "bg-accent",
+      )}
+    >
+      {/* Leading worktree icon mirrors the sidebar's "has worktree"
+          affordance (see ProjectFeatureRow). Picking such a branch
+          routes through the `reuse` mode — no fresh worktree is created;
+          the conversation lands on the existing one. */}
+      {branch.attached_worktree_path ? (
+        <GitBranchIcon
+          className="size-3 shrink-0 text-[var(--chip-worktree-fg)]"
+          aria-label="Has worktree"
+        />
+      ) : (
+        <span className="size-3 shrink-0" aria-hidden="true" />
+      )}
+      <span className="flex-1 truncate font-mono text-xs">{branch.name}</span>
+      {isDefault && (
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wide">default</span>
+      )}
+      {!branch.is_local && (
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wide">remote</span>
+      )}
+      {branch.attached_feature_id != null && (
+        <span className="text-[10px] text-muted-foreground">
+          in use by feature #{branch.attached_feature_id}
+        </span>
+      )}
+      {isSelected && <CheckIcon className="size-3 shrink-0 text-[var(--chip-worktree-fg)]" />}
+    </button>
   );
 }
 
 /**
  * Resolve the live `WorktreeChoice` from the two-chip state. Pulled into a
  * pure helper so the route can call it inside `onSend` without duplicating
- * the rule. Returns `off` when the toggle is off, `reuse` when the picked
- * branch already has an attached worktree, otherwise `new` (with `base`
- * pinned to the explicit pick when the user diverged from the default).
+ * the rule. Returns `reuse` when the picked branch already has an attached
+ * worktree, even if the toggle is off, otherwise respects the toggle: `off`
+ * when disabled or `new` when enabled (with `base` pinned to the explicit
+ * pick when the user diverged from the default).
  */
 export function resolveWorktreeChoice(args: {
   useWorktree: boolean;
   selectedBranch: string | null;
   branches: BranchInfo[] | undefined;
 }): WorktreeChoice {
-  if (!args.useWorktree) return { kind: "off" };
-  if (args.selectedBranch == null) return { kind: "new", base: null };
+  if (args.selectedBranch == null) {
+    return args.useWorktree ? { kind: "new", base: null } : { kind: "off" };
+  }
   const matched = args.branches?.find((b) => b.name === args.selectedBranch);
   if (matched?.attached_worktree_path) {
     return { kind: "reuse", branch: args.selectedBranch };
   }
-  return { kind: "new", base: args.selectedBranch };
+  return args.useWorktree ? { kind: "new", base: args.selectedBranch } : { kind: "off" };
 }

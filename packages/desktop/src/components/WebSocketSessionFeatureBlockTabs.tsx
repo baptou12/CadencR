@@ -215,7 +215,6 @@ function useAgentSendHandler(args: {
         projectId,
         queryClient,
         selectedBranch: controls.selectedBranch,
-        useWorktree: controls.useWorktree,
       });
       const choice = resolveWorktreeChoice({
         useWorktree: controls.useWorktree,
@@ -225,11 +224,8 @@ function useAgentSendHandler(args: {
       if (isFirstPrompt && choice.kind !== "off") {
         await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
       }
-      controls.ws.sendPrompt(
-        text,
-        images,
-        isFirstPrompt && controls.useWorktree ? true : undefined,
-      );
+      const shouldStartWorktree = isFirstPrompt && choice.kind !== "off";
+      controls.ws.sendPrompt(text, images, shouldStartWorktree ? true : undefined);
     },
     [
       controls.activeProviderId,
@@ -250,14 +246,13 @@ interface LoadBranchesParams {
   projectId: number;
   queryClient: QueryClient;
   selectedBranch: string | null;
-  useWorktree: boolean;
 }
 
 async function loadBranchesForFirstPrompt(
   params: LoadBranchesParams,
 ): Promise<Awaited<ReturnType<typeof listBranches>> | undefined> {
-  const { isFirstPrompt, projectId, queryClient, selectedBranch, useWorktree } = params;
-  if (!isFirstPrompt || !useWorktree || selectedBranch == null) return undefined;
+  const { isFirstPrompt, projectId, queryClient, selectedBranch } = params;
+  if (!isFirstPrompt || selectedBranch == null) return undefined;
   try {
     return await queryClient.ensureQueryData({
       queryKey: getListBranchesQueryKey({ project_id: projectId }),
