@@ -664,15 +664,28 @@ pub(super) async fn handle_mode_set(
 
     match &mut handle.state {
         QueryState::Pending(options) => {
+            // No live CLI yet; the queued mode will be passed via
+            // `Options.permission_mode` at spawn time.
             options.permission_mode = Some(new_mode);
         }
         QueryState::Active { query, .. } => {
             let q = query.lock().await;
-            if let Err(e) = q.set_permission_mode(new_mode).await {
+            if let Err(e) = q.set_permission_mode(new_mode.clone()).await {
+                // The CLI rejected (or never acked) the mode change.
+                // Per `no-optimistic-updates.md` we leave the FE chip
+                // alone — surface the error so the caller can retry. We
+                // deliberately don't roll back `desired_permission_mode`:
+                // the user's intent stays recorded so a subsequent
+                // success starts from there rather than CLI state.
                 error!(db_session_id, error = %e, "failed to set permission mode on active query");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
                 return;
             }
+            // Track what the CLI actually accepted. Without this,
+            // `plan_post_plan_mode_transition`'s "already in target mode"
+            // short-circuit (post_plan_mode.rs) reads stale state and
+            // may skip the post-plan-approval transition.
+            handle.spawned_permission_mode = Some(new_mode);
         }
     }
 

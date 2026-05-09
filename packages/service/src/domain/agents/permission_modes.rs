@@ -60,3 +60,14 @@ pub(crate) fn post_plan_approval_mode_wire(provider: &str, model: Option<&str>) 
         .map(|adapter| adapter.post_plan_approval_mode_wire(model))
         .unwrap_or("acceptEdits")
 }
+
+/// If the post-plan target mode was rejected by the CLI, return the
+/// fallback wire string the orchestrator should retry with. `None` means
+/// surface the original rejection.
+pub(crate) fn post_plan_approval_fallback_mode_wire(
+    provider: &str,
+    failed_mode_wire: &str,
+) -> Option<&'static str> {
+    runtime_adapter(provider)
+        .and_then(|adapter| adapter.post_plan_approval_fallback_mode_wire(failed_mode_wire))
+}
