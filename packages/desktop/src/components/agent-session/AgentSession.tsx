@@ -87,6 +87,7 @@ export const AgentSession = memo(
       currentModelId,
       onModelChange,
       currentThinkingEffort,
+      showReadOnlyModel,
       onThinkingEffortChange,
       featureId,
       projectId,
@@ -261,7 +262,11 @@ export const AgentSession = memo(
     // When narrow, secondary chips render below the prompt — so they don't
     // count toward whether the inline `MetaBar` should appear above it.
     const hasInlineMeta =
-      !!onPermissionModeToggle || !!onModelChange || showDiffBar || showWorktreeChip;
+      !!onPermissionModeToggle ||
+      !!onModelChange ||
+      !!showReadOnlyModel ||
+      showDiffBar ||
+      showWorktreeChip;
     const hasSecondaryMeta =
       showAutoScrollChip || (todos && todos.length > 0) || !!(runtimeSessionId && onStop);
     const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
@@ -290,6 +295,7 @@ export const AgentSession = memo(
         currentThinkingEffort={parseThinkingEffort(currentThinkingEffort)}
         supportedThinkingEfforts={supportedThinkingEfforts}
         onThinkingEffortChange={onThinkingEffortChange}
+        showReadOnlyModel={showReadOnlyModel}
         currentModelId={currentModelId}
         currentModelLabel={currentModelLabel}
         models={visibleModels}

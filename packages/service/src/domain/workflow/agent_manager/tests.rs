@@ -336,3 +336,101 @@ async fn test_resolve_provider_feature_overrides_project() {
     let provider = mgr.resolve_provider("plan", Some(1)).await;
     assert_eq!(provider, "opencode");
 }
+
+#[tokio::test]
+async fn test_set_permission_mode_persists_active_session_mode() {
+    let pool = setup_test_db().await;
+    sqlx::query(
+        "CREATE TABLE agent_sessions (\
+            id INTEGER PRIMARY KEY AUTOINCREMENT, \
+            feature_id INTEGER NOT NULL, \
+            agent_type TEXT NOT NULL, \
+            status TEXT NOT NULL, \
+            runtime_provider TEXT, \
+            permission_mode TEXT\
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let session_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider, permission_mode) \
+         VALUES (1, 'session', 'running', 'claude_code', 'acceptEdits') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let mgr = make_agent_manager(pool.clone(), 1);
+    let slot = crate::domain::workflow::engine::AgentSlot::Session(session_id);
+    mgr.active_items.insert(slot.clone(), session_id);
+
+    let changed_session_id = mgr.set_permission_mode(slot, "plan").await.unwrap();
+
+    assert_eq!(changed_session_id, session_id);
+    let stored_mode: String =
+        sqlx::query_scalar("SELECT permission_mode FROM agent_sessions WHERE id = ?")
+            .bind(session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored_mode, "plan");
+}
+
+#[tokio::test]
+async fn test_set_permission_mode_rejects_unsupported_provider_mode() {
+    let pool = setup_test_db().await;
+    sqlx::query(
+        "CREATE TABLE agent_sessions (\
+            id INTEGER PRIMARY KEY AUTOINCREMENT, \
+            feature_id INTEGER NOT NULL, \
+            agent_type TEXT NOT NULL, \
+            status TEXT NOT NULL, \
+            runtime_provider TEXT, \
+            permission_mode TEXT\
+        )",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO projects (id, name) VALUES (1, 'test')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let session_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO agent_sessions (feature_id, agent_type, status, runtime_provider, permission_mode) \
+         VALUES (1, 'session', 'running', 'codex_cli', 'default') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let mgr = make_agent_manager(pool.clone(), 1);
+    let slot = crate::domain::workflow::engine::AgentSlot::Session(session_id);
+    mgr.active_items.insert(slot.clone(), session_id);
+
+    let error = mgr.set_permission_mode(slot, "auto").await.unwrap_err();
+
+    assert!(error.contains("does not support permission mode auto"));
+    let stored_mode: String =
+        sqlx::query_scalar("SELECT permission_mode FROM agent_sessions WHERE id = ?")
+            .bind(session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(stored_mode, "default");
+}

@@ -4,6 +4,7 @@ import { useMetaBarModelProps } from "@/hooks/useMetaBarModelProps";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { nextThinkingEffort } from "@/shared/thinking-effort";
 import type { AgentType } from "@/types/agent-types";
+import type { PermissionMode } from "@/types/permission-mode";
 
 interface StandaloneModelPickerProps {
   featureId: number;
@@ -11,6 +12,9 @@ interface StandaloneModelPickerProps {
   agentType: AgentType;
   /** Optional second agent type kept in lockstep with the primary on change. */
   secondaryAgentType?: AgentType;
+  permissionMode?: PermissionMode;
+  onPermissionModeToggle?: () => void;
+  enabledOptInModes?: PermissionMode[];
   onModelSelected?: () => void;
 }
 
@@ -27,7 +31,16 @@ export const StandaloneModelPicker = forwardRef<
   StandaloneModelPickerHandle,
   StandaloneModelPickerProps
 >(function StandaloneModelPicker(
-  { featureId, projectId, agentType, secondaryAgentType, onModelSelected },
+  {
+    featureId,
+    projectId,
+    agentType,
+    secondaryAgentType,
+    permissionMode,
+    onPermissionModeToggle,
+    enabledOptInModes,
+    onModelSelected,
+  },
   ref,
 ) {
   const metaBarRef = useRef<MetaBarHandle>(null);
@@ -76,6 +89,9 @@ export const StandaloneModelPicker = forwardRef<
       showAutoScrollChip={false}
       autoScrollEnabled={false}
       onToggleAutoScroll={() => {}}
+      permissionMode={permissionMode}
+      onPermissionModeToggle={onPermissionModeToggle}
+      enabledOptInModes={enabledOptInModes}
       showWorktreeChip={false}
       showDiffBar={false}
       onModelSelected={onModelSelected}

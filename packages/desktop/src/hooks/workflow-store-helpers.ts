@@ -22,6 +22,7 @@ import {
   PLAN_KEY,
   PRD_KEY,
 } from "@/types/workflow";
+import { parsePermissionMode } from "@/types/permission-mode";
 
 // ---------------------------------------------------------------------------
 // hydrateFromSnapshot
@@ -102,6 +103,9 @@ export function hydrateFromSnapshotPatch(
       hasMore: rest?.hasMore ?? false,
       oldestMessageId: rest?.oldestMessageId ?? null,
       runtimeSessionId: session.runtime_session_id ?? null,
+      runtimeProvider: session.runtime_provider ?? null,
+      model: session.model ?? null,
+      permissionMode: parsePermissionMode(session.permission_mode) ?? "acceptEdits",
       inputTokens: session.input_tokens ?? 0,
       outputTokens: session.output_tokens ?? 0,
       contextWindow:

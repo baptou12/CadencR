@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
+use crate::domain::agents::permission_modes::default_permission_mode;
 use crate::domain::agents::providers::provider_default_model;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::runtime_adapter;
@@ -196,6 +197,7 @@ impl AgentManager {
         resume_session_id: Option<&str>,
         include_mcp_instructions: bool,
         permissions: &PermissionRouter,
+        permission_mode_override: Option<RuntimePermissionMode>,
         model_override: Option<&str>,
     ) -> Result<SpawnContext, String> {
         let mcp_servers = build_mcp_server_config(agent_type, self.feature_id);
@@ -325,7 +327,9 @@ impl AgentManager {
 
         let runtime_config = RuntimeSpawnConfig {
             cwd: cwd.clone(),
-            permission_mode: Some(RuntimePermissionMode::AcceptEdits),
+            permission_mode: Some(
+                permission_mode_override.unwrap_or_else(|| default_permission_mode(&provider)),
+            ),
             model: Some(model.clone()),
             thinking_effort,
             system_prompt: full_system_prompt,

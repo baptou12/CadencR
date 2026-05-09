@@ -151,6 +151,10 @@ impl WorkflowEngine {
 
             if is_running {
                 let agent_type = slot.agent_type_str().unwrap_or("execute").to_string();
+                let (runtime_provider, model, permission_mode) = self
+                    .agent_manager
+                    .session_runtime_metadata(db_session_id)
+                    .await;
                 let envelope = WsEnvelope::new(
                     "workflow",
                     "agent_running",
@@ -159,6 +163,9 @@ impl WorkflowEngine {
                         agent_slot: slot.clone(),
                         session_id: db_session_id,
                         agent_type,
+                        runtime_provider,
+                        model,
+                        permission_mode,
                     }),
                 );
                 let _ = self

@@ -14,6 +14,7 @@ import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { StreamingState } from "@/stores/ws-session-store";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { FeatureAgentStateResponse } from "@/api/generated";
+import type { PermissionMode } from "@/types/permission-mode";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,6 +73,11 @@ export interface AgentSessionState {
   historyLoaded: boolean;
   /** Runtime session ID (UUID) for --resume */
   runtimeSessionId: string | null;
+  /** Runtime provider and model selected for this session. */
+  runtimeProvider: string | null;
+  model: string | null;
+  /** Provider-specific permission mode confirmed by the backend. */
+  permissionMode: PermissionMode;
   inputTokens: number;
   outputTokens: number;
   /** `null` until the provider reports an authoritative context window. */
@@ -101,6 +107,9 @@ export interface AgentSessionSummary {
   status: string;
   agent_type: string | null;
   runtime_session_id: string | null;
+  runtime_provider?: string | null;
+  model?: string | null;
+  permission_mode?: string | null;
   input_tokens: number;
   output_tokens: number;
   context_window: number | null;
@@ -203,6 +212,7 @@ export interface WorkflowState {
     optionId?: string,
   ) => void;
   respondToQuestion: (slotKey: string, response: AgentQuestionAnswers) => void;
+  setAgentPermissionMode: (slotKey: string, mode: PermissionMode) => void;
   sendPromptToAgent: (
     slotKey: string,
     text: string,
@@ -210,7 +220,11 @@ export interface WorkflowState {
   ) => void;
   interruptItem: (slotKey: string) => void;
   resumeItem: (slotKey: string) => void;
-  startSession: (prompt: string, images?: Array<{ base64: string; mimeType: string }>) => void;
+  startSession: (
+    prompt: string,
+    images?: Array<{ base64: string; mimeType: string }>,
+    permissionMode?: PermissionMode,
+  ) => void;
   startRefine: (description: string, images?: Array<{ base64: string; mimeType: string }>) => void;
   startReviewFixer: (comments: string) => void;
   startRisk: () => void;

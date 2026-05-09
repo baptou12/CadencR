@@ -3,11 +3,14 @@ import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import type { ContextUsageState, LiveAgentStatus } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
 import type { WorkflowBackend } from "@/hooks/workflowBackendTypes";
+import { useEnabledOptInModesByProvider } from "@/hooks/useEnabledOptInModes";
 import { capitalize, cn } from "@/lib/utils";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ReactElement, ReactNode } from "react";
+import { nextProviderMode } from "@/lib/provider-modes";
+import { parsePermissionMode } from "@/types/permission-mode";
 
 /**
  * Resolve the live 3-value status for a workflow agent session.
@@ -92,11 +95,22 @@ export function WorkflowAgentGrid({
   // Single subscription for the whole grid: every entry derives its live
   // status from this map without each row opening its own selector.
   const bySession = useSessionStatusStore((s) => s.bySession);
+  const enabledOptInModesByProvider = useEnabledOptInModesByProvider();
   const renderAgent = (entry: FeatureSession, index: number, isGridItem: boolean): ReactNode => {
     const liveStatus = liveStatusFor(entry, bySession);
     const knownLabel = AGENT_LABELS[entry.agentType as AgentType];
-    const providerId = resolveProvider(entry.agentType);
-    const modelId = resolveModel(entry.agentType);
+    const providerId = entry.runtimeProvider || resolveProvider(entry.agentType);
+    const modelId = entry.model || resolveModel(entry.agentType);
+    const isSessionAgent = entry.agentType === "session";
+    const enabledOptInModes = isSessionAgent ? enabledOptInModesByProvider(providerId) : undefined;
+    const handlePermissionModeToggle =
+      isSessionAgent && backend.setAgentPermissionMode
+        ? (): void => {
+            const current = parsePermissionMode(entry.permissionMode) ?? "acceptEdits";
+            const next = nextProviderMode(providerId, current, enabledOptInModes ?? []);
+            if (next !== current) backend.setAgentPermissionMode?.(entry, next);
+          }
+        : undefined;
     const label = knownLabel
       ? (entry.agentType === "execute" || entry.agentType === "qa") && entry.phaseTitle
         ? `${knownLabel} - ${entry.phaseTitle}`
@@ -129,6 +143,9 @@ export function WorkflowAgentGrid({
         }
         pendingQuestions={questions.length > 0 ? questions : undefined}
         disableShortcuts={agentsWithQuestions > 1}
+        permissionMode={entry.agentType === "session" ? entry.permissionMode : undefined}
+        enabledOptInModes={enabledOptInModes}
+        onPermissionModeToggle={handlePermissionModeToggle}
         onMarkDone={
           (entry.agentType === "session" || entry.agentType === "review-fixer") &&
           (entry.status === "running" || entry.status === "paused")

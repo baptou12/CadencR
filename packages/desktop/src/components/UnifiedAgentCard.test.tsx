@@ -8,6 +8,7 @@ import { UnifiedAgentCard } from "./UnifiedAgentCard";
 
 const mocks = vi.hoisted(() => ({
   WebSocketSessionFeatureBlock: vi.fn(() => <div data-testid="ws-block" />),
+  AgentSession: vi.fn(() => null),
   togglePin: vi.fn(),
 }));
 
@@ -24,7 +25,7 @@ vi.mock("@/components/EmbeddedFeatureHeader", () => ({
 }));
 
 vi.mock("@/components/agent-session", () => ({
-  AgentSession: () => null,
+  AgentSession: mocks.AgentSession,
 }));
 
 function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): UnifiedAgentEntry {
@@ -141,5 +142,27 @@ describe("UnifiedAgentCard ws-session hydration", () => {
     expect(session?.lifecycle).toEqual({ phase: "paused", reason: "permission" });
     expect(session?.currentModelId).toBe("model-b");
     expect(session?.hasFileChanges).toBe(true);
+  });
+
+  it("passes read-only model metadata for ws-feature unified cards", () => {
+    const entry = makeEntry({
+      model: "openai/gpt-5.3-codex",
+      runtimeProvider: "opencode",
+      status: "completed",
+    });
+    entry.feature.type = "ws-feature";
+
+    render(<UnifiedAgentCard entry={entry} index={0} isActive={false} onActivate={vi.fn()} />);
+
+    type AgentSessionPropsCapture = {
+      showReadOnlyModel?: boolean;
+      currentModelId?: string;
+      currentProviderId?: string;
+    };
+    const calls = mocks.AgentSession.mock.calls as unknown as Array<[AgentSessionPropsCapture]>;
+    const props = calls.at(-1)?.[0];
+    expect(props?.showReadOnlyModel).toBe(true);
+    expect(props?.currentModelId).toBe("openai/gpt-5.3-codex");
+    expect(props?.currentProviderId).toBe("opencode");
   });
 });

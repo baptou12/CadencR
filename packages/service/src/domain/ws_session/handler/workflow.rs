@@ -259,6 +259,7 @@ pub async fn handle_workflow_action(
             workflow_interact::handle_permission_respond(envelope, sender, app_state).await
         }
         "prompt.send" => workflow_interact::handle_prompt_send(envelope, sender, app_state).await,
+        "mode.set" => workflow_interact::handle_mode_set(envelope, sender).await,
         "interrupt" => workflow_interact::handle_interrupt(envelope, sender, app_state).await,
         "set_autonomy" => handle_set_autonomy(envelope, sender).await,
         "set_parallel" => handle_set_parallel(envelope, sender, app_state).await,
@@ -444,6 +445,9 @@ async fn handle_start_agent<T, F, Fut>(
                 to_value(WorkflowFeatureIdSessionPayload {
                     feature_id,
                     session_id,
+                    runtime_provider: None,
+                    model: None,
+                    permission_mode: None,
                 }),
             );
             let _ = sender.send(Message::Text(String::from(ack).into()));
@@ -460,18 +464,50 @@ async fn handle_start_agent<T, F, Fut>(
 }
 
 async fn handle_start_session(envelope: WsEnvelope, sender: &WsSender) {
-    handle_start_agent::<WorkflowStartSessionPayload, _, _>(
-        envelope,
-        sender,
-        "session",
-        "session.started",
-        |p, engine| async move {
-            engine
-                .spawn_session_agent(&p.prompt, &p.images.unwrap_or_default())
-                .await
-        },
-    )
-    .await;
+    let Some((payload, engine)) =
+        parse_and_get_engine::<WorkflowStartSessionPayload>(&envelope, sender)
+    else {
+        return;
+    };
+    let feature_id = payload.feature_id;
+
+    info!(feature_id, "spawning session agent");
+    match engine
+        .spawn_session_agent(
+            &payload.prompt,
+            &payload.images.unwrap_or_default(),
+            payload.permission_mode.as_deref(),
+        )
+        .await
+    {
+        Ok(session_id) => {
+            let (runtime_provider, model, permission_mode) = engine
+                .agent_manager
+                .session_runtime_metadata(session_id)
+                .await;
+            let ack = WsEnvelope::reply(
+                &envelope.id,
+                "workflow",
+                "session.started",
+                to_value(WorkflowFeatureIdSessionPayload {
+                    feature_id,
+                    session_id,
+                    runtime_provider,
+                    model,
+                    permission_mode,
+                }),
+            );
+            let _ = sender.send(Message::Text(String::from(ack).into()));
+        }
+        Err(e) => {
+            send_workflow_error(
+                sender,
+                &envelope.id,
+                "SPAWN_FAILED",
+                &format!("Failed to spawn session: {e}"),
+            );
+        }
+    }
 }
 
 async fn handle_start_refine(envelope: WsEnvelope, sender: &WsSender) {

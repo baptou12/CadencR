@@ -16,6 +16,7 @@ const workflowSourceKey = (featureId: number): string => `workflow:${featureId}`
 import { blocksContainFileChange, patchAgent } from "@/hooks/agent-event-handlers";
 import type { AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
 import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-payload";
+import type { PermissionMode } from "@/types/permission-mode";
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => {
   function send(action: string, payload: Record<string, unknown> = {}): boolean {
@@ -300,6 +301,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       // those clear pending-* state for us.
     },
 
+    setAgentPermissionMode(slotKey: string, mode: PermissionMode) {
+      send("mode.set", { agent_slot: slotKeyToAgentSlot(slotKey), mode });
+    },
+
     sendPromptToAgent(slotKey, text, images) {
       send("prompt.send", { agent_slot: slotKeyToAgentSlot(slotKey), text, images });
       // Backend emits `agent_user_message` (persist_user_message), which
@@ -317,9 +322,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       // Backend emits `agent_running` + `item_update` on successful resume.
     },
 
-    startSession(prompt, images) {
+    startSession(prompt, images, permissionMode) {
       set({ startingSession: true });
-      if (!send("start_session", { prompt, images })) {
+      if (!send("start_session", { prompt, images, permission_mode: permissionMode })) {
         set({ startingSession: false, error: "Not connected — cannot start session" });
       }
     },

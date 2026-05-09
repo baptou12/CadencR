@@ -16,8 +16,8 @@ use crate::domain::ws_session::protocol::{
     ImagePayload, PermissionDecision, PermissionRequestPayload, SessionErrorPayload, WsEnvelope,
 };
 
-use super::super::helpers::{parse_permission_mode, post_plan_approval_mode_wire};
-use super::super::types::{QueryState, SdkSessions};
+use super::super::post_plan_mode::transition_session_to_post_plan_mode;
+use super::super::types::SdkSessions;
 use super::super::WsSender;
 
 pub(crate) fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value {
@@ -307,95 +307,30 @@ impl WsBridgeCanUseTool {
     /// the handle / DB / chip alone. Lying about CLI state is exactly the
     /// bug class this whole code path was rewritten to fix.
     async fn transition_to_post_plan_mode(&self) {
-        let mut sessions = self.sdk_sessions.lock().await;
-        let Some(handle) = sessions.get_mut(&self.db_session_id) else {
-            warn!(
-                db_session_id = self.db_session_id,
-                "post-plan-approval: session handle missing, skipping mode transition"
-            );
-            return;
-        };
-
-        // The live model wins over the requested-but-not-yet-spawned model:
-        // the CLI we're about to talk to was spawned with `spawned_model`,
-        // and the auto-mode capability gate must reflect what's actually
-        // running (not what the user clicked into the chip mid-turn).
-        let model_for_gate = handle
-            .spawned_model
-            .as_deref()
-            .or(handle.desired_model.as_deref());
-        let target_wire = post_plan_approval_mode_wire(&handle.runtime_provider, model_for_gate);
-        let target_mode = parse_permission_mode(target_wire);
-
-        // No-op fast path: the CLI is already in the target mode (e.g. the
-        // user kicked off plan mode from `acceptEdits` and the model
-        // doesn't support `auto`, so the post-approval target maps right
-        // back to `acceptEdits`). Skipping the round-trip avoids a wasted
-        // stdin write and a redundant `mode.changed` envelope.
-        if handle.spawned_permission_mode.as_ref() == Some(&target_mode) {
-            debug!(
-                db_session_id = self.db_session_id,
-                target_mode = target_wire,
-                "post-plan-approval: CLI already in target mode, skipping"
-            );
-            return;
-        }
-
-        info!(
-            db_session_id = self.db_session_id,
-            provider = %handle.runtime_provider,
-            model = ?model_for_gate,
-            target_mode = target_wire,
-            "transitioning to post-plan-approval permission mode"
-        );
-
-        if let QueryState::Active { query, .. } = &handle.state {
-            let q = query.lock().await;
-            if let Err(e) = q.set_permission_mode(target_mode.clone()).await {
-                error!(
-                    db_session_id = self.db_session_id,
-                    error = %e,
-                    "post-plan-approval: failed to push set_permission_mode to CLI"
-                );
-                let err = WsEnvelope::new(
-                    "session",
-                    "error",
-                    serde_json::to_value(SessionErrorPayload {
-                        code: "SDK_ERROR".into(),
-                        message: format!("Failed to apply post-plan permission mode: {e}"),
-                    })
-                    .unwrap(),
-                );
-                let _ = self.sender.send(Message::Text(String::from(err).into()));
-                // Bail without mutating handle / DB / broadcasting so the
-                // chip stays accurate to the CLI's actual mode. Releasing
-                // `Allow` from the caller is fine; the agent resumes in
-                // its current mode rather than a fictional new one.
-                return;
-            }
-        }
-
-        handle.desired_permission_mode = Some(target_mode.clone());
-        handle.spawned_permission_mode = Some(target_mode.clone());
-        handle.config.permission_mode = Some(target_mode);
-        drop(sessions);
-
-        // Persist + broadcast on the same path as a manual chip toggle so
-        // the FE updates from `mode.changed` (its single source of truth).
-        WsSessionPersistence::update_permission_mode_static(
-            &self.write_pool,
+        if let Err(e) = transition_session_to_post_plan_mode(
+            &self.sdk_sessions,
             self.db_session_id,
-            target_wire,
+            &self.write_pool,
+            &self.sender,
         )
-        .await;
-        let envelope = WsEnvelope::new(
-            "session",
-            "mode.changed",
-            serde_json::json!({ "mode": target_wire }),
-        );
-        let _ = self
-            .sender
-            .send(Message::Text(String::from(envelope).into()));
+        .await
+        {
+            error!(
+                db_session_id = self.db_session_id,
+                error = %e,
+                "post-plan-approval: failed to push set_permission_mode to CLI"
+            );
+            let err = WsEnvelope::new(
+                "session",
+                "error",
+                serde_json::to_value(SessionErrorPayload {
+                    code: "SDK_ERROR".into(),
+                    message: format!("Failed to apply post-plan permission mode: {e}"),
+                })
+                .unwrap(),
+            );
+            let _ = self.sender.send(Message::Text(String::from(err).into()));
+        }
     }
 
     async fn attach_plan_to_exit_block(

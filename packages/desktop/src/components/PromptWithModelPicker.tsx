@@ -6,6 +6,7 @@ import {
   type StandaloneModelPickerHandle,
 } from "@/components/StandaloneModelPicker";
 import type { AgentType } from "@/types/agent-types";
+import type { PermissionMode } from "@/types/permission-mode";
 
 interface PromptWithModelPickerProps {
   featureId: number;
@@ -13,6 +14,9 @@ interface PromptWithModelPickerProps {
   agentType: AgentType;
   /** Optional second agent type kept in lockstep with `agentType` (e.g. Plan + PRD). */
   secondaryAgentType?: AgentType;
+  permissionMode?: PermissionMode;
+  onPermissionModeToggle?: () => void;
+  enabledOptInModes?: PermissionMode[];
   disabled?: boolean;
   splitSendActions: SplitSendAction[];
   promptBarRef?: React.Ref<AgentPromptBarHandle>;
@@ -30,6 +34,9 @@ export function PromptWithModelPicker({
   projectId,
   agentType,
   secondaryAgentType,
+  permissionMode,
+  onPermissionModeToggle,
+  enabledOptInModes,
   disabled,
   splitSendActions,
   promptBarRef,
@@ -62,6 +69,9 @@ export function PromptWithModelPicker({
         projectId={projectId}
         agentType={agentType}
         secondaryAgentType={secondaryAgentType}
+        permissionMode={permissionMode}
+        onPermissionModeToggle={onPermissionModeToggle}
+        enabledOptInModes={enabledOptInModes}
         onModelSelected={focusPrompt}
         ref={modelPickerRef}
       />
@@ -72,6 +82,8 @@ export function PromptWithModelPicker({
         status="idle"
         disabled={disabled}
         splitSendActions={splitSendActions}
+        permissionMode={permissionMode}
+        onPermissionModeToggle={onPermissionModeToggle}
         onOpenModelPicker={() => modelPickerRef.current?.openModelPicker()}
         agentTabActive={agentTabActive}
         featureId={featureId}

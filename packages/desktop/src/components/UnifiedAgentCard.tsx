@@ -15,7 +15,7 @@ import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { normalizeContextWindow } from "@/types/agent";
 import type { ContextUsageState, LiveAgentStatus } from "@/types/agent";
 import type { AgentType } from "@/types/agent-types";
-import type { PermissionMode } from "@/types/permission-mode";
+import { parsePermissionMode } from "@/types/permission-mode";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 
@@ -177,7 +177,7 @@ function buildUnifiedSessionPatch(
   const pendingPermission = asPendingPermission(entry.session.pendingPermission);
   const pendingQuestions = asQuestions(entry.session.pendingQuestions) ?? [];
   const pendingPlanApproval = asPlanApproval(entry.session.pendingPlanApproval);
-  const permissionMode = asPermissionMode(entry.session.permissionMode);
+  const permissionMode = parsePermissionMode(entry.session.permissionMode);
   const lifecycle = unifiedStatusToLifecycle(entry, {
     pendingPermission,
     pendingQuestions,
@@ -311,6 +311,7 @@ function UnifiedReadOnlyAgent({
       contextUsage={contextUsage}
       currentProviderId={entry.session.runtimeProvider ?? undefined}
       currentModelId={entry.session.model ?? undefined}
+      showReadOnlyModel
       runtimeProvider={entry.session.runtimeProvider ?? undefined}
       runtimeSessionId={entry.session.runtimeSessionId ?? undefined}
       hasFileChanges={entry.session.hasFileChanges}
@@ -359,20 +360,6 @@ function asPlanApproval(
 
 function asQuestions(value: unknown): AgentQuestion[] | undefined {
   return Array.isArray(value) ? (value as AgentQuestion[]) : undefined;
-}
-
-function asPermissionMode(value: string): PermissionMode | undefined {
-  if (
-    value === "default" ||
-    value === "acceptEdits" ||
-    value === "plan" ||
-    value === "auto" ||
-    value === "bypassPermissions" ||
-    value === "dontAsk"
-  ) {
-    return value;
-  }
-  return undefined;
 }
 
 function buildContextUsage(entry: UnifiedAgentEntry): ContextUsageState {

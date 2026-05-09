@@ -34,6 +34,7 @@ vi.mock("@/hooks/useResolvedModel", () => ({
 vi.mock("@/api/generated", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/generated")>()),
   useListFiles: vi.fn(() => ({ data: [] })),
+  useGetWorkspaceSetting: vi.fn(() => ({ data: undefined })),
 }));
 
 const defaultProps = {
@@ -48,6 +49,7 @@ const defaultProps = {
   isStartingExecute: false,
   isStartingRisk: false,
   isStartingReview: false,
+  sessionProviderId: "claude_code",
 };
 
 describe("NextStepsBar", () => {

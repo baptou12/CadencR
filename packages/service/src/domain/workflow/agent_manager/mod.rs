@@ -12,6 +12,9 @@ use tracing::{error, info, warn};
 use axum::extract::ws::Message;
 
 use crate::domain::agents::adapter::RuntimeSessionHandle;
+use crate::domain::agents::permission_modes::{
+    parse_permission_mode, permission_mode_wire, provider_supports_mode,
+};
 use crate::domain::agents::runtime_adapter;
 use crate::domain::features::models::QueueItem;
 use crate::domain::features::repository as repo;
@@ -28,6 +31,7 @@ use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::*;
 
 mod interrupt;
+mod post_plan_mode;
 mod send_prompt;
 mod spawn_context;
 
@@ -98,6 +102,7 @@ impl AgentManager {
             system_prompt,
             initial_prompt,
             None,
+            None,
             images,
             slot_fn,
             permissions,
@@ -114,6 +119,7 @@ impl AgentManager {
         system_prompt: &str,
         initial_prompt: &str,
         user_display_message: Option<&str>,
+        permission_mode_wire_override: Option<&str>,
         images: &[ImagePayload],
         slot_fn: impl FnOnce(i64) -> AgentSlot,
         permissions: &PermissionRouter,
@@ -124,14 +130,18 @@ impl AgentManager {
             "spawning pre-queue agent"
         );
 
+        let selected_mode_wire = permission_mode_wire_override.unwrap_or("acceptEdits");
+        let selected_mode = parse_permission_mode(selected_mode_wire);
+
         // 1. Create agent session in DB
         let now = chrono::Utc::now().to_rfc3339();
         let db_session_id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, permission_mode) VALUES (?, ?, 'running', ?, 'acceptEdits') RETURNING id",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, started_at, permission_mode) VALUES (?, ?, 'running', ?, ?) RETURNING id",
         )
         .bind(self.feature_id)
         .bind(agent_type_str)
         .bind(&now)
+        .bind(selected_mode_wire)
         .fetch_one(&self.write_pool)
         .await
         .map_err(|e| format!("Failed to create {agent_type_str} agent session: {e}"))?;
@@ -149,9 +159,17 @@ impl AgentManager {
                 None,
                 true,
                 permissions,
+                Some(selected_mode.clone()),
                 None,
             )
             .await?;
+
+        if !provider_supports_mode(&ctx.provider, &selected_mode) {
+            return Err(format!(
+                "Provider {} does not support permission mode {}",
+                ctx.provider, selected_mode_wire
+            ));
+        }
 
         // 3. Persist the initial user prompt and send it to the frontend
         let display_msg = user_display_message.unwrap_or(initial_prompt);
@@ -163,7 +181,12 @@ impl AgentManager {
             );
             p.persist_user_message(display_msg).await;
         }
-        self.send_user_message_event(slot.clone(), db_session_id, display_msg);
+        self.send_user_message_event(
+            slot.clone(),
+            db_session_id,
+            display_msg,
+            Some((&ctx.provider, &ctx.model, selected_mode_wire)),
+        );
 
         let content_value = build_content_value(initial_prompt, images);
 
@@ -218,6 +241,9 @@ impl AgentManager {
                         agent_slot: slot,
                         session_id: db_session_id,
                         agent_type: agent_type_str.to_string(),
+                        runtime_provider: Some(ctx.provider.clone()),
+                        model: Some(ctx.model.clone()),
+                        permission_mode: Some(selected_mode_wire.to_string()),
                     }),
                 );
                 let _ = self
@@ -324,6 +350,7 @@ impl AgentManager {
                 None,
                 include_mcp,
                 permissions,
+                None,
                 model_override_owned.as_deref(),
             )
             .await?;
@@ -337,7 +364,12 @@ impl AgentManager {
             );
             p.persist_user_message(&initial_prompt).await;
         }
-        self.send_user_message_event(slot.clone(), db_session_id, &initial_prompt);
+        self.send_user_message_event(
+            slot.clone(),
+            db_session_id,
+            &initial_prompt,
+            Some((&ctx.provider, &ctx.model, "acceptEdits")),
+        );
 
         let content_value = serde_json::Value::String(initial_prompt);
 
@@ -445,7 +477,16 @@ impl AgentManager {
     }
 
     /// Send the initial user message to the frontend.
-    fn send_user_message_event(&self, slot: AgentSlot, session_id: i64, content: &str) {
+    fn send_user_message_event(
+        &self,
+        slot: AgentSlot,
+        session_id: i64,
+        content: &str,
+        runtime_metadata: Option<(&str, &str, &str)>,
+    ) {
+        let (runtime_provider, model, permission_mode) = runtime_metadata
+            .map(|(provider, model, mode)| (Some(provider), Some(model), Some(mode)))
+            .unwrap_or((None, None, None));
         let envelope = WsEnvelope::new(
             "workflow",
             "agent_user_message",
@@ -453,6 +494,9 @@ impl AgentManager {
                 "agent_slot": slot,
                 "session_id": session_id,
                 "content": content,
+                "runtime_provider": runtime_provider,
+                "model": model,
+                "permission_mode": permission_mode,
             }),
         );
         let _ = self
@@ -493,5 +537,77 @@ impl AgentManager {
     /// Broadcast a `feature.updated` event to the frontend.
     pub fn send_feature_updated(&self, changed: &[&str]) {
         send_feature_updated_envelope(&self.ws_sender, self.feature_id, changed);
+    }
+
+    /// Change a workflow agent's permission mode and persist the confirmed mode.
+    pub async fn set_permission_mode(
+        &self,
+        slot: AgentSlot,
+        mode_wire: &str,
+    ) -> Result<i64, String> {
+        let db_session_id = self
+            .active_items
+            .get(&slot)
+            .map(|entry| *entry.value())
+            .or_else(|| match &slot {
+                AgentSlot::Session(id)
+                | AgentSlot::Risk(id)
+                | AgentSlot::Retro(id)
+                | AgentSlot::ReviewFixer(id) => Some(*id),
+                AgentSlot::Plan | AgentSlot::Prd | AgentSlot::Refine | AgentSlot::QueueItem(_) => {
+                    None
+                }
+            })
+            .ok_or_else(|| format!("No active session for slot {slot}"))?;
+
+        let mode = parse_permission_mode(mode_wire);
+        let provider = self.session_runtime_provider(db_session_id).await?;
+        if !provider_supports_mode(&provider, &mode) {
+            return Err(format!(
+                "Provider {provider} does not support permission mode {mode_wire}"
+            ));
+        }
+
+        if let Some(query) = self.queries.get(&slot) {
+            let q = query.lock().await;
+            q.set_permission_mode(mode)
+                .await
+                .map_err(|e| format!("Failed to set permission mode: {e}"))?;
+        }
+
+        WsSessionPersistence::update_permission_mode_static(
+            &self.write_pool,
+            db_session_id,
+            permission_mode_wire(&parse_permission_mode(mode_wire)),
+        )
+        .await;
+        Ok(db_session_id)
+    }
+
+    async fn session_runtime_provider(&self, db_session_id: i64) -> Result<String, String> {
+        sqlx::query_scalar::<_, Option<String>>(
+            "SELECT runtime_provider FROM agent_sessions WHERE id = ?",
+        )
+        .bind(db_session_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .map_err(|e| format!("Failed to read session runtime provider: {e}"))?
+        .flatten()
+        .ok_or_else(|| format!("No runtime provider stored for session {db_session_id}"))
+    }
+
+    pub async fn session_runtime_metadata(
+        &self,
+        db_session_id: i64,
+    ) -> (Option<String>, Option<String>, Option<String>) {
+        sqlx::query_as::<_, (Option<String>, Option<String>, Option<String>)>(
+            "SELECT runtime_provider, model, permission_mode FROM agent_sessions WHERE id = ?",
+        )
+        .bind(db_session_id)
+        .fetch_optional(&self.read_pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or((None, None, None))
     }
 }

@@ -2,7 +2,6 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::instructions::codex_developer_instructions;
 use super::model::{approval_policy, sandbox_policy};
 use crate::domain::agents::adapter::RuntimePermissionMode;
 
@@ -36,7 +35,7 @@ pub(super) fn turn_start_params(
     params
 }
 
-fn collaboration_mode(
+pub(super) fn collaboration_mode(
     permission_mode: Option<&RuntimePermissionMode>,
     model: Option<&str>,
     effort: Option<&str>,
@@ -49,13 +48,18 @@ fn collaboration_mode(
     } else {
         "default"
     };
-    let developer_instructions = codex_developer_instructions();
     Some(json!({
         "mode": mode,
         "settings": {
             "model": model,
             "reasoning_effort": effort,
-            "developer_instructions": developer_instructions
+            // Null means "use Codex's built-in instructions for this
+            // collaboration mode". Supplying Cadencr's generic developer
+            // guidance here replaces Codex's Plan Mode prompt, leaving the
+            // runtime marked as plan while the model is not told how to behave
+            // in plan mode. Cadencr guidance is sent separately via thread
+            // config / base instructions.
+            "developer_instructions": null
         }
     }))
 }
@@ -98,14 +102,12 @@ mod tests {
             params["collaborationMode"]["settings"]["reasoning_effort"],
             "high"
         );
-        let instructions = params["collaborationMode"]["settings"]["developer_instructions"]
-            .as_str()
-            .expect("developer instructions");
-        assert!(instructions
-            .starts_with(crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION));
-        assert!(instructions.contains("mcp__cadencr-plan__update_plan"));
-        assert!(instructions.contains("mcp__cadencr_plan____update_plan"));
-        assert!(instructions.contains("Do not use Codex-native `update_plan`"));
+        assert!(
+            params["collaborationMode"]["settings"]["developer_instructions"].is_null(),
+            "Codex must use its built-in Plan Mode instructions; a custom \
+             collaboration developer prompt replaces them and makes the model \
+             unaware that runtime plan mode is active"
+        );
     }
 
     #[test]
