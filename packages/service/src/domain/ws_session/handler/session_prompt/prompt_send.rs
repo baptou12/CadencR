@@ -119,6 +119,28 @@ pub(crate) async fn handle_prompt_send(
         handle.state = QueryState::Pending(options);
     }
 
+    // TEMP-ACP-WIRE-LOG: dispatch decision before every prompt. Pair with
+    // ACP wire frames to detect spurious respawns between turns. Remove
+    // alongside the other TEMP-ACP-WIRE-LOG calls when debugging is done.
+    info!(
+        db_session_id,
+        desired_model = ?handle.desired_model,
+        spawned_model = ?handle.spawned_model,
+        desired_mode = ?handle.desired_permission_mode,
+        spawned_mode = ?handle.spawned_permission_mode,
+        desired_effort = ?handle.desired_thinking_effort,
+        spawned_effort = ?handle.spawned_thinking_effort,
+        model_changed,
+        mode_changed,
+        effort_changed,
+        needs_respawn,
+        state = match &handle.state {
+            QueryState::Pending(_) => "pending",
+            QueryState::Active { .. } => "active",
+        },
+        "prompt_send dispatch decision"
+    );
+
     match &handle.state {
         QueryState::Pending(_) => {
             // First prompt (or respawn after model change) — take stored options and spawn.

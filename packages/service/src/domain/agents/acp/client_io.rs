@@ -177,6 +177,10 @@ fn send_process_exited(
     if exit_sent.swap(true, Ordering::SeqCst) {
         return;
     }
+    // TEMP-ACP-WIRE-LOG: ACP subprocess exit. Pair with `acp_wire = "send"`
+    // / `"recv"` frames to detect a respawn between turns. Remove with the
+    // rest of the TEMP-ACP-WIRE-LOG calls when ACP debugging is done.
+    tracing::info!(acp_wire = "exit", ?status, ?signal, "ACP subprocess exited");
     drain_pending_process_exited(pending);
     let _ = events.send(AcpEvent::ProcessExited { status, signal });
 }

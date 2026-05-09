@@ -107,6 +107,14 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // releases the lock through the same drain path below.
         let _guard = self.prompt_turn_lock.lock().await;
         let session_id = self.require_session_id().await?;
+        // TEMP-ACP-WIRE-LOG: per-turn ACP session id. Lets us see whether a
+        // follow-up turn reuses the original `session/new` id or got a
+        // fresh subprocess. Remove with the other TEMP-ACP-WIRE-LOG calls.
+        tracing::info!(
+            acp_wire = "stream_input",
+            %session_id,
+            "ACP stream_input — sending session/prompt"
+        );
         let prompt = acp_prompt_blocks_from_content(content);
         let supports = self.supports_set_config_option.load(Ordering::SeqCst);
         let model = self.current_model.read().await.clone();
