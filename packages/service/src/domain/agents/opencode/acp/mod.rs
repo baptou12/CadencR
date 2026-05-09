@@ -43,8 +43,8 @@ pub(super) async fn session_finished(_runtime_session_id: &str) -> bool {
     false
 }
 
-/// Entry point invoked by `OpenCodeAdapter::spawn` when
-/// `CADENCR_OPENCODE_TRANSPORT=acp` is set.
+/// Entry point invoked by `OpenCodeAdapter::spawn`. ACP is the only
+/// supported OpenCode transport; see `transport.rs` for the hardcode.
 pub(super) async fn spawn_acp_session(
     content: Value,
     config: RuntimeSpawnConfig,

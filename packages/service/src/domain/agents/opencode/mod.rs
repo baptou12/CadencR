@@ -274,18 +274,17 @@ mod tests {
     use tokio::net::TcpListener;
     use tokio::sync::mpsc;
 
-    use super::transport::with_transport_env;
     use super::{decorate_system_prompt, session::OpenCodeSession, OpenCodeAdapter};
     use crate::domain::agents::adapter::{AgentRuntimeAdapter, AgentRuntimeSession};
     use crate::domain::agents::response_style::RICH_MARKDOWN_INSTRUCTION;
 
     #[test]
     fn acp_transport_rejects_resume_session_ids() {
-        with_transport_env(Some("acp"), || {
-            let adapter = OpenCodeAdapter;
-            assert!(!adapter.is_valid_resume_session_id("ses_stale"));
-            assert_eq!(adapter.resolve_resume_session_id(Some("ses_stale")), None);
-        });
+        // ACP is the hardcoded transport — see `transport.rs`. Resume ids
+        // are subprocess-scoped and never valid across spawns.
+        let adapter = OpenCodeAdapter;
+        assert!(!adapter.is_valid_resume_session_id("ses_stale"));
+        assert_eq!(adapter.resolve_resume_session_id(Some("ses_stale")), None);
     }
 
     #[test]
