@@ -127,7 +127,6 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
             onInitialCommandConsumedRef.current?.();
           }, 150);
         }
-        terminalRef.current?.focus();
       },
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [],
@@ -169,7 +168,6 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         } catch {
           // Ignore resize errors
         }
-        terminalRef.current?.focus();
         // eslint-disable-next-line react-hooks/exhaustive-deps
       },
       [onExit],
@@ -382,7 +380,6 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
   },
 );
 
-/** Create a configured xterm.js Terminal instance bound to the active theme. */
 function createXtermInstance(theme: XTermPalette): Terminal {
   return new Terminal({
     cursorBlink: true,
