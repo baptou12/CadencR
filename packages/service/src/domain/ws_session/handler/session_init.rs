@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use serde_json::Value;
 use tracing::{debug, info};
 
 use super::super::permissions;
@@ -17,6 +16,9 @@ use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 
+#[path = "session_init_restore.rs"]
+mod session_init_restore;
+
 fn resume_session_id_for_provider(
     provider_id: &str,
     row_runtime_provider: Option<&str>,
@@ -28,35 +30,6 @@ fn resume_session_id_for_provider(
     }
     let adapter = runtime_adapter(provider_id)?;
     adapter.resolve_resume_session_id(runtime_session_id)
-}
-
-fn pending_question_payload(value: &str) -> Option<PermissionRequestPayload> {
-    if let Ok(payload) = serde_json::from_str::<PermissionRequestPayload>(value) {
-        return Some(payload);
-    }
-    let raw = serde_json::from_str::<Value>(value).ok()?;
-    Some(PermissionRequestPayload {
-        request_id: raw.get("request_id").and_then(Value::as_str)?.to_string(),
-        tool_name: raw
-            .get("tool_name")
-            .and_then(Value::as_str)
-            .unwrap_or("AskUserQuestion")
-            .to_string(),
-        tool_input: raw.get("tool_input").cloned().unwrap_or(Value::Null),
-        description: raw
-            .get("description")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        pattern: raw
-            .get("pattern")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        preview: raw
-            .get("preview")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        options: Vec::new(),
-    })
 }
 
 /// Handle session.init: DB-driven session creation.
@@ -377,115 +350,14 @@ pub(super) async fn handle_init(
         send_runtime_session_id(sender, cli_sid);
     }
 
-    // Check if there's a pending plan approval in the DB (e.g., from a previous app session)
-    if let Some(row) =
-        WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await
-    {
-        if row.pending_plan_approval.is_some() {
-            info!(
-                db_session_id,
-                feature_id, "restoring pending plan approval from DB"
-            );
-            let plan_input: serde_json::Value = row
-                .pending_plan_approval
-                .as_deref()
-                .and_then(|s| serde_json::from_str(s).ok())
-                .unwrap_or(serde_json::json!({}));
-            let payload = super::super::protocol::PermissionRequestPayload {
-                request_id: format!("plan_restore_{db_session_id}"),
-                tool_name: "ExitPlanMode".to_string(),
-                tool_input: plan_input,
-                description: Some("Plan is ready for approval".to_string()),
-                pattern: None,
-                preview: None,
-                options: Vec::new(),
-            };
-            let envelope = super::super::protocol::WsEnvelope::new(
-                "session",
-                "permission.request",
-                serde_json::to_value(payload).unwrap(),
-            );
-            let _ = sender.send(axum::extract::ws::Message::Text(
-                String::from(envelope).into(),
-            ));
-            WsSessionPersistence::broadcast_session_status(
-                &app_state.session_status_tx,
-                db_session_id,
-                feature_id,
-                crate::domain::session_status::AgentStatus::Question,
-                Some(crate::domain::session_status::PendingKind::PlanApproval),
-            );
-            return;
-        }
-
-        if let Some(payload) = row.pending_permission.as_deref().and_then(|value| {
-            serde_json::from_str::<super::super::protocol::PermissionRequestPayload>(value).ok()
-        }) {
-            let envelope = super::super::protocol::WsEnvelope::new(
-                "session",
-                "permission.request",
-                serde_json::to_value(payload).unwrap(),
-            );
-            let _ = sender.send(axum::extract::ws::Message::Text(
-                String::from(envelope).into(),
-            ));
-            WsSessionPersistence::broadcast_session_status(
-                &app_state.session_status_tx,
-                db_session_id,
-                feature_id,
-                crate::domain::session_status::AgentStatus::Question,
-                Some(crate::domain::session_status::PendingKind::Permission),
-            );
-            return;
-        }
-
-        if let Some(payload) = row
-            .pending_questions
-            .as_deref()
-            .and_then(pending_question_payload)
-        {
-            let envelope = super::super::protocol::WsEnvelope::new(
-                "session",
-                "permission.request",
-                serde_json::to_value(payload).unwrap(),
-            );
-            let _ = sender.send(axum::extract::ws::Message::Text(
-                String::from(envelope).into(),
-            ));
-            WsSessionPersistence::broadcast_session_status(
-                &app_state.session_status_tx,
-                db_session_id,
-                feature_id,
-                crate::domain::session_status::AgentStatus::Question,
-                Some(crate::domain::session_status::PendingKind::Question),
-            );
-            return;
-        }
-    }
-
-    // Clear every stale pending_* gate. The preceding branches returned
-    // early if there was a live gate, so by this point we've confirmed
-    // nothing should be pending. Without this, a ws-session Claude Code
-    // AskUserQuestion that stored in pending_permission would leak into
-    // a ghost Question on every reconnect.
-    WsSessionPersistence::clear_all_pending_user_input_static(&app_state.write_pool, db_session_id)
+    session_init_restore::restore_pending_or_idle(app_state, sender, db_session_id, feature_id)
         .await;
-
-    // Broadcast Idle to clear any stale status — session is idle until a prompt is sent.
-    WsSessionPersistence::broadcast_session_status(
-        &app_state.session_status_tx,
-        db_session_id,
-        feature_id,
-        crate::domain::session_status::AgentStatus::Idle,
-        None,
-    );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{pending_question_payload, resume_session_id_for_provider};
+    use super::resume_session_id_for_provider;
     use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-    use serde_json::json;
 
     #[test]
     fn resume_session_for_claude_rejects_non_uuid() {
@@ -506,48 +378,14 @@ mod tests {
     }
 
     #[test]
-    fn resume_session_for_non_claude_only_when_provider_matches() {
+    fn resume_session_for_opencode_acp_is_disabled_even_when_provider_matches() {
         let opencode_sid = "ses_27f586910ffeUNaKL2l5UARerl";
         let matching =
             resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid));
-        assert_eq!(matching, Some(opencode_sid.to_string()));
+        assert_eq!(matching, None);
 
         let mismatched =
             resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
         assert_eq!(mismatched, None);
-    }
-
-    #[test]
-    fn pending_question_payload_accepts_reduced_shape() {
-        let stored = json!({
-            "tool_name": "AskUserQuestion",
-            "tool_input": { "question": "Proceed?" },
-            "request_id": "req_1",
-            "pattern": null
-        })
-        .to_string();
-
-        let payload = pending_question_payload(&stored).expect("payload");
-        assert_eq!(payload.request_id, "req_1");
-        assert_eq!(payload.tool_name, "AskUserQuestion");
-        assert_eq!(payload.tool_input["question"], "Proceed?");
-    }
-
-    #[test]
-    fn pending_question_payload_accepts_legacy_full_shape() {
-        let stored = json!({
-            "request_id": "req_2",
-            "tool_name": "AskUserQuestion",
-            "tool_input": { "question": "Continue?" },
-            "description": "Codex question",
-            "pattern": null,
-            "preview": null,
-            "options": []
-        })
-        .to_string();
-
-        let payload = pending_question_payload(&stored).expect("payload");
-        assert_eq!(payload.request_id, "req_2");
-        assert_eq!(payload.description.as_deref(), Some("Codex question"));
     }
 }
