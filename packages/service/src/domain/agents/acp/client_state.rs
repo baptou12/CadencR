@@ -28,6 +28,7 @@ pub(crate) struct Inner {
     pub(crate) kill_tx: StdMutex<Option<oneshot::Sender<()>>>,
     pub(crate) exit_sent: Arc<AtomicBool>,
     pub(crate) client_info: AcpClientInfo,
+    #[allow(dead_code)]
     pub(crate) request_timeout: Duration,
 }
 

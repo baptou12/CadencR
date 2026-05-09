@@ -20,13 +20,17 @@ use crate::domain::agents::adapter::{
 
 use super::config_options::{set_config_option_model, set_config_option_thinking_effort};
 use super::events_stream_blocks::EventIndexer;
+use super::mode_switch::set_session_mode;
 use super::permissions::{
     acp_permission_response_payload, reject_all_pending, take_pending, PendingPermissions,
 };
 use super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::provider_hooks::AcpProviderHooks;
 use super::session_permissions::SessionPermissions;
-use super::turn_lifecycle::{finalize_turn, PromptTurnLock};
+use super::turn_lifecycle::{
+    finalize_cancelled_turn, finalize_turn, request_prompt_with_cancel, PromptCancel,
+    PromptRequestOutcome, PromptTurnLock,
+};
 
 /// Channel buffer for the per-session runtime stream. Matches the size used
 /// by other adapters; deltas are coalesced upstream so even noisy turns fit.
@@ -44,6 +48,8 @@ pub struct AcpRuntimeSession {
     /// response so we stop wasting round trips and let the legacy
     /// "ride-along on the next prompt" fallback handle model/effort changes.
     pub(super) supports_set_config_option: Arc<AtomicBool>,
+    /// Tracks whether the agent supports `session/set_mode`.
+    pub(super) supports_set_mode: Arc<AtomicBool>,
     pub(super) pending_permissions: PendingPermissions,
     /// In-memory map of `allow_for_session` / `allow_always` decisions.
     /// Cleared on session close.
@@ -62,6 +68,7 @@ pub struct AcpRuntimeSession {
     /// in-flight turn (request + post-response drain) to finish before
     /// sending its own `session/prompt` (W4).
     pub(super) prompt_turn_lock: PromptTurnLock,
+    pub(super) prompt_cancel: PromptCancel,
 }
 
 impl AcpRuntimeSession {
@@ -113,15 +120,20 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         );
         // `session/prompt` represents a whole agent turn — sit-idle ceilings
         // need to be huge (minutes of permission drawers + long tools).
-        let response = self
-            .client
-            .request_with_timeout(
-                "session/prompt",
-                params,
-                std::time::Duration::from_secs(60 * 60),
-            )
-            .await
-            .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))?;
+        let response =
+            match request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await? {
+                PromptRequestOutcome::Completed(response) => response,
+                PromptRequestOutcome::Cancelled => {
+                    finalize_cancelled_turn(
+                        &self.local_tx,
+                        &self.indexer,
+                        Some(session_id),
+                        self.context_window,
+                    )
+                    .await;
+                    return Ok(());
+                }
+            };
         if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
             tracing::debug!(stop_reason = reason, "session/prompt completed");
             finalize_turn(
@@ -143,6 +155,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             .notify("session/cancel", json!({ "sessionId": session_id }))
             .await
             .map_err(|e| RuntimeError::new(format!("session/cancel failed: {e}")))?;
+        self.prompt_cancel.cancel_current_turn();
         Ok(())
     }
 
@@ -198,15 +211,14 @@ impl AgentRuntimeSession for AcpRuntimeSession {
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError> {
         let mode_id = self.hooks.mode_for_permission_mode(mode).unwrap_or("build");
         let session_id = self.require_session_id().await?;
-        self.client
-            .request(
-                "session/set_mode",
-                json!({ "sessionId": session_id, "modeId": mode_id }),
-            )
-            .await
-            .map_err(|e| RuntimeError::new(format!("session/set_mode failed: {e}")))?;
-        *self.current_mode.write().await = mode_id.to_string();
-        Ok(())
+        set_session_mode(
+            &self.client,
+            &session_id,
+            &self.current_mode,
+            &self.supports_set_mode,
+            mode_id,
+        )
+        .await
     }
 
     async fn respond_permission(

@@ -4,6 +4,7 @@
 //! providers can share this code. Provider-specific behavior plugs in
 //! through the [`provider_hooks::AcpProviderHooks`] trait.
 
+pub mod capability_probe;
 pub mod config_options;
 pub mod event_loop_state;
 pub mod events;
@@ -17,6 +18,7 @@ pub mod events_tool_call_update;
 pub mod fs;
 pub mod lifecycle;
 pub mod mcp;
+pub mod mode_switch;
 pub mod permissions;
 mod permissions_dispatch;
 pub mod prompt_turn;

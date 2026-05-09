@@ -23,11 +23,12 @@ use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::session::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
 use super::session_permissions::SessionPermissions;
 use super::terminal_registry::TerminalRegistry;
-use super::turn_lifecycle::drive_initial_prompt;
+use super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
 
 /// Options for [`spawn_acp_runtime_session`].
 pub struct AcpRuntimeSpawnArgs {
     pub command: tokio::process::Command,
+    pub spawn_guard: Option<Box<dyn Send + 'static>>,
     pub client_info: AcpClientInfo,
     pub config: RuntimeSpawnConfig,
     pub initial_content: Value,
@@ -44,6 +45,7 @@ pub async fn spawn_acp_runtime_session(
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
     let AcpRuntimeSpawnArgs {
         command,
+        spawn_guard,
         client_info,
         config,
         initial_content,
@@ -55,6 +57,7 @@ pub async fn spawn_acp_runtime_session(
         client_info,
         request_timeout: None,
         max_line_bytes: None,
+        spawn_guard,
     })
     .await
     .map_err(|e| RuntimeError::new(format!("failed to spawn ACP subprocess: {e}")))?;
@@ -120,6 +123,7 @@ fn spawn_initial_prompt(
     let indexer_arc = Arc::clone(&session.indexer);
     let context_window = session.context_window;
     let prompt_turn_lock = Arc::clone(&session.prompt_turn_lock);
+    let prompt_cancel = session.prompt_cancel.clone();
     tokio::spawn(async move {
         if let Err(error) = drive_initial_prompt(
             &session_for_prompt,
@@ -131,6 +135,7 @@ fn spawn_initial_prompt(
             &indexer_arc,
             context_window,
             &prompt_turn_lock,
+            &prompt_cancel,
         )
         .await
         {
@@ -159,6 +164,7 @@ impl AcpRuntimeSession {
             current_effort: Arc::new(RwLock::new(config.thinking_effort.clone())),
             current_mode: Arc::new(RwLock::new("build".to_string())),
             supports_set_config_option: Arc::new(AtomicBool::new(true)),
+            supports_set_mode: Arc::new(AtomicBool::new(true)),
             pending_permissions: PendingPermissions::default(),
             session_permissions: SessionPermissions::new(),
             closing: Arc::new(AtomicBool::new(false)),
@@ -170,6 +176,7 @@ impl AcpRuntimeSession {
             hooks,
             indexer,
             prompt_turn_lock: Arc::new(AsyncMutex::new(())),
+            prompt_cancel: PromptCancel::new(),
         }
     }
 }

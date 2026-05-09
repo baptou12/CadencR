@@ -38,6 +38,8 @@ pub(super) async fn spawn_acp_subprocess(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
+    drop(options.spawn_guard.take());
+
     let mut child = options
         .command
         .spawn()
@@ -87,6 +89,7 @@ where
         client_info,
         request_timeout: None,
         max_line_bytes: None,
+        spawn_guard: None,
     };
     assemble(stdin, stdout, stderr, None, None, options)
 }

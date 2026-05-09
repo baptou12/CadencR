@@ -16,11 +16,11 @@ use super::super::permissions::PendingPermissions;
 use super::super::provider_hooks::AcpProviderHooks;
 use super::super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::super::terminal_registry::TerminalRegistry;
-use super::super::turn_lifecycle::drive_initial_prompt;
+use super::super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
 use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
 use crate::domain::agents::adapter::{
-    RuntimeContentBlock, RuntimeEvent, RuntimePermissionDecision, RuntimePermissionMode,
-    RuntimeStreamEvent,
+    AgentRuntimeSession, RuntimeContentBlock, RuntimeEvent, RuntimePermissionDecision,
+    RuntimePermissionMode, RuntimeStreamEvent,
 };
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -46,8 +46,11 @@ impl AcpProviderHooks for PlainHooks {
     fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
         RuntimePermissionDecision::AllowOnce
     }
-    fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-        None
+    fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<&'static str> {
+        Some(match mode {
+            RuntimePermissionMode::Plan => "plan",
+            _ => "build",
+        })
     }
     fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
         None
@@ -100,6 +103,7 @@ async fn prompt_turn_lifecycle_drains_open_blocks_before_result_e2e() {
     let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
     let pending = PendingPermissions::default();
     let lock = Arc::new(AsyncMutex::new(()));
+    let cancel = PromptCancel::new();
     let (tx, mut rx) = mpsc::channel(64);
 
     // Wire the event loop so `session/update` notifications get mapped
@@ -127,6 +131,7 @@ async fn prompt_turn_lifecycle_drains_open_blocks_before_result_e2e() {
         let effort = Arc::clone(&effort);
         let indexer = Arc::clone(&indexer);
         let lock = Arc::clone(&lock);
+        let cancel = cancel.clone();
         let tx = tx.clone();
         async move {
             drive_initial_prompt(
@@ -139,6 +144,7 @@ async fn prompt_turn_lifecycle_drains_open_blocks_before_result_e2e() {
                 &indexer,
                 None,
                 &lock,
+                &cancel,
             )
             .await
         }
@@ -300,4 +306,91 @@ async fn prompt_turn_lifecycle_drains_open_blocks_before_result_e2e() {
     );
 
     drop(tx);
+}
+
+#[tokio::test]
+async fn set_permission_mode_method_not_found_disables_future_probe_without_error() {
+    let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+    let negotiated = super::super::lifecycle::NegotiatedSession {
+        session_id: "s-mode".to_string(),
+        model: None,
+        mcp_servers: Vec::new(),
+        context_window: None,
+    };
+    let (tx, rx) = mpsc::channel(8);
+    let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
+    let session = super::AcpRuntimeSession::assemble(
+        &client,
+        &negotiated,
+        &crate::domain::agents::adapter::RuntimeSpawnConfig::default(),
+        None,
+        rx,
+        tx,
+        Arc::new(PlainHooks),
+        indexer,
+    );
+    let current_mode = Arc::clone(&session.current_mode);
+
+    let first = tokio::spawn(async move {
+        session
+            .set_permission_mode(RuntimePermissionMode::Plan)
+            .await
+    });
+    let request = read_one_request(&mut agent_stdin).await;
+    assert_eq!(request["method"], "session/set_mode");
+    let id = request["id"].as_u64().unwrap();
+    write_frame(
+        &mut agent_stdout,
+        json!({ "id": id, "error": { "code": -32601, "message": "method not found" } }),
+    )
+    .await;
+    first
+        .await
+        .unwrap()
+        .expect("MethodNotFound should be treated as unsupported capability");
+    assert_eq!(current_mode.read().await.as_str(), "plan");
+}
+
+#[tokio::test]
+async fn interrupt_releases_in_flight_prompt_turn_without_waiting_for_agent_reply() {
+    let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client();
+    let negotiated = super::super::lifecycle::NegotiatedSession {
+        session_id: "s-cancel".to_string(),
+        model: None,
+        mcp_servers: Vec::new(),
+        context_window: None,
+    };
+    let (tx, rx) = mpsc::channel(8);
+    let mut session = super::AcpRuntimeSession::assemble(
+        &client,
+        &negotiated,
+        &crate::domain::agents::adapter::RuntimeSpawnConfig::default(),
+        None,
+        rx,
+        tx,
+        Arc::new(PlainHooks),
+        Arc::new(StdMutex::new(EventIndexer::default())),
+    );
+    let mut runtime_rx = session.take_message_rx();
+    let session = Arc::new(session);
+
+    let prompt = tokio::spawn({
+        let session = Arc::clone(&session);
+        async move { session.stream_input(json!("hello")).await }
+    });
+    let prompt_req = read_one_request(&mut agent_stdin).await;
+    assert_eq!(prompt_req["method"], "session/prompt");
+
+    session.interrupt().await.unwrap();
+    let cancel = read_one_request(&mut agent_stdin).await;
+    assert_eq!(cancel["method"], "session/cancel");
+
+    tokio::time::timeout(Duration::from_millis(250), prompt)
+        .await
+        .expect("cancel should release prompt lock immediately")
+        .unwrap()
+        .unwrap();
+    let result = runtime_rx.recv().await.unwrap().unwrap();
+    assert!(result.is_result());
+    assert_eq!(result.raw_json()["stop_reason"], "cancelled");
 }

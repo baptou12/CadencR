@@ -144,9 +144,13 @@ fn extract_session_id(value: &Value, fallback: &str) -> Result<String, RuntimeEr
     ))
 }
 
-/// Synthesise an MCP server status list for the init event. ACP doesn't
-/// expose health info, so we mark every configured server as `connected`
-/// optimistically — bad servers will surface as tool-call failures later.
+/// Synthesise an MCP server status list for the init event.
+///
+/// ACP `session/new` accepts an MCP server catalog but does not prove that
+/// every configured server has spawned and passed a health check. Reporting
+/// `connected` here would make the spec status field a lie, so keep the
+/// status explicitly unknown until a future health probe can replace it with
+/// an observed state.
 fn mcp_status_list(
     servers: Option<&HashMap<String, RuntimeMcpServerConfig>>,
 ) -> Vec<RuntimeMcpServerStatus> {
@@ -155,7 +159,7 @@ fn mcp_status_list(
             m.keys()
                 .map(|name| RuntimeMcpServerStatus {
                     name: name.clone(),
-                    status: "connected".to_string(),
+                    status: "unknown".to_string(),
                 })
                 .collect()
         })
@@ -206,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_status_list_marks_all_as_connected() {
+    fn mcp_status_list_marks_servers_unknown_until_health_probe_exists() {
         let mut servers = HashMap::new();
         servers.insert(
             "tools".to_string(),
@@ -219,7 +223,7 @@ mod tests {
         let statuses = mcp_status_list(Some(&servers));
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].name, "tools");
-        assert_eq!(statuses[0].status, "connected");
+        assert_eq!(statuses[0].status, "unknown");
     }
 
     #[test]

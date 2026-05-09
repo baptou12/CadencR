@@ -1,9 +1,7 @@
 //! Prompt-turn lifecycle helpers (W4).
 //!
-//! - [`PromptTurnLock`] is the per-session mutex serialising prompt turns
-//!   so a second `stream_input` waits for the in-flight turn to fully
-//!   resolve (request + post-response drain) before sending its own
-//!   `session/prompt`.
+//! - [`PromptTurnLock`] serialises prompt turns so follow-up prompts wait
+//!   for the in-flight turn to resolve before sending `session/prompt`.
 //! - [`finalize_turn`] is the single funnel that runs at every terminal
 //!   `stopReason` (end_turn / max_tokens / cancelled / refusal / error).
 //!   It drains any open streaming text/thinking blocks (so the FE sees
@@ -12,10 +10,11 @@
 //! Lifted out of `prompt_turn.rs` so neither file exceeds the 400-line
 //! ceiling once W4's tests land.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex as AsyncMutex, RwLock};
+use tokio::sync::{mpsc, Mutex as AsyncMutex, Notify, RwLock};
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
@@ -34,6 +33,28 @@ use super::turn_result::emit_turn_result;
 /// path.
 pub type PromptTurnLock = Arc<AsyncMutex<()>>;
 
+#[derive(Clone, Default)]
+pub struct PromptCancel {
+    epoch: Arc<AtomicU64>,
+    notify: Arc<Notify>,
+}
+
+impl PromptCancel {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel_current_turn(&self) {
+        self.epoch.fetch_add(1, Ordering::Relaxed);
+        self.notify.notify_waiters();
+    }
+}
+
+pub enum PromptRequestOutcome {
+    Completed(Value),
+    Cancelled,
+}
+
 /// Send the very first `session/prompt` for a freshly-spawned ACP session.
 ///
 /// Runs detached from the spawn flow so the caller can return before the
@@ -51,6 +72,7 @@ pub async fn drive_initial_prompt(
     indexer: &Arc<StdMutex<EventIndexer>>,
     context_window: Option<u64>,
     prompt_turn_lock: &PromptTurnLock,
+    prompt_cancel: &PromptCancel,
 ) -> Result<(), RuntimeError> {
     let _guard = prompt_turn_lock.lock().await;
     let session_id = session_id_lock
@@ -68,14 +90,13 @@ pub async fn drive_initial_prompt(
         effort.as_deref(),
         false,
     );
-    let response = client
-        .request_with_timeout(
-            "session/prompt",
-            params,
-            std::time::Duration::from_secs(60 * 60),
-        )
-        .await
-        .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))?;
+    let response = match request_prompt_with_cancel(client, params, prompt_cancel).await? {
+        PromptRequestOutcome::Completed(response) => response,
+        PromptRequestOutcome::Cancelled => {
+            finalize_cancelled_turn(tx, indexer, Some(session_id), context_window).await;
+            return Ok(());
+        }
+    };
     if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
         finalize_turn(
             tx,
@@ -88,6 +109,57 @@ pub async fn drive_initial_prompt(
         .await;
     }
     Ok(())
+}
+
+pub async fn request_prompt_with_cancel(
+    client: &AcpClient,
+    params: Value,
+    prompt_cancel: &PromptCancel,
+) -> Result<PromptRequestOutcome, RuntimeError> {
+    let start_epoch = prompt_cancel.epoch.load(Ordering::Relaxed);
+    let request = client.request_with_timeout(
+        "session/prompt",
+        params,
+        std::time::Duration::from_secs(60 * 60),
+    );
+    tokio::pin!(request);
+    loop {
+        let notified = prompt_cancel.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if prompt_cancel.epoch.load(Ordering::Relaxed) != start_epoch {
+            return Ok(PromptRequestOutcome::Cancelled);
+        }
+        tokio::select! {
+            result = &mut request => {
+                return result
+                    .map(PromptRequestOutcome::Completed)
+                    .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")));
+            }
+            () = &mut notified => {
+                if prompt_cancel.epoch.load(Ordering::Relaxed) != start_epoch {
+                    return Ok(PromptRequestOutcome::Cancelled);
+                }
+            }
+        }
+    }
+}
+
+pub async fn finalize_cancelled_turn(
+    tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    indexer: &Arc<StdMutex<EventIndexer>>,
+    session_id: Option<String>,
+    context_window: Option<u64>,
+) {
+    finalize_turn(
+        tx,
+        indexer,
+        session_id,
+        context_window,
+        "cancelled",
+        &serde_json::json!({}),
+    )
+    .await;
 }
 
 /// Single funnel for everything that must happen at turn end:
@@ -124,7 +196,7 @@ pub async fn finalize_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::{drive_initial_prompt, finalize_turn, EventIndexer, PromptTurnLock};
+    use super::{drive_initial_prompt, finalize_turn, EventIndexer, PromptCancel, PromptTurnLock};
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex as StdMutex};
@@ -242,6 +314,7 @@ mod tests {
         let effort = Arc::new(RwLock::new(None));
         let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
         let lock = make_lock();
+        let cancel = PromptCancel::new();
         let (tx, mut rx) = mpsc::channel(16);
 
         let first = tokio::spawn({
@@ -251,6 +324,7 @@ mod tests {
             let effort = Arc::clone(&effort);
             let indexer = Arc::clone(&indexer);
             let lock = Arc::clone(&lock);
+            let cancel = cancel.clone();
             let tx = tx.clone();
             async move {
                 drive_initial_prompt(
@@ -263,6 +337,7 @@ mod tests {
                     &indexer,
                     None,
                     &lock,
+                    &cancel,
                 )
                 .await
             }
@@ -282,6 +357,7 @@ mod tests {
             let effort = Arc::clone(&effort);
             let indexer = Arc::clone(&indexer);
             let lock = Arc::clone(&lock);
+            let cancel = cancel.clone();
             async move {
                 drive_initial_prompt(
                     &client,
@@ -293,6 +369,7 @@ mod tests {
                     &indexer,
                     None,
                     &lock,
+                    &cancel,
                 )
                 .await
             }

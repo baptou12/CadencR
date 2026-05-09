@@ -26,7 +26,6 @@ pub struct AcpClient {
 }
 
 /// Options for `AcpClient::spawn`.
-#[derive(Debug)]
 pub struct AcpSpawnOptions {
     /// The command to spawn. Stdio piping and `kill_on_drop(true)` are
     /// applied by `spawn` so callers don't have to remember.
@@ -38,6 +37,11 @@ pub struct AcpSpawnOptions {
     /// Maximum size of one stdout/stderr frame. Lines longer than this kill
     /// the reader (with a logged error) to prevent OOM. Defaults to 8 MiB.
     pub max_line_bytes: Option<usize>,
+    /// Optional resource held until immediately before `Command::spawn`.
+    /// Dropping it at the last possible moment lets adapters reserve scarce
+    /// local resources (for example a sidecar port) without an early TOCTOU
+    /// window.
+    pub spawn_guard: Option<Box<dyn Send + 'static>>,
 }
 
 impl AcpSpawnOptions {
@@ -51,6 +55,7 @@ impl AcpSpawnOptions {
             client_info: AcpClientInfo::default(),
             request_timeout: None,
             max_line_bytes: None,
+            spawn_guard: None,
         }
     }
 }
@@ -100,6 +105,7 @@ impl AcpClient {
     /// Send a JSON-RPC request and await the response under the default
     /// timeout. Returns `Ok(result)` on success, or surfaces protocol /
     /// timeout / process-exit failures as `AcpError`.
+    #[allow(dead_code)]
     pub async fn request(&self, method: &str, params: Value) -> Result<Value, AcpError> {
         self.request_with_timeout(method, params, self.inner.request_timeout)
             .await

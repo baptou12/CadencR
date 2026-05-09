@@ -10,15 +10,17 @@
 //! `set_model` / `set_thinking_effort` calls just update the local state and
 //! let `build_prompt_params` carry `model` / `_meta.thinkingEffort`.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
-use crate::domain::agents::acp::{AcpClient, AcpError};
+use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::RuntimeError;
+
+use super::capability_probe::{request_optional_method, ProbeResult};
 
 const SET_CONFIG_OPTION_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -99,39 +101,28 @@ async fn send_set_config_option(
     name: &str,
     value: Value,
 ) -> Result<(), RuntimeError> {
-    if !supports_flag.load(Ordering::SeqCst) {
-        // Already known unsupported — skip the round trip entirely.
-        return Ok(());
-    }
     let params = json!({
         "sessionId": session_id,
         "configOption": { "name": name, "value": value },
     });
-    match client
-        .request_with_timeout(
-            "session/set_config_option",
-            params,
-            SET_CONFIG_OPTION_TIMEOUT,
-        )
-        .await
+    match request_optional_method(
+        client,
+        "session/set_config_option",
+        params,
+        SET_CONFIG_OPTION_TIMEOUT,
+        supports_flag,
+    )
+    .await?
     {
-        Ok(_) => Ok(()),
-        Err(AcpError::Rpc { code: -32601, .. }) => {
-            // First time we see MethodNotFound: warn once. Subsequent calls
-            // short-circuit at the top of the function before issuing a
-            // request, so this only fires once per session.
-            if supports_flag.swap(false, Ordering::SeqCst) {
-                tracing::warn!(
-                    config_option = name,
-                    "ACP agent does not support session/set_config_option; \
-                     falling back to legacy ride-along on session/prompt"
-                );
-            }
+        ProbeResult::Supported | ProbeResult::AlreadyUnsupported => Ok(()),
+        ProbeResult::NewlyUnsupported => {
+            tracing::warn!(
+                config_option = name,
+                "ACP agent does not support session/set_config_option; \
+                 falling back to legacy ride-along on session/prompt"
+            );
             Ok(())
         }
-        Err(error) => Err(RuntimeError::new(format!(
-            "session/set_config_option({name}) failed: {error}"
-        ))),
     }
 }
 
