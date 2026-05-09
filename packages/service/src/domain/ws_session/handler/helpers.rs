@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::domain::agents::adapter::RuntimeSessionHandle;
 pub(crate) use crate::domain::agents::permission_modes::{
     default_permission_mode, default_permission_mode_wire, parse_permission_mode,
-    post_plan_approval_mode_wire, provider_supports_mode,
+    post_plan_approval_fallback_mode_wire, post_plan_approval_mode_wire, provider_supports_mode,
 };
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};

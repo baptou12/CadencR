@@ -13,7 +13,7 @@ JSON on the CLI's stdio (`--output-format stream-json
 
 | # | Feature | Status | Notes |
 |---|---|---|---|
-| 1 | Modes: plan / build / accept-edits | ✅ | `--permission-mode` at spawn; `set_permission_mode` control command mid-session. All six `RuntimePermissionMode` variants supported. |
+| 1 | Modes: plan / build / accept-edits | ✅ | `--permission-mode` at spawn; `set_permission_mode` control request mid-session. The CLI applies the new mode immediately to subsequent tool requests in the running turn. All six `RuntimePermissionMode` variants supported. |
 | 2 | Thinking | ✅ | `ContentBlock::Thinking` and `ContentDelta::ThinkingDelta` mapped to runtime thinking blocks/deltas. `--thinking-display summarized` always on. |
 | 3 | Partial / streaming messages | ✅ | `StreamEventData::ContentBlockStart/Delta/Stop` + `Result` turn-complete. Indexes assigned by the CLI. |
 | 4 | Bash tool calls + outputs | ✅ | `Bash` is a native CLI tool; results flow back as `ToolResult` user-messages. |
@@ -57,8 +57,29 @@ Mid-session, the adapter calls `Query::set_permission_mode`, which sends:
 { "type": "control_request", "request_id": "...", "request": { "subtype": "set_permission_mode", "mode": "<flag>" } }
 ```
 
-The CLI applies the mode before the next user turn. There is no schema
-drift between runtime modes and CLI modes — they are 1:1.
+Per the official Claude Agent SDK
+([Configure permissions → During streaming](https://code.claude.com/docs/en/agent-sdk/permissions))
+the CLI applies the new mode **immediately to all subsequent tool
+requests**, including tool calls in the currently running turn. This is
+the contract Cadencr relies on for two cases:
+
+- **Mid-turn chip switch.** The user toggling the chip while the agent
+  is editing affects the very next tool call in the same turn — no need
+  to wait for a turn boundary.
+- **Post-`ExitPlanMode` build mode.** `WsBridgeCanUseTool` issues a
+  `set_permission_mode` *before* returning `Allow` from `can_use_tool`,
+  so the CLI exits plan mode straight into the chosen build mode (`auto`
+  for capable models, `acceptEdits` otherwise) without prompting on the
+  first edit.
+
+The SDK awaits the matching `control_response` and surfaces
+`SdkError::ControlRequestFailed` if the CLI rejects the change, or
+`SdkError::Timeout` if no response arrives. The Cadencr WS handler
+gates `mode.changed` broadcasts on `Ok(())` so the FE chip never claims
+a mode the CLI didn't actually accept (see `no-optimistic-updates.md`).
+
+There is no schema drift between runtime modes and CLI modes — they
+are 1:1.
 
 ### 2. Thinking
 
@@ -161,13 +182,15 @@ response (`supported_effort_levels`); shared code never hardcodes it.
 `Query::set_model(model)` sends:
 
 ```json
-{ "type": "control_request", "request": { "subtype": "set_model", "model": "<id>" } }
+{ "type": "control_request", "request_id": "...", "request": { "subtype": "set_model", "model": "<id>" } }
 ```
 
-The change is asynchronous and applies to the next turn. The runtime
-exposes this via `AgentRuntimeSession::set_model`. Available models
-come from `initialize.supported_models`, where each entry carries its
-own effort, fast-mode, and auto-mode capability flags.
+The CLI applies the new model on the next user turn — the in-flight
+turn keeps the model it started with — and the SDK awaits the matching
+`control_response` before returning. The runtime exposes this via
+`AgentRuntimeSession::set_model`. Available models come from
+`initialize.supported_models`, where each entry carries its own effort,
+fast-mode, and auto-mode capability flags.
 
 ### 10. Permissions: yes / no / always / session
 
@@ -220,7 +243,10 @@ Stdio is the path Cadencr uses; the SDK also supports SSE and HTTP.
 `RuntimeInitEvent.mcp_servers`. Status is whatever the CLI reports —
 the adapter does not optimistically mark servers connected.
 
-`set_mcp_servers` lets the user hot-swap servers mid-session.
+`set_mcp_servers` lets the user hot-swap servers mid-session. It uses
+the same `control_request` envelope as the other mid-session commands
+(`{ "type": "control_request", "request_id": "...", "request": { "subtype": "set_mcp_servers", "mcp_servers": {…} } }`)
+and the SDK awaits the CLI's `control_response`.
 
 Tool names from MCP servers arrive without explicit namespacing in the
 CLI's `initialize.tools` list; Cadencr treats them like any other tool

@@ -218,7 +218,7 @@ fn to_cli_args_omits_permission_mode_when_unset() {
 #[test]
 fn to_cli_args_includes_permission_prompt_tool_when_can_use_tool_set() {
     let opts = Options {
-        can_use_tool: Some(Box::new(AllowAllTools)),
+        can_use_tool: Some(std::sync::Arc::new(AllowAllTools)),
         ..Options::default()
     };
     let args = opts.to_cli_args();

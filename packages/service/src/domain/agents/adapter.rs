@@ -90,6 +90,13 @@ pub enum RuntimeError {
         provider: &'static str,
         searched: Vec<PathBuf>,
     },
+    /// The provider's CLI accepted the protocol envelope but rejected the
+    /// requested operation (e.g. `set_permission_mode("auto")` on a model
+    /// that doesn't support auto). `subtype` is the control-request
+    /// subtype the SDK sent — callers (e.g. the post-plan-approval
+    /// transition) can branch on this to apply a fallback. `message` is
+    /// the CLI's verbatim error text.
+    ControlRequestRejected { subtype: String, message: String },
 }
 
 impl Display for RuntimeError {
@@ -102,6 +109,9 @@ impl Display for RuntimeError {
                     "{provider} CLI not found; searched {} location(s)",
                     searched.len()
                 )
+            }
+            Self::ControlRequestRejected { subtype, message } => {
+                write!(f, "CLI rejected control request `{subtype}`: {message}")
             }
         }
     }
@@ -126,6 +136,14 @@ impl From<claude_agent_sdk_rs::SdkError> for RuntimeError {
         match value {
             claude_agent_sdk_rs::SdkError::CliNotFound { searched } => {
                 Self::cli_not_found("claude", searched)
+            }
+            // Preserve the structured rejection so adapters can apply
+            // command-specific fallbacks (e.g. post-plan `auto` →
+            // `acceptEdits`). Without this, the variant flattens to a
+            // string and the only way to recover would be substring
+            // matching on the message.
+            claude_agent_sdk_rs::SdkError::ControlRequestFailed { subtype, message } => {
+                Self::ControlRequestRejected { subtype, message }
             }
             other => Self::Generic(other.to_string()),
         }
@@ -719,6 +737,23 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// explicitly to a plan-approval-specific override.
     fn post_plan_approval_mode_wire(&self, _model: Option<&str>) -> &'static str {
         self.default_permission_mode_wire()
+    }
+
+    /// If the post-plan target mode (chosen by
+    /// `post_plan_approval_mode_wire`) is rejected by the live CLI,
+    /// return a fallback wire string the orchestrator should retry with.
+    /// Returning `None` means propagate the error.
+    ///
+    /// The motivating case is Claude Code's `auto` mode: the catalog
+    /// advertises auto-capable aliases optimistically (we can't always
+    /// tell from the CLI metadata alone whether a given resolved model
+    /// actually supports it), so we observe the rejection at runtime and
+    /// fall back to `acceptEdits`. Other providers default to `None`.
+    fn post_plan_approval_fallback_mode_wire(
+        &self,
+        _failed_mode_wire: &str,
+    ) -> Option<&'static str> {
+        None
     }
 
     async fn session_finished(&self, _runtime_session_id: &str) -> bool {

@@ -47,4 +47,11 @@ pub enum SdkError {
     /// The operation was cancelled via a CancellationToken.
     #[error("operation was cancelled")]
     Cancelled,
+
+    /// The CLI replied to a `control_request` with an `error` subtype.
+    /// `subtype` is the request subtype we sent (e.g. `set_permission_mode`,
+    /// `set_model`); `message` is whatever the CLI included in the error
+    /// payload. Surfaced verbatim so callers can decide how to display it.
+    #[error("CLI rejected control request `{subtype}`: {message}")]
+    ControlRequestFailed { subtype: String, message: String },
 }

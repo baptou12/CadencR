@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
@@ -35,10 +36,13 @@ pub struct Options {
     pub language: Option<String>,
 
     // --- Runtime-only fields (not serialised to CLI flags) ---
-    /// Permission handler. When set, the stream blocks on every permission
-    /// request until this trait method resolves — enabling the
-    /// AskUserQuestion / ExitPlanMode / tool-permission "waiting" states.
-    pub can_use_tool: Option<Box<dyn CanUseTool>>,
+    /// Permission handler. When set, every permission control_request from
+    /// the CLI is dispatched to this trait method on a *separate* task so
+    /// the SDK reader keeps processing other inbound messages (notably the
+    /// `control_response`s for `set_permission_mode` issued from inside
+    /// the callback itself, e.g. after `ExitPlanMode` approval). `Arc` so
+    /// the reader can clone the handle into the spawned task.
+    pub can_use_tool: Option<Arc<dyn CanUseTool>>,
     /// Cancellation token for aborting a running query.
     pub abort_signal: Option<CancellationToken>,
     /// Extra environment variables layered on top of the inherited parent env
@@ -233,7 +237,7 @@ impl OptionsBuilder {
         self
     }
 
-    pub fn can_use_tool(mut self, handler: Box<dyn CanUseTool>) -> Self {
+    pub fn can_use_tool(mut self, handler: Arc<dyn CanUseTool>) -> Self {
         self.inner.can_use_tool = Some(handler);
         self
     }

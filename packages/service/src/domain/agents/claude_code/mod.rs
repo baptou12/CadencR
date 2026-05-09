@@ -44,6 +44,18 @@ pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
     probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
 };
 
+/// Seed the static `CLAUDE_CODE_ADAPTER`'s model catalog from a test.
+/// Crate-visible so tests in other modules (e.g. the post-plan-mode
+/// orchestrator) can drive `post_plan_approval_mode_wire` to a known
+/// outcome without needing access to the private cache cell.
+#[cfg(test)]
+pub(crate) fn seed_static_catalog_for_tests(models: Vec<ModelCatalogEntry>) {
+    let cell = CLAUDE_CODE_ADAPTER.models_cell();
+    if let Ok(mut guard) = cell.write() {
+        *guard = models;
+    }
+}
+
 impl ClaudeCodeAdapter {
     /// Whether the active model can run Claude's classifier-backed `auto`
     /// mode (Sonnet 4.6+ / Opus 4.6+).
@@ -298,6 +310,25 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         }
     }
 
+    /// Catalog-based detection in `post_plan_approval_mode_wire` is best-
+    /// effort: the CLI sometimes advertises auto on alias rows (`sonnet`,
+    /// `opus`) even when the resolved model doesn't actually accept
+    /// `set_permission_mode("auto")` — Sonnet 4.5 is the canonical
+    /// offender. The CLI surfaces this as a `control_response` error
+    /// ("auto mode unavailable for this model"); we observe it at runtime
+    /// and quietly downgrade to `acceptEdits` so the user still leaves
+    /// plan mode without a permission-prompt storm.
+    fn post_plan_approval_fallback_mode_wire(
+        &self,
+        failed_mode_wire: &str,
+    ) -> Option<&'static str> {
+        if failed_mode_wire == "auto" {
+            Some("acceptEdits")
+        } else {
+            None
+        }
+    }
+
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
         let default_model = Self::default_model_from(&models);
@@ -378,8 +409,8 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
                     .collect()
             }),
             can_use_tool: config.permission_handler.map(|handler| {
-                Box::new(ClaudeCanUseToolAdapter { inner: handler })
-                    as Box<dyn claude_agent_sdk_rs::CanUseTool>
+                std::sync::Arc::new(ClaudeCanUseToolAdapter { inner: handler })
+                    as std::sync::Arc<dyn claude_agent_sdk_rs::CanUseTool>
             }),
             env,
             ..claude_agent_sdk_rs::Options::default()
@@ -654,5 +685,34 @@ mod tests {
             vec![model_with_auto("claude-sonnet-4-6", Some(true))],
         );
         assert_eq!(adapter.post_plan_approval_mode_wire(None), "acceptEdits");
+    }
+
+    #[test]
+    fn post_plan_approval_fallback_recovers_auto_to_accept_edits() {
+        // When the CLI rejects `auto` (Sonnet 4.5 et al), the orchestrator
+        // should try `acceptEdits` instead — the user still leaves plan
+        // mode without a permission prompt on every edit.
+        let adapter = new_test_adapter();
+        assert_eq!(
+            adapter.post_plan_approval_fallback_mode_wire("auto"),
+            Some("acceptEdits")
+        );
+    }
+
+    #[test]
+    fn post_plan_approval_fallback_has_no_recovery_for_other_modes() {
+        // Only the `auto`-specific catalog optimism is recoverable today;
+        // a rejection of `acceptEdits` or `default` is a real CLI failure
+        // and should propagate to the user via the standard error envelope.
+        let adapter = new_test_adapter();
+        assert_eq!(
+            adapter.post_plan_approval_fallback_mode_wire("acceptEdits"),
+            None
+        );
+        assert_eq!(
+            adapter.post_plan_approval_fallback_mode_wire("default"),
+            None
+        );
+        assert_eq!(adapter.post_plan_approval_fallback_mode_wire("plan"), None);
     }
 }
