@@ -27,6 +27,7 @@ pub mod server_requests;
 pub mod session;
 pub mod session_permissions;
 pub mod session_spawn;
+mod spawn_initial_config;
 mod spawn_initial_mode;
 mod terminal_enrich;
 mod terminal_io;

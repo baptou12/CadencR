@@ -22,6 +22,7 @@ use super::provider_hooks::AcpProviderHooks;
 use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::session::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
 use super::session_permissions::SessionPermissions;
+use super::spawn_initial_config::{apply_initial_model, apply_initial_thinking_effort};
 use super::spawn_initial_mode::apply_initial_permission_mode;
 use super::terminal_registry::TerminalRegistry;
 use super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
@@ -71,7 +72,6 @@ pub async fn spawn_acp_runtime_session(
     let mut session = AcpRuntimeSession::assemble(
         &client,
         &negotiated,
-        &config,
         pid,
         rx,
         tx.clone(),
@@ -80,6 +80,15 @@ pub async fn spawn_acp_runtime_session(
     );
 
     apply_initial_permission_mode(&session, &negotiated, &config).await?;
+    // Push the user-selected model and thinking effort to the agent before
+    // the first `session/prompt`, otherwise the agent runs at its own
+    // default. The two requests are independent (disjoint locks; only the
+    // atomic `supports_set_config_option` is shared and writes are
+    // idempotent) so we race them to save one RPC of spawn latency.
+    tokio::try_join!(
+        apply_initial_model(&session, &negotiated, &config),
+        apply_initial_thinking_effort(&session, &negotiated, &config),
+    )?;
 
     emit_init_event(&tx, &negotiated).await;
     let handles = spawn_event_loop(
@@ -153,7 +162,6 @@ impl AcpRuntimeSession {
     pub(super) fn assemble(
         client: &AcpClient,
         negotiated: &NegotiatedSession,
-        config: &RuntimeSpawnConfig,
         pid: Option<u32>,
         rx: mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>,
         local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
@@ -163,8 +171,11 @@ impl AcpRuntimeSession {
         AcpRuntimeSession {
             client: client.clone(),
             session_id: Arc::new(RwLock::new(Some(negotiated.session_id.clone()))),
-            current_model: Arc::new(RwLock::new(negotiated.model.clone())),
-            current_effort: Arc::new(RwLock::new(config.thinking_effort.clone())),
+            // Start as `None` so the first `set_config_option` call doesn't
+            // short-circuit on `current == intent` and skip telling the
+            // agent. See `spawn_initial_config::apply_initial_model`.
+            current_model: Arc::new(RwLock::new(None)),
+            current_effort: Arc::new(RwLock::new(None)),
             current_mode: Arc::new(RwLock::new(
                 // Fall back to "build" only if the agent omitted
                 // `currentModeId` in `session/new`. Every ACP provider we

@@ -50,6 +50,10 @@ pub async fn set_config_option_model(
 /// Set the active thinking effort for this session via
 /// `session/set_config_option`. `effort` is the raw provider string (e.g.
 /// "low" / "medium" / "high"); `None` clears the override.
+///
+/// The wire `configId` is `"effort"` (not `"thinkingEffort"`) — that's
+/// the discriminator OpenCode's handler matches against. See
+/// `send_set_config_option` for the full payload shape.
 pub async fn set_config_option_thinking_effort(
     client: &AcpClient,
     session_id: &str,
@@ -62,7 +66,7 @@ pub async fn set_config_option_thinking_effort(
         session_id,
         current_effort,
         supports_flag,
-        "thinkingEffort",
+        "effort",
         new_effort,
     )
     .await
@@ -76,14 +80,13 @@ async fn set_config_option(
     session_id: &str,
     current: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
-    name: &str,
+    config_id: &str,
     new_value: Option<&str>,
 ) -> Result<(), RuntimeError> {
     if value_is_already_current(current, new_value).await {
         return Ok(());
     }
-    let payload = new_value.map_or(Value::Null, |v| Value::String(v.to_string()));
-    send_set_config_option(client, session_id, supports_flag, name, payload).await?;
+    send_set_config_option(client, session_id, supports_flag, config_id, new_value).await?;
     // Always update local state so the legacy fallback (and the FE) sees the
     // user's intent even when the agent doesn't acknowledge the option.
     *current.write().await = new_value.map(ToOwned::to_owned);
@@ -94,16 +97,28 @@ async fn set_config_option(
 /// of whether the agent ack'd or returned `MethodNotFound` — the caller's
 /// local state update is the ground truth either way. Other RPC errors
 /// propagate.
+///
+/// Wire shape per OpenCode's handler (the only ACP provider today):
+/// ```json
+/// { "sessionId": "...", "configId": "model"|"effort", "type": "string", "value": "..." }
+/// ```
+/// `configId` and `type` are top-level discriminators — *not* nested under
+/// a `configOption` envelope. `type` is always `"string"` for our two
+/// callsites (model and effort); the schema also accepts `"boolean"` but
+/// no current configId uses it.
 async fn send_set_config_option(
     client: &AcpClient,
     session_id: &str,
     supports_flag: &Arc<AtomicBool>,
-    name: &str,
-    value: Value,
+    config_id: &str,
+    value: Option<&str>,
 ) -> Result<(), RuntimeError> {
+    let value_payload = value.map_or(Value::Null, |v| Value::String(v.to_string()));
     let params = json!({
         "sessionId": session_id,
-        "configOption": { "name": name, "value": value },
+        "configId": config_id,
+        "type": "string",
+        "value": value_payload,
     });
     match request_optional_method(
         client,
@@ -117,7 +132,7 @@ async fn send_set_config_option(
         ProbeResult::Supported | ProbeResult::AlreadyUnsupported => Ok(()),
         ProbeResult::NewlyUnsupported => {
             tracing::warn!(
-                config_option = name,
+                config_id,
                 "ACP agent does not support session/set_config_option; \
                  falling back to legacy ride-along on session/prompt"
             );
@@ -183,6 +198,38 @@ mod tests {
         stdout.write_all(frame.as_bytes()).await.unwrap();
     }
 
+    /// Regression: OpenCode rejects the legacy `{configOption: {name, value}}`
+    /// envelope with `-32602 Invalid params`. The runtime must serialise the
+    /// shape OpenCode actually validates: top-level `configId` / `type` /
+    /// `value` discriminators, no nested envelope.
+    #[tokio::test]
+    async fn wire_payload_uses_top_level_config_id_type_value_no_envelope() {
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let current_model = Arc::new(RwLock::new(None));
+        let supports = Arc::new(AtomicBool::new(true));
+        let task = tokio::spawn({
+            let client = client.clone();
+            let current_model = Arc::clone(&current_model);
+            let supports = Arc::clone(&supports);
+            async move {
+                set_config_option_model(&client, "s-x", &current_model, &supports, "openai/gpt-5.4")
+                    .await
+            }
+        });
+        let parsed = read_one_request(&mut agent_stdin).await;
+        let params = &parsed["params"];
+        assert!(
+            params.get("configOption").is_none(),
+            "must NOT nest under a configOption envelope (OpenCode rejects it)"
+        );
+        assert_eq!(params["configId"], "model");
+        assert_eq!(params["type"], "string");
+        assert_eq!(params["value"], "openai/gpt-5.4");
+        let id = parsed["id"].as_u64().unwrap();
+        reply_ok(&mut agent_stdout, id, json!({})).await;
+        task.await.unwrap().unwrap();
+    }
+
     #[tokio::test]
     async fn set_model_issues_set_config_option_and_updates_state() {
         let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
@@ -200,8 +247,9 @@ mod tests {
         let parsed = read_one_request(&mut agent_stdin).await;
         assert_eq!(parsed["method"], "session/set_config_option");
         assert_eq!(parsed["params"]["sessionId"], "s-1");
-        assert_eq!(parsed["params"]["configOption"]["name"], "model");
-        assert_eq!(parsed["params"]["configOption"]["value"], "new-model");
+        assert_eq!(parsed["params"]["configId"], "model");
+        assert_eq!(parsed["params"]["type"], "string");
+        assert_eq!(parsed["params"]["value"], "new-model");
         let id = parsed["id"].as_u64().unwrap();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
@@ -299,8 +347,11 @@ mod tests {
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
-        assert_eq!(parsed["params"]["configOption"]["name"], "thinkingEffort");
-        assert_eq!(parsed["params"]["configOption"]["value"], "high");
+        // OpenCode's handler matches on `configId === "effort"`, NOT
+        // `"thinkingEffort"`. The runtime translates this for callers.
+        assert_eq!(parsed["params"]["configId"], "effort");
+        assert_eq!(parsed["params"]["type"], "string");
+        assert_eq!(parsed["params"]["value"], "high");
         let id = parsed["id"].as_u64().unwrap();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();

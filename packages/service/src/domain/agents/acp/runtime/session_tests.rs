@@ -323,7 +323,6 @@ async fn set_permission_mode_method_not_found_disables_future_probe_without_erro
     let session = super::AcpRuntimeSession::assemble(
         &client,
         &negotiated,
-        &crate::domain::agents::adapter::RuntimeSpawnConfig::default(),
         None,
         rx,
         tx,
@@ -366,7 +365,6 @@ async fn interrupt_releases_in_flight_prompt_turn_without_waiting_for_agent_repl
     let mut session = super::AcpRuntimeSession::assemble(
         &client,
         &negotiated,
-        &crate::domain::agents::adapter::RuntimeSpawnConfig::default(),
         None,
         rx,
         tx,

@@ -99,16 +99,11 @@ mod tests {
         (client, ag_out, BufReader::new(ag_in))
     }
 
-    fn assemble_session(
-        client: &AcpClient,
-        neg: &NegotiatedSession,
-        cfg: &RuntimeSpawnConfig,
-    ) -> AcpRuntimeSession {
+    fn assemble_session(client: &AcpClient, neg: &NegotiatedSession) -> AcpRuntimeSession {
         let (tx, rx) = mpsc::channel(8);
         AcpRuntimeSession::assemble(
             client,
             neg,
-            cfg,
             None,
             rx,
             tx,
@@ -136,14 +131,10 @@ mod tests {
     #[tokio::test]
     async fn assemble_seeds_current_mode_from_negotiated_value() {
         let (client, _o, _i) = build_client();
-        let s = assemble_session(
-            &client,
-            &neg("s", Some("plan")),
-            &RuntimeSpawnConfig::default(),
-        );
+        let s = assemble_session(&client, &neg("s", Some("plan")));
         assert_eq!(s.current_mode.read().await.as_str(), "plan");
         let (client, _o, _i) = build_client();
-        let s = assemble_session(&client, &neg("s", None), &RuntimeSpawnConfig::default());
+        let s = assemble_session(&client, &neg("s", None));
         assert_eq!(s.current_mode.read().await.as_str(), "build");
     }
 
@@ -153,7 +144,7 @@ mod tests {
         let (client, _o, mut stdin) = build_client();
         let n = neg("s", Some("build"));
         let c = RuntimeSpawnConfig::default();
-        let s = assemble_session(&client, &n, &c);
+        let s = assemble_session(&client, &n);
         apply_initial_permission_mode(&s, &n, &c).await.unwrap();
         assert_no_frame(&mut stdin).await;
         // Already in target mode: compare-and-skip in `set_session_mode`.
@@ -163,7 +154,7 @@ mod tests {
             permission_mode: Some(RuntimePermissionMode::Plan),
             ..RuntimeSpawnConfig::default()
         };
-        let s = assemble_session(&client, &n, &c);
+        let s = assemble_session(&client, &n);
         apply_initial_permission_mode(&s, &n, &c).await.unwrap();
         assert_no_frame(&mut stdin).await;
     }
@@ -176,7 +167,7 @@ mod tests {
             permission_mode: Some(RuntimePermissionMode::Plan),
             ..RuntimeSpawnConfig::default()
         };
-        let s = assemble_session(&client, &n, &c);
+        let s = assemble_session(&client, &n);
         let task = tokio::spawn(async move { apply_initial_permission_mode(&s, &n, &c).await });
         let mut line = String::new();
         stdin.read_line(&mut line).await.unwrap();

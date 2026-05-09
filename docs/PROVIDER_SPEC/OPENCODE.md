@@ -36,8 +36,8 @@ removal. This document covers the ACP transport only.
 | 5 | Edits / Writes / Patch | 🟡 | `Edit` works. **`Write` input mis-mapped** (`newText`→`new_string` instead of `content` — diff renders blank). **`MultiEdit` silently drops all edits except the first.** **`ApplyPatch` is a string-match only** — no real `patchUpdated` handler. |
 | 6 | Sub-agents | 🟡 | `parent_tool_use_id` plumbed. **`subAgentSessionId` is mis-mapped to `parent_tool_use_id`** (the FE expects a tool_use_id, gets a session id; child events drop on the floor). No `thread_id → parent_tool_use_id` registry; spec § 6 child final-text synthesis under the parent `Agent` block is missing. |
 | 7 | Todo | 🟡 | `TodoWrite` and `plan` updates normalized to canonical shape. **`last_todowrite_call_id` is never reset across turns** — once any turn sees a TodoWrite, every subsequent `plan` update for the rest of the session is silently dropped. **Reverse-order plan-then-tool_call duplicates the UI.** |
-| 8 | Thinking level changes | 🟡 | `set_thinking_effort` wired through `session/set_config_option` with legacy ride-along fallback. **Initial spawn does NOT push effort** — first turn runs at the agent's default. |
-| 9 | Model selection changes | ❌ | **CONFIRMED BUG (user-reported).** Initial spawn never sends `set_config_option(model)`; `set_model` short-circuits when `current_model` already matches the user selection (it was seeded from the same value). The agent never receives the model via the schema-correct path, so the first turn — and every turn where the user "re-confirms" the selected model — runs the agent's default. User reports talking to `gpt-5.4-mini` while the prompt header claims `gpt-5.4`. |
+| 8 | Thinking level changes | ✅ | `set_thinking_effort` wired through `session/set_config_option { configId: "effort", type: "string", value }` with legacy ride-along fallback. `apply_initial_thinking_effort` (`spawn_initial_config.rs`) pushes effort to the agent right after `session/new`, so the first turn already reflects the user's selection. `current_effort` starts as `None` (decoupled from intent) and is only written when the agent acks. |
+| 9 | Model selection changes | ✅ | `set_model` and `apply_initial_model` (`spawn_initial_config.rs`) both send `session/set_config_option { configId: "model", type: "string", value }` — the schema OpenCode actually accepts (top-level `configId`/`type`/`value`, *not* a nested `configOption` envelope). `current_model` starts as `None` and is only written once the agent has acknowledged, so the short-circuit is keyed off real acknowledgement rather than Cadencr's intent. The "Talking to gpt-5.4-mini while the prompt says gpt-5.4" regression is fixed. |
 | 10 | Permissions: yes / no / always / session | 🟡 | Bridge pattern wired via `permission_bridge`; question sidecar HTTP endpoint functional. **Deny on a question hangs the agent** (`respond_permission_fallback` early-returns when both `updated_input` and `feedback` are `None`, never calling `reject_tool_call`). **`AllowForSession` collapses onto `AllowFuture`** on the WS wire (a "session" decision is routed back to ACP as a permanent grant). Close cancellation uses JSON-RPC `-32800` instead of the spec'd `outcome: cancelled`. |
 | 11 | MCP | ❌ | **MCP servers do not load.** OpenCode reads MCP config from `opencode.json` on disk regardless of transport; the ACP spawn path skips the `ensure_worktree_opencode_config` step the HTTP path runs. Plus `mcp_status_list` reports every configured server as `connected` before any health probe (spec § 11 status field is meaningless). |
 | 12 | Plan approval | ❌ | **Not implemented at all.** No code synthesises an `ExitPlanMode` `ToolUse`. `AcpRuntimeSession::permission_response_kind` is not overridden, so it defaults to `Normal`; `should_transition_after_plan_approval` always returns `false`. Plan-approval bar never closes after Approve; session stays in plan. |
@@ -232,19 +232,25 @@ in the UI).
 
 `AcpRuntimeSession::set_thinking_effort` calls
 `set_config_option_thinking_effort` which sends
-`session/set_config_option { name: "thinkingEffort", value }`. On
-`MethodNotFound (-32601)` the runtime flips
+`session/set_config_option { configId: "effort", type: "string", value }`.
+On `MethodNotFound (-32601)` the runtime flips
 `supports_set_config_option` to `false` and falls back to a legacy
 ride-along under `_meta.thinkingEffort` on the next `session/prompt`.
 `config_option_update` notifications mirror the agent's authoritative
 value back into `current_effort`.
 
+`spawn_initial_config::apply_initial_thinking_effort` runs immediately
+after `session/new` (alongside `apply_initial_permission_mode`), so the
+first turn already reflects the user's selection rather than the
+agent's default. `current_effort` starts as `None` so the
+short-circuit in `value_is_already_current` does not suppress the
+spawn-time push — see § 9 for the same architectural pattern applied to
+model. The `configId` discriminator on the wire is `"effort"` (not
+`"thinkingEffort"`); the translation lives in
+`set_config_option_thinking_effort`.
+
 **Known issues:**
 
-- *Initial spawn does not push effort.* Because
-  `supports_set_config_option == true` initially, `build_prompt_params`
-  drops the legacy ride-along on the first prompt — so the first turn
-  runs at the agent's default effort.
 - *`applies_thinking_effort_in_place` is `true` on ACP.* The WS handler
   immediately stamps `spawned_thinking_effort` to the new value; an
   in-flight turn still uses the old value, causing a brief desync
@@ -253,33 +259,43 @@ value back into `current_effort`.
 ### 9. Model selection changes
 
 `AcpRuntimeSession::set_model` calls `set_config_option_model` which
-sends `session/set_config_option { name: "model", value }` with the
-same `MethodNotFound` fallback path as effort. `current_model` is
-seeded at spawn from `RuntimeSpawnConfig.model`.
+sends `session/set_config_option { configId: "model", type: "string", value }`
+with the same `MethodNotFound` fallback path as effort.
+`spawn_initial_config::apply_initial_model` runs the same call right
+after `session/new` so the first turn already runs against the user's
+selection.
 
-**Known issues — confirmed user-reported bug:**
+**Wire schema (verified against `opencode acp 1.14.44`).** Top-level
+discriminators — *not* nested under a `configOption` envelope:
 
-> User: "Talking to gpt-5.4-mini but the prompt says I'm using gpt-5.4
-> (even after model change)."
+```json
+{
+  "sessionId": "...",
+  "configId": "model",
+  "type": "string",
+  "value": "openai/gpt-5.4"
+}
+```
 
-Two compounding bugs cause this:
+OpenCode's handler validates `configId` ∈ {`model`, `effort`, `mode`}
+and rejects any other shape with `-32602 Invalid params`. The schema
+was reverse-engineered from the binary at `setSessionConfigOption`.
 
-1. **Initial spawn never sends `set_config_option(model)`.** The
-   model is only carried via the legacy ride-along path, which is
-   skipped while `supports_set_config_option == true`. The agent uses
-   its own default model on the first turn.
-2. **`set_model` short-circuits when the value already matches.**
-   `value_is_already_current` (`config_options.rs:138-143`) returns
-   `true` when `current_model == new_model`, so a user who selected
-   `gpt-5.4` at spawn and then "set" `gpt-5.4` again never triggers a
-   wire request. `current_model` is the value Cadencr THINKS the agent
-   is using, not the value the agent has actually been told. The agent
-   continues with its default (`gpt-5.4-mini`).
+**Decoupling Cadencr's intent from the agent's acknowledgement.**
+`current_model` (and `current_effort`) start as `None`, *not* seeded
+from `RuntimeSpawnConfig.model`. They flip to the user's selection only
+after `set_config_option_model` has actually run — either via a
+successful agent ack, or via the `MethodNotFound` fallback that still
+writes the value locally so the legacy ride-along path can carry it on
+the next prompt. This kills the previous regression where:
 
-**Fix:** after `negotiate_session`, send a one-shot
-`session/set_config_option(model)` before the initial prompt. Decouple
-"Cadencr's intent" from "value the agent acknowledged" so the
-short-circuit is keyed off the latter.
+> User reported: "Talking to gpt-5.4-mini but the prompt says I'm
+> using gpt-5.4 (even after model change)."
+
+Pre-seeding meant the very first `set_config_option` call short-circuited
+on `current_model == new_model` and never reached the wire. Decoupling
+makes the short-circuit fire only when the agent has *actually* been
+told.
 
 `accepts_model` uses `is_opencode_model_ref` which requires a
 `provider/model` shape — bare ids will not be routed to OpenCode.
@@ -546,8 +562,6 @@ Issues that don't fit a single feature row:
 **Round 1 — must-fix to even smoke-test reliably:**
 
 - § 11 — wire `ensure_worktree_opencode_config` into the ACP spawn path.
-- § 9 — push `set_config_option(model)` at spawn; decouple intent from
-  acknowledgement.
 - § 12 — synthesise `ExitPlanMode` + override
   `permission_response_kind`.
 - § 16 / Architecture #7 — return `None` from `session_finished_text`
