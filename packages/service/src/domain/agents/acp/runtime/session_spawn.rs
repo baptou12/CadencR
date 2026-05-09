@@ -22,6 +22,7 @@ use super::provider_hooks::AcpProviderHooks;
 use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::session::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
 use super::session_permissions::SessionPermissions;
+use super::spawn_initial_mode::apply_initial_permission_mode;
 use super::terminal_registry::TerminalRegistry;
 use super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
 
@@ -77,6 +78,8 @@ pub async fn spawn_acp_runtime_session(
         hooks.clone(),
         Arc::clone(&indexer),
     );
+
+    apply_initial_permission_mode(&session, &negotiated, &config).await?;
 
     emit_init_event(&tx, &negotiated).await;
     let handles = spawn_event_loop(
@@ -162,7 +165,15 @@ impl AcpRuntimeSession {
             session_id: Arc::new(RwLock::new(Some(negotiated.session_id.clone()))),
             current_model: Arc::new(RwLock::new(negotiated.model.clone())),
             current_effort: Arc::new(RwLock::new(config.thinking_effort.clone())),
-            current_mode: Arc::new(RwLock::new("build".to_string())),
+            current_mode: Arc::new(RwLock::new(
+                // Fall back to "build" only if the agent omitted
+                // `currentModeId` in `session/new`. Every ACP provider we
+                // ship today reports a mode, so this is just a safety net.
+                negotiated
+                    .current_mode
+                    .clone()
+                    .unwrap_or_else(|| "build".to_string()),
+            )),
             supports_set_config_option: Arc::new(AtomicBool::new(true)),
             supports_set_mode: Arc::new(AtomicBool::new(true)),
             pending_permissions: PendingPermissions::default(),

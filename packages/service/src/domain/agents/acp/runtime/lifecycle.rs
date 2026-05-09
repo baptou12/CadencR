@@ -31,6 +31,9 @@ pub struct NegotiatedSession {
     pub model: Option<String>,
     pub mcp_servers: Vec<RuntimeMcpServerStatus>,
     pub context_window: Option<u64>,
+    /// `currentModeId` reported by the agent in `session/new`, when it
+    /// advertises one. `None` if the agent omits modes from the response.
+    pub current_mode: Option<String>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -71,13 +74,14 @@ pub async fn negotiate_session(
             "ignoring resume_session_id on ACP — sessions are subprocess-scoped"
         );
     }
-    let session_id = start_new_session(client, &config.cwd, &mcp_servers).await?;
+    let (session_id, current_mode) = start_new_session(client, &config.cwd, &mcp_servers).await?;
 
     Ok(NegotiatedSession {
         session_id,
         model: model_id,
         mcp_servers: mcp_statuses,
         context_window,
+        current_mode,
     })
 }
 
@@ -113,7 +117,7 @@ async fn start_new_session(
     client: &AcpClient,
     cwd: &Path,
     mcp_servers: &Value,
-) -> Result<String, RuntimeError> {
+) -> Result<(String, Option<String>), RuntimeError> {
     let result = client
         .request_with_timeout(
             "session/new",
@@ -125,7 +129,18 @@ async fn start_new_session(
         )
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/new failed: {e}")))?;
-    extract_session_id(&result, "")
+    let session_id = extract_session_id(&result, "")?;
+    Ok((session_id, extract_current_mode(&result)))
+}
+
+/// Extract `modes.currentModeId` from a `session/new` response, or `None`
+/// when the agent omits it.
+fn extract_current_mode(value: &Value) -> Option<String> {
+    value
+        .get("modes")
+        .and_then(|m| m.get("currentModeId"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
 }
 
 fn extract_session_id(value: &Value, fallback: &str) -> Result<String, RuntimeError> {
@@ -168,7 +183,10 @@ fn mcp_status_list(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_session_id, mcp_status_list, parse_agent_capabilities, AgentCapabilities};
+    use super::{
+        extract_current_mode, extract_session_id, mcp_status_list, parse_agent_capabilities,
+        AgentCapabilities,
+    };
     use crate::domain::agents::adapter::RuntimeMcpServerConfig;
     use serde_json::json;
     use std::collections::HashMap;
@@ -230,5 +248,20 @@ mod tests {
     fn agent_capabilities_default_is_none() {
         let caps = AgentCapabilities::default();
         assert!(!caps.load_session);
+    }
+
+    #[test]
+    fn extract_current_mode_reads_modes_namespace() {
+        let mode = extract_current_mode(&json!({
+            "sessionId": "s-1",
+            "modes": { "currentModeId": "plan" }
+        }));
+        assert_eq!(mode.as_deref(), Some("plan"));
+    }
+
+    #[test]
+    fn extract_current_mode_returns_none_when_absent() {
+        let mode = extract_current_mode(&json!({ "sessionId": "s-1" }));
+        assert!(mode.is_none());
     }
 }

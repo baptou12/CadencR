@@ -316,6 +316,7 @@ async fn set_permission_mode_method_not_found_disables_future_probe_without_erro
         model: None,
         mcp_servers: Vec::new(),
         context_window: None,
+        current_mode: None,
     };
     let (tx, rx) = mpsc::channel(8);
     let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
@@ -359,6 +360,7 @@ async fn interrupt_releases_in_flight_prompt_turn_without_waiting_for_agent_repl
         model: None,
         mcp_servers: Vec::new(),
         context_window: None,
+        current_mode: None,
     };
     let (tx, rx) = mpsc::channel(8);
     let mut session = super::AcpRuntimeSession::assemble(
