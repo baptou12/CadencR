@@ -1,23 +1,39 @@
 //! Per-session registry of live ACP terminals. Each entry owns the
 //! spawned `Child`, a bounded stdout/stderr ring buffer, and the joined
 //! command line we surface to the FE BashBlock.
+//!
+//! `terminal/create` enforces a sandbox: the requested cwd must live under
+//! the session cwd, and the `env` field must follow ACP's array shape
+//! (with a backward-compat warning for the legacy object shape). The
+//! sandbox helpers live in `terminal_sandbox.rs`; the IO ring-buffer and
+//! payload helpers live in `terminal_io.rs`.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+use super::terminal_io::{
+    build_output_payload, exit_signal, spawn_pumps, ExitInfo, TerminalOutput,
+};
+use super::terminal_sandbox::{parse_acp_env, resolve_sandboxed_cwd};
+
 const DEFAULT_OUTPUT_LIMIT: usize = 1024 * 1024; // 1 MiB
 
 #[derive(Default)]
-pub(super) struct TerminalRegistry {
+pub struct TerminalRegistry {
     inner: Mutex<Inner>,
+    /// Tracks whether we've already logged the "deprecated env-as-object"
+    /// warning for this session. The schema-correct shape is
+    /// `[{name, value}, ...]`; we still accept the legacy object form for
+    /// backward compatibility but only warn once per session.
+    legacy_env_warned: AtomicBool,
 }
 
 #[derive(Default)]
@@ -37,52 +53,9 @@ struct TerminalEntry {
     command_line: String,
 }
 
-#[derive(Clone, Debug)]
-struct ExitInfo {
-    exit_code: Option<i32>,
-    signal: Option<i32>,
-}
-
-#[derive(Default)]
-struct TerminalOutput {
-    buffer: Vec<u8>,
-    truncated: bool,
-    limit: usize,
-}
-
-impl TerminalOutput {
-    fn new(limit: usize) -> Self {
-        Self {
-            buffer: Vec::new(),
-            truncated: false,
-            limit,
-        }
-    }
-
-    fn append(&mut self, chunk: &[u8]) {
-        let remaining = self.limit.saturating_sub(self.buffer.len());
-        if remaining == 0 {
-            self.truncated = true;
-            return;
-        }
-        let take = chunk.len().min(remaining);
-        self.buffer.extend_from_slice(&chunk[..take]);
-        if take < chunk.len() {
-            self.truncated = true;
-        }
-    }
-
-    fn snapshot(&self) -> (String, bool) {
-        (
-            String::from_utf8_lossy(&self.buffer).to_string(),
-            self.truncated,
-        )
-    }
-}
-
 impl TerminalRegistry {
     /// Spawn a new terminal under the given session and return its id.
-    pub(super) async fn create(
+    pub async fn create(
         &self,
         params: &Value,
         session_cwd: &PathBuf,
@@ -91,6 +64,13 @@ impl TerminalRegistry {
             .get("command")
             .and_then(Value::as_str)
             .ok_or((-32602, "terminal/create: missing 'command'".to_string()))?;
+        if command.trim().is_empty() {
+            return Err((
+                -32602,
+                "terminal/create: 'command' must not be empty".to_string(),
+            ));
+        }
+
         let args = params
             .get("args")
             .and_then(Value::as_array)
@@ -100,11 +80,10 @@ impl TerminalRegistry {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let cwd = params
-            .get("cwd")
-            .and_then(Value::as_str)
-            .map(PathBuf::from)
-            .unwrap_or_else(|| session_cwd.clone());
+
+        let cwd = resolve_sandboxed_cwd(params.get("cwd"), session_cwd)?;
+        let env = parse_acp_env(params.get("env"), &self.legacy_env_warned)?;
+
         let limit = params
             .get("outputByteLimit")
             .and_then(Value::as_u64)
@@ -118,12 +97,8 @@ impl TerminalRegistry {
         };
         let mut cmd = Command::new(command);
         cmd.args(&args).current_dir(&cwd);
-        if let Some(env) = params.get("env").and_then(Value::as_object) {
-            for (key, value) in env {
-                if let Some(value) = value.as_str() {
-                    cmd.env(key, value);
-                }
-            }
+        for (key, value) in env.iter() {
+            cmd.env(key, value);
         }
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -159,7 +134,7 @@ impl TerminalRegistry {
     /// Look up the command line we stashed at `terminal/create`. ACP's
     /// later tool-call references only carry the `terminalId`, so the
     /// adapter calls this to enrich Bash tool blocks with a `command`.
-    pub(super) async fn command_for(&self, terminal_id: &str) -> Option<String> {
+    pub async fn command_for(&self, terminal_id: &str) -> Option<String> {
         let inner = self.inner.lock().await;
         inner
             .terminals
@@ -170,7 +145,7 @@ impl TerminalRegistry {
     /// Return the current stdout/stderr snapshot as plain text. Used to
     /// surface terminal output in the FE without going through the full
     /// `output()` payload (which is shaped for ACP's wire response).
-    pub(super) async fn output_text(&self, terminal_id: &str) -> Option<String> {
+    pub async fn output_text(&self, terminal_id: &str) -> Option<String> {
         let inner = self.inner.lock().await;
         let entry = inner.terminals.get(terminal_id)?;
         let (text, _) = entry.output.lock().await.snapshot();
@@ -178,7 +153,7 @@ impl TerminalRegistry {
     }
 
     /// Return current accumulated output without blocking.
-    pub(super) async fn output(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
+    pub async fn output(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
         let inner = self.inner.lock().await;
         let Some(entry) = inner.terminals.get(terminal_id) else {
             return Err((-32602, format!("terminal/output: unknown id {terminal_id}")));
@@ -189,7 +164,7 @@ impl TerminalRegistry {
     }
 
     /// Block until the child exits, then return exit info.
-    pub(super) async fn wait_for_exit(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
+    pub async fn wait_for_exit(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
         let child = {
             let mut inner = self.inner.lock().await;
             let Some(entry) = inner.terminals.get_mut(terminal_id) else {
@@ -235,7 +210,7 @@ impl TerminalRegistry {
     }
 
     /// Kill the running command (if any) without releasing the registry slot.
-    pub(super) async fn kill(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
+    pub async fn kill(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
         let mut inner = self.inner.lock().await;
         let Some(entry) = inner.terminals.get_mut(terminal_id) else {
             return Err((-32602, format!("terminal/kill: unknown id {terminal_id}")));
@@ -247,7 +222,7 @@ impl TerminalRegistry {
     }
 
     /// Kill the command if still running and remove the registry entry.
-    pub(super) async fn release(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
+    pub async fn release(&self, terminal_id: &str) -> Result<Value, (i64, String)> {
         let mut inner = self.inner.lock().await;
         let Some(mut entry) = inner.terminals.remove(terminal_id) else {
             return Err((
@@ -263,68 +238,6 @@ impl TerminalRegistry {
         }
         Ok(Value::Null)
     }
-}
-
-fn spawn_pumps(
-    stdout: Option<tokio::process::ChildStdout>,
-    stderr: Option<tokio::process::ChildStderr>,
-    output: Arc<Mutex<TerminalOutput>>,
-) -> Vec<JoinHandle<()>> {
-    let mut handles = Vec::new();
-    if let Some(stdout) = stdout {
-        let output = Arc::clone(&output);
-        handles.push(tokio::spawn(
-            async move { pump_stream(stdout, output).await },
-        ));
-    }
-    if let Some(stderr) = stderr {
-        handles.push(tokio::spawn(
-            async move { pump_stream(stderr, output).await },
-        ));
-    }
-    handles
-}
-
-async fn pump_stream<R>(mut reader: R, output: Arc<Mutex<TerminalOutput>>)
-where
-    R: tokio::io::AsyncRead + Unpin,
-{
-    let mut buf = [0u8; 8192];
-    loop {
-        match reader.read(&mut buf).await {
-            Ok(0) => break,
-            Ok(n) => {
-                let mut guard = output.lock().await;
-                guard.append(&buf[..n]);
-            }
-            Err(_) => break,
-        }
-    }
-}
-
-fn build_output_payload(text: String, truncated: bool, exit: Option<ExitInfo>) -> Value {
-    let mut payload = json!({
-        "output": text,
-        "truncated": truncated,
-    });
-    if let Some(exit) = exit {
-        payload["exitStatus"] = json!({
-            "exitCode": exit.exit_code,
-            "signal": exit.signal,
-        });
-    }
-    payload
-}
-
-#[cfg(unix)]
-fn exit_signal(status: &std::process::ExitStatus) -> Option<i32> {
-    use std::os::unix::process::ExitStatusExt;
-    status.signal()
-}
-
-#[cfg(not(unix))]
-fn exit_signal(_status: &std::process::ExitStatus) -> Option<i32> {
-    None
 }
 
 #[cfg(test)]
@@ -343,7 +256,6 @@ mod tests {
             .expect("create ok");
         let id = result["terminalId"].as_str().unwrap().to_string();
 
-        // Wait for exit so output is flushed.
         let _ = registry.wait_for_exit(&id).await.unwrap();
         let out = registry.output(&id).await.unwrap();
         let text = out["output"].as_str().unwrap();
@@ -359,6 +271,64 @@ mod tests {
             .create(&json!({}), &PathBuf::from("/tmp"))
             .await
             .expect_err("should reject");
+        assert_eq!(err.0, -32602);
+    }
+
+    #[tokio::test]
+    async fn create_empty_command_is_rejected() {
+        let registry = TerminalRegistry::default();
+        let err = registry
+            .create(&json!({ "command": "   " }), &std::env::temp_dir())
+            .await
+            .expect_err("empty command rejected");
+        assert_eq!(err.0, -32602);
+        assert!(err.1.contains("must not be empty"), "got: {}", err.1);
+    }
+
+    #[tokio::test]
+    async fn create_rejects_cwd_outside_session_sandbox() {
+        let session_cwd = std::env::temp_dir();
+        let registry = TerminalRegistry::default();
+        let err = registry
+            .create(&json!({ "command": "echo", "cwd": "/etc" }), &session_cwd)
+            .await
+            .expect_err("escape rejected");
+        assert_eq!(err.0, -32602);
+        assert!(err.1.contains("outside session sandbox"), "got: {}", err.1);
+    }
+
+    #[tokio::test]
+    async fn create_accepts_array_env_shape() {
+        let registry = TerminalRegistry::default();
+        let cwd = std::env::temp_dir();
+        let result = registry
+            .create(
+                &json!({
+                    "command": "sh",
+                    "args": ["-c", "printf %s \"$ACP_PARITY\""],
+                    "env": [{ "name": "ACP_PARITY", "value": "ok" }],
+                }),
+                &cwd,
+            )
+            .await
+            .expect("array env ok");
+        let id = result["terminalId"].as_str().unwrap().to_string();
+        let _ = registry.wait_for_exit(&id).await.unwrap();
+        let out = registry.output(&id).await.unwrap();
+        assert_eq!(out["output"].as_str().unwrap(), "ok");
+        let _ = registry.release(&id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn create_rejects_malformed_env() {
+        let registry = TerminalRegistry::default();
+        let err = registry
+            .create(
+                &json!({ "command": "echo", "env": "not-an-env" }),
+                &std::env::temp_dir(),
+            )
+            .await
+            .expect_err("string env rejected");
         assert_eq!(err.0, -32602);
     }
 

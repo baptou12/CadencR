@@ -296,7 +296,13 @@ impl AgentRuntimeSession for OpenCodeSession {
                         RuntimePermissionDecision::AllowOnce => {
                             opencode_sdk_rs::PermissionReply::Once
                         }
-                        RuntimePermissionDecision::AllowFuture => {
+                        // Both flavours map to OpenCode HTTP's `Always` —
+                        // the HTTP transport doesn't expose a session-only
+                        // grant today, so `AllowForSession` falls through to
+                        // the same persistent reply. Documented divergence
+                        // until the HTTP path grows a session-scoped reply.
+                        RuntimePermissionDecision::AllowFuture
+                        | RuntimePermissionDecision::AllowForSession => {
                             opencode_sdk_rs::PermissionReply::Always
                         }
                         RuntimePermissionDecision::Deny => opencode_sdk_rs::PermissionReply::Reject,

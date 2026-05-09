@@ -1,67 +1,61 @@
-//! Event loop draining the ACP transport into Cadencr `RuntimeEvent`s.
+//! Event-loop and server-request dispatch for the ACP runtime.
 //!
-//! Subscribes to the `AcpClient` broadcast channel, dispatches notifications
-//! through the events.rs mapper, routes server-initiated requests through
-//! the appropriate handler module (permissions / fs / terminal), and turns
-//! `ProcessExited` into a visible `RuntimeError` on the runtime channel.
-//!
-//! The loop keeps a `RwLock`-shared `pending_permissions` map keyed by
-//! request_id so the session's `respond_permission()` method can look up
-//! the original ACP server-request id when the user picks an option.
+//! Subscribes to the `AcpClient` broadcast channel, dispatches `session/update`
+//! notifications through the events.rs mapper, routes server-initiated requests
+//! through the appropriate handler module (permissions / fs / terminal), and
+//! turns `ProcessExited` into a visible `RuntimeError` on the runtime channel.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::{AcpClient, AcpEvent};
-use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimePermissionDecision,
-    RuntimePermissionOption, RuntimePermissionRequest, RuntimeStreamStatus,
-};
-use crate::domain::agents::opencode::acp::event_loop_status::{
-    describe_exit, emit_recovered, sync_session_state_from_update,
-};
-use crate::domain::agents::opencode::acp::event_loop_terminal_enrich::enrich_session_update;
-use crate::domain::agents::opencode::acp::events::{session_update_to_events, EventIndexer};
-use crate::domain::agents::opencode::acp::fs_handler::{
-    handle_read_text_file, handle_write_text_file, FsOutcome,
-};
-use crate::domain::agents::opencode::acp::permissions::permission_request_from_acp;
-use crate::domain::agents::opencode::acp::terminal_registry::TerminalRegistry;
+use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamStatus};
 
-/// Map keyed by Cadencr `request_id` (the ACP server-request id, stringified).
-/// Value is the raw ACP id we need to echo back when responding.
-pub(super) type PendingPermissions = Arc<RwLock<HashMap<String, Value>>>;
+use super::event_loop_state::sync_session_state_from_update;
+use super::events::session_update_to_events;
+use super::events_stream_blocks::EventIndexer;
+use super::fs::{handle_read_text_file, handle_write_text_file, FsOutcome};
+use super::permissions::{
+    dispatch_permission_request, permission_request_from_acp, PendingPermissions,
+};
+use super::provider_hooks::AcpProviderHooks;
+use super::terminal_enrich::enrich_session_update;
+use super::terminal_registry::TerminalRegistry;
 
-pub(super) struct EventLoopHandles {
+pub struct EventLoopHandles {
     pub task: JoinHandle<()>,
 }
 
 #[derive(Clone)]
-pub(super) struct EventLoopConfig {
+pub struct EventLoopConfig {
     pub session_id: Arc<RwLock<Option<String>>>,
     pub current_model: Arc<RwLock<Option<String>>>,
+    pub current_effort: Arc<RwLock<Option<String>>>,
     pub current_mode: Arc<RwLock<String>>,
     pub cwd: PathBuf,
     pub closing: Arc<AtomicBool>,
     pub pending_permissions: PendingPermissions,
     pub terminals: Arc<TerminalRegistry>,
+    pub hooks: Arc<dyn AcpProviderHooks>,
+    /// Shared streaming-block indexer. Owned jointly by the event loop (which
+    /// mutates it on every `session/update`) and the prompt-turn path (which
+    /// drains open blocks at `stop_reason` time — see W4).
+    pub indexer: Arc<Mutex<EventIndexer>>,
 }
 
 /// Spawn the loop. Returns a handle the session can `abort()` on close.
-pub(super) fn spawn_event_loop(
+pub fn spawn_event_loop(
     client: AcpClient,
     mut source_rx: broadcast::Receiver<AcpEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: EventLoopConfig,
 ) -> EventLoopHandles {
     let task = tokio::spawn(async move {
-        let mut indexer = EventIndexer::default();
         // Tracks whether we've previously emitted a `Degraded` banner so we
         // can pair it with a `Recovered` banner once the next regular event
         // arrives. Without this the FE sees a stuck Degraded indicator
@@ -74,7 +68,7 @@ pub(super) fn spawn_event_loop(
                         emit_recovered(&tx).await;
                         degraded = false;
                     }
-                    handle_notification(&method, &params, &mut indexer, &tx, &config).await;
+                    handle_notification(&method, &params, &tx, &config).await;
                 }
                 Ok(AcpEvent::ServerRequest { id, method, params }) => {
                     if degraded {
@@ -95,7 +89,7 @@ pub(super) fn spawn_event_loop(
                             .await;
                         let _ = tx
                             .send(Err(RuntimeError::new(format!(
-                                "opencode ACP process exited: {message}"
+                                "ACP process exited: {message}"
                             ))))
                             .await;
                     }
@@ -122,7 +116,6 @@ pub(super) fn spawn_event_loop(
 async fn handle_notification(
     method: &str,
     params: &Value,
-    indexer: &mut EventIndexer,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: &EventLoopConfig,
 ) {
@@ -135,8 +128,19 @@ async fn handle_notification(
             // the FE with both `toolInput.command` and an inline text result.
             let enriched = enrich_session_update(params, &config.terminals).await;
             let payload = enriched.as_ref().unwrap_or(params);
-            let mapped =
-                session_update_to_events(payload, indexer, model.as_deref(), session_id.as_deref());
+            let mapped = {
+                // Hold the mutex only across the (synchronous) mapping call;
+                // never across `await`. The prompt-turn path competes for
+                // this lock at turn end (see drain_open_blocks).
+                let mut indexer = config.indexer.lock().expect("EventIndexer poisoned");
+                session_update_to_events(
+                    payload,
+                    &mut indexer,
+                    model.as_deref(),
+                    session_id.as_deref(),
+                    config.hooks.as_ref(),
+                )
+            };
             for event in mapped.events {
                 if tx.send(Ok(event)).await.is_err() {
                     return;
@@ -224,55 +228,17 @@ async fn handle_permission_request(
         }
         return;
     };
-    config
-        .pending_permissions
-        .write()
-        .await
-        .insert(request_id.clone(), id.clone());
-
-    let raw = permission_raw_event(&request, params);
-    let metadata = crate::domain::agents::adapter::RuntimeEventMetadata {
-        session_id: config.session_id.read().await.clone(),
-        usage: None,
-        context_window: None,
-        raw,
-    };
-    // The WS bridge picks the request up via `parse_permission_request` on
-    // the raw envelope; mirrors how the HTTP path also surfaces these.
-    let event = RuntimeEvent::new(metadata, RuntimeEventKind::Other);
-    let _ = tx.send(Ok(event)).await;
-    // Hold the server-request open: `respond_permission()` answers it
-    // later. Agent-initiated cancellation just silently drops the id.
-}
-
-fn permission_raw_event(request: &RuntimePermissionRequest, params: &Value) -> Value {
-    json!({
-        "type": "opencode_permission_request",
-        "transport": "acp",
-        "request_id": request.request_id,
-        "call_id": request.tool_use_id,
-        "tool_name": request.tool_name,
-        "tool_input": request.tool_input,
-        "description": request.description,
-        "preview": request.preview,
-        "options": request.options.iter().map(permission_option_json).collect::<Vec<_>>(),
-        "acp": params.clone(),
-    })
-}
-
-fn permission_option_json(option: &RuntimePermissionOption) -> Value {
-    let decision = match option.decision {
-        RuntimePermissionDecision::AllowOnce => "allow_once",
-        RuntimePermissionDecision::AllowFuture => "allow_future",
-        RuntimePermissionDecision::Deny => "deny",
-    };
-    json!({
-        "decision": decision,
-        "option_id": option.option_id,
-        "label": option.label,
-        "description": option.description,
-        "collect_feedback": option.collect_feedback,
-    })
+    let session_id = config.session_id.read().await.clone();
+    dispatch_permission_request(
+        &config.pending_permissions,
+        session_id,
+        &request_id,
+        id.clone(),
+        request,
+        params,
+        tx,
+    )
+    .await;
 }
 
 async fn respond_or_reject(client: &AcpClient, id: Value, outcome: FsOutcome) {
@@ -308,93 +274,35 @@ fn terminal_id_param(params: &Value) -> &str {
         .unwrap_or("")
 }
 
+/// Send a `RuntimeStreamStatus::Recovered` banner. The event loop pairs
+/// this with a previously-emitted `Degraded` so the UI doesn't get stuck
+/// after a transient lag spike.
+async fn emit_recovered(tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>) {
+    let _ = tx
+        .send(Ok(RuntimeEvent::stream_status_event(
+            RuntimeStreamStatus::Recovered,
+        )))
+        .await;
+}
+
+/// Render an exit-status pair `(code, signal)` into a human-readable
+/// reason string for surface envelopes.
+pub fn describe_exit(status: Option<i32>, signal: Option<i32>) -> String {
+    match (status, signal) {
+        (Some(code), _) => format!("exit code {code}"),
+        (_, Some(sig)) => format!("signal {sig}"),
+        _ => "unknown reason".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{spawn_event_loop, EventLoopConfig};
-    use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
-    use crate::domain::agents::adapter::AgentRuntimeAdapter;
-    use crate::domain::agents::opencode::OpenCodeAdapter;
-    use serde_json::json;
-    use std::path::PathBuf;
-    use std::sync::atomic::AtomicBool;
-    use std::sync::Arc;
-    use tokio::io::{duplex, AsyncWriteExt};
-    use tokio::sync::{mpsc, RwLock};
+    use super::describe_exit;
 
-    fn dummy_config() -> EventLoopConfig {
-        EventLoopConfig {
-            session_id: Arc::new(RwLock::new(None)),
-            current_model: Arc::new(RwLock::new(None)),
-            current_mode: Arc::new(RwLock::new("build".to_string())),
-            cwd: PathBuf::from("/tmp"),
-            closing: Arc::new(AtomicBool::new(false)),
-            pending_permissions: Arc::new(RwLock::new(Default::default())),
-            terminals: Arc::new(super::TerminalRegistry::default()),
-        }
-    }
-
-    #[tokio::test]
-    async fn config_pending_permissions_is_per_session_writable() {
-        let cfg = dummy_config();
-        cfg.pending_permissions
-            .write()
-            .await
-            .insert("perm-1".to_string(), serde_json::json!("perm-1"));
-        assert_eq!(cfg.pending_permissions.read().await.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn permission_request_emits_parseable_runtime_permission_event() {
-        let (client_reads_stdout, mut agent_writes_stdout) = duplex(64 * 1024);
-        let (agent_reads_stdin, client_writes_stdin) = duplex(64 * 1024);
-        let client = AcpClient::spawn_with_streams(
-            Box::new(client_writes_stdin),
-            client_reads_stdout,
-            agent_reads_stdin,
-            AcpClientInfo::default(),
-        );
-        let (tx, mut rx) = mpsc::channel(8);
-        let config = dummy_config();
-        *config.session_id.write().await = Some("s1".to_string());
-        let handles = spawn_event_loop(client.clone(), client.subscribe(), tx, config.clone());
-
-        let frame = format!(
-            "{}\n",
-            json!({
-                "id": "perm-1",
-                "method": "session/request_permission",
-                "params": {
-                    "toolCall": {
-                        "toolCallId": "call-1",
-                        "toolName": "Bash",
-                        "toolInput": { "command": "git status" },
-                        "title": "Run a command"
-                    },
-                    "options": [
-                        { "optionId": "yes", "name": "Allow once", "kind": "allow_once" },
-                        { "optionId": "always", "name": "Allow always", "kind": "allow_always" },
-                        { "optionId": "no", "name": "Reject", "kind": "reject_once" }
-                    ]
-                }
-            })
-        );
-        agent_writes_stdout
-            .write_all(frame.as_bytes())
-            .await
-            .unwrap();
-
-        let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        let parsed = OpenCodeAdapter
-            .parse_permission_request(event.raw_json())
-            .expect("permission request should be visible to WS bridge");
-        assert_eq!(parsed.request_id, "perm-1");
-        assert_eq!(parsed.tool_use_id.as_deref(), Some("call-1"));
-        assert_eq!(parsed.options[0].option_id.as_deref(), Some("yes"));
-        assert_eq!(config.pending_permissions.read().await.len(), 1);
-        handles.task.abort();
+    #[test]
+    fn describe_exit_prefers_status_then_signal() {
+        assert_eq!(describe_exit(Some(0), None), "exit code 0");
+        assert_eq!(describe_exit(None, Some(9)), "signal 9");
+        assert_eq!(describe_exit(None, None), "unknown reason");
     }
 }

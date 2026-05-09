@@ -7,11 +7,11 @@
 //! fresh content block per delta, which fragments persisted assistant
 //! messages and breaks streaming render.
 //!
-//! The `Start/Delta/Stop` raw envelopes delegate to the HTTP path helpers
-//! in `super::super::events`. Reusing them is what makes the WS bridge
-//! recognise these as `stream_event`s and route them to the FE's
-//! `ws-block-mutations` parser. Earlier the ACP path passed the raw ACP
-//! `session/update` params through, which the FE didn't know how to render.
+//! The `Start/Delta/Stop` raw envelopes delegate to the OpenCode helpers
+//! in `domain::agents::opencode::events`. They are provider-neutral
+//! constructors (they only build `RuntimeEvent`s) — kept where they live
+//! today so the HTTP path keeps using them too. Future workstreams may
+//! lift them into `acp/runtime` directly.
 
 use std::collections::{HashMap, HashSet};
 
@@ -22,7 +22,7 @@ use crate::domain::agents::opencode::events::{
 };
 
 #[derive(Default)]
-pub(super) struct EventIndexer {
+pub struct EventIndexer {
     next_index: u64,
     tool_indices: HashMap<String, u64>,
     /// Canonical Cadencr-side tool name (e.g. `Write`, `Bash`) keyed by the
@@ -35,26 +35,26 @@ pub(super) struct EventIndexer {
     /// Used by the `plan` session-update mapper to backfill todos onto the
     /// existing tool block (OpenCode emits `tool_call(todowrite)` with an
     /// empty `rawInput`, then sends the actual entries via `plan`).
-    pub(super) last_todowrite_call_id: Option<String>,
-    pub(super) current_text_index: Option<u64>,
-    pub(super) current_thinking_index: Option<u64>,
+    pub last_todowrite_call_id: Option<String>,
+    pub current_text_index: Option<u64>,
+    pub current_thinking_index: Option<u64>,
     /// True once we've emitted a `message_start` for the current assistant
     /// message segment. ACP doesn't have an explicit "new message" signal,
     /// so we synthesise one when text/thinking starts after a turn boundary
     /// or a tool call. The FE relies on this envelope to allocate a new
     /// chat bubble.
-    pub(super) message_started: bool,
+    pub message_started: bool,
     question_prompt_ids: HashSet<String>,
 }
 
 impl EventIndexer {
-    pub(super) fn next_anonymous(&mut self) -> u64 {
+    pub fn next_anonymous(&mut self) -> u64 {
         let i = self.next_index;
         self.next_index += 1;
         i
     }
 
-    pub(super) fn index_for_tool(&mut self, tool_call_id: &str) -> u64 {
+    pub fn index_for_tool(&mut self, tool_call_id: &str) -> u64 {
         if let Some(idx) = self.tool_indices.get(tool_call_id) {
             return *idx;
         }
@@ -66,7 +66,7 @@ impl EventIndexer {
 
     /// Remember the canonical tool name observed at `tool_call` start. Also
     /// stamps the recency tracker for the TodoWrite/plan join.
-    pub(super) fn record_tool_name(&mut self, tool_call_id: &str, tool_name: &str) {
+    pub fn record_tool_name(&mut self, tool_call_id: &str, tool_name: &str) {
         self.tool_names
             .insert(tool_call_id.to_string(), tool_name.to_string());
         if tool_name == "TodoWrite" {
@@ -74,18 +74,18 @@ impl EventIndexer {
         }
     }
 
-    pub(super) fn tool_name_for(&self, tool_call_id: &str) -> Option<&str> {
+    pub fn tool_name_for(&self, tool_call_id: &str) -> Option<&str> {
         self.tool_names.get(tool_call_id).map(String::as_str)
     }
 
-    pub(super) fn mark_question_prompt_emitted(&mut self, tool_call_id: &str) -> bool {
+    pub fn mark_question_prompt_emitted(&mut self, tool_call_id: &str) -> bool {
         self.question_prompt_ids.insert(tool_call_id.to_string())
     }
 
     /// Allocate (or reuse) the index for the currently-open text block.
     /// `is_new == true` means the caller must emit a `ContentBlockStart`
     /// before the first delta; subsequent same-kind chunks just emit deltas.
-    pub(super) fn open_text_block(&mut self) -> (u64, bool) {
+    pub fn open_text_block(&mut self) -> (u64, bool) {
         match self.current_text_index {
             Some(idx) => (idx, false),
             None => {
@@ -96,7 +96,7 @@ impl EventIndexer {
         }
     }
 
-    pub(super) fn open_thinking_block(&mut self) -> (u64, bool) {
+    pub fn open_thinking_block(&mut self) -> (u64, bool) {
         match self.current_thinking_index {
             Some(idx) => (idx, false),
             None => {
@@ -111,7 +111,7 @@ impl EventIndexer {
     /// Caller emits `ContentBlockStop` for each index returned. After the
     /// call both currents are `None`, so the next text/thinking chunk
     /// allocates a fresh block.
-    pub(super) fn drain_open_streaming_blocks(&mut self) -> Vec<u64> {
+    pub fn drain_open_streaming_blocks(&mut self) -> Vec<u64> {
         let mut out = Vec::new();
         if let Some(idx) = self.current_text_index.take() {
             out.push(idx);
@@ -120,6 +120,23 @@ impl EventIndexer {
             out.push(idx);
         }
         out
+    }
+
+    /// Drain any open text/thinking blocks and produce the matching
+    /// `ContentBlockStop` envelopes. Used at turn end (W4) to make sure the
+    /// FE never sees an open streaming block lingering past `stop_reason`.
+    /// Also clears `message_started` so the next turn synthesises a fresh
+    /// `message_start`.
+    pub fn drain_open_blocks(&mut self, session_id: Option<&str>) -> Vec<RuntimeEvent> {
+        let stops: Vec<RuntimeEvent> = self
+            .drain_open_streaming_blocks()
+            .into_iter()
+            .map(|index| stream_stop_event(index, session_id))
+            .collect();
+        if !stops.is_empty() {
+            self.message_started = false;
+        }
+        stops
     }
 }
 
@@ -131,7 +148,7 @@ impl EventIndexer {
 /// Returned via `Vec` rather than wrapping a closure so callers can sequence
 /// the drain (which needs `&mut indexer`) before the mapping call (which
 /// also needs `&mut indexer`) without fighting the borrow checker.
-pub(super) fn drain_streaming_block_stops(
+pub fn drain_streaming_block_stops(
     indexer: &mut EventIndexer,
     session_id: Option<&str>,
 ) -> Vec<RuntimeEvent> {
@@ -145,11 +162,7 @@ pub(super) fn drain_streaming_block_stops(
 /// Emit a `ContentBlockStart` envelope using the HTTP path's canonical raw
 /// shape so the FE WS parser recognises it. `is_thinking` selects between
 /// a Thinking and a Text content block.
-pub(super) fn stream_start_event(
-    index: u64,
-    is_thinking: bool,
-    session_id: Option<&str>,
-) -> RuntimeEvent {
+pub fn stream_start_event(index: u64, is_thinking: bool, session_id: Option<&str>) -> RuntimeEvent {
     let block = if is_thinking {
         RuntimeContentBlock::Thinking {
             thinking: String::new(),
@@ -162,11 +175,11 @@ pub(super) fn stream_start_event(
     http_stream_start_event(session_id.unwrap_or(""), index, block, None)
 }
 
-pub(super) fn stream_stop_event(index: u64, session_id: Option<&str>) -> RuntimeEvent {
+pub fn stream_stop_event(index: u64, session_id: Option<&str>) -> RuntimeEvent {
     http_stream_stop_event(session_id.unwrap_or(""), index, None)
 }
 
-pub(super) fn stream_delta_event(
+pub fn stream_delta_event(
     index: u64,
     delta: RuntimeContentDelta,
     session_id: Option<&str>,
@@ -177,10 +190,7 @@ pub(super) fn stream_delta_event(
 /// Synthesize the per-message envelope the FE uses to allocate a new
 /// assistant chat bubble. Called once per message segment, before the
 /// first text/thinking `ContentBlockStart`.
-pub(super) fn message_start_for(
-    session_id: Option<&str>,
-    active_model: Option<&str>,
-) -> RuntimeEvent {
+pub fn message_start_for(session_id: Option<&str>, active_model: Option<&str>) -> RuntimeEvent {
     message_start_event(
         session_id.unwrap_or(""),
         active_model.map(ToOwned::to_owned),
@@ -230,5 +240,26 @@ mod tests {
         assert_ne!(text_idx, think_idx);
         let drained = idx.drain_open_streaming_blocks();
         assert_eq!(drained.len(), 2);
+    }
+
+    #[test]
+    fn drain_open_blocks_emits_stop_events_and_resets_message_started() {
+        let mut idx = EventIndexer::default();
+        idx.open_text_block();
+        idx.message_started = true;
+        let events = idx.drain_open_blocks(Some("s-1"));
+        assert_eq!(events.len(), 1);
+        assert!(!idx.message_started);
+        assert!(idx.current_text_index.is_none());
+    }
+
+    #[test]
+    fn drain_open_blocks_returns_empty_when_no_blocks_open() {
+        let mut idx = EventIndexer::default();
+        idx.message_started = true;
+        let events = idx.drain_open_blocks(None);
+        assert!(events.is_empty());
+        // No-op drain must not clobber message_started.
+        assert!(idx.message_started);
     }
 }

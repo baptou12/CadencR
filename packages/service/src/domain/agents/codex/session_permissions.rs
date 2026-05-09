@@ -39,7 +39,9 @@ pub(super) fn plan_approval_prompt(
     feedback: Option<String>,
 ) -> String {
     match decision {
-        RuntimePermissionDecision::AllowOnce | RuntimePermissionDecision::AllowFuture => {
+        RuntimePermissionDecision::AllowOnce
+        | RuntimePermissionDecision::AllowFuture
+        | RuntimePermissionDecision::AllowForSession => {
             "Plan approved. Proceed with execution.".to_string()
         }
         RuntimePermissionDecision::Deny => feedback

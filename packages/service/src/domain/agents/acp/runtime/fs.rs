@@ -11,14 +11,14 @@ use serde_json::{json, Value};
 
 /// Outcome of an `fs/*` handler. Either a successful result `Value` to send
 /// back or a `(code, message)` pair to reject with.
-pub(super) enum FsOutcome {
+pub enum FsOutcome {
     Ok(Value),
     Error { code: i64, message: String },
 }
 
 /// Handle an `fs/read_text_file` request. Reads the file at the requested
 /// path and returns `{ content }`. Honors `line` (1-based) and `limit`.
-pub(super) async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
+pub async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
     let Some(path) = params.get("path").and_then(Value::as_str) else {
         return FsOutcome::Error {
             code: -32602,
@@ -49,7 +49,7 @@ pub(super) async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutco
 
 /// Handle an `fs/write_text_file` request. Writes `content` to `path`,
 /// creating parent directories as needed. Returns `null` on success.
-pub(super) async fn handle_write_text_file(cwd: &Path, params: &Value) -> FsOutcome {
+pub async fn handle_write_text_file(cwd: &Path, params: &Value) -> FsOutcome {
     let (Some(path), Some(content)) = (
         params.get("path").and_then(Value::as_str),
         params.get("content").and_then(Value::as_str),

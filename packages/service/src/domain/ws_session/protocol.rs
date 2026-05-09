@@ -216,7 +216,14 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
         Self {
             decision: match option.decision {
                 RuntimePermissionDecision::AllowOnce => PermissionDecision::AllowOnce,
-                RuntimePermissionDecision::AllowFuture => PermissionDecision::AllowFuture,
+                // The WS protocol predates the runtime split between
+                // session-scoped and persistent grants and only exposes a
+                // single `AllowFuture` discriminant; both runtime flavours
+                // collapse onto it for backwards compatibility. Distinct
+                // labels/descriptions still let the FE render two separate
+                // buttons when the agent advertises both kinds.
+                RuntimePermissionDecision::AllowFuture
+                | RuntimePermissionDecision::AllowForSession => PermissionDecision::AllowFuture,
                 RuntimePermissionDecision::Deny => PermissionDecision::Deny,
             },
             option_id: option.option_id,

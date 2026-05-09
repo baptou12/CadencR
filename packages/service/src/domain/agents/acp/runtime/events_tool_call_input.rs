@@ -14,18 +14,14 @@ use serde_json::{json, Value};
 use crate::domain::agents::adapter::{
     RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent,
 };
-use crate::domain::agents::opencode::acp::events::EventIndexer;
-use crate::domain::agents::opencode::acp::events_tool_call_normalize::normalize_edit_input;
+
+use super::events_stream_blocks::EventIndexer;
+use super::provider_hooks::AcpProviderHooks;
 
 /// Tools whose toolArgs the FE renders as a structured block — file diffs,
 /// command bubbles, sub-agent panels. Anything else falls under the generic
 /// ToolCallBlock so we can skip the input-delta synthesis for them.
-///
-/// `Task` / `Agent` are included because `TaskAgentBlock` reads
-/// `description` / `prompt` / `subagent_type` from `toolArgs` to label the
-/// agent panel; without an input delta the FE only sees the empty
-/// `toolInput` from the initial `tool_call` and renders "Subtask".
-fn is_structured_input_tool(tool_name: &str) -> bool {
+pub(super) fn is_structured_input_tool(tool_name: &str) -> bool {
     matches!(
         tool_name,
         "Write"
@@ -36,18 +32,13 @@ fn is_structured_input_tool(tool_name: &str) -> bool {
             | "Bash"
             | "Task"
             | "Agent"
-            // `TodoWrite` is rendered as the meta-bar todo list; the FE
-            // parser pulls `todos[]` straight out of the tool block's
-            // `toolArgs`, so we have to surface OpenCode's
-            // `tool_call_update.rawInput.todos` as an input delta.
             | "TodoWrite"
     )
 }
 
 /// Build a `ContentBlockDelta::InputJson` for an ACP `tool_call_update`
 /// if it carries fresh tool input. Returns `None` for tool kinds whose
-/// FE renderer doesn't depend on toolArgs (which would otherwise emit a
-/// noisy delta with no visual effect).
+/// FE renderer doesn't depend on toolArgs.
 pub(super) fn synthesize_input_delta_event(
     tool_call_id: &str,
     index: u64,
@@ -55,6 +46,7 @@ pub(super) fn synthesize_input_delta_event(
     parent_tool_use_id: Option<String>,
     indexer: &EventIndexer,
     metadata: RuntimeEventMetadata,
+    hooks: &dyn AcpProviderHooks,
 ) -> Option<RuntimeEvent> {
     let tool_name = indexer.tool_name_for(tool_call_id)?.to_string();
     if !is_structured_input_tool(&tool_name) {
@@ -68,7 +60,7 @@ pub(super) fn synthesize_input_delta_event(
         Some(value) if !is_empty_value(&value) => value,
         _ => derive_input_from_content(&tool_name, body)?,
     };
-    let normalized = normalize_edit_input(&tool_name, derived_input);
+    let normalized = hooks.normalize_tool_input(&tool_name, derived_input);
     let partial_json = serde_json::to_string(&normalized).ok()?;
     let mut event = RuntimeEvent::new(
         metadata,
@@ -84,7 +76,7 @@ pub(super) fn synthesize_input_delta_event(
     Some(event)
 }
 
-fn is_empty_value(value: &Value) -> bool {
+pub(super) fn is_empty_value(value: &Value) -> bool {
     match value {
         Value::Null => true,
         Value::Object(map) => map.is_empty(),
@@ -95,9 +87,9 @@ fn is_empty_value(value: &Value) -> bool {
 
 /// Walk the ACP `content[]` array for a `Diff` variant and synthesise a
 /// `{file_path, old_string, new_string}` input. Used for Edit/Write/
-/// MultiEdit where OpenCode sends the actual file payload only inside
+/// MultiEdit where the agent sends the actual file payload only inside
 /// the update's content rather than a top-level `toolInput`.
-fn derive_input_from_content(tool_name: &str, body: &Value) -> Option<Value> {
+pub(super) fn derive_input_from_content(tool_name: &str, body: &Value) -> Option<Value> {
     if !matches!(tool_name, "Write" | "Edit" | "MultiEdit" | "ApplyPatch") {
         return None;
     }
@@ -143,11 +135,36 @@ mod tests {
         derive_input_from_content, is_empty_value, is_structured_input_tool,
         synthesize_input_delta_event,
     };
+    use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
+    use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{
-        RuntimeContentDelta, RuntimeEventMetadata, RuntimeStreamEvent,
+        RuntimeContentDelta, RuntimeEventMetadata, RuntimePermissionDecision,
+        RuntimePermissionMode, RuntimeStreamEvent,
     };
-    use crate::domain::agents::opencode::acp::events::EventIndexer;
     use serde_json::{json, Value};
+
+    struct PlainHooks;
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for PlainHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+        fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
+            input
+        }
+        fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
+            json!(blocks)
+        }
+        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
+            RuntimePermissionDecision::AllowOnce
+        }
+        fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
+            None
+        }
+        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
+            None
+        }
+    }
 
     #[test]
     fn is_structured_input_tool_recognises_diff_and_bash_tools() {
@@ -159,52 +176,13 @@ mod tests {
 
     #[test]
     fn is_structured_input_tool_recognises_subagent_tools() {
-        // Without this, the Task block renders with a literal "Subtask"
-        // label because OpenCode delivers `description` / `prompt` /
-        // `subagent_type` only inside `tool_call_update.rawInput`.
         assert!(is_structured_input_tool("Task"));
         assert!(is_structured_input_tool("Agent"));
     }
 
     #[test]
     fn is_structured_input_tool_recognises_todowrite() {
-        // OpenCode's `tool_call` for todowrite starts with empty rawInput;
-        // the actual todos arrive in `tool_call_update.rawInput.todos`.
-        // Without this entry, the meta-bar todo list never populates.
         assert!(is_structured_input_tool("TodoWrite"));
-    }
-
-    #[test]
-    fn synthesize_emits_input_delta_for_task_subagent_metadata() {
-        let mut idx = EventIndexer::default();
-        idx.record_tool_name("call-1", "Task");
-        let body = json!({
-            "toolInput": {
-                "description": "Run git log oneline -3",
-                "prompt": "Run `git log --oneline -3` and report back.",
-                "subagent_type": "general"
-            }
-        });
-        let event = synthesize_input_delta_event(
-            "call-1",
-            2,
-            &body,
-            None,
-            &idx,
-            RuntimeEventMetadata::default(),
-        )
-        .expect("Task input delta should be synthesised");
-        match event.stream_event().unwrap() {
-            RuntimeStreamEvent::ContentBlockDelta {
-                delta: RuntimeContentDelta::InputJson { partial_json },
-                ..
-            } => {
-                let parsed: Value = serde_json::from_str(partial_json).unwrap();
-                assert_eq!(parsed["description"], "Run git log oneline -3");
-                assert_eq!(parsed["subagent_type"], "general");
-            }
-            other => panic!("unexpected variant: {other:?}"),
-        }
     }
 
     #[test]
@@ -264,6 +242,7 @@ mod tests {
             None,
             &idx,
             RuntimeEventMetadata::default(),
+            &PlainHooks,
         )
         .is_none());
     }
@@ -280,6 +259,7 @@ mod tests {
             None,
             &idx,
             RuntimeEventMetadata::default(),
+            &PlainHooks,
         )
         .is_none());
     }
@@ -296,6 +276,7 @@ mod tests {
             None,
             &idx,
             RuntimeEventMetadata::default(),
+            &PlainHooks,
         )
         .expect("event");
         match event.stream_event().unwrap() {
@@ -328,6 +309,7 @@ mod tests {
             None,
             &idx,
             RuntimeEventMetadata::default(),
+            &PlainHooks,
         )
         .expect("event");
         match event.stream_event().unwrap() {

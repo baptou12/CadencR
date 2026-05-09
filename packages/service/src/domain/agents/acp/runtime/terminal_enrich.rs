@@ -17,13 +17,13 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::domain::agents::opencode::acp::terminal_registry::TerminalRegistry;
+use super::terminal_registry::TerminalRegistry;
 
 /// Walk a `session/update` payload and rewrite any terminal references it
 /// contains. Returns `Some(enriched)` only when at least one substitution
 /// occurred — callers fall back to the original `params` otherwise so we
 /// never pay a clone for non-terminal updates.
-pub(super) async fn enrich_session_update(
+pub async fn enrich_session_update(
     params: &Value,
     terminals: &Arc<TerminalRegistry>,
 ) -> Option<Value> {
@@ -48,9 +48,6 @@ pub(super) async fn enrich_session_update(
     Some(enriched)
 }
 
-/// Collect every `terminalId` referenced inside `update.content[]`. ACP can
-/// embed multiple terminals in a single tool call (e.g. piped commands), so
-/// we resolve them all rather than just the first.
 fn collect_terminal_ids(params: &Value) -> Vec<String> {
     let body = params.get("update").unwrap_or(params);
     let Some(content) = body.get("content").and_then(Value::as_array) else {
@@ -70,9 +67,6 @@ fn collect_terminal_ids(params: &Value) -> Vec<String> {
         .collect()
 }
 
-/// If the body has no `toolInput.command`, inject the registry-stashed
-/// command. We never overwrite an existing command — the agent may have
-/// already provided a richer description we shouldn't clobber.
 fn inject_command_into_tool_input(
     body: &mut serde_json::Map<String, Value>,
     command: Option<&str>,
@@ -90,9 +84,6 @@ fn inject_command_into_tool_input(
     map.insert("command".to_string(), Value::String(command.to_string()));
 }
 
-/// Replace the `{type: "terminal", terminalId}` content entry with a
-/// `{type: "text", text: <output>}` so `flatten_tool_result_content`
-/// collapses it into a string the FE BashBlock result path consumes.
 fn replace_terminal_in_content(
     body: &mut serde_json::Map<String, Value>,
     terminal_id: &str,
@@ -117,7 +108,7 @@ fn replace_terminal_in_content(
 #[cfg(test)]
 mod tests {
     use super::enrich_session_update;
-    use crate::domain::agents::opencode::acp::terminal_registry::TerminalRegistry;
+    use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
     use serde_json::json;
     use std::sync::Arc;
 
@@ -129,7 +120,6 @@ mod tests {
             .await
             .expect("create ok");
         let id = result["terminalId"].as_str().unwrap().to_string();
-        // Wait for exit so output is flushed before the test reads it.
         let _ = registry.wait_for_exit(&id).await.unwrap();
         (registry, id)
     }
@@ -207,9 +197,6 @@ mod tests {
                 "content": [{ "type": "terminal", "terminalId": "term_missing" }]
             }
         });
-        // Still returns Some because we attempted enrichment; output text
-        // falls back to "" but the terminal entry is normalised to text so
-        // the flatten path stops choking on the unknown variant.
         let enriched = enrich_session_update(&params, &registry).await.unwrap();
         assert_eq!(enriched["update"]["content"][0]["type"], "text");
     }

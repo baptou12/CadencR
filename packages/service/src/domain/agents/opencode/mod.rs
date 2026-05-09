@@ -1,5 +1,5 @@
 mod acp;
-mod events;
+pub(crate) mod events;
 mod mcp_config;
 mod model;
 pub(crate) mod permissions;
@@ -156,7 +156,19 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
-        Some(RuntimeCompactionStrategy::SummaryReplay)
+        // TODO: switch back to `SummaryReplay` once OpenCode's ACP transport
+        // advertises `loadSession` / `session/load` so we can re-hydrate a
+        // truncated transcript. Today the ACP subprocess is session-scoped
+        // and there's no spec'd way to replay a summary back into it, so
+        // SummaryReplay would silently lose context. The HTTP transport
+        // still rebuilds via the shared session log, so it gets
+        // SummaryReplay; ACP relies on the agent's own
+        // context-window tracking (surfaced via the `usage_update`
+        // notification → `RuntimeEventMetadata.context_window`).
+        match opencode_transport_env() {
+            OpenCodeTransport::Acp => Some(RuntimeCompactionStrategy::LiveRuntime),
+            OpenCodeTransport::Http => Some(RuntimeCompactionStrategy::SummaryReplay),
+        }
     }
 
     fn supports_permission_mode(

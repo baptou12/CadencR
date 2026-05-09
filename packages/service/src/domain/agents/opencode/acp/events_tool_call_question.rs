@@ -1,9 +1,15 @@
 //! Question-tool mapping helpers for ACP tool calls.
+//!
+//! OpenCode-specific UX: kept in `opencode/acp/` because the question
+//! payload shape and the synthetic `opencode_permission_request` envelope
+//! we emit on the runtime channel are OpenCode quirks. The shared ACP
+//! runtime delegates here through `OpenCodeAcpAdapter`'s tool-call
+//! overrides.
 
 use serde_json::{json, Value};
 
+use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
 use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata};
-use crate::domain::agents::opencode::acp::events::EventIndexer;
 
 pub(super) fn question_start_event(
     tool_call_id: &str,
@@ -93,8 +99,8 @@ fn question_permission_event(
 #[cfg(test)]
 mod tests {
     use super::{question_start_event, question_update_event};
+    use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::adapter::RuntimeEventMetadata;
-    use crate::domain::agents::opencode::acp::events::EventIndexer;
     use serde_json::json;
 
     fn metadata() -> RuntimeEventMetadata {

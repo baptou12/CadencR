@@ -29,10 +29,21 @@ fn approval_response(params: &Value, response: &RuntimePermissionResponse) -> Va
     }
     let decision = match response.decision {
         RuntimePermissionDecision::AllowOnce => "accept",
-        RuntimePermissionDecision::AllowFuture if supports_accept_for_session(params) => {
+        // `AllowForSession` and `AllowFuture` collapse to the same Codex
+        // decision today — Codex's RPC vocabulary already carries the
+        // session-vs-always distinction via `acceptForSession` vs the
+        // separate `permissions_response` "scope" field. The runtime-side
+        // `AllowForSession` was introduced for ACP and is not constructed
+        // by the Codex adapter, but we accept it defensively so an option
+        // that flowed through shared code doesn't panic.
+        RuntimePermissionDecision::AllowFuture | RuntimePermissionDecision::AllowForSession
+            if supports_accept_for_session(params) =>
+        {
             "acceptForSession"
         }
-        RuntimePermissionDecision::AllowFuture => "accept",
+        RuntimePermissionDecision::AllowFuture | RuntimePermissionDecision::AllowForSession => {
+            "accept"
+        }
         RuntimePermissionDecision::Deny => deny_decision(params),
     };
     json!({ "decision": decision })
@@ -139,7 +150,12 @@ fn permissions_response(params: &Value, response: &RuntimePermissionResponse) ->
     }
     let strict_auto_review = response.option_id.as_deref() == Some(STRICT_AUTO_REVIEW_OPTION_ID);
     let scope = match response.decision {
-        RuntimePermissionDecision::AllowFuture => "session",
+        // Both runtime decisions request multi-turn approval for Codex's
+        // permissions RPC; Codex itself decides whether it persists the
+        // grant beyond the session.
+        RuntimePermissionDecision::AllowFuture | RuntimePermissionDecision::AllowForSession => {
+            "session"
+        }
         _ => "turn",
     };
     let mut result = json!({

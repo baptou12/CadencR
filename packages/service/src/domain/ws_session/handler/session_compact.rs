@@ -174,9 +174,15 @@ mod tests {
             compaction_strategy(&sessions, 1).await.unwrap(),
             RuntimeCompactionStrategy::LiveRuntime
         );
+        // OpenCode now picks its compaction strategy per-transport: ACP
+        // sessions get `LiveRuntime` (no `loadSession` support yet) while
+        // HTTP sessions stay on `SummaryReplay`. The transport selector is
+        // currently hard-coded to ACP via TEMP-ACP-FORCE, so this assertion
+        // tracks the active wiring; the HTTP arm is exercised by
+        // `OpenCodeAdapter::compaction_strategy` once the force is lifted.
         assert_eq!(
             compaction_strategy(&sessions, 2).await.unwrap(),
-            RuntimeCompactionStrategy::SummaryReplay
+            RuntimeCompactionStrategy::LiveRuntime
         );
     }
 }

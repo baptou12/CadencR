@@ -18,13 +18,17 @@ use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
 
+pub use super::permissions_dispatch::{
+    dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
+};
+
 /// Convert an ACP `session/request_permission` server-request payload into a
 /// Cadencr `RuntimePermissionRequest`.
 ///
 /// Returns `None` if the params are malformed (no `toolCall`); callers
 /// should respond to the server-request with a JSON-RPC error in that case
 /// rather than silently dropping it.
-pub(super) fn permission_request_from_acp(
+pub fn permission_request_from_acp(
     request_id: &str,
     params: &Value,
 ) -> Option<RuntimePermissionRequest> {
@@ -72,9 +76,17 @@ pub(super) fn permission_request_from_acp(
 fn convert_options(raw: &[Value]) -> Vec<RuntimePermissionOption> {
     let mut out = Vec::new();
     for option in raw {
+        // ACP defines five canonical kinds; we surface four distinct
+        // decisions so the frontend (and the backend response routing)
+        // can distinguish "remember this session" from "remember always".
         let decision = match option.get("kind").and_then(Value::as_str).unwrap_or("") {
             "allow_once" => RuntimePermissionDecision::AllowOnce,
+            "allow_for_session" => RuntimePermissionDecision::AllowForSession,
             "allow_always" => RuntimePermissionDecision::AllowFuture,
+            // `reject_always` collapses to the same on-the-wire response
+            // ("deny + remember"). The runtime doesn't track persistent
+            // rejections separately yet; the agent owns persistence via the
+            // echoed `optionId`.
             "reject_once" | "reject_always" => RuntimePermissionDecision::Deny,
             _ => continue,
         };
@@ -122,6 +134,7 @@ fn default_option_id(decision: RuntimePermissionDecision) -> &'static str {
     match decision {
         RuntimePermissionDecision::AllowOnce => "allow_once",
         RuntimePermissionDecision::AllowFuture => "allow_always",
+        RuntimePermissionDecision::AllowForSession => "allow_for_session",
         RuntimePermissionDecision::Deny => "reject_once",
     }
 }
@@ -129,7 +142,8 @@ fn default_option_id(decision: RuntimePermissionDecision) -> &'static str {
 fn default_label(decision: RuntimePermissionDecision) -> &'static str {
     match decision {
         RuntimePermissionDecision::AllowOnce => "Allow",
-        RuntimePermissionDecision::AllowFuture => "Allow for this session",
+        RuntimePermissionDecision::AllowFuture => "Always allow",
+        RuntimePermissionDecision::AllowForSession => "Allow for this session",
         RuntimePermissionDecision::Deny => "Deny",
     }
 }
@@ -138,16 +152,17 @@ fn default_description(decision: RuntimePermissionDecision) -> &'static str {
     match decision {
         RuntimePermissionDecision::AllowOnce => "Approve this single request",
         RuntimePermissionDecision::AllowFuture => {
-            "Approve similar requests for the rest of the session"
+            "Approve similar requests in this and future sessions"
+        }
+        RuntimePermissionDecision::AllowForSession => {
+            "Approve similar requests for the rest of this session"
         }
         RuntimePermissionDecision::Deny => "Reject this request",
     }
 }
 
 /// Best-effort extraction of a one-line preview ("read README.md", "rm -rf
-/// /") for the permission drawer. Mirrors the HTTP adapter behaviour but
-/// without provider-specific knowledge — we just look at the most common
-/// shape names.
+/// /") for the permission drawer.
 fn derive_preview(tool_input: &Value) -> Option<String> {
     let common_keys = ["command", "cmd", "path", "filePath", "file_path", "url"];
     for key in common_keys {
@@ -179,7 +194,7 @@ fn derive_preview(tool_input: &Value) -> Option<String> {
 /// it under `_meta` AND mirror it as a top-level `feedback` field — agents
 /// that recognise either form pick it up; the rest silently ignore the
 /// extras (per JSON-RPC 2.0 / ACP passthrough).
-pub(super) fn acp_permission_response_payload(
+pub fn acp_permission_response_payload(
     decision: RuntimePermissionDecision,
     option_id: Option<&str>,
     feedback: Option<&str>,
@@ -195,7 +210,10 @@ pub(super) fn acp_permission_response_payload(
     payload
 }
 
-pub(super) fn acp_permission_cancel_payload() -> Value {
+/// Payload used when the user dismisses the permission drawer without
+/// picking an option. W2/W3 will wire this through `cancel_pending`.
+#[allow(dead_code)]
+pub fn acp_permission_cancel_payload() -> Value {
     json!({ "outcome": { "outcome": "cancelled" } })
 }
 

@@ -1,10 +1,8 @@
 //! ACP `plan` SessionUpdate → synthetic `TodoWrite` assistant message.
 //!
-//! OpenCode is doubly chatty here: it sends a `tool_call(todowrite)` (whose
-//! `tool_call_update.rawInput.todos` we already surface via the structured-
-//! input delta in `events_tool_call_input`) AND a `session/update plan`
-//! carrying the same entries. Suppress the plan path in that case so a
-//! single TodoWrite block is produced.
+//! Some ACP agents are doubly chatty: they send a `tool_call(todowrite)` AND
+//! a `session/update plan` carrying the same entries. Suppress the plan path
+//! in that case so a single TodoWrite block is produced.
 //!
 //! For ACP agents that only emit `plan` (no TodoWrite tool_call), we still
 //! synthesise an `AssistantMessage` with a `TodoWrite` tool_use so the FE
@@ -16,9 +14,11 @@ use crate::domain::agents::adapter::{
     RuntimeAssistantMessage, RuntimeContentBlock, RuntimeEvent, RuntimeEventKind,
     RuntimeEventMetadata,
 };
-use crate::domain::agents::opencode::acp::events::{EventIndexer, MappedUpdate};
 
-pub(super) fn map_plan(
+use super::events_stream_blocks::EventIndexer;
+use super::events_tool_call::MappedUpdate;
+
+pub fn map_plan(
     body: &Value,
     indexer: &mut EventIndexer,
     active_model: Option<&str>,
@@ -74,8 +74,8 @@ fn normalize_plan_entry(entry: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::map_plan;
+    use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEventMetadata};
-    use crate::domain::agents::opencode::acp::events::EventIndexer;
     use serde_json::json;
 
     #[test]
@@ -125,11 +125,6 @@ mod tests {
 
     #[test]
     fn map_plan_is_suppressed_when_a_todowrite_tool_call_was_already_recorded() {
-        // OpenCode sends BOTH `tool_call(todowrite)` and `session/update
-        // plan` for the same payload; the tool_call_update path already
-        // emits the structured-input delta carrying `todos[]`. Without
-        // this suppression the FE renders two TodoWrite blocks for one
-        // logical plan write.
         let mut idx = EventIndexer::default();
         idx.record_tool_name("call-1", "TodoWrite");
         let result = map_plan(

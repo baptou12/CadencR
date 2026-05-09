@@ -17,6 +17,7 @@ mod client_spawn;
 mod client_state;
 pub mod error;
 mod protocol;
+pub mod runtime;
 pub mod types;
 
 pub use client::{AcpClient, AcpSpawnOptions};

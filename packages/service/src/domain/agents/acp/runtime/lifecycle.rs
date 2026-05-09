@@ -15,7 +15,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::domain::agents::acp::{AcpClient, AcpError};
+use crate::domain::agents::acp::runtime::mcp::build_stdio_mcp_payload;
+use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeSpawnConfig,
 };
@@ -25,16 +26,15 @@ const INIT_TIMEOUT: Duration = Duration::from_secs(15);
 const SESSION_SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug)]
-pub(super) struct NegotiatedSession {
+pub struct NegotiatedSession {
     pub session_id: String,
     pub model: Option<String>,
     pub mcp_servers: Vec<RuntimeMcpServerStatus>,
     pub context_window: Option<u64>,
-    pub agent_capabilities: AgentCapabilities,
 }
 
 #[derive(Debug, Default, Clone)]
-pub(super) struct AgentCapabilities {
+pub struct AgentCapabilities {
     pub load_session: bool,
 }
 
@@ -42,9 +42,13 @@ pub(super) struct AgentCapabilities {
 /// `RuntimeError` if any step fails fatally (initialize timed out / agent
 /// hung up). Soft failures (resume not supported) are logged and the loop
 /// falls back to a fresh session.
-pub(super) async fn negotiate_session(
+///
+/// `context_window` is provider-resolved: the caller (an adapter) maps the
+/// model id → window using its provider catalog before invoking us.
+pub async fn negotiate_session(
     client: &AcpClient,
     config: &RuntimeSpawnConfig,
+    context_window: Option<u64>,
 ) -> Result<NegotiatedSession, RuntimeError> {
     let init_result = client
         .request_with_timeout("initialize", initialize_params(client), INIT_TIMEOUT)
@@ -53,18 +57,14 @@ pub(super) async fn negotiate_session(
     let capabilities = parse_agent_capabilities(&init_result);
 
     let model_id = config.model.clone();
-    let mcp_servers = build_mcp_payload(config.mcp_servers.as_ref());
+    let mcp_servers = build_stdio_mcp_payload(config.mcp_servers.as_ref());
     let mcp_statuses = mcp_status_list(config.mcp_servers.as_ref());
 
-    // OpenCode-ACP sessions are bound to the subprocess lifetime: a session
-    // id created by one `opencode acp` instance is unknown to the next.
-    // We always spawn a fresh subprocess per Cadencr session, so resume can
-    // never succeed against this agent today. `session/load` for unknown
-    // ids has been observed to hang silently rather than error fast, so
-    // we skip it unconditionally and start fresh. `resume_session_id` is
-    // logged for diagnostics. When OpenCode (or another ACP provider)
-    // adds durable cross-spawn sessions we'll honour `loadSession` here
-    // again.
+    // ACP sessions are bound to the subprocess lifetime: a session id created
+    // by one ACP subprocess is unknown to the next. We always spawn a fresh
+    // subprocess per Cadencr session, so resume can never succeed today.
+    // `session/load` for unknown ids has been observed to hang silently rather
+    // than error fast, so we skip it unconditionally and start fresh.
     if config.resume_session_id.is_some() {
         tracing::debug!(
             advertised_load_session = capabilities.load_session,
@@ -73,21 +73,11 @@ pub(super) async fn negotiate_session(
     }
     let session_id = start_new_session(client, &config.cwd, &mcp_servers).await?;
 
-    // Mirror the HTTP path: derive the context window from the provider
-    // catalog so the FE budget indicator works on ACP too.
-    let context_window = match model_id.as_deref() {
-        Some(model) => {
-            crate::domain::agents::providers::opencode::context_window_for_model(model).await
-        }
-        None => None,
-    };
-
     Ok(NegotiatedSession {
         session_id,
         model: model_id,
         mcp_servers: mcp_statuses,
         context_window,
-        agent_capabilities: capabilities,
     })
 }
 
@@ -117,33 +107,6 @@ fn parse_agent_capabilities(init_response: &Value) -> AgentCapabilities {
         .and_then(Value::as_bool)
         .unwrap_or(false);
     AgentCapabilities { load_session }
-}
-
-async fn try_load_session(
-    client: &AcpClient,
-    session_id: &str,
-    cwd: &Path,
-    mcp_servers: &Value,
-    capabilities: &AgentCapabilities,
-) -> Result<String, AcpError> {
-    if !capabilities.load_session {
-        return Err(AcpError::Rpc {
-            code: -32601,
-            message: "agent does not advertise loadSession capability".to_string(),
-        });
-    }
-    let result = client
-        .request_with_timeout(
-            "session/load",
-            json!({
-                "sessionId": session_id,
-                "cwd": cwd.to_string_lossy(),
-                "mcpServers": mcp_servers,
-            }),
-            SESSION_SETUP_TIMEOUT,
-        )
-        .await?;
-    extract_session_id(&result, session_id).map_err(|error| AcpError::Protocol(error.to_string()))
 }
 
 async fn start_new_session(
@@ -181,38 +144,6 @@ fn extract_session_id(value: &Value, fallback: &str) -> Result<String, RuntimeEr
     ))
 }
 
-/// Build the `mcpServers` array passed to `session/new` / `session/load`.
-///
-/// Today `RuntimeMcpServerConfig` only has a `Stdio` variant, so every
-/// server we know about translates 1:1 onto ACP. When new variants are
-/// added (HTTP/SSE, etc.) the match arm should explicitly emit a warning
-/// — `RuntimeMcpServerConfig` is non-exhaustive on purpose so the
-/// compiler will force this revisit.
-fn build_mcp_payload(servers: Option<&HashMap<String, RuntimeMcpServerConfig>>) -> Value {
-    let Some(servers) = servers else {
-        return Value::Array(Vec::new());
-    };
-    let mut payload = Vec::new();
-    for (name, config) in servers {
-        match config {
-            RuntimeMcpServerConfig::Stdio { command, args, env } => {
-                let mut entry = json!({
-                    "name": name,
-                    "command": command,
-                });
-                if let Some(args) = args {
-                    entry["args"] = json!(args);
-                }
-                if let Some(env) = env {
-                    entry["env"] = json!(env);
-                }
-                payload.push(entry);
-            }
-        }
-    }
-    Value::Array(payload)
-}
-
 /// Synthesise an MCP server status list for the init event. ACP doesn't
 /// expose health info, so we mark every configured server as `connected`
 /// optimistically — bad servers will surface as tool-call failures later.
@@ -233,10 +164,7 @@ fn mcp_status_list(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_mcp_payload, extract_session_id, mcp_status_list, parse_agent_capabilities,
-        AgentCapabilities,
-    };
+    use super::{extract_session_id, mcp_status_list, parse_agent_capabilities, AgentCapabilities};
     use crate::domain::agents::adapter::RuntimeMcpServerConfig;
     use serde_json::json;
     use std::collections::HashMap;
@@ -275,29 +203,6 @@ mod tests {
     fn extract_session_id_rejects_missing_id_when_no_resume_fallback() {
         let error = extract_session_id(&json!({}), "").expect_err("missing new session id fails");
         assert!(error.to_string().contains("missing sessionId"));
-    }
-
-    #[test]
-    fn build_mcp_payload_emits_stdio_entries() {
-        let mut servers = HashMap::new();
-        servers.insert(
-            "fs".to_string(),
-            RuntimeMcpServerConfig::Stdio {
-                command: "/usr/local/bin/mcp-fs".to_string(),
-                args: Some(vec!["--mode".into(), "ro".into()]),
-                env: None,
-            },
-        );
-        let payload = build_mcp_payload(Some(&servers));
-        let entry = &payload.as_array().unwrap()[0];
-        assert_eq!(entry["name"], "fs");
-        assert_eq!(entry["command"], "/usr/local/bin/mcp-fs");
-        assert_eq!(entry["args"], json!(["--mode", "ro"]));
-    }
-
-    #[test]
-    fn build_mcp_payload_handles_none() {
-        assert!(build_mcp_payload(None).as_array().unwrap().is_empty());
     }
 
     #[test]

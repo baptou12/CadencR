@@ -170,7 +170,18 @@ impl From<codex_app_server_sdk_rs::SdkError> for RuntimeError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePermissionDecision {
     AllowOnce,
+    /// Persist the decision across sessions/runs. Maps to ACP's
+    /// `allow_always` option kind. OpenCode's HTTP transport persists this
+    /// via `PermissionReply::Always`; ACP-side, the agent owns persistence
+    /// via the `optionId` we echo back.
     AllowFuture,
+    /// Allow for the lifetime of the current session only. Maps to ACP's
+    /// `allow_for_session` option kind. The runtime keeps a per-session map
+    /// in `AcpRuntimeSession`; the agent additionally enforces it server-
+    /// side via the echoed `optionId`. Distinct from `AllowFuture` so we
+    /// can route different `optionId`s back to ACP without conflating
+    /// "remember forever" with "remember this session only".
+    AllowForSession,
     Deny,
 }
 
