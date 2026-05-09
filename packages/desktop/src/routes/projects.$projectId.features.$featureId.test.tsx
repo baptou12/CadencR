@@ -1,19 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen } from "@/test-utils";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
   const mockUseParams = vi.fn(() => ({ featureId: "1", projectId: "2" }));
+  const mockUseSearch = vi.fn(() => ({}));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mockGetByIdQuery = vi.fn(() => ({ data: undefined as any })) as any;
   const mockSaveLastOpened = vi.fn();
-  return { mockUseParams, mockGetByIdQuery, mockSaveLastOpened };
+  return { mockUseParams, mockUseSearch, mockGetByIdQuery, mockSaveLastOpened };
 });
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (_path: string) => (opts: { component: unknown }) => ({
     options: opts,
-    useSearch: vi.fn(() => ({})),
+    useSearch: mocks.mockUseSearch,
     useParams: mocks.mockUseParams,
   }),
   useNavigate: () => vi.fn(),
@@ -107,11 +108,15 @@ vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
   useSaveLastOpenedFeature: mocks.mockSaveLastOpened,
 }));
 
-import { Route } from "./projects/$projectId/features/$featureId";
+let routeModule: { options: { component: React.ComponentType } };
+
+beforeAll(async () => {
+  const mod = await import("./projects/$projectId/features/$featureId");
+  routeModule = mod.Route as unknown as { options: { component: React.ComponentType } };
+});
 
 function FeaturePage() {
-  const Component = (Route as unknown as { options: { component: React.ComponentType } }).options
-    ?.component;
+  const Component = routeModule.options?.component;
   if (!Component) return null;
   return <Component />;
 }
@@ -119,6 +124,7 @@ function FeaturePage() {
 describe("FeaturePage route", () => {
   beforeEach(() => {
     mocks.mockUseParams.mockReturnValue({ featureId: "1", projectId: "2" });
+    mocks.mockUseSearch.mockReturnValue({});
     mocks.mockGetByIdQuery.mockReturnValue({ data: undefined });
     mocks.mockSaveLastOpened.mockClear();
   });
