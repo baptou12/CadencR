@@ -10,6 +10,32 @@ describe("validateWsSessionSearch", () => {
     });
   });
 
+  it("accepts valid focusTab values", () => {
+    expect(
+      validateWsSessionSearch({
+        cwd: "/repo",
+        featureId: "7",
+        projectId: 2,
+        focusTab: "terminal",
+      }),
+    ).toEqual({
+      cwd: "/repo",
+      featureId: 7,
+      projectId: 2,
+      focusTab: "terminal",
+    });
+  });
+
+  it("ignores invalid focusTab values", () => {
+    expect(
+      validateWsSessionSearch({ cwd: "/repo", featureId: "7", projectId: 2, focusTab: "bogus" }),
+    ).toEqual({
+      cwd: "/repo",
+      featureId: 7,
+      projectId: 2,
+    });
+  });
+
   it("rejects fractional ids", () => {
     expect(() => validateWsSessionSearch({ cwd: "/repo", featureId: "1.5", projectId: 2 })).toThrow(
       /featureId/,

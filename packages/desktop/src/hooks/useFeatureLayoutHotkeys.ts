@@ -1,11 +1,7 @@
 import { useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
-import {
-  findPaneContaining,
-  selectFeatureLayout,
-  useFeatureLayoutStore,
-} from "@/stores/feature-layout-store";
+import { activateFeatureTab } from "@/stores/feature-layout-store";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
 
@@ -26,19 +22,15 @@ export function useFeatureLayoutHotkeys(
   featureId: number,
   options: FeatureLayoutHotkeysOptions = {},
 ): void {
-  const setPaneActiveTab = useFeatureLayoutStore((s) => s.setPaneActiveTab);
   const { onTerminalActivate, onEditorActivate, enabled = true } = options;
 
   const activate = useCallback(
     (tab: TabKind) => {
-      const state = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
-      const leaf = findPaneContaining(state.splitRoot, tab);
-      if (!leaf) return;
-      setPaneActiveTab(featureId, leaf.id, tab);
+      if (!activateFeatureTab(featureId, tab)) return;
       if (tab === "terminal") onTerminalActivate?.();
       if (tab === "editor") onEditorActivate?.();
     },
-    [featureId, setPaneActiveTab, onTerminalActivate, onEditorActivate],
+    [featureId, onTerminalActivate, onEditorActivate],
   );
 
   useHotkeys(

@@ -9,13 +9,14 @@ export const Route = createFileRoute("/ws-session/$sessionId")({
 
 function WebSocketSessionPage() {
   const { sessionId } = Route.useParams();
-  const { cwd, featureId, projectId } = Route.useSearch();
+  const { cwd, featureId, projectId, focusTab } = Route.useSearch();
   return (
     <WebSocketSessionFeatureBlock
       sessionId={sessionId}
       cwd={cwd}
       featureId={featureId}
       projectId={projectId}
+      requestedFocusTab={focusTab}
     />
   );
 }

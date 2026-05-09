@@ -54,6 +54,7 @@ export function PaneChrome({
       >
         <PaneTabStrip paneId={leaf.id} enabled={splitsEnabled}>
           <PaneTabs
+            featureId={featureId}
             leaf={leaf}
             tabs={tabs}
             isRoot={isRoot}
@@ -79,6 +80,7 @@ export function PaneChrome({
 }
 
 interface PaneTabsProps {
+  featureId: number;
   leaf: LayoutLeaf;
   tabs: FeatureTabs;
   isRoot: boolean;
@@ -90,6 +92,7 @@ interface PaneTabsProps {
 }
 
 function PaneTabs({
+  featureId,
   leaf,
   tabs,
   isRoot,
@@ -113,6 +116,7 @@ function PaneTabs({
           splitsEnabled ? (
             <DraggableTabTrigger
               key={tab}
+              featureId={featureId}
               paneId={leaf.id}
               tab={tab}
               tabs={tabs}
@@ -127,6 +131,7 @@ function PaneTabs({
           ) : (
             <StaticTabTrigger
               key={tab}
+              featureId={featureId}
               tab={tab}
               tabs={tabs}
               isFocusedPane={isFocused}
@@ -144,6 +149,7 @@ function PaneTabs({
 // ---------------------------------------------------------------------------
 
 interface DraggableTabTriggerProps {
+  featureId: number;
   paneId: string;
   tab: TabKind;
   tabs: FeatureTabs;
@@ -154,6 +160,7 @@ interface DraggableTabTriggerProps {
 }
 
 function DraggableTabTrigger({
+  featureId,
   paneId,
   tab,
   tabs,
@@ -179,6 +186,8 @@ function DraggableTabTrigger({
     >
       <TabsTrigger
         value={tab}
+        data-feature-tab-kind={tab}
+        data-feature-id={featureId}
         {...attributes}
         {...listeners}
         onClick={onActivate}
@@ -210,6 +219,7 @@ function DraggableTabTrigger({
 }
 
 interface StaticTabTriggerProps {
+  featureId: number;
   tab: TabKind;
   tabs: FeatureTabs;
   isFocusedPane: boolean;
@@ -217,6 +227,7 @@ interface StaticTabTriggerProps {
 }
 
 function StaticTabTrigger({
+  featureId,
   tab,
   tabs,
   isFocusedPane,
@@ -226,6 +237,8 @@ function StaticTabTrigger({
   return (
     <TabsTrigger
       value={tab}
+      data-feature-tab-kind={tab}
+      data-feature-id={featureId}
       onClick={onActivate}
       className={cn("group", !isFocusedPane && "data-[state=active]:after:bg-transparent")}
     >

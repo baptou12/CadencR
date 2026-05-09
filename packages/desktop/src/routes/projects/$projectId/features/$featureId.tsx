@@ -3,9 +3,11 @@ import { isAxiosError } from "axios";
 import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
+import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
 
 interface FeatureSearch {
   initialDescription?: string;
+  focusTab?: TabKind;
 }
 
 export const Route = createFileRoute("/projects/$projectId/features/$featureId")({
@@ -13,12 +15,13 @@ export const Route = createFileRoute("/projects/$projectId/features/$featureId")
   validateSearch: (search: Record<string, unknown>): FeatureSearch => ({
     initialDescription:
       typeof search.initialDescription === "string" ? search.initialDescription : undefined,
+    focusTab: isTabKind(search.focusTab) ? search.focusTab : undefined,
   }),
 });
 
 function FeaturePage() {
   const { featureId, projectId } = Route.useParams();
-  const { initialDescription } = Route.useSearch();
+  const { initialDescription, focusTab } = Route.useSearch();
   const numericFeatureId = Number(featureId);
   const numericProjectId = Number(projectId);
 
@@ -30,7 +33,13 @@ function FeaturePage() {
   const isWsSession = feature?.type === "ws-session";
 
   if (isWsSession) {
-    return <WsSessionRedirect featureId={numericFeatureId} projectId={numericProjectId} />;
+    return (
+      <WsSessionRedirect
+        featureId={numericFeatureId}
+        projectId={numericProjectId}
+        focusTab={focusTab}
+      />
+    );
   }
 
   // The backend now returns 404 when a feature has been deleted (instead of
@@ -87,7 +96,15 @@ function FeatureLoadError({ error, onRetry }: { error: unknown; onRetry: () => v
 // WS session redirect — navigates to the WS session route
 // ---------------------------------------------------------------------------
 
-function WsSessionRedirect({ featureId, projectId }: { featureId: number; projectId: number }) {
+function WsSessionRedirect({
+  featureId,
+  projectId,
+  focusTab,
+}: {
+  featureId: number;
+  projectId: number;
+  focusTab?: TabKind;
+}) {
   const projectsQuery = useListProjects();
   const project = projectsQuery.data?.find((p) => p.id === projectId);
 
@@ -101,7 +118,11 @@ function WsSessionRedirect({ featureId, projectId }: { featureId: number; projec
     <Navigate
       to="/ws-session/$sessionId"
       params={{ sessionId: wsSessionId }}
-      search={{ cwd: project.path, featureId, projectId }}
+      search={
+        focusTab
+          ? { cwd: project.path, featureId, projectId, focusTab }
+          : { cwd: project.path, featureId, projectId }
+      }
       replace
     />
   );

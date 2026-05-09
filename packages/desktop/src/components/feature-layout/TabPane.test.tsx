@@ -163,6 +163,31 @@ describe("TabPane", () => {
     expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
   });
 
+  it("marks the pane focused when activating an already-active tab by click", () => {
+    useFeatureLayoutStore.getState().setState(FEATURE_ID, {
+      version: 1,
+      splitRoot: {
+        type: "split",
+        orientation: "horizontal",
+        children: [
+          { ...leaf, activeTabId: "terminal" },
+          { type: "leaf", id: "other", tabIds: ["git"], activeTabId: "git" },
+        ],
+      },
+      focusedPaneId: "other",
+      appliedLayoutId: null,
+    });
+    render(
+      <DndContext>
+        <TabPane featureId={FEATURE_ID} leaf={{ ...leaf, activeTabId: "terminal" }} tabs={tabs} />
+      </DndContext>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /terminal/i }));
+
+    expect(useFeatureLayoutStore.getState().features[FEATURE_ID]?.focusedPaneId).toBe(ROOT_LEAF_ID);
+  });
+
   it("marks the pane focused when clicking inside tab content", () => {
     useFeatureLayoutStore.getState().setState(FEATURE_ID, {
       version: 1,

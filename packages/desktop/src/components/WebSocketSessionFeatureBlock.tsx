@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
@@ -6,11 +6,13 @@ import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShe
 import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { ROOT_LEAF_ID, type TabKind } from "@/stores/feature-layout-schema";
 import {
+  findPaneContaining,
   getFocusedTab,
   isTabVisible,
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
+import { useRequestedFeatureFocus } from "@/hooks/useRequestedFeatureFocus";
 import {
   useSessionControls,
   useSessionFeatureData,
@@ -36,6 +38,7 @@ export interface WebSocketSessionFeatureBlockProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  requestedFocusTab?: TabKind;
 }
 
 export function WebSocketSessionFeatureBlock(
@@ -64,8 +67,10 @@ function WebSocketSessionFeatureBody(
     embedded = false,
     hotkeysEnabled = true,
     onActivate,
+    requestedFocusTab,
   } = props;
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
+  const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
   useSaveLastOpenedFeature(projectId, featureId, focusedTabId, embedded);
 
@@ -79,6 +84,8 @@ function WebSocketSessionFeatureBody(
   });
   const refs = useSessionRefs();
   const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
+  const requestedFocusKeyRef = useRef<string | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
 
   const { handleViewDiff, sendPromptAndFocus, sendFromGitTab } = useSessionFeatureActions({
     layoutFeatureId,
@@ -96,9 +103,35 @@ function WebSocketSessionFeatureBody(
     refs,
     focusedTabId,
     hotkeysEnabled,
-    autoFocusPrompt: !embedded,
+    autoFocusPrompt: !embedded && !requestedFocusPending,
     autoInitSession: !embedded,
   });
+  useEffect((): (() => void) | void => {
+    if (!requestedFocusTab || requestedFocusPending) return;
+
+    const key = `${layoutFeatureId}:${requestedFocusTab}`;
+    if (requestedFocusKeyRef.current === key) return;
+    requestedFocusKeyRef.current = key;
+    const focusRequestedTarget = (): void => {
+      if (requestedFocusTab === "agent") refs.agent.current?.focusPromptBar();
+      if (requestedFocusTab === "terminal") refs.terminal.current?.activate();
+      if (requestedFocusTab === "editor") refs.editor.current?.focusActiveEditor();
+      if (requestedFocusTab === "git" && sectionRef.current) {
+        focusTabTrigger(sectionRef.current, layoutFeatureId, requestedFocusTab);
+      }
+    };
+    const frame = requestAnimationFrame(focusRequestedTarget);
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [
+    layoutFeatureId,
+    refs.agent,
+    refs.editor,
+    refs.terminal,
+    requestedFocusTab,
+    requestedFocusPending,
+  ]);
   useWsSessionShortcuts({ controls, setInlineDiffOpen, hotkeysEnabled });
 
   const tabs = useFeatureBlockTabs({
@@ -116,6 +149,7 @@ function WebSocketSessionFeatureBody(
 
   return (
     <section
+      ref={sectionRef}
       tabIndex={0}
       onFocusCapture={onActivate}
       onPointerDownCapture={onActivate}
@@ -153,6 +187,21 @@ function WebSocketSessionFeatureBody(
       />
     </section>
   );
+}
+
+function focusTabTrigger(container: HTMLElement, layoutFeatureId: number, tab: TabKind): void {
+  const layout = useFeatureLayoutStore.getState().features[layoutFeatureId];
+  const paneId = layout ? findPaneContaining(layout.splitRoot, tab)?.id : null;
+  const triggers = container.querySelectorAll<HTMLElement>("[data-feature-tab-kind]");
+  for (const trigger of triggers) {
+    if (trigger.dataset.featureTabKind !== tab) continue;
+    if (trigger.dataset.featureId !== String(layoutFeatureId)) continue;
+    if (paneId && trigger.closest("[data-pane-id]")?.getAttribute("data-pane-id") !== paneId) {
+      continue;
+    }
+    trigger.focus({ preventScroll: true });
+    return;
+  }
 }
 
 function useFeatureBlockTabs(args: {

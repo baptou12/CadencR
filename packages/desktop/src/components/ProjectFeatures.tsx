@@ -21,6 +21,7 @@ import { apiErrorMessage } from "@/lib/api-errors";
 import { ProjectFeatureRow, type FeatureStatus } from "@/components/ProjectFeatureRow";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
+import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
 export function ProjectFeatures({
   projectId,
@@ -131,12 +132,15 @@ export function ProjectFeatures({
 
   const handleNavigate = (feature: Feature) => {
     onSelectFeature(feature.id);
+    const focusTab = getFocusedTabForFeature(activeFeatureId);
     if (feature.type === "ws-session") {
       const wsSessionId = wsSessionIdFromFeature(feature.id);
       void navigate({
         to: "/ws-session/$sessionId",
         params: { sessionId: wsSessionId },
-        search: { cwd: projectPath, featureId: feature.id, projectId },
+        search: focusTab
+          ? { cwd: projectPath, featureId: feature.id, projectId, focusTab }
+          : { cwd: projectPath, featureId: feature.id, projectId },
       });
     } else {
       void navigate({
@@ -145,11 +149,9 @@ export function ProjectFeatures({
           projectId: String(projectId),
           featureId: String(feature.id),
         },
+        search: focusTab ? { focusTab } : undefined,
       });
     }
-    requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
-    });
   };
 
   const handleStatusChange = (featureId: number, status: FeatureStatus) => {

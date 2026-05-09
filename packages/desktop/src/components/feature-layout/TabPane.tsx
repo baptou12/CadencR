@@ -90,6 +90,7 @@ export function TabPane({
 
   const activateTab = useCallback(
     (tab: TabKind): void => {
+      markPaneFocused();
       if (activatedTabRef.current === tab) return;
       activatedTabRef.current = tab;
       queueMicrotask(() => {
@@ -98,7 +99,7 @@ export function TabPane({
       if (leaf.activeTabId !== tab) setPaneActiveTab(featureId, leaf.id, tab);
       notifyTabActivation(tab);
     },
-    [featureId, leaf.activeTabId, leaf.id, notifyTabActivation, setPaneActiveTab],
+    [featureId, leaf.activeTabId, leaf.id, markPaneFocused, notifyTabActivation, setPaneActiveTab],
   );
 
   const handleTabChange = useCallback(

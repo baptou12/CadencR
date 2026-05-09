@@ -33,12 +33,16 @@ vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
 }));
 
 vi.mock("@/stores/feature-layout-store", () => ({
+  findPaneContaining: () => null,
   getFocusedTab: () => "agent",
   isTabVisible: () => false,
   selectFeatureLayout: () => () => ({}),
   useFeatureLayoutStore: (
-    selector: (state: { setPaneActiveTab: typeof mocks.setPaneActiveTab }) => unknown,
-  ) => selector({ setPaneActiveTab: mocks.setPaneActiveTab }),
+    selector: (state: {
+      features: Record<number, unknown>;
+      setPaneActiveTab: typeof mocks.setPaneActiveTab;
+    }) => unknown,
+  ) => selector({ features: {}, setPaneActiveTab: mocks.setPaneActiveTab }),
 }));
 
 vi.mock("@/components/WebSocketSessionFeatureBlockHooks", () => ({

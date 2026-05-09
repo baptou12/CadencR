@@ -302,6 +302,15 @@ export function findHostFor(state: FeatureLayoutState, tab: TabKind): string | n
   return findPaneContaining(state.splitRoot, tab)?.id ?? null;
 }
 
+export function activateFeatureTab(featureId: number, tab: TabKind): boolean {
+  const state = useFeatureLayoutStore.getState().features[featureId];
+  if (!state) return false;
+  const paneId = findHostFor(state, tab);
+  if (!paneId) return false;
+  useFeatureLayoutStore.getState().setPaneActiveTab(featureId, paneId, tab);
+  return true;
+}
+
 /** Pane whose active tab should be treated as globally focused. */
 export function getFocusedLeaf(state: FeatureLayoutState): LayoutLeaf | null {
   const focusedLeaf = state.focusedPaneId

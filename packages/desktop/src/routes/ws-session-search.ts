@@ -1,7 +1,10 @@
+import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
+
 export interface WsSessionSearch {
   cwd: string;
   featureId: number;
   projectId: number;
+  focusTab?: TabKind;
 }
 
 export function validateWsSessionSearch(search: Record<string, unknown>): WsSessionSearch {
@@ -16,5 +19,8 @@ export function validateWsSessionSearch(search: Record<string, unknown>): WsSess
   if (!Number.isInteger(projectId) || projectId <= 0) {
     throw new Error("projectId search param is required for WebSocket sessions");
   }
-  return { cwd: search.cwd, featureId, projectId };
+  const focusTab = isTabKind(search.focusTab) ? search.focusTab : undefined;
+  return focusTab
+    ? { cwd: search.cwd, featureId, projectId, focusTab }
+    : { cwd: search.cwd, featureId, projectId };
 }

@@ -11,6 +11,7 @@ import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicato
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
+import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
 export function Sidebar() {
   const { setCollapsed } = useSidebarCollapsed();
@@ -18,7 +19,7 @@ export function Sidebar() {
   const sidebarRef = useRef<HTMLElement>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
   const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
-  useSidebarKeyboardNavigation(sidebarRef, navigate);
+  useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
 
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
@@ -63,6 +64,7 @@ function useSidebarActiveIds(selectedFeatureId: number | null): {
 function useSidebarKeyboardNavigation(
   sidebarRef: RefObject<HTMLElement | null>,
   navigate: ReturnType<typeof useNavigate>,
+  activeFeatureId: number | null,
 ): void {
   const getNavItems = (): HTMLElement[] => {
     if (!sidebarRef.current) return [];
@@ -121,12 +123,11 @@ function useSidebarKeyboardNavigation(
       const projectId = focused.getAttribute("data-nav-project-id");
 
       if (type === "feature" && id && projectId) {
+        const focusTab = getFocusedTabForFeature(activeFeatureId);
         void navigate({
           to: "/projects/$projectId/features/$featureId",
           params: { projectId, featureId: id },
-        });
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
+          search: focusTab ? { focusTab } : undefined,
         });
       } else if (type === "project" && id) {
         // Toggle expand by clicking the project button

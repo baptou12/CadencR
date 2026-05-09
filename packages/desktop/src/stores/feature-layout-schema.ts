@@ -105,7 +105,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isTabKind(value: unknown): value is TabKind {
+export function isTabKind(value: unknown): value is TabKind {
   return value === "agent" || value === "terminal" || value === "git" || value === "editor";
 }
 

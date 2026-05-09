@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { shouldIgnoreFeatureRowKeyDown } from "./ProjectFeatureRow";
 import { resetMockIds } from "@/test-fixtures";
+import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
+import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
 const mockNavigate = vi.fn();
 const _mockInvalidate = vi.fn();
@@ -91,6 +93,7 @@ describe("ProjectFeatures", () => {
     mockUpdateStatus.mockClear();
     mockUpdateLabel.mockClear();
     mockDelete.mockClear();
+    useFeatureLayoutStore.setState({ features: {} });
   });
 
   it("renders feature list", () => {
@@ -147,6 +150,37 @@ describe("ProjectFeatures", () => {
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
         to: "/projects/$projectId/features/$featureId",
+      }),
+    );
+  });
+
+  it("passes the currently focused tab when navigating to another feature", async () => {
+    const user = userEvent.setup();
+    useFeatureLayoutStore.getState().setState(1, {
+      version: 1,
+      splitRoot: {
+        type: "leaf",
+        id: ROOT_LEAF_ID,
+        tabIds: ["agent", "terminal", "git", "editor"],
+        activeTabId: "terminal",
+      },
+      focusedPaneId: ROOT_LEAF_ID,
+      appliedLayoutId: null,
+    });
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={1}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Feature Two"));
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({ focusTab: "terminal" }),
       }),
     );
   });
