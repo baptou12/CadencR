@@ -53,7 +53,7 @@ describe("ProjectSettingsDialog", () => {
     render(
       <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
-    expect(screen.getByText("Worktree Setup Commands")).toBeInTheDocument();
+    expect(screen.getByText("Worktree setup commands")).toBeInTheDocument();
   });
 
   it("renders setup worktree commands as a shell editor", () => {
@@ -68,7 +68,7 @@ describe("ProjectSettingsDialog", () => {
     render(
       <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
-    expect(screen.getByText("Agent Autonomy")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: /agent autonomy/i })).toBeInTheDocument();
   });
 
   it("closes dialog when escape is pressed", async () => {

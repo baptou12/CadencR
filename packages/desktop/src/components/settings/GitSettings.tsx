@@ -7,19 +7,21 @@ import {
   useGetWorkspaceSetting,
   useSetWorkspaceSetting,
 } from "@/api/generated";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioCardGroup, type RadioCardOption } from "./RadioCardGroup";
 import {
   GIT_MERGE_MODE_KEY,
   GIT_MERGE_MODE_OPTIONS,
   parseGitMergeMode,
   type GitMergeMode,
 } from "@/lib/git-merge-mode";
+
+/** CSS color var per merge mode — mirrors the design's accent-tinted flag chips. */
+const MERGE_FLAG_COLOR_VAR: Record<GitMergeMode, string> = {
+  default: "var(--muted-foreground)",
+  no_ff: "var(--acc-purple)",
+  ff_only: "var(--acc-cyan)",
+  squash: "var(--acc-orange)",
+};
 
 export function GitSettings(): ReactElement {
   const queryClient = useQueryClient();
@@ -39,39 +41,33 @@ export function GitSettings(): ReactElement {
   });
 
   const value = parseGitMergeMode(setting.data?.value);
-  const selected = GIT_MERGE_MODE_OPTIONS.find((option) => option.value === value);
 
   function updateMergeMode(next: GitMergeMode): void {
-    setSetting.mutate({
-      key: GIT_MERGE_MODE_KEY,
-      data: { value: next },
-    });
+    setSetting.mutate({ key: GIT_MERGE_MODE_KEY, data: { value: next } });
   }
 
-  return (
-    <div className="space-y-2">
-      <label htmlFor="git-merge-strategy" className="text-sm font-medium">
-        Merge Strategy
-      </label>
-      <Select
-        value={value}
-        onValueChange={(next) => updateMergeMode(next as GitMergeMode)}
-        disabled={setSetting.isPending}
+  const options: RadioCardOption<GitMergeMode>[] = GIT_MERGE_MODE_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label,
+    description: option.description,
+    visual: (
+      <span
+        className="mt-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]"
+        style={{ color: MERGE_FLAG_COLOR_VAR[option.value] }}
       >
-        <SelectTrigger id="git-merge-strategy" className="w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {GIT_MERGE_MODE_OPTIONS.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <p className="text-xs text-muted-foreground">
-        {selected?.description ?? "Choose the default option used by the Merge action."}
-      </p>
-    </div>
+        {option.flag}
+      </span>
+    ),
+  }));
+
+  return (
+    <RadioCardGroup<GitMergeMode>
+      ariaLabel="Merge strategy"
+      value={value}
+      onChange={updateMergeMode}
+      options={options}
+      layout="grid"
+      disabled={setSetting.isPending}
+    />
   );
 }

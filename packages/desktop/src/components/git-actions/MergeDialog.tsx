@@ -27,7 +27,7 @@ import {
 import {
   GIT_MERGE_MODE_KEY,
   GIT_MERGE_MODE_OPTIONS,
-  gitMergeModeLabel,
+  gitMergeModeFlag,
   parseGitMergeMode,
   type GitMergeMode,
 } from "@/lib/git-merge-mode";
@@ -76,7 +76,7 @@ export default function MergeDialog({
           queryKey: getGetWorkspaceSettingQueryKey(GIT_MERGE_MODE_KEY),
         });
       }
-      toast.success(`Merged with ${gitMergeModeLabel(effectiveMode)}`);
+      toast.success(`Merged with ${gitMergeModeFlag(effectiveMode)}`);
       onOpenChange(false);
     } catch (err) {
       showError(formatMergeError(err));
