@@ -281,10 +281,12 @@ fn map_available_commands_update(body: &Value, metadata: RuntimeEventMetadata) -
 }
 
 /// Parse the `availableCommands` array off a `session/update` body
-/// into the provider-neutral runtime shape. Public to the runtime so
-/// `event_loop_state` can mirror the same parsed catalog into the
-/// provider hook (no double-parsing).
-pub(super) fn parse_available_commands(body: &Value) -> Vec<RuntimeSlashCommand> {
+/// into the provider-neutral runtime shape. Reused by
+/// `event_loop_state` (to mirror the parsed catalog through the
+/// provider hook) and by `opencode::commands::probe_inner` (to parse
+/// the same notification when the ephemeral refresh probe receives
+/// it directly off the broadcast channel).
+pub(crate) fn parse_available_commands(body: &Value) -> Vec<RuntimeSlashCommand> {
     body.get("availableCommands")
         .and_then(Value::as_array)
         .map(|entries| entries.iter().filter_map(parse_available_command).collect())

@@ -89,12 +89,27 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         // (built-ins + project-local) over `available_commands_update`.
         // The runtime mirrors each push into `commands::record_snapshot`
         // via `OpenCodeAcpAdapter::record_available_commands`. Here we
-        // read the latest snapshot for `cwd`. Cold-start (no ACP
-        // session has run for this cwd yet in this process) returns an
-        // empty list — the FE picker stays empty until the first push,
-        // which arrives within the first `session/update` of any new
-        // session.
+        // read the latest snapshot for `cwd` — the synchronous fast
+        // path. A fresh probe is triggered separately by the WS
+        // handler via `refresh_runtime_slash_commands` so the FE gets
+        // instant cached feedback plus a live update when the probe
+        // finishes.
         commands::runtime_slash_commands(cwd).await
+    }
+
+    fn supports_runtime_slash_command_refresh(&self) -> bool {
+        true
+    }
+
+    async fn refresh_runtime_slash_commands(
+        &self,
+        cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        // Spawn an ephemeral `opencode acp` probe, run the handshake,
+        // wait for the first `available_commands_update` push, snapshot
+        // it, and reap. Single-flighted per cwd so concurrent `/`
+        // triggers share one probe.
+        commands::refresh_via_acp(cwd).await
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {

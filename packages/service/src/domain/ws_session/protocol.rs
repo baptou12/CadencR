@@ -351,6 +351,13 @@ pub enum SlashCommandKindPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
+    /// `true` when the server is currently re-resolving the catalog in
+    /// the background (the FE returned cached data instantly; a fresh
+    /// `commands.updated` envelope will follow when the probe
+    /// completes). The FE renders a small spinner / loader while this
+    /// is set so the user knows the picker is being refreshed.
+    #[serde(default)]
+    pub refreshing: bool,
 }
 
 /// Server → Client: live slash-command catalog the agent advertised

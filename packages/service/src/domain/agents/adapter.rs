@@ -734,6 +734,35 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         ))
     }
 
+    /// Whether `refresh_runtime_slash_commands` performs a real
+    /// re-resolve (vs. a no-op default). The WS `commands.get` handler
+    /// reads this to decide whether to advertise `refreshing: true`
+    /// and spawn a background refresh task. Default `false` — providers
+    /// that can re-resolve (today: OpenCode via an ephemeral ACP probe)
+    /// override.
+    fn supports_runtime_slash_command_refresh(&self) -> bool {
+        false
+    }
+
+    /// Force a fresh re-resolve of the slash-command catalog (typically
+    /// by spawning a short-lived discovery probe). Used by the WS
+    /// `commands.get` handler to background-refresh the cached snapshot
+    /// every time the FE opens the `/` menu, so the picker stays in
+    /// sync with on-disk command changes without the user having to
+    /// reload the session.
+    ///
+    /// Default implementation is a no-op error so providers that don't
+    /// opt in don't pay the cost of `runtime_slash_commands` (which
+    /// for some adapters spawns a subprocess).
+    async fn refresh_runtime_slash_commands(
+        &self,
+        _cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        Err(RuntimeError::new(
+            "runtime slash command refresh is not supported by this provider",
+        ))
+    }
+
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
         None
     }
