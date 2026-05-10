@@ -59,6 +59,11 @@ pub struct AcpRuntimeSession {
     pub(super) context_window: Option<u64>,
     pub(super) message_rx: Option<RuntimeMessageRx>,
     pub(super) loop_task: Option<JoinHandle<()>>,
+    /// Optional provider-spawned listener (e.g. OpenCode subscribes to its
+    /// HTTP/SSE event stream so live sub-agent child-session events that the
+    /// ACP transport silently drops can be injected into the runtime
+    /// channel). Aborted on `close()`.
+    pub(super) side_channel_task: Option<JoinHandle<()>>,
     pub(super) local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pub(super) hooks: Arc<dyn AcpProviderHooks>,
     /// Shared streaming-block indexer (also held by the event loop) used to
@@ -180,6 +185,9 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // Drop session-scoped permission grants on close.
         self.session_permissions.clear().await;
         if let Some(task) = self.loop_task.take() {
+            task.abort();
+        }
+        if let Some(task) = self.side_channel_task.take() {
             task.abort();
         }
         self.client.shutdown().await;

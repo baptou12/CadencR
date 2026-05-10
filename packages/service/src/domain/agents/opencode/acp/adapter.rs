@@ -4,8 +4,14 @@
 //! trait. Lives next to the OpenCode HTTP code so OpenCode-only quirks stay
 //! out of the provider-neutral runtime.
 
+use std::collections::VecDeque;
+use std::path::Path;
+use std::sync::{Arc, Mutex as StdMutex};
+
 use async_trait::async_trait;
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
 use crate::domain::agents::acp::runtime::provider_hooks::{
@@ -21,17 +27,33 @@ use crate::domain::agents::opencode::tool_names::{
 };
 
 use super::adapter_normalize::normalize_edit_input;
+use super::events_subagent_synthesis::{extract_subagent_body, synthesize_subagent_text_event};
 use super::events_tool_call_question::{question_start_event, question_update_event};
 use super::question_sidecar::QuestionSidecar;
+use super::upstream_workaround::{spawn_subagent_listener, PendingSubagentTasks};
 
 /// OpenCode-specific implementation of [`AcpProviderHooks`].
 pub struct OpenCodeAcpAdapter {
     question_sidecar: QuestionSidecar,
+    /// Port of the OpenCode HTTP backend running inside the `opencode acp`
+    /// subprocess. We hand this to the SSE side-channel listener so it can
+    /// subscribe to all session events (including child sub-agent sessions
+    /// the ACP transport itself silently drops).
+    opencode_http_port: u16,
+    /// FIFO of `Task`/`Agent` tool_call ids the FE has seen via the ACP wire
+    /// but whose child session id we don't yet know. The SSE listener pops
+    /// from here when a `SessionCreated` arrives with `parent_id == root` so
+    /// freshly-spawned child sessions inherit the right `parent_tool_use_id`.
+    pending_subagent_calls: PendingSubagentTasks,
 }
 
 impl OpenCodeAcpAdapter {
-    pub fn new(question_sidecar: QuestionSidecar) -> Self {
-        Self { question_sidecar }
+    pub fn new(question_sidecar: QuestionSidecar, opencode_http_port: u16) -> Self {
+        Self {
+            question_sidecar,
+            opencode_http_port,
+            pending_subagent_calls: Arc::new(StdMutex::new(VecDeque::new())),
+        }
     }
 }
 
@@ -128,6 +150,75 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         )
     }
 
+    /// OpenCode delivers the entire `Task` / `Agent` sub-agent result as a
+    /// single `{metadata, output: "task_id: …<task_result>…</task_result>"}`
+    /// envelope on the parent `tool_call_update`. Surfacing that raw blob
+    /// produces a JSON dump in the chat alongside an empty Task block. We
+    /// suppress the default tool_result emission here and let
+    /// `synthesize_tool_call_completion` render the cleaned body as a child
+    /// Text block under the parent tool_use_id instead.
+    fn suppresses_raw_output(&self, tool_name: &str) -> bool {
+        matches!(tool_name, "Task" | "Agent")
+    }
+
+    /// On a completed `Task` / `Agent` update, build a synthetic
+    /// `AssistantMessage` whose `parent_tool_use_id` is the parent Task's
+    /// `tool_call_id`. The FE's existing nesting path renders it as a child
+    /// Text block inside the Task block.
+    ///
+    /// OpenCode does not stream the sub-agent's intermediate events (no
+    /// `session/update` notifications are keyed to the sub-agent session id;
+    /// the sub-agent session id only appears in `rawOutput.metadata`), so
+    /// this synthesis is the only path by which the user sees what the
+    /// sub-agent produced.
+    fn synthesize_tool_call_completion(
+        &self,
+        tool_call_id: &str,
+        tool_name: &str,
+        body: &Value,
+        _status: &str,
+        metadata: &RuntimeEventMetadata,
+        _indexer: &mut EventIndexer,
+    ) -> Vec<RuntimeEvent> {
+        if !matches!(tool_name, "Task" | "Agent") {
+            return Vec::new();
+        }
+        let Some(body_text) = extract_subagent_body(body) else {
+            return Vec::new();
+        };
+        vec![synthesize_subagent_text_event(
+            metadata,
+            tool_call_id,
+            &body_text,
+        )]
+    }
+
+    fn record_tool_call_start(&self, tool_call_id: &str, tool_name: &str) {
+        // Track Task/Agent calls so the SSE listener can pair them with the
+        // child session OpenCode is about to spawn. We hold the lock only
+        // long enough to push; the listener pops the same lock from its task.
+        if matches!(tool_name, "Task" | "Agent") {
+            if let Ok(mut queue) = self.pending_subagent_calls.lock() {
+                queue.push_back(tool_call_id.to_string());
+            }
+        }
+    }
+
+    fn start_side_channel(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    ) -> Option<JoinHandle<()>> {
+        Some(spawn_subagent_listener(
+            self.opencode_http_port,
+            cwd.to_path_buf(),
+            session_id.to_string(),
+            Arc::clone(&self.pending_subagent_calls),
+            tx,
+        ))
+    }
+
     async fn respond_permission_fallback(
         &self,
         response: RuntimePermissionResponse,
@@ -183,7 +274,7 @@ mod tests {
     use super::{flatten_tool_result_content, OpenCodeAcpAdapter};
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
-    use crate::domain::agents::adapter::RuntimeEventMetadata;
+    use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEventMetadata};
     use serde_json::json;
 
     fn metadata() -> RuntimeEventMetadata {
@@ -194,7 +285,13 @@ mod tests {
     }
 
     fn adapter() -> OpenCodeAcpAdapter {
-        OpenCodeAcpAdapter::new(super::QuestionSidecar::new(0, std::path::Path::new("/tmp")))
+        OpenCodeAcpAdapter::new(
+            super::QuestionSidecar::new(0, std::path::Path::new("/tmp")),
+            // Tests don't actually exercise the SSE side channel; any port is
+            // fine because the listener is only spawned by `start_side_channel`,
+            // which the unit tests don't call.
+            0,
+        )
     }
 
     #[test]
@@ -298,6 +395,95 @@ mod tests {
         let raw = event.raw_json();
         assert_eq!(raw["type"], "opencode_permission_request");
         assert_eq!(raw["tool_name"], "AskUserQuestion");
+    }
+
+    #[test]
+    fn suppresses_raw_output_for_task_and_agent_only() {
+        let adapter = adapter();
+        assert!(adapter.suppresses_raw_output("Task"));
+        assert!(adapter.suppresses_raw_output("Agent"));
+        assert!(!adapter.suppresses_raw_output("Bash"));
+        assert!(!adapter.suppresses_raw_output("Write"));
+    }
+
+    #[test]
+    fn synthesize_tool_call_completion_emits_text_under_parent_for_task() {
+        // Real wire shape captured on a sub-agent run (see plan):
+        //   tool_call_update completed → content[0] = {type:"content", content:{type:"text", text:"task_id: …<task_result>body</task_result>"}}
+        //   plus rawOutput.{output, metadata.sessionId}.
+        let adapter = adapter();
+        let mut idx = EventIndexer::default();
+        let body = json!({
+            "toolCallId": "call_TASK_PARENT",
+            "status": "completed",
+            "content": [{
+                "type": "content",
+                "content": {
+                    "type": "text",
+                    "text": "task_id: ses_child\n\n<task_result>\nfindings line 1\nfindings line 2\n</task_result>"
+                }
+            }],
+            "rawOutput": {
+                "output": "task_id: ses_child\n\n<task_result>\nfindings line 1\nfindings line 2\n</task_result>",
+                "metadata": { "sessionId": "ses_child", "model": { "modelID": "gpt-5.4" } }
+            }
+        });
+        let events = adapter.synthesize_tool_call_completion(
+            "call_TASK_PARENT",
+            "Task",
+            &body,
+            "completed",
+            &metadata(),
+            &mut idx,
+        );
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.parent_tool_use_id(), Some("call_TASK_PARENT"));
+        let assistant = event.assistant_message().expect("assistant message");
+        let RuntimeContentBlock::Text { text } = &assistant.content[0] else {
+            panic!("expected text block");
+        };
+        assert_eq!(text, "findings line 1\nfindings line 2");
+    }
+
+    #[test]
+    fn synthesize_tool_call_completion_returns_empty_for_non_subagent_tools() {
+        let adapter = adapter();
+        let mut idx = EventIndexer::default();
+        let body = json!({
+            "toolCallId": "call_BASH",
+            "status": "completed",
+            "rawOutput": { "output": "ls -la output" }
+        });
+        let events = adapter.synthesize_tool_call_completion(
+            "call_BASH",
+            "Bash",
+            &body,
+            "completed",
+            &metadata(),
+            &mut idx,
+        );
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn synthesize_tool_call_completion_returns_empty_when_body_is_blank() {
+        let adapter = adapter();
+        let mut idx = EventIndexer::default();
+        let body = json!({
+            "toolCallId": "call_TASK",
+            "status": "completed",
+            "rawOutput": { "output": "" }
+        });
+        let events = adapter.synthesize_tool_call_completion(
+            "call_TASK",
+            "Task",
+            &body,
+            "completed",
+            &metadata(),
+            &mut idx,
+        );
+        assert!(events.is_empty());
     }
 
     #[test]

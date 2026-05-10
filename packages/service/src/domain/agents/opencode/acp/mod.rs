@@ -7,8 +7,16 @@
 
 mod adapter;
 mod adapter_normalize;
+mod events_subagent_synthesis;
 mod events_tool_call_question;
 mod question_sidecar;
+// Workarounds for ACP-wire limitations in upstream OpenCode. Anything
+// that talks to the embedded HTTP backend on `--port` to make up for an
+// ACP-wire gap lives here; see `upstream_workaround/mod.rs` for the
+// removal criteria. Distinct from the legacy OpenCode HTTP transport
+// under `opencode/http/` (and `opencode-sdk-rs/src/sse/**`), which is
+// being retired and whose removal must NOT take this directory with it.
+mod upstream_workaround;
 
 use std::net::TcpListener;
 use std::path::Path;
@@ -86,6 +94,11 @@ pub(super) async fn spawn_acp_session(
         }
         None => None,
     };
+    // `question_port` is also the OpenCode HTTP backend's port — the same
+    // server hosts both the question sidecar endpoints we already use and
+    // the `/event` SSE stream the sub-agent listener subscribes to. See
+    // `opencode/src/cli/cmd/acp.ts` upstream: `Server.listen({hostname,port})`
+    // is bound to the same `--hostname --port` flags Cadencr passes.
     spawn_acp_runtime_session(AcpRuntimeSpawnArgs {
         command,
         spawn_guard: Some(Box::new(reserved_question_port)),
@@ -93,7 +106,7 @@ pub(super) async fn spawn_acp_session(
         config,
         initial_content: content,
         context_window,
-        hooks: Arc::new(OpenCodeAcpAdapter::new(question_sidecar)),
+        hooks: Arc::new(OpenCodeAcpAdapter::new(question_sidecar, question_port)),
     })
     .await
 }

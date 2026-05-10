@@ -295,6 +295,17 @@ impl OpenCodeClient {
             .unwrap_or_default())
     }
 
+    /// `GET /session/{id}/message` — cumulative message snapshot for a
+    /// session.
+    ///
+    /// **Load-bearing for the ACP sub-agent workaround** — the polling
+    /// listener in `cadencr-service`'s
+    /// `opencode/acp/upstream_workaround/subagent_listener.rs` uses
+    /// this to tail child-session messages OpenCode silently drops
+    /// from the ACP wire. Do **not** remove this method when the
+    /// legacy HTTP transport is retired; it is still needed by the
+    /// ACP path against the embedded HTTP backend (the OpenCode
+    /// subprocess's `--port` server).
     pub async fn list_messages(&self, session_id: &str) -> Result<Vec<Message>, SdkError> {
         let response = self
             .http
@@ -335,6 +346,14 @@ impl OpenCodeClient {
         ensure_success(response).await.map(|_| ())
     }
 
+    /// `GET /session/{id}/children` — direct sub-sessions of a parent.
+    ///
+    /// **Load-bearing for the ACP sub-agent workaround** — see the
+    /// note on `list_messages`. The polling listener calls this to
+    /// discover child sessions OpenCode never registers with the ACP
+    /// wire. Keep this method when the legacy HTTP transport is
+    /// retired; the ACP path still needs it against the embedded HTTP
+    /// backend.
     pub async fn list_children_in_directory(
         &self,
         session_id: &str,

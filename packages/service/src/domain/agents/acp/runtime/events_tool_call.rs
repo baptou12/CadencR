@@ -44,6 +44,7 @@ pub fn map_tool_call_start(
         .unwrap_or("tool");
     let tool_name = hooks.normalize_tool_name(raw_tool_name);
     indexer.record_tool_name(tool_call_id, &tool_name);
+    hooks.record_tool_call_start(tool_call_id, &tool_name);
     // Per the official ACP schema (`ToolCall.rawInput`), `rawInput` is the
     // spec-canonical opaque agent input. `toolInput` is a legacy non-spec
     // field some adapters (and our terminal enrichment) write into for
@@ -351,10 +352,11 @@ mod tests {
     // --- W8 sub-agent metadata tests -------------------------------------
 
     #[test]
-    fn start_propagates_sub_agent_session_id_as_parent() {
-        // ACP can mark a child invocation by `subAgentSessionId` instead of
-        // `parentToolCallId`; both must surface as parent_tool_use_id so the
-        // FE can nest the child events under the parent tool block.
+    fn start_does_not_propagate_sub_agent_session_id_as_parent() {
+        // Regression: `subAgentSessionId` carries a child *session* id, not a
+        // tool_use_id. Stamping it as `parent_tool_use_id` would orphan the
+        // event at the FE's tool_use_id map lookup. See
+        // `events_tool_call_parent.rs::parent_tool_use_id` for the rationale.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -367,7 +369,7 @@ mod tests {
             metadata(),
             &PlainHooks,
         );
-        assert_eq!(result.events[0].parent_tool_use_id(), Some("sub-session-9"));
+        assert!(result.events[0].parent_tool_use_id().is_none());
     }
 
     #[test]

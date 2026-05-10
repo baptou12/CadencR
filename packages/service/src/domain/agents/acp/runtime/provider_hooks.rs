@@ -4,8 +4,12 @@
 //! this trait to plug provider-specific normalization and policy decisions
 //! into the otherwise provider-neutral runtime.
 
+use std::path::Path;
+
 use async_trait::async_trait;
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
@@ -114,6 +118,63 @@ pub trait AcpProviderHooks: Send + Sync {
     ) -> Result<bool, RuntimeError> {
         Ok(false)
     }
+
+    /// Provider opt-in: suppress the default `rawOutput` tool_result emission
+    /// for `tool_name`. OpenCode uses this to drop the noisy
+    /// `{metadata, output}` JSON dump for sub-agent tools (`Task` / `Agent`),
+    /// since the cleaned body text is synthesised separately under the parent
+    /// block via `synthesize_tool_call_completion`.
+    fn suppresses_raw_output(&self, _tool_name: &str) -> bool {
+        false
+    }
+
+    /// Provider opt-in: append extra events to a completed `tool_call_update`.
+    /// Returns events the runtime splices into the mapped update's event list
+    /// — used by OpenCode to emit a synthetic `AssistantMessage` carrying the
+    /// sub-agent's final text under `parent_tool_use_id`. Each returned event
+    /// must already carry its own `parent_tool_use_id`; the runtime does not
+    /// stamp on top of these.
+    fn synthesize_tool_call_completion(
+        &self,
+        _tool_call_id: &str,
+        _tool_name: &str,
+        _body: &Value,
+        _status: &str,
+        _metadata: &RuntimeEventMetadata,
+        _indexer: &mut EventIndexer,
+    ) -> Vec<RuntimeEvent> {
+        Vec::new()
+    }
+
+    /// Provider opt-in: spawn a side-channel that pushes additional
+    /// `RuntimeEvent`s onto the same runtime channel. Used by OpenCode to
+    /// subscribe to the underlying HTTP/SSE event stream for live sub-agent
+    /// child-session events (which OpenCode's ACP transport silently drops
+    /// today because its session manager only forwards events for sessions
+    /// it has explicitly registered).
+    ///
+    /// Implementors return an optional `JoinHandle`; the runtime aborts it on
+    /// `close()` so the listener stops cleanly. Default implementation does
+    /// nothing.
+    fn start_side_channel(
+        &self,
+        _session_id: &str,
+        _cwd: &Path,
+        _tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
+    ) -> Option<JoinHandle<()>> {
+        None
+    }
+
+    /// Provider opt-in: invoked at the start of every `tool_call` (after the
+    /// canonical name has been resolved) so adapters can record state for
+    /// later use by their side-channel — e.g. OpenCode tracks pending
+    /// `Task`/`Agent` call ids so its SSE listener can pair freshly-spawned
+    /// child sessions with the right parent tool block.
+    ///
+    /// Default implementation is a no-op. This is intentionally separate from
+    /// `tool_call_start_override` (which decides whether to short-circuit
+    /// event emission); both fire on the same notification.
+    fn record_tool_call_start(&self, _tool_call_id: &str, _tool_name: &str) {}
 }
 
 pub(crate) fn flatten_tool_result_content_with<'a>(

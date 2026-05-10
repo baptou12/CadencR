@@ -110,6 +110,13 @@ pub async fn spawn_acp_runtime_session(
     );
     session.loop_task = Some(handles.task);
 
+    // Provider-spawned side channel (e.g. OpenCode's HTTP/SSE listener for
+    // sub-agent child-session events). Started after the event loop so the
+    // listener's emitted events queue behind any spawn-time init events the
+    // FE expects to see first.
+    session.side_channel_task =
+        hooks.start_side_channel(&negotiated.session_id, config.cwd.as_path(), tx.clone());
+
     if !initial_content.is_null() {
         spawn_initial_prompt(&session, &tx, initial_content);
     }
@@ -194,6 +201,7 @@ impl AcpRuntimeSession {
             context_window: negotiated.context_window,
             message_rx: Some(rx),
             loop_task: None,
+            side_channel_task: None,
             local_tx,
             hooks,
             indexer,

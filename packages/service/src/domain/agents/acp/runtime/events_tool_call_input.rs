@@ -90,18 +90,29 @@ pub(super) fn is_empty_value(value: &Value) -> bool {
     }
 }
 
-/// Walk the ACP `content[]` array for `Diff` variants and synthesise a
-/// canonical edit-tool input. Used for Edit/Write/MultiEdit/ApplyPatch
-/// where the agent sends the actual file payload only inside the update's
-/// content rather than a top-level `rawInput`.
+/// Walk the ACP `content[]` array and synthesise a canonical tool input.
 ///
-/// - `Write`: stop at the first diff → `{file_path, content}`.
-/// - `Edit` / `ApplyPatch`: stop at the first diff →
-///   `{file_path, old_string, new_string}`.
-/// - `MultiEdit`: walk every diff and emit
-///   `{file_path, edits: [{old_string, new_string}, …]}`. The first diff's
-///   path is canonical (ACP MultiEdit groups edits per file).
+/// Two shapes are supported:
+///
+/// - **Diff content** (Edit/Write/MultiEdit/ApplyPatch). Used when the agent
+///   sends the actual file payload only inside the update's content rather
+///   than a top-level `rawInput`.
+///   - `Write`: stop at the first diff → `{file_path, content}`.
+///   - `Edit` / `ApplyPatch`: stop at the first diff →
+///     `{file_path, old_string, new_string}`.
+///   - `MultiEdit`: walk every diff and emit
+///     `{file_path, edits: [{old_string, new_string}, …]}`. The first diff's
+///     path is canonical (ACP MultiEdit groups edits per file).
+///
+/// - **Sub-agent prompt content** (Task/Agent). Defensive fallback for
+///   adapters that deliver `{description, prompt}` only via `content[]`
+///   instead of `rawInput`. The current OpenCode wire delivers these via
+///   `rawInput`, but the spec § 6 flagged content-only as a possible
+///   variant — this keeps the sub-agent panel header populated either way.
 pub(super) fn derive_input_from_content(tool_name: &str, body: &Value) -> Option<Value> {
+    if matches!(tool_name, "Task" | "Agent") {
+        return derive_subagent_input_from_content(body);
+    }
     if !matches!(tool_name, "Write" | "Edit" | "MultiEdit" | "ApplyPatch") {
         return None;
     }
@@ -138,6 +149,58 @@ pub(super) fn derive_input_from_content(tool_name: &str, body: &Value) -> Option
         "old_string": first.old_text,
         "new_string": first.new_text,
     }))
+}
+
+/// Pull `{description, prompt}` out of a Task/Agent `content[]` entry.
+/// Recognised shapes:
+///
+/// - `content[i]` is an object with `description` / `prompt` string fields.
+/// - `content[i]` is `{type: "text", text: "..."}` — treat the text as the
+///   prompt and synthesise a description from the first non-empty line.
+/// - `content[i]` is `{type: "content", content: {...}}` — recurse into the
+///   inner block (matches OpenCode's text-envelope wrapping).
+fn derive_subagent_input_from_content(body: &Value) -> Option<Value> {
+    let content = body.get("content").and_then(Value::as_array)?;
+    for entry in content {
+        if let Some(input) = subagent_input_from_entry(entry) {
+            return Some(input);
+        }
+    }
+    None
+}
+
+fn subagent_input_from_entry(entry: &Value) -> Option<Value> {
+    if let (Some(description), Some(prompt)) = (
+        entry.get("description").and_then(Value::as_str),
+        entry.get("prompt").and_then(Value::as_str),
+    ) {
+        return Some(json!({
+            "description": description,
+            "prompt": prompt,
+        }));
+    }
+    let kind = entry.get("type").and_then(Value::as_str)?;
+    match kind {
+        "text" => entry
+            .get("text")
+            .and_then(Value::as_str)
+            .map(subagent_input_from_text),
+        "content" => entry.get("content").and_then(subagent_input_from_entry),
+        _ => None,
+    }
+}
+
+fn subagent_input_from_text(text: &str) -> Value {
+    let description = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("Sub-agent")
+        .to_string();
+    json!({
+        "description": description,
+        "prompt": text,
+    })
 }
 
 struct DiffEntry {
@@ -292,6 +355,65 @@ mod tests {
         });
         assert!(derive_input_from_content("Bash", &body).is_none());
         assert!(derive_input_from_content("Read", &body).is_none());
+    }
+
+    #[test]
+    fn derive_input_pulls_description_and_prompt_for_task() {
+        // Defensive: some adapters may eventually deliver Task input via
+        // `content[]` with explicit `{description, prompt}` keys instead of
+        // `rawInput`. Surface them so the sub-agent panel header still
+        // populates.
+        let body = json!({
+            "content": [
+                { "description": "Explore backend", "prompt": "Look at packages/service" }
+            ]
+        });
+        let derived = derive_input_from_content("Task", &body).expect("derived");
+        assert_eq!(derived["description"], "Explore backend");
+        assert_eq!(derived["prompt"], "Look at packages/service");
+        // Same shape works for the alternate `Agent` tool name.
+        let derived = derive_input_from_content("Agent", &body).expect("derived");
+        assert_eq!(derived["description"], "Explore backend");
+    }
+
+    #[test]
+    fn derive_input_synthesises_task_input_from_text_block() {
+        // Plain text content: the first non-empty line becomes the
+        // description and the full text becomes the prompt.
+        let body = json!({
+            "content": [
+                { "type": "text", "text": "Explore backend\n\nDetails follow…" }
+            ]
+        });
+        let derived = derive_input_from_content("Task", &body).expect("derived");
+        assert_eq!(derived["description"], "Explore backend");
+        assert_eq!(derived["prompt"], "Explore backend\n\nDetails follow…");
+    }
+
+    #[test]
+    fn derive_input_unwraps_opencode_content_envelope_for_task() {
+        // OpenCode wraps text in `{type:"content", content:{type:"text",…}}`.
+        // The Task-content path mirrors `unwrap_text_block` and recurses.
+        let body = json!({
+            "content": [
+                { "type": "content", "content": { "type": "text", "text": "Spawn explore" } }
+            ]
+        });
+        let derived = derive_input_from_content("Task", &body).expect("derived");
+        assert_eq!(derived["description"], "Spawn explore");
+        assert_eq!(derived["prompt"], "Spawn explore");
+    }
+
+    #[test]
+    fn derive_input_returns_none_for_task_with_diff_only_content() {
+        // A Task whose content is unrelated diff entries should not synthesize
+        // a bogus header.
+        let body = json!({
+            "content": [
+                { "type": "diff", "path": "/x", "newText": "x" }
+            ]
+        });
+        assert!(derive_input_from_content("Task", &body).is_none());
     }
 
     #[test]

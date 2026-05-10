@@ -72,6 +72,7 @@ pub fn map_tool_call_update(
         parent.clone(),
         metadata.clone(),
         hooks,
+        indexer,
         &mut events,
     );
 
@@ -85,7 +86,27 @@ pub fn map_tool_call_update(
         );
         events.push(event);
     } else if events.is_empty() {
-        events.push(other_event(metadata));
+        events.push(other_event(metadata.clone()));
+    }
+
+    // Provider-specific synthesis runs *after* the default event list is
+    // built so the synthesised events (e.g. OpenCode's cleaned sub-agent
+    // text under `parent_tool_use_id == tool_call_id`) appear in the FE
+    // after the parent tool block's stop boundary, ready to nest.
+    if status == "completed" {
+        let tool_name = indexer
+            .tool_name_for(tool_call_id)
+            .map(ToOwned::to_owned)
+            .unwrap_or_default();
+        let extra = hooks.synthesize_tool_call_completion(
+            tool_call_id,
+            &tool_name,
+            body,
+            status,
+            &metadata,
+            indexer,
+        );
+        events.extend(extra);
     }
 
     MappedUpdate { events }
@@ -103,8 +124,21 @@ fn push_tool_result(
     parent: Option<String>,
     metadata: RuntimeEventMetadata,
     hooks: &dyn AcpProviderHooks,
+    indexer: &EventIndexer,
     events: &mut Vec<RuntimeEvent>,
 ) {
+    // Some providers (OpenCode for `Task`/`Agent`) prefer to deliver the
+    // tool's final body via `synthesize_tool_call_completion` after stripping
+    // a wrapper format, rather than dumping the raw `{metadata, output}`
+    // envelope directly. Skip both the `rawOutput` and `content[]` paths in
+    // that case.
+    let suppressed = indexer
+        .tool_name_for(tool_call_id)
+        .map(|name| hooks.suppresses_raw_output(name))
+        .unwrap_or(false);
+    if suppressed {
+        return;
+    }
     if let Some(raw_output) = body.get("rawOutput").cloned() {
         let is_error = matches!(status, "failed");
         let mut event =
@@ -304,6 +338,116 @@ mod tests {
             RuntimeUserContentBlock::ToolResult { content, .. } => {
                 assert_eq!(content["ok"], true);
                 assert_eq!(content["items"][2], 3);
+            }
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    /// Test hook that suppresses raw-output emission for a marker tool name
+    /// and synthesises a single Other event so the splice path is exercised.
+    struct SynthesisHooks;
+
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for SynthesisHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+        fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
+            input
+        }
+        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
+            RuntimePermissionDecision::AllowOnce
+        }
+        fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
+            None
+        }
+        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
+            None
+        }
+        fn suppresses_raw_output(&self, tool_name: &str) -> bool {
+            tool_name == "Suppressed"
+        }
+        fn synthesize_tool_call_completion(
+            &self,
+            tool_call_id: &str,
+            tool_name: &str,
+            _body: &Value,
+            _status: &str,
+            metadata: &RuntimeEventMetadata,
+            _indexer: &mut EventIndexer,
+        ) -> Vec<crate::domain::agents::adapter::RuntimeEvent> {
+            if tool_name != "Suppressed" {
+                return Vec::new();
+            }
+            // Build a tagged AssistantMessage so the test can find it via
+            // `parent_tool_use_id()` (only assistant/user/stream variants
+            // expose the field).
+            vec![crate::domain::agents::adapter::RuntimeEvent::new(
+                metadata.clone(),
+                crate::domain::agents::adapter::RuntimeEventKind::AssistantMessage {
+                    message: crate::domain::agents::adapter::RuntimeAssistantMessage {
+                        model: None,
+                        content: vec![crate::domain::agents::adapter::RuntimeContentBlock::Text {
+                            text: "synth".to_string(),
+                        }],
+                    },
+                    parent_tool_use_id: Some(tool_call_id.to_string()),
+                },
+            )]
+        }
+    }
+
+    #[test]
+    fn suppresses_raw_output_drops_default_tool_result_for_marked_tools() {
+        let mut idx = EventIndexer::default();
+        idx.record_tool_name("t-supp", "Suppressed");
+        let result = map_tool_call_update(
+            &json!({
+                "toolCallId": "t-supp",
+                "status": "completed",
+                "rawOutput": { "noisy": "json" }
+            }),
+            &mut idx,
+            metadata(),
+            &SynthesisHooks,
+        );
+        // No user-message tool_result should appear.
+        assert!(
+            result.events.iter().all(|e| e.user_message().is_none()),
+            "rawOutput tool_result should be suppressed"
+        );
+        // The synthesis hook still gets to splice an event in.
+        assert!(
+            result
+                .events
+                .iter()
+                .any(|e| e.parent_tool_use_id() == Some("t-supp")),
+            "synthesised completion event should be appended"
+        );
+    }
+
+    #[test]
+    fn unsuppressed_tools_still_emit_raw_output_and_completion_hook_does_not_fire() {
+        let mut idx = EventIndexer::default();
+        idx.record_tool_name("t-keep", "Bash");
+        let result = map_tool_call_update(
+            &json!({
+                "toolCallId": "t-keep",
+                "status": "completed",
+                "rawOutput": { "ok": true }
+            }),
+            &mut idx,
+            metadata(),
+            &SynthesisHooks,
+        );
+        let user = result
+            .events
+            .iter()
+            .find_map(|e| e.user_message())
+            .expect("user message present for non-suppressed tool");
+        match &user.content[0] {
+            RuntimeUserContentBlock::ToolResult { content, .. } => {
+                assert_eq!(content["ok"], true);
             }
             other => panic!("unexpected variant: {other:?}"),
         }
