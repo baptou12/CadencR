@@ -112,9 +112,10 @@ pub async fn notify_worktree_created_for_all_providers(
 }
 
 pub async fn shutdown_runtime_servers() {
-    if let Err(error) = opencode_sdk_rs::OpenCodeServer::shutdown().await {
-        tracing::warn!(error = %error, "failed to shut down opencode server");
-    }
+    // Previously shut down a long-running OpenCode HTTP server. With the
+    // ACP-only transport, OpenCode subprocesses are owned by individual
+    // sessions and torn down with their owning runtime — there's no
+    // shared server to terminate from here.
 }
 
 pub async fn runtime_session_finished(provider_id: &str, runtime_session_id: &str) -> bool {

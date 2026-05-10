@@ -24,9 +24,6 @@ pub(crate) mod helpers;
 pub(crate) mod mcp_spawn;
 pub(crate) mod post_plan_mode;
 mod session_compact;
-mod session_compact_opencode;
-mod session_compact_opencode_events;
-mod session_compact_opencode_poll;
 mod session_control;
 mod session_data;
 mod session_init;
@@ -1167,7 +1164,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),
@@ -1198,7 +1194,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),

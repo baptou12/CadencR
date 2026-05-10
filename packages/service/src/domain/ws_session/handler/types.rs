@@ -64,10 +64,11 @@ pub struct SdkHandle {
     /// Thinking effort the runtime was last spawned with.
     pub(super) spawned_thinking_effort: Option<String>,
     /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
-    /// OpenCode uses this for manual compaction so it can reuse the same
-    /// running server instead of probing/spawning on every compact request.
+    /// Currently only ever populated by the legacy OpenCode HTTP transport;
+    /// retained on the struct so the wider session-handle plumbing keeps
+    /// compiling, but no remaining code path reads it. Drop once a follow-up
+    /// removes the `runtime_control_endpoint` field from `SdkHandle` setters.
     pub(super) runtime_control_endpoint: Option<String>,
-    pub(super) manual_compact_running: Arc<AtomicBool>,
     /// Claude CLI session ID to use for --resume on the first prompt.
     /// Set from the DB row at init time; consumed (taken) when spawning.
     pub(super) resume_session_id: Option<String>,

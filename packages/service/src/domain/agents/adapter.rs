@@ -216,8 +216,10 @@ pub enum RuntimeSlashCommandKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCompactionStrategy {
+    /// The runtime drives compaction itself (e.g. via an SDK `compact()`
+    /// call) and pushes a summary back to the FE through the regular
+    /// event stream.
     LiveRuntime,
-    SummaryReplay,
 }
 
 #[derive(Debug, Clone)]
@@ -605,10 +607,6 @@ pub trait AgentRuntimeSession: Send + Sync {
 
 #[async_trait]
 pub trait AgentRuntimeAdapter: Send + Sync {
-    async fn init(&self) -> Result<(), RuntimeError> {
-        Ok(())
-    }
-
     fn is_valid_resume_session_id(&self, _session_id: &str) -> bool {
         true
     }

@@ -319,7 +319,6 @@ pub(super) async fn handle_init(
         desired_thinking_effort,
         spawned_thinking_effort: None,
         runtime_control_endpoint: None,
-        manual_compact_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         resume_session_id: resume_session_id.clone(),
         config,
         manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),

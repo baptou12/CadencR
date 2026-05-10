@@ -1,8 +1,6 @@
 use axum::extract::ws::Message;
 
-use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
-use super::session_compact_opencode::handle_opencode_compact;
 use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeCompactionStrategy;
@@ -12,7 +10,7 @@ pub(super) async fn handle_compact(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
-    app_state: &AppState,
+    _app_state: &AppState,
 ) {
     let payload = match compact_payload(&envelope, sender) {
         Some(payload) => payload,
@@ -31,22 +29,9 @@ pub(super) async fn handle_compact(
         }
     };
 
-    let session_row =
-        WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await;
     match compaction_strategy(sdk_sessions, db_session_id).await {
         Ok(RuntimeCompactionStrategy::LiveRuntime) => {
             handle_active_runtime_compact(&envelope.id, sender, sdk_sessions, db_session_id).await;
-        }
-        Ok(RuntimeCompactionStrategy::SummaryReplay) => {
-            handle_opencode_compact(
-                &envelope.id,
-                sender,
-                sdk_sessions,
-                app_state,
-                db_session_id,
-                session_row.as_ref(),
-            )
-            .await;
         }
         Err(message) => send_error(sender, &envelope.id, "INVALID_STATE", &message),
     }
@@ -143,7 +128,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::new(),
@@ -158,7 +142,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compaction_strategy_dispatches_by_adapter() {
+    async fn compaction_strategy_returns_live_runtime_for_all_providers() {
+        // Both supported providers (Codex / OpenCode-ACP) compact via the
+        // live runtime path. SummaryReplay was the legacy OpenCode HTTP
+        // strategy and is gone with the HTTP transport.
         let sessions: SdkSessions = Arc::new(Mutex::new(HashMap::from([
             (
                 1,
@@ -174,12 +161,6 @@ mod tests {
             compaction_strategy(&sessions, 1).await.unwrap(),
             RuntimeCompactionStrategy::LiveRuntime
         );
-        // OpenCode now picks its compaction strategy per-transport: ACP
-        // sessions get `LiveRuntime` (no `loadSession` support yet) while
-        // HTTP sessions stay on `SummaryReplay`. The transport selector is
-        // currently hard-coded to ACP via TEMP-ACP-FORCE, so this assertion
-        // tracks the active wiring; the HTTP arm is exercised by
-        // `OpenCodeAdapter::compaction_strategy` once the force is lifted.
         assert_eq!(
             compaction_strategy(&sessions, 2).await.unwrap(),
             RuntimeCompactionStrategy::LiveRuntime

@@ -400,9 +400,6 @@ pub(crate) async fn handle_prompt_send(
                             desired_thinking_effort: spawned_effort.clone(),
                             spawned_thinking_effort: spawned_effort,
                             runtime_control_endpoint,
-                            manual_compact_running: Arc::new(std::sync::atomic::AtomicBool::new(
-                                false,
-                            )),
                             resume_session_id: None,
                             config,
                             manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(

@@ -2,7 +2,6 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 use super::models::*;
-use super::opencode_hydration::hydrate_full_opencode_sessions;
 use crate::error::AppError;
 
 /// Soft cap on the total number of blocks (root + nested) returned by a single
@@ -767,7 +766,12 @@ pub async fn get_feature_agent_state(
         }
     }
 
-    hydrate_full_opencode_sessions(&sessions, &mut full_messages).await;
+    // OpenCode HTTP-server hydration used to run here. Removed with the
+    // legacy HTTP transport: ACP sessions are subprocess-scoped and
+    // there's no remote server to query for child-session messages once
+    // the session ends. If parent/child relationships need to be
+    // recovered post-shutdown for ACP, add a database-backed hydration
+    // path here — do not bring back an HTTP fetch.
 
     // Incremental fetches
     let mut incremental_messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
