@@ -11,9 +11,8 @@
 
 use serde_json::{json, Value};
 
-use crate::domain::agents::adapter::{
-    RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent,
-};
+use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent, RuntimeEventMetadata};
+use crate::domain::agents::opencode::events::stream_delta_event as http_stream_delta_event;
 
 use super::events_stream_blocks::EventIndexer;
 use super::provider_hooks::AcpProviderHooks;
@@ -52,9 +51,14 @@ pub(super) fn synthesize_input_delta_event(
     if !is_structured_input_tool(&tool_name) {
         return None;
     }
+    // Per the official ACP schema (`ToolCall.rawInput`), `rawInput` is the
+    // spec-canonical opaque agent input. `toolInput` is a legacy non-spec
+    // field some adapters (and our terminal enrichment) write into for
+    // back-compat — only fall back to it when `rawInput` is empty/missing.
     let raw_input = body
-        .get("toolInput")
-        .or_else(|| body.get("rawInput"))
+        .get("rawInput")
+        .filter(|v| !is_empty_value(v))
+        .or_else(|| body.get("toolInput"))
         .cloned();
     let derived_input = match raw_input {
         Some(value) if !is_empty_value(&value) => value,
@@ -62,20 +66,21 @@ pub(super) fn synthesize_input_delta_event(
     };
     let normalized = hooks.normalize_tool_input(&tool_name, derived_input);
     let partial_json = serde_json::to_string(&normalized).ok()?;
-    let mut event = RuntimeEvent::new(
-        metadata,
-        RuntimeEventKind::StreamEvent {
-            event: RuntimeStreamEvent::ContentBlockDelta {
-                index,
-                delta: RuntimeContentDelta::InputJson { partial_json },
-            },
-            parent_tool_use_id: None,
-        },
+    // Build the event via the shared Claude-shape helper so the WS bridge
+    // ships an `input_json_delta` envelope the FE can merge into the
+    // existing tool block. See events_tool_call.rs for the rationale.
+    let event = http_stream_delta_event(
+        metadata.session_id.as_deref().unwrap_or(""),
+        index,
+        RuntimeContentDelta::InputJson { partial_json },
+        parent_tool_use_id.as_deref(),
     );
-    event.set_parent_tool_use_id(parent_tool_use_id);
     Some(event)
 }
 
+/// Treat `null`, `{}`, and `[]` as "no input present". Used by both the
+/// `tool_call` start path and the update path to decide whether to fall
+/// back to a legacy field or content-derived synthesis.
 pub(super) fn is_empty_value(value: &Value) -> bool {
     match value {
         Value::Null => true,
@@ -85,48 +90,88 @@ pub(super) fn is_empty_value(value: &Value) -> bool {
     }
 }
 
-/// Walk the ACP `content[]` array for a `Diff` variant and synthesise a
-/// `{file_path, old_string, new_string}` input. Used for Edit/Write/
-/// MultiEdit where the agent sends the actual file payload only inside
-/// the update's content rather than a top-level `toolInput`.
+/// Walk the ACP `content[]` array for `Diff` variants and synthesise a
+/// canonical edit-tool input. Used for Edit/Write/MultiEdit/ApplyPatch
+/// where the agent sends the actual file payload only inside the update's
+/// content rather than a top-level `rawInput`.
+///
+/// - `Write`: stop at the first diff → `{file_path, content}`.
+/// - `Edit` / `ApplyPatch`: stop at the first diff →
+///   `{file_path, old_string, new_string}`.
+/// - `MultiEdit`: walk every diff and emit
+///   `{file_path, edits: [{old_string, new_string}, …]}`. The first diff's
+///   path is canonical (ACP MultiEdit groups edits per file).
 pub(super) fn derive_input_from_content(tool_name: &str, body: &Value) -> Option<Value> {
     if !matches!(tool_name, "Write" | "Edit" | "MultiEdit" | "ApplyPatch") {
         return None;
     }
     let content = body.get("content").and_then(Value::as_array)?;
-    for entry in content {
-        if entry.get("type").and_then(Value::as_str) != Some("diff") {
-            continue;
-        }
-        let path = entry
-            .get("path")
-            .or_else(|| entry.get("filePath"))
-            .and_then(Value::as_str)?;
-        let old_text = entry
-            .get("oldText")
-            .or_else(|| entry.get("old_string"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let new_text = entry
-            .get("newText")
-            .or_else(|| entry.get("new_string"))
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        if tool_name == "Write" {
-            return Some(json!({
-                "file_path": path,
-                "content": new_text,
-            }));
-        }
+    let diffs: Vec<DiffEntry> = content.iter().filter_map(extract_diff_entry).collect();
+    if diffs.is_empty() {
+        return None;
+    }
+    if tool_name == "MultiEdit" {
+        let file_path = diffs[0].path.clone();
+        let edits: Vec<Value> = diffs
+            .into_iter()
+            .map(|d| {
+                json!({
+                    "old_string": d.old_text,
+                    "new_string": d.new_text,
+                })
+            })
+            .collect();
         return Some(json!({
-            "file_path": path,
-            "old_string": old_text,
-            "new_string": new_text,
+            "file_path": file_path,
+            "edits": edits,
         }));
     }
-    None
+    let first = diffs.into_iter().next()?;
+    if tool_name == "Write" {
+        return Some(json!({
+            "file_path": first.path,
+            "content": first.new_text,
+        }));
+    }
+    Some(json!({
+        "file_path": first.path,
+        "old_string": first.old_text,
+        "new_string": first.new_text,
+    }))
+}
+
+struct DiffEntry {
+    path: String,
+    old_text: String,
+    new_text: String,
+}
+
+fn extract_diff_entry(entry: &Value) -> Option<DiffEntry> {
+    if entry.get("type").and_then(Value::as_str) != Some("diff") {
+        return None;
+    }
+    let path = entry
+        .get("path")
+        .or_else(|| entry.get("filePath"))
+        .and_then(Value::as_str)?
+        .to_string();
+    let old_text = entry
+        .get("oldText")
+        .or_else(|| entry.get("old_string"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let new_text = entry
+        .get("newText")
+        .or_else(|| entry.get("new_string"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    Some(DiffEntry {
+        path,
+        old_text,
+        new_text,
+    })
 }
 
 #[cfg(test)]
@@ -218,6 +263,24 @@ mod tests {
         assert_eq!(derived["file_path"], "/x/file.txt");
         assert_eq!(derived["old_string"], "a");
         assert_eq!(derived["new_string"], "b");
+    }
+
+    #[test]
+    fn derive_input_from_diff_content_collects_all_multi_edit_entries() {
+        let body = json!({
+            "content": [
+                { "type": "diff", "path": "/x/file.txt", "oldText": "a", "newText": "b" },
+                { "type": "diff", "path": "/x/file.txt", "oldText": "c", "newText": "d" },
+            ]
+        });
+        let derived = derive_input_from_content("MultiEdit", &body).unwrap();
+        assert_eq!(derived["file_path"], "/x/file.txt");
+        let edits = derived["edits"].as_array().expect("edits array");
+        assert_eq!(edits.len(), 2);
+        assert_eq!(edits[0]["old_string"], "a");
+        assert_eq!(edits[0]["new_string"], "b");
+        assert_eq!(edits[1]["old_string"], "c");
+        assert_eq!(edits[1]["new_string"], "d");
     }
 
     #[test]

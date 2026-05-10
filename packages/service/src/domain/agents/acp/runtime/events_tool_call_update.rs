@@ -8,13 +8,13 @@
 
 use serde_json::Value;
 
-use crate::domain::agents::adapter::{
-    RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeStreamEvent,
-};
+use crate::domain::agents::adapter::{RuntimeEvent, RuntimeEventMetadata};
+use crate::domain::agents::opencode::events::stream_stop_event as http_stream_stop_event;
 
 use super::events_stream_blocks::EventIndexer;
-use super::events_tool_call::{other_event, parent_tool_use_id, MappedUpdate};
+use super::events_tool_call::{other_event, MappedUpdate};
 use super::events_tool_call_input::synthesize_input_delta_event;
+use super::events_tool_call_parent::parent_tool_use_id;
 use super::events_tool_call_result::{tool_result_event, tool_result_event_from_raw_output};
 use super::provider_hooks::AcpProviderHooks;
 
@@ -76,14 +76,13 @@ pub fn map_tool_call_update(
     );
 
     if matches!(status, "completed" | "failed") {
-        let mut event = RuntimeEvent::new(
-            metadata,
-            RuntimeEventKind::StreamEvent {
-                event: RuntimeStreamEvent::ContentBlockStop { index },
-                parent_tool_use_id: None,
-            },
+        // Build via the shared Claude-shape helper so the WS bridge ships a
+        // `content_block_stop` envelope the FE recognises.
+        let event = http_stream_stop_event(
+            metadata.session_id.as_deref().unwrap_or(""),
+            index,
+            parent.as_deref(),
         );
-        event.set_parent_tool_use_id(parent);
         events.push(event);
     } else if events.is_empty() {
         events.push(other_event(metadata));

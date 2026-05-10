@@ -13,6 +13,7 @@ pub mod events_plan;
 pub mod events_stream_blocks;
 pub mod events_tool_call;
 mod events_tool_call_input;
+mod events_tool_call_parent;
 mod events_tool_call_result;
 pub mod events_tool_call_update;
 pub mod fs;

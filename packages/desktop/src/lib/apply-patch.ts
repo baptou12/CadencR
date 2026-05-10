@@ -128,8 +128,11 @@ export function extractApplyPatchPreviewPartial(rawContent: string): ApplyPatchP
 function previewFromPatchText(patchText: string): ApplyPatchPreview | null {
   const changes = parseApplyPatchChanges(patchText);
   if (changes.length !== 1) return null;
+  return previewFromChange(changes[0]);
+}
 
-  const [change] = changes;
+/** Translate a single parsed `ApplyPatchChange` into the FE preview shape. */
+function previewFromChange(change: ApplyPatchChange): ApplyPatchPreview | null {
   if (change.kind === "add") {
     const addedContent = change.addedLines.join("\n");
     return {
@@ -138,7 +141,6 @@ function previewFromPatchText(patchText: string): ApplyPatchPreview | null {
       newContent: addedContent || CREATED_FILE_PLACEHOLDER,
     };
   }
-
   if (change.kind === "delete") {
     const removedContent = change.removedLines.join("\n");
     return {
@@ -147,7 +149,6 @@ function previewFromPatchText(patchText: string): ApplyPatchPreview | null {
       newContent: "",
     };
   }
-
   return {
     filePath: change.moveTo ?? change.filePath,
     oldContent: change.removedLines.join("\n"),

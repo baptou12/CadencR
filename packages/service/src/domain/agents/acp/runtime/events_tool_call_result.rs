@@ -6,7 +6,7 @@
 //! Split out of `events_tool_call.rs` to keep that file under the
 //! 400-line ceiling.
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::domain::agents::adapter::{
     RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeUserContentBlock,
@@ -45,6 +45,29 @@ fn build(
     is_error: bool,
     metadata: RuntimeEventMetadata,
 ) -> RuntimeEvent {
+    // The WS bridge ships `metadata.raw` to the FE verbatim. The FE's
+    // `processSdkMessage` switches on `msg.type` and only knows
+    // `stream_event`, `assistant`, `user`, `system`, `result`. ACP's raw
+    // `session/update` shape has no `type` field and would be silently
+    // dropped, so reshape into the Claude-style `user` envelope here.
+    let session_id = metadata.session_id.clone().unwrap_or_else(|| String::new());
+    let claude_raw = json!({
+        "type": "user",
+        "session_id": session_id,
+        "parent_tool_use_id": Value::Null,
+        "message": {
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": tool_call_id,
+                "is_error": is_error,
+                "content": content.clone(),
+            }],
+        }
+    });
+    let metadata = RuntimeEventMetadata {
+        raw: claude_raw,
+        ..metadata
+    };
     RuntimeEvent::new(
         metadata,
         RuntimeEventKind::UserMessage {

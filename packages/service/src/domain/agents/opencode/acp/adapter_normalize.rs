@@ -14,6 +14,10 @@ use serde_json::Value;
 /// names (Edit / MultiEdit / Write / ApplyPatch — `ApplyPatch` shares the
 /// same key shape per the ACP schema) so other tool inputs pass through
 /// unchanged.
+///
+/// `Write` takes a different canonical shape: the FE Write renderer reads
+/// `content`, not `new_string`, and there is no diff base (`oldText` is
+/// dropped). Edit / MultiEdit / ApplyPatch keep `{old_string, new_string}`.
 pub fn normalize_edit_input(tool_name: &str, mut input: Value) -> Value {
     if !matches!(tool_name, "Edit" | "MultiEdit" | "Write" | "ApplyPatch") {
         return input;
@@ -21,13 +25,20 @@ pub fn normalize_edit_input(tool_name: &str, mut input: Value) -> Value {
     let Some(map) = input.as_object_mut() else {
         return input;
     };
-    rename_key(map, "oldText", "old_string");
-    rename_key(map, "newText", "new_string");
     rename_key(map, "filePath", "file_path");
     if !map.contains_key("file_path") {
         if let Some(path) = map.remove("path") {
             map.insert("file_path".to_string(), path);
         }
+    }
+    if tool_name == "Write" {
+        // FE Write renderer reads `content` (see tool-adapter.ts);
+        // `new_string` would render blank.
+        rename_key(map, "newText", "content");
+        map.remove("oldText");
+    } else {
+        rename_key(map, "oldText", "old_string");
+        rename_key(map, "newText", "new_string");
     }
     input
 }
@@ -79,6 +90,43 @@ mod tests {
             normalize_edit_input("Edit", raw.clone()),
             normalize_edit_input("ApplyPatch", raw)
         );
+    }
+
+    #[test]
+    fn normalize_write_rewrites_new_text_to_content() {
+        // Write expects `content`, not `new_string` — see
+        // packages/desktop/src/lib/tool-adapter.ts:154-159.
+        let normalized = normalize_edit_input(
+            "Write",
+            json!({ "filePath": "/x/new.txt", "newText": "hello" }),
+        );
+        assert_eq!(normalized["file_path"], "/x/new.txt");
+        assert_eq!(normalized["content"], "hello");
+        assert!(normalized.get("new_string").is_none());
+        assert!(normalized.get("newText").is_none());
+    }
+
+    #[test]
+    fn normalize_write_drops_old_text_field() {
+        // Write has no diff base; an `oldText` field would never be read
+        // by the FE and is dropped to keep the canonical shape clean.
+        let normalized = normalize_edit_input(
+            "Write",
+            json!({ "filePath": "/x/new.txt", "oldText": "ignored", "newText": "hello" }),
+        );
+        assert_eq!(normalized["content"], "hello");
+        assert!(normalized.get("oldText").is_none());
+        assert!(normalized.get("old_string").is_none());
+    }
+
+    #[test]
+    fn normalize_write_leaves_canonical_content_key_untouched() {
+        let normalized = normalize_edit_input(
+            "Write",
+            json!({ "file_path": "/x", "content": "already canonical" }),
+        );
+        assert_eq!(normalized["file_path"], "/x");
+        assert_eq!(normalized["content"], "already canonical");
     }
 
     #[test]

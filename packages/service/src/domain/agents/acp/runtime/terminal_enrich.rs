@@ -8,10 +8,11 @@
 //! empty `toolInput` and an opaque terminal ref — BashBlock renders blank.
 //!
 //! We resolve `terminalId → (command, output)` from the per-session
-//! `TerminalRegistry`, inject `toolInput.command` if missing, and replace
-//! the terminal entry in `content[]` with a `{type: "text", text: <output>}`
-//! block so `flatten_tool_result_content` collapses it into a string the
-//! BashBlock result path consumes directly.
+//! `TerminalRegistry`, inject `command` into `rawInput` (the spec field)
+//! and `toolInput` (legacy non-spec field, kept for back-compat) when
+//! missing, and replace the terminal entry in `content[]` with a
+//! `{type: "text", text: <output>}` block so `flatten_tool_result_content`
+//! collapses it into a string the BashBlock result path consumes directly.
 
 use std::sync::Arc;
 
@@ -42,7 +43,7 @@ pub async fn enrich_session_update(
     for terminal_id in &terminal_ids {
         let command = terminals.command_for(terminal_id).await;
         let output = terminals.output_text(terminal_id).await;
-        inject_command_into_tool_input(body, command.as_deref());
+        inject_command_into_input(body, command.as_deref());
         replace_terminal_in_content(body, terminal_id, output.as_deref());
     }
     Some(enriched)
@@ -67,21 +68,24 @@ fn collect_terminal_ids(params: &Value) -> Vec<String> {
         .collect()
 }
 
-fn inject_command_into_tool_input(
-    body: &mut serde_json::Map<String, Value>,
-    command: Option<&str>,
-) {
+fn inject_command_into_input(body: &mut serde_json::Map<String, Value>, command: Option<&str>) {
     let Some(command) = command else { return };
-    let entry = body
-        .entry("toolInput".to_string())
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    let Some(map) = entry.as_object_mut() else {
-        return;
-    };
-    if map.contains_key("command") {
-        return;
+    // Write to both envelopes: `rawInput` is the spec-canonical field the
+    // FE-bound start/update mappers prefer; `toolInput` is the legacy
+    // non-spec field kept for back-compat with adapters that still read
+    // it. The per-field guard keeps existing values untouched.
+    for envelope in ["rawInput", "toolInput"] {
+        let entry = body
+            .entry(envelope)
+            .or_insert_with(|| Value::Object(serde_json::Map::new()));
+        let Some(map) = entry.as_object_mut() else {
+            continue;
+        };
+        if map.contains_key("command") {
+            continue;
+        }
+        map.insert("command".to_string(), Value::String(command.to_string()));
     }
-    map.insert("command".to_string(), Value::String(command.to_string()));
 }
 
 fn replace_terminal_in_content(
@@ -150,6 +154,28 @@ mod tests {
         });
         let enriched = enrich_session_update(&params, &registry).await.unwrap();
         assert_eq!(enriched["update"]["toolInput"]["command"], "echo hello");
+        // Spec-canonical envelope is also populated.
+        assert_eq!(enriched["update"]["rawInput"]["command"], "echo hello");
+    }
+
+    #[tokio::test]
+    async fn enrich_injects_command_into_raw_input_when_missing() {
+        // Mirrors the OpenCode wire shape: `rawInput: {}` (the agent puts
+        // the command in `terminal/create`, not in the tool call). The
+        // start mapper prefers `rawInput`, so the enriched envelope must
+        // populate it for the FE BashBlock to render the command.
+        let (registry, id) = registry_with_terminal().await;
+        let params = json!({
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "t-1",
+                "toolName": "bash",
+                "rawInput": {},
+                "content": [{ "type": "terminal", "terminalId": id }]
+            }
+        });
+        let enriched = enrich_session_update(&params, &registry).await.unwrap();
+        assert_eq!(enriched["update"]["rawInput"]["command"], "echo hello");
     }
 
     #[tokio::test]
@@ -179,11 +205,13 @@ mod tests {
                 "toolCallId": "t-1",
                 "toolName": "bash",
                 "toolInput": { "command": "user-set" },
+                "rawInput": { "command": "user-raw" },
                 "content": [{ "type": "terminal", "terminalId": id }]
             }
         });
         let enriched = enrich_session_update(&params, &registry).await.unwrap();
         assert_eq!(enriched["update"]["toolInput"]["command"], "user-set");
+        assert_eq!(enriched["update"]["rawInput"]["command"], "user-raw");
     }
 
     #[tokio::test]
