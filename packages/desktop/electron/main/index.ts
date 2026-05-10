@@ -167,6 +167,10 @@ function closeSplash(): void {
   splash = null;
 }
 
+// Pin AUMID so Windows attributes notifications/taskbar to Cadencr (no-op on
+// macOS). Must run before any window or notification is shown.
+app.setAppUserModelId(app.isPackaged ? "com.cadencr.desktop" : "com.cadencr.desktop.dev");
+
 // Give the dev build its own identity so it can run side-by-side with the
 // installed production Cadencr without colliding on Electron's
 // single-instance lock (the lock is keyed on `userData`). Without this,

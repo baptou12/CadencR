@@ -41,7 +41,9 @@ export interface CadencrDesktopBridge {
   pickDirectory: () => Promise<string | null>;
   notifyPermission: () => Promise<boolean>;
   notify: (opts: NotifyBridgeOptions) => Promise<void>;
+  notifyTest: () => Promise<void>;
   onNotificationClicked: (cb: (payload: NotificationClickPayload) => void) => () => void;
+  onNotificationFailed: (cb: (payload: { reason: string }) => void) => () => void;
   onCloseRequested: (cb: () => void) => () => void;
   confirmClose: () => Promise<void>;
   requestQuit: () => Promise<void>;
@@ -77,7 +79,9 @@ const browserBridge: CadencrDesktopBridge = {
   pickDirectory: () => unavailable("pickDirectory"),
   notifyPermission: () => Promise.resolve(false),
   notify: () => Promise.resolve(),
+  notifyTest: () => unavailable("notifyTest"),
   onNotificationClicked: () => () => undefined,
+  onNotificationFailed: () => () => undefined,
   onCloseRequested: () => () => undefined,
   confirmClose: () => Promise.resolve(),
   requestQuit: () => Promise.resolve(),

@@ -11,7 +11,12 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { getRuntimeConfig } from "./runtime-config";
-import { notificationPermission, sendNotification, type NotifyOptions } from "./notifications";
+import {
+  notificationPermission,
+  sendNotification,
+  sendTestNotification,
+  type NotifyOptions,
+} from "./notifications";
 
 const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_HANDLES = 128;
@@ -55,6 +60,10 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
   ipcMain.handle("notify:send", (event, opts: unknown) => {
     assertTrustedSender(event, getMainWindow);
     sendNotification(requireMainWindow(getMainWindow), parseNotifyOptions(opts));
+  });
+  ipcMain.handle("notify:test", (event) => {
+    assertTrustedSender(event, getMainWindow);
+    sendTestNotification(requireMainWindow(getMainWindow));
   });
   ipcMain.handle("app:confirm-close", (event) => {
     assertTrustedSender(event, getMainWindow);

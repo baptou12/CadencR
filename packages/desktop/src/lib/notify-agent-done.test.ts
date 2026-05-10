@@ -1,4 +1,8 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
+
+const mockToastError = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast: { error: mockToastError } }));
+
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
@@ -6,12 +10,16 @@ import {
 import type { CadencrDesktopBridge } from "@/lib/desktop-bridge";
 import {
   initNotificationPermission,
+  listenForNotificationFailures,
   notifyAgentDone,
   notifyAgentNeedsInput,
 } from "./notify-agent-done";
 
 const mockNotifyPermission = vi.fn();
 const mockNotify = vi.fn();
+const mockOnNotificationFailed = vi.fn<CadencrDesktopBridge["onNotificationFailed"]>(
+  () => () => undefined,
+);
 
 function bridge(): CadencrDesktopBridge {
   return {
@@ -24,7 +32,9 @@ function bridge(): CadencrDesktopBridge {
     pickDirectory: vi.fn(),
     notifyPermission: mockNotifyPermission,
     notify: mockNotify,
+    notifyTest: vi.fn(),
     onNotificationClicked: vi.fn(() => () => undefined),
+    onNotificationFailed: mockOnNotificationFailed,
     onCloseRequested: vi.fn(() => () => undefined),
     confirmClose: vi.fn(),
     requestQuit: vi.fn(),
@@ -190,6 +200,29 @@ describe("notifyAgentDone", () => {
       projectId: 2,
       routeType: "workflow",
     });
+  });
+});
+
+describe("listenForNotificationFailures", () => {
+  it("toasts the failure reason from the main process and cleans up the listener", () => {
+    const cleanup = vi.fn();
+    type FailureCb = (payload: { reason: string }) => void;
+    const captured: FailureCb[] = [];
+    mockOnNotificationFailed.mockImplementationOnce((cb) => {
+      captured.push(cb);
+      return cleanup;
+    });
+
+    const unsubscribe = listenForNotificationFailures();
+    expect(captured).toHaveLength(1);
+
+    captured[0]({ reason: "macOS denied authorization" });
+    expect(mockToastError).toHaveBeenCalledWith("System notification was blocked", {
+      description: "macOS denied authorization",
+    });
+
+    unsubscribe();
+    expect(cleanup).toHaveBeenCalled();
   });
 });
 
