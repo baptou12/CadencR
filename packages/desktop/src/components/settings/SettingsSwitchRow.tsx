@@ -1,0 +1,53 @@
+import { useId, type ReactNode } from "react";
+import { Switch } from "@/components/ui/switch";
+import { SettingsRow } from "./SettingsRow";
+import { IconTile, type IconTileTint } from "./IconTile";
+
+/**
+ * Convenience wrapper around `SettingsRow` for the very common
+ * "icon-tile + label + description + switch" pattern. Used by the Editor
+ * card, Feature Workflow's Parallel Execution row, etc.
+ */
+export function SettingsSwitchRow({
+  id,
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled,
+  icon,
+  iconTint = "muted",
+  divided,
+}: {
+  id?: string;
+  label: ReactNode;
+  description?: ReactNode;
+  checked: boolean;
+  onCheckedChange: (next: boolean) => void;
+  disabled?: boolean;
+  icon?: ReactNode;
+  iconTint?: IconTileTint;
+  divided?: boolean;
+}): React.JSX.Element {
+  const fallbackId = useId();
+  const switchId = id ?? fallbackId;
+
+  return (
+    <SettingsRow
+      htmlFor={switchId}
+      icon={icon ? <IconTile tint={iconTint}>{icon}</IconTile> : undefined}
+      label={label}
+      description={description}
+      divided={divided}
+      align="start"
+      control={
+        <Switch
+          id={switchId}
+          checked={checked}
+          onCheckedChange={onCheckedChange}
+          disabled={disabled}
+        />
+      }
+    />
+  );
+}

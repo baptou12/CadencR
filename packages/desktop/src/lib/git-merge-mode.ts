@@ -8,29 +8,36 @@ export const DEFAULT_GIT_MERGE_MODE: GitMergeMode = "no_ff";
 
 export interface GitMergeModeOption {
   value: GitMergeMode;
+  /** Display name (e.g. "No fast-forward"). */
   label: string;
+  /** Git CLI flag (e.g. "--no-ff") rendered as a chip. */
+  flag: string;
   description: string;
 }
 
 export const GIT_MERGE_MODE_OPTIONS: GitMergeModeOption[] = [
   {
     value: "default",
-    label: "Default",
+    label: "Git default",
+    flag: "default",
     description: "Use Git's default merge behavior.",
   },
   {
     value: "no_ff",
-    label: "--no-ff",
+    label: "No fast-forward",
+    flag: "--no-ff",
     description: "Always create a merge commit.",
   },
   {
     value: "ff_only",
-    label: "--ff-only",
+    label: "Fast-forward only",
+    flag: "--ff-only",
     description: "Only merge when a fast-forward is possible.",
   },
   {
     value: "squash",
-    label: "--squash",
+    label: "Squash",
+    flag: "--squash",
     description: "Stage the combined changes without creating a merge commit.",
   },
 ];
@@ -41,6 +48,7 @@ export function parseGitMergeMode(value: string | null | undefined): GitMergeMod
     : DEFAULT_GIT_MERGE_MODE;
 }
 
-export function gitMergeModeLabel(value: GitMergeMode): string {
-  return GIT_MERGE_MODE_OPTIONS.find((option) => option.value === value)?.label ?? "--no-ff";
+/** CLI flag (e.g. "--no-ff") for a given merge mode — used by buttons / chips. */
+export function gitMergeModeFlag(value: GitMergeMode): string {
+  return GIT_MERGE_MODE_OPTIONS.find((option) => option.value === value)?.flag ?? "--no-ff";
 }

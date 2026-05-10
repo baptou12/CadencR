@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ShieldOff } from "lucide-react";
+import { AlertTriangle, ShieldOff } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -11,16 +11,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SettingsCard } from "./SettingsCard";
+import { IconTile } from "./IconTile";
 
 /**
  * Per-provider opt-in for an unsafe permission mode (Claude Code's
- * BypassPermissions, Codex's danger-full-access). Persisted as a workspace
- * setting (`"true" | "false"` string). Flipping ON shows a confirmation
- * dialog the user has to acknowledge — flipping OFF is silent.
- *
- * The toggled mode joins the per-provider Shift+Tab cycle in MetaBar; see
- * `lib/provider-modes.ts` for the catalog and `routes/ws-session.$sessionId.tsx`
- * for the wiring.
+ * BypassPermissions, Codex's danger-full-access). Flipping ON shows a
+ * confirmation dialog; flipping OFF is silent.
  */
 export function DangerousModeToggle({
   settingKey,
@@ -41,8 +38,6 @@ export function DangerousModeToggle({
 
   const handleToggle = (checked: boolean): void => {
     if (checked) {
-      // Surface the warning before the change persists. The toggle stays in
-      // its previous (off) position until the user confirms.
       setConfirmOpen(true);
       return;
     }
@@ -55,14 +50,22 @@ export function DangerousModeToggle({
   };
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold flex items-center gap-2">
-            <ShieldOff className="size-4 text-red-400" aria-hidden />
-            {title}
-          </h3>
-          <p className="text-sm text-muted-foreground mt-1">{description}</p>
+    <SettingsCard tone="danger" padded>
+      <div className="flex items-start justify-between gap-6">
+        <div className="flex items-start gap-3">
+          <IconTile tint="red">
+            <ShieldOff className="size-4" aria-hidden />
+          </IconTile>
+          <div>
+            <div className="text-sm font-semibold">{title}</div>
+            <p className="mt-0.5 max-w-md text-xs text-muted-foreground leading-snug">
+              {description}
+            </p>
+            <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-[var(--acc-red)]">
+              <AlertTriangle className="size-3" aria-hidden />
+              Only enable in containers, VMs, or dev sandboxes.
+            </div>
+          </div>
         </div>
         <Switch
           checked={enabled}
@@ -75,7 +78,7 @@ export function DangerousModeToggle({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-400">
+            <DialogTitle className="flex items-center gap-2 text-[var(--acc-red)]">
               <ShieldOff className="size-4" aria-hidden />
               {warningTitle}
             </DialogTitle>
@@ -87,16 +90,12 @@ export function DangerousModeToggle({
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button
-              variant="default"
-              onClick={handleConfirm}
-              className="bg-red-500 hover:bg-red-600 text-white"
-            >
+            <Button variant="destructive" onClick={handleConfirm}>
               I understand, enable
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </SettingsCard>
   );
 }

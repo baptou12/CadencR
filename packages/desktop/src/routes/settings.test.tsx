@@ -52,50 +52,45 @@ describe("SettingsPage route", () => {
     mocks.mockGetWorkspaceSetting.mockReturnValue({ data: { value: "1" }, isSuccess: true });
   });
 
-  it("renders the settings heading", () => {
+  it("renders the workspace settings heading", () => {
     render(<SettingsPage />);
-    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Workspace settings" })).toBeInTheDocument();
   });
 
-  it("renders agent runtime section", () => {
+  it("renders the sidebar nav with grouped sections", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Agent Runtime")).toBeInTheDocument();
+    // sidebar nav buttons (the visible ones, not the section headings)
+    expect(screen.getAllByRole("button", { name: /Appearance/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /CLI Providers/ }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /Feature Workflow/ }).length).toBeGreaterThan(0);
+  });
+
+  it("renders runtime & models section with the model selector", () => {
+    render(<SettingsPage />);
+    expect(screen.getByRole("heading", { name: /Runtime & Models/ })).toBeInTheDocument();
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
   });
 
-  it("renders agent autonomy section", () => {
+  it("renders the autonomy radio group inside Feature Workflow", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Agent Autonomy")).toBeInTheDocument();
-    expect(screen.getAllByRole("combobox").length).toBeGreaterThan(0);
+    expect(screen.getByRole("radiogroup", { name: /agent autonomy/i })).toBeInTheDocument();
   });
 
-  it("renders git settings section", () => {
+  it("renders git merge-strategy radio group", () => {
     render(<SettingsPage />);
     expect(screen.getByRole("heading", { name: "Git" })).toBeInTheDocument();
-    expect(
-      screen.getByText("Configure defaults and behavior for Git actions in the header."),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: /merge strategy/i })).toBeInTheDocument();
     expect(screen.getByText("--no-ff")).toBeInTheDocument();
   });
 
-  it("renders loader style section", () => {
+  it("renders loader-style options inside Appearance", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Loader Style")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Choose between the default square loader and a discreet animated usage glow.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Loader style")).toBeInTheDocument();
     expect(screen.getByText("Normal")).toBeInTheDocument();
     expect(screen.getByText("Usage Glow")).toBeInTheDocument();
     expect(
       screen.getByText(
         "Keep the current square streaming indicator and standard context usage bar.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Hide the square and let the context usage bar carry a subtle neon pulse while the agent is running.",
       ),
     ).toBeInTheDocument();
   });

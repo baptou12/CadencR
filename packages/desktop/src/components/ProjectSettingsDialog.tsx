@@ -1,25 +1,25 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { GitBranch, GitFork, TerminalSquare } from "lucide-react";
 import {
   useGetProjectSettings,
   useSetProjectSetting,
   getGetProjectSettingsQueryKey,
 } from "../api/generated";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { ModelSelector } from "./ModelSelector";
 import { WorktreeList } from "./WorktreeList";
 import { ShellTerminalFrame } from "./ShellTerminalFrame";
+import { SettingsCard } from "@/components/settings/SettingsCard";
+import { SettingsRow } from "@/components/settings/SettingsRow";
+import { SettingsSection } from "@/components/settings/SettingsSection";
+import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
+import { IconTile } from "@/components/settings/IconTile";
+import { AutonomyRadio } from "@/components/settings/AutonomyRadio";
+import { parseAgentAutonomy } from "@/lib/agent-autonomy";
 import { DEFAULT_PROJECT_COLOR } from "@/lib/project-colors";
 
 export function ProjectSettingsDialog({
@@ -35,7 +35,6 @@ export function ProjectSettingsDialog({
 }) {
   const queryClient = useQueryClient();
   const { data: settingsArray } = useGetProjectSettings(projectId, { query: { enabled: open } });
-  // Convert array to record for easy key access
   const settings: Record<string, string> = {};
   if (settingsArray) {
     for (const s of settingsArray) {
@@ -52,195 +51,221 @@ export function ProjectSettingsDialog({
   });
 
   const branchPrefix = settings?.branch_prefix ?? "";
-  const agentAutonomy = settings?.agent_autonomy ?? "1";
+  const agentAutonomy = parseAgentAutonomy(settings?.agent_autonomy);
+  const parallelExecution = (settings?.parallel_execution ?? "true") === "true";
   const [colorInput, setColorInput] = useState(settings?.color ?? "");
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
   const [qaPrompt, setQaPrompt] = useState(settings?.qa_prompt ?? "");
   useEffect(() => {
-    if (settings?.color != null) {
-      setColorInput(settings.color);
-    }
+    if (settings?.color != null) setColorInput(settings.color);
   }, [settings?.color]);
   useEffect(() => {
-    if (settings?.qa_prompt != null) {
-      setQaPrompt(settings.qa_prompt);
-    }
+    if (settings?.qa_prompt != null) setQaPrompt(settings.qa_prompt);
   }, [settings?.qa_prompt]);
   useEffect(() => {
-    if (settings?.setup_worktree != null) {
-      setSetupWorktree(settings.setup_worktree);
-    }
+    if (settings?.setup_worktree != null) setSetupWorktree(settings.setup_worktree);
   }, [settings?.setup_worktree]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] w-[90vw] max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Project Settings: {projectName}</DialogTitle>
+      <DialogContent className="flex max-h-[85vh] w-[90vw] flex-col gap-0 p-0 sm:max-w-[860px]">
+        <DialogHeader className="border-b border-border px-6 py-4">
+          <DialogTitle className="text-base font-semibold">
+            Project Settings: {projectName}
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-5 overflow-y-auto flex-1 pr-1">
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Project Color</h4>
-            <div className="flex items-center gap-3">
-              <span
-                className="size-6 shrink-0 rounded-full border border-border"
-                style={{ backgroundColor: `#${colorInput || DEFAULT_PROJECT_COLOR}` }}
-              />
-              <Input
-                placeholder="e.g. 3b82f6"
-                value={colorInput}
-                onChange={(e) =>
-                  setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))
+
+        <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
+          <SettingsSection size="sm" title="Identity" subtitle="Color · Display">
+            <SettingsCard padded>
+              <SettingsRow
+                icon={
+                  <span
+                    className="size-8 shrink-0 rounded-full border border-border"
+                    style={{ backgroundColor: `#${colorInput || DEFAULT_PROJECT_COLOR}` }}
+                  />
                 }
-                onBlur={() =>
+                label="Project color"
+                description="Hex color used for this project's accent dot in the sidebar."
+                control={
+                  <Input
+                    placeholder="3b82f6"
+                    value={colorInput}
+                    onChange={(e) =>
+                      setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))
+                    }
+                    onBlur={() =>
+                      setSettingMutation.mutate({
+                        id: projectId,
+                        data: { key: "color", value: colorInput },
+                      })
+                    }
+                    className="h-8 w-28 font-mono text-sm"
+                  />
+                }
+                className="!px-0 !py-0"
+              />
+            </SettingsCard>
+          </SettingsSection>
+
+          <SettingsSection
+            size="sm"
+            title="Runtime & Models"
+            subtitle="Per-agent model picks"
+            description="Override the runtime/model used for each agent inside this project."
+          >
+            <SettingsCard>
+              <ModelSelector level="project" projectId={projectId} />
+            </SettingsCard>
+          </SettingsSection>
+
+          <SettingsSection
+            size="sm"
+            title="Git & Automation"
+            subtitle="Worktree defaults"
+            description="Defaults applied to worktrees created for this project."
+          >
+            <SettingsCard padded className="space-y-5">
+              <div className="space-y-2">
+                <label htmlFor="branch-prefix" className="text-sm font-medium">
+                  Branch prefix
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Prefix added to worktree branch names.
+                </p>
+                <div className="flex items-center gap-2">
+                  <IconTile tint="cyan">
+                    <GitBranch className="size-4" />
+                  </IconTile>
+                  <Input
+                    id="branch-prefix"
+                    placeholder="e.g. feature/"
+                    value={branchPrefix}
+                    onChange={(e) =>
+                      setSettingMutation.mutate({
+                        id: projectId,
+                        data: { key: "branch_prefix", value: e.target.value },
+                      })
+                    }
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-border" />
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <IconTile tint="green">
+                    <TerminalSquare className="size-4" />
+                  </IconTile>
+                  <div>
+                    <div className="text-sm font-medium">Worktree setup commands</div>
+                    <p className="text-xs text-muted-foreground">
+                      Shell commands to run after creating a worktree (one per line).
+                    </p>
+                  </div>
+                </div>
+                <ShellTerminalFrame subtitle="one command per line" bodyClassName="p-0">
+                  <Textarea
+                    placeholder={
+                      "pnpm install\ncp packages/service/.env.example packages/service/.env"
+                    }
+                    rows={4}
+                    value={setupWorktree}
+                    onChange={(e) => setSetupWorktree(e.target.value)}
+                    onBlur={() =>
+                      setSettingMutation.mutate({
+                        id: projectId,
+                        data: { key: "setup_worktree", value: setupWorktree },
+                      })
+                    }
+                    className="min-h-24 resize-y rounded-none border-0 bg-[var(--block-bash-body-bg)] font-mono text-xs leading-relaxed text-[var(--block-bash-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                </ShellTerminalFrame>
+              </div>
+
+              <div className="border-t border-border" />
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Agent autonomy</div>
+                <p className="text-xs text-muted-foreground">
+                  How much automation the execute agent uses while building features in this
+                  project.
+                </p>
+                <AutonomyRadio
+                  value={agentAutonomy}
+                  onChange={(value) =>
+                    setSettingMutation.mutate({
+                      id: projectId,
+                      data: { key: "agent_autonomy", value },
+                    })
+                  }
+                />
+              </div>
+
+              <div className="border-t border-border" />
+
+              <SettingsSwitchRow
+                icon={<GitFork className="size-4" />}
+                iconTint="purple"
+                label="Parallel agent execution"
+                description="Run multiple agents in parallel within each execution step."
+                checked={parallelExecution}
+                onCheckedChange={(checked) =>
                   setSettingMutation.mutate({
                     id: projectId,
-                    data: { key: "color", value: colorInput },
+                    data: {
+                      key: "parallel_execution",
+                      value: checked ? "true" : "false",
+                    },
                   })
                 }
-                className="h-8 text-sm w-32 font-mono"
               />
-              <p className="text-xs text-muted-foreground">Hex color code (no #)</p>
-            </div>
-          </div>
+            </SettingsCard>
+          </SettingsSection>
 
-          <div className="space-y-3">
-            <div>
-              <h4 className="text-sm font-semibold">Model Configuration</h4>
-              <p className="text-xs text-muted-foreground">Override models for this project</p>
-            </div>
-            <ModelSelector level="project" projectId={projectId} />
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">Git &amp; Automation</h4>
-
-            <div className="space-y-1">
-              <span className="text-xs font-medium">Branch Prefix</span>
-              <Input
-                placeholder="e.g. feature/"
-                value={branchPrefix}
-                onChange={(e) =>
-                  setSettingMutation.mutate({
-                    id: projectId,
-                    data: { key: "branch_prefix", value: e.target.value },
-                  })
-                }
-                className="h-8 text-sm"
-              />
-              <p className="text-xs text-muted-foreground">Prefix added to worktree branch names</p>
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-xs font-medium">Worktree Setup Commands</span>
-              <ShellTerminalFrame subtitle="one command per line" bodyClassName="p-0">
+          <SettingsSection
+            size="sm"
+            title="QA & Testing"
+            subtitle="Verification commands"
+            description="Commands and steps the QA agent will follow to verify implementations."
+          >
+            <SettingsCard padded>
+              <div className="space-y-2">
+                <label htmlFor="qa-prompt" className="text-sm font-medium">
+                  QA testing procedure
+                </label>
                 <Textarea
+                  id="qa-prompt"
                   placeholder={
-                    "pnpm install\ncp packages/service/.env.example packages/service/.env"
+                    "e.g. pnpm test\npnpm run lint\nVerify the app starts with pnpm start"
                   }
                   rows={4}
-                  value={setupWorktree}
-                  onChange={(e) => setSetupWorktree(e.target.value)}
+                  value={qaPrompt}
+                  onChange={(e) => setQaPrompt(e.target.value)}
                   onBlur={() =>
                     setSettingMutation.mutate({
                       id: projectId,
-                      data: { key: "setup_worktree", value: setupWorktree },
+                      data: { key: "qa_prompt", value: qaPrompt },
                     })
                   }
-                  className="min-h-24 resize-y rounded-none border-0 bg-[var(--block-bash-body-bg)] font-mono text-xs leading-relaxed text-[var(--block-bash-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  className="text-sm"
                 />
-              </ShellTerminalFrame>
-              <p className="text-xs text-muted-foreground">
-                Shell commands to run after creating a worktree (one per line)
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-xs font-medium">Agent Autonomy</span>
-              <Select
-                value={agentAutonomy}
-                onValueChange={(value) =>
-                  setSettingMutation.mutate({
-                    id: projectId,
-                    data: { key: "agent_autonomy", value },
-                  })
-                }
-              >
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Low — ask before commit</SelectItem>
-                  <SelectItem value="2">Medium — manual continue</SelectItem>
-                  <SelectItem value="3">High — full auto</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Controls how much the execute agent does automatically
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="project-parallel-execution"
-                  checked={(settings?.parallel_execution ?? "true") === "true"}
-                  onCheckedChange={(checked) =>
-                    setSettingMutation.mutate({
-                      id: projectId,
-                      data: {
-                        key: "parallel_execution",
-                        value: checked ? "true" : "false",
-                      },
-                    })
-                  }
-                />
-                <label
-                  htmlFor="project-parallel-execution"
-                  className="text-xs font-medium cursor-pointer"
-                >
-                  Enable parallel agent execution
-                </label>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Run multiple agents in parallel within each execution step
-              </p>
-            </div>
-          </div>
+            </SettingsCard>
+          </SettingsSection>
 
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold">QA &amp; Testing</h4>
-
-            <div className="space-y-1">
-              <span className="text-xs font-medium">QA Testing Procedure</span>
-              <Textarea
-                placeholder={"e.g. pnpm test\npnpm run lint\nVerify the app starts with pnpm start"}
-                rows={4}
-                value={qaPrompt}
-                onChange={(e) => setQaPrompt(e.target.value)}
-                onBlur={() =>
-                  setSettingMutation.mutate({
-                    id: projectId,
-                    data: { key: "qa_prompt", value: qaPrompt },
-                  })
-                }
-                className="text-sm"
-              />
-              <p className="text-xs text-muted-foreground">
-                Commands and steps the QA agent will follow to verify implementations
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <h4 className="text-sm font-semibold">Worktrees</h4>
-              <p className="text-xs text-muted-foreground">
-                Git worktrees created for this project's features
-              </p>
-            </div>
-            <WorktreeList projectId={projectId} />
-          </div>
+          <SettingsSection
+            size="sm"
+            title="Worktrees"
+            subtitle="Active checkouts"
+            description="Git worktrees created for this project's features."
+          >
+            <SettingsCard padded>
+              <WorktreeList projectId={projectId} />
+            </SettingsCard>
+          </SettingsSection>
         </div>
       </DialogContent>
     </Dialog>
