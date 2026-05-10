@@ -98,7 +98,7 @@ describe("useRequestedFeatureFocus", () => {
     expect(state ? getFocusedTab(state) : null).toBe("git");
   });
 
-  it("retries briefly after completion so mounted inputs cannot steal requested focus", () => {
+  it("does not re-assert requested focus after the user moves focus elsewhere", () => {
     vi.useFakeTimers();
     useFeatureLayoutStore.getState().setState(FEATURE_ID, splitLayout());
 
@@ -109,10 +109,10 @@ describe("useRequestedFeatureFocus", () => {
     });
     expect(getFocusedTab(useFeatureLayoutStore.getState().features[FEATURE_ID])).toBe("terminal");
 
-    act(() => vi.advanceTimersByTime(50));
+    act(() => vi.advanceTimersByTime(2000));
 
     const state = useFeatureLayoutStore.getState().features[FEATURE_ID];
-    expect(state?.focusedPaneId).toBe(ROOT_LEAF_ID);
-    expect(state ? getFocusedTab(state) : null).toBe("git");
+    expect(state?.focusedPaneId).toBe("terminal-pane");
+    expect(state ? getFocusedTab(state) : null).toBe("terminal");
   });
 });
