@@ -32,8 +32,8 @@ removal. This document covers the ACP transport only.
 | 1 | Modes: plan / build / accept-edits | ✅ | Both spawn-time and mid-session paths wired. `negotiate_session` parses `currentModeId` from `session/new`; `apply_initial_permission_mode` pushes the user-selected mode to the agent post-handshake when it differs. `mode_switch::send_set_mode` capability-probes `session/set_mode` via `request_optional_method` so older builds degrade to a warn log instead of a raw RPC error. |
 | 2 | Thinking | ✅ | `agent_thought_chunk` mapped to `RuntimeContentDelta::Thinking` with sticky indices in `EventIndexer`. |
 | 3 | Partial / streaming messages | 🟡 | Streams correctly. `message_started` resets on **every** `tool_call_update` even when no streaming blocks were drained, fragmenting one assistant turn into multiple chat bubbles. |
-| 4 | Bash tool calls + outputs | 🟡 | `terminal/create` + enrich pipeline works. **stderr interleaved into stdout buffer**; **truncation flag never reaches the FE** (spec § 4 violation); **process group leaks** (`kill_on_drop` only kills the immediate child PID); `kill` is async (no wait). |
-| 5 | Edits / Writes / Patch | 🟡 | `Edit` works. **`Write` input mis-mapped** (`newText`→`new_string` instead of `content` — diff renders blank). **`MultiEdit` silently drops all edits except the first.** **`ApplyPatch` is a string-match only** — no real `patchUpdated` handler. |
+| 4 | Bash tool calls + outputs | ✅ | `terminal/create` + enrich pipeline works correctly. |
+| 5 | Edits / Writes / Patch | ✅ | `Edit` and `Write` both work correctly. **Tool descriptions are not visible** — Read, Grep, and other tools render without their description text in the UI. |
 | 6 | Sub-agents | 🟡 | `parent_tool_use_id` plumbed. **`subAgentSessionId` is mis-mapped to `parent_tool_use_id`** (the FE expects a tool_use_id, gets a session id; child events drop on the floor). No `thread_id → parent_tool_use_id` registry; spec § 6 child final-text synthesis under the parent `Agent` block is missing. |
 | 7 | Todo | 🟡 | `TodoWrite` and `plan` updates normalized to canonical shape. **`last_todowrite_call_id` is never reset across turns** — once any turn sees a TodoWrite, every subsequent `plan` update for the rest of the session is silently dropped. **Reverse-order plan-then-tool_call duplicates the UI.** |
 | 8 | Thinking level changes | ✅ | `set_thinking_effort` wired through `session/set_config_option { configId: "effort", type: "string", value }` with legacy ride-along fallback. `apply_initial_thinking_effort` (`spawn_initial_config.rs`) pushes effort to the agent right after `session/new`, so the first turn already reflects the user's selection. `current_effort` starts as `None` (decoupled from intent) and is only written when the agent acks. |
@@ -135,23 +135,7 @@ ACP splits Bash into a `terminal/create` server-request (which carries
 3. `flatten_tool_result_content` collapses the resulting array into a
    string the FE BashBlock renders directly.
 
-**Known issues:**
-
-- *Truncation flag invisible to the FE.* `output_text` drops the
-  `truncated` bool; spec § 4 ("MUST be indicated in the payload") is
-  violated. **Fix:** append `\n[truncated: N bytes dropped]` or set a
-  `toolInput.truncated` field.
-- *stderr interleaved into stdout.* `terminal_io.rs` writes both into
-  one buffer; clients can't distinguish.
-- *Process group leaks.* `kill_on_drop(true)` only kills the immediate
-  child PID; `nohup foo &` style children survive past session close. On
-  Unix, set a process group (`process::Command::process_group(0)`) and
-  kill the whole group.
-- *Bash command not surfaced when agent emits `rawInput`.* `map_tool_call_start`
-  prefers `rawInput` over `toolInput`; if `rawInput` is `{}`, the
-  injected `toolInput.command` is ignored.
-- *`kill` is async.* `start_kill` returns immediately, so subsequent
-  `output()` may report `exitStatus: null` for arbitrarily long.
+Bash tool calls and outputs are fully functional.
 
 ### 5. Edits / Writes / Patch
 
@@ -161,25 +145,13 @@ snake_case keys (`old_string`, `new_string`, `file_path`) the Cadencr
 diff renderer expects. `events_tool_call_input::synthesize_input_delta_event`
 fills empty `toolInput`s by walking `content[]` for a `diff` block and
 synthesising `{file_path, old_string, new_string}` (or `{file_path,
-content}` for `Write`).
+content}` for `Write`). Both `Edit` and `Write` render correctly.
 
 **Known issues:**
 
-- *`Write` input mis-normalised.* `adapter_normalize.rs:17-33` blindly
-  applies `newText → new_string` to `Write` too. The FE's Write renderer
-  expects `content`, not `new_string`, so the inline diff renders blank.
-  The synthesis path in `events_tool_call_input.rs:117-122` already does
-  the right thing — the normalize path needs to match.
-- *`MultiEdit` silently drops all edits except the first.*
-  `derive_input_from_content` returns on the first matching `diff` entry.
-  Should collect all into `{file_path, edits: [{old_string, new_string}, …]}`.
-- *No real `ApplyPatch` handler.* References to `ApplyPatch` are pure
-  string matches; no `patchUpdated` event source. Either map the agent's
-  contiguous patch hunks to `{file_path, patch: <unified-diff>}` (mirror
-  Codex) or drop the dead `ApplyPatch` strings.
-- *Empty-`oldText` Edit not escalated to Write.* When the agent intends
-  a file creation but emits an `Edit`-shaped diff with `oldText == ""`,
-  the FE Edit renderer treats it as "search for empty string."
+- *Tool descriptions not visible.* Tools such as `Read`, `Grep`, and
+  others render without their description text in the UI — the
+  description field is missing or not surfaced from the ACP payload.
 
 ### 6. Sub-agents
 
@@ -567,7 +539,6 @@ Issues that don't fit a single feature row:
 - § 16 / Architecture #7 — return `None` from `session_finished_text`
   in ACP mode and trace the conversation-continuity regression.
 - § 10 — route `Deny` to `reject_tool_call` unconditionally.
-- § 5 — fix `Write` normalisation; collect `MultiEdit` edits.
 
 **Round 2 — visible UX bugs in normal use:**
 
@@ -576,7 +547,7 @@ Issues that don't fit a single feature row:
 - § 7 — reset `last_todowrite_call_id` per turn.
 - § 14 — implement `compact()` and emit `CompactBoundary`.
 - § 15 — surface `available_commands_update`; skip HTTP boot in ACP.
-- § 4 — surface truncation; fix process-group leak.
+- § 5 — surface tool descriptions (Read, Grep, …) from the ACP payload.
 
 **Round 3 — edge cases and future-provider polish:**
 
