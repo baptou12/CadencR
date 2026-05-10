@@ -10,7 +10,7 @@ import {
   Maximize2Icon,
   Minimize2Icon,
 } from "lucide-react";
-import { SlidingText } from "./SlidingText";
+import { SlidingText } from "@/components/SlidingText";
 
 interface BadgeConfig {
   label: string;
