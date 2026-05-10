@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useHotkeys } from "react-hotkeys-hook";
 import {
   ArrowLeft,
+  Bell,
   BrainCircuit,
   ChevronRight,
   Code2,
@@ -34,6 +35,7 @@ import { CustomModelsSection } from "@/components/settings/CustomModelsSection";
 import { DangerousModeToggle } from "@/components/settings/DangerousModeToggle";
 import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
+import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
@@ -76,6 +78,7 @@ const NAV_GROUPS: SettingsNavGroup[] = [
       { id: "appearance", label: "Appearance", icon: <Palette className="size-4" /> },
       { id: "editor", label: "Editor", icon: <Code2 className="size-4" /> },
       { id: "interface", label: "Interface & Zoom", icon: <MonitorCog className="size-4" /> },
+      { id: "notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     ],
   },
   {
@@ -175,6 +178,7 @@ function SettingsPage() {
           <AppearanceSection />
           <EditorSection />
           <InterfaceSection />
+          <NotificationsSection />
           <RuntimeSection />
           <FeatureWorkflowSection />
           <GitSection />

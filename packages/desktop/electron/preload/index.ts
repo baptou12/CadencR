@@ -93,8 +93,11 @@ contextBridge.exposeInMainWorld("cadencr", {
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:pick-directory"),
   notifyPermission: (): Promise<boolean> => ipcRenderer.invoke("notify:permission"),
   notify: (opts: NotifyOptions): Promise<void> => ipcRenderer.invoke("notify:send", opts),
+  notifyTest: (): Promise<void> => ipcRenderer.invoke("notify:test"),
   onNotificationClicked: (cb: (payload: NotificationClickPayload) => void): (() => void) =>
     onIpc("notification-clicked", cb),
+  onNotificationFailed: (cb: (payload: { reason: string }) => void): (() => void) =>
+    onIpc("notification-failed", cb),
   onCloseRequested: (cb: () => void): (() => void) => onIpc("app:close-requested", cb),
   confirmClose: (): Promise<void> => ipcRenderer.invoke("app:confirm-close"),
   requestQuit: (): Promise<void> => ipcRenderer.invoke("app:request-quit"),

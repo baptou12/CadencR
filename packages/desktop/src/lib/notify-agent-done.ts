@@ -8,7 +8,12 @@ let permissionCache: boolean | null = null;
 /**
  * Initialize notification permission check.
  * Must be called once at app startup before any notifications are sent.
- * The Rust side waits for macOS authorization before returning.
+ *
+ * On macOS there is no programmatic API to query the user's notification
+ * authorization state, so this only verifies the OS *supports* notifications
+ * at all — it does not guarantee delivery. Authorization failures (denied
+ * permission, Focus mode, missing entitlement) are surfaced asynchronously
+ * via `listenForNotificationFailures`.
  */
 export async function initNotificationPermission(): Promise<void> {
   try {
@@ -16,6 +21,19 @@ export async function initNotificationPermission(): Promise<void> {
   } catch {
     permissionCache = false;
   }
+}
+
+/**
+ * Surface main-process notification failures (denied permission, Focus mode,
+ * missing entitlement, …) as a toast so users aren't left wondering why
+ * nothing fired. Returns a cleanup function for use in useEffect.
+ */
+export function listenForNotificationFailures(): () => void {
+  return desktopBridge.onNotificationFailed((payload) => {
+    toast.error("System notification was blocked", {
+      description: payload.reason,
+    });
+  });
 }
 
 interface NotifyOptions {
