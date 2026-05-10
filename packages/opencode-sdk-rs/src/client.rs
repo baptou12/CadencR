@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::error::SdkError;
 use crate::parsing::{parse_message_from, parse_session_from};
-use crate::types::{Message, Session};
+use crate::types::{ConfigProvidersResponse, Message, Session};
 
 #[derive(Clone)]
 pub struct OpenCodeClient {
@@ -95,6 +95,24 @@ impl OpenCodeClient {
             .collect())
     }
 
+    /// `GET /config/providers` — opencode's resolved provider/model
+    /// list from models.dev + on-disk config.
+    ///
+    /// Read-only / no token usage: this endpoint is a pure config
+    /// listing and does not trigger upstream model API calls. The
+    /// cadencr-service catalog probe spawns a short-lived
+    /// `opencode serve` subprocess just to hit this and then exits.
+    pub async fn list_config_providers(&self) -> Result<ConfigProvidersResponse, SdkError> {
+        let response = self
+            .http
+            .get(format!("{}/config/providers", self.base_url))
+            .send()
+            .await?;
+        let body = ensure_success(response).await?;
+        let parsed: ConfigProvidersResponse = serde_json::from_value(body)?;
+        Ok(parsed)
+    }
+
     fn maybe_scoped_request(
         &self,
         req: reqwest::RequestBuilder,
@@ -126,4 +144,61 @@ async fn ensure_success(response: reqwest::Response) -> Result<Value, SdkError> 
 
 fn deserialize_json<T: DeserializeOwned>(raw: &str) -> Result<T, SdkError> {
     serde_json::from_str(raw).map_err(SdkError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenCodeClient;
+    use axum::routing::get;
+    use axum::Json;
+    use serde_json::json;
+
+    /// Boots a one-shot axum stub server bound to an OS-assigned port,
+    /// answering `GET /config/providers` with the given fixture, and
+    /// returns the port the client should talk to.
+    async fn spawn_config_providers_stub(body: serde_json::Value) -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let app = axum::Router::new().route(
+            "/config/providers",
+            get(move || {
+                let body = body.clone();
+                async move { Json(body) }
+            }),
+        );
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn list_config_providers_parses_stub_response() {
+        let port = spawn_config_providers_stub(json!({
+            "providers": [
+                {
+                    "id": "anthropic",
+                    "name": "Anthropic",
+                    "models": {
+                        "claude-sonnet-4-5": {
+                            "name": "Claude Sonnet 4.5",
+                            "limit": { "context": 200000, "output": 64000 }
+                        }
+                    }
+                }
+            ],
+            "default": { "anthropic": "claude-sonnet-4-5" }
+        }))
+        .await;
+
+        let client = OpenCodeClient::new(port);
+        let response = client.list_config_providers().await.expect("ok");
+        assert_eq!(response.providers.len(), 1);
+        assert_eq!(response.providers[0].id, "anthropic");
+        assert_eq!(response.providers[0].models[0].id, "claude-sonnet-4-5");
+        assert_eq!(
+            response.default.get("anthropic").map(String::as_str),
+            Some("claude-sonnet-4-5"),
+        );
+    }
 }

@@ -9,6 +9,7 @@ mod adapter;
 mod adapter_normalize;
 mod events_subagent_synthesis;
 mod events_tool_call_question;
+pub(in crate::domain::agents) mod port;
 mod question_sidecar;
 // Workarounds for ACP-wire limitations in upstream OpenCode. Anything
 // that talks to the embedded HTTP backend on `--port` to make up for an
@@ -18,7 +19,6 @@ mod question_sidecar;
 // being retired and whose removal must NOT take this directory with it.
 mod upstream_workaround;
 
-use std::net::TcpListener;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -29,6 +29,7 @@ use crate::domain::agents::acp::AcpClientInfo;
 use crate::domain::agents::adapter::{AgentRuntimeSession, RuntimeError, RuntimeSpawnConfig};
 
 use self::adapter::OpenCodeAcpAdapter;
+use self::port::reserve_local_port;
 use self::question_sidecar::QuestionSidecar;
 
 /// ACP's answer to the runtime layer's "is this session finished?" probe.
@@ -105,29 +106,4 @@ pub(super) async fn spawn_acp_session(
         hooks: Arc::new(OpenCodeAcpAdapter::new(question_sidecar, question_port)),
     })
     .await
-}
-
-struct ReservedLocalPort {
-    _listener: TcpListener,
-    port: u16,
-}
-
-impl ReservedLocalPort {
-    fn port(&self) -> u16 {
-        self.port
-    }
-}
-
-fn reserve_local_port() -> Result<ReservedLocalPort, RuntimeError> {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
-        RuntimeError::new(format!("failed to reserve ACP sidecar port: {error}"))
-    })?;
-    let port = listener
-        .local_addr()
-        .map(|addr| addr.port())
-        .map_err(|error| RuntimeError::new(format!("failed to read ACP sidecar port: {error}")))?;
-    Ok(ReservedLocalPort {
-        _listener: listener,
-        port,
-    })
 }

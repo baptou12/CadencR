@@ -1,5 +1,7 @@
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SessionStatus {
@@ -344,5 +346,165 @@ impl PromptPart {
             }
             PromptPart::Raw(value) => value,
         }
+    }
+}
+
+// -- /config/providers wire shapes -------------------------------------------
+//
+// `GET /config/providers` on the embedded HTTP backend of `opencode
+// serve` returns the providers/models opencode resolved from
+// models.dev + on-disk config. Pure config listing — no upstream model
+// API calls, no token usage. Service-side probe shapes these into the
+// provider-neutral `ProviderCatalogEntry`.
+//
+// `default` is wired as `{ providerID: modelID }` (one entry per
+// provider) — *not* a single `ModelRef`. The service picks one based
+// on its own selection policy.
+
+/// Top-level response for `GET /config/providers`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConfigProvidersResponse {
+    pub providers: Vec<ConfigProvider>,
+    #[serde(default)]
+    pub default: std::collections::HashMap<String, String>,
+}
+
+/// A single provider entry. `models` is sent over the wire as
+/// `{ "model-id": {…} }` and flattened here into a vec with the map key
+/// injected as `id`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConfigProvider {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_model_map")]
+    pub models: Vec<ConfigProviderModel>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConfigProviderModel {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub limit: Option<ConfigModelLimit>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ConfigModelLimit {
+    #[serde(default)]
+    pub context: Option<u64>,
+    #[serde(default)]
+    pub output: Option<u64>,
+}
+
+/// Deserialize the wire-side `{ "model-id": { … } }` map into a
+/// `Vec<ConfigProviderModel>`, injecting each map key as the `id` of the
+/// corresponding entry. Mirrors how opencode emits the provider config.
+fn deserialize_model_map<'de, D>(deserializer: D) -> Result<Vec<ConfigProviderModel>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    /// Body of each map entry. `id` is intentionally optional on the wire —
+    /// the canonical id is the map key, but if upstream ever sets it
+    /// inline we prefer that.
+    #[derive(Deserialize)]
+    struct ModelBody {
+        #[serde(default)]
+        id: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        limit: Option<ConfigModelLimit>,
+    }
+
+    struct ModelMapVisitor;
+
+    impl<'de> Visitor<'de> for ModelMapVisitor {
+        type Value = Vec<ConfigProviderModel>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a map of model id → model body")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: MapAccess<'de>,
+        {
+            let mut out = Vec::new();
+            while let Some((key, body)) = map.next_entry::<String, ModelBody>()? {
+                out.push(ConfigProviderModel {
+                    id: body.id.unwrap_or(key),
+                    name: body.name,
+                    limit: body.limit,
+                });
+            }
+            Ok(out)
+        }
+    }
+
+    deserializer
+        .deserialize_map(ModelMapVisitor)
+        .map_err(de::Error::custom)
+}
+
+#[cfg(test)]
+mod config_providers_tests {
+    use super::*;
+
+    #[test]
+    fn config_providers_response_round_trips() {
+        let raw = serde_json::json!({
+            "providers": [
+                {
+                    "id": "anthropic",
+                    "name": "Anthropic",
+                    "models": {
+                        "claude-sonnet-4-5": {
+                            "name": "Claude Sonnet 4.5",
+                            "limit": { "context": 200000, "output": 64000 }
+                        }
+                    }
+                }
+            ],
+            "default": { "anthropic": "claude-sonnet-4-5" }
+        });
+
+        let parsed: ConfigProvidersResponse = serde_json::from_value(raw).expect("parse");
+        assert_eq!(parsed.providers.len(), 1);
+        let provider = &parsed.providers[0];
+        assert_eq!(provider.id, "anthropic");
+        assert_eq!(provider.name.as_deref(), Some("Anthropic"));
+        assert_eq!(provider.models.len(), 1);
+        let model = &provider.models[0];
+        assert_eq!(model.id, "claude-sonnet-4-5");
+        assert_eq!(model.name.as_deref(), Some("Claude Sonnet 4.5"));
+        let limit = model.limit.as_ref().expect("limit");
+        assert_eq!(limit.context, Some(200_000));
+        assert_eq!(limit.output, Some(64_000));
+        assert_eq!(
+            parsed.default.get("anthropic").map(String::as_str),
+            Some("claude-sonnet-4-5"),
+        );
+    }
+
+    #[test]
+    fn config_providers_handles_missing_limit() {
+        let raw = serde_json::json!({
+            "providers": [
+                {
+                    "id": "local",
+                    "models": {
+                        "default": {}
+                    }
+                }
+            ]
+        });
+
+        let parsed: ConfigProvidersResponse = serde_json::from_value(raw).expect("parse");
+        let model = &parsed.providers[0].models[0];
+        assert_eq!(model.id, "default");
+        assert!(model.limit.is_none());
+        assert!(parsed.default.is_empty());
     }
 }

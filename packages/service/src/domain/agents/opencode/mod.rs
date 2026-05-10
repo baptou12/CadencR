@@ -1,4 +1,4 @@
-mod acp;
+pub(in crate::domain::agents) mod acp;
 pub(crate) mod events;
 pub(crate) mod permissions;
 mod questions;
@@ -60,6 +60,20 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
 
     async fn context_window_for_model(&self, model_id: &str) -> Option<u64> {
         super::providers::opencode::context_window_for_model(model_id).await
+    }
+
+    async fn default_model_id(&self) -> Option<String> {
+        super::providers::opencode::default_model_id().await
+    }
+
+    fn spawn_startup_warmup(&self) {
+        // Warm the live catalog cache off the request path. The probe
+        // spawns a short-lived `opencode acp` subprocess; running it at
+        // startup means the first FE provider-picker render hits a
+        // populated cache instead of waiting on a fresh probe.
+        tokio::spawn(async {
+            let _ = super::providers::opencode::catalog_entry_live().await;
+        });
     }
 
     fn worktree_config_paths(&self) -> &'static [&'static str] {

@@ -252,7 +252,18 @@ async fn test_resolve_model_uses_provider_default_after_provider_override() {
 
     let mgr = make_agent_manager(pool, 1);
     let model = mgr.resolve_model("plan", Some(1)).await;
-    assert_eq!(model, "default/default");
+    // With the feature's `agent_runtime_plan = opencode` and no explicit
+    // model override, the resolver should hand back whatever the
+    // OpenCode adapter reports as its default. That used to be the
+    // static `"default/default"` stub; it's now live (see
+    // `providers::opencode`), so we just assert the contract — the
+    // resolver returned a non-empty value in the provider/model shape
+    // the OpenCode catalog uses.
+    assert!(!model.is_empty(), "expected non-empty resolved model");
+    assert!(
+        model.contains('/'),
+        "expected provider/model id, got {model:?}",
+    );
 }
 
 #[tokio::test]
