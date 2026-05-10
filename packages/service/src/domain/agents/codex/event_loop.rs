@@ -5,10 +5,10 @@ use std::sync::Arc;
 use codex_app_server_sdk_rs::AppServerEvent;
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
-use super::event_items::item_type;
 use super::event_state::IndexState;
 use super::event_system::{permission_request_event, request_key};
-use super::events::{notification_events, turn_id_from_started};
+use super::event_turn_state::{update_turn_state, RootTurnTracker};
+use super::events::notification_events;
 use super::permissions::PendingCodexRequest;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
@@ -16,7 +16,7 @@ pub(super) fn spawn_event_loop(
     mut source_rx: broadcast::Receiver<AppServerEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
-    active_turn_id: Arc<RwLock<Option<String>>>,
+    turns: RootTurnTracker,
     model: Arc<RwLock<Option<String>>>,
     closing: Arc<AtomicBool>,
 ) {
@@ -39,7 +39,14 @@ pub(super) fn spawn_event_loop(
                             command_outputs.clear();
                         }
                     }
-                    update_turn_state(&method, &params, &active_turn_id).await;
+                    update_turn_state(
+                        &method,
+                        &params,
+                        &turns.active_turn_id,
+                        &turns.last_root_turn_id,
+                        &turns.root_thread_id,
+                    )
+                    .await;
                     clear_resolved_request(&method, &params, &pending_requests).await;
                     enrich_command_output(&method, &mut params, &mut command_outputs);
                     let current_model = model.read().await.clone();
@@ -98,39 +105,6 @@ pub(super) fn spawn_event_loop(
             }
         }
     });
-}
-
-async fn update_turn_state(
-    method: &str,
-    params: &serde_json::Value,
-    active_turn_id: &Arc<RwLock<Option<String>>>,
-) {
-    if method == "turn/started" {
-        if let Some(turn_id) = turn_id_from_started(params) {
-            *active_turn_id.write().await = Some(turn_id);
-        }
-    }
-    if method == "item/started" && is_context_compaction_item(params) {
-        if let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) {
-            *active_turn_id.write().await = Some(turn_id.to_string());
-        }
-    }
-    if method == "turn/completed" {
-        *active_turn_id.write().await = None;
-    }
-    if method == "item/completed" && is_context_compaction_item(params) {
-        let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
-            return;
-        };
-        let mut active_turn = active_turn_id.write().await;
-        if active_turn.as_deref() == Some(turn_id) {
-            *active_turn = None;
-        }
-    }
-}
-
-fn is_context_compaction_item(params: &serde_json::Value) -> bool {
-    item_type(params) == Some("contextCompaction")
 }
 
 async fn clear_resolved_request(
@@ -215,80 +189,11 @@ mod tests {
     use std::sync::Arc;
 
     use serde_json::json;
-    use tokio::sync::{Mutex, RwLock};
+    use tokio::sync::Mutex;
 
     use super::super::event_system::request_key;
     use super::super::permissions::PendingCodexRequest;
-    use super::{clear_resolved_request, enrich_command_output, update_turn_state};
-
-    #[tokio::test]
-    async fn turn_started_and_completed_update_active_turn_state() {
-        let active_turn_id = Arc::new(RwLock::new(None));
-
-        update_turn_state(
-            "turn/started",
-            &json!({ "turn": { "id": "turn_1" } }),
-            &active_turn_id,
-        )
-        .await;
-        assert_eq!(active_turn_id.read().await.as_deref(), Some("turn_1"));
-
-        update_turn_state("turn/completed", &json!({}), &active_turn_id).await;
-        assert!(active_turn_id.read().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn context_compaction_item_updates_active_turn_state() {
-        let active_turn_id = Arc::new(RwLock::new(None));
-
-        update_turn_state(
-            "item/started",
-            &json!({
-                "turnId": "compact_turn",
-                "item": { "type": "contextCompaction", "id": "compact_1" }
-            }),
-            &active_turn_id,
-        )
-        .await;
-        assert_eq!(active_turn_id.read().await.as_deref(), Some("compact_turn"));
-
-        update_turn_state(
-            "item/completed",
-            &json!({
-                "turnId": "compact_turn",
-                "item": { "type": "contextCompaction", "id": "compact_1" }
-            }),
-            &active_turn_id,
-        )
-        .await;
-        assert!(active_turn_id.read().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn context_compaction_completion_keeps_unmatched_active_turn() {
-        let active_turn_id = Arc::new(RwLock::new(Some("regular_turn".to_string())));
-
-        update_turn_state(
-            "item/completed",
-            &json!({
-                "turnId": "compact_turn",
-                "item": { "type": "contextCompaction", "id": "compact_1" }
-            }),
-            &active_turn_id,
-        )
-        .await;
-        assert_eq!(active_turn_id.read().await.as_deref(), Some("regular_turn"));
-
-        update_turn_state(
-            "item/completed",
-            &json!({
-                "item": { "type": "contextCompaction", "id": "compact_1" }
-            }),
-            &active_turn_id,
-        )
-        .await;
-        assert_eq!(active_turn_id.read().await.as_deref(), Some("regular_turn"));
-    }
+    use super::{clear_resolved_request, enrich_command_output};
 
     #[tokio::test]
     async fn server_request_resolved_clears_matching_pending_request() {

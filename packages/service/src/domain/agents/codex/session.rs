@@ -12,6 +12,7 @@ use tracing::warn;
 
 use super::event_loop::spawn_event_loop;
 use super::event_system::init_event;
+use super::event_turn_state::RootTurnTracker;
 use super::input::user_input_from_content;
 use super::permissions::PendingCodexRequest;
 use super::responses::response_value;
@@ -27,6 +28,8 @@ pub(super) struct CodexSession {
     client: CodexAppServerClient,
     thread_id: String,
     active_turn_id: Arc<RwLock<Option<String>>>,
+    /// Interrupt fallback when `active_turn_id` is None — see `event_turn_state`.
+    last_root_turn_id: Arc<RwLock<Option<String>>>,
     model: Arc<RwLock<Option<String>>>,
     effort: Arc<RwLock<Option<String>>>,
     permission_mode: Arc<RwLock<Option<RuntimePermissionMode>>>,
@@ -58,6 +61,7 @@ impl CodexSession {
             client,
             thread_id,
             active_turn_id: Arc::new(RwLock::new(None)),
+            last_root_turn_id: Arc::new(RwLock::new(None)),
             model: Arc::new(RwLock::new(model)),
             effort: Arc::new(RwLock::new(effort)),
             permission_mode: Arc::new(RwLock::new(permission_mode)),
@@ -101,7 +105,8 @@ impl CodexSession {
             effort,
         );
         let turn = with_timeout("Codex turn/start", self.client.turn_start(params)).await?;
-        *self.active_turn_id.write().await = Some(turn.id);
+        *self.active_turn_id.write().await = Some(turn.id.clone());
+        *self.last_root_turn_id.write().await = Some(turn.id);
         Ok(())
     }
 
@@ -136,7 +141,11 @@ impl AgentRuntimeSession for CodexSession {
             source_rx,
             tx.clone(),
             Arc::clone(&self.pending_requests),
-            Arc::clone(&self.active_turn_id),
+            RootTurnTracker {
+                active_turn_id: Arc::clone(&self.active_turn_id),
+                last_root_turn_id: Arc::clone(&self.last_root_turn_id),
+                root_thread_id: self.thread_id.clone(),
+            },
             self.model.clone(),
             Arc::clone(&self.closing),
         );
@@ -162,14 +171,25 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
-        let Some(turn_id) = self.active_turn_id.read().await.clone() else {
+        // Live turn: surface RPC failures so the UI shows Stop failed.
+        if let Some(turn_id) = self.active_turn_id.read().await.clone() {
+            return with_timeout(
+                "Codex turn/interrupt",
+                self.client.turn_interrupt(&self.thread_id, &turn_id),
+            )
+            .await;
+        }
+        // Fallback (race between Stop and the next turn/started). Errors
+        // are treated as success — nothing to interrupt is the user's goal.
+        let Some(turn_id) = self.last_root_turn_id.read().await.clone() else {
             return Ok(());
         };
-        with_timeout(
-            "Codex turn/interrupt",
+        let _ = with_timeout(
+            "Codex turn/interrupt (fallback)",
             self.client.turn_interrupt(&self.thread_id, &turn_id),
         )
-        .await
+        .await;
+        Ok(())
     }
 
     async fn compact(&self) -> Result<(), RuntimeError> {

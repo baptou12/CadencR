@@ -10,6 +10,7 @@ mod event_raw;
 mod event_state;
 mod event_subagents;
 mod event_system;
+mod event_turn_state;
 mod event_usage;
 mod events;
 mod input;
