@@ -1,5 +1,6 @@
 import { memo, type ReactElement } from "react";
 import { Badge } from "@/components/ui/badge";
+import { SlidingText } from "@/components/SlidingText";
 import { cn } from "@/lib/utils";
 
 interface FeatureLabelChipProps {
@@ -17,11 +18,11 @@ export const FeatureLabelChip = memo(function FeatureLabelChip({
       variant="secondary"
       title={label}
       className={cn(
-        "inline-flex min-w-0 max-w-36 shrink-0 items-center truncate rounded-md border border-primary/15 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium leading-none text-primary/90",
+        "inline-flex min-w-0 max-w-36 shrink-0 items-center rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary",
         className,
       )}
     >
-      {label}
+      <SlidingText text={label} />
     </Badge>
   );
 });

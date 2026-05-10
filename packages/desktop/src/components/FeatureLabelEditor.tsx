@@ -52,17 +52,27 @@ export function FeatureLabelEditor({
       return;
     }
     if (event.key === "Enter") {
-      // Defer to cmdk's own Enter handler (which fires onSelect on the
-      // highlighted item) when a suggestion is highlighted. Otherwise save
-      // the typed value directly.
-      const root = event.currentTarget.closest<HTMLElement>("[cmdk-root]");
-      const highlighted = root?.querySelector(
-        '[cmdk-item][data-selected="true"], [cmdk-item][aria-selected="true"]',
-      );
-      if (highlighted) return;
+      // Always save the typed value. Prevent cmdk's default Enter behavior
+      // (which would fire onSelect on the highlighted suggestion).
       event.preventDefault();
       event.stopPropagation();
       onSave();
+      return;
+    }
+    if (event.key === "Tab" && !event.shiftKey) {
+      // Autocomplete: if a suggestion is highlighted, fill the input with
+      // it without saving. If nothing is highlighted, let Tab default
+      // (move focus) so the user can reach the Save button.
+      const root = event.currentTarget.closest<HTMLElement>("[cmdk-root]");
+      const highlighted = root?.querySelector<HTMLElement>(
+        '[cmdk-item][data-selected="true"], [cmdk-item][aria-selected="true"]',
+      );
+      if (!highlighted) return;
+      const next = highlighted.getAttribute("data-value") ?? highlighted.textContent ?? "";
+      if (!next) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onChange(next);
       return;
     }
     // Don't stopPropagation for the rest — cmdk listens on the Command root
@@ -135,7 +145,9 @@ export function FeatureLabelEditor({
             </CommandList>
           )}
           <div className="flex items-center justify-between gap-2 border-t p-2">
-            <span className="text-[10.5px] text-muted-foreground">Enter saves · Esc cancels</span>
+            <span className="text-[10.5px] text-muted-foreground">
+              Tab autocompletes · Enter saves · Esc cancels
+            </span>
             <Button type="button" size="xs" disabled={isSaving} onClick={() => onSave()}>
               {isSaving && (
                 <Loader2Icon aria-label="Saving label" className="size-3 animate-spin" />

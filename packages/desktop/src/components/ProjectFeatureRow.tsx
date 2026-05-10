@@ -129,10 +129,6 @@ export function ProjectFeatureRow({
             if (isActive || e.detail > 1) return;
             onNavigate(feature);
           }}
-          onDoubleClick={(e) => {
-            e.preventDefault();
-            onStartLabelEdit(feature);
-          }}
           onKeyDown={(e) => {
             if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
             if (e.key === "Enter" || e.key === " ") {

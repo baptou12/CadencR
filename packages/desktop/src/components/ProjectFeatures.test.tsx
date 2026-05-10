@@ -7,6 +7,16 @@ import { resetMockIds } from "@/test-fixtures";
 import { ROOT_LEAF_ID } from "@/stores/feature-layout-schema";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 
+type UserEvent = ReturnType<typeof userEvent.setup>;
+
+async function openLabelEditor(user: UserEvent, featureText: string): Promise<void> {
+  const row = screen.getByText(featureText).closest("[role=button]");
+  if (!row) throw new Error(`Feature row not found for "${featureText}"`);
+  fireEvent.contextMenu(row);
+  await user.click(await screen.findByText("Set label"));
+  await screen.findByText("Set feature label");
+}
+
 const mockNavigate = vi.fn();
 const _mockInvalidate = vi.fn();
 const mockUpdateStatus = vi.fn();
@@ -240,7 +250,7 @@ describe("ProjectFeatures", () => {
     expect(screen.getByText("Blocked")).toBeInTheDocument();
   });
 
-  it("opens the label editor popover on double click and saves with Enter", async () => {
+  it("opens the label editor popover from the context menu and saves with Enter", async () => {
     const user = userEvent.setup();
     render(
       <ProjectFeatures
@@ -251,8 +261,7 @@ describe("ProjectFeatures", () => {
       />,
     );
 
-    await user.dblClick(screen.getByText("Feature One"));
-    expect(screen.getByText("Set feature label")).toBeInTheDocument();
+    await openLabelEditor(user, "Feature One");
     const input = screen.getByDisplayValue("Review");
     await user.clear(input);
     await user.type(input, "QA{Enter}");
@@ -286,7 +295,7 @@ describe("ProjectFeatures", () => {
       />,
     );
 
-    await user.dblClick(screen.getByText("Feature One"));
+    await openLabelEditor(user, "Feature One");
     await user.keyboard("{Enter}");
 
     expect(mockUpdateLabel).not.toHaveBeenCalled();
@@ -311,23 +320,6 @@ describe("ProjectFeatures", () => {
     expect(screen.getByText("Set feature label")).toBeInTheDocument();
   });
 
-  it("does not re-navigate the active feature before opening its label editor", async () => {
-    const user = userEvent.setup();
-    render(
-      <ProjectFeatures
-        projectId={1}
-        projectPath="/test/path"
-        activeFeatureId={1}
-        onSelectFeature={vi.fn()}
-      />,
-    );
-
-    await user.dblClick(screen.getByText("Feature One"));
-
-    expect(screen.getByText("Set feature label")).toBeInTheDocument();
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
   it("does not navigate when typing spaces in the label editor", async () => {
     const user = userEvent.setup();
     render(
@@ -339,7 +331,7 @@ describe("ProjectFeatures", () => {
       />,
     );
 
-    await user.dblClick(screen.getByText("Feature One"));
+    await openLabelEditor(user, "Feature One");
     const callsBeforeTyping = mockNavigate.mock.calls.length;
     const input = screen.getByDisplayValue("Review");
     await user.clear(input);
