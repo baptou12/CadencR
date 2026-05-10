@@ -22,6 +22,7 @@ function makeElectronBridge(): CadencrDesktopBridge {
     notifyTest: vi.fn(() => Promise.resolve()),
     onNotificationClicked: vi.fn(() => () => undefined),
     onNotificationFailed: vi.fn(() => () => undefined),
+    onNotificationFallback: vi.fn(() => () => undefined),
     onCloseRequested: vi.fn(() => () => undefined),
     confirmClose: vi.fn(() => Promise.resolve()),
     requestQuit: vi.fn(() => Promise.resolve()),

@@ -123,6 +123,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_sidebar_collapsed",
     "git_sidebar_collapsed",
     "git_merge_mode",
+    // Where agent-finished notifications appear: "native" (system banner),
+    // "in_app" (Sonner toast inside Cadencr), or "off". Mirrors
+    // NOTIFICATION_MODE_KEY in packages/desktop/src/lib/notification-mode.ts.
+    "notification_mode",
     // Workspace-scope agent defaults (mirror the per-project / per-feature keys)
     "agent_autonomy",
     "parallel_execution",
@@ -339,6 +343,16 @@ mod tests {
         assert!(!is_workspace_key_allowed("thinking_effort_model_a/b"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a;drop"));
         assert!(!is_workspace_key_allowed("thinking_effort_model_a b"));
+    }
+
+    #[test]
+    fn workspace_accepts_notification_mode() {
+        // Wired to packages/desktop/src/lib/notification-mode.ts —
+        // the Settings → Notifications picker writes "native" / "in_app" / "off".
+        // Without this, useDebouncedSetting toasts "Could not save setting".
+        assert!(is_workspace_key_allowed("notification_mode"));
+        assert!(!is_feature_key_allowed("notification_mode"));
+        assert!(!is_project_key_allowed("notification_mode"));
     }
 
     #[test]

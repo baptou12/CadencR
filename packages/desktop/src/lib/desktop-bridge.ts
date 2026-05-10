@@ -12,12 +12,26 @@ export interface NotificationClickPayload {
   route_type: RouteType;
 }
 
+export interface NotificationFallbackPayload {
+  title: string;
+  body: string;
+  click: NotificationClickPayload | null;
+}
+
+/**
+ * Where an agent-finished notification should be rendered. `"off"` is
+ * resolved in the renderer (we just skip the bridge call entirely), so
+ * the bridge only ever sees these two modes.
+ */
+export type NotifyMode = "native" | "in_app";
+
 export interface NotifyBridgeOptions {
   title: string;
   body: string;
   featureId: number;
   projectId: number;
   routeType: RouteType;
+  mode: NotifyMode;
 }
 
 export interface FileDropItem {
@@ -44,6 +58,7 @@ export interface CadencrDesktopBridge {
   notifyTest: () => Promise<void>;
   onNotificationClicked: (cb: (payload: NotificationClickPayload) => void) => () => void;
   onNotificationFailed: (cb: (payload: { reason: string }) => void) => () => void;
+  onNotificationFallback: (cb: (payload: NotificationFallbackPayload) => void) => () => void;
   onCloseRequested: (cb: () => void) => () => void;
   confirmClose: () => Promise<void>;
   requestQuit: () => Promise<void>;
@@ -82,6 +97,7 @@ const browserBridge: CadencrDesktopBridge = {
   notifyTest: () => unavailable("notifyTest"),
   onNotificationClicked: () => () => undefined,
   onNotificationFailed: () => () => undefined,
+  onNotificationFallback: () => () => undefined,
   onCloseRequested: () => () => undefined,
   confirmClose: () => Promise.resolve(),
   requestQuit: () => Promise.resolve(),

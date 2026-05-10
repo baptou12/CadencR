@@ -27,6 +27,7 @@ function bridgeWithRuntime(
     notifyTest: vi.fn(),
     onNotificationClicked: vi.fn(() => () => undefined),
     onNotificationFailed: vi.fn(() => () => undefined),
+    onNotificationFallback: vi.fn(() => () => undefined),
     onCloseRequested: vi.fn(() => () => undefined),
     confirmClose: vi.fn(),
     requestQuit: vi.fn(),
