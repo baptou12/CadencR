@@ -54,6 +54,10 @@ pub(crate) fn spawn_stream_reader(
         let mut last_runtime_activity = Instant::now();
         let mut last_provider_reconcile = Instant::now();
         let mut last_signal_status: Option<crate::domain::session_status::AgentStatus> = None;
+        // Re-armed on every Result; only MessageStart re-enters Agent. Guards
+        // against late events (e.g. Codex bash `item/completed` arriving
+        // after `turn/completed`) flipping status back to Agent.
+        let mut between_turns: bool = true;
 
         loop {
             let recv_result =
@@ -207,18 +211,27 @@ pub(crate) fn spawn_stream_reader(
                     }
 
                     if !runtime_event.is_result() {
-                        if let Some(signal) =
-                            crate::domain::session_status::provider_signal_for_event(&runtime_event)
-                        {
-                            let next = signal.status();
-                            if last_signal_status != Some(next) {
-                                WsSessionPersistence::broadcast_session_signal(
-                                    &session_status_tx,
-                                    db_session_id,
-                                    feature_id,
-                                    signal,
-                                );
-                                last_signal_status = Some(next);
+                        // MessageStart is the only signal that re-enters Agent
+                        // after a turn ended.
+                        if crate::domain::session_status::event_starts_fresh_turn(&runtime_event) {
+                            between_turns = false;
+                        }
+                        if !between_turns {
+                            if let Some(signal) =
+                                crate::domain::session_status::provider_signal_for_event(
+                                    &runtime_event,
+                                )
+                            {
+                                let next = signal.status();
+                                if last_signal_status != Some(next) {
+                                    WsSessionPersistence::broadcast_session_signal(
+                                        &session_status_tx,
+                                        db_session_id,
+                                        feature_id,
+                                        signal,
+                                    );
+                                    last_signal_status = Some(next);
+                                }
                             }
                         }
                     }
@@ -260,6 +273,8 @@ pub(crate) fn spawn_stream_reader(
                     let envelope = if runtime_event.is_result() {
                         WsSessionPersistence::mark_completed_static(&write_pool, db_session_id)
                             .await;
+                        // Re-arm the gate so straggling events can't re-enter Agent.
+                        between_turns = true;
                         let has_pending_user_input =
                             WsSessionPersistence::get_session_row(&write_pool, db_session_id)
                                 .await

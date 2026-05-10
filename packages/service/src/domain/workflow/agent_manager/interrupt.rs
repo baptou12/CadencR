@@ -24,10 +24,16 @@ impl AgentManager {
                 debug!(slot = %slot, rt_session_id = %rt_session_id, "captured runtime session ID for resume");
                 self.paused_sessions.insert(slot.clone(), rt_session_id);
             }
-            return q
-                .interrupt()
-                .await
-                .map_err(|e| format!("Interrupt failed: {e}"));
+            let result = q.interrupt().await;
+            drop(q);
+            if let Err(error) = result {
+                // RPC failed (timeout / transport): treat the CLI as dead so
+                // the UI doesn't sit on "running" forever. The error is also
+                // bubbled up so the frontend can show an INTERRUPT_FAILED toast.
+                self.mark_session_idle_after_failed_interrupt(&slot).await;
+                return Err(format!("Interrupt failed: {error}"));
+            }
+            return Ok(());
         }
         // Fallback: PID from DB — only for real queue items
         if let AgentSlot::QueueItem(item_id) = &slot {
@@ -88,6 +94,23 @@ impl AgentManager {
         } else {
             Err(format!("No query handle or PID for item {queue_item_id}"))
         }
+    }
+
+    /// Mark the affected session paused + broadcast Idle when the runtime's
+    /// interrupt RPC errors (timeout / transport failure). The CLI is treated
+    /// as dead so the UI converges to a non-working state.
+    async fn mark_session_idle_after_failed_interrupt(&self, slot: &AgentSlot) {
+        let Some(db_session_id) = self.active_items.get(slot).map(|e| *e.value()) else {
+            return;
+        };
+        WsSessionPersistence::mark_paused_static(&self.write_pool, db_session_id).await;
+        WsSessionPersistence::broadcast_session_status(
+            &self.session_status_tx,
+            db_session_id,
+            self.feature_id,
+            crate::domain::session_status::AgentStatus::Idle,
+            None,
+        );
     }
 
     /// Clean up state for an agent slot (remove from all tracking maps).

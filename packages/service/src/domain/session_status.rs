@@ -265,6 +265,23 @@ fn event_kind_implies_turn_started(event: &RuntimeEvent) -> bool {
     }
 }
 
+/// Whether this event explicitly starts a fresh turn.
+///
+/// After a turn ends (Result event), tool_results, content deltas, etc.
+/// can still arrive on a stale stream — these must NOT re-enter the
+/// "Agent is working" state. Only an explicit `MessageStart` is a valid
+/// turn-start signal post-Result. Provider-neutral: every adapter is
+/// expected to synthesize `MessageStart` at the top of every turn (Codex
+/// emits one on `turn/started`, Claude on `message_start`, OpenCode on
+/// stream open). See `stream_reader.rs` for the call site that uses this
+/// to gate post-turn status broadcasts.
+pub fn event_starts_fresh_turn(event: &RuntimeEvent) -> bool {
+    matches!(
+        event.stream_event(),
+        Some(RuntimeStreamEvent::MessageStart { .. })
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,6 +499,54 @@ mod tests {
         // we swallow it.
         let seq = bc.broadcast(1, 1, AgentStatus::Idle, None);
         assert_eq!(seq, 1);
+    }
+
+    #[test]
+    fn event_starts_fresh_turn_only_on_message_start() {
+        use crate::domain::agents::adapter::{
+            RuntimeAssistantMessage, RuntimeContentBlock, RuntimeEvent, RuntimeEventKind,
+            RuntimeEventMetadata,
+        };
+
+        let message_start = RuntimeEvent::new(
+            RuntimeEventMetadata::default(),
+            RuntimeEventKind::StreamEvent {
+                event: RuntimeStreamEvent::MessageStart {
+                    model: None,
+                    input_tokens: None,
+                },
+                parent_tool_use_id: None,
+            },
+        );
+        assert!(event_starts_fresh_turn(&message_start));
+
+        // Tool result (UserMessage), assistant text, content deltas, content
+        // stops, and Result events are NOT fresh-turn starts. After a Result
+        // sets `between_turns = true`, none of these may flip status back
+        // to Agent — only an explicit MessageStart can.
+        let assistant = RuntimeEvent::new(
+            RuntimeEventMetadata::default(),
+            RuntimeEventKind::AssistantMessage {
+                message: RuntimeAssistantMessage {
+                    model: None,
+                    content: vec![RuntimeContentBlock::Text { text: "x".into() }],
+                },
+                parent_tool_use_id: None,
+            },
+        );
+        assert!(!event_starts_fresh_turn(&assistant));
+
+        let content_block_stop = RuntimeEvent::new(
+            RuntimeEventMetadata::default(),
+            RuntimeEventKind::StreamEvent {
+                event: RuntimeStreamEvent::ContentBlockStop { index: 0 },
+                parent_tool_use_id: None,
+            },
+        );
+        assert!(!event_starts_fresh_turn(&content_block_stop));
+
+        let result = RuntimeEvent::new(RuntimeEventMetadata::default(), RuntimeEventKind::Result);
+        assert!(!event_starts_fresh_turn(&result));
     }
 
     // RuntimeStreamEvent / RuntimeEvent mapping tests live in
