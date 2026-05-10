@@ -5,10 +5,11 @@
 //! HTTP transport retired the surface here is now narrow: typed wire shapes
 //! (`types::Message`, `MessagePart`, `Session`, …), binary discovery + CLI
 //! override (`process::opencode_discovery_spec`,
-//! `process::set_binary_override`), and a thin REST client whose only
-//! callers are the ACP `upstream_workaround` polling sidecar (which hits
-//! the embedded HTTP backend exposed by every `opencode acp --port`
-//! subprocess we spawn). Anything broader belongs in a separate transport.
+//! `process::set_binary_override`, `process::resolve_binary`), and a thin
+//! REST client whose only callers are the ACP `upstream_workaround` polling
+//! sidecar (which hits the embedded HTTP backend exposed by every
+//! `opencode acp --port` subprocess we spawn). Anything broader belongs in
+//! a separate transport.
 
 pub mod client;
 pub mod client_payload;
@@ -24,7 +25,7 @@ pub use parsing::{
     parse_message_from, parse_part_from, parse_permission_from, parse_question_from,
     parse_session_from,
 };
-pub use process::{opencode_discovery_spec, set_binary_override};
+pub use process::{opencode_discovery_spec, resolve_binary, set_binary_override};
 pub use types::{
     Message, MessagePart, MessageRole, PermissionRequest, Question, QuestionItem, QuestionOption,
     Session, SessionStatus, TokenCacheUsage, TokenUsage,

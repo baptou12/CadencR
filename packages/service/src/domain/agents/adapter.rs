@@ -152,7 +152,12 @@ impl From<claude_agent_sdk_rs::SdkError> for RuntimeError {
 
 impl From<opencode_sdk_rs::SdkError> for RuntimeError {
     fn from(value: opencode_sdk_rs::SdkError) -> Self {
-        Self::Generic(value.to_string())
+        match value {
+            opencode_sdk_rs::SdkError::CliNotFound { searched } => {
+                Self::cli_not_found("opencode", searched)
+            }
+            other => Self::Generic(other.to_string()),
+        }
     }
 }
 
@@ -826,6 +831,21 @@ mod tests {
                 parent_tool_use_id: None,
             },
         )
+    }
+
+    #[test]
+    fn opencode_cli_not_found_maps_to_structured_runtime_error() {
+        let searched = vec![std::path::PathBuf::from("/custom/opencode")];
+        let error = RuntimeError::from(opencode_sdk_rs::SdkError::CliNotFound {
+            searched: searched.clone(),
+        });
+        assert!(matches!(
+            error,
+            RuntimeError::CliNotFound {
+                provider: "opencode",
+                searched: actual,
+            } if actual == searched
+        ));
     }
 
     #[test]

@@ -19,14 +19,10 @@ mod question_sidecar;
 mod upstream_workaround;
 
 use std::net::TcpListener;
-use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
 use tokio::process::Command;
-
-use cli_discovery::{discover_all, select_best};
-use opencode_sdk_rs::process::opencode_discovery_spec;
 
 use crate::domain::agents::acp::runtime::{spawn_acp_runtime_session, AcpRuntimeSpawnArgs};
 use crate::domain::agents::acp::AcpClientInfo;
@@ -57,7 +53,7 @@ pub(super) async fn spawn_acp_session(
     content: Value,
     config: RuntimeSpawnConfig,
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
-    let binary = resolve_opencode_binary().await?;
+    let binary = opencode_sdk_rs::process::resolve_binary().await?;
     let reserved_question_port = reserve_local_port()?;
     let question_port = reserved_question_port.port();
     let mut command = Command::new(&binary);
@@ -134,38 +130,4 @@ fn reserve_local_port() -> Result<ReservedLocalPort, RuntimeError> {
         _listener: listener,
         port,
     })
-}
-
-/// Resolve the `opencode` binary path. Honors the existing override via
-/// `set_binary_override` (which the host applies from `opencode_cli_path`
-/// settings) and the `CADENCR_OPENCODE_BIN` env var.
-async fn resolve_opencode_binary() -> Result<std::path::PathBuf, RuntimeError> {
-    let spec = opencode_discovery_spec();
-    let override_path = std::env::var_os("CADENCR_OPENCODE_BIN").map(std::path::PathBuf::from);
-    let override_ref: Option<&Path> = override_path.as_deref();
-    let candidates = discover_all(&spec, override_ref).await;
-    if let Some(best) = select_best(&candidates) {
-        return Ok(best.path.clone());
-    }
-    Err(RuntimeError::cli_not_found(
-        "opencode",
-        candidates.iter().map(|c| c.path.clone()).collect(),
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::resolve_opencode_binary;
-
-    #[tokio::test]
-    async fn resolve_returns_a_path_or_an_actionable_error() {
-        // We can't assert success on every CI host, but the function must
-        // never panic and must return an error variant we can render —
-        // that's the contract for the spawn pathway.
-        let result = resolve_opencode_binary().await;
-        match result {
-            Ok(path) => assert!(path.is_absolute() || path.exists() || true),
-            Err(_error) => { /* CliNotFound is a valid outcome */ }
-        }
-    }
 }

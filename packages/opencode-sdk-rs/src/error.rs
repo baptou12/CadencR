@@ -1,7 +1,12 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SdkError {
+    #[error("opencode CLI not found; searched {} location(s)", searched.len())]
+    CliNotFound { searched: Vec<PathBuf> },
+
     #[error("http request failed: {0}")]
     Http(#[from] reqwest::Error),
 

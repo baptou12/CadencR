@@ -573,8 +573,9 @@ function OpencodeProviderPanel(): React.JSX.Element {
         discoveryKey="opencode"
         description={
           <>
-            Every <strong>opencode</strong> install Cadencr found on disk. Override via onboarding
-            or the legacy <strong>CADENCR_OPENCODE_BIN</strong> env var.
+            Every <strong>opencode</strong> install Cadencr found on disk. The selected one is
+            spawned as <strong>opencode acp</strong>; override via onboarding or the{" "}
+            <strong>opencode_cli_path</strong> workspace setting.
           </>
         }
       />
