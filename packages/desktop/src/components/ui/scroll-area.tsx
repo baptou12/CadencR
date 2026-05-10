@@ -6,11 +6,15 @@ import { cn } from "@/lib/utils";
 function ScrollArea({
   className,
   children,
+  type = "scroll",
+  scrollHideDelay = 500,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
+      type={type}
+      scrollHideDelay={scrollHideDelay}
       className={cn("relative", className)}
       {...props}
     >
@@ -36,7 +40,7 @@ function ScrollBar({
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px select-none opacity-0 transition-opacity hover:opacity-100 [[data-slot=scroll-area]:hover_&]:opacity-100",
+        "flex touch-none p-px select-none opacity-0 transition-opacity data-[state=visible]:opacity-100 hover:opacity-100",
         orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent",
         orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent",
         className,

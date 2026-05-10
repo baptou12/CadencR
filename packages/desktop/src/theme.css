@@ -18,6 +18,7 @@
 /* Default — Dracula. Also used when `data-theme` is absent (first paint, SSR). */
 :root,
 :root[data-theme="dracula"] {
+  color-scheme: dark;
   /* Tailwind semantic tokens */
   --background: oklch(0.22 0.022 277.497);
   --foreground: oklch(0.977 0.008 106.793);
@@ -178,6 +179,7 @@
  * Code surface and terminal go light too so the theme reads as a coherent
  * white IDE, not a hybrid white-chrome / dark-editor split. */
 :root[data-theme="aurora"] {
+  color-scheme: light;
   /* Tailwind semantic tokens */
   --background: oklch(0.985 0.004 290);
   --foreground: oklch(0.205 0.04 285);
