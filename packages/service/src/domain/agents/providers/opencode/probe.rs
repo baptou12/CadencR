@@ -1,25 +1,18 @@
 //! Short-lived `opencode serve` subprocess probe for `/config/providers`.
 //!
-//! Lifecycle: reserve a free local port → spawn `opencode serve
-//! --hostname 127.0.0.1 --port <port>` → poll `GET /config/providers`
-//! until it succeeds or the probe timeout fires → kill the subprocess.
-//!
 //! Why `serve` and not `acp`? Both subcommands bind the same HTTP
 //! backend, but `acp` expects a JSON-RPC ACP client to drive its stdin
 //! — if stdin EOFs (which it does whenever we don't wire a full ACP
 //! handshake), opencode tears the subprocess down before the listener
 //! is reachable. `serve` is the headless variant: no stdin handshake,
 //! the HTTP backend stays up until we kill the subprocess.
-//!
-//! The TTL cache in `cache.rs` is what keeps us from doing this on
-//! every catalog request — see that file's docstring.
 
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use opencode_sdk_rs::{ConfigProvidersResponse, OpenCodeClient, SdkError};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 
 use crate::domain::agents::adapter::RuntimeError;
 use crate::domain::agents::opencode::acp::port::reserve_local_port;
@@ -33,6 +26,8 @@ use crate::domain::agents::opencode::acp::port::reserve_local_port;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
+const PROBE_LOG_PREFIX: &str = "opencode /config/providers probe";
+
 /// Run the probe, returning opencode's resolved provider/model list.
 ///
 /// Errors bubble up so the cache layer can log + fall back. Caller must
@@ -40,58 +35,56 @@ const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(100);
 pub(super) async fn run() -> Result<ConfigProvidersResponse, RuntimeError> {
     let port = reserve_local_port()?.into_port();
     let binary = opencode_sdk_rs::process::resolve_binary().await?;
-    let child = Command::new(&binary)
+    // `kill_on_drop(true)` on the `Command` reaps the subprocess for
+    // every early-return / cancellation / panic path. We only need an
+    // explicit `wait()` on the happy path so the child is fully
+    // collected before we return.
+    let mut child = Command::new(&binary)
         .arg("serve")
         .arg("--hostname")
         .arg("127.0.0.1")
         .arg("--port")
         .arg(port.to_string())
-        // `serve` doesn't read stdin, but inheriting our stdin (or
-        // leaving it as a TTY pipe) would let an EOF leak in and shut
-        // the subprocess down. Pin it to /dev/null so the lifecycle is
-        // entirely controlled by us via `kill()` below.
+        // `serve` doesn't read stdin, but an inherited TTY/EOF would
+        // shut the subprocess down. Pin to /dev/null so our `kill()`
+        // is the only thing that ends the process.
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|error| {
-            RuntimeError::new(format!("failed to spawn opencode serve probe: {error}"))
-        })?;
-
-    // `ChildGuard::Drop` runs the kill+wait in a detached background task.
-    // That covers panic / early-return paths; the happy path explicitly
-    // awaits cleanup via `shutdown()` so the subprocess is reaped before
-    // we return.
-    let mut guard = ChildGuard::new(child);
+        .map_err(|error| RuntimeError::new(format!("{PROBE_LOG_PREFIX}: spawn failed: {error}")))?;
 
     let client = OpenCodeClient::new(port);
     // Stash the most recent SDK error so the timeout path can include
-    // *why* we kept retrying (connection refused vs. 404 vs. JSON
-    // decode failure all look identical from the outside otherwise).
+    // *why* we kept retrying. `Arc<Mutex<…>>` is load-bearing here:
+    // when the outer `tokio::time::timeout` fires, the polling future
+    // is dropped, so any state local to that future is lost. The Arc
+    // gives the timeout's `map_err` a reader after the future is gone.
     let last_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
-    let response = tokio::time::timeout(
+    let outcome = tokio::time::timeout(
         PROBE_TIMEOUT,
         poll_until_ready(&client, Arc::clone(&last_error)),
     )
-    .await
-    .map_err(|_| {
-        let detail = last_error
-            .lock()
-            .ok()
-            .and_then(|guard| guard.clone())
-            .unwrap_or_else(|| "no readiness response observed".to_string());
-        RuntimeError::new(format!(
-            "opencode /config/providers probe timed out after {:?} (last error: {detail})",
-            PROBE_TIMEOUT
-        ))
-    })?
-    .map_err(|error| {
-        RuntimeError::new(format!("opencode /config/providers probe failed: {error}"))
-    })?;
+    .await;
 
-    guard.shutdown().await;
-    Ok(response)
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+
+    match outcome {
+        Ok(Ok(response)) => Ok(response),
+        Ok(Err(error)) => Err(RuntimeError::new(format!("{PROBE_LOG_PREFIX}: {error}"))),
+        Err(_) => {
+            let detail = last_error
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+                .unwrap_or_else(|| "no readiness response observed".to_string());
+            Err(RuntimeError::new(format!(
+                "{PROBE_LOG_PREFIX}: timed out after {PROBE_TIMEOUT:?} (last error: {detail})"
+            )))
+        }
+    }
 }
 
 /// Drives the readiness loop. Connection-refused / IO errors are
@@ -106,12 +99,11 @@ async fn poll_until_ready(
         match client.list_config_providers().await {
             Ok(response) => return Ok(response),
             Err(error) => {
-                let retry = is_retryable_readiness_error(&error);
+                if !is_retryable_readiness_error(&error) {
+                    return Err(error);
+                }
                 if let Ok(mut guard) = last_error.lock() {
                     *guard = Some(error.to_string());
-                }
-                if !retry {
-                    return Err(error);
                 }
                 tokio::time::sleep(READINESS_POLL_INTERVAL).await;
             }
@@ -126,50 +118,10 @@ async fn poll_until_ready(
 fn is_retryable_readiness_error(error: &SdkError) -> bool {
     match error {
         SdkError::Http(http_error) => {
-            // `reqwest::Error::is_connect()` covers ECONNREFUSED while
-            // the subprocess is still starting; we also tolerate raw
-            // request-builder / IO errors that surface here on macOS
-            // before the listener appears.
             http_error.is_connect() || http_error.is_request() || http_error.is_timeout()
         }
         SdkError::Io(_) => true,
         _ => false,
-    }
-}
-
-/// Scope guard for the `opencode acp` child. Ensures the subprocess is
-/// killed even on panic or early return.
-///
-/// Two cleanup paths:
-/// * `shutdown()` — happy path. Awaits kill + wait so the OS reaps the
-///   process before we return; the cache won't observe a zombie.
-/// * `Drop` — panic / early-error path. We can't `.await` in `Drop`, so
-///   we fire-and-forget a kill via `start_kill()` and let
-///   `kill_on_drop(true)` from the spawn config handle the rest.
-struct ChildGuard {
-    child: Option<Child>,
-}
-
-impl ChildGuard {
-    fn new(child: Child) -> Self {
-        Self { child: Some(child) }
-    }
-
-    async fn shutdown(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-        }
-    }
-}
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            // Best-effort SIGKILL from a sync context; `kill_on_drop`
-            // from the original spawn also reaps the process.
-            let _ = child.start_kill();
-        }
     }
 }
 

@@ -1,18 +1,10 @@
 //! OpenCode provider catalog & model lookup.
 //!
-//! The live catalog comes from a short-lived `opencode acp --port`
-//! subprocess that we spawn just long enough to hit `GET /config/providers`
-//! on its embedded HTTP backend. That endpoint is a pure config listing
-//! (no upstream model API calls, no token usage) — it returns whatever
-//! opencode resolved from models.dev + on-disk config. See
-//! `probe.rs` for subprocess lifecycle and `cache.rs` for the TTL +
-//! failure-fallback policy.
-//!
-//! Module layout:
-//! * this file — public facade + provider-specific shaping of the wire
-//!   response into the provider-neutral catalog types.
-//! * `probe.rs` — subprocess spawn / readiness loop / cleanup.
-//! * `cache.rs` — 30s TTL, single-flight refresh, failure-fallback.
+//! The live catalog comes from a short-lived `opencode serve` subprocess
+//! (see `probe.rs`) that we spawn just long enough to hit
+//! `GET /config/providers` on its embedded HTTP backend. That endpoint
+//! is a pure config listing — no upstream model API calls, no token
+//! usage. Results are cached with a 30s TTL (see `cache.rs`).
 
 mod cache;
 mod probe;
@@ -23,15 +15,17 @@ use opencode_sdk_rs::ConfigProvidersResponse;
 
 use crate::domain::agents::runtime::{ModelCatalogEntry, ProviderCatalogEntry, ProviderStatus};
 
+const PROVIDER_ID: &str = "opencode";
+const PROVIDER_LABEL: &str = "OpenCode";
 const FALLBACK_MODEL_ID: &str = "default/default";
 const OPENCODE_FALLBACK_CONTEXT_WINDOW: u64 = 200_000;
 
 /// Static catalog used before the live probe has run (and as the
-/// failure fallback inside `cache::live_catalog`).
+/// failure fallback inside `cache::live_catalog_entry_with`).
 pub(crate) fn catalog_entry() -> ProviderCatalogEntry {
     ProviderCatalogEntry {
-        id: "opencode".to_string(),
-        label: "OpenCode".to_string(),
+        id: PROVIDER_ID.to_string(),
+        label: PROVIDER_LABEL.to_string(),
         status: ProviderStatus::Available,
         status_message: None,
         models: vec![ModelCatalogEntry {
@@ -49,7 +43,7 @@ pub(crate) fn catalog_entry() -> ProviderCatalogEntry {
 }
 
 pub(crate) async fn catalog_entry_live() -> ProviderCatalogEntry {
-    cache::live_catalog().await
+    (*cache::live_catalog().await).clone()
 }
 
 pub(crate) async fn context_window_for_model(model_id: &str) -> Option<u64> {
@@ -64,30 +58,35 @@ pub(crate) async fn context_window_for_model(model_id: &str) -> Option<u64> {
 }
 
 pub(crate) async fn default_model_id() -> Option<String> {
-    cache::live_catalog().await.default_model
+    cache::live_catalog().await.default_model.clone()
 }
 
 /// Provider-specific shaping of the wire response. Returns the
 /// FE-facing catalog + a `model id → context window` lookup table the
 /// cache stores alongside it.
+///
+/// opencode's wire-side `default` is `{ providerID → modelID }` (one
+/// entry per provider). Cadencr's catalog wants a single default, so
+/// we pick the first model whose `providerID/modelID` matches an
+/// entry in that map — a single pass over the providers builds both
+/// the model list and resolves the default in one shot.
 fn catalog_from_response(
     response: ConfigProvidersResponse,
 ) -> (ProviderCatalogEntry, HashMap<String, u64>) {
-    // Build the model list first so we can resolve the default by walking
-    // it in the provider order opencode returned. opencode's wire-side
-    // `default` map is `{ providerID → modelID }` (one entry per
-    // provider). Cadencr's catalog wants a single default, so we pick the
-    // first model whose `providerID/modelID` matches an entry in that
-    // map.
     let mut models = Vec::new();
     let mut context_windows = HashMap::new();
+    let mut default_model_from_wire = None;
     for provider in &response.providers {
         let provider_label = provider.name.clone().unwrap_or_else(|| provider.id.clone());
+        let wire_default = response.default.get(&provider.id);
         for model in &provider.models {
             let id = format!("{}/{}", provider.id, model.id);
             let model_label = model.name.clone().unwrap_or_else(|| model.id.clone());
             if let Some(context) = model.limit.as_ref().and_then(|limit| limit.context) {
                 context_windows.insert(id.clone(), context);
+            }
+            if default_model_from_wire.is_none() && wire_default == Some(&model.id) {
+                default_model_from_wire = Some(id.clone());
             }
             models.push(ModelCatalogEntry {
                 id,
@@ -102,20 +101,13 @@ fn catalog_from_response(
         }
     }
 
-    let default_model_from_wire = response.providers.iter().find_map(|provider| {
-        response
-            .default
-            .get(&provider.id)
-            .map(|model_id| format!("{}/{model_id}", provider.id))
-    });
-
     let default_model = default_model_from_wire
         .or_else(|| models.first().map(|model| model.id.clone()))
         .or_else(|| Some(FALLBACK_MODEL_ID.to_string()));
 
     let catalog = ProviderCatalogEntry {
-        id: "opencode".to_string(),
-        label: "OpenCode".to_string(),
+        id: PROVIDER_ID.to_string(),
+        label: PROVIDER_LABEL.to_string(),
         status: ProviderStatus::Available,
         status_message: None,
         models,
@@ -227,7 +219,7 @@ mod tests {
             })))
         };
         // Seed the cache through the probe seam.
-        let _ = super::cache::live_catalog_with(probe).await;
+        let _ = super::cache::live_catalog_entry_with(probe).await;
         // Re-read via the public path which uses the same cache.
         let window = context_window_for_model("anthropic/claude-sonnet-4-5").await;
         assert_eq!(window, Some(250_000));
@@ -250,7 +242,7 @@ mod tests {
                 ]
             })))
         };
-        let _ = super::cache::live_catalog_with(probe).await;
+        let _ = super::cache::live_catalog_entry_with(probe).await;
         let window = context_window_for_model("unknown/model").await;
         assert_eq!(window, Some(OPENCODE_FALLBACK_CONTEXT_WINDOW));
         super::cache::reset_for_test().await;

@@ -99,9 +99,7 @@ impl OpenCodeClient {
     /// list from models.dev + on-disk config.
     ///
     /// Read-only / no token usage: this endpoint is a pure config
-    /// listing and does not trigger upstream model API calls. The
-    /// cadencr-service catalog probe spawns a short-lived
-    /// `opencode serve` subprocess just to hit this and then exits.
+    /// listing and does not trigger upstream model API calls.
     pub async fn list_config_providers(&self) -> Result<ConfigProvidersResponse, SdkError> {
         let response = self
             .http

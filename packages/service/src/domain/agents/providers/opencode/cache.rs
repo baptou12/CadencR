@@ -1,18 +1,14 @@
 //! TTL-cached snapshot of opencode's `/config/providers` response.
 //!
 //! Mirrors the Codex `live_catalog` pattern at
-//! `domain/agents/codex/mod.rs:131`: a single in-process `RwLock` over an
-//! `Option<CatalogCacheEntry>`, a separate `Mutex` for single-flight
-//! refresh, and a double-check-after-lock so a thundering-herd of probes
-//! collapses to one. Probe failures are folded into the cache too — see
-//! `live_catalog_with`. That's load-bearing for `.claude/rules/error-
-//! handling.md`: a flaky probe must not respawn `opencode acp` on every
-//! FE refresh.
+//! `domain/agents/codex/mod.rs:131`. Probe failures are folded into the
+//! cache for the TTL window so a flaky probe doesn't respawn
+//! `opencode serve` on every FE refresh (`.claude/rules/error-handling.md`).
 //!
 //! The probe seam is intentional: the production path uses
 //! `super::probe::run`, but inline tests inject a counting closure via
-//! `live_catalog_with` to assert TTL + failure-caching behaviour without
-//! actually spawning a subprocess.
+//! `live_catalog_entry_with` to assert TTL + failure-caching behaviour
+//! without actually spawning a subprocess.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -27,10 +23,16 @@ use crate::domain::agents::runtime::ProviderCatalogEntry;
 
 const CATALOG_TTL: Duration = Duration::from_secs(30);
 
+/// The cached snapshot. Both `catalog` and `context_windows` are
+/// `Arc`-wrapped so every cache read is two refcount bumps — the
+/// catalog itself is non-trivial (one `ModelCatalogEntry` per
+/// upstream model, each with several `String` fields), and the
+/// trait boundary already pays one clone, so paying a second one
+/// inside the cache layer would double the cost for nothing.
 #[derive(Clone)]
 pub(super) struct CatalogCacheEntry {
     pub(super) fetched_at: Instant,
-    pub(super) catalog: ProviderCatalogEntry,
+    pub(super) catalog: Arc<ProviderCatalogEntry>,
     pub(super) context_windows: Arc<HashMap<String, u64>>,
 }
 
@@ -45,32 +47,18 @@ fn catalog_refresh_lock() -> &'static Mutex<()> {
     CATALOG_REFRESH_LOCK.get_or_init(|| Mutex::new(()))
 }
 
-/// Public production entry point: returns just the catalog half, using
-/// the real subprocess probe.
-pub(super) async fn live_catalog() -> ProviderCatalogEntry {
-    live_catalog_with(super::probe::run).await
+/// Production entry points use the real subprocess probe.
+pub(super) async fn live_catalog() -> Arc<ProviderCatalogEntry> {
+    live_catalog_entry().await.catalog
 }
 
-/// Same as `live_catalog`, but returns the full cache entry so callers
-/// who need the `context_windows` lookup table (e.g.
-/// `context_window_for_model`) can read it without re-shaping the
-/// catalog.
 pub(super) async fn live_catalog_entry() -> CatalogCacheEntry {
     live_catalog_entry_with(super::probe::run).await
 }
 
-/// Probe seam. Pure function over `probe()`; lets tests inject a
-/// counting closure that returns `Ok`/`Err` deterministically without
-/// spawning a subprocess.
-pub(super) async fn live_catalog_with<F, Fut>(probe: F) -> ProviderCatalogEntry
-where
-    F: Fn() -> Fut,
-    Fut: Future<Output = Result<ConfigProvidersResponse, RuntimeError>>,
-{
-    live_catalog_entry_with(probe).await.catalog
-}
-
-async fn live_catalog_entry_with<F, Fut>(probe: F) -> CatalogCacheEntry
+/// Probe seam. Tests inject a counting closure that returns `Ok`/`Err`
+/// deterministically without spawning a subprocess.
+pub(super) async fn live_catalog_entry_with<F, Fut>(probe: F) -> CatalogCacheEntry
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<ConfigProvidersResponse, RuntimeError>>,
@@ -81,7 +69,7 @@ where
         }
     }
 
-    let _refresh = catalog_refresh_lock().lock().await;
+    let _guard = catalog_refresh_lock().lock().await;
     if let Some(entry) = catalog_cache().read().await.clone() {
         if entry.fetched_at.elapsed() < CATALOG_TTL {
             return entry;
@@ -91,10 +79,6 @@ where
     let entry = match probe().await {
         Ok(response) => entry_from_response(response),
         Err(error) => {
-            // Per `.claude/rules/error-handling.md`: surface the failure
-            // to logs, but still cache the static fallback for the TTL
-            // window so we don't respawn `opencode acp` on every FE
-            // refresh.
             tracing::warn!(
                 provider = "opencode",
                 error = %error,
@@ -112,7 +96,7 @@ fn entry_from_response(response: ConfigProvidersResponse) -> CatalogCacheEntry {
     let (catalog, context_windows) = super::catalog_from_response(response);
     CatalogCacheEntry {
         fetched_at: Instant::now(),
-        catalog,
+        catalog: Arc::new(catalog),
         context_windows: Arc::new(context_windows),
     }
 }
@@ -120,7 +104,7 @@ fn entry_from_response(response: ConfigProvidersResponse) -> CatalogCacheEntry {
 fn fallback_entry() -> CatalogCacheEntry {
     CatalogCacheEntry {
         fetched_at: Instant::now(),
-        catalog: super::catalog_entry(),
+        catalog: Arc::new(super::catalog_entry()),
         context_windows: Arc::new(HashMap::new()),
     }
 }
@@ -178,10 +162,10 @@ mod tests {
             async { Ok(sample_response()) }
         };
 
-        let first = live_catalog_with(&probe).await;
-        let second = live_catalog_with(&probe).await;
+        let first = live_catalog_entry_with(&probe).await;
+        let second = live_catalog_entry_with(&probe).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(first.default_model, second.default_model);
+        assert_eq!(first.catalog.default_model, second.catalog.default_model);
         reset_for_test().await;
     }
 
@@ -195,9 +179,9 @@ mod tests {
             async { Ok(sample_response()) }
         };
 
-        let _ = live_catalog_with(&probe).await;
+        let _ = live_catalog_entry_with(&probe).await;
         force_expire_for_test().await;
-        let _ = live_catalog_with(&probe).await;
+        let _ = live_catalog_entry_with(&probe).await;
         assert_eq!(calls.load(Ordering::SeqCst), 2);
         reset_for_test().await;
     }
@@ -213,13 +197,13 @@ mod tests {
         };
 
         let fallback = super::super::catalog_entry();
-        let first = live_catalog_with(&probe).await;
+        let first = live_catalog_entry_with(&probe).await.catalog;
         assert_eq!(first.id, fallback.id);
         assert_eq!(first.default_model, fallback.default_model);
         assert_eq!(first.models.len(), fallback.models.len());
 
         // Subsequent call within TTL must not re-spawn the probe.
-        let _ = live_catalog_with(&probe).await;
+        let _ = live_catalog_entry_with(&probe).await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         reset_for_test().await;
     }
