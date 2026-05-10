@@ -324,7 +324,7 @@ describe("ws-session-store", () => {
     expect(sessionsAfterSecond["s1"].runtimeSessionId).toBe("uuid-abc-123");
   });
 
-  it("close clears server session identifiers so init can run again", async () => {
+  it("close clears server session identifiers so init can run again, but preserves runtimeSessionId across transient transport drops", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -346,7 +346,10 @@ describe("ws-session-store", () => {
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.isConnected).toBe(false);
     expect(session.serverSessionId).toBe("");
-    expect(session.runtimeSessionId).toBe("");
+    // The WS is just transport; the underlying agent runtime session id
+    // (e.g. Codex thread id) is still valid on the backend, so the chip
+    // must not blink off on transient reconnects.
+    expect(session.runtimeSessionId).toBe("uuid-abc-123");
     expect(session.conn).toBeNull();
   });
 

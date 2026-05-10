@@ -157,7 +157,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               conn: null,
               isConnected: false,
               serverSessionId: "",
-              runtimeSessionId: "",
+              // Do not clear `runtimeSessionId` here: the WS is just transport
+              // between the desktop app and the local service. Dropping it
+              // does not invalidate the underlying agent runtime session
+              // (e.g. Codex thread id), which is persisted in the DB and
+              // re-emitted on the next stream. Clearing it here makes the
+              // session info chip blink off on transient reconnects.
               lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
                 type: "connection_lost",
               }),
@@ -180,7 +185,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               conn: null,
               isConnected: false,
               serverSessionId: "",
-              runtimeSessionId: "",
+              // See onClose above: `runtimeSessionId` survives transport hiccups.
               lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
                 type: "turn_errored",
               }),
