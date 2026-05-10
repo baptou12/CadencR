@@ -7,7 +7,8 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::domain::agents::adapter::{
-    RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeUsage,
+    RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeSlashCommand,
+    RuntimeSlashCommandKind, RuntimeUsage,
 };
 
 use super::events_config_option::map_config_option_update;
@@ -260,19 +261,47 @@ fn map_session_info_update(body: &Value, mut metadata: RuntimeEventMetadata) -> 
     RuntimeEvent::new(metadata, RuntimeEventKind::Other)
 }
 
-/// Map `available_commands_update` into a benign `Other` event.
+/// Map `available_commands_update` into a typed `SlashCommandsUpdated`
+/// event carrying the full agent-advertised catalog.
 ///
-/// Per product decision the HTTP catalog stays authoritative; we don't push
-/// these into any FE-visible catalog. We log the count so wire-debug traces
-/// reflect that the agent did advertise its slash-command list.
+/// ACP wire shape: `{ availableCommands: [{ name, description?, … }] }`.
+/// Each entry maps to `RuntimeSlashCommand` with kind `Command` (ACP
+/// doesn't distinguish skills today). The provider-neutral
+/// `RuntimeEventKind::SlashCommandsUpdated` lets the WS bridge fan
+/// updates out to live FE pickers; the per-cwd snapshot store the
+/// synchronous `commands.get` reads back is mirrored separately by the
+/// provider's `AcpProviderHooks::record_available_commands` hook.
 fn map_available_commands_update(body: &Value, metadata: RuntimeEventMetadata) -> RuntimeEvent {
-    let count = body
-        .get("availableCommands")
+    let commands = parse_available_commands(body);
+    tracing::info!(count = commands.len(), "acp_available_commands");
+    RuntimeEvent::new(
+        metadata,
+        RuntimeEventKind::SlashCommandsUpdated(Arc::new(commands)),
+    )
+}
+
+/// Parse the `availableCommands` array off a `session/update` body
+/// into the provider-neutral runtime shape. Public to the runtime so
+/// `event_loop_state` can mirror the same parsed catalog into the
+/// provider hook (no double-parsing).
+pub(super) fn parse_available_commands(body: &Value) -> Vec<RuntimeSlashCommand> {
+    body.get("availableCommands")
         .and_then(Value::as_array)
-        .map(Vec::len)
-        .unwrap_or(0);
-    tracing::info!(count, "acp_available_commands");
-    RuntimeEvent::new(metadata, RuntimeEventKind::Other)
+        .map(|entries| entries.iter().filter_map(parse_available_command).collect())
+        .unwrap_or_default()
+}
+
+fn parse_available_command(value: &Value) -> Option<RuntimeSlashCommand> {
+    let name = value.get("name").and_then(Value::as_str)?.to_string();
+    let description = value
+        .get("description")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    Some(RuntimeSlashCommand {
+        name,
+        description,
+        kind: RuntimeSlashCommandKind::Command,
+    })
 }
 
 /// Mirror a `session_info_update` body into the session's local state.

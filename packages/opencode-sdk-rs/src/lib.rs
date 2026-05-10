@@ -27,7 +27,7 @@ pub use parsing::{
 };
 pub use process::{opencode_discovery_spec, resolve_binary, set_binary_override};
 pub use types::{
-    ConfigModelLimit, ConfigProvider, ConfigProviderModel, ConfigProvidersResponse, Message,
-    MessagePart, MessageRole, ModelRef, PermissionRequest, Question, QuestionItem, QuestionOption,
-    Session, SessionStatus, TokenCacheUsage, TokenUsage,
+    Agent, Command, ConfigModelLimit, ConfigProvider, ConfigProviderModel, ConfigProvidersResponse,
+    Message, MessagePart, MessageRole, ModelRef, PermissionRequest, Question, QuestionItem,
+    QuestionOption, Session, SessionStatus, TokenCacheUsage, TokenUsage,
 };

@@ -292,6 +292,26 @@ pub struct Command {
     pub subtask: Option<bool>,
 }
 
+/// Wire shape for `GET /agent` on the embedded HTTP backend. Surfaces
+/// both built-in and custom agents (the latter sourced from
+/// `~/.config/opencode/agent/*.md` and `<cwd>/.opencode/agent/*.md`).
+///
+/// Plumbed through the SDK now so a follow-up can opt agents into
+/// runtime discovery without re-touching the SDK; today the service
+/// surfaces only `/command` results because OpenCode invokes agents
+/// with `@agent-name`, not `/`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Agent {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Upstream values are `"subagent" | "primary" | "all"`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default, rename = "builtIn")]
+    pub built_in: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PromptOptions {
     pub model: Option<ModelRef>,
@@ -460,6 +480,44 @@ mod config_providers_tests {
             parsed.default.get("anthropic").map(String::as_str),
             Some("claude-sonnet-4-5"),
         );
+    }
+
+    #[test]
+    fn command_round_trips_with_only_required_fields() {
+        let raw = serde_json::json!({
+            "name": "foo",
+            "description": "Foo command"
+        });
+        let parsed: Command = serde_json::from_value(raw).expect("parse");
+        assert_eq!(parsed.name, "foo");
+        assert_eq!(parsed.description.as_deref(), Some("Foo command"));
+        assert!(parsed.agent.is_none());
+        assert!(parsed.subtask.is_none());
+    }
+
+    #[test]
+    fn agent_round_trips_with_built_in_alias() {
+        let raw = serde_json::json!({
+            "name": "build",
+            "description": "Default build agent",
+            "mode": "primary",
+            "builtIn": true
+        });
+        let parsed: Agent = serde_json::from_value(raw).expect("parse");
+        assert_eq!(parsed.name, "build");
+        assert_eq!(parsed.description.as_deref(), Some("Default build agent"));
+        assert_eq!(parsed.mode.as_deref(), Some("primary"));
+        assert!(parsed.built_in);
+    }
+
+    #[test]
+    fn agent_tolerates_missing_optional_fields() {
+        let raw = serde_json::json!({ "name": "custom" });
+        let parsed: Agent = serde_json::from_value(raw).expect("parse");
+        assert_eq!(parsed.name, "custom");
+        assert!(parsed.description.is_none());
+        assert!(parsed.mode.is_none());
+        assert!(!parsed.built_in);
     }
 
     #[test]

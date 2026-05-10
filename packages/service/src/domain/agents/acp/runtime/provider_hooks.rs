@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -175,6 +175,18 @@ pub trait AcpProviderHooks: Send + Sync {
     /// `tool_call_start_override` (which decides whether to short-circuit
     /// event emission); both fire on the same notification.
     fn record_tool_call_start(&self, _tool_call_id: &str, _tool_name: &str) {}
+
+    /// Provider opt-in: persist the latest slash-command catalog the
+    /// agent pushed via ACP `available_commands_update`, scoped to the
+    /// session's `cwd`. The synchronous WS `commands.get` request the
+    /// FE makes before/between turns reads this back through the
+    /// adapter's `runtime_slash_commands(cwd)`, so the picker reflects
+    /// what the live ACP session actually advertises (built-ins +
+    /// project-local) instead of duplicating discovery via HTTP.
+    ///
+    /// Default implementation is a no-op so non-opencode ACP providers
+    /// don't have to opt in.
+    async fn record_available_commands(&self, _cwd: &Path, _commands: Vec<RuntimeSlashCommand>) {}
 }
 
 pub(crate) fn flatten_tool_result_content_with<'a>(

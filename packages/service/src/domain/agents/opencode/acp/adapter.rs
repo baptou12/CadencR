@@ -19,7 +19,7 @@ use crate::domain::agents::acp::runtime::provider_hooks::{
 };
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand,
 };
 use crate::domain::agents::opencode::questions::extract_question_answers;
 use crate::domain::agents::opencode::tool_names::{
@@ -217,6 +217,14 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
             Arc::clone(&self.pending_subagent_calls),
             tx,
         ))
+    }
+
+    async fn record_available_commands(&self, cwd: &Path, commands: Vec<RuntimeSlashCommand>) {
+        // Mirror the ACP-pushed catalog into the per-cwd snapshot the
+        // synchronous WS `commands.get` request reads back through the
+        // adapter's `runtime_slash_commands(cwd)`.
+        let cwd = cwd.to_string_lossy().into_owned();
+        crate::domain::agents::opencode::commands::record_snapshot(&cwd, commands).await;
     }
 
     async fn respond_permission_fallback(

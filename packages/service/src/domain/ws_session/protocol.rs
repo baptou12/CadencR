@@ -353,6 +353,17 @@ pub struct CommandsListPayload {
     pub commands: Vec<SlashCommandPayload>,
 }
 
+/// Server → Client: live slash-command catalog the agent advertised
+/// over the runtime stream (today: ACP `available_commands_update`).
+///
+/// Emitted whenever a `RuntimeEventKind::SlashCommandsUpdated` arrives
+/// on a session's runtime channel. The full catalog is sent every time
+/// — frontends should replace, not merge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandsUpdatedPayload {
+    pub commands: Vec<SlashCommandPayload>,
+}
+
 /// Trait for workflow payloads that carry a feature_id, used by the
 /// `parse_and_get_engine` helper to extract the id generically.
 pub trait HasFeatureId {

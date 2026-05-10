@@ -327,6 +327,12 @@ pub enum RuntimeEventKind {
     /// "Reconnecting…" banner instead of an infinite silent loader.
     /// Hard failures stay on the existing `RuntimeError` channel.
     StreamStatus(RuntimeStreamStatus),
+    /// Live slash-command catalog pushed by the agent (today: the ACP
+    /// `available_commands_update` notification). Carries the full
+    /// list, not a delta — every push replaces the prior snapshot.
+    /// `Arc` so the WS bridge can fan out without cloning the vec
+    /// per subscriber.
+    SlashCommandsUpdated(Arc<Vec<RuntimeSlashCommand>>),
     Other,
 }
 
@@ -544,6 +550,17 @@ impl RuntimeEvent {
     pub fn stream_status(&self) -> Option<&RuntimeStreamStatus> {
         match &self.kind {
             RuntimeEventKind::StreamStatus(status) => Some(status),
+            _ => None,
+        }
+    }
+
+    /// Live slash-command catalog snapshot pushed by the agent over
+    /// ACP `available_commands_update`. The WS bridge fans these out
+    /// to subscribers so the FE picker reflects the agent's current
+    /// catalog without re-querying.
+    pub fn slash_commands_updated(&self) -> Option<&[RuntimeSlashCommand]> {
+        match &self.kind {
+            RuntimeEventKind::SlashCommandsUpdated(commands) => Some(commands.as_slice()),
             _ => None,
         }
     }

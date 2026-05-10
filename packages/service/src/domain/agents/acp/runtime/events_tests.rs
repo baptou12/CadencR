@@ -246,7 +246,7 @@ async fn mirror_session_info_update_leaves_model_alone_when_absent() {
 }
 
 #[test]
-fn available_commands_update_emits_single_other_event() {
+fn available_commands_update_emits_typed_slash_commands_event() {
     let mut idx = EventIndexer::default();
     let result = session_update_to_events(
         &json!({
@@ -264,11 +264,17 @@ fn available_commands_update_emits_single_other_event() {
         &PlainHooks,
     );
     assert_eq!(result.events.len(), 1);
-    assert!(result.events[0].assistant_message().is_none());
+    let commands = result.events[0]
+        .slash_commands_updated()
+        .expect("expected SlashCommandsUpdated event");
+    assert_eq!(commands.len(), 2);
+    assert_eq!(commands[0].name, "compact");
+    assert_eq!(commands[0].description.as_deref(), Some("summarize"));
+    assert_eq!(commands[1].name, "init");
 }
 
 #[test]
-fn available_commands_update_does_not_panic_on_empty_list() {
+fn available_commands_update_emits_empty_list_when_array_empty() {
     let mut idx = EventIndexer::default();
     let result = session_update_to_events(
         &json!({
@@ -283,4 +289,32 @@ fn available_commands_update_does_not_panic_on_empty_list() {
         &PlainHooks,
     );
     assert_eq!(result.events.len(), 1);
+    let commands = result.events[0]
+        .slash_commands_updated()
+        .expect("expected SlashCommandsUpdated event");
+    assert!(commands.is_empty());
+}
+
+#[test]
+fn available_commands_update_skips_entries_without_name() {
+    let mut idx = EventIndexer::default();
+    let result = session_update_to_events(
+        &json!({
+            "update": {
+                "sessionUpdate": "available_commands_update",
+                "availableCommands": [
+                    { "description": "no name here" },
+                    { "name": "valid" }
+                ]
+            }
+        }),
+        &mut idx,
+        None,
+        None,
+        &PlainHooks,
+    );
+    let commands = result.events[0].slash_commands_updated().unwrap();
+    assert_eq!(commands.len(), 1);
+    assert_eq!(commands[0].name, "valid");
+    assert!(commands[0].description.is_none());
 }

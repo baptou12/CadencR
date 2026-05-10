@@ -1,4 +1,5 @@
 pub(in crate::domain::agents) mod acp;
+pub(in crate::domain::agents::opencode) mod commands;
 pub(crate) mod events;
 pub(crate) mod permissions;
 mod questions;
@@ -82,14 +83,18 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
 
     async fn runtime_slash_commands(
         &self,
-        _cwd: &str,
+        cwd: &str,
     ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
-        // OpenCode's ACP wire doesn't expose slash-command discovery today.
-        // Return an empty list rather than the trait default's "not supported"
-        // error so the resolver doesn't log a per-session warning. When the
-        // ACP wire (or the embedded HTTP backend used by `upstream_workaround/`)
-        // grows a way to enumerate commands, wire it in here.
-        Ok(Vec::new())
+        // ACP-first: `opencode acp` pushes its slash-command catalog
+        // (built-ins + project-local) over `available_commands_update`.
+        // The runtime mirrors each push into `commands::record_snapshot`
+        // via `OpenCodeAcpAdapter::record_available_commands`. Here we
+        // read the latest snapshot for `cwd`. Cold-start (no ACP
+        // session has run for this cwd yet in this process) returns an
+        // empty list — the FE picker stays empty until the first push,
+        // which arrives within the first `session/update` of any new
+        // session.
+        commands::runtime_slash_commands(cwd).await
     }
 
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
