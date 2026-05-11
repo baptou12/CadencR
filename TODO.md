@@ -1,14 +1,12 @@
 ## FIX
 - [~] [opencode] Not sync on command updates
 - [~] [opencode] inline diff broken sometimes
-- [ ] [feature] session agent goes to idle once finished, it should be paused
-- [ ] [feature / codex] cannot see the user messages in session agents?
-- [ ] [agent] agent tab is focused, but cursor is still focusing the terminal
-- [ ] [unified] wrong border for focused agent
 - [ ] [git] when selecting a branch without worktree, we don't checkout the branch 
-- [ ] [codex] launch command is not available?
-- [ ] [codex] cannot stop the agent when it's working
-- [ ] [codex] sometimes, after the agent finishes it's job, some command can land and the agent goes back to running
+- [ ] [codex] keeps asking for the same permissions all the time
+- [ ] [feature] remove feature workflow
+- [ ] [agent] scroll jumps
+- [ ] [terminal] some terminal becomes dead
+- [ ] [terminal] cmd+d and cmd+shift+d don't split anymore?
 
 
 ## FEAT
