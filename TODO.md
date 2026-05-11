@@ -1,11 +1,7 @@
 ## FIX
 - [~] [opencode] Not sync on command updates
 - [~] [opencode] inline diff broken sometimes
-- [~] [codex] keeps asking for the same permissions all the time
 - [ ] [feature] remove feature workflow
-- [~] [agent] scroll jumps
-- [~] [terminal] some terminal becomes dead
-- [~] [terminal] cmd+d and cmd+shift+d don't split anymore?
 
 
 ## FEAT
