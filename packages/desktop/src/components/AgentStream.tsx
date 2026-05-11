@@ -1,11 +1,18 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo } from "react";
 import { Loader2Icon } from "lucide-react";
-import { Virtuoso } from "react-virtuoso";
+import { Virtuoso, type Components, type ListRange } from "react-virtuoso";
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
-import { isFileChangeTool } from "@/lib/tool-adapter";
+import { buildDisplayBlockKeys, filterRenderableBlocks } from "./agentStreamDisplay";
 
-type DivRef = (el: HTMLDivElement | null) => void;
+type ScrollRef = (el: HTMLElement | null) => void;
+const FIRST_ITEM_INDEX_BASE = 1_000_000;
+const HISTORY_PREFETCH_ROWS = 12;
+
+interface AgentStreamVirtuosoContext {
+  isStreaming: boolean;
+  showStreamingIndicator: boolean;
+}
 
 interface AgentStreamProps {
   blocks: AgentBlockData[];
@@ -29,20 +36,13 @@ interface AgentStreamProps {
   /** Base path to strip from file paths in diffs */
   basePath?: string;
   /** Callback ref for the scrollable container (auto-scroll listeners attach here). */
-  scrollContainerRef?: DivRef;
-  /** Callback ref for the 1px top sentinel (IntersectionObserver loadOlder). */
-  topSentinelRef?: DivRef;
-  /**
-   * Callback ref for the content wrapper. The auto-scroll hook attaches a
-   * `ResizeObserver` to this so it can re-anchor to the bottom as the
-   * conversation lays out asynchronously (markdown, code highlighting,
-   * images). Without this the initial render of a long session lands above
-   * the bottom because `scrollHeight` hasn't settled when the layout effect
-   * first runs.
-   */
-  scrollContentRef?: DivRef;
+  scrollContainerRef?: ScrollRef;
+  /** Called by Virtuoso when the first rendered item is reached. */
+  onStartReached?: () => void;
   /** When true, a spinner is shown above the first item (older history loading). */
   isLoadingOlder?: boolean;
+  /** Number of rendered Virtuoso rows prepended by older-history pagination. */
+  historyPrependDisplayOffset?: number;
 }
 
 const StreamingCursor = memo(function StreamingCursor() {
@@ -53,79 +53,33 @@ const StreamingCursor = memo(function StreamingCursor() {
   );
 });
 
-function isHiddenByRenderer(block: AgentBlockData): boolean {
-  if (block.type === "thinking") return !block.content.trim();
-  if (block.type !== "tool_result") return false;
-  if (
-    block.sourceToolName === "Bash" ||
-    block.sourceToolName === "Agent" ||
-    block.sourceToolName === "Task"
-  ) {
-    return false;
-  }
-  return !isFileChangeTool(block.sourceToolName);
-}
+const StreamFooter = memo(function StreamFooter({
+  context,
+}: {
+  context?: AgentStreamVirtuosoContext;
+}) {
+  if (!context?.isStreaming || !context.showStreamingIndicator) return null;
+  return <StreamingCursor />;
+});
 
-function coalesceDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {
-  const merged: AgentBlockData[] = [];
-  for (const block of blocks) {
-    if (isHiddenByRenderer(block)) continue;
+const VIRTUOSO_COMPONENTS = {
+  Footer: StreamFooter,
+} satisfies Components<AgentBlockData, AgentStreamVirtuosoContext>;
 
-    const previous = merged[merged.length - 1];
-    const shouldMergeText =
-      previous &&
-      previous.type === "text" &&
-      block.type === "text" &&
-      !!previous.createdAt &&
-      !!block.createdAt &&
-      !!previous.model &&
-      !!block.model &&
-      previous.model === block.model &&
-      previous.parentToolUseId === block.parentToolUseId;
-
-    if (shouldMergeText) {
-      merged[merged.length - 1] = {
-        ...previous,
-        content: previous.content + block.content,
-      };
-      continue;
-    }
-    merged.push(block);
-  }
-  return merged;
-}
-
-function buildDisplayBlockKeys(blocks: AgentBlockData[]): string[] {
-  const totalById = new Map<string, number>();
-  for (const block of blocks) totalById.set(block.id, (totalById.get(block.id) ?? 0) + 1);
-
-  const seenById = new Map<string, number>();
-  return blocks.map((block: AgentBlockData): string => {
-    const total = totalById.get(block.id) ?? 0;
-    if (total <= 1) return block.id;
-    const seen = seenById.get(block.id) ?? 0;
-    seenById.set(block.id, seen + 1);
-    return `${block.id}#${seen}`;
-  });
-}
-
-export const AgentStream = memo(function AgentStream({
-  blocks,
-  rootBlocks: rootBlocksProp,
-  toolResultMap: toolResultMapProp,
-  isStreaming,
-  showStreamingIndicator = true,
-  basePath,
-  scrollContainerRef,
-  topSentinelRef,
-  scrollContentRef,
-  isLoadingOlder = false,
-}: AgentStreamProps) {
-  const rootBlocks = useMemo(
-    () => rootBlocksProp ?? blocks.filter((b) => !b.parentToolUseId),
+function useRootBlocks(
+  blocks: AgentBlockData[],
+  rootBlocksProp: AgentBlockData[] | undefined,
+): AgentBlockData[] {
+  return useMemo(
+    () => rootBlocksProp ?? blocks.filter((block) => !block.parentToolUseId),
     [rootBlocksProp, blocks],
   );
-  const displayBlocks = useMemo(() => coalesceDisplayBlocks(rootBlocks), [rootBlocks]);
+}
+
+function useToolResultMap(
+  blocks: AgentBlockData[],
+  toolResultMapProp: Map<string, AgentBlockData> | undefined,
+): Map<string, AgentBlockData> {
   const fallbackToolResultCount = useMemo(
     () =>
       toolResultMapProp ? 0 : blocks.reduce((n, b) => n + (b.type === "tool_result" ? 1 : 0), 0),
@@ -136,20 +90,73 @@ export const AgentStream = memo(function AgentStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: rebuild only on tool_result count change for the fallback path
     [fallbackToolResultCount, toolResultMapProp],
   );
-  const toolResultMap = toolResultMapProp ?? fallbackToolResultMap;
-  const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
+  return toolResultMapProp ?? fallbackToolResultMap;
+}
 
-  // `customScrollParent` needs the actual scroller element (not just a ref),
-  // so we mirror the callback ref into local state. The outer callback still
-  // forwards the element to the parent-provided `scrollContainerRef` so
-  // `useAgentSessionScroll` keeps owning scroll/wheel/touch listeners.
-  const [scrollerEl, setScrollerEl] = useState<HTMLDivElement | null>(null);
-  const onScroller = useCallback<DivRef>(
-    (el) => {
-      setScrollerEl(el);
-      scrollContainerRef?.(el);
+const LoadingOlderOverlay = memo(function LoadingOlderOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+      <div className="rounded-full border bg-background/80 p-1 shadow-sm backdrop-blur">
+        <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    </div>
+  );
+});
+
+export const AgentStream = memo(function AgentStream({
+  blocks,
+  rootBlocks: rootBlocksProp,
+  toolResultMap: toolResultMapProp,
+  isStreaming,
+  showStreamingIndicator = true,
+  basePath,
+  scrollContainerRef,
+  onStartReached,
+  isLoadingOlder = false,
+  historyPrependDisplayOffset = 0,
+}: AgentStreamProps) {
+  const rootBlocks = useRootBlocks(blocks, rootBlocksProp);
+  const displayBlocks = useMemo(() => filterRenderableBlocks(rootBlocks), [rootBlocks]);
+  const toolResultMap = useToolResultMap(blocks, toolResultMapProp);
+  const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
+  const firstItemIndex = FIRST_ITEM_INDEX_BASE - historyPrependDisplayOffset;
+
+  const virtuosoContext = useMemo(
+    (): AgentStreamVirtuosoContext => ({
+      isStreaming: Boolean(isStreaming),
+      showStreamingIndicator,
+    }),
+    [isStreaming, showStreamingIndicator],
+  );
+  const onScroller = useCallback(
+    (el: HTMLElement | Window | null): void => {
+      scrollContainerRef?.(el instanceof HTMLElement ? el : null);
     },
     [scrollContainerRef],
+  );
+  const onRangeChanged = useCallback(
+    (range: ListRange): void => {
+      if (range.startIndex <= firstItemIndex + HISTORY_PREFETCH_ROWS) onStartReached?.();
+    },
+    [firstItemIndex, onStartReached],
+  );
+  const computeItemKey = useCallback(
+    (i: number): string => {
+      const localIndex = i - firstItemIndex;
+      return itemKeys[localIndex] ?? displayBlocks[localIndex]?.id ?? String(i);
+    },
+    [displayBlocks, firstItemIndex, itemKeys],
+  );
+  const renderItem = useCallback(
+    (_i: number, block: AgentBlockData) => (
+      <AgentStreamItem
+        block={block}
+        isStreaming={isStreaming}
+        basePath={basePath}
+        toolResultMap={toolResultMap}
+      />
+    ),
+    [basePath, isStreaming, toolResultMap],
   );
 
   if (displayBlocks.length === 0) {
@@ -159,35 +166,28 @@ export const AgentStream = memo(function AgentStream({
   }
 
   return (
-    <div
-      ref={onScroller}
-      data-testid="agent-stream-scroller"
-      className="h-full overflow-y-auto overflow-x-hidden"
-    >
-      <div ref={topSentinelRef} aria-hidden style={{ height: 1 }} />
-      <div ref={scrollContentRef}>
-        {isLoadingOlder && (
-          <div className="flex justify-center py-2">
-            <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
-          </div>
-        )}
-        <Virtuoso
-          customScrollParent={scrollerEl ?? undefined}
-          data={displayBlocks}
-          computeItemKey={(i) => itemKeys[i] ?? displayBlocks[i].id}
-          initialTopMostItemIndex={displayBlocks.length - 1}
-          overscan={{ main: 800, reverse: 800 }}
-          itemContent={(_i, block) => (
-            <AgentStreamItem
-              block={block}
-              isStreaming={isStreaming}
-              basePath={basePath}
-              toolResultMap={toolResultMap}
-            />
-          )}
-        />
-        {isStreaming && showStreamingIndicator && <StreamingCursor />}
-      </div>
+    <div className="relative h-full">
+      {isLoadingOlder && <LoadingOlderOverlay />}
+      <Virtuoso
+        data-testid="agent-stream-scroller"
+        className="h-full overflow-x-hidden"
+        style={{ height: "100%" }}
+        scrollerRef={onScroller}
+        data={displayBlocks}
+        firstItemIndex={firstItemIndex}
+        computeItemKey={computeItemKey}
+        initialTopMostItemIndex={{ index: "LAST", align: "end" }}
+        defaultItemHeight={96}
+        increaseViewportBy={{ top: 1600, bottom: 800 }}
+        minOverscanItemCount={{ top: 12, bottom: 8 }}
+        overscan={{ main: 800, reverse: 800 }}
+        skipAnimationFrameInResizeObserver
+        components={VIRTUOSO_COMPONENTS}
+        context={virtuosoContext}
+        startReached={onStartReached}
+        rangeChanged={onRangeChanged}
+        itemContent={renderItem}
+      />
     </div>
   );
 });

@@ -4,6 +4,7 @@ import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import { parseAskUserQuestions, type AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
+import { countRenderableDisplayRows } from "@/components/agentStreamDisplay";
 import {
   blocksPatchWithDerived,
   injectPlanIntoBlocks,
@@ -248,6 +249,7 @@ export function applyPersistedState(
 
   const sessionMetaPatch: Partial<SessionEntry> = {
     persistedLoaded: true,
+    historyPrependDisplayOffset: 0,
     hasMore: hasMore ?? false,
     oldestMessageId: oldestMessageId ?? null,
     featureId: featureId ?? null,
@@ -295,9 +297,8 @@ export function applyPersistedState(
 
 /**
  * Load older messages for a session from the server. Returns the number of
- * blocks that were prepended so callers (Virtuoso scroll preservation) can
- * decrement `firstItemIndex` synchronously without resorting to refs +
- * `requestAnimationFrame` to read the new array length back from React.
+ * blocks that were prepended. The store also tracks the rendered display-row
+ * delta so Virtuoso can preserve scroll position via `firstItemIndex`.
  */
 export async function loadOlderSessionMessages(
   ctx: StoreAccessors,
@@ -329,9 +330,12 @@ export async function loadOlderSessionMessages(
   const currentSession = ctx.get().sessions[sessionId];
   if (!currentSession) return 0;
   const mergedBlocks = [...olderBlocks, ...currentSession.blocks];
+  const prependedDisplayRows = countRenderableDisplayRows(olderBlocks);
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...blocksPatchWithDerived(currentSession.streamingState, mergedBlocks),
+      historyPrependDisplayOffset:
+        currentSession.historyPrependDisplayOffset + prependedDisplayRows,
       hasMore: serverSession.hasMore ?? false,
       oldestMessageId: serverSession.oldestMessageId ?? null,
     }),

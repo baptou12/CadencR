@@ -37,6 +37,8 @@ export interface UseWebSocketSessionReturn {
   /** Map from a tool_call's `toolUseId` to its `tool_result` block, also
    *  maintained incrementally by the store. */
   toolResultMap: Map<string, AgentBlockData>;
+  /** Rendered Virtuoso row count prepended by older-history pagination. */
+  historyPrependDisplayOffset: number;
   lifecycle: TurnLifecycle;
   status: LiveAgentStatus;
   isConnected: boolean;
@@ -221,6 +223,7 @@ export function useWebSocketSession(
       blocks: session?.blocks ?? [],
       rootBlocks: session?.rootBlocks ?? [],
       toolResultMap: session?.toolResultMap ?? new Map(),
+      historyPrependDisplayOffset: session?.historyPrependDisplayOffset ?? 0,
       lifecycle,
       status,
       isConnected: session?.isConnected ?? false,

@@ -108,6 +108,8 @@ export interface SessionEntry {
    * whole conversation per render.
    */
   toolResultMap: Map<string, AgentBlockData>;
+  /** Rendered Virtuoso row count prepended by older-history pagination. */
+  historyPrependDisplayOffset: number;
   pendingPermission: PendingPermission | null;
   pendingPermissionQueue: PendingPermission[];
   pendingRequestId: string;
@@ -160,6 +162,7 @@ export function createSessionEntry(): SessionEntry {
     blocks: [],
     rootBlocks: [],
     toolResultMap: new Map(),
+    historyPrependDisplayOffset: 0,
     pendingPermission: null,
     pendingPermissionQueue: [],
     pendingRequestId: "",
@@ -245,9 +248,8 @@ export interface WsSessionStore {
   setPersistedState: (sessionId: string, options: PersistedStatePayload) => void;
   /**
    * Loads older messages for a session. Resolves with the number of blocks
-   * prepended to the conversation so callers can preserve scroll position
-   * (e.g. Virtuoso's `firstItemIndex` decrement) without re-deriving the
-   * delta from React state.
+   * prepended to the conversation. The store also increments
+   * `historyPrependDisplayOffset` by the rendered row count for Virtuoso.
    */
   loadOlderMessages: (sessionId: string) => Promise<number>;
 }

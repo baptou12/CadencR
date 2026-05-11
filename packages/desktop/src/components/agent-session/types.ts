@@ -30,6 +30,8 @@ export interface AgentSessionProps {
    * incremental-vs-fallback contract as `rootBlocks`.
    */
   toolResultMap?: Map<string, AgentBlockData>;
+  /** Rendered Virtuoso row count prepended by older-history pagination. */
+  historyPrependDisplayOffset?: number;
   /** Current status of the agent */
   status: AgentStatus;
   /**
@@ -161,8 +163,8 @@ export interface AgentSessionProps {
   /**
    * Called when user scrolls to top and older messages should be loaded.
    * Resolves with the number of blocks that were prepended (or `void` for
-   * legacy callers that haven't migrated). The agent-session scroll hook
-   * uses this to preserve Virtuoso's `firstItemIndex` synchronously.
+   * legacy callers that haven't migrated). WS sessions preserve prepend
+   * anchoring through `historyPrependDisplayOffset`.
    */
   onLoadOlder?: () => Promise<number | void>;
   /** Whether "use worktree" is toggled on (shown as chip before first message) */

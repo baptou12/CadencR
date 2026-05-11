@@ -105,19 +105,49 @@ vi.mock("react-virtuoso", async () => {
     totalCount?: number;
     data?: unknown[];
     itemContent?: ItemContent;
-    components?: { Header?: () => unknown; Footer?: () => unknown };
+    components?: {
+      Header?: (props: { context?: unknown }) => React.ReactNode;
+      Footer?: (props: { context?: unknown }) => React.ReactNode;
+    };
+    context?: unknown;
+    scrollerRef?: (ref: HTMLElement | null) => void;
+    startReached?: () => void;
     style?: React.CSSProperties;
+    className?: string;
+    "data-testid"?: string;
   }
   const Virtuoso = React.forwardRef<unknown, VirtuosoProps>(function VirtuosoMock(
-    { totalCount, data, itemContent, components, style },
+    {
+      totalCount,
+      data,
+      itemContent,
+      components,
+      context,
+      scrollerRef,
+      startReached,
+      style,
+      className,
+      "data-testid": testId,
+    },
     _ref,
   ) {
+    const rootRef = React.useRef<HTMLDivElement | null>(null);
+    React.useEffect(() => {
+      const root = rootRef.current;
+      scrollerRef?.(root);
+      if (!root || !startReached) return () => scrollerRef?.(null);
+      root.addEventListener("virtuoso-start-reached", startReached);
+      return () => {
+        root.removeEventListener("virtuoso-start-reached", startReached);
+        scrollerRef?.(null);
+      };
+    }, [scrollerRef, startReached]);
     const count = data?.length ?? totalCount ?? 0;
     const headerEl = components?.Header
-      ? React.createElement(components.Header as () => React.ReactNode)
+      ? React.createElement(components.Header, { context } as { context?: unknown })
       : null;
     const footerEl = components?.Footer
-      ? React.createElement(components.Footer as () => React.ReactNode)
+      ? React.createElement(components.Footer, { context } as { context?: unknown })
       : null;
     const rowEls: React.ReactNode[] = [];
     for (let i = 0; i < count; i++) {
@@ -131,7 +161,12 @@ vi.mock("react-virtuoso", async () => {
     }
     return React.createElement(
       "div",
-      { "data-testid": "virtuoso-mock", style },
+      {
+        ref: rootRef,
+        "data-testid": testId ?? "virtuoso-mock",
+        className,
+        style,
+      },
       headerEl,
       ...rowEls,
       footerEl,

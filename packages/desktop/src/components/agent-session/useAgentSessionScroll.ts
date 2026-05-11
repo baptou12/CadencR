@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { toast } from "sonner";
 import type { AgentBlockData } from "../AgentBlock";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
-import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
+import { subscribeResize } from "@/lib/resize-coordinator";
 
 /**
  * Auto-scroll for the chat, in three rules:
@@ -20,17 +20,15 @@ import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
  *     previous `scrollTop` and only disengage when the user moved upward.
  *
  * We do NOT disengage just because `distanceFromBottom > threshold`: with
- * virtualization (Virtuoso `customScrollParent`), item measurement settles
+ * virtualization, item measurement settles
  * asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
  * event after Virtuoso has expanded the content, so the stale `scrollTop`
  * reads as "scrolled away" against the new `scrollHeight`. A direction-aware
  * check ignores those echoes because `scrollTop` only ever increased.
  *
- * Prepend-restore: when older history is loaded, we capture
- * `scrollHeight` / `scrollTop` synchronously *before* invoking the loader,
- * then in a layout effect — gated on the first block changing — restore via
- * `scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop`. Standard
- * chat-app pattern; runs before paint, no flash.
+ * Older-history pagination is triggered by Virtuoso's `startReached`, and
+ * prepend anchoring is owned by Virtuoso's `firstItemIndex`. This hook only
+ * owns bottom-stick state and the guarded older-history request.
  */
 
 const STICK_THRESHOLD_PX = 16;
@@ -47,8 +45,8 @@ interface UseAgentSessionScrollOptions {
   /**
    * Conversation contents. The hook reads `length`, the last block's
    * `content.length`, and the first block's `id` to drive its layout-effect
-   * deps. Pass the same array `<AgentStream>` renders so prepend-restore
-   * sees the same `firstBlockId` change React does.
+   * deps. Pass the same array `<AgentStream>` renders so bottom anchoring
+   * sees the same content changes React does.
    */
   blocks: AgentBlockData[];
   /**
@@ -64,19 +62,11 @@ interface UseAgentSessionScrollOptions {
   onLoadOlder?: () => Promise<number | void>;
 }
 
-type DivRef = (el: HTMLDivElement | null) => void;
+type ScrollRef = (el: HTMLElement | null) => void;
 
 interface UseAgentSessionScrollResult {
-  scrollContainerRef: DivRef;
-  topSentinelRef: DivRef;
-  /**
-   * Pass to `<AgentStream scrollContentRef={...} />`. A `ResizeObserver`
-   * attached here re-anchors to the bottom whenever the content's height
-   * changes — markdown rendering, syntax highlighting, image decoding etc.
-   * settle asynchronously after first paint, and without this we land above
-   * the bottom on the initial render of a long session.
-   */
-  scrollContentRef: DivRef;
+  scrollContainerRef: ScrollRef;
+  onStartReached: () => void;
   autoScrollEnabled: boolean;
   isLoadingOlder: boolean;
   scrollToBottom: () => void;
@@ -92,19 +82,13 @@ export function useAgentSessionScroll({
   const lastBlockContentLength = blocks[blocksLength - 1]?.content.length ?? 0;
   const firstBlockId = blocks[0]?.id ?? null;
 
-  const scrollerElRef = useRef<HTMLDivElement | null>(null);
-  const sentinelElRef = useRef<HTMLDivElement | null>(null);
-  const contentElRef = useRef<HTMLDivElement | null>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const contentObserverRef = useRef<ResizeObserver | null>(null);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
   const stickRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const touchStartYRef = useRef(0);
   // Last `scrollTop` we saw on the scroller — used by `onScroll` to detect
   // an actual user-driven upward scroll vs. a programmatic re-anchor echo.
   const lastScrollTopRef = useRef(0);
-  const pendingPrependRef = useRef<{ prevH: number; prevT: number } | null>(null);
-  const prevFirstBlockIdRef = useRef<string | null>(firstBlockId);
   const prevConversationKeyRef = useRef<string | null>(conversationKey);
   // Open during a conversation-switch settle window — suppresses the
   // direction-aware `onScroll` disengage so a `scrollHeight` shrink in the
@@ -113,8 +97,8 @@ export function useAgentSessionScroll({
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
-  // Latest-callbacks pattern so the IntersectionObserver doesn't need to be
-  // re-created when `hasMore` / `onLoadOlder` change.
+  // Latest-callbacks pattern so the Virtuoso `startReached` handler stays
+  // stable while reading current pagination state.
   const hasMoreRef = useRef(hasMore);
   const onLoadOlderRef = useRef(onLoadOlder);
   hasMoreRef.current = hasMore;
@@ -152,8 +136,6 @@ export function useAgentSessionScroll({
   useLayoutEffect(() => {
     if (prevConversationKeyRef.current === conversationKey) return;
     prevConversationKeyRef.current = conversationKey;
-    pendingPrependRef.current = null;
-    prevFirstBlockIdRef.current = firstBlockId;
     lastScrollTopRef.current = 0;
     stickRef.current = true;
     setAutoScrollEnabledState(true);
@@ -161,20 +143,12 @@ export function useAgentSessionScroll({
     closeSwapWindow();
     const el = scrollerElRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [conversationKey, firstBlockId, closeSwapWindow]);
+  }, [conversationKey, closeSwapWindow]);
 
   useLayoutEffect(() => {
     const el = scrollerElRef.current;
-    const prevId = prevFirstBlockIdRef.current;
-    prevFirstBlockIdRef.current = firstBlockId;
     if (!el) return;
 
-    const restore = pendingPrependRef.current;
-    if (restore !== null && firstBlockId !== prevId) {
-      pendingPrependRef.current = null;
-      el.scrollTop = el.scrollHeight - restore.prevH + restore.prevT;
-      return;
-    }
     if (stickRef.current) el.scrollTop = el.scrollHeight;
   }, [blocksLength, lastBlockContentLength, firstBlockId]);
 
@@ -185,7 +159,7 @@ export function useAgentSessionScroll({
   useEffect(
     () =>
       subscribeResize((active) => {
-        if (active || !stickRef.current || pendingPrependRef.current !== null) return;
+        if (active || !stickRef.current) return;
         stickToBottom();
       }),
     [stickToBottom],
@@ -234,7 +208,7 @@ export function useAgentSessionScroll({
     [setAutoScrollEnabled],
   );
 
-  const scrollContainerRef = useCallback<DivRef>(
+  const scrollContainerRef = useCallback<ScrollRef>(
     (el) => {
       const prev = scrollerElRef.current;
       if (prev === el) return;
@@ -255,76 +229,26 @@ export function useAgentSessionScroll({
     [onScroll, onWheel, onTouchStart, onTouchMove],
   );
 
-  const scrollContentRef = useCallback<DivRef>(
-    (el) => {
-      if (contentElRef.current === el) return;
-      contentObserverRef.current?.disconnect();
-      contentObserverRef.current = null;
-      contentElRef.current = el;
-      if (!el || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(() => {
-        // Skip the per-frame re-anchor while a resize-handle drag is in
-        // flight; the catch-up subscription above runs one pass on release.
-        if (isResizing()) return;
-        // While a conversation-switch swap is settling, every layout shift
-        // pushes the close-out further so the window covers Virtuoso's
-        // async measurement pass even if it spills past `SWAP_SETTLE_MS`.
-        if (swapInProgressRef.current) closeSwapWindow();
-        if (!stickRef.current || pendingPrependRef.current !== null) return;
-        const scroller = scrollerElRef.current;
-        if (!scroller) return;
-        scroller.scrollTop = scroller.scrollHeight;
+  const onStartReached = useCallback((): void => {
+    if (!hasMoreRef.current || !onLoadOlderRef.current || loadingOlderRef.current) return;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    void onLoadOlderRef
+      .current()
+      .then(() => {
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+      })
+      .catch(() => {
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+        toast.error("Failed to load older messages");
       });
-      observer.observe(el);
-      contentObserverRef.current = observer;
-    },
-    [closeSwapWindow],
-  );
-
-  const topSentinelRef = useCallback<DivRef>((el) => {
-    if (sentinelElRef.current === el) return;
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-    sentinelElRef.current = el;
-    if (!el) return;
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          if (!hasMoreRef.current || !onLoadOlderRef.current || loadingOlderRef.current) continue;
-          const scroller = scrollerElRef.current;
-          if (!scroller) continue;
-          // Capture geometry synchronously — the upcoming layout effect
-          // restores the visible-content anchor via this delta.
-          pendingPrependRef.current = {
-            prevH: scroller.scrollHeight,
-            prevT: scroller.scrollTop,
-          };
-          loadingOlderRef.current = true;
-          setIsLoadingOlder(true);
-          void onLoadOlderRef
-            .current()
-            .then(() => {
-              loadingOlderRef.current = false;
-              setIsLoadingOlder(false);
-            })
-            .catch(() => {
-              pendingPrependRef.current = null;
-              loadingOlderRef.current = false;
-              setIsLoadingOlder(false);
-              toast.error("Failed to load older messages");
-            });
-        }
-      },
-      { rootMargin: "200px 0px 0px 0px" },
-    );
-    observerRef.current.observe(el);
   }, []);
 
   return {
     scrollContainerRef,
-    topSentinelRef,
-    scrollContentRef,
+    onStartReached,
     autoScrollEnabled,
     isLoadingOlder,
     scrollToBottom,
