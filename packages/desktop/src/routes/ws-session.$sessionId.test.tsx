@@ -242,7 +242,7 @@ vi.mock("@/api/agentRuntime", () => ({
       providers: [
         {
           id: "claude_code",
-          label: "Claude Code",
+          label: "Claude",
           status: "available",
           models: [{ id: "claude-opus-4-5", label: "Opus" }],
           default_model: "claude-opus-4-5",

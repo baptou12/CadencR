@@ -43,7 +43,7 @@ const mockAgentCatalog = vi.fn(
       providers: [
         {
           id: "claude_code",
-          label: "Claude Code",
+          label: "Claude",
           status: "available",
           models: [],
           default_model: "default",
@@ -124,7 +124,7 @@ describe("useResolvedModel", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [],
             default_model: "default",
@@ -228,7 +228,7 @@ describe("useResolvedModel", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             default_model: "claude-opus-4",
             models: [
@@ -256,7 +256,7 @@ describe("useResolvedModel", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             default_model: "claude-opus-4",
             models: [

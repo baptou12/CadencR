@@ -18,7 +18,7 @@ function Harness(props: {
       providers={[
         {
           id: "claude_code",
-          label: "Claude Code",
+          label: "Claude",
           disabled: false,
           models: [{ id: "opus", label: "Opus" }],
         },
@@ -41,7 +41,7 @@ describe("RuntimeModelPicker", () => {
     render(<Harness onSelect={onSelect} onAfterSelectClose={onAfterSelectClose} />);
 
     await user.click(screen.getByRole("button", { name: "Open picker" }));
-    await user.click(screen.getByRole("option", { name: /Claude Code \/ Opus/i }));
+    await user.click(screen.getByRole("option", { name: /Claude \/ Opus/i }));
 
     expect(onSelect).toHaveBeenCalledWith("claude_code", "opus");
     await waitFor(() => expect(onAfterSelectClose).toHaveBeenCalled());

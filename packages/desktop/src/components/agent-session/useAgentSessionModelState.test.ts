@@ -8,7 +8,7 @@ const catalog: AgentCatalog = {
   providers: [
     {
       id: "claude_code",
-      label: "Claude Code",
+      label: "Claude",
       status: "available",
       default_model: "opus",
       models: [{ id: "opus", label: "Opus" }],

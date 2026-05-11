@@ -246,7 +246,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         let default_model = Self::default_model_from(&models);
         ProviderCatalogEntry {
             id: "claude_code".to_string(),
-            label: "Claude Code".to_string(),
+            label: "Claude".to_string(),
             status: ProviderStatus::Available,
             status_message: None,
             models,
@@ -334,7 +334,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         let default_model = Self::default_model_from(&models);
         ProviderCatalogEntry {
             id: "claude_code".to_string(),
-            label: "Claude Code".to_string(),
+            label: "Claude".to_string(),
             status: ProviderStatus::Available,
             status_message: None,
             models,

@@ -25,10 +25,17 @@ const PROVIDER_ICONS: Record<ProviderId, string> = {
   [PROVIDER_IDS.OPENCODE]: opencodeLogo,
 };
 
+/** Canonical display names for known providers (Anthropic-recommended branding). */
+const PROVIDER_LABELS: Partial<Record<string, string>> = {
+  [PROVIDER_IDS.CLAUDE_CODE]: "Claude",
+  [PROVIDER_IDS.OPENCODE]: "OpenCode",
+  [PROVIDER_IDS.CODEX_CLI]: "Codex",
+};
+
 /**
  * Get provider metadata. Returns icon from the local asset map and label from
- * the optional catalog data (falls back to the provider ID as a label).
- * New providers only need to add an icon asset + one entry in PROVIDER_ICONS.
+ * the optional catalog data (falls back to the canonical label map, then the
+ * provider ID). New providers only need an icon asset + one entry in each map.
  */
 export function getProviderMetadata(
   providerId?: string | null,
@@ -39,7 +46,7 @@ export function getProviderMetadata(
   }
   return {
     id: providerId,
-    label: catalogLabel ?? formatProviderId(providerId),
+    label: catalogLabel ?? PROVIDER_LABELS[providerId] ?? formatProviderId(providerId),
     iconSrc: PROVIDER_ICONS[providerId as ProviderId] ?? null,
   };
 }

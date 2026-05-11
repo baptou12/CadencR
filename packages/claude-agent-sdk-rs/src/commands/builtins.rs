@@ -6,7 +6,7 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ("agents", "Manage agent configurations"),
     (
         "autofix-pr",
-        "Spawn a Claude Code on the web session that watches the current branch PR",
+        "Spawn a Claude on the web session that watches the current branch PR",
     ),
     (
         "batch",
@@ -35,12 +35,12 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "desktop",
-        "Continue the current session in the Claude Code Desktop app",
+        "Continue the current session in the Claude Desktop app",
     ),
     ("diff", "Open an interactive diff viewer"),
     (
         "doctor",
-        "Diagnose and verify your Claude Code installation and settings",
+        "Diagnose and verify your Claude installation and settings",
     ),
     ("effort", "Set the model effort level"),
     ("exit", "Exit the CLI"),
@@ -50,7 +50,7 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
         "Configure extra usage to keep working when rate limits are hit",
     ),
     ("fast", "Toggle fast mode"),
-    ("feedback", "Submit feedback about Claude Code"),
+    ("feedback", "Submit feedback about Claude"),
     (
         "fewer-permission-prompts",
         "Reduce common read-only permission prompts",
@@ -66,7 +66,7 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ("init", "Initialize project guidance"),
     (
         "insights",
-        "Generate a report analyzing your Claude Code sessions",
+        "Generate a report analyzing your Claude sessions",
     ),
     (
         "install-github-app",
@@ -93,13 +93,13 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ),
     ("mobile", "Show QR code to download the Claude mobile app"),
     ("model", "Select or change the AI model"),
-    ("passes", "Share a free week of Claude Code with friends"),
+    ("passes", "Share a free week of Claude with friends"),
     ("permissions", "Manage tool permission rules"),
     ("plan", "Enter plan mode directly from the prompt"),
-    ("plugin", "Manage Claude Code plugins"),
+    ("plugin", "Manage Claude plugins"),
     (
         "powerup",
-        "Discover Claude Code features through interactive lessons",
+        "Discover Claude features through interactive lessons",
     ),
     ("privacy-settings", "View and update privacy settings"),
     (
@@ -141,13 +141,13 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ("skills", "List available skills"),
     ("stats", "Alias for usage"),
     ("status", "Open the Settings status interface"),
-    ("statusline", "Configure Claude Code status line"),
-    ("stickers", "Order Claude Code stickers"),
+    ("statusline", "Configure Claude status line"),
+    ("stickers", "Order Claude stickers"),
     ("tasks", "List and manage background tasks"),
     ("team-onboarding", "Generate a team onboarding guide"),
     (
         "teleport",
-        "Pull a Claude Code on the web session into this terminal",
+        "Pull a Claude on the web session into this terminal",
     ),
     ("terminal-setup", "Configure terminal keybindings"),
     ("theme", "Change the color theme"),
@@ -162,6 +162,6 @@ pub(super) const BUILTIN_COMMANDS: &[(&str, &str)] = &[
     ("voice", "Toggle voice dictation"),
     (
         "web-setup",
-        "Connect your GitHub account to Claude Code on the web",
+        "Connect your GitHub account to Claude on the web",
     ),
 ];

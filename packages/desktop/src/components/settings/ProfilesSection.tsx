@@ -96,7 +96,7 @@ export function ProfilesSection() {
           ))}
           {profiles.length === 0 && (
             <div className="px-4 py-3 text-sm text-muted-foreground border-t border-border">
-              No custom profiles yet. Create one to switch Claude Code between backends.
+              No custom profiles yet. Create one to switch Claude between backends.
             </div>
           )}
         </div>
@@ -260,7 +260,7 @@ function ProfileEditor({
         <DialogHeader>
           <DialogTitle>{isEdit ? `Edit profile "${initial!.name}"` : "New profile"}</DialogTitle>
           <DialogDescription>
-            Env vars are injected on top of the inherited environment when Claude Code is spawned.
+            Env vars are injected on top of the inherited environment when Claude is spawned.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

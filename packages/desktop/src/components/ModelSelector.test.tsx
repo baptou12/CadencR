@@ -34,7 +34,7 @@ const {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
@@ -167,7 +167,7 @@ describe("ModelSelector", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
@@ -266,7 +266,7 @@ describe("ModelSelector", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "default", label: "Default" }],
             default_model: "default",
@@ -296,7 +296,7 @@ describe("ModelSelector", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "default", label: "Default", description: "Opus 4.7 with 1M context" }],
             default_model: "default",
@@ -319,7 +319,7 @@ describe("ModelSelector", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "default", label: "Default" }],
             default_model: "default",
@@ -353,7 +353,7 @@ describe("ModelSelector", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus", description: "Claude default" }],
             default_model: "opus",
@@ -383,6 +383,6 @@ describe("ModelSelector", () => {
     const opencodeOptionText = optionTexts.find((text) => text.includes("OpenCode / GPT-5"));
     expect(opencodeOptionText).toBeDefined();
     expect(opencodeOptionText).toContain("Codex default");
-    expect(optionTexts.some((text) => text.includes("Claude Code / Opus"))).toBe(false);
+    expect(optionTexts.some((text) => text.includes("Claude / Opus"))).toBe(false);
   });
 });
