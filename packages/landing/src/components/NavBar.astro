@@ -6,13 +6,23 @@ import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import Button from "@/components/ui/Button.astro";
 
 const base = import.meta.env.BASE_URL;
+const navLinks = [
+  { href: `${base}#stream`, label: "Features" },
+  { href: `${base}#compat`, label: "Compatibility" },
+  { href: `${base}roadmap/`, label: "Roadmap" },
+  { href: `${base}news/`, label: "News" },
+  { href: `${base}docs/`, label: "Docs" },
+];
 ---
 <header class="sticky top-0 z-50 border-b border-border/55 bg-background/90 backdrop-blur-md backdrop-saturate-[1.4]">
-  <div class="mx-auto flex h-[52px] max-w-[1160px] items-center gap-[22px] px-6">
-    <a href={base} aria-label="Cadencr home" class="inline-flex items-center gap-2.5">
+  <div class="mx-auto flex h-[52px] max-w-[1160px] items-center gap-3 px-4 sm:gap-[22px] sm:px-6">
+    <a href={base} class="inline-flex items-center gap-2.5">
       <LogoMark size={36} />
       <span class="text-sm font-bold uppercase tracking-[0.14em]">Cadencr</span>
-      <span class="font-mono text-[10px] text-muted-foreground rounded border border-border px-[5px] py-px">
+      <span
+        aria-hidden="true"
+        class="hidden font-mono text-[10px] text-muted-foreground rounded border border-border px-[5px] py-px sm:inline-block"
+      >
         v0.1.0
       </span>
     </a>
@@ -20,33 +30,58 @@ const base = import.meta.env.BASE_URL;
       aria-label="Primary"
       class="ml-3.5 hidden gap-[18px] text-[12.5px] text-muted-foreground md:flex [&_a:hover]:text-foreground"
     >
-      <a href={`${base}#readability`}>Features</a>
-      <a href={`${base}#compat`}>Compatibility</a>
-      <a href={`${base}roadmap/`}>Roadmap</a>
-      <a href={`${base}news/`}>News</a>
-      <a href={`${base}docs/`}>Docs</a>
+      {navLinks.map((link) => <a href={link.href}>{link.label}</a>)}
     </nav>
     <span class="flex-1"></span>
-    <div class="flex items-center gap-2">
-      <a
-        href="https://github.com/rle-mino/cadencr"
-        aria-label="Star on GitHub"
-        class="inline-flex h-7 items-stretch overflow-hidden rounded-md border border-border font-mono text-xs [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:px-[9px] [&_svg]:h-3 [&_svg]:w-3 [&_svg]:stroke-[2]"
+    <a
+      href="https://github.com/rle-mino/cadencr"
+      aria-label="rle-mino/cadencr — Star on GitHub"
+      class="hidden h-7 items-stretch overflow-hidden rounded-md border border-border font-mono text-xs sm:inline-flex [&>span]:inline-flex [&>span]:items-center [&>span]:gap-1.5 [&>span]:px-[9px] [&_svg]:h-3 [&_svg]:w-3 [&_svg]:stroke-[2]"
+    >
+      <span class="text-muted-foreground hover:bg-accent hover:text-foreground">
+        <GithubIcon />
+        rle-mino/cadencr
+      </span>
+      <span class="border-l border-border bg-muted/35 font-medium text-foreground">
+        <StarIcon />
+        <span data-github-stars>0</span>
+      </span>
+    </a>
+    <Button href="https://github.com/rle-mino/cadencr/releases/latest" size="sm">
+      <DownloadIcon />
+      <span class="sr-only sm:not-sr-only">Download</span>
+    </Button>
+    <details class="relative md:hidden" data-mobile-menu>
+      <summary
+        aria-label="Open menu"
+        class="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden"
       >
-        <span class="text-muted-foreground hover:bg-accent hover:text-foreground">
-          <GithubIcon />
-          rle-mino/cadencr
-        </span>
-        <span class="border-l border-border bg-muted/35 font-medium text-foreground">
-          <StarIcon />
-          <span data-github-stars>0</span>
-        </span>
-      </a>
-      <Button href="https://github.com/rle-mino/cadencr/releases/latest" size="sm">
-        <DownloadIcon />
-        Download
-      </Button>
-    </div>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="18" x2="20" y2="18" />
+        </svg>
+      </summary>
+      <nav
+        aria-label="Mobile"
+        class="absolute right-0 top-full mt-2 flex w-48 flex-col gap-1 rounded-md border border-border bg-background p-2 text-sm shadow-md"
+      >
+        {navLinks.map((link) => (
+          <a
+            href={link.href}
+            class="rounded px-3 py-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {link.label}
+          </a>
+        ))}
+        <a
+          href="https://github.com/rle-mino/cadencr"
+          class="rounded px-3 py-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          GitHub
+        </a>
+      </nav>
+    </details>
   </div>
 </header>
 
@@ -90,5 +125,16 @@ const base = import.meta.env.BASE_URL;
       .catch(() => {
         /* keep the default 0; stars are non-critical UI */
       });
+  }
+
+  // Close the mobile menu when a link inside it is clicked, or when clicking outside.
+  const menu = document.querySelector<HTMLDetailsElement>("[data-mobile-menu]");
+  if (menu) {
+    menu.querySelectorAll("a").forEach((a) =>
+      a.addEventListener("click", () => menu.removeAttribute("open"))
+    );
+    document.addEventListener("click", (e) => {
+      if (menu.open && !menu.contains(e.target as Node)) menu.removeAttribute("open");
+    });
   }
 </script>

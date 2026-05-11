@@ -1,0 +1,37 @@
+---
+import FeatureSection from "@/components/FeatureSection.astro";
+import FeatureMedia from "@/components/ui/FeatureMedia.astro";
+import Lede from "@/components/ui/Lede.astro";
+import unifiedAgents from "@/assets/unified-agents.png";
+---
+<FeatureSection
+  id="agent-cockpit"
+  eyebrow="Agent Cockpit"
+  heading="Scan, filter, and steer every agent."
+  reverse
+>
+  <FeatureMedia
+    slot="media"
+    src={unifiedAgents}
+    alt="Cadencr agent cockpit showing a live grid of agent sessions with filter bar, status indicators, and resizable panels"
+    reverse
+  />
+  <Fragment slot="lede">
+    <Lede>
+      The cockpit gives you a <span class="em">live grid of every active session</span>.
+      Filter by project, recency, or keyword — pin the ones that matter, keyboard-navigate the rest.
+    </Lede>
+    <Lede class="mt-2.5">
+      Resize rows and columns to fit your workload. Status rings show who needs attention before you open anything.
+    </Lede>
+  </Fragment>
+  <Fragment slot="bullets">
+    <li>
+      <strong>Filter language</strong> — <code>/last:5m</code>, <code>/project:</code>,
+      <code>/sort:</code> — find any session instantly.
+    </li>
+    <li><strong>Pin to top</strong> — float active work above the noise.</li>
+    <li><strong>Keyboard navigation</strong> — move across the grid without touching the mouse.</li>
+    <li><strong>Live status rings</strong> — running, idle, waiting, or error — at a glance.</li>
+  </Fragment>
+</FeatureSection>

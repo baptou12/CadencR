@@ -13,7 +13,7 @@
   --color-primary: oklch(0.742 0.149 301.871);
   --color-primary-foreground: oklch(0.22 0.022 277.497);
   --color-muted: oklch(0.403 0.032 277.821);
-  --color-muted-foreground: oklch(0.56 0.08 270.087);
+  --color-muted-foreground: oklch(0.7 0.05 270);
   --color-accent: oklch(0.403 0.032 277.821);
   --color-border: oklch(0.32 0.032 277.821);
   --color-sidebar: oklch(0.23 0.022 277.497);
@@ -96,16 +96,17 @@
   /* Bullet list with checkmark icon */
   .bullets li::before {
     content: "";
+    position: absolute;
+    left: 0;
+    top: 0.35em;
     width: 14px;
     height: 14px;
-    flex: none;
     border-radius: 4px;
     background-color: color-mix(in oklch, var(--color-primary) 20%, transparent);
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23bd93f9' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='20 6 9 17 4 12'/></svg>");
     background-size: 10px 10px;
     background-repeat: no-repeat;
     background-position: center;
-    margin-top: 2px;
   }
 
   /* Hero dashed orbits */
