@@ -142,4 +142,37 @@ describe("useGlobalShortcut", () => {
     fireKey("s", { metaKey: true, code: "KeyS" });
     expect(callback).toHaveBeenCalledWith(expect.any(KeyboardEvent));
   });
+
+  // Regression: arrow keys arrive as `ArrowLeft`/`ArrowRight` etc. on
+  // KeyboardEvent.key, but callers spell shortcuts as "meta+alt+left". The
+  // matcher must alias both spellings to KeyboardEvent.code so terminal
+  // split-navigation works.
+  describe("arrow key aliases", () => {
+    const cases: Array<[string, string]> = [
+      ["meta+alt+left", "ArrowLeft"],
+      ["meta+alt+right", "ArrowRight"],
+      ["meta+alt+up", "ArrowUp"],
+      ["meta+alt+down", "ArrowDown"],
+    ];
+
+    for (const [shortcut, code] of cases) {
+      it(`matches ${shortcut} via short alias`, () => {
+        renderHook(() => useGlobalShortcut(shortcut, callback));
+        fireKey(code, { metaKey: true, altKey: true, code });
+        expect(callback).toHaveBeenCalledOnce();
+      });
+    }
+
+    it("also accepts the long Arrow… spelling", () => {
+      renderHook(() => useGlobalShortcut("meta+alt+arrowleft", callback));
+      fireKey("ArrowLeft", { metaKey: true, altKey: true, code: "ArrowLeft" });
+      expect(callback).toHaveBeenCalledOnce();
+    });
+
+    it("ignores arrow key without the expected modifiers", () => {
+      renderHook(() => useGlobalShortcut("meta+alt+left", callback));
+      fireKey("ArrowLeft", { metaKey: true, code: "ArrowLeft" });
+      expect(callback).not.toHaveBeenCalled();
+    });
+  });
 });

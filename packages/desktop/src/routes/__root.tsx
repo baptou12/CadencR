@@ -18,7 +18,6 @@ import {
 } from "@/api/generated";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { customInstance } from "@/api/client";
-import { focusZoneByDirection } from "@/lib/focus-zones";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
@@ -233,26 +232,6 @@ function RootLayout() {
     (e) => {
       e.preventDefault();
       setCommandPaletteOpen((prev) => !prev);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // CMD+SHIFT+[ -> cycle focus left
-  useHotkeys(
-    "meta+alt+left",
-    (e) => {
-      e.preventDefault();
-      focusZoneByDirection("left");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
-
-  // CMD+SHIFT+] -> cycle focus right
-  useHotkeys(
-    "meta+alt+right",
-    (e) => {
-      e.preventDefault();
-      focusZoneByDirection("right");
     },
     { enableOnFormTags: true, enableOnContentEditable: true },
   );

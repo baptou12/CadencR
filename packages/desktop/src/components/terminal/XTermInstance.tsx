@@ -69,6 +69,13 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     const mountedRef = useRef(true);
     const exitedRef = useRef(false);
     const shouldKillRef = useRef(killOnUnmount);
+    // True once `terminal.open(container)` has actually run — only after that
+    // point does `term.focus()` reach a real textarea. Focus requests that
+    // arrive before then (e.g. CMD+T or post-split focus, where the new pane
+    // mounts and we ask it to focus on the same frame) are remembered in
+    // `pendingFocusRef` and replayed at the end of `ensureOpen()`.
+    const openedRef = useRef(false);
+    const pendingFocusRef = useRef(false);
 
     shouldKillRef.current = killOnUnmount;
     const onTerminalFocusRef = useRef(onTerminalFocus);
@@ -83,12 +90,23 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         const term = terminalRef.current;
         if (!term) return;
         term.options.cursorBlink = true;
+        if (!openedRef.current) {
+          // xterm isn't opened yet — there's no textarea to focus. Remember
+          // the request and replay it from `ensureOpen()` once `terminal.open`
+          // has run. Without this, post-create focus calls (CMD+T, post-split)
+          // silently no-op because the dimensions race wins.
+          pendingFocusRef.current = true;
+          return;
+        }
         term.focus();
       },
       blur: () => {
         const term = terminalRef.current;
         if (!term) return;
         term.options.cursorBlink = false;
+        // Clear any pending focus so a blur after a deferred focus actually
+        // sticks instead of being overridden when the terminal finally opens.
+        pendingFocusRef.current = false;
         term.blur();
       },
       markForKill: () => {
@@ -213,6 +231,13 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
 
       // macOS-style navigation: Cmd+Arrow (line) and Option+Arrow (word).
       // Safe to attach pre-`open()` — handler only fires once a textarea exists.
+      //
+      // The modifier check must be *exclusive*: CMD+OPT+Arrow is the split-
+      // navigation chord owned by TerminalPanel, not a line/word jump. If we
+      // only checked `metaKey ? "meta" : altKey ? "alt"`, the meta branch
+      // would win on CMD+OPT+ArrowLeft and we'd ship \x01 (Ctrl+A) to the
+      // pane the user is *leaving*, which the user reported as "arrows do
+      // nothing visible to the splits".
       terminal.attachCustomKeyEventHandler((event) => {
         if (event.type !== "keydown") return true;
         if (!ptyIdRef.current || exitedRef.current) return true;
@@ -222,7 +247,9 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
           "alt+ArrowLeft": "\x1bb",
           "alt+ArrowRight": "\x1bf",
         };
-        const mod = event.metaKey ? "meta" : event.altKey ? "alt" : "";
+        const isOnlyMeta = event.metaKey && !event.altKey && !event.ctrlKey && !event.shiftKey;
+        const isOnlyAlt = event.altKey && !event.metaKey && !event.ctrlKey && !event.shiftKey;
+        const mod = isOnlyMeta ? "meta" : isOnlyAlt ? "alt" : "";
         const seq = mod ? keyMap[`${mod}+${event.key}`] : undefined;
         if (seq) {
           writeRef.current?.(seq);
@@ -262,6 +289,14 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
           }
         });
         opened = true;
+        openedRef.current = true;
+        // Replay any focus request that came in before the textarea existed.
+        // This is what makes CMD+T / post-split focus actually land on the
+        // freshly-mounted pane.
+        if (pendingFocusRef.current) {
+          pendingFocusRef.current = false;
+          terminal.focus();
+        }
         return true;
       };
 
@@ -347,6 +382,8 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
           killRef.current?.();
         }
         ptyIdRef.current = null;
+        openedRef.current = false;
+        pendingFocusRef.current = false;
         terminal.dispose();
         terminalRef.current = null;
         fitAddonRef.current = null;
