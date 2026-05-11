@@ -164,6 +164,8 @@ export function useWebSocketSession(
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
       pendingPlanApproval: lastSession.pendingPlanApproval as PendingPlanApproval | null,
+      pendingPermission: lastSession.pendingPermission,
+      pendingQuestions: lastSession.pendingQuestions,
       contextUsage: persistedContextUsage,
       hasFileChanges: lastSession.hasFileChanges,
     });

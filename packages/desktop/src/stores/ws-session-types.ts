@@ -28,6 +28,28 @@ export interface PendingPlanApproval {
   plan?: string;
 }
 
+/** Snapshot fed into `setPersistedState` to hydrate the WS store from REST. */
+export interface PersistedStatePayload {
+  blocks: AgentBlockData[];
+  lifecycle: TurnLifecycle;
+  hasMore?: boolean;
+  oldestMessageId?: number | null;
+  featureId?: number;
+  sessionDbId?: number;
+  currentProviderId?: string;
+  currentModelId?: string;
+  currentThinkingEffort?: string;
+  runtimeProvider?: string | null;
+  runtimeSessionId?: string | null;
+  pendingPlanApproval?: PendingPlanApproval | null;
+  /** Raw `agent_sessions.pending_permission` JSON, or null. */
+  pendingPermission?: unknown;
+  /** Raw `agent_sessions.pending_questions` JSON, or null. */
+  pendingQuestions?: unknown;
+  contextUsage?: ContextUsageState | null;
+  hasFileChanges?: boolean;
+}
+
 export interface QueuedPrompt {
   text: string;
   images?: Array<{ base64: string; mimeType: string }>;
@@ -220,25 +242,7 @@ export interface WsSessionStore {
   requestSlashCommands: (sessionId: string, cwd: string, provider: string) => void;
 
   markPersistedLoaded: (sessionId: string) => void;
-  setPersistedState: (
-    sessionId: string,
-    options: {
-      blocks: AgentBlockData[];
-      lifecycle: TurnLifecycle;
-      hasMore?: boolean;
-      oldestMessageId?: number | null;
-      featureId?: number;
-      sessionDbId?: number;
-      currentProviderId?: string;
-      currentModelId?: string;
-      runtimeProvider?: string | null;
-      runtimeSessionId?: string | null;
-      pendingPlanApproval?: PendingPlanApproval | null;
-      contextUsage?: ContextUsageState | null;
-      hasFileChanges?: boolean;
-      currentThinkingEffort?: string;
-    },
-  ) => void;
+  setPersistedState: (sessionId: string, options: PersistedStatePayload) => void;
   /**
    * Loads older messages for a session. Resolves with the number of blocks
    * prepended to the conversation so callers can preserve scroll position

@@ -1,34 +1,57 @@
 import { createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
 import { getFeatureAgentState } from "@/api/generated";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
+import { upsertPendingPermission } from "@/lib/pending-permission-queue";
+import { parseAskUserQuestions, type AgentQuestion } from "@/components/AgentQuestionDrawer";
+import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import {
   blocksPatchWithDerived,
   injectPlanIntoBlocks,
   parseTodosFromBlocks,
 } from "./ws-message-processing";
 import type { StoreAccessors } from "./ws-envelope-handler";
+import { parsePermissionPayload } from "./ws-envelope-payload";
 import {
   markLastPlanBlock,
-  type PendingPlanApproval,
+  type PersistedStatePayload,
   type SessionEntry,
   updateSession,
 } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
-import type { ContextUsageState } from "@/types/agent";
-export interface PersistedStatePayload {
-  blocks: SessionEntry["blocks"];
-  lifecycle: SessionEntry["lifecycle"];
-  hasMore?: boolean;
-  oldestMessageId?: number | null;
-  featureId?: number;
-  sessionDbId?: number;
-  currentProviderId?: string;
-  currentModelId?: string;
-  runtimeProvider?: string | null;
-  runtimeSessionId?: string | null;
-  pendingPlanApproval?: PendingPlanApproval | null;
-  contextUsage?: ContextUsageState | null;
-  hasFileChanges?: boolean;
+
+export type { PersistedStatePayload };
+
+interface DecodedQuestion {
+  questions: AgentQuestion[];
+  toolInput: Record<string, unknown>;
+  requestId: string;
+}
+
+// `pending_permission` and `pending_questions` are filtered by tool_name so a
+// payload mis-routed into the wrong column (or stored under a tool the other
+// gate owns) doesn't double-render. The plan-approval and question gates
+// have their own columns and code paths.
+function decodeSnapshotPermission(value: unknown): PendingPermission | null {
+  const parsed = parsePermissionPayload(value);
+  if (!parsed?.request_id || !parsed.tool_name) return null;
+  if (parsed.tool_name === "ExitPlanMode" || parsed.tool_name === "AskUserQuestion") return null;
+  return {
+    toolName: parsed.tool_name,
+    input: parsed.tool_input,
+    description: parsed.description ?? "",
+    pattern: parsed.pattern ?? "",
+    preview: parsed.preview,
+    options: parsed.options,
+    requestId: parsed.request_id,
+  };
+}
+
+function decodeSnapshotQuestion(value: unknown): DecodedQuestion | null {
+  const parsed = parsePermissionPayload(value);
+  if (!parsed?.request_id) return null;
+  const questions = parseAskUserQuestions(parsed.tool_input);
+  if (questions.length === 0) return null;
+  return { questions, toolInput: parsed.tool_input, requestId: parsed.request_id };
 }
 
 export function applyApprovePlan(
@@ -176,6 +199,8 @@ export function applyPersistedState(
     runtimeProvider,
     runtimeSessionId,
     pendingPlanApproval,
+    pendingPermission: pendingPermissionSnapshot,
+    pendingQuestions: pendingQuestionsSnapshot,
     contextUsage,
     hasFileChanges,
   } = payload;
@@ -184,41 +209,74 @@ export function applyPersistedState(
   const resolvedRuntimeProvider = runtimeProvider ?? currentProviderId ?? undefined;
   const resolvedRuntimeSessionId = runtimeSessionId ?? undefined;
   const existing = ctx.get().sessions[sessionId];
+
+  // Race guard: a live `permission.request` envelope can arrive before the
+  // REST snapshot resolves; the live state is always fresher.
+  const canHydrateFromSnapshot = (existing?.pendingRequestId ?? "") === "";
+  const decodedPermission =
+    canHydrateFromSnapshot && pendingPermissionSnapshot != null
+      ? decodeSnapshotPermission(pendingPermissionSnapshot)
+      : null;
+  const decodedQuestion =
+    canHydrateFromSnapshot && pendingQuestionsSnapshot != null
+      ? decodeSnapshotQuestion(pendingQuestionsSnapshot)
+      : null;
+
+  let lifecycleWithPendingGate = lifecycle;
+  if (pendingPlanApproval != null) {
+    lifecycleWithPendingGate = transitionTurn(lifecycle, { type: "plan_approval_requested" });
+  } else if (decodedPermission) {
+    lifecycleWithPendingGate = transitionTurn(lifecycle, { type: "permission_requested" });
+  } else if (decodedQuestion) {
+    lifecycleWithPendingGate = transitionTurn(lifecycle, { type: "question_requested" });
+  }
+
+  const permissionQueuePatch = decodedPermission
+    ? upsertPendingPermission(
+        existing ?? { pendingPermission: null, pendingPermissionQueue: [] },
+        decodedPermission,
+      )
+    : null;
+
+  const restoredRequestId = decodedPermission?.requestId
+    ? decodedPermission.requestId
+    : decodedQuestion
+      ? decodedQuestion.requestId
+      : pendingPlanApproval != null
+        ? existing?.pendingRequestId || `${planRestorePrefix}${Date.now()}`
+        : "";
+
   const sessionMetaPatch: Partial<SessionEntry> = {
     persistedLoaded: true,
     hasMore: hasMore ?? false,
     oldestMessageId: oldestMessageId ?? null,
     featureId: featureId ?? null,
     sessionDbId: sessionDbId ?? null,
+    lifecycle: lifecycleWithPendingGate,
     ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
     ...(currentModelId ? { currentModelId } : {}),
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
     ...(contextUsage !== undefined ? { contextUsage } : {}),
     ...(hasFileChanges !== undefined ? { hasFileChanges } : {}),
-    ...(pendingPlanApproval != null
+    ...(pendingPlanApproval != null ? { pendingPlanApproval } : {}),
+    ...(permissionQueuePatch
       ? {
-          pendingPlanApproval,
-          lifecycle: transitionTurn(lifecycle, { type: "plan_approval_requested" }),
+          pendingPermission: permissionQueuePatch.pendingPermission,
+          pendingPermissionQueue: permissionQueuePatch.pendingPermissionQueue,
         }
       : {}),
-  };
-
-  const restoredRequestId =
-    pendingPlanApproval != null
-      ? existing?.pendingRequestId || `${planRestorePrefix}${Date.now()}`
-      : "";
-
-  const restoredPlanApprovalPatch =
-    pendingPlanApproval != null ? { pendingRequestId: restoredRequestId } : {};
-
-  const sessionMetaWithRequestId: Partial<SessionEntry> = {
-    ...sessionMetaPatch,
-    ...restoredPlanApprovalPatch,
+    ...(decodedQuestion
+      ? {
+          pendingQuestions: decodedQuestion.questions,
+          pendingQuestionToolInput: decodedQuestion.toolInput,
+        }
+      : {}),
+    ...(restoredRequestId !== "" ? { pendingRequestId: restoredRequestId } : {}),
   };
 
   if (existing && existing.blocks.length > 0) {
-    ctx.set(updateSession(ctx.get(), sessionId, sessionMetaWithRequestId));
+    ctx.set(updateSession(ctx.get(), sessionId, sessionMetaPatch));
     return;
   }
 
@@ -228,12 +286,8 @@ export function applyPersistedState(
 
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      ...sessionMetaWithRequestId,
+      ...sessionMetaPatch,
       ...blocksPatchWithDerived(session.streamingState, enrichedBlocks),
-      lifecycle:
-        pendingPlanApproval != null
-          ? transitionTurn(lifecycle, { type: "plan_approval_requested" })
-          : lifecycle,
       ...(todos ? { todos } : {}),
     }),
   );

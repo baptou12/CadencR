@@ -1042,6 +1042,156 @@ describe("ws-session-store", () => {
     expect(session.persistedLoaded).toBe(true);
   });
 
+  // ---------------------------------------------------------------------------
+  // setPersistedState — hydration of pending permission / question gates.
+  //
+  // Regression target: opening a conversation while the agent was paused on a
+  // permission or AskUserQuestion request used to drop those fields on the
+  // floor — the sidebar (which reads the same DB columns via the unified
+  // agents endpoint) showed an indicator while the conversation rendered
+  // blank.
+  // ---------------------------------------------------------------------------
+
+  describe("setPersistedState pending-gate hydration", () => {
+    const bashPermissionSnapshot = {
+      request_id: "bd2613bf-a8e6-47d6-9929-22d71083d707",
+      tool_name: "Bash",
+      tool_input: { command: "find . -name '*.rs'" },
+      description: "The provider requests permission to use Bash",
+      pattern: null,
+      preview: "find . -name '*.rs'",
+      options: [
+        {
+          decision: "allow_once",
+          option_id: null,
+          label: "Allow once",
+          description: "Approve this tool call only",
+          collect_feedback: false,
+        },
+        {
+          decision: "deny",
+          option_id: null,
+          label: "Deny",
+          description: "Reject this tool call",
+          collect_feedback: true,
+        },
+      ],
+    };
+
+    const askUserQuestionSnapshot = {
+      request_id: "q-7",
+      tool_name: "AskUserQuestion",
+      tool_input: {
+        questions: [
+          {
+            question: "Which strategy do you want?",
+            header: "Strategy",
+            multiSelect: false,
+            options: [
+              { label: "Option A", description: "Pick A" },
+              { label: "Option B", description: "Pick B" },
+            ],
+          },
+        ],
+      },
+    };
+
+    it("hydrates pendingPermission and lifecycle from agent-state snapshot", () => {
+      useWsSessionStore.getState().connect("s1");
+      useWsSessionStore.getState().setPersistedState("s1", {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        pendingPermission: bashPermissionSnapshot,
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission?.toolName).toBe("Bash");
+      expect(session.pendingPermission?.requestId).toBe(bashPermissionSnapshot.request_id);
+      expect(session.pendingPermissionQueue).toHaveLength(0);
+      expect(session.pendingRequestId).toBe(bashPermissionSnapshot.request_id);
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      // Snake-case wire fields must be remapped to the frontend's camelCase shape.
+      expect(session.pendingPermission?.options?.[0]).toMatchObject({
+        decision: "allow_once",
+        collectFeedback: false,
+      });
+    });
+
+    it("hydrates pendingQuestions and lifecycle from agent-state snapshot", () => {
+      useWsSessionStore.getState().connect("s1");
+      useWsSessionStore.getState().setPersistedState("s1", {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        pendingQuestions: askUserQuestionSnapshot,
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingQuestions).toHaveLength(1);
+      expect(session.pendingQuestions[0].question).toBe("Which strategy do you want?");
+      expect(session.pendingQuestionToolInput).toEqual(askUserQuestionSnapshot.tool_input);
+      expect(session.pendingRequestId).toBe("q-7");
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "question" });
+    });
+
+    it("hydrates pendingPermission even when restored blocks already exist", () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      // Simulate the existing-blocks branch in applyPersistedState (the
+      // hydration helper short-circuits to a meta-only patch when blocks
+      // are already in the store).
+      useWsSessionStore.setState(
+        updateSession(useWsSessionStore.getState(), "s1", {
+          blocks: [{ id: "live-1", type: "text" as const, content: "live block" }],
+        }),
+      );
+      store.setPersistedState("s1", {
+        blocks: [{ id: "db-1", type: "text" as const, content: "stale" }],
+        lifecycle: { phase: "idle" },
+        pendingPermission: bashPermissionSnapshot,
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission?.requestId).toBe(bashPermissionSnapshot.request_id);
+      expect(session.pendingRequestId).toBe(bashPermissionSnapshot.request_id);
+      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      // Live blocks survive the hydration.
+      expect(session.blocks[0].id).toBe("live-1");
+    });
+
+    it("does not clobber a live pending request that beat the snapshot", () => {
+      const store = useWsSessionStore.getState();
+      store.connect("s1");
+      // Pretend a live permission.request envelope already populated state.
+      useWsSessionStore.setState(
+        updateSession(useWsSessionStore.getState(), "s1", {
+          pendingRequestId: "live-X",
+        }),
+      );
+      store.setPersistedState("s1", {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        pendingPermission: bashPermissionSnapshot,
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      // Race guard: live state wins, snapshot is dropped.
+      expect(session.pendingRequestId).toBe("live-X");
+      expect(session.pendingPermission).toBeNull();
+    });
+
+    it("ignores ExitPlanMode payloads stored in pending_permission (plan branch owns those)", () => {
+      useWsSessionStore.getState().connect("s1");
+      useWsSessionStore.getState().setPersistedState("s1", {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        pendingPermission: {
+          request_id: "exit-plan-1",
+          tool_name: "ExitPlanMode",
+          tool_input: { plan: "## Plan" },
+        },
+      });
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission).toBeNull();
+      expect(session.pendingRequestId).toBe("");
+    });
+  });
+
   it("handles concurrent sessions independently", async () => {
     const store = useWsSessionStore.getState();
     store.connect("a");
