@@ -50,7 +50,7 @@ vi.mock("../api/agentRuntime", () => ({
       providers: [
         {
           id: "claude_code",
-          label: "Claude Code",
+          label: "Claude",
           status: "available",
           models: [{ id: "opus", label: "Opus" }],
           default_model: "opus",
@@ -145,7 +145,7 @@ describe("AgentSession", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
@@ -191,7 +191,7 @@ describe("AgentSession", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
@@ -228,7 +228,7 @@ describe("AgentSession", () => {
     await user.click(screen.getByRole("button", { name: /Opus/i }));
 
     const optionTexts = screen.getAllByRole("option").map((element) => element.textContent ?? "");
-    expect(optionTexts.some((text) => text.includes("Claude Code / Opus"))).toBe(true);
+    expect(optionTexts.some((text) => text.includes("Claude / Opus"))).toBe(true);
     expect(optionTexts.some((text) => text.includes("OpenCode / GPT-5.3 Codex"))).toBe(true);
     expect(screen.queryByText(/Use Claude Code/)).toBeNull();
     expect(screen.queryByText(/Use OpenCode/)).toBeNull();
@@ -267,7 +267,7 @@ describe("AgentSession", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",
@@ -493,7 +493,7 @@ describe("AgentSession", () => {
         providers: [
           {
             id: "claude_code",
-            label: "Claude Code",
+            label: "Claude",
             status: "available",
             models: [{ id: "opus", label: "Opus" }],
             default_model: "opus",

@@ -538,11 +538,11 @@ function ClaudeProviderPanel(): React.JSX.Element {
         description={
           <>
             Adds <strong>Bypass</strong> to the permission-mode cycle in the agent prompt for Claude
-            Code sessions. When active, Claude executes every tool call without prompting and skips
-            all safety checks.
+            sessions. When active, Claude executes every tool call without prompting and skips all
+            safety checks.
           </>
         }
-        warningTitle="Enable BypassPermissions for Claude Code?"
+        warningTitle="Enable BypassPermissions for Claude?"
         warningBody={
           <>
             <p>
@@ -551,7 +551,7 @@ function ClaudeProviderPanel(): React.JSX.Element {
             </p>
             <p>
               Only enable this in isolated environments (containers, VMs, dev containers) where
-              Claude Code cannot damage your host system. You can always toggle it off later.
+              Claude cannot damage your host system. You can always toggle it off later.
             </p>
           </>
         }

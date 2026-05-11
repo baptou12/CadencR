@@ -39,9 +39,9 @@ export function WelcomeStep({ isPersisting, onAdvance, onBack }: OnboardingStepP
         <div className="space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight">Welcome to Cadencr</h1>
           <p className="text-base text-muted-foreground leading-relaxed">
-            One workspace for Claude Code, OpenCode, and Codex. We&apos;ll take a minute to detect
-            your installed agent CLIs, pick a project folder, and choose a default agent — then drop
-            you straight into your first prompt.
+            One workspace for Claude, OpenCode, and Codex. We&apos;ll take a minute to detect your
+            installed agent CLIs, pick a project folder, and choose a default agent — then drop you
+            straight into your first prompt.
           </p>
         </div>
 

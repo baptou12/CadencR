@@ -34,8 +34,8 @@ export function DiscoverCliStep({
       <header className="space-y-2">
         <h2 className="text-2xl font-semibold tracking-tight">Detect your agent CLIs</h2>
         <p className="text-sm text-muted-foreground">
-          Cadencr runs your locally-installed agents — Claude Code, OpenCode, Codex — and shows
-          their output here. We&apos;ll use whichever ones we can find.
+          Cadencr runs your locally-installed agents — Claude, OpenCode, Codex — and shows their
+          output here. We&apos;ll use whichever ones we can find.
         </p>
       </header>
 
