@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 import { useGetFeature, useListProjects } from "@/api/generated";
 import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
 import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
+import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
 
@@ -55,7 +56,7 @@ function FeaturePage() {
   }
 
   return (
-    <>
+    <ResolvedModelProvider featureId={numericFeatureId} projectId={numericProjectId}>
       <FeatureContentSearchShortcut featureId={numericFeatureId} projectId={numericProjectId} />
       <FeatureWorkflowView
         featureId={numericFeatureId}
@@ -64,7 +65,7 @@ function FeaturePage() {
         featureQuery={featureQuery}
         initialDescription={initialDescription}
       />
-    </>
+    </ResolvedModelProvider>
   );
 }
 

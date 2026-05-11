@@ -11,7 +11,7 @@
 import { toast } from "sonner";
 import type { GitStatusSnapshot } from "@/api/generated";
 import { queryClient } from "@/lib/queryClient";
-import { useGitStatusStore } from "@/stores/useGitStatusStore";
+import { gitStatusSnapshotsEqual, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { usePushOutputStore } from "@/stores/usePushOutputStore";
 
@@ -37,8 +37,10 @@ export function handleGitEnvelope(action: string, payload: Record<string, unknow
   if (action === "status") {
     const snapshot = parseGitStatusSnapshot(payload);
     if (!snapshot) return;
+    const existing = useGitStatusStore.getState().byFeature[snapshot.feature_id];
+    const shouldInvalidate = shouldInvalidateGitQueries(existing, snapshot);
     useGitStatusStore.getState().setStatus(snapshot);
-    void invalidateGitQueriesForFeature(snapshot.feature_id);
+    if (shouldInvalidate) void invalidateGitQueriesForFeature(snapshot.feature_id);
     return;
   }
   if (action === "status_error") {
@@ -105,6 +107,15 @@ export function handleGitEnvelope(action: string, payload: Record<string, unknow
     if (featureId == null) return;
     usePushOutputStore.getState().complete(featureId);
   }
+}
+
+function shouldInvalidateGitQueries(
+  existing: GitStatusSnapshot | undefined,
+  snapshot: GitStatusSnapshot,
+): boolean {
+  if (!existing) return false;
+  if (existing.computed_at > snapshot.computed_at) return false;
+  return !gitStatusSnapshotsEqual(existing, snapshot);
 }
 
 function invalidateGitQueriesForFeature(featureId: number): Promise<void> {

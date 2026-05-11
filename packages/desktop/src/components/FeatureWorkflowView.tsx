@@ -30,7 +30,7 @@ import { NextStepsBar } from "@/components/NextStepsBar";
 import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
 import type { FeatureSession } from "@/hooks/useFeatureAgentState";
 import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
-import { useResolvedModel } from "@/hooks/useResolvedModel";
+import { useResolvedModelContext } from "@/contexts/ResolvedModelContext";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import {
   findLeafById,
@@ -130,7 +130,7 @@ function FeatureWorkflowViewBody({
     handleProviderChange: handleProviderChangeForAgent,
     resolveModelThinkingEffort: resolveModelThinkingEffortForAgent,
     setModelThinkingEffort: setModelThinkingEffortForAgent,
-  } = useResolvedModel(featureId, projectId);
+  } = useResolvedModelContext();
   const slashCommandProviderId = resolveProviderForAgent("session");
 
   useEffect(() => {

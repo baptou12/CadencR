@@ -19,7 +19,8 @@ import {
 } from "@/api/generated";
 import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
-import { useResolvedModel } from "@/hooks/useResolvedModel";
+import { useResolvedModelContext } from "@/contexts/ResolvedModelContext";
+import type { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
@@ -94,7 +95,7 @@ export function useSessionFeatureData(
   );
   const { data: branchData } = useGetBranch(
     { project_id: projectId },
-    { query: { enabled: gitMetadataEnabled, refetchInterval: 10000 } },
+    { query: { enabled: gitMetadataEnabled } },
   );
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettings = useMemo(
@@ -176,10 +177,7 @@ export function useSessionControls(
   const [useWorktree, setUseWorktree] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const initializedRef = useRef<string | null>(null);
-  const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModel(
-    featureId,
-    projectId,
-  );
+  const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModelContext();
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");

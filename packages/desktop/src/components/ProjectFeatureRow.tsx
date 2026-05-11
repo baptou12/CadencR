@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { memo, type ReactElement } from "react";
 import {
   TrashIcon,
   ArchiveIcon,
@@ -64,7 +64,13 @@ interface ProjectFeatureRowProps {
   onArchiveOrDelete: (featureId: number) => void;
 }
 
-export function ProjectFeatureRow({
+/**
+ * Memoized: rendered N times per project in the sidebar. A parent update
+ * (status badge, label edit, project rename) must not re-render every row.
+ * The parent passes stable callback refs and a stable `labelSuggestions`
+ * reference, so default shallow-prop comparison is sufficient.
+ */
+export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   feature,
   projectId,
   activeFeatureId,
@@ -285,7 +291,7 @@ export function ProjectFeatureRow({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;

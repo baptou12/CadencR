@@ -96,14 +96,169 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
  * progress over WebSocket while the HTTP request stays open.
  */
 const NO_TIMEOUT_PATHS = ["/api/git/commit", "/api/git/push"];
+const STRICT_MODE_STABLE_GET_PATHS = ["/api/git/", "/api/feature-layouts"];
+const STRICT_MODE_STABLE_RESULT_TTL_MS = 250;
+const stableReadRequests = new Map<string, Promise<unknown>>();
+const stableReadResults = new Map<string, { expiresAt: number; value: unknown }>();
+const WORKSPACE_SETTINGS_PATH = "/api/workspace/settings";
+const WORKSPACE_SETTINGS_SINGLE_PREFIX = `${WORKSPACE_SETTINGS_PATH}/`;
+const WORKSPACE_SETTINGS_BULK_RESULT_TTL_MS = 500;
+let workspaceSettingsBulkRequest: Promise<unknown> | null = null;
+let workspaceSettingsBulkResult: { expiresAt: number; value: unknown } | null = null;
+
+interface WorkspaceSettingEntry {
+  key: string;
+  value: string;
+}
+
+interface WorkspaceSettingValue {
+  value: string | null;
+}
+
+export function shouldAttachAbortSignal(
+  config: Pick<AxiosRequestConfig, "method" | "signal" | "url">,
+): boolean {
+  if (config.signal === undefined) return true;
+  const method = config.method?.toUpperCase() ?? "GET";
+  if (method !== "GET" || typeof config.url !== "string") return true;
+  return !STRICT_MODE_STABLE_GET_PATHS.some((path) => config.url!.startsWith(path));
+}
+
+export function strictModeStableReadRequestKey(
+  config: Pick<AxiosRequestConfig, "method" | "params" | "url">,
+): string | null {
+  const method = config.method?.toUpperCase() ?? "GET";
+  if (method !== "GET" || typeof config.url !== "string") return null;
+  if (!STRICT_MODE_STABLE_GET_PATHS.some((path) => config.url!.startsWith(path))) return null;
+  return `${method} ${config.url}?${stableStringify(config.params)}`;
+}
 
 export async function customInstance<T>(config: AxiosRequestConfig): Promise<T> {
-  const finalConfig =
+  let finalConfig =
     typeof config.url === "string" && NO_TIMEOUT_PATHS.some((p) => config.url!.startsWith(p))
       ? { ...config, timeout: 0 }
       : config;
+  if (!shouldAttachAbortSignal(finalConfig)) {
+    finalConfig = { ...finalConfig, signal: undefined };
+  }
+  const workspaceSettingKey = workspaceSingleSettingKey(finalConfig);
+  if (workspaceSettingKey) {
+    const cachedSetting = await workspaceSettingFromBulkRequest(workspaceSettingKey);
+    if (cachedSetting !== undefined) return cachedSetting as T;
+  }
+  if (isWorkspaceSettingsBulkGet(finalConfig)) {
+    return (await fetchWorkspaceSettingsBulk(finalConfig)) as T;
+  }
+  const dedupeKey = strictModeStableReadRequestKey(finalConfig);
+  if (dedupeKey) {
+    const now = Date.now();
+    const cached = stableReadResults.get(dedupeKey);
+    if (cached && cached.expiresAt > now) return cached.value as T;
+    if (cached) stableReadResults.delete(dedupeKey);
+    const existing = stableReadRequests.get(dedupeKey);
+    if (existing) return (await existing) as T;
+    const request = axiosInstance(finalConfig).then((response) => response.data as T);
+    stableReadRequests.set(dedupeKey, request);
+    try {
+      const result = await request;
+      stableReadResults.set(dedupeKey, {
+        expiresAt: Date.now() + STRICT_MODE_STABLE_RESULT_TTL_MS,
+        value: result,
+      });
+      return result;
+    } finally {
+      stableReadRequests.delete(dedupeKey);
+      // Prune in `finally` so error paths also bound map growth — one entry
+      // per unique cached path would otherwise leak across a long session.
+      pruneExpiredStableReadResults();
+    }
+  }
   const response = await axiosInstance(finalConfig);
   return response.data;
+}
+
+function isWorkspaceSettingsBulkGet(config: Pick<AxiosRequestConfig, "method" | "url">): boolean {
+  const method = config.method?.toUpperCase() ?? "GET";
+  return method === "GET" && config.url === WORKSPACE_SETTINGS_PATH;
+}
+
+function workspaceSingleSettingKey(
+  config: Pick<AxiosRequestConfig, "method" | "url">,
+): string | null {
+  const method = config.method?.toUpperCase() ?? "GET";
+  if (method !== "GET" || typeof config.url !== "string") return null;
+  if (!config.url.startsWith(WORKSPACE_SETTINGS_SINGLE_PREFIX)) return null;
+  const key = config.url.slice(WORKSPACE_SETTINGS_SINGLE_PREFIX.length);
+  return key.length > 0 && !key.includes("/") ? decodeURIComponent(key) : null;
+}
+
+async function workspaceSettingFromBulkRequest(
+  key: string,
+): Promise<WorkspaceSettingValue | undefined> {
+  const cached = workspaceSettingsBulkResult;
+  if (cached && cached.expiresAt > Date.now()) return workspaceSettingFromBulk(cached.value, key);
+  if (!workspaceSettingsBulkRequest) return undefined;
+  return workspaceSettingFromBulk(await workspaceSettingsBulkRequest, key);
+}
+
+async function fetchWorkspaceSettingsBulk(config: AxiosRequestConfig): Promise<unknown> {
+  if (workspaceSettingsBulkRequest) return workspaceSettingsBulkRequest;
+  const request = axiosInstance(config).then((response) => response.data as unknown);
+  workspaceSettingsBulkRequest = request;
+  try {
+    const result = await request;
+    workspaceSettingsBulkResult = {
+      expiresAt: Date.now() + WORKSPACE_SETTINGS_BULK_RESULT_TTL_MS,
+      value: result,
+    };
+    return result;
+  } finally {
+    workspaceSettingsBulkRequest = null;
+  }
+}
+
+export function workspaceSettingFromBulk(
+  settings: unknown,
+  key: string,
+): WorkspaceSettingValue | undefined {
+  if (!isWorkspaceSettingEntryArray(settings)) return undefined;
+  const entry = settings.find((item) => item.key === key);
+  return { value: entry?.value ?? null };
+}
+
+function isWorkspaceSettingEntryArray(value: unknown): value is WorkspaceSettingEntry[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        typeof item === "object" &&
+        item !== null &&
+        "key" in item &&
+        "value" in item &&
+        typeof item.key === "string" &&
+        typeof item.value === "string",
+    )
+  );
+}
+
+function pruneExpiredStableReadResults(): void {
+  const now = Date.now();
+  for (const [key, entry] of stableReadResults) {
+    if (entry.expiresAt <= now) stableReadResults.delete(key);
+  }
+}
+
+function stableStringify(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 /**

@@ -40,17 +40,34 @@ import {
  *
  * Returns the resolved model ID and a mutation to update the feature-level setting.
  */
+const RESOLVED_MODEL_STALE_MS = 5 * 60 * 1000;
+
 export function useResolvedModel(featureId: number, projectId: number) {
   const queryClient = useQueryClient();
 
-  const agentCatalog = useAgentCatalog();
-  const featureSettings = useGetFeatureModelSettings(featureId);
-  const projectSettings = useGetProjectModelSettings(projectId);
-  const globalSettings = useGetWorkspaceModelSettings();
+  // Settings inside `useResolvedModel` change rarely and the WS layer pushes
+  // updates anyway — a 5-minute staleTime collapses the dual-mount waterfall
+  // (route + WebSocketSessionFeatureBlock) without losing freshness.
+  const agentCatalog = useAgentCatalog({ staleTime: RESOLVED_MODEL_STALE_MS });
+  const featureSettings = useGetFeatureModelSettings(featureId, {
+    query: { staleTime: RESOLVED_MODEL_STALE_MS },
+  });
+  const projectSettings = useGetProjectModelSettings(projectId, {
+    query: { staleTime: RESOLVED_MODEL_STALE_MS },
+  });
+  const globalSettings = useGetWorkspaceModelSettings({
+    query: { staleTime: RESOLVED_MODEL_STALE_MS },
+  });
   const workspaceKvSettings = useGetWorkspaceSettings();
-  const featureProviderSettings = useGetFeatureProviderSettings(featureId);
-  const projectProviderSettings = useGetProjectProviderSettings(projectId);
-  const globalProviderSettings = useGetWorkspaceProviderSettings();
+  const featureProviderSettings = useGetFeatureProviderSettings(featureId, {
+    staleTime: RESOLVED_MODEL_STALE_MS,
+  });
+  const projectProviderSettings = useGetProjectProviderSettings(projectId, {
+    staleTime: RESOLVED_MODEL_STALE_MS,
+  });
+  const globalProviderSettings = useGetWorkspaceProviderSettings({
+    staleTime: RESOLVED_MODEL_STALE_MS,
+  });
 
   const setModelMutation = useSetFeatureModelSetting({
     mutation: {
@@ -161,12 +178,27 @@ export function useResolvedModel(featureId: number, projectId: number) {
     [featureId, setProviderMutation],
   );
 
-  return {
-    resolveModel,
-    handleModelChange,
-    resolveProvider,
-    handleProviderChange,
-    resolveModelThinkingEffort,
-    setModelThinkingEffort,
-  };
+  // Stabilize the return value: a fresh object literal would propagate a new
+  // `value` through `ResolvedModelContext` on every render of the provider,
+  // re-rendering every consumer. Each member callback is already stable
+  // (wrapped in `useCallback`), so a deps-keyed `useMemo` keeps the whole
+  // object identity-stable across renders.
+  return useMemo(
+    () => ({
+      resolveModel,
+      handleModelChange,
+      resolveProvider,
+      handleProviderChange,
+      resolveModelThinkingEffort,
+      setModelThinkingEffort,
+    }),
+    [
+      resolveModel,
+      handleModelChange,
+      resolveProvider,
+      handleProviderChange,
+      resolveModelThinkingEffort,
+      setModelThinkingEffort,
+    ],
+  );
 }

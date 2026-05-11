@@ -56,12 +56,13 @@ export const useGitStatusStore = create<GitStatusState>((set) => ({
       if (existing && existing.computed_at > snapshot.computed_at) {
         return state;
       }
-      if (existing && gitStatusSnapshotsEqual(existing, snapshot)) {
-        return state;
-      }
       // Drop the stored error for this feature on a successful update so the
       // UI doesn't keep showing a stale toast/inline message.
       const { [snapshot.feature_id]: _droppedErr, ...remainingErrors } = state.errorByFeature;
+      if (existing && gitStatusSnapshotsEqual(existing, snapshot)) {
+        if (state.errorByFeature[snapshot.feature_id] === undefined) return state;
+        return { errorByFeature: remainingErrors };
+      }
       return {
         byFeature: { ...state.byFeature, [snapshot.feature_id]: snapshot },
         errorByFeature: remainingErrors,
@@ -93,7 +94,7 @@ export const useGitStatusStore = create<GitStatusState>((set) => ({
   },
 }));
 
-function gitStatusSnapshotsEqual(a: GitStatusSnapshot, b: GitStatusSnapshot): boolean {
+export function gitStatusSnapshotsEqual(a: GitStatusSnapshot, b: GitStatusSnapshot): boolean {
   return (
     a.feature_id === b.feature_id &&
     a.current_branch === b.current_branch &&

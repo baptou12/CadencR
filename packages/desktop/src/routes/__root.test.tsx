@@ -34,7 +34,18 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
 vi.mock("@/hooks/useDebouncedSetting", () => ({
-  useDebouncedSetting: vi.fn(() => ({ value: "256", setValue: vi.fn() })),
+  useDebouncedSetting: vi.fn(() => ({ value: "256", setValue: vi.fn(), isLoading: false })),
+  useDebouncedSettingFromMap: vi.fn(() => ({
+    value: "256",
+    setValue: vi.fn(),
+    isLoading: false,
+  })),
+}));
+
+vi.mock("@/api/settings", () => ({
+  useGetWorkspaceSettings: vi.fn(() => ({ data: [], isLoading: false })),
+  settingsArrayToMap: vi.fn(() => ({})),
+  getWorkspaceSettingsQueryKey: () => ["workspace", "settings"] as const,
 }));
 
 vi.mock("@/components/Sidebar", () => ({
