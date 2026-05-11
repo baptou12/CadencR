@@ -8,7 +8,6 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub enum AcpError {
     Io(std::io::Error),
-    Json(serde_json::Error),
     /// Per-RPC timeout. Carries a static label of the method that timed out so
     /// the host can surface a helpful error ("session/prompt timed out").
     Timeout(&'static str),
@@ -29,7 +28,6 @@ impl Display for AcpError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => write!(f, "io error: {error}"),
-            Self::Json(error) => write!(f, "json error: {error}"),
             Self::Timeout(label) => write!(f, "ACP request timed out: {label}"),
             Self::Protocol(message) => write!(f, "ACP protocol error: {message}"),
             Self::Rpc { code, message } => write!(f, "ACP returned error {code}: {message}"),
@@ -42,7 +40,6 @@ impl std::error::Error for AcpError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::Json(error) => Some(error),
             _ => None,
         }
     }
@@ -51,12 +48,6 @@ impl std::error::Error for AcpError {
 impl From<std::io::Error> for AcpError {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
-    }
-}
-
-impl From<serde_json::Error> for AcpError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Json(value)
     }
 }
 
