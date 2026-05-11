@@ -9,6 +9,9 @@ import {
   getAuthTokenSync,
   preloadRuntimeConfig,
   resolveApiBaseUrlSync,
+  shouldAttachAbortSignal,
+  strictModeStableReadRequestKey,
+  workspaceSettingFromBulk,
 } from "./client";
 
 function bridgeWithRuntime(
@@ -73,5 +76,77 @@ describe("runtime config client", () => {
 
     expect(resolveApiBaseUrlSync()).toBe("http://127.0.0.1:5005");
     expect(getAuthTokenSync()).toBe("dev-token");
+  });
+});
+
+describe("request abort policy", () => {
+  it("keeps StrictMode-stable read endpoints alive across development remounts", () => {
+    const signal = new AbortController().signal;
+
+    expect(shouldAttachAbortSignal({ method: "GET", signal, url: "/api/git/diff" })).toBe(false);
+    expect(shouldAttachAbortSignal({ method: "GET", signal, url: "/api/feature-layouts" })).toBe(
+      false,
+    );
+  });
+
+  it("preserves abort signals for mutations and large message fetches", () => {
+    const signal = new AbortController().signal;
+
+    expect(shouldAttachAbortSignal({ method: "POST", signal, url: "/api/git/commit" })).toBe(true);
+    expect(
+      shouldAttachAbortSignal({
+        method: "GET",
+        signal,
+        url: "/api/sessions/messages/2585/full",
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("stable read request key", () => {
+  it("normalizes equivalent query param insertion orders", () => {
+    expect(
+      strictModeStableReadRequestKey({
+        method: "GET",
+        url: "/api/git/diff",
+        params: { feature_id: 1076, mode: "uncommitted" },
+      }),
+    ).toBe(
+      strictModeStableReadRequestKey({
+        method: "GET",
+        url: "/api/git/diff",
+        params: { mode: "uncommitted", feature_id: 1076 },
+      }),
+    );
+  });
+
+  it("does not dedupe non-stable reads", () => {
+    expect(
+      strictModeStableReadRequestKey({
+        method: "GET",
+        url: "/api/sessions/messages/2585/full",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("workspace setting bulk adapter", () => {
+  it("projects a single setting response from the bulk workspace settings payload", () => {
+    expect(
+      workspaceSettingFromBulk(
+        [
+          { key: "loader_style", value: "spinner" },
+          { key: "sidebar_collapsed", value: "false" },
+        ],
+        "sidebar_collapsed",
+      ),
+    ).toEqual({ value: "false" });
+  });
+
+  it("returns null for missing settings and ignores malformed payloads", () => {
+    expect(workspaceSettingFromBulk([{ key: "known", value: "yes" }], "missing")).toEqual({
+      value: null,
+    });
+    expect(workspaceSettingFromBulk({ key: "known", value: "yes" }, "known")).toBeUndefined();
   });
 });

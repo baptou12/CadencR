@@ -5,6 +5,8 @@ import { AgentSession } from "@/components/agent-session";
 import { EmbeddedFeatureHeader } from "@/components/EmbeddedFeatureHeader";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { WebSocketSessionFeatureBlock } from "@/components/WebSocketSessionFeatureBlock";
+import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
+import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,7 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
 }: UnifiedAgentCardProps): ReactElement {
   useHydrateUnifiedWsSession(entry);
   const pinControls = useUnifiedAgentPinControls(entry);
+  const prefetchFeature = useFeaturePrefetch(entry.feature.id, entry.project.id);
   const activate = (): void => onActivate(index);
   const baseClass = cn(
     "group/card relative flex h-full min-h-[420px] flex-col overflow-hidden rounded-[10px] border bg-card shadow-sm outline-none transition-[border-color,box-shadow]",
@@ -51,25 +54,29 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
         data-unified-agent-index={index}
         onFocusCapture={activate}
         onPointerDownCapture={activate}
+        onMouseEnter={prefetchFeature}
+        onFocus={prefetchFeature}
         className={baseClass}
       >
-        <WebSocketSessionFeatureBlock
-          sessionId={wsSessionIdFromFeature(entry.feature.id)}
-          cwd={entry.project.path}
-          featureId={entry.feature.id}
-          projectId={entry.project.id}
-          layoutFeatureId={-entry.session.sessionDbId}
-          embedded
-          hotkeysEnabled={isActive}
-          onActivate={activate}
-          projectName={entry.project.name}
-          featureTitle={entry.feature.title}
-          featureLabel={entry.feature.label}
-          lastActivityAt={entry.last_activity_at}
-          isPinned={entry.is_pinned}
-          isPinPending={pinControls.isPending}
-          onTogglePin={pinControls.toggle}
-        />
+        <ResolvedModelProvider featureId={entry.feature.id} projectId={entry.project.id}>
+          <WebSocketSessionFeatureBlock
+            sessionId={wsSessionIdFromFeature(entry.feature.id)}
+            cwd={entry.project.path}
+            featureId={entry.feature.id}
+            projectId={entry.project.id}
+            layoutFeatureId={-entry.session.sessionDbId}
+            embedded
+            hotkeysEnabled={isActive}
+            onActivate={activate}
+            projectName={entry.project.name}
+            featureTitle={entry.feature.title}
+            featureLabel={entry.feature.label}
+            lastActivityAt={entry.last_activity_at}
+            isPinned={entry.is_pinned}
+            isPinPending={pinControls.isPending}
+            onTogglePin={pinControls.toggle}
+          />
+        </ResolvedModelProvider>
       </section>
     );
   }

@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { memo, type ReactElement } from "react";
 import {
   TrashIcon,
   ArchiveIcon,
@@ -25,6 +25,7 @@ import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
+import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 
@@ -64,7 +65,13 @@ interface ProjectFeatureRowProps {
   onArchiveOrDelete: (featureId: number) => void;
 }
 
-export function ProjectFeatureRow({
+/**
+ * Memoized: rendered N times per project in the sidebar. A parent update
+ * (status badge, label edit, project rename) must not re-render every row.
+ * The parent passes stable callback refs and a stable `labelSuggestions`
+ * reference, so default shallow-prop comparison is sufficient.
+ */
+export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   feature,
   projectId,
   activeFeatureId,
@@ -106,6 +113,7 @@ export function ProjectFeatureRow({
     },
   );
 
+  const prefetchFeature = useFeaturePrefetch(feature.id, projectId);
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   const hasLabel = !!feature.label;
   const showMetaLine = isEditingLabel || hasLabel || hasStats || feature.type !== "ws-session";
@@ -130,6 +138,8 @@ export function ProjectFeatureRow({
             if (isActive || e.detail > 1) return;
             onNavigate(feature);
           }}
+          onMouseEnter={prefetchFeature}
+          onFocus={prefetchFeature}
           onKeyDown={(e) => {
             if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
             if (e.key === "Enter" || e.key === " ") {
@@ -285,7 +295,7 @@ export function ProjectFeatureRow({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
+});
 
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;

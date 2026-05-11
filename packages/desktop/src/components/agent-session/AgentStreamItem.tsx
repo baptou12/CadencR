@@ -23,14 +23,10 @@ function formatTimestamp(iso: string): string {
  * the underlying `AgentBlock` tree. Props must remain stable: `toolResultMap`
  * is memoised upstream, `basePath` / `isStreaming` are primitives.
  *
- * Tab-resize perf: the outer wrapper opts into `content-visibility: auto`.
- * The browser then skips layout, paint, and style for items outside the
- * viewport, which collapses the per-frame layout cost during a panel-resize
- * drag from O(all messages) to O(on-screen messages). `contain-intrinsic-size:
- * auto 200px` gives the browser a placeholder size for off-screen items
- * (`auto` keyword stores the last measured size, so heights stabilise after
- * an item has been scrolled into view once — keeping `scrollHeight` and the
- * stick-to-bottom anchor in `useAgentSessionScroll` predictable).
+ * Keep this wrapper layout-neutral. Virtuoso owns measurement and scroll
+ * anchoring; browser-level `content-visibility: auto` uses estimated
+ * off-screen heights, which makes `scrollHeight` change while scrolling back
+ * through long conversations and causes visible jumps/flicker.
  */
 export const AgentStreamItem = memo(function AgentStreamItem({
   block,
@@ -43,7 +39,7 @@ export const AgentStreamItem = memo(function AgentStreamItem({
 
   return (
     <AgentStreamContextMenu block={block}>
-      <div className="py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_200px]">
+      <div className="py-0.5">
         {showHeader && block.createdAt && (
           <div
             className={`text-xs text-muted-foreground/60 mt-2 mb-0.5 ${isUserMessage ? "text-right" : ""}`}

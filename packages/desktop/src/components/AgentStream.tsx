@@ -1,5 +1,6 @@
-import { memo, useMemo } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { Loader2Icon } from "lucide-react";
+import { Virtuoso } from "react-virtuoso";
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { isFileChangeTool } from "@/lib/tool-adapter";
@@ -138,6 +139,19 @@ export const AgentStream = memo(function AgentStream({
   const toolResultMap = toolResultMapProp ?? fallbackToolResultMap;
   const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
 
+  // `customScrollParent` needs the actual scroller element (not just a ref),
+  // so we mirror the callback ref into local state. The outer callback still
+  // forwards the element to the parent-provided `scrollContainerRef` so
+  // `useAgentSessionScroll` keeps owning scroll/wheel/touch listeners.
+  const [scrollerEl, setScrollerEl] = useState<HTMLDivElement | null>(null);
+  const onScroller = useCallback<DivRef>(
+    (el) => {
+      setScrollerEl(el);
+      scrollContainerRef?.(el);
+    },
+    [scrollContainerRef],
+  );
+
   if (displayBlocks.length === 0) {
     return (
       <div className="p-3">{isStreaming && showStreamingIndicator && <StreamingCursor />}</div>
@@ -146,7 +160,7 @@ export const AgentStream = memo(function AgentStream({
 
   return (
     <div
-      ref={scrollContainerRef}
+      ref={onScroller}
       data-testid="agent-stream-scroller"
       className="h-full overflow-y-auto overflow-x-hidden"
     >
@@ -157,15 +171,21 @@ export const AgentStream = memo(function AgentStream({
             <Loader2Icon className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         )}
-        {displayBlocks.map((block, i) => (
-          <AgentStreamItem
-            key={itemKeys[i] ?? block.id}
-            block={block}
-            isStreaming={isStreaming}
-            basePath={basePath}
-            toolResultMap={toolResultMap}
-          />
-        ))}
+        <Virtuoso
+          customScrollParent={scrollerEl ?? undefined}
+          data={displayBlocks}
+          computeItemKey={(i) => itemKeys[i] ?? displayBlocks[i].id}
+          initialTopMostItemIndex={displayBlocks.length - 1}
+          overscan={{ main: 800, reverse: 800 }}
+          itemContent={(_i, block) => (
+            <AgentStreamItem
+              block={block}
+              isStreaming={isStreaming}
+              basePath={basePath}
+              toolResultMap={toolResultMap}
+            />
+          )}
+        />
         {isStreaming && showStreamingIndicator && <StreamingCursor />}
       </div>
     </div>

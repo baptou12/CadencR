@@ -145,6 +145,22 @@ pub async fn save_draft_handler(
     Ok(Json(SaveDraftResponse { success: true }))
 }
 
+#[utoipa::path(get, path = "/api/sessions/messages/{message_id}/full",
+    params(("message_id" = i64, Path,)),
+    responses(
+        (status = 200, body = MessageFullContentResponse),
+        (status = 404, description = "Message not found")
+    ))]
+pub async fn get_message_full_content_handler(
+    State(state): State<AppState>,
+    Path(message_id): Path<i64>,
+) -> Result<Json<MessageFullContentResponse>, AppError> {
+    let content = repository::get_message_content(&state.read_pool, message_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("agent_message {message_id}")))?;
+    Ok(Json(MessageFullContentResponse { content }))
+}
+
 pub fn sessions_router() -> Router<AppState> {
     Router::new()
         .route(
@@ -163,5 +179,9 @@ pub fn sessions_router() -> Router<AppState> {
         .route(
             "/api/sessions/{session_id}/draft",
             get(get_draft_handler).put(save_draft_handler),
+        )
+        .route(
+            "/api/sessions/messages/{message_id}/full",
+            get(get_message_full_content_handler),
         )
 }

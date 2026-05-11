@@ -68,6 +68,12 @@ pub struct AgentBlock {
     pub created_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// When true, `content` was tail-truncated server-side. Currently applied
+    /// to Bash blocks (both `tool_call` and `tool_result`) whose aggregated
+    /// output exceeds the configured line or byte cap. The full payload is
+    /// reachable via `GET /api/sessions/messages/{id}/full`.
+    #[serde(rename = "truncatedContent", skip_serializing_if = "Option::is_none")]
+    pub truncated_content: Option<bool>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -200,6 +206,11 @@ pub struct SaveDraftResponse {
     pub success: bool,
 }
 
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MessageFullContentResponse {
+    pub content: String,
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct PhaseTitle {
     pub id: i64,
@@ -251,6 +262,7 @@ mod tests {
             source_tool_name: None,
             created_at: Some("2024-01-01".to_string()),
             model: None,
+            truncated_content: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -277,6 +289,7 @@ mod tests {
             source_tool_name: None,
             created_at: None,
             model: None,
+            truncated_content: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -300,6 +313,7 @@ mod tests {
             source_tool_name: None,
             created_at: None,
             model: None,
+            truncated_content: None,
         };
         let parent = AgentBlock {
             id: "msg-task".to_string(),
@@ -314,6 +328,7 @@ mod tests {
             source_tool_name: None,
             created_at: None,
             model: None,
+            truncated_content: None,
         };
         let json = serde_json::to_string(&parent).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();

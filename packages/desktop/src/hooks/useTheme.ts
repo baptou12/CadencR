@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useDebouncedSettingFromMap } from "@/hooks/useDebouncedSetting";
 import { useSystemAppearance } from "@/hooks/useSystemAppearance";
+import { settingsArrayToMap, useGetWorkspaceSettings } from "@/api/settings";
 import {
   applyThemeToDocument,
   getTheme,
@@ -42,18 +43,50 @@ interface UseThemeResult {
  * palette as a JS object via `theme.xterm`. The rest of the UI follows
  * automatically because `useThemeSync` keeps `<html data-theme="…">` in
  * sync with this hook.
+ *
+ * Reads of the four theme keys (`THEME_*`) are folded into a single bulk
+ * `GET /api/workspace/settings` rather than four `GET /…/settings/{key}`
+ * fires. Writers warm the bulk cache on success so the next render skips
+ * the round-trip.
  */
 export function useTheme(): UseThemeResult {
-  const manualSetting = useDebouncedSetting(THEME_SETTING_KEY, 0, { immediateCache: false });
-  const followSetting = useDebouncedSetting(THEME_FOLLOW_SYSTEM_SETTING_KEY, 0, {
-    immediateCache: false,
-  });
-  const lightSetting = useDebouncedSetting(THEME_SYSTEM_LIGHT_SETTING_KEY, 0, {
-    immediateCache: false,
-  });
-  const darkSetting = useDebouncedSetting(THEME_SYSTEM_DARK_SETTING_KEY, 0, {
-    immediateCache: false,
-  });
+  const workspaceSettings = useGetWorkspaceSettings();
+  const settingsMap = useMemo(
+    () => settingsArrayToMap(workspaceSettings.data),
+    [workspaceSettings.data],
+  );
+  const isMapLoading = workspaceSettings.isLoading;
+
+  const manualSetting = useDebouncedSettingFromMap(
+    settingsMap,
+    THEME_SETTING_KEY,
+    isMapLoading,
+    0,
+    {
+      immediateCache: false,
+    },
+  );
+  const followSetting = useDebouncedSettingFromMap(
+    settingsMap,
+    THEME_FOLLOW_SYSTEM_SETTING_KEY,
+    isMapLoading,
+    0,
+    { immediateCache: false },
+  );
+  const lightSetting = useDebouncedSettingFromMap(
+    settingsMap,
+    THEME_SYSTEM_LIGHT_SETTING_KEY,
+    isMapLoading,
+    0,
+    { immediateCache: false },
+  );
+  const darkSetting = useDebouncedSettingFromMap(
+    settingsMap,
+    THEME_SYSTEM_DARK_SETTING_KEY,
+    isMapLoading,
+    0,
+    { immediateCache: false },
+  );
   const systemAppearance = useSystemAppearance();
 
   const manualThemeId = parseThemeId(manualSetting.value);
@@ -81,11 +114,7 @@ export function useTheme(): UseThemeResult {
       setSystemLightTheme: lightSetting.setValue,
       setSystemDarkTheme: darkSetting.setValue,
       setFollowSystemTheme: (next: boolean): void => followSetting.setValue(String(next)),
-      isLoading:
-        manualSetting.isLoading ||
-        followSetting.isLoading ||
-        lightSetting.isLoading ||
-        darkSetting.isLoading,
+      isLoading: isMapLoading,
       systemAppearanceError: systemAppearance.error,
     }),
     [
@@ -99,10 +128,7 @@ export function useTheme(): UseThemeResult {
       lightSetting.setValue,
       darkSetting.setValue,
       followSetting.setValue,
-      manualSetting.isLoading,
-      followSetting.isLoading,
-      lightSetting.isLoading,
-      darkSetting.isLoading,
+      isMapLoading,
       systemAppearance.error,
     ],
   );

@@ -1,7 +1,27 @@
+import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
+
+// Mock Virtuoso so JSDOM tests render all items synchronously instead of
+// relying on layout/IntersectionObserver. Real virtualization is exercised
+// in the running app; here we just need block content reachable in the DOM.
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({
+    data,
+    itemContent,
+  }: {
+    data?: AgentBlockData[];
+    itemContent?: (index: number, block: AgentBlockData) => ReactNode;
+  }) => (
+    <div data-testid="virtuoso-mock">
+      {data?.map((item, i) => (
+        <div key={item.id}>{itemContent?.(i, item)}</div>
+      ))}
+    </div>
+  ),
+}));
 
 // Per-block render counts captured by the AgentBlock mock. Tests that care
 // about the memoisation of `AgentStreamItem` read this map after re-rendering.

@@ -40,14 +40,27 @@ function defaultProviderSettings(): ProviderSettings {
   ) as ProviderSettings;
 }
 
-export function useAgentCatalog() {
+interface QueryExtras {
+  enabled?: boolean;
+  staleTime?: number;
+}
+
+function readQueryExtras(arg: boolean | QueryExtras | undefined): QueryExtras {
+  if (arg === undefined) return {};
+  if (typeof arg === "boolean") return { enabled: arg };
+  return arg;
+}
+
+export function useAgentCatalog(extras?: QueryExtras) {
   return useQuery({
     queryKey: ["agent-catalog"],
     queryFn: () => customInstance<AgentCatalog>({ method: "GET", url: "/api/agent-catalog" }),
+    ...extras,
   });
 }
 
-export function useGetWorkspaceProviderSettings(enabled = true) {
+export function useGetWorkspaceProviderSettings(arg: boolean | QueryExtras = true) {
+  const { enabled = true, staleTime } = readQueryExtras(arg);
   return useQuery({
     queryKey: ["workspace", "provider-settings"],
     queryFn: async () => {
@@ -58,6 +71,7 @@ export function useGetWorkspaceProviderSettings(enabled = true) {
       return { ...defaultProviderSettings(), ...data };
     },
     enabled,
+    staleTime,
   });
 }
 
@@ -80,7 +94,11 @@ export function useSetWorkspaceProviderSetting(
   });
 }
 
-export function useGetProjectProviderSettings(projectId: number, enabled = true) {
+export function useGetProjectProviderSettings(
+  projectId: number,
+  arg: boolean | QueryExtras = true,
+) {
+  const { enabled = true, staleTime } = readQueryExtras(arg);
   return useQuery({
     queryKey: ["projects", "provider-settings", projectId],
     queryFn: () =>
@@ -89,6 +107,7 @@ export function useGetProjectProviderSettings(projectId: number, enabled = true)
         url: `/api/projects/${projectId}/provider-settings`,
       }),
     enabled,
+    staleTime,
   });
 }
 
@@ -254,7 +273,11 @@ export function useDeleteClaudeCodeCustomModel() {
   });
 }
 
-export function useGetFeatureProviderSettings(featureId: number, enabled = true) {
+export function useGetFeatureProviderSettings(
+  featureId: number,
+  arg: boolean | QueryExtras = true,
+) {
+  const { enabled = true, staleTime } = readQueryExtras(arg);
   return useQuery({
     queryKey: ["features", "provider-settings", featureId],
     queryFn: () =>
@@ -263,6 +286,7 @@ export function useGetFeatureProviderSettings(featureId: number, enabled = true)
         url: `/api/features/${featureId}/provider-settings`,
       }),
     enabled,
+    staleTime,
   });
 }
 

@@ -1,6 +1,17 @@
 import { QueryClient } from "@tanstack/react-query";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
+import { CACHE_VERSION } from "./persistedQueries";
 
-export const queryClient = new QueryClient();
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: 1,
+    },
+  },
+});
 
 /**
  * Invalidate every cached query whose URL key starts with any of the given
@@ -28,3 +39,20 @@ export function invalidateByUrlPrefix(
     },
   });
 }
+
+/**
+ * localStorage persister used by `PersistQueryClientProvider` in `App.tsx`.
+ *
+ * Only queries that pass `shouldDehydrateQuery` (see `persistedQueries.ts`)
+ * are written; the safelist keeps total bytes well under the 5 MB browser
+ * quota. The cache key embeds {@link CACHE_VERSION} so a shape change can
+ * be rolled out by bumping the version.
+ *
+ * `throttleTime: 1000` coalesces bursts of cache writes (e.g. typing a
+ * settings field) into one localStorage write per second.
+ */
+export const persister = createSyncStoragePersister({
+  storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  key: `cadencr-rq-cache-${CACHE_VERSION}`,
+  throttleTime: 1000,
+});

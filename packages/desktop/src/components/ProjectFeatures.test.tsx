@@ -81,6 +81,12 @@ vi.mock("@/api/generated", () => ({
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
   useGetStats: vi.fn(() => ({ data: undefined })),
+  getFeatureAgentState: vi.fn(() => Promise.resolve({ sessions: [] })),
+  getGetFeatureAgentStateQueryKey: (id: number) => [`/api/features/${id}/agent-state`] as const,
+  getBranch: vi.fn(() => Promise.resolve({ branch: "main" })),
+  getGetBranchQueryKey: (params: unknown) => [`/api/git/branch`, params] as const,
+  getStats: vi.fn(() => Promise.resolve({ insertions: 0, deletions: 0 })),
+  getGetStatsQueryKey: (params: unknown) => [`/api/git/stats`, params] as const,
 }));
 
 vi.mock("@/stores/ws-session-store", () => ({

@@ -7,7 +7,26 @@ const mockUseQuery = vi.fn();
 
 vi.mock("../api/generated", () => ({
   useGetFeatureAgentState: (...args: unknown[]) => mockUseQuery(...args),
+  getFeatureAgentState: vi.fn(),
+  getGetFeatureAgentStateQueryKey: (featureId: number, params?: unknown) =>
+    [`/api/features/${featureId}/agent-state`, ...(params ? [params] : [])] as const,
 }));
+
+vi.mock("@/lib/agentStateCache", () => ({
+  readAgentStateCache: vi.fn(() => Promise.resolve(null)),
+  writeAgentStateCache: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQueryClient: () => ({
+      getQueryData: vi.fn(() => undefined),
+      setQueryData: vi.fn(),
+    }),
+  };
+});
 
 /** Helper to build a minimal session payload for tests. */
 function makeSession(overrides: Record<string, unknown> = {}) {

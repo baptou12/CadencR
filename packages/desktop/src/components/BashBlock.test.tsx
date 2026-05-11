@@ -12,9 +12,18 @@ import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 
 const parseAnsiMock = vi.fn((text: string) => text);
+const getMessageFullContentMock = vi.fn();
 
 vi.mock("@/lib/ansi-to-html", () => ({
   parseAnsi: (text: string) => parseAnsiMock(text),
+}));
+
+vi.mock("@/api/generated", () => ({
+  getMessageFullContent: (messageId: number, signal?: AbortSignal) =>
+    getMessageFullContentMock(messageId, signal),
+  getGetMessageFullContentQueryKey: (messageId?: number) => [
+    `/api/sessions/messages/${messageId}/full`,
+  ],
 }));
 
 import { BashBlock } from "./BashBlock";
@@ -26,6 +35,7 @@ function bigContent(lines: number): string {
 
 beforeEach(() => {
   parseAnsiMock.mockClear();
+  getMessageFullContentMock.mockReset();
 });
 
 describe("BashBlock lazy ANSI parse", () => {
@@ -53,5 +63,33 @@ describe("BashBlock lazy ANSI parse", () => {
     // After expansion the full content must be parsed at least once.
     const fullCalls = parseAnsiMock.mock.calls.filter((c) => c[0] === content);
     expect(fullCalls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("BashBlock server-truncated output", () => {
+  it("fetches the full message content when expanding server-truncated output", async () => {
+    const user = userEvent.setup();
+    const truncated = bigContent(20);
+    const fullOutput = bigContent(80);
+    let resolveFullContent: (value: { content: string }) => void = () => undefined;
+    getMessageFullContentMock.mockReturnValue(
+      new Promise<{ content: string }>((resolve) => {
+        resolveFullContent = resolve;
+      }),
+    );
+
+    render(
+      <BashBlock command="seq 80" content={truncated} messageId={2585} truncatedContent={true} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Show all 20/ }));
+
+    expect(await screen.findByText("Loading full output…")).toBeInTheDocument();
+    resolveFullContent({
+      content: JSON.stringify({ aggregatedOutput: fullOutput, status: "completed" }),
+    });
+    expect(await screen.findByText(/line-79/)).toBeInTheDocument();
+    expect(getMessageFullContentMock).toHaveBeenCalledTimes(1);
+    expect(getMessageFullContentMock).toHaveBeenCalledWith(2585, expect.any(AbortSignal));
   });
 });

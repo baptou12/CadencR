@@ -141,6 +141,18 @@ vi.mock("@/hooks/useResolvedModel", () => ({
   })),
 }));
 
+vi.mock("@/contexts/ResolvedModelContext", () => ({
+  ResolvedModelProvider: ({ children }: { children: ReactNode }) => children,
+  useResolvedModelContext: vi.fn(() => ({
+    resolveProvider: vi.fn(() => "claude_code"),
+    resolveModel: vi.fn(() => undefined),
+    resolveModelThinkingEffort: vi.fn(() => undefined),
+    setModelThinkingEffort: vi.fn(),
+    handleProviderChange: vi.fn(),
+    handleModelChange: vi.fn(),
+  })),
+}));
+
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn(() => ({ value: undefined, setValue: vi.fn() })),
 }));

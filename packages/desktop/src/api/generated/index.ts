@@ -40,6 +40,13 @@ export type AgentBlockToolName = string | null;
 
 export type AgentBlockToolUseId = string | null;
 
+/**
+ * When true, `content` was tail-truncated server-side (currently only for
+Bash `tool_result` blocks exceeding the line cap). The full payload is
+reachable via `GET /api/sessions/messages/{id}/full`.
+ */
+export type AgentBlockTruncatedContent = boolean | null;
+
 export interface AgentBlock {
   /** Nested child blocks (for Task/Agent tool calls) */
   childBlocks?: AgentBlockChildBlocks;
@@ -53,6 +60,10 @@ export interface AgentBlock {
   toolArgs?: AgentBlockToolArgs;
   toolName?: AgentBlockToolName;
   toolUseId?: AgentBlockToolUseId;
+  /** When true, `content` was tail-truncated server-side (currently only for
+Bash `tool_result` blocks exceeding the line cap). The full payload is
+reachable via `GET /api/sessions/messages/{id}/full`. */
+  truncatedContent?: AgentBlockTruncatedContent;
   type: string;
 }
 
@@ -128,6 +139,10 @@ export interface AgentSessionRow {
 
 export type AgentSessionSummaryContextWindow = number | null;
 
+export type AgentSessionSummaryModel = string | null;
+
+export type AgentSessionSummaryPermissionMode = string | null;
+
 export type AgentSessionSummaryQueueItemId = number | null;
 
 export type AgentSessionSummaryRuntimeProvider = string | null;
@@ -142,7 +157,9 @@ export interface AgentSessionSummary {
   created_at: string;
   id: number;
   input_tokens: number;
+  model?: AgentSessionSummaryModel;
   output_tokens: number;
+  permission_mode?: AgentSessionSummaryPermissionMode;
   queue_item_id?: AgentSessionSummaryQueueItemId;
   runtime_provider?: AgentSessionSummaryRuntimeProvider;
   runtime_session_id?: AgentSessionSummaryRuntimeSessionId;
@@ -882,6 +899,10 @@ export type MergeResultError = string | null;
 export interface MergeResult {
   error?: MergeResultError;
   success: boolean;
+}
+
+export interface MessageFullContentResponse {
+  content: string;
 }
 
 export type ModelCatalogEntryDescription = string | null;
@@ -8730,6 +8751,64 @@ export const useSetProjectSetting = <TError = ErrorType<unknown>, TContext = unk
 
   return useMutation(mutationOptions);
 };
+
+export const getMessageFullContent = (messageId: number, signal?: AbortSignal) => {
+  return customInstance<MessageFullContentResponse>({
+    url: `/api/sessions/messages/${messageId}/full`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetMessageFullContentQueryKey = (messageId?: number) => {
+  return [`/api/sessions/messages/${messageId}/full`] as const;
+};
+
+export const getGetMessageFullContentQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMessageFullContent>>,
+  TError = ErrorType<void>,
+>(
+  messageId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMessageFullContent>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMessageFullContentQueryKey(messageId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMessageFullContent>>> = ({ signal }) =>
+    getMessageFullContent(messageId, signal);
+
+  return { queryKey, queryFn, enabled: !!messageId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMessageFullContent>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMessageFullContentQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMessageFullContent>>
+>;
+export type GetMessageFullContentQueryError = ErrorType<void>;
+
+export function useGetMessageFullContent<
+  TData = Awaited<ReturnType<typeof getMessageFullContent>>,
+  TError = ErrorType<void>,
+>(
+  messageId: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof getMessageFullContent>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMessageFullContentQueryOptions(messageId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getSessionDraft = (sessionId: number, signal?: AbortSignal) => {
   return customInstance<DraftResponse>({

@@ -4,7 +4,6 @@ import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchS
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
 import { FeatureLayoutShell } from "@/components/feature-layout/FeatureLayoutShell";
-import { useSaveLastOpenedFeature } from "@/hooks/useSaveLastOpenedFeature";
 import { ROOT_LEAF_ID, type TabKind } from "@/stores/feature-layout-schema";
 import {
   findPaneContaining,
@@ -73,8 +72,10 @@ function WebSocketSessionFeatureBody(
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
   const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
-  useSaveLastOpenedFeature(projectId, featureId, focusedTabId, embedded);
 
+  // `useSaveLastOpenedFeature` is now mounted once at the route level
+  // (`FeatureWorkflowView`); we used to also call it here, which produced a
+  // duplicate `PUT /api/workspace/settings/lastOpenedFeature` on every open.
   const gitVisible = isTabVisible(layoutState, "git");
   const data = useSessionFeatureData(sessionId, cwd, featureId, projectId, {
     gitMetadataEnabled: !embedded || gitVisible,

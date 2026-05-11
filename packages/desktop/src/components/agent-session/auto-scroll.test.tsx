@@ -306,6 +306,43 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(1000);
   });
 
+  // Regression: with Virtuoso `customScrollParent`, item measurement settles
+  // asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
+  // event AFTER Virtuoso has expanded the content, so the stale `scrollTop`
+  // reads as below-threshold against the new `scrollHeight`. Older symmetric
+  // `onScroll` would call `setAutoScrollEnabled(false)` here, and the next
+  // ResizeObserver re-anchor would be skipped — the user would see content
+  // landing off-screen even though the chip looked engaged. The current
+  // implementation only disengages when `scrollTop` actually decreased.
+  it("does not disengage stick when a programmatic re-anchor echo arrives after content grew", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    // We were at the bottom of a 1000px-tall list (scrollTop=600).
+    stubGeometry(scroller, 1000, 400);
+    dispatchScroll(scroller, 600);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+
+    // Simulate Virtuoso settling: content grew from 1000 to 1400 without any
+    // user gesture. The next scroll event arrives with the OLD `scrollTop`
+    // (600) against the NEW `scrollHeight` (1400). distance = 400, > 16.
+    // `scrollTop` did not decrease — stick must stay engaged so the next
+    // ResizeObserver pass re-anchors to the new bottom.
+    stubGeometry(scroller, 1400, 400);
+    act(() => {
+      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
   // Conversely, if the user has scrolled away (rule 2), an in-place content
   // update must NOT yank the view back down — the chip is the only way back.
   it("does not re-anchor when the user has scrolled up", () => {

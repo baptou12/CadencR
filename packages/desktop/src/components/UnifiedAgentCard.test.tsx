@@ -4,6 +4,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import { createSessionEntry } from "@/stores/ws-session-types";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import { UnifiedAgentCard } from "./UnifiedAgentCard";
 
 const mocks = vi.hoisted(() => ({
@@ -14,6 +15,18 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/components/WebSocketSessionFeatureBlock", () => ({
   WebSocketSessionFeatureBlock: mocks.WebSocketSessionFeatureBlock,
+}));
+
+vi.mock("@/contexts/ResolvedModelContext", () => ({
+  ResolvedModelProvider: ({ children }: { children: ReactNode }) => children,
+  useResolvedModelContext: () => ({
+    resolveProvider: () => "claude_code",
+    resolveModel: () => "claude-opus-4-5",
+    resolveModelThinkingEffort: () => undefined,
+    setModelThinkingEffort: () => undefined,
+    handleProviderChange: () => undefined,
+    handleModelChange: () => undefined,
+  }),
 }));
 
 vi.mock("@/components/useUnifiedAgentPinControls", () => ({

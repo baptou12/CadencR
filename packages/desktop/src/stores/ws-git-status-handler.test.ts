@@ -58,13 +58,40 @@ describe("parseGitStatusSnapshot", () => {
 });
 
 describe("handleGitEnvelope", () => {
-  it("writes a valid status into the store and invalidates git queries", () => {
+  it("writes the first valid status into the store without invalidating git queries", () => {
     const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 
     handleGitEnvelope("status", validSnapshot as Record<string, unknown>);
 
     expect(useGitStatusStore.getState().byFeature[7]).toEqual(validSnapshot);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("invalidates git queries when an existing status meaningfully changes", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    useGitStatusStore.getState().setStatus(validSnapshot);
+
+    handleGitEnvelope("status", {
+      ...validSnapshot,
+      uncommitted_count: 4,
+      computed_at: validSnapshot.computed_at + 1,
+    } as Record<string, unknown>);
+
+    expect(useGitStatusStore.getState().byFeature[7]?.uncommitted_count).toBe(4);
     expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it("does not invalidate git queries for an unchanged status refresh", () => {
+    const spy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    useGitStatusStore.getState().setStatus(validSnapshot);
+
+    handleGitEnvelope("status", {
+      ...validSnapshot,
+      computed_at: validSnapshot.computed_at + 1,
+    } as Record<string, unknown>);
+
+    expect(useGitStatusStore.getState().byFeature[7]?.computed_at).toBe(validSnapshot.computed_at);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("ignores a malformed status payload (no store write, no toast)", () => {
