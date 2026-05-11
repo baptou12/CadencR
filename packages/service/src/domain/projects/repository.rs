@@ -5,7 +5,20 @@ use sqlx::SqlitePool;
 
 pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> {
     let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String)>(
-        "SELECT id, name, path, branch_prefix, qa_prompt, agent_autonomy, parallel_execution, created_at FROM projects ORDER BY created_at DESC",
+        r#"WITH latest_project_activity AS (
+               SELECT
+                   f.project_id,
+                   MAX(datetime(COALESCE(am.created_at, s.started_at, f.created_at))) AS activity_at
+               FROM features f
+               LEFT JOIN agent_sessions s ON s.feature_id = f.id
+               LEFT JOIN agent_messages am ON am.session_id = s.id
+               WHERE f.status != 'archived'
+               GROUP BY f.project_id
+           )
+           SELECT p.id, p.name, p.path, p.branch_prefix, p.qa_prompt, p.agent_autonomy, p.parallel_execution, p.created_at
+           FROM projects p
+           LEFT JOIN latest_project_activity activity ON activity.project_id = p.id
+           ORDER BY COALESCE(activity.activity_at, datetime(p.created_at)) DESC, p.id DESC"#,
     )
     .fetch_all(pool)
     .await?;
@@ -448,7 +461,7 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "CREATE TABLE features (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')"
+            "CREATE TABLE features (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature', created_at TEXT DEFAULT (datetime('now')))"
         ).execute(&pool).await.unwrap();
 
         sqlx::query(
@@ -463,11 +476,11 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            "CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL)"
+            "CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, started_at TEXT)"
         ).execute(&pool).await.unwrap();
 
         sqlx::query(
-            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL)"
+            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')))"
         ).execute(&pool).await.unwrap();
 
         sqlx::query(
@@ -504,12 +517,94 @@ mod tests {
 
         let projects = list_projects(&pool).await.unwrap();
         assert_eq!(projects.len(), 2);
-        // ORDER BY created_at DESC — p2 was created last so comes first (same second, but rowid order)
+        // Projects are sorted by recent conversation when available; without
+        // conversations both created projects should still be listed.
         let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"Alpha"));
         assert!(names.contains(&"Beta"));
         assert_eq!(p1.name, "Alpha");
         assert_eq!(p2.path, "/tmp/beta");
+    }
+
+    #[tokio::test]
+    async fn test_list_projects_orders_by_latest_conversation_activity() {
+        let pool = setup_test_db().await;
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, created_at) VALUES
+             (1, 'Older Project', '/older', '2026-01-03 00:00:00'),
+             (2, 'Active Project', '/active', '2026-01-01 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type, created_at) VALUES
+             (10, 1, 'older feature', 'draft', 'ws-session', '2026-01-03 00:00:00'),
+             (20, 2, 'active feature', 'draft', 'ws-session', '2026-01-01 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, started_at) VALUES
+             (10, '2026-01-03 00:00:00'),
+             (20, '2026-01-02 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_messages (session_id, created_at) VALUES
+             (2, '2026-01-04 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let projects = list_projects(&pool).await.unwrap();
+        let names: Vec<&str> = projects
+            .iter()
+            .map(|project| project.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Active Project", "Older Project"]);
+    }
+
+    #[tokio::test]
+    async fn test_list_projects_ignores_archived_feature_conversations_for_ordering() {
+        let pool = setup_test_db().await;
+        sqlx::query(
+            "INSERT INTO projects (id, name, path, created_at) VALUES
+             (1, 'Fresh Archived Only', '/archived', '2026-01-01 00:00:00'),
+             (2, 'Fresh Active', '/active', '2026-01-02 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type, created_at) VALUES
+             (10, 1, 'archived feature', 'archived', 'ws-session', '2026-01-01 00:00:00'),
+             (20, 2, 'active feature', 'draft', 'ws-session', '2026-01-02 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (feature_id, started_at) VALUES
+             (10, '2026-01-05 00:00:00'),
+             (20, '2026-01-03 00:00:00')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let projects = list_projects(&pool).await.unwrap();
+        let names: Vec<&str> = projects
+            .iter()
+            .map(|project| project.name.as_str())
+            .collect();
+
+        assert_eq!(names, vec!["Fresh Active", "Fresh Archived Only"]);
     }
 
     #[tokio::test]
