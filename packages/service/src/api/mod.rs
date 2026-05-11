@@ -49,5 +49,12 @@ pub fn build_router(state: AppState) -> Router {
             state.clone(),
             middleware::auth_middleware,
         ))
+        // Compression sits OUTSIDE auth so 401 bodies also compress.
+        // Tower's CompressionLayer automatically skips `Upgrade` (WebSocket) requests.
+        .layer(
+            tower_http::compression::CompressionLayer::new()
+                .gzip(true)
+                .br(true),
+        )
         .with_state(state)
 }

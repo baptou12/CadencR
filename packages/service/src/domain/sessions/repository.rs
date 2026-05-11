@@ -5,6 +5,24 @@ use super::models::*;
 use super::opencode_hydration::hydrate_full_opencode_sessions;
 use crate::error::AppError;
 
+/// Soft cap on the total number of blocks (root + nested) returned by a single
+/// `get_feature_agent_state` call. The wire payload for very long conversations
+/// can dwarf the per-session message `limit` because each Bash call yields two
+/// blocks (call + result) and Task agents nest children — so a message-level
+/// cap is not a useful payload-size guard. When the block count exceeds this
+/// value we drop the oldest root blocks (and their children) and report
+/// `has_more = true` so the client can paginate with `before_message_ids`.
+const BLOCK_SOFT_CAP: usize = 400;
+
+/// Max number of lines retained in a Bash `tool_result` block on the wire.
+/// Larger outputs are tail-truncated and flagged with `truncated_content`,
+/// and the full content is reachable via `GET /api/sessions/messages/{id}/full`.
+const BASH_OUTPUT_MAX_LINES: usize = 200;
+/// Max UTF-8 bytes retained from a Bash `tool_result` output field after line
+/// truncation. This keeps pathological single-line outputs from dominating the
+/// decoded agent-state payload.
+const BASH_OUTPUT_MAX_CHARS: usize = 8 * 1024;
+
 // ---- Block builder (port of shared.ts buildBlocks) ----
 
 struct MutableBlock {
@@ -20,6 +38,7 @@ struct MutableBlock {
     model: Option<String>,
     has_child_slots: bool, // Task/Agent get child slots
     child_indices: Vec<usize>,
+    truncated_content: Option<bool>,
 }
 
 fn convert_block(idx: usize, all: &[MutableBlock]) -> AgentBlock {
@@ -51,6 +70,7 @@ fn convert_block(idx: usize, all: &[MutableBlock]) -> AgentBlock {
         source_tool_name: b.source_tool_name.clone(),
         created_at: b.created_at.clone(),
         model: b.model.clone(),
+        truncated_content: b.truncated_content,
     }
 }
 
@@ -94,6 +114,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                         model: msg.model.clone(),
                         has_child_slots: false,
                         child_indices: Vec::new(),
+                        truncated_content: None,
                     });
                     if let Some(pidx) = parent_idx {
                         all[pidx].child_indices.push(new_idx);
@@ -131,6 +152,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                         model: None,
                         has_child_slots: false,
                         child_indices: Vec::new(),
+                        truncated_content: None,
                     });
                     if let Some(pidx) = parent_idx {
                         all[pidx].child_indices.push(new_idx);
@@ -140,10 +162,16 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                 }
             }
             "tool_call" => {
-                // Deduplicate: if tool_use_id already seen, update content if longer
+                // Deduplicate: if tool_use_id already seen, update content if longer.
+                // Exception: Bash tool_calls must keep their original args content
+                // (e.g. {"command":..., "description":...}) — without this guard,
+                // a stray duplicate row carrying the bash OUTPUT would overwrite
+                // the args here, doubling the payload (the same output already
+                // lives on the matching `tool_result` block).
                 if let Some(tuid) = &msg.tool_use_id {
                     if let Some(&existing_idx) = tool_use_id_map.get(tuid.as_str()) {
-                        if !msg.content.is_empty()
+                        if !is_bash_tool_name(all[existing_idx].tool_name.as_deref())
+                            && !msg.content.is_empty()
                             && msg.content.len() > all[existing_idx].content.len()
                         {
                             all[existing_idx].content = msg.content.clone();
@@ -154,11 +182,22 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
 
                 let is_task = msg.tool_name.as_deref() == Some("Task")
                     || msg.tool_name.as_deref() == Some("Agent");
+                // Defensive truncation for Bash tool_calls. The dedup gate
+                // above prevents *new* rows from poisoning the tool_call with
+                // command output, but historical rows in the DB already carry
+                // the full output baked onto the tool_call. Treat the content
+                // exactly like a Bash tool_result so the wire stays small.
+                let is_bash_call = is_bash_tool_name(msg.tool_name.as_deref());
+                let (call_content, call_truncated) = if is_bash_call {
+                    truncate_bash_output(&msg.content, BASH_OUTPUT_MAX_LINES)
+                } else {
+                    (msg.content.clone(), false)
+                };
                 let new_idx = all.len();
                 all.push(MutableBlock {
                     id,
                     type_: "tool_call".to_string(),
-                    content: msg.content.clone(),
+                    content: call_content,
                     tool_name: msg.tool_name.clone().or(Some("tool".to_string())),
                     tool_use_id: msg.tool_use_id.clone(),
                     parent_tool_use_id: msg.parent_tool_use_id.clone(),
@@ -168,6 +207,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: is_task,
                     child_indices: Vec::new(),
+                    truncated_content: if call_truncated { Some(true) } else { None },
                 });
                 if let Some(tuid) = &msg.tool_use_id {
                     tool_use_id_map.insert(tuid.clone(), new_idx);
@@ -207,11 +247,21 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     }
                 }
 
+                // Truncate Bash tool_result payloads to the last N lines on the
+                // wire. The full output remains in `agent_messages.content` and
+                // is reachable via `GET /api/sessions/messages/{id}/full`.
+                let is_bash_result = is_bash_tool_name(source_tool_name.as_deref());
+                let (result_content, was_truncated) = if is_bash_result {
+                    truncate_bash_output(&msg.content, BASH_OUTPUT_MAX_LINES)
+                } else {
+                    (msg.content.clone(), false)
+                };
+
                 let new_idx = all.len();
                 all.push(MutableBlock {
                     id,
                     type_: "tool_result".to_string(),
-                    content: msg.content.clone(),
+                    content: result_content,
                     tool_name: None,
                     tool_use_id: msg.tool_use_id.clone(),
                     parent_tool_use_id: msg.parent_tool_use_id.clone(),
@@ -221,6 +271,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: false,
                     child_indices: Vec::new(),
+                    truncated_content: if was_truncated { Some(true) } else { None },
                 });
                 // Nest under parent_tool_use_id if available, otherwise under the
                 // matching Agent/Task tool_call (tool_result shares tool_use_id).
@@ -251,6 +302,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: false,
                     child_indices: Vec::new(),
+                    truncated_content: None,
                 });
                 if let Some(pidx) = parent_idx {
                     all[pidx].child_indices.push(new_idx);
@@ -273,6 +325,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: false,
                     child_indices: Vec::new(),
+                    truncated_content: None,
                 });
                 if let Some(pidx) = parent_idx {
                     all[pidx].child_indices.push(new_idx);
@@ -295,6 +348,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: false,
                     child_indices: Vec::new(),
+                    truncated_content: None,
                 });
                 if let Some(pidx) = parent_idx {
                     all[pidx].child_indices.push(new_idx);
@@ -317,6 +371,7 @@ pub fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
                     model: None,
                     has_child_slots: false,
                     child_indices: Vec::new(),
+                    truncated_content: None,
                 });
                 if let Some(pidx) = parent_idx {
                     all[pidx].child_indices.push(new_idx);
@@ -339,6 +394,141 @@ fn is_file_change_tool_name(tool_name: Option<&str>) -> bool {
         tool_name,
         Some("Write" | "Edit" | "NotebookEdit" | "ApplyPatch" | "apply_patch")
     )
+}
+
+/// Cadencr persists provider tool names in their canonical form. Codex
+/// normalizes `bash`/`shell`/`exec`/`exec_command` → `"Bash"` in
+/// `agents/codex/raw_tool_names.rs:43`; OpenCode round-trips through
+/// `canonical_cadencr_tool_name` in `agents/opencode/tool_names.rs`; Claude
+/// Code already emits `"Bash"`. So a plain equality check is intentional and
+/// keeps the provider-boundary rule: a single canonical name in shared code.
+fn is_bash_tool_name(tool_name: Option<&str>) -> bool {
+    matches!(tool_name, Some("Bash"))
+}
+
+/// Tail-truncate Bash content to the last `max_lines` lines.
+/// Returns `(content, was_truncated)`. The full output is preserved in the
+/// database and exposed via `GET /api/sessions/messages/{id}/full`.
+///
+/// Bash command output is stored as a JSON envelope on the agent_messages
+/// row (e.g. `{"aggregatedOutput":"line1\nline2\n…","status":"…",…}`), so
+/// the newlines we care about are *inside* one JSON string field, not in
+/// the raw bytes. Parse the envelope, truncate the embedded `aggregatedOutput`
+/// (or `output` / `stdout` for older formats), and re-serialize. Fall back
+/// to raw line-splitting for content that isn't a JSON object.
+fn truncate_bash_output(content: &str, max_lines: usize) -> (String, bool) {
+    if content.is_empty() {
+        return (String::new(), false);
+    }
+    if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(content) {
+        if let Some(obj) = value.as_object_mut() {
+            let mut envelope_was_truncated = false;
+            for key in ["aggregatedOutput", "output", "stdout"] {
+                let Some(serde_json::Value::String(s)) = obj.get(key).cloned() else {
+                    continue;
+                };
+                let (truncated, was_truncated) =
+                    truncate_bash_output_text(&s, max_lines, BASH_OUTPUT_MAX_CHARS);
+                if !was_truncated {
+                    continue;
+                }
+                obj.insert(key.to_string(), serde_json::Value::String(truncated));
+                envelope_was_truncated = true;
+            }
+            return if envelope_was_truncated {
+                (value.to_string(), true)
+            } else {
+                (content.to_owned(), false)
+            };
+        }
+    }
+    truncate_bash_output_text(content, max_lines, BASH_OUTPUT_MAX_CHARS)
+}
+
+fn truncate_bash_output_text(content: &str, max_lines: usize, max_chars: usize) -> (String, bool) {
+    // Cheap fast-path: under both caps and no possibility of line trimming.
+    // Avoids splitting + allocating a Vec<&str> for the common case of short
+    // command output (which runs over every Bash block on every full read).
+    // Count newlines with early-exit once we've seen more than `max_lines`.
+    if content.len() <= max_chars {
+        let mut newline_count = 0usize;
+        let mut over_cap = false;
+        for &b in content.as_bytes() {
+            if b == b'\n' {
+                newline_count += 1;
+                if newline_count >= max_lines {
+                    over_cap = true;
+                    break;
+                }
+            }
+        }
+        if !over_cap {
+            return (content.to_owned(), false);
+        }
+    }
+    let lines: Vec<&str> = content.split('\n').collect();
+    let line_truncated = lines.len() > max_lines;
+    let line_limited = if line_truncated {
+        lines[lines.len() - max_lines..].join("\n")
+    } else {
+        content.to_owned()
+    };
+    if line_limited.len() <= max_chars {
+        return (line_limited, line_truncated);
+    }
+    (
+        tail_by_utf8_bytes(&line_limited, max_chars).to_owned(),
+        true,
+    )
+}
+
+fn tail_by_utf8_bytes(content: &str, max_bytes: usize) -> &str {
+    if content.len() <= max_bytes {
+        return content;
+    }
+    let mut start = content.len() - max_bytes;
+    while !content.is_char_boundary(start) {
+        start += 1;
+    }
+    &content[start..]
+}
+
+/// Count root + nested blocks (one level of `child_blocks`).
+fn total_block_count(blocks: &[AgentBlock]) -> usize {
+    blocks
+        .iter()
+        .map(|b| 1 + b.child_blocks.as_ref().map_or(0, |c| c.len()))
+        .sum()
+}
+
+/// Extract the numeric message id encoded in `AgentBlock::id` (`"msg-<n>"`).
+fn block_message_id(block: &AgentBlock) -> Option<i64> {
+    block.id.strip_prefix("msg-").and_then(|s| s.parse().ok())
+}
+
+/// Drop the oldest root blocks (and their nested children) until the total
+/// block count is at or below `cap`. Returns the number of root blocks that
+/// were dropped. A caller should mark `has_more = true` and recompute the
+/// oldest cursor when this is non-zero.
+fn trim_blocks_to_cap(blocks: &mut Vec<AgentBlock>, cap: usize) -> usize {
+    let total = total_block_count(blocks);
+    if total <= cap {
+        return 0;
+    }
+    // Scan front-to-back accumulating child counts; stop as soon as dropping
+    // up to `i` root entries would put us at or below the cap. Single O(n)
+    // pass plus one `drain` — no quadratic recount or per-element memmove.
+    let mut remaining = total;
+    let mut dropped = 0usize;
+    for block in blocks.iter() {
+        if remaining <= cap {
+            break;
+        }
+        remaining -= 1 + block.child_blocks.as_ref().map_or(0, |c| c.len());
+        dropped += 1;
+    }
+    blocks.drain(0..dropped);
+    dropped
 }
 
 fn merge_tool_result_patch(tool_call_content: &mut String, tool_result_content: &str) {
@@ -664,7 +854,22 @@ pub async fn get_feature_agent_state(
                 msgs.iter().map(|m| m.id).max().unwrap_or(0)
             };
 
-            let blocks = build_blocks(&msgs);
+            let mut blocks = build_blocks(&msgs);
+
+            // Block-level pagination soft cap (full-fetch only). The
+            // per-session message `limit` is on `agent_messages` rows, but
+            // payload size scales with BLOCKS (every Bash call expands to two
+            // blocks plus output). Drop the oldest root blocks until we are
+            // under the cap and report has_more so the client can paginate.
+            let mut trimmed_has_more = false;
+            let mut trimmed_oldest_id: Option<i64> = None;
+            if !is_incremental {
+                let dropped = trim_blocks_to_cap(&mut blocks, BLOCK_SOFT_CAP);
+                if dropped > 0 {
+                    trimmed_has_more = true;
+                    trimmed_oldest_id = blocks.iter().filter_map(block_message_id).min();
+                }
+            }
 
             let tool_call_updates: Option<HashMap<String, String>> = if is_incremental {
                 updated_tool_calls.get(&s.id).map(|m| {
@@ -729,11 +934,13 @@ pub async fn get_feature_agent_state(
                 context_window: s.context_window,
                 was_compacted: s.was_compacted != 0,
                 draft_prompt: s.draft_prompt,
-                has_more: *has_more_map.get(&s.id).unwrap_or(&false),
-                oldest_message_id: oldest_message_id_map
-                    .get(&s.id)
-                    .copied()
-                    .or_else(|| msgs.first().map(|m| m.id)),
+                has_more: *has_more_map.get(&s.id).unwrap_or(&false) || trimmed_has_more,
+                oldest_message_id: trimmed_oldest_id.or_else(|| {
+                    oldest_message_id_map
+                        .get(&s.id)
+                        .copied()
+                        .or_else(|| msgs.first().map(|m| m.id))
+                }),
             }
         })
         .collect();
@@ -812,6 +1019,20 @@ pub async fn get_draft(pool: &SqlitePool, session_id: i64) -> Result<Option<Stri
             .fetch_optional(pool)
             .await?;
     Ok(row.and_then(|(v,)| v))
+}
+
+/// Fetch the full, untruncated `content` for a single `agent_messages` row.
+/// Used by the "Show all" affordance on Bash blocks whose payload was
+/// tail-truncated for the agent-state response.
+pub async fn get_message_content(
+    pool: &SqlitePool,
+    message_id: i64,
+) -> Result<Option<String>, AppError> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT content FROM agent_messages WHERE id = ?")
+        .bind(message_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(row.map(|(c,)| c))
 }
 
 pub async fn save_draft(
@@ -1098,14 +1319,16 @@ mod tests {
 
     #[test]
     fn test_build_blocks_tool_call_deduplication() {
+        // Non-Bash tools (Edit/Write) legitimately accumulate args via
+        // `input_json_delta`, so the longer content should win.
         let msgs = vec![
-            make_message_full(1, 1, "tool_call", "{}", Some("Bash"), Some("tu-dup"), None),
+            make_message_full(1, 1, "tool_call", "{}", Some("Edit"), Some("tu-dup"), None),
             make_message_full(
                 2,
                 1,
                 "tool_call",
-                "{\"cmd\":\"ls\"}",
-                Some("Bash"),
+                "{\"file_path\":\"/x.txt\"}",
+                Some("Edit"),
                 Some("tu-dup"),
                 None,
             ),
@@ -1114,7 +1337,44 @@ mod tests {
         assert_eq!(blocks.len(), 1, "duplicate tool_use_id should deduplicate");
         assert_eq!(blocks[0].type_, "tool_call");
         // content updated to longer version
-        assert_eq!(blocks[0].content, "{\"cmd\":\"ls\"}");
+        assert_eq!(blocks[0].content, "{\"file_path\":\"/x.txt\"}");
+    }
+
+    #[test]
+    fn test_build_blocks_bash_dedupe_does_not_overwrite_args() {
+        // Bash tool_call args must never be replaced by a later same-tool_use_id
+        // row carrying the bash OUTPUT — that's the 2x-payload regression the
+        // dedupe gate prevents. The output stays exclusively on tool_result.
+        let original_args = r#"{"command":"ls -la","description":"list files"}"#;
+        let giant_output = "A".repeat(1_000_000);
+        let msgs = vec![
+            make_message_full(
+                1,
+                1,
+                "tool_call",
+                original_args,
+                Some("Bash"),
+                Some("tu-bash"),
+                None,
+            ),
+            // Stray duplicate with a much longer payload — must be ignored.
+            make_message_full(
+                2,
+                1,
+                "tool_call",
+                &giant_output,
+                Some("Bash"),
+                Some("tu-bash"),
+                None,
+            ),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 1, "Bash dup should still dedupe to one block");
+        assert_eq!(blocks[0].type_, "tool_call");
+        assert_eq!(
+            blocks[0].content, original_args,
+            "Bash tool_call content must not be overwritten by a larger duplicate"
+        );
     }
 
     #[test]
@@ -1626,5 +1886,390 @@ mod tests {
 
         let draft = get_draft(&pool, session_id).await.unwrap();
         assert_eq!(draft.as_deref(), Some("updated draft"));
+    }
+
+    // ---- is_bash_tool_name() ----
+
+    #[test]
+    fn test_is_bash_tool_name_matches_bash() {
+        assert!(is_bash_tool_name(Some("Bash")));
+    }
+
+    #[test]
+    fn test_is_bash_tool_name_rejects_others() {
+        assert!(!is_bash_tool_name(None));
+        assert!(!is_bash_tool_name(Some("")));
+        assert!(!is_bash_tool_name(Some("bash"))); // case-sensitive
+        assert!(!is_bash_tool_name(Some("Edit")));
+        assert!(!is_bash_tool_name(Some("Write")));
+        assert!(!is_bash_tool_name(Some("Task")));
+    }
+
+    // ---- truncate_bash_output() ----
+
+    #[test]
+    fn test_truncate_bash_output_empty() {
+        let (out, trunc) = truncate_bash_output("", 200);
+        assert_eq!(out, "");
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn test_truncate_bash_output_no_newlines() {
+        let (out, trunc) = truncate_bash_output("single line", 200);
+        assert_eq!(out, "single line");
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn test_truncate_bash_output_exactly_max_lines() {
+        let content = (1..=5)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (out, trunc) = truncate_bash_output(&content, 5);
+        assert_eq!(out, content);
+        assert!(!trunc);
+    }
+
+    #[test]
+    fn test_truncate_bash_output_max_plus_one() {
+        let content = (1..=6)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (out, trunc) = truncate_bash_output(&content, 5);
+        assert!(trunc);
+        // Should retain the LAST 5 lines (drop the oldest one, "1")
+        assert_eq!(out, "2\n3\n4\n5\n6");
+    }
+
+    #[test]
+    fn test_truncate_bash_output_json_envelope_aggregated_output() {
+        let inner = (1..=300)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let envelope = serde_json::json!({
+            "aggregatedOutput": inner,
+            "processId": "12345",
+            "status": "completed",
+        })
+        .to_string();
+        let (out, trunc) = truncate_bash_output(&envelope, 200);
+        assert!(
+            trunc,
+            "envelope with 300-line aggregatedOutput must be truncated"
+        );
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("re-parses");
+        let truncated_inner = parsed
+            .get("aggregatedOutput")
+            .and_then(|v| v.as_str())
+            .expect("aggregatedOutput preserved");
+        assert_eq!(truncated_inner.split('\n').count(), 200);
+        assert!(truncated_inner.starts_with("line 101"));
+        assert!(truncated_inner.ends_with("line 300"));
+        // Sibling fields preserved
+        assert_eq!(
+            parsed.get("processId").and_then(|v| v.as_str()),
+            Some("12345")
+        );
+        assert_eq!(
+            parsed.get("status").and_then(|v| v.as_str()),
+            Some("completed")
+        );
+    }
+
+    #[test]
+    fn test_truncate_bash_output_json_envelope_short_aggregated_output_untouched() {
+        let envelope = serde_json::json!({
+            "aggregatedOutput": "hi\nthere",
+            "status": "completed",
+        })
+        .to_string();
+        let (out, trunc) = truncate_bash_output(&envelope, 200);
+        assert!(!trunc);
+        assert_eq!(out, envelope);
+    }
+
+    #[test]
+    fn test_truncate_bash_output_json_envelope_falls_back_to_output_key() {
+        let inner = (1..=250)
+            .map(|i| format!("l{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let envelope = serde_json::json!({ "output": inner }).to_string();
+        let (out, trunc) = truncate_bash_output(&envelope, 100);
+        assert!(trunc);
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("re-parses");
+        let truncated_inner = parsed.get("output").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(truncated_inner.split('\n').count(), 100);
+        assert!(truncated_inner.ends_with("l250"));
+    }
+
+    #[test]
+    fn test_truncate_bash_output_json_envelope_caps_very_long_lines() {
+        let inner = (1..=5)
+            .map(|i| format!("line-{i}-{}", "x".repeat(BASH_OUTPUT_MAX_CHARS)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let envelope = serde_json::json!({ "aggregatedOutput": inner }).to_string();
+
+        let (out, trunc) = truncate_bash_output(&envelope, BASH_OUTPUT_MAX_LINES);
+
+        assert!(trunc);
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("re-parses");
+        let truncated_inner = parsed
+            .get("aggregatedOutput")
+            .and_then(|v| v.as_str())
+            .expect("aggregatedOutput preserved");
+        assert!(truncated_inner.len() <= BASH_OUTPUT_MAX_CHARS);
+        assert!(truncated_inner.ends_with(&"x".repeat(BASH_OUTPUT_MAX_CHARS)));
+    }
+
+    #[test]
+    fn test_truncate_bash_output_json_envelope_caps_all_output_fields() {
+        let inner = (1..=5)
+            .map(|i| format!("line-{i}-{}", "x".repeat(BASH_OUTPUT_MAX_CHARS)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let envelope = serde_json::json!({
+            "aggregatedOutput": inner,
+            "output": inner,
+            "stdout": inner,
+            "status": "completed",
+        })
+        .to_string();
+
+        let (out, trunc) = truncate_bash_output(&envelope, BASH_OUTPUT_MAX_LINES);
+
+        assert!(trunc);
+        let parsed: serde_json::Value = serde_json::from_str(&out).expect("re-parses");
+        for key in ["aggregatedOutput", "output", "stdout"] {
+            let truncated_inner = parsed.get(key).and_then(|v| v.as_str()).expect(key);
+            assert!(
+                truncated_inner.len() <= BASH_OUTPUT_MAX_CHARS,
+                "{key} should be capped, got {} bytes",
+                truncated_inner.len()
+            );
+        }
+        assert_eq!(
+            parsed.get("status").and_then(|v| v.as_str()),
+            Some("completed")
+        );
+    }
+
+    #[test]
+    fn test_truncate_bash_output_raw_caps_very_long_lines() {
+        let content = format!("short\n{}", "z".repeat(BASH_OUTPUT_MAX_CHARS + 100));
+
+        let (out, trunc) = truncate_bash_output(&content, BASH_OUTPUT_MAX_LINES);
+
+        assert!(trunc);
+        assert!(out.len() <= BASH_OUTPUT_MAX_CHARS);
+        assert_eq!(out, "z".repeat(BASH_OUTPUT_MAX_CHARS));
+    }
+
+    #[test]
+    fn test_truncate_bash_output_large() {
+        let content = (1..=1000)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (out, trunc) = truncate_bash_output(&content, 200);
+        assert!(trunc);
+        let kept: Vec<&str> = out.split('\n').collect();
+        assert_eq!(kept.len(), 200);
+        assert_eq!(kept[0], "801");
+        assert_eq!(kept[199], "1000");
+    }
+
+    // ---- Bash tool_result truncation in build_blocks ----
+
+    #[test]
+    fn test_build_blocks_bash_result_truncated_when_oversized() {
+        let big_output = (1..=BASH_OUTPUT_MAX_LINES + 50)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let msgs = vec![
+            make_message_full(
+                1,
+                1,
+                "tool_call",
+                r#"{"command":"seq"}"#,
+                Some("Bash"),
+                Some("tu-b"),
+                None,
+            ),
+            make_message_full(2, 1, "tool_result", &big_output, None, Some("tu-b"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks.len(), 2);
+        let result = &blocks[1];
+        assert_eq!(result.type_, "tool_result");
+        assert_eq!(result.truncated_content, Some(true));
+        let kept_lines: Vec<&str> = result.content.split('\n').collect();
+        assert_eq!(kept_lines.len(), BASH_OUTPUT_MAX_LINES);
+        // Bash tool_call args must be untouched (the args, not the output).
+        assert_eq!(blocks[0].content, r#"{"command":"seq"}"#);
+    }
+
+    #[test]
+    fn test_build_blocks_bash_result_not_truncated_when_small() {
+        let small = "ok";
+        let msgs = vec![
+            make_message_full(
+                1,
+                1,
+                "tool_call",
+                r#"{"command":"echo"}"#,
+                Some("Bash"),
+                Some("tu-s"),
+                None,
+            ),
+            make_message_full(2, 1, "tool_result", small, None, Some("tu-s"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks[1].content, small);
+        assert_eq!(blocks[1].truncated_content, None);
+    }
+
+    #[test]
+    fn test_build_blocks_non_bash_result_not_truncated() {
+        let huge = (1..=1000)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let msgs = vec![
+            make_message_full(1, 1, "tool_call", "{}", Some("Read"), Some("tu-r"), None),
+            make_message_full(2, 1, "tool_result", &huge, None, Some("tu-r"), None),
+        ];
+        let blocks = build_blocks(&msgs);
+        assert_eq!(blocks[1].content, huge);
+        assert_eq!(blocks[1].truncated_content, None);
+    }
+
+    // ---- trim_blocks_to_cap ----
+
+    fn make_root_block(id_num: i64) -> AgentBlock {
+        AgentBlock {
+            id: format!("msg-{id_num}"),
+            type_: "text".to_string(),
+            content: String::new(),
+            tool_name: None,
+            tool_args: None,
+            is_error: None,
+            tool_use_id: None,
+            parent_tool_use_id: None,
+            child_blocks: None,
+            source_tool_name: None,
+            created_at: None,
+            model: None,
+            truncated_content: None,
+        }
+    }
+
+    #[test]
+    fn test_trim_blocks_to_cap_no_op() {
+        let mut blocks: Vec<AgentBlock> = (1..=5).map(make_root_block).collect();
+        let dropped = trim_blocks_to_cap(&mut blocks, 10);
+        assert_eq!(dropped, 0);
+        assert_eq!(blocks.len(), 5);
+    }
+
+    #[test]
+    fn test_trim_blocks_to_cap_drops_oldest_roots() {
+        let mut blocks: Vec<AgentBlock> = (1..=10).map(make_root_block).collect();
+        let dropped = trim_blocks_to_cap(&mut blocks, 4);
+        assert_eq!(dropped, 6);
+        assert_eq!(blocks.len(), 4);
+        // The surviving blocks should be the newest 4 (ids 7..=10).
+        assert_eq!(blocks.first().map(|b| b.id.as_str()), Some("msg-7"));
+        assert_eq!(blocks.last().map(|b| b.id.as_str()), Some("msg-10"));
+    }
+
+    #[test]
+    fn test_trim_blocks_to_cap_counts_children() {
+        // A root with 9 children = 10 blocks total. Cap=10 → no trim.
+        // Add another root → 11 blocks total → must drop the older root.
+        let mut root_with_kids = make_root_block(1);
+        root_with_kids.child_blocks = Some((100..=108).map(make_root_block).collect());
+        let mut blocks = vec![root_with_kids, make_root_block(2)];
+        assert_eq!(total_block_count(&blocks), 11);
+        let dropped = trim_blocks_to_cap(&mut blocks, 10);
+        assert_eq!(dropped, 1);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].id, "msg-2");
+    }
+
+    #[tokio::test]
+    async fn test_get_feature_agent_state_block_cap_trims_and_sets_has_more() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let session_id = insert_session(&pool, fid.0, "completed").await;
+
+        // Insert > BLOCK_SOFT_CAP messages (each becomes one root block: distinct
+        // tool_calls so text-merging doesn't collapse them).
+        let total = BLOCK_SOFT_CAP + 50;
+        for i in 0..total {
+            insert_message(
+                &pool,
+                session_id,
+                "tool_call",
+                "{}",
+                Some("Read"),
+                Some(&format!("tu-cap-{i}")),
+                None,
+            )
+            .await;
+        }
+
+        let state = get_feature_agent_state(&pool, fid.0, None, None, None)
+            .await
+            .unwrap();
+        let s = &state.sessions[0];
+        assert!(s.has_more, "trimmed response should report has_more=true");
+        assert!(s.oldest_message_id.is_some());
+        assert!(
+            s.blocks.len() <= BLOCK_SOFT_CAP,
+            "block count {} exceeds cap {BLOCK_SOFT_CAP}",
+            s.blocks.len()
+        );
+    }
+
+    // ---- get_message_content ----
+
+    #[tokio::test]
+    async fn test_get_message_content_returns_row() {
+        let pool = setup_test_db().await;
+        let fid: (i64,) = sqlx::query_as("INSERT INTO features (title) VALUES ('f') RETURNING id")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let sid = insert_session(&pool, fid.0, "completed").await;
+        let mid = insert_message(
+            &pool,
+            sid,
+            "tool_result",
+            "the full bash output",
+            None,
+            Some("tu-1"),
+            None,
+        )
+        .await;
+
+        let content = get_message_content(&pool, mid).await.unwrap();
+        assert_eq!(content.as_deref(), Some("the full bash output"));
+    }
+
+    #[tokio::test]
+    async fn test_get_message_content_missing_returns_none() {
+        let pool = setup_test_db().await;
+        let res = get_message_content(&pool, 999_999).await.unwrap();
+        assert!(res.is_none());
     }
 }
