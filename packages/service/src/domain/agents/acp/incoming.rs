@@ -103,6 +103,15 @@ impl AcpServerRequest {
             Self::Known { raw, .. } | Self::Extension { params: raw, .. } => raw,
         }
     }
+
+    pub fn typed_as<T>(&self, extract: fn(&AgentRequest) -> Option<&T>) -> Option<&T> {
+        match self {
+            Self::Known {
+                typed: Some(typed), ..
+            } => extract(typed),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

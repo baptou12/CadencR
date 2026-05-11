@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use agent_client_protocol::schema::AgentRequest;
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::task::JoinHandle;
@@ -26,13 +25,9 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamSt
 use super::event_loop_state::sync_session_state_from_update;
 use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
-use super::fs::{
-    handle_read_text_file, handle_read_text_file_typed, handle_write_text_file,
-    handle_write_text_file_typed, FsOutcome,
-};
+use super::fs::{handle_read_text_file, handle_write_text_file, FsOutcome};
 use super::permissions::{
-    dispatch_permission_request, permission_request_from_acp, permission_request_from_typed,
-    PendingPermissions,
+    dispatch_permission_request, permission_request_from_server_request, PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
 use super::terminal_enrich::enrich_session_update;
@@ -176,23 +171,11 @@ async fn handle_server_request(
             handle_permission_request(client, id, &request, tx, config).await;
         }
         "fs/read_text_file" => {
-            let outcome = match &request {
-                AcpServerRequest::Known {
-                    typed: Some(AgentRequest::ReadTextFileRequest(typed)),
-                    ..
-                } => handle_read_text_file_typed(&config.cwd, typed).await,
-                _ => handle_read_text_file(&config.cwd, request.params()).await,
-            };
+            let outcome = handle_read_text_file(&request, &config.cwd).await;
             respond_or_reject(client, id, outcome).await;
         }
         "fs/write_text_file" => {
-            let outcome = match &request {
-                AcpServerRequest::Known {
-                    typed: Some(AgentRequest::WriteTextFileRequest(typed)),
-                    ..
-                } => handle_write_text_file_typed(&config.cwd, typed).await,
-                _ => handle_write_text_file(&config.cwd, request.params()).await,
-            };
+            let outcome = handle_write_text_file(&request, &config.cwd).await;
             respond_or_reject(client, id, outcome).await;
         }
         "terminal/create" => {
@@ -250,13 +233,7 @@ async fn handle_permission_request(
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| id.to_string());
-    let parsed = match request {
-        AcpServerRequest::Known {
-            typed: Some(AgentRequest::RequestPermissionRequest(typed)),
-            ..
-        } => permission_request_from_typed(&request_id, typed),
-        _ => permission_request_from_acp(&request_id, request.params()),
-    };
+    let parsed = permission_request_from_server_request(&request_id, request);
     let Some(permission) = parsed else {
         if let Err(error) = client
             .reject_server_request(id, -32602, "missing toolCall")

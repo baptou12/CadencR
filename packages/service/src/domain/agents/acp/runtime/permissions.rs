@@ -12,8 +12,10 @@
 //! "allow_once"/"allow_always"/"reject_once" strings when the agent didn't
 //! advertise an explicit id.
 
+use agent_client_protocol::schema::{AgentRequest, RequestPermissionRequest};
 use serde_json::Value;
 
+use crate::domain::agents::acp::incoming::AcpServerRequest;
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
@@ -21,7 +23,7 @@ use crate::domain::agents::adapter::{
 pub use super::permissions_dispatch::{
     dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
 };
-pub use super::permissions_typed::permission_request_from_typed;
+use super::permissions_typed::permission_request_from_typed;
 use super::schema_bridge::{
     default_option_id, permission_response_value, resolve_permission_option,
 };
@@ -45,6 +47,23 @@ pub fn permission_request_from_acp(
         raw_tool_input(tool_call),
         raw_options(params),
     ))
+}
+
+pub fn permission_request_from_server_request(
+    request_id: &str,
+    request: &AcpServerRequest,
+) -> Option<RuntimePermissionRequest> {
+    if let Some(typed) = request.typed_as(permission_request) {
+        return permission_request_from_typed(request_id, typed);
+    }
+    permission_request_from_acp(request_id, request.params())
+}
+
+fn permission_request(request: &AgentRequest) -> Option<&RequestPermissionRequest> {
+    match request {
+        AgentRequest::RequestPermissionRequest(request) => Some(request),
+        _ => None,
+    }
 }
 
 pub(super) fn permission_request_at(
