@@ -24,6 +24,7 @@ import { useGetStats, type Feature } from "@/api/generated";
 import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
+import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 
@@ -137,6 +138,8 @@ export function ProjectFeatureRow({
             }
           }}
         >
+          <SidebarShortcutBadge />
+
           {/* Live status icon driven by the per-session backend store. */}
           <div className="shrink-0 w-3.5">
             {liveStatus === "agent" && <BotIcon className="size-3.5 text-blue-500 animate-pulse" />}

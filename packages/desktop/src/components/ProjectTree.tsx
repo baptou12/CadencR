@@ -33,6 +33,9 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { useProjectTreeNumberShortcuts } from "@/hooks/useProjectTreeNumberShortcuts";
+import { useSidebarCollapsed } from "@/components/SidebarContext";
+import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 
 interface ProjectTreeProps {
   activeProjectId: number | null;
@@ -49,6 +52,9 @@ export function ProjectTree({
   const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
+  const treeRef = useRef<HTMLDivElement>(null);
+  const { collapsed } = useSidebarCollapsed();
+  useProjectTreeNumberShortcuts(treeRef, !collapsed);
 
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const setProjectSetting = useSetProjectSetting();
@@ -149,7 +155,7 @@ export function ProjectTree({
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+    <div ref={treeRef} className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
       <div className="flex items-center justify-between px-2">
         <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
         <Button
@@ -183,6 +189,7 @@ export function ProjectTree({
                         isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
                       }`}
                     >
+                      <SidebarShortcutBadge />
                       {isExpanded ? (
                         <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                       ) : (

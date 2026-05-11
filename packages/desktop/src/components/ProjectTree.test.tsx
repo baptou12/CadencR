@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
@@ -128,5 +128,48 @@ describe("ProjectTree", () => {
     // Click again to collapse
     await user.click(screen.getByText("Alpha Project"));
     expect(screen.queryByText("Feature One")).not.toBeInTheDocument();
+  });
+
+  it("uses command-number to activate visible sidebar rows", async () => {
+    const onSelectFeature = vi.fn();
+    render(
+      <ProjectTree
+        activeProjectId={null}
+        activeFeatureId={null}
+        onSelectFeature={onSelectFeature}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+    expect(screen.getByText("Feature One")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "2", metaKey: true });
+    expect(onSelectFeature).toHaveBeenCalledWith(10);
+    expect(mockNavigate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "/projects/$projectId/features/$featureId",
+        params: { projectId: "1", featureId: "10" },
+      }),
+    );
+  });
+
+  it("shows visible command-number hints while command is held", () => {
+    const { container } = render(
+      <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
+    );
+    const badges = (): string[] =>
+      Array.from(container.querySelectorAll("[data-nav-shortcut-badge]"))
+        .map((badge) => badge.textContent ?? "")
+        .filter(Boolean);
+
+    expect(badges()).toEqual([]);
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+
+    expect(badges()).toEqual(["1", "2", "3"]);
+
+    fireEvent.keyUp(window, { key: "Meta", metaKey: false });
+
+    expect(badges()).toEqual([]);
   });
 });
