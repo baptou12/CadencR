@@ -220,12 +220,17 @@ export function parseNotifyOptions(rawOpts: unknown): NotifyOptions {
   if (routeType !== "workflow" && routeType !== "session") {
     throw new Error("Invalid notification route type.");
   }
+  const mode = opts.mode;
+  if (mode !== "native" && mode !== "in_app") {
+    throw new Error("Invalid notification mode.");
+  }
   return {
     title: boundedString(opts.title, "title", 120),
     body: boundedString(opts.body, "body", 500),
     featureId: positiveInteger(opts.featureId, "featureId"),
     projectId: positiveInteger(opts.projectId, "projectId"),
     routeType,
+    mode,
   };
 }
 

@@ -1,20 +1,48 @@
-import { useState } from "react";
+import { createElement, useMemo, useState } from "react";
 import { Bell } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import {
+  NOTIFICATION_MODE_KEY,
+  NOTIFICATION_MODE_OPTIONS,
+  parseNotificationMode,
+  type NotificationMode,
+} from "@/lib/notification-mode";
 import { SettingsCard } from "./SettingsCard";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 import { IconTile } from "./IconTile";
+import { RadioCardGroup, type RadioCardOption } from "./RadioCardGroup";
 
 /**
- * Fires a notification through the same path agent events use, so a failure
- * here is a strong signal real notifications are also blocked. OS-level
- * failures surface via the `notification-failed` listener in `__root.tsx`.
+ * Two-row Notifications section:
+ *  1. Destination picker (System / In app / Off) — persisted via
+ *     `useDebouncedSetting`, which writes through to the React Query
+ *     cache that `notifyAgentDone` reads on each fire.
+ *  2. "Send test" button — always fires through the OS path so users
+ *     can diagnose OS-level delivery problems independently of the
+ *     destination they picked.
  */
 export function NotificationsSection(): React.JSX.Element {
   const [sending, setSending] = useState(false);
+  const modeSetting = useDebouncedSetting(NOTIFICATION_MODE_KEY, 0);
+  const mode = parseNotificationMode(modeSetting.value);
+
+  const options = useMemo<RadioCardOption<NotificationMode>[]>(
+    () =>
+      NOTIFICATION_MODE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description,
+        visual: createElement(option.icon, {
+          className: "mt-0.5 size-4",
+          style: { color: option.iconColorVar },
+        }),
+      })),
+    [],
+  );
 
   const handleSendTest = async () => {
     setSending(true);
@@ -36,8 +64,28 @@ export function NotificationsSection(): React.JSX.Element {
       id="notifications"
       title="Notifications"
       subtitle="System notifications"
-      description="Cadencr sends a system notification when an agent finishes or needs your input. Use this to verify the OS is delivering them."
+      description="Cadencr can ping you when an agent finishes or needs your input. Choose where the ping shows up, then use the test button to verify delivery."
     >
+      <SettingsCard padded>
+        <div className="space-y-3">
+          <div>
+            <div className="text-sm font-medium">Notification destination</div>
+            <p className="text-xs text-muted-foreground">
+              Where agent-finished notifications appear. System notifications stay visible even when
+              Cadencr is in the background.
+            </p>
+          </div>
+          <RadioCardGroup<NotificationMode>
+            ariaLabel="Notification destination"
+            value={mode}
+            onChange={modeSetting.setValue}
+            options={options}
+            layout="stack"
+            showDot={false}
+            disabled={modeSetting.isLoading}
+          />
+        </div>
+      </SettingsCard>
       <SettingsCard>
         <SettingsRow
           icon={
@@ -46,7 +94,7 @@ export function NotificationsSection(): React.JSX.Element {
             </IconTile>
           }
           label="Send test notification"
-          description="Fires a notification through the same path agent notifications use. If nothing appears, the OS is dropping them — check System Settings → Notifications for Cadencr."
+          description="Always exercises the OS path so you can diagnose delivery problems independently of the destination above. If nothing appears, check System Settings → Notifications for Cadencr."
           control={
             <Button variant="outline" size="sm" onClick={handleSendTest} disabled={sending}>
               {sending ? "Sending…" : "Send test"}

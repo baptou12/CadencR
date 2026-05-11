@@ -1,4 +1,6 @@
-import { Notification, type BrowserWindow } from "electron";
+import { app, Notification, type BrowserWindow } from "electron";
+
+export type NotifyMode = "native" | "in_app";
 
 export interface NotifyOptions {
   title: string;
@@ -6,6 +8,7 @@ export interface NotifyOptions {
   featureId: number;
   projectId: number;
   routeType: "workflow" | "session";
+  mode: NotifyMode;
 }
 
 export function notificationPermission(): boolean {
@@ -16,6 +19,18 @@ export function notificationPermission(): boolean {
 }
 
 export function sendNotification(mainWindow: BrowserWindow, opts: NotifyOptions): void {
+  if (shouldRenderInApp(opts.mode)) {
+    safeSend(mainWindow, "notification-fallback", {
+      title: opts.title,
+      body: opts.body,
+      click: {
+        feature_id: opts.featureId,
+        project_id: opts.projectId,
+        route_type: opts.routeType,
+      },
+    });
+    return;
+  }
   showNotification(mainWindow, opts.title, opts.body, () => {
     safeSend(mainWindow, "notification-clicked", {
       feature_id: opts.featureId,
@@ -25,12 +40,34 @@ export function sendNotification(mainWindow: BrowserWindow, opts: NotifyOptions)
   });
 }
 
+/**
+ * The test button is a diagnostic tool, not the agent-finished pipeline.
+ * In dev the bundle identity is wrong, so we fall back to the in-app
+ * toast — otherwise we always try the native path regardless of the
+ * user's saved preference.
+ */
 export function sendTestNotification(mainWindow: BrowserWindow): void {
-  showNotification(
-    mainWindow,
-    "Cadencr test notification",
-    "If you can see this, system notifications are working.",
-  );
+  const title = "Cadencr test notification";
+  const body = "If you can see this, system notifications are working.";
+  if (!app.isPackaged) {
+    safeSend(mainWindow, "notification-fallback", { title, body, click: null });
+    return;
+  }
+  showNotification(mainWindow, title, body);
+}
+
+/**
+ * In-app fallback wins when either:
+ *
+ * - The user picked "in app" in Settings → Notifications, or
+ * - We're running in dev (`!app.isPackaged`). The dev binary's bundle id
+ *   is `com.github.Electron`, not `com.cadencr.desktop`, so a native
+ *   banner would be attributed to "Electron" — confusing and unrepresentative.
+ *
+ * The dev override applies regardless of the saved setting, by design.
+ */
+function shouldRenderInApp(mode: NotifyMode): boolean {
+  return !app.isPackaged || mode === "in_app";
 }
 
 function showNotification(
@@ -45,12 +82,28 @@ function showNotification(
     });
     return;
   }
-  const notification = new Notification({ title, body });
+  // Cadencr is an IDE — agent-finished pings every few minutes shouldn't make a noise.
+  const notification = new Notification({ title, body, silent: true });
   if (onClick) notification.on("click", onClick);
   notification.on("failed", (_event, error) => {
-    safeSend(mainWindow, "notification-failed", { reason: error || "Unknown error" });
+    safeSend(mainWindow, "notification-failed", { reason: friendlyFailureReason(error) });
   });
   notification.show();
+}
+
+/**
+ * Translate raw macOS notification errors into something the user can act
+ * on. Per the Electron docs, unsigned macOS binaries can't deliver to
+ * Notification Center; macOS reports this as `UNErrorDomain error 1`
+ * (`UNErrorCodeNotificationsNotAllowed`). Leave other errors (Focus mode,
+ * "denied", …) verbatim so we don't hide useful detail.
+ */
+export function friendlyFailureReason(rawError: string | undefined): string {
+  const error = rawError && rawError.length > 0 ? rawError : "Unknown error";
+  if (error.includes("UNErrorDomain error 1") || error.includes("UNErrorDomain Code=1")) {
+    return "macOS refused to deliver this notification because the app isn't code-signed. Use the production build, or rebuild locally so an ad-hoc signature is applied.";
+  }
+  return error;
 }
 
 function safeSend(mainWindow: BrowserWindow, channel: string, payload: unknown): void {

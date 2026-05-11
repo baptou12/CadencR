@@ -28,6 +28,7 @@ import {
   initNotificationPermission,
   listenForNotificationClicks,
   listenForNotificationFailures,
+  listenForNotificationFallbacks,
 } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
@@ -77,6 +78,7 @@ function RootLayout() {
     void initNotificationPermission();
   }, []);
   useEffect(() => listenForNotificationClicks(navigate, queryClient), [navigate, queryClient]);
+  useEffect(() => listenForNotificationFallbacks(navigate, queryClient), [navigate, queryClient]);
   useEffect(() => listenForNotificationFailures(), []);
   const routerState = useRouterState();
   const routeParams = (routerState.location.pathname.match(

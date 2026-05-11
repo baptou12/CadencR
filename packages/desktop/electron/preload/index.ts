@@ -14,12 +14,21 @@ interface NotificationClickPayload {
   route_type: RouteType;
 }
 
+interface NotificationFallbackPayload {
+  title: string;
+  body: string;
+  click: NotificationClickPayload | null;
+}
+
+type NotifyMode = "native" | "in_app";
+
 interface NotifyOptions {
   title: string;
   body: string;
   featureId: number;
   projectId: number;
   routeType: RouteType;
+  mode: NotifyMode;
 }
 
 interface FileDropItem {
@@ -98,6 +107,8 @@ contextBridge.exposeInMainWorld("cadencr", {
     onIpc("notification-clicked", cb),
   onNotificationFailed: (cb: (payload: { reason: string }) => void): (() => void) =>
     onIpc("notification-failed", cb),
+  onNotificationFallback: (cb: (payload: NotificationFallbackPayload) => void): (() => void) =>
+    onIpc("notification-fallback", cb),
   onCloseRequested: (cb: () => void): (() => void) => onIpc("app:close-requested", cb),
   confirmClose: (): Promise<void> => ipcRenderer.invoke("app:confirm-close"),
   requestQuit: (): Promise<void> => ipcRenderer.invoke("app:request-quit"),

@@ -1,23 +1,41 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockToastError = vi.hoisted(() => vi.fn());
-vi.mock("sonner", () => ({ toast: { error: mockToastError } }));
+const mockToastMessage = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast: { error: mockToastError, message: mockToastMessage } }));
 
+import { queryClient } from "@/lib/queryClient";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
 import type { CadencrDesktopBridge } from "@/lib/desktop-bridge";
+import { getGetWorkspaceSettingQueryKey, type SettingValueResponse } from "@/api/generated";
+import { NOTIFICATION_MODE_KEY } from "@/lib/notification-mode";
 import {
   initNotificationPermission,
   listenForNotificationFailures,
+  listenForNotificationFallbacks,
   notifyAgentDone,
   notifyAgentNeedsInput,
+  readNotificationMode,
 } from "./notify-agent-done";
+
+function setStoredMode(value: string | undefined): void {
+  const key = getGetWorkspaceSettingQueryKey(NOTIFICATION_MODE_KEY);
+  if (value === undefined) {
+    queryClient.removeQueries({ queryKey: key });
+  } else {
+    queryClient.setQueryData<SettingValueResponse>(key, { value });
+  }
+}
 
 const mockNotifyPermission = vi.fn();
 const mockNotify = vi.fn();
 const mockOnNotificationFailed = vi.fn<CadencrDesktopBridge["onNotificationFailed"]>(
+  () => () => undefined,
+);
+const mockOnNotificationFallback = vi.fn<CadencrDesktopBridge["onNotificationFallback"]>(
   () => () => undefined,
 );
 
@@ -35,6 +53,7 @@ function bridge(): CadencrDesktopBridge {
     notifyTest: vi.fn(),
     onNotificationClicked: vi.fn(() => () => undefined),
     onNotificationFailed: mockOnNotificationFailed,
+    onNotificationFallback: mockOnNotificationFallback,
     onCloseRequested: vi.fn(() => () => undefined),
     confirmClose: vi.fn(),
     requestQuit: vi.fn(),
@@ -49,9 +68,13 @@ const baseOpts = { featureId: 1, projectId: 2, routeType: "workflow" as const };
 beforeEach(() => {
   vi.clearAllMocks();
   setDesktopBridgeOverrideForTests(bridge());
+  setStoredMode("native");
 });
 
-afterEach(() => clearDesktopBridgeOverrideForTests());
+afterEach(() => {
+  clearDesktopBridgeOverrideForTests();
+  setStoredMode(undefined);
+});
 
 describe("initNotificationPermission", () => {
   it("caches the permission result", async () => {
@@ -131,6 +154,7 @@ describe("notifyAgentDone", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
   });
 
@@ -157,6 +181,7 @@ describe("notifyAgentDone", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
   });
 
@@ -178,6 +203,7 @@ describe("notifyAgentDone", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
   });
 
@@ -199,6 +225,7 @@ describe("notifyAgentDone", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
   });
 });
@@ -226,6 +253,110 @@ describe("listenForNotificationFailures", () => {
   });
 });
 
+describe("notification mode from query cache", () => {
+  async function setup(): Promise<void> {
+    mockNotifyPermission.mockResolvedValue(true);
+    mockNotify.mockResolvedValue(undefined);
+    await initNotificationPermission();
+    mockNotify.mockClear();
+    Object.defineProperty(window, "location", {
+      value: { pathname: "/other" },
+      writable: true,
+    });
+  }
+  const opts = { status: "completed" as const, featureTitle: "F", ...baseOpts };
+
+  it("skips the bridge entirely when the stored mode is 'off'", async () => {
+    await setup();
+    setStoredMode("off");
+    notifyAgentDone(opts);
+    expect(mockNotify).not.toHaveBeenCalled();
+  });
+
+  it("forwards the current mode through the bridge payload and reacts to cache changes", async () => {
+    await setup();
+    setStoredMode("in_app");
+    notifyAgentDone(opts);
+    expect(mockNotify).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "in_app" }));
+
+    setStoredMode("native");
+    notifyAgentDone(opts);
+    expect(mockNotify).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "native" }));
+  });
+
+  it("readNotificationMode defaults when no value is cached", () => {
+    setStoredMode(undefined);
+    expect(readNotificationMode()).toBe("native");
+  });
+});
+
+describe("listenForNotificationFallbacks", () => {
+  it("renders a toast with an Open action that routes through navigate", () => {
+    const cleanup = vi.fn();
+    type FallbackCb = Parameters<CadencrDesktopBridge["onNotificationFallback"]>[0];
+    const captured: FallbackCb[] = [];
+    mockOnNotificationFallback.mockImplementationOnce((cb) => {
+      captured.push(cb);
+      return cleanup;
+    });
+
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    const queryClient = { getQueriesData: vi.fn(() => []) } as unknown as Parameters<
+      typeof listenForNotificationFallbacks
+    >[1];
+
+    const unsubscribe = listenForNotificationFallbacks(navigate, queryClient);
+    expect(captured).toHaveLength(1);
+
+    captured[0]({
+      title: "Agent finished",
+      body: "My Feature\nExecute",
+      click: { feature_id: 9, project_id: 2, route_type: "workflow" },
+    });
+
+    expect(mockToastMessage).toHaveBeenCalledWith(
+      "Agent finished",
+      expect.objectContaining({
+        description: "My Feature\nExecute",
+        action: expect.objectContaining({ label: "Open" }),
+      }),
+    );
+
+    const action = mockToastMessage.mock.calls[0][1].action as { onClick: () => void };
+    action.onClick();
+    expect(navigate).toHaveBeenCalledWith({
+      to: "/projects/$projectId/features/$featureId",
+      params: { projectId: "2", featureId: "9" },
+    });
+
+    unsubscribe();
+    expect(cleanup).toHaveBeenCalled();
+  });
+
+  it("renders a toast with no action when there is no click payload (test notification)", () => {
+    type FallbackCb = Parameters<CadencrDesktopBridge["onNotificationFallback"]>[0];
+    const captured: FallbackCb[] = [];
+    mockOnNotificationFallback.mockImplementationOnce((cb) => {
+      captured.push(cb);
+      return () => undefined;
+    });
+
+    const navigate = vi.fn();
+    const queryClient = { getQueriesData: vi.fn(() => []) } as unknown as Parameters<
+      typeof listenForNotificationFallbacks
+    >[1];
+
+    listenForNotificationFallbacks(navigate, queryClient);
+    captured[0]({ title: "Test", body: "Hi", click: null });
+
+    expect(mockToastMessage).toHaveBeenCalledWith(
+      "Test",
+      expect.objectContaining({ description: "Hi", action: undefined }),
+    );
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
 describe("notifyAgentNeedsInput", () => {
   it("sends a needs_input notification", async () => {
     mockNotifyPermission.mockResolvedValue(true);
@@ -245,6 +376,7 @@ describe("notifyAgentNeedsInput", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
   });
 });

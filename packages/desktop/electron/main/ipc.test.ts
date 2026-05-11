@@ -73,6 +73,7 @@ describe("ipc validators", () => {
         featureId: 1,
         projectId: 2,
         routeType: "workflow",
+        mode: "native",
       }),
     ).toEqual({
       title: "Done",
@@ -80,8 +81,19 @@ describe("ipc validators", () => {
       featureId: 1,
       projectId: 2,
       routeType: "workflow",
+      mode: "native",
     });
     expect(() => parseNotifyOptions({ routeType: "bad" })).toThrow(/route type/);
+    expect(() =>
+      parseNotifyOptions({
+        title: "Done",
+        body: "Agent complete",
+        featureId: 1,
+        projectId: 2,
+        routeType: "workflow",
+        mode: "bogus",
+      }),
+    ).toThrow(/notification mode/);
   });
 
   it("canonicalizes files and rejects traversal and directories", async () => {

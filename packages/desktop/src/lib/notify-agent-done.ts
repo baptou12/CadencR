@@ -1,7 +1,14 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getListProjectsQueryKey, type Project } from "@/api/generated";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import {
+  getGetWorkspaceSettingQueryKey,
+  getListProjectsQueryKey,
+  type Project,
+  type SettingValueResponse,
+} from "@/api/generated";
+import { desktopBridge, type NotificationFallbackPayload } from "@/lib/desktop-bridge";
+import { NOTIFICATION_MODE_KEY, parseNotificationMode } from "@/lib/notification-mode";
+import { queryClient } from "@/lib/queryClient";
 
 let permissionCache: boolean | null = null;
 
@@ -21,6 +28,19 @@ export async function initNotificationPermission(): Promise<void> {
   } catch {
     permissionCache = false;
   }
+}
+
+/**
+ * Read the user's notification-mode preference from React Query's
+ * workspace-settings cache. `useDebouncedSetting` writes through to this
+ * cache synchronously on every change, so non-React callers stay in sync
+ * without a separate module-level cache.
+ */
+export function readNotificationMode() {
+  const cached = queryClient.getQueryData<SettingValueResponse>(
+    getGetWorkspaceSettingQueryKey(NOTIFICATION_MODE_KEY),
+  );
+  return parseNotificationMode(cached?.value);
 }
 
 /**
@@ -78,6 +98,8 @@ function titleForStatus(status: NotifyOptions["status"]): string {
  */
 export function notifyAgentDone(opts: NotifyOptions): void {
   if (!permissionCache) return;
+  const mode = readNotificationMode();
+  if (mode === "off") return;
   if (isViewingFeature(opts)) return;
 
   const bodyParts = [opts.featureTitle];
@@ -92,6 +114,7 @@ export function notifyAgentDone(opts: NotifyOptions): void {
       featureId: opts.featureId,
       projectId: opts.projectId,
       routeType: opts.routeType,
+      mode,
     })
     .catch((e: unknown) => {
       const message = e instanceof Error ? e.message : String(e);
@@ -127,25 +150,58 @@ export function listenForNotificationClicks(
   queryClient: QueryClient,
 ): () => void {
   return desktopBridge.onNotificationClicked((payload: NotificationClickPayload) => {
-    const { feature_id, project_id, route_type } = payload;
-    const nav =
-      route_type === "session"
-        ? navigate({
-            to: "/ws-session/$sessionId",
-            params: { sessionId: `ws-feature-${feature_id}` },
-            search: {
-              cwd: lookupProjectPath(queryClient, project_id),
-              featureId: feature_id,
-              projectId: project_id,
-            },
-          })
-        : navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: { projectId: String(project_id), featureId: String(feature_id) },
-          });
-    void nav.then(() => {
-      setTimeout(() => window.dispatchEvent(new CustomEvent("cadencr:focus-prompt")), 100);
+    openFromNotification(payload, navigate, queryClient);
+  });
+}
+
+/**
+ * In dev mode the main process can't deliver native notifications under
+ * the Cadencr bundle id (the running binary is `com.github.Electron`),
+ * so it forwards the payload here and we render an in-app Sonner toast
+ * with an "Open" action that uses the same routing as a real click.
+ * Returns a cleanup function for use in useEffect.
+ */
+export function listenForNotificationFallbacks(
+  navigate: NavigateFn,
+  queryClient: QueryClient,
+): () => void {
+  return desktopBridge.onNotificationFallback((payload: NotificationFallbackPayload) => {
+    const click = payload.click;
+    toast.message(payload.title, {
+      description: payload.body,
+      action: click
+        ? {
+            label: "Open",
+            onClick: () => openFromNotification(click, navigate, queryClient),
+          }
+        : undefined,
     });
+  });
+}
+
+function openFromNotification(
+  payload: NotificationClickPayload,
+  navigate: NavigateFn,
+  queryClient: QueryClient,
+): void {
+  const { feature_id, project_id, route_type } = payload;
+  const nav =
+    route_type === "session"
+      ? navigate({
+          to: "/ws-session/$sessionId",
+          params: { sessionId: `ws-feature-${feature_id}` },
+          search: {
+            cwd: lookupProjectPath(queryClient, project_id),
+            featureId: feature_id,
+            projectId: project_id,
+          },
+        })
+      : navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: { projectId: String(project_id), featureId: String(feature_id) },
+        });
+  void nav.then(() => {
+    setTimeout(() => window.dispatchEvent(new CustomEvent("cadencr:focus-prompt")), 100);
   });
 }
 
