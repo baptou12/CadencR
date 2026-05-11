@@ -10,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 import {
@@ -29,7 +29,7 @@ interface TerminalPanelProps {
   featureId: number;
   projectId: number;
   state: TerminalPanelState;
-  splitPane: (leafId: string | undefined, orientation: SplitOrientation) => void;
+  splitPane: (leafId: string | undefined, orientation: SplitOrientation) => string | null;
   removePane: (paneId: string) => void;
   /** Working directory the feature currently expects (worktree path or project root). */
   expectedCwd: string | null;
@@ -39,8 +39,11 @@ interface TerminalPanelProps {
 const ICON_BTN =
   "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
 
+const NAV_DIRECTIONS = ["left", "right", "up", "down"] as const;
+
 export interface TerminalPanelHandle {
   focusActivePane: () => void;
+  focusFirstPane: () => void;
 }
 
 function createSlotElement(id: string): HTMLDivElement {
@@ -140,34 +143,55 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       ref,
       () => ({
         focusActivePane: () => focusPaneByIndex(activeIndex),
+        focusFirstPane,
       }),
-      [activeIndex, focusPaneByIndex],
+      [activeIndex, focusPaneByIndex, focusFirstPane],
     );
 
     // -- Keyboard shortcuts --
     // All terminal pane shortcuts are scoped to the terminal tab so they
     // don't fire when the user has another tab focused.
+    //
+    // We use the *global* capture-phase variant rather than `useHotkeys` so
+    // the shortcuts still fire while xterm's textarea has focus.
+    // `react-hotkeys-hook` ignores keydowns on form tags by default, which
+    // is exactly what was breaking CMD+D: the moment a user clicked into
+    // the terminal, every split shortcut went dead.
 
-    useScopedHotkeys(
+    // Helper: split + focus the newly-created pane. The store returns the new
+    // leaf id; we focus it on the next rAF so React has had a chance to mount
+    // the new XTermInstance and register its imperative handle. The
+    // `XTermInstance.focus()` method itself queues the request when xterm
+    // isn't fully opened yet, so even a single rAF is enough.
+    const splitAndFocus = useCallback(
+      (orientation: SplitOrientation) => {
+        const newId = splitPane(resolvedActivePaneId ?? undefined, orientation);
+        if (!newId) return;
+        requestAnimationFrame(() => focusPane(newId));
+      },
+      [splitPane, resolvedActivePaneId, focusPane],
+    );
+
+    useScopedGlobalShortcut(
       "meta+d",
       (e) => {
         e.preventDefault();
-        splitPane(resolvedActivePaneId ?? undefined, "horizontal");
+        e.stopPropagation();
+        splitAndFocus("horizontal");
       },
       "terminal",
       { enabled: hotkeysEnabled },
-      [splitPane, resolvedActivePaneId],
     );
 
-    useScopedHotkeys(
+    useScopedGlobalShortcut(
       "meta+shift+d",
       (e) => {
         e.preventDefault();
-        splitPane(resolvedActivePaneId ?? undefined, "vertical");
+        e.stopPropagation();
+        splitAndFocus("vertical");
       },
       "terminal",
       { enabled: hotkeysEnabled },
-      [splitPane, resolvedActivePaneId],
     );
 
     const navigatePane = useCallback(
@@ -179,19 +203,20 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [root, resolvedActivePaneId, focusPane],
     );
 
-    useScopedHotkeys(
-      ["meta+alt+left", "meta+alt+right", "meta+alt+up", "meta+alt+down"],
-      (e, handler) => {
-        e.preventDefault();
-        const dir = handler.keys?.[0];
-        if (dir === "left" || dir === "right" || dir === "up" || dir === "down") {
-          navigatePane(dir);
-        }
-      },
-      "terminal",
-      { enabled: hotkeysEnabled },
-      [navigatePane],
-    );
+    // One capture-phase listener per arrow direction so xterm doesn't swallow
+    // the keys while its textarea is focused. Iterating a static array keeps
+    // hook order stable across renders (rules-of-hooks-safe).
+    for (const direction of NAV_DIRECTIONS) {
+      useScopedGlobalShortcut(
+        `meta+alt+${direction}`,
+        (e) => {
+          e.preventDefault();
+          navigatePane(direction);
+        },
+        "terminal",
+        { enabled: hotkeysEnabled },
+      );
+    }
 
     // Use ref for leaves so closePane stays stable
     const leavesRef = useRef(leaves);
@@ -210,6 +235,29 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         }
       },
       [removePane, focusPane],
+    );
+
+    // CMD+W: kill the active split's PTY (via `closePane`, which marks the
+    // pane for kill and removes the leaf). Scoped to the terminal tab.
+    //
+    // We only `preventDefault` + `stopPropagation` when there *is* a pane to
+    // close — otherwise we let the event fall through to `useAppClose`'s
+    // global meta+w (hooks/useAppClose.ts:108-115), which is the user-visible
+    // "no terminals left, close the app" behaviour they asked for.
+    //
+    // Stopping propagation matters: without it, `useAppClose` would *also*
+    // run after us and request a window close while the user only intended
+    // to kill one split.
+    useScopedGlobalShortcut(
+      "meta+w",
+      (e) => {
+        if (!resolvedActivePaneId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closePane(resolvedActivePaneId);
+      },
+      "terminal",
+      { enabled: hotkeysEnabled },
     );
 
     const handlePaneExit = useCallback(

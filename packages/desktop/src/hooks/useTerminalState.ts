@@ -65,10 +65,21 @@ interface TerminalStore {
   getFeature: (featureId: number) => TerminalPanelState;
 
   togglePanel: (featureId: number) => void;
-  /** Split the active pane (by leafId) in the given orientation. If no leafId, splits the last leaf. */
-  splitPane: (featureId: number, leafId: string | undefined, orientation: SplitOrientation) => void;
-  /** Add a pane (no specific split target — appends to last leaf). Used for simple "new pane" actions. */
-  addPane: (featureId: number) => void;
+  /**
+   * Split the active pane (by leafId) in the given orientation. If no leafId,
+   * splits the last leaf. Returns the id of the newly-created leaf so callers
+   * can immediately focus it.
+   */
+  splitPane: (
+    featureId: number,
+    leafId: string | undefined,
+    orientation: SplitOrientation,
+  ) => string | null;
+  /**
+   * Add a pane (no specific split target — appends to last leaf). Used for
+   * simple "new pane" actions. Returns the id of the newly-created leaf.
+   */
+  addPane: (featureId: number) => string | null;
   removePane: (featureId: number, paneId: string) => void;
   /**
    * Replace a leaf in-place with a fresh empty leaf (new id, no ptyId).
@@ -114,36 +125,51 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       return updateFeature(state, featureId, { ...prev, isOpen: true, isMinimized: false });
     }),
 
-  splitPane: (featureId, leafId, orientation) =>
+  splitPane: (featureId, leafId, orientation) => {
+    // Build the new leaf outside the set() so we can return its id to the
+    // caller. The store still owns id generation via `makeLeaf` so behaviour
+    // is unchanged — we just expose what we created.
+    let createdId: string | null = null;
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) {
+        const newLeaf = makeLeaf();
+        createdId = newLeaf.id;
         return updateFeature(state, featureId, {
           isOpen: true,
           isMinimized: false,
-          root: makeLeaf(),
+          root: newLeaf,
         });
       }
       const targetId = leafId ?? getLeaves(prev.root).at(-1)?.id;
       if (!targetId) return state;
       const newLeaf = makeLeaf();
       const newRoot = splitLeaf(prev.root, targetId, orientation, newLeaf);
+      createdId = newLeaf.id;
       return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
+    });
+    return createdId;
+  },
 
-  addPane: (featureId) =>
+  addPane: (featureId) => {
+    let createdId: string | null = null;
     set((state) => {
       const prev = state.features[featureId] ?? defaultState;
       if (!prev.root) {
-        return updateFeature(state, featureId, { ...prev, root: makeLeaf() });
+        const newLeaf = makeLeaf();
+        createdId = newLeaf.id;
+        return updateFeature(state, featureId, { ...prev, root: newLeaf });
       }
-      // Default: vertical split on the last leaf
+      // Default: horizontal split on the last leaf
       const lastLeaf = getLeaves(prev.root).at(-1);
       if (!lastLeaf) return state;
       const newLeaf = makeLeaf();
       const newRoot = splitLeaf(prev.root, lastLeaf.id, "horizontal", newLeaf);
+      createdId = newLeaf.id;
       return updateFeature(state, featureId, { ...prev, root: newRoot });
-    }),
+    });
+    return createdId;
+  },
 
   removePane: (featureId, paneId) =>
     set((state) => {
@@ -251,11 +277,14 @@ export function useTerminalState(featureId: number) {
     [featureId],
   );
   const splitPane = useCallback(
-    (leafId: string | undefined, orientation: SplitOrientation) =>
+    (leafId: string | undefined, orientation: SplitOrientation): string | null =>
       useTerminalStore.getState().splitPane(featureId, leafId, orientation),
     [featureId],
   );
-  const addPane = useCallback(() => useTerminalStore.getState().addPane(featureId), [featureId]);
+  const addPane = useCallback(
+    (): string | null => useTerminalStore.getState().addPane(featureId),
+    [featureId],
+  );
   const removePane = useCallback(
     (paneId: string) => useTerminalStore.getState().removePane(featureId, paneId),
     [featureId],

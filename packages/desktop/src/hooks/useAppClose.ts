@@ -4,6 +4,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
+import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { getListFeaturesQueryKey } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -104,12 +105,25 @@ export function useAppClose(queryClient: QueryClient) {
     void desktopBridge.requestQuit();
   });
 
-  // CMD+W → close app (only when no editor buffers; EditorSubTabs owns CMD+W when buffers exist)
+  // CMD+W → close app, but only when nothing else owns CMD+W:
+  //   - EditorSubTabs owns CMD+W while editor buffers exist (closes the buffer)
+  //   - TerminalPanel owns CMD+W while terminal panes exist (kills the split)
+  // Both of those handlers are also capture-phase on window, so they fire as
+  // siblings to this one. Without the terminal check below, CMD+W on the
+  // terminal tab would still close the application (the user-reported bug):
+  // this handler runs first, sees no editor buffers, and calls `requestClose()`
+  // regardless of what `e.preventDefault()` does inside the sibling.
+  //
+  // Mirrors the editor's existing pattern — "if there's something to close
+  // in the active surface, bail and let that surface's handler take CMD+W".
   useGlobalShortcut("meta+w", (e) => {
     const hasBuffers = Object.values(useEditorStore.getState().features).some((f) =>
       Object.values(f.panes).some((p) => p.tabs.length > 0),
     );
-    if (hasBuffers) return;
+    const hasTerminals = Object.values(useTerminalStore.getState().features).some(
+      (f) => f.root !== null,
+    );
+    if (hasBuffers || hasTerminals) return;
     e.preventDefault();
     requestClose();
   });

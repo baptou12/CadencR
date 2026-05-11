@@ -9,6 +9,7 @@ import {
 } from "react";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
+import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
 import { useGetFeatureSettings, useListProjects } from "@/api/generated";
 import {
   getFocusedTab,
@@ -88,6 +89,26 @@ export const FeatureTerminalTab = memo(
     }, [ensureTerminalOpen]);
 
     useImperativeHandle(ref, () => ({ activate }), [activate]);
+
+    // CMD+T (scoped to the terminal tab): focus the first pane if any exist,
+    // otherwise open a fresh terminal. Read fresh state via `getState()` so
+    // the callback doesn't go stale when panes are added/removed without a
+    // re-render of this component.
+    useScopedGlobalShortcut(
+      "meta+t",
+      (e) => {
+        if (hidden) return;
+        e.preventDefault();
+        const fresh = useTerminalStore.getState().getFeature(featureId);
+        if (fresh.root) {
+          terminalRef.current?.focusFirstPane();
+        } else {
+          activate();
+        }
+      },
+      "terminal",
+      { enabled: hotkeysEnabled && !hidden },
+    );
 
     // Auto-create a pane and open if none exist when the terminal tab is visible,
     // but only move real DOM focus there when this pane is the focused one.

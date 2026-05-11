@@ -25,6 +25,25 @@ function parseShortcut(shortcut: string): ParsedShortcut {
   };
 }
 
+// Names that the *KeyboardEvent.code* uses, keyed by the short tokens callers
+// pass into `useGlobalShortcut("meta+alt+left")` — and their `Arrow…` long
+// form, so either spelling works. Without this mapping, "left" never matches
+// `e.key === "ArrowLeft"`, which is exactly the bug that left CMD+OPT+Arrow
+// silently dead in the terminal after we dropped react-hotkeys-hook for these
+// shortcuts (react-hotkeys-hook normalises `left` → `ArrowLeft` internally).
+const codeByKey: Record<string, string> = {
+  "[": "BracketLeft",
+  "]": "BracketRight",
+  left: "ArrowLeft",
+  right: "ArrowRight",
+  up: "ArrowUp",
+  down: "ArrowDown",
+  arrowleft: "ArrowLeft",
+  arrowright: "ArrowRight",
+  arrowup: "ArrowUp",
+  arrowdown: "ArrowDown",
+};
+
 function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
   if (e.metaKey !== parsed.meta) return false;
   if (e.ctrlKey !== parsed.ctrl) return false;
@@ -36,8 +55,8 @@ function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
     return e.code === `Key${parsed.key.toUpperCase()}`;
   }
 
-  // Bracket keys — shift changes e.key to { / }, so match via e.code
-  const codeByKey: Record<string, string> = { "[": "BracketLeft", "]": "BracketRight" };
+  // Aliased keys (brackets, arrows) — match via e.code so modifier mangling
+  // and long/short spellings don't matter.
   if (codeByKey[parsed.key]) {
     return e.code === codeByKey[parsed.key];
   }

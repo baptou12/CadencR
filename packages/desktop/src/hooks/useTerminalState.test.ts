@@ -45,6 +45,43 @@ describe("useTerminalState", () => {
     expect(result.current.root?.type).toBe("split");
   });
 
+  it("splitPane returns the id of the newly-created leaf", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel());
+    const firstId = result.current.panes[0].id;
+    let newId: string | null = null;
+    act(() => {
+      newId = result.current.splitPane(firstId, "horizontal");
+    });
+    // The returned id must be one of the two leaves after the split, and
+    // distinct from the pre-existing one — callers rely on this to focus
+    // the new split.
+    const leafIds = result.current.panes.map((p) => p.id);
+    expect(leafIds).toHaveLength(2);
+    expect(leafIds).toContain(newId);
+    expect(newId).not.toBe(firstId);
+  });
+
+  it("addPane returns the id of the newly-created leaf", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    // First addPane on an empty panel creates the root leaf and returns it.
+    let firstNewId: string | null = null;
+    act(() => {
+      firstNewId = result.current.addPane();
+    });
+    expect(result.current.panes).toHaveLength(1);
+    expect(firstNewId).toBe(result.current.panes[0].id);
+
+    // Subsequent addPane splits the last leaf and returns the *new* leaf id.
+    let secondNewId: string | null = null;
+    act(() => {
+      secondNewId = result.current.addPane();
+    });
+    expect(result.current.panes).toHaveLength(2);
+    expect(secondNewId).toBe(result.current.panes[1].id);
+    expect(secondNewId).not.toBe(firstNewId);
+  });
+
   it("splitPane creates a vertical split (stacked)", () => {
     const { result } = renderHook(() => useTerminalState(1));
     act(() => result.current.togglePanel());
