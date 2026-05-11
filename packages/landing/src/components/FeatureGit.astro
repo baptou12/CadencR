@@ -1,25 +1,23 @@
 ---
 import FeatureSection from "@/components/FeatureSection.astro";
+import FeatureMedia from "@/components/ui/FeatureMedia.astro";
 import Lede from "@/components/ui/Lede.astro";
+import gitImage from "@/assets/git.png";
 ---
 <FeatureSection
   id="git"
-  eyebrow="03 · Git"
+  eyebrow="Git"
   heading="Git stays where you can see it."
-  placeholder={{
-    label: "Git log",
-    hint: "screenshot pending",
-    ratio: "4/3",
-    caption: "commit graph · pending commits · staged diff",
-  }}
 >
+  <FeatureMedia
+    slot="media"
+    src={gitImage}
+    alt="Cadencr git panel showing staged diffs, pending commits, and working changes alongside the code editor and agent stream"
+  />
   <Fragment slot="lede">
     <Lede>
-      Agents don't edit in place — they land commits. Cadencr shows the graph, the staged diff, and the pending message
+      Agents don't edit in place — they land commits. Cadencr shows the staged diff and the pending message
       <span class="em">before</span> anything ships. You review, edit the message, commit.
-    </Lede>
-    <Lede class="mt-2.5">
-      Or raise autonomy to <span class="em">High</span> and let it run. Either way, the history stays yours.
     </Lede>
   </Fragment>
   <Fragment slot="bullets">
