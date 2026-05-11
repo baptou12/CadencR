@@ -17,6 +17,7 @@
 //! `workflow_service::list_branches(...)`, `workflow_service::commit(...)`, etc.
 
 mod branches;
+pub mod checkout;
 mod commit_push;
 mod merge;
 mod push;
@@ -31,9 +32,29 @@ pub use push::{push, push_input};
 pub use status::{enrich_with_sharing, get_compare_url, get_git_status};
 pub use target_branch::{resolve_target_branch, update_target_branch};
 
+use std::path::Path;
+
 use crate::app_state::AppState;
+use crate::shared::git_cli::run_git_safe_refs;
 
 const SETTING_TARGET_BRANCH: &str = "target_branch";
+
+/// True when `refs/heads/<branch>` resolves in `repo`. Shared by the merge
+/// and checkout flows so the predicate stays in one place.
+pub(super) async fn local_branch_exists(repo: &Path, branch: &str) -> bool {
+    let refname = format!("refs/heads/{branch}");
+    run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
+        .await
+        .is_ok()
+}
+
+/// True when `refs/remotes/<branch>` resolves in `repo` (e.g. `origin/main`).
+pub(super) async fn remote_branch_exists(repo: &Path, branch: &str) -> bool {
+    let refname = format!("refs/remotes/{branch}");
+    run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
+        .await
+        .is_ok()
+}
 
 /// Best-effort recompute + WS broadcast after a successful write. Errors are
 /// logged and swallowed — the HTTP response already reported success and the

@@ -15,7 +15,9 @@ use crate::domain::workspace;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_safe_refs};
 
-use super::{broadcast_after_write, resolve_target_branch};
+use super::{
+    broadcast_after_write, local_branch_exists, remote_branch_exists, resolve_target_branch,
+};
 
 const SETTING_GIT_MERGE_MODE: &str = "git_merge_mode";
 
@@ -123,7 +125,7 @@ async fn ensure_local_target(repo: &Path, target: &str) -> Result<String, AppErr
     if local_branch_exists(repo, target).await {
         return Ok(target.to_string());
     }
-    if remote_ref_exists(repo, target).await {
+    if remote_branch_exists(repo, target).await {
         let local = target
             .split_once('/')
             .map(|(_, branch)| branch)
@@ -138,20 +140,6 @@ async fn ensure_local_target(repo: &Path, target: &str) -> Result<String, AppErr
     Err(AppError::BadRequest(format!(
         "target branch '{target}' does not resolve locally or as a remote-tracking ref"
     )))
-}
-
-async fn local_branch_exists(repo: &Path, branch: &str) -> bool {
-    let refname = format!("refs/heads/{branch}");
-    run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
-        .await
-        .is_ok()
-}
-
-async fn remote_ref_exists(repo: &Path, branch: &str) -> bool {
-    let refname = format!("refs/remotes/{branch}");
-    run_git_safe_refs(&["show-ref"], &["--verify", "--quiet"], &[&refname], repo)
-        .await
-        .is_ok()
 }
 
 async fn target_worktree_or_project(

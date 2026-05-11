@@ -303,6 +303,10 @@ pub async fn get_uncommitted_files_handler(
     ))
 }
 
+// Checkout handlers live alongside the service implementation in
+// `workflow_service::checkout` so this catalog stays under the 400-line cap.
+pub use workflow_service::checkout::{checkout_branch_handler, validate_checkout_handler};
+
 #[utoipa::path(
     patch,
     path = "/api/features/{id}/target-branch",
@@ -378,6 +382,11 @@ pub fn git_router() -> Router<AppState> {
         .route(
             "/api/features/{id}/target-branch",
             patch(update_target_branch_handler),
+        )
+        .route("/api/git/checkout", post(checkout_branch_handler))
+        .route(
+            "/api/git/checkout/validate",
+            post(validate_checkout_handler),
         )
         .route("/api/git/commit", post(commit_handler))
         .route("/api/git/push", post(push_handler))

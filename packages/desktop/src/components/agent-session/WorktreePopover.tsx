@@ -23,12 +23,14 @@
  */
 import { memo, useCallback, useMemo, useState, type ReactElement } from "react";
 import { CheckIcon, ChevronDownIcon, GitBranchIcon, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useListBranches, type BranchInfo } from "@/api/generated";
+import { useListBranches, useValidateCheckout, type BranchInfo } from "@/api/generated";
 import { useBranchList, type BranchListRowContext } from "@/components/branch-chip/BranchList";
+import { apiErrorMessage } from "@/lib/api-errors";
 
 /**
  * Resolved worktree choice as fed to the route's prompt-send handler. The
@@ -109,16 +111,43 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
     [branches, selectedBranch],
   );
   const lockedWorktreeToggle = selectedBranchChoice.kind === "reuse";
+  const validateCheckout = useValidateCheckout();
+  const validateMutateAsync = validateCheckout.mutateAsync;
 
   const handlePick = useCallback(
-    (branch: BranchInfo) => {
-      onSelectedBranchChange(branch.name);
-      if (branch.attached_worktree_path && !useWorktree) {
-        onToggleWorktree();
+    async (branch: BranchInfo) => {
+      // Branch already lives in a worktree — drop into it.
+      if (branch.attached_worktree_path) {
+        onSelectedBranchChange(branch.name);
+        if (!useWorktree) onToggleWorktree();
+        setOpen(false);
+        return;
       }
-      setOpen(false);
+      // Picking the project's current branch is a no-op — same as "Project default".
+      if (branch.name === defaultBranch) {
+        onSelectedBranchChange(null);
+        setOpen(false);
+        return;
+      }
+      // Heuristic dry-run via the backend. The real `git checkout` runs at
+      // first-prompt send in `useAgentSendHandler` — we only persist the
+      // selection if the dry-run is happy.
+      try {
+        await validateMutateAsync({ data: { project_id: projectId, branch: branch.name } });
+        onSelectedBranchChange(branch.name);
+        setOpen(false);
+      } catch (err) {
+        toast.error(apiErrorMessage(err, "Could not switch to this branch"));
+      }
     },
-    [onSelectedBranchChange, onToggleWorktree, useWorktree],
+    [
+      defaultBranch,
+      onSelectedBranchChange,
+      onToggleWorktree,
+      projectId,
+      useWorktree,
+      validateMutateAsync,
+    ],
   );
   const handleToggleWorktree = useCallback((): void => {
     if (lockedWorktreeToggle) return;
@@ -171,10 +200,19 @@ export const WorktreeButtonGroup = memo(function WorktreeButtonGroup({
           segment is never in a "no value" state. */}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <button type="button" className={cn(SEGMENT_ACTIVE, "rounded-l-md")}>
+          <button
+            type="button"
+            className={cn(SEGMENT_ACTIVE, "rounded-l-md")}
+            aria-busy={validateCheckout.isPending}
+            disabled={validateCheckout.isPending}
+          >
             <GitBranchIcon className="size-3" />
             <span className="truncate max-w-[160px]">{branchLabel}</span>
-            <ChevronDownIcon className="size-3 opacity-70" />
+            {validateCheckout.isPending ? (
+              <Loader2 className="size-3 animate-spin opacity-70" />
+            ) : (
+              <ChevronDownIcon className="size-3 opacity-70" />
+            )}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-[28rem] max-w-[calc(100vw-2rem)] p-0" align="start">
