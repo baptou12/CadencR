@@ -5,10 +5,12 @@ import { WorktreeButtonGroup } from "./WorktreePopover";
 
 const mocks = vi.hoisted(() => ({
   mockUseListBranches: vi.fn(),
+  mockUseValidateCheckout: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
   useListBranches: mocks.mockUseListBranches,
+  useValidateCheckout: mocks.mockUseValidateCheckout,
 }));
 
 function branch(name: string, attached?: string | null): BranchInfo {
@@ -31,6 +33,10 @@ function renderGroup(args: {
     isLoading: false,
     isError: false,
     error: null,
+  });
+  mocks.mockUseValidateCheckout.mockReturnValue({
+    mutateAsync: vi.fn().mockResolvedValue({ success: true }),
+    isPending: false,
   });
   return render(
     <WorktreeButtonGroup

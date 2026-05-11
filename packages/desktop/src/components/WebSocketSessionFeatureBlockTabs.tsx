@@ -9,7 +9,15 @@ import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
 import { GitBadge } from "@/components/feature-layout/GitBadge";
 import type { FeatureTabDef, FeatureTabs } from "@/components/feature-layout/types";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
-import { getListBranchesQueryKey, listBranches, useSetFeatureSetting } from "@/api/generated";
+import {
+  getGetBranchQueryKey,
+  getGetGitStatusQueryKey,
+  getListBranchesQueryKey,
+  listBranches,
+  useCheckoutBranch,
+  useSetFeatureSetting,
+} from "@/api/generated";
+import { apiErrorMessage } from "@/lib/api-errors";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -199,6 +207,9 @@ function useAgentSendHandler(args: {
   const { featureId, projectId, data, controls } = args;
   const queryClient = useQueryClient();
   const setFeatureSetting = useSetFeatureSetting();
+  // Pull the stable `mutateAsync` out of the mutation result so the callback
+  // identity isn't churned every time react-query re-renders the host.
+  const checkoutMutateAsync = useCheckoutBranch().mutateAsync;
   return useCallback(
     async (text, images) => {
       if (text.trim() === "/clear") {
@@ -224,14 +235,42 @@ function useAgentSendHandler(args: {
       if (isFirstPrompt && choice.kind !== "off") {
         await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
       }
+      // Authoritative checkout for the no-worktree branch pick. Failure
+      // surfaces the verbatim git stderr and aborts the send.
+      if (
+        isFirstPrompt &&
+        choice.kind === "off" &&
+        controls.selectedBranch != null &&
+        controls.selectedBranch !== data.defaultBranch
+      ) {
+        try {
+          await checkoutMutateAsync({
+            data: { project_id: projectId, branch: controls.selectedBranch },
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetBranchQueryKey({ project_id: projectId }),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getListBranchesQueryKey({ project_id: projectId }),
+          });
+          queryClient.invalidateQueries({
+            queryKey: getGetGitStatusQueryKey({ feature_id: featureId }),
+          });
+        } catch (err) {
+          toast.error(apiErrorMessage(err, "git checkout failed"));
+          return;
+        }
+      }
       const shouldStartWorktree = isFirstPrompt && choice.kind !== "off";
       controls.ws.sendPrompt(text, images, shouldStartWorktree ? true : undefined);
     },
     [
+      checkoutMutateAsync,
       controls.activeProviderId,
       controls.selectedBranch,
       controls.useWorktree,
       controls.ws,
+      data.defaultBranch,
       data.session?.blocks?.length,
       featureId,
       projectId,

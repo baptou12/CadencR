@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   const mockSendPrompt = vi.fn();
   const mockToastError = vi.fn();
   const mockListBranches = vi.fn().mockResolvedValue([]);
+  const mockCheckoutBranchMutateAsync = vi.fn().mockResolvedValue({ success: true });
   return {
     mockUseParams,
     mockUseSearch,
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => {
     mockSendPrompt,
     mockToastError,
     mockListBranches,
+    mockCheckoutBranchMutateAsync,
   };
 });
 
@@ -260,9 +262,19 @@ vi.mock("@/api/generated", () => ({
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
   useSetFeatureSetting: vi.fn(() => ({ mutateAsync: mocks.mockSetFeatureSettingMutateAsync })),
+  useCheckoutBranch: vi.fn(() => ({ mutateAsync: mocks.mockCheckoutBranchMutateAsync })),
+  useValidateCheckout: vi.fn(() => ({
+    mutateAsync: vi.fn().mockResolvedValue({ success: true }),
+    isPending: false,
+  })),
   getListBranchesQueryKey: vi.fn((params: { project_id: number }) => [
     "listBranches",
     params.project_id,
+  ]),
+  getGetBranchQueryKey: vi.fn((params: { project_id: number }) => ["getBranch", params.project_id]),
+  getGetGitStatusQueryKey: vi.fn((params: { feature_id: number }) => [
+    "getGitStatus",
+    params.feature_id,
   ]),
   listBranches: mocks.mockListBranches,
   useListBranches: vi.fn(() => ({ data: undefined, isLoading: false, isError: false })),

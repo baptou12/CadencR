@@ -376,6 +376,18 @@ pub struct UpdateTargetBranchBody {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct CheckoutBody {
+    pub project_id: i64,
+    pub branch: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CheckoutValidateBody {
+    pub project_id: i64,
+    pub branch: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CommitBody {
     pub feature_id: i64,
     pub message: String,

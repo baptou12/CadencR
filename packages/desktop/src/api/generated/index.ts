@@ -41,8 +41,9 @@ export type AgentBlockToolName = string | null;
 export type AgentBlockToolUseId = string | null;
 
 /**
- * When true, `content` was tail-truncated server-side (currently only for
-Bash `tool_result` blocks exceeding the line cap). The full payload is
+ * When true, `content` was tail-truncated server-side. Currently applied
+to Bash blocks (both `tool_call` and `tool_result`) whose aggregated
+output exceeds the configured line or byte cap. The full payload is
 reachable via `GET /api/sessions/messages/{id}/full`.
  */
 export type AgentBlockTruncatedContent = boolean | null;
@@ -60,8 +61,9 @@ export interface AgentBlock {
   toolArgs?: AgentBlockToolArgs;
   toolName?: AgentBlockToolName;
   toolUseId?: AgentBlockToolUseId;
-  /** When true, `content` was tail-truncated server-side (currently only for
-Bash `tool_result` blocks exceeding the line cap). The full payload is
+  /** When true, `content` was tail-truncated server-side. Currently applied
+to Bash blocks (both `tool_call` and `tool_result`) whose aggregated
+output exceeds the configured line or byte cap. The full payload is
 reachable via `GET /api/sessions/messages/{id}/full`. */
   truncatedContent?: AgentBlockTruncatedContent;
   type: string;
@@ -224,6 +226,16 @@ The frontend uses this to render a "staged" badge next to the file. */
   is_staged?: boolean;
   old_file?: ChangedFileOldFile;
   status: string;
+}
+
+export interface CheckoutBody {
+  branch: string;
+  project_id: number;
+}
+
+export interface CheckoutValidateBody {
+  branch: string;
+  project_id: number;
 }
 
 export interface ClaudeCodeSuccessResponse {
@@ -6487,6 +6499,145 @@ export function useGetChangedFiles<
 
   return query;
 }
+
+export const checkoutBranch = (checkoutBody: CheckoutBody, signal?: AbortSignal) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/checkout`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: checkoutBody,
+    signal,
+  });
+};
+
+export const getCheckoutBranchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkoutBranch>>,
+    TError,
+    { data: CheckoutBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkoutBranch>>,
+  TError,
+  { data: CheckoutBody },
+  TContext
+> => {
+  const mutationKey = ["checkoutBranch"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkoutBranch>>,
+    { data: CheckoutBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return checkoutBranch(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckoutBranchMutationResult = NonNullable<Awaited<ReturnType<typeof checkoutBranch>>>;
+export type CheckoutBranchMutationBody = CheckoutBody;
+export type CheckoutBranchMutationError = ErrorType<unknown>;
+
+export const useCheckoutBranch = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkoutBranch>>,
+    TError,
+    { data: CheckoutBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkoutBranch>>,
+  TError,
+  { data: CheckoutBody },
+  TContext
+> => {
+  const mutationOptions = getCheckoutBranchMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const validateCheckout = (
+  checkoutValidateBody: CheckoutValidateBody,
+  signal?: AbortSignal,
+) => {
+  return customInstance<GitSuccessResponse>({
+    url: `/api/git/checkout/validate`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: checkoutValidateBody,
+    signal,
+  });
+};
+
+export const getValidateCheckoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateCheckout>>,
+    TError,
+    { data: CheckoutValidateBody },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof validateCheckout>>,
+  TError,
+  { data: CheckoutValidateBody },
+  TContext
+> => {
+  const mutationKey = ["validateCheckout"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof validateCheckout>>,
+    { data: CheckoutValidateBody }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return validateCheckout(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ValidateCheckoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof validateCheckout>>
+>;
+export type ValidateCheckoutMutationBody = CheckoutValidateBody;
+export type ValidateCheckoutMutationError = ErrorType<unknown>;
+
+export const useValidateCheckout = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateCheckout>>,
+    TError,
+    { data: CheckoutValidateBody },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof validateCheckout>>,
+  TError,
+  { data: CheckoutValidateBody },
+  TContext
+> => {
+  const mutationOptions = getValidateCheckoutMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const commit = (commitBody: CommitBody, signal?: AbortSignal) => {
   return customInstance<GitSuccessResponse>({
