@@ -12,6 +12,10 @@ use serde_json::{json, Value};
 
 use crate::domain::agents::acp::incoming::AcpServerRequest;
 
+mod line_window;
+
+pub(super) use line_window::apply_line_window;
+
 /// Outcome of an `fs/*` handler. Either a successful result `Value` to send
 /// back or a `(code, message)` pair to reject with.
 pub enum FsOutcome {
@@ -213,17 +217,6 @@ fn normalize(path: &Path) -> PathBuf {
     out
 }
 
-fn apply_line_window(content: &str, line: Option<u64>, limit: Option<u64>) -> String {
-    let start = line.unwrap_or(1).max(1) as usize;
-    let take = limit.map(|n| n as usize).unwrap_or(usize::MAX);
-    content
-        .lines()
-        .skip(start - 1)
-        .take(take)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -357,6 +350,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn typed_read_outside_cwd_is_rejected() {
+        use super::handle_read_text_file_typed;
+        use agent_client_protocol::schema::ReadTextFileRequest;
+
+        let dir = tempdir().unwrap();
+        let outside = std::env::temp_dir().join("typed-outside-acp.txt");
+        let request = ReadTextFileRequest::new("s-1", outside);
+        let FsOutcome::Error { code, message } =
+            handle_read_text_file_typed(dir.path(), &request).await
+        else {
+            panic!("expected error");
+        };
+        assert_eq!(code, -32602);
+        assert!(message.contains("outside"));
+    }
+
+    #[tokio::test]
     async fn typed_write_request_creates_file() {
         use super::handle_write_text_file_typed;
         use agent_client_protocol::schema::WriteTextFileRequest;
@@ -369,5 +379,22 @@ mod tests {
             panic!("expected ok");
         };
         assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "ok");
+    }
+
+    #[tokio::test]
+    async fn typed_write_outside_cwd_is_rejected() {
+        use super::handle_write_text_file_typed;
+        use agent_client_protocol::schema::WriteTextFileRequest;
+
+        let dir = tempdir().unwrap();
+        let outside = std::env::temp_dir().join("typed-danger.txt");
+        let request = WriteTextFileRequest::new("s-1", outside, "x");
+        let FsOutcome::Error { code, message } =
+            handle_write_text_file_typed(dir.path(), &request).await
+        else {
+            panic!("expected error");
+        };
+        assert_eq!(code, -32602);
+        assert!(message.contains("outside"));
     }
 }

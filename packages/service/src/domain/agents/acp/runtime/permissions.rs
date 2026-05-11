@@ -24,9 +24,11 @@ pub use super::permissions_dispatch::{
     dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
 };
 use super::permissions_typed::permission_request_from_typed;
-use super::schema_bridge::{
-    default_option_id, permission_response_value, resolve_permission_option,
-};
+use super::schema_bridge::{permission_response_value, resolve_permission_option};
+
+mod options;
+
+pub(super) use options::{default_options, derive_preview, permission_option};
 
 /// Convert an ACP `session/request_permission` server-request payload into a
 /// Cadencr `RuntimePermissionRequest`.
@@ -138,83 +140,6 @@ fn raw_options(params: &Value) -> impl Iterator<Item = RuntimePermissionOption> 
         })
 }
 
-pub(super) fn permission_option(
-    decision: RuntimePermissionDecision,
-    option_id: Option<String>,
-    label: Option<String>,
-) -> RuntimePermissionOption {
-    RuntimePermissionOption {
-        decision,
-        option_id,
-        label: label.unwrap_or_else(|| default_label(decision).to_string()),
-        description: default_description(decision).to_string(),
-        collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
-    }
-}
-
-pub(super) fn default_options() -> Vec<RuntimePermissionOption> {
-    [
-        RuntimePermissionDecision::AllowOnce,
-        RuntimePermissionDecision::AllowFuture,
-        RuntimePermissionDecision::Deny,
-    ]
-    .into_iter()
-    .map(|decision| RuntimePermissionOption {
-        decision,
-        option_id: Some(default_option_id(decision).to_string()),
-        label: default_label(decision).to_string(),
-        description: default_description(decision).to_string(),
-        collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
-    })
-    .collect()
-}
-
-fn default_label(decision: RuntimePermissionDecision) -> &'static str {
-    match decision {
-        RuntimePermissionDecision::AllowOnce => "Allow",
-        RuntimePermissionDecision::AllowFuture => "Always allow",
-        RuntimePermissionDecision::AllowForSession => "Allow for this session",
-        RuntimePermissionDecision::Deny => "Deny",
-    }
-}
-
-pub(super) fn default_description(decision: RuntimePermissionDecision) -> &'static str {
-    match decision {
-        RuntimePermissionDecision::AllowOnce => "Approve this single request",
-        RuntimePermissionDecision::AllowFuture => {
-            "Approve similar requests in this and future sessions"
-        }
-        RuntimePermissionDecision::AllowForSession => {
-            "Approve similar requests for the rest of this session"
-        }
-        RuntimePermissionDecision::Deny => "Reject this request",
-    }
-}
-
-/// Best-effort extraction of a one-line preview ("read README.md", "rm -rf
-/// /") for the permission drawer.
-pub(super) fn derive_preview(tool_input: &Value) -> Option<String> {
-    let common_keys = ["command", "cmd", "path", "filePath", "file_path", "url"];
-    for key in common_keys {
-        if let Some(value) = tool_input.get(key) {
-            if let Some(s) = value.as_str() {
-                return Some(s.to_string());
-            }
-            if let Some(arr) = value.as_array() {
-                let joined = arr
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !joined.is_empty() {
-                    return Some(joined);
-                }
-            }
-        }
-    }
-    None
-}
-
 /// Build the JSON payload Cadencr sends back as a response to
 /// `session/request_permission`. Supports the cancellation case for when
 /// the user closes the drawer without picking an option.
@@ -234,9 +159,18 @@ pub fn acp_permission_response_payload(
 
 #[cfg(test)]
 mod tests {
-    use super::{acp_permission_response_payload, default_options, permission_request_from_acp};
+    use super::{
+        acp_permission_response_payload, default_options, dispatch_permission_request,
+        permission_request_from_acp, permission_request_from_server_request, PendingPermissions,
+    };
+    use crate::domain::agents::acp::incoming::AcpServerRequest;
     use crate::domain::agents::adapter::RuntimePermissionDecision;
+    use agent_client_protocol::schema::{
+        AgentRequest, PermissionOption, PermissionOptionKind, RequestPermissionRequest,
+        ToolCallUpdate, ToolCallUpdateFields,
+    };
     use serde_json::json;
+    use tokio::sync::mpsc;
 
     #[test]
     fn parse_extracts_tool_metadata_and_options() {
@@ -313,6 +247,96 @@ mod tests {
         );
         assert_eq!(req.options[1].option_id.as_deref(), Some("session"));
         assert_eq!(req.options[2].decision, RuntimePermissionDecision::Deny);
+    }
+
+    fn typed_permission_request(
+        session_id: &str,
+        options: Vec<PermissionOption>,
+    ) -> RequestPermissionRequest {
+        RequestPermissionRequest::new(
+            session_id.to_string(),
+            ToolCallUpdate::new(
+                "call-typed",
+                ToolCallUpdateFields::new()
+                    .title("Bash".to_string())
+                    .raw_input(json!({ "command": "pwd" })),
+            ),
+            options,
+        )
+    }
+
+    fn typed_server_request(typed: RequestPermissionRequest) -> AcpServerRequest {
+        AcpServerRequest::Known {
+            id: json!("perm-typed"),
+            method: "session/request_permission".to_string(),
+            raw: json!({ "sessionId": typed.session_id, "toolCall": {}, "options": [] }),
+            typed: Some(AgentRequest::RequestPermissionRequest(typed)),
+        }
+    }
+
+    #[test]
+    fn typed_empty_options_fall_back_to_default_options() {
+        let request = typed_server_request(typed_permission_request("s-typed", Vec::new()));
+        let parsed = permission_request_from_server_request("perm-typed", &request).unwrap();
+        assert_eq!(parsed.options.len(), 3);
+        assert_eq!(
+            parsed.options[0].decision,
+            RuntimePermissionDecision::AllowOnce
+        );
+        assert_eq!(
+            parsed.options[1].decision,
+            RuntimePermissionDecision::AllowFuture
+        );
+        assert_eq!(parsed.options[2].decision, RuntimePermissionDecision::Deny);
+    }
+
+    #[test]
+    fn typed_permission_option_kinds_map_to_runtime_decisions() {
+        let request = typed_server_request(typed_permission_request(
+            "s-typed",
+            vec![
+                PermissionOption::new("once", "Once", PermissionOptionKind::AllowOnce),
+                PermissionOption::new("always", "Always", PermissionOptionKind::AllowAlways),
+                PermissionOption::new("reject", "Reject", PermissionOptionKind::RejectOnce),
+                PermissionOption::new("never", "Never", PermissionOptionKind::RejectAlways),
+            ],
+        ));
+        let parsed = permission_request_from_server_request("perm-typed", &request).unwrap();
+        let decisions = parsed
+            .options
+            .iter()
+            .map(|option| option.decision)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decisions,
+            vec![
+                RuntimePermissionDecision::AllowOnce,
+                RuntimePermissionDecision::AllowFuture,
+                RuntimePermissionDecision::Deny,
+                RuntimePermissionDecision::Deny,
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn typed_permission_dispatch_preserves_session_id() {
+        let request = typed_server_request(typed_permission_request("s-typed", Vec::new()));
+        let parsed = permission_request_from_server_request("perm-typed", &request).unwrap();
+        let pending = PendingPermissions::default();
+        let (tx, mut rx) = mpsc::channel(1);
+        dispatch_permission_request(
+            &pending,
+            Some("s-typed".to_string()),
+            "perm-typed",
+            json!("perm-typed"),
+            parsed,
+            request.params(),
+            &tx,
+        )
+        .await;
+        let event = rx.recv().await.unwrap().unwrap();
+        assert_eq!(event.session_id(), Some("s-typed"));
+        assert_eq!(event.raw_json()["acp"]["sessionId"], "s-typed");
     }
 
     #[test]
