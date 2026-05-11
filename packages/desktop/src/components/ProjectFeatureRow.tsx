@@ -25,6 +25,7 @@ import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
+import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
 import { STATUSES, STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { useFeatureStatus } from "@/stores/session-status-store";
 
@@ -112,6 +113,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
     },
   );
 
+  const prefetchFeature = useFeaturePrefetch(feature.id, projectId);
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   const hasLabel = !!feature.label;
   const showMetaLine = isEditingLabel || hasLabel || hasStats || feature.type !== "ws-session";
@@ -136,6 +138,8 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
             if (isActive || e.detail > 1) return;
             onNavigate(feature);
           }}
+          onMouseEnter={prefetchFeature}
+          onFocus={prefetchFeature}
           onKeyDown={(e) => {
             if (shouldIgnoreFeatureRowKeyDown(e.target)) return;
             if (e.key === "Enter" || e.key === " ") {
