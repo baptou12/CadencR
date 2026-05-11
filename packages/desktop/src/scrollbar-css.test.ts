@@ -20,4 +20,13 @@ describe("scrollbar CSS", () => {
     );
     expect(themeCss).toMatch(/:root\[data-theme="aurora"\]\s*{[^}]*color-scheme:\s*light;/s);
   });
+
+  it("keeps Dracula hover and active accents subdued", () => {
+    expect(themeCss).toMatch(
+      /:root,\s*:root\[data-theme="dracula"\]\s*{[^}]*--accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,
+    );
+    expect(themeCss).toMatch(
+      /:root,\s*:root\[data-theme="dracula"\]\s*{[^}]*--sidebar-accent:\s*oklch\(0\.34 0\.032 277\.821\);/s,
+    );
+  });
 });
