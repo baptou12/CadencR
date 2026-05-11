@@ -20,13 +20,6 @@ pub enum AcpError {
         code: i64,
         message: String,
     },
-    /// The ACP subprocess exited (cleanly or by signal). Pending requests are
-    /// drained with this error so callers see a definitive failure rather than
-    /// hanging forever.
-    ProcessExited,
-    /// The oneshot channel waiting for a response was closed before a response
-    /// arrived (typically because the reader task dropped the sender).
-    ResponseClosed,
     /// Failed to spawn the subprocess (binary missing, pipes etc.). Distinct
     /// from generic IO so adapters can render an actionable message.
     Spawn(String),
@@ -40,8 +33,6 @@ impl Display for AcpError {
             Self::Timeout(label) => write!(f, "ACP request timed out: {label}"),
             Self::Protocol(message) => write!(f, "ACP protocol error: {message}"),
             Self::Rpc { code, message } => write!(f, "ACP returned error {code}: {message}"),
-            Self::ProcessExited => f.write_str("ACP process exited"),
-            Self::ResponseClosed => f.write_str("ACP response channel closed"),
             Self::Spawn(message) => write!(f, "failed to spawn ACP subprocess: {message}"),
         }
     }
@@ -66,5 +57,14 @@ impl From<std::io::Error> for AcpError {
 impl From<serde_json::Error> for AcpError {
     fn from(value: serde_json::Error) -> Self {
         Self::Json(value)
+    }
+}
+
+impl AcpError {
+    pub(crate) fn from_acp(value: agent_client_protocol::Error) -> Self {
+        Self::Rpc {
+            code: i32::from(value.code) as i64,
+            message: value.message,
+        }
     }
 }

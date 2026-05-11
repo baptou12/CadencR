@@ -165,8 +165,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{
-        RuntimeEventMetadata, RuntimePermissionDecision, RuntimePermissionMode, RuntimeStreamEvent,
-        RuntimeUserContentBlock,
+        RuntimeEventMetadata, RuntimePermissionMode, RuntimeStreamEvent, RuntimeUserContentBlock,
     };
     use serde_json::{json, Value};
 
@@ -202,13 +201,7 @@ mod tests {
             }
             json!(blocks)
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
     }
@@ -355,13 +348,7 @@ mod tests {
         fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
             input
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
         fn suppresses_raw_output(&self, tool_name: &str) -> bool {

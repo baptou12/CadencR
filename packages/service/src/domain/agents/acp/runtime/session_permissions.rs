@@ -64,10 +64,7 @@ impl SessionPermissions {
         self.inner.write().await.insert(key, decision);
     }
 
-    /// Look up a previously-recorded decision. Returns `None` when the
-    /// agent must re-prompt. Surfaced for the W3+ pre-flight short-circuit
-    /// path; today the OpenCode ACP runtime always asks the agent.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub async fn lookup(&self, key: &PermissionKey) -> Option<RuntimePermissionDecision> {
         self.inner.read().await.get(key).copied()
     }

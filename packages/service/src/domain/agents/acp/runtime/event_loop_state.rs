@@ -65,9 +65,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::EventLoopConfig;
     use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
-    use crate::domain::agents::adapter::{
-        RuntimePermissionDecision, RuntimePermissionMode, RuntimeSlashCommand,
-    };
+    use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSlashCommand};
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::AtomicBool;
@@ -86,13 +84,7 @@ mod tests {
         fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
             json!(blocks)
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
     }
@@ -115,13 +107,7 @@ mod tests {
         fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
             json!(blocks)
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
         async fn record_available_commands(&self, cwd: &Path, commands: Vec<RuntimeSlashCommand>) {

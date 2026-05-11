@@ -12,11 +12,8 @@
 //! into `RuntimeEvent` for the unified runtime layer.
 
 pub mod client;
-mod client_io;
 mod client_spawn;
-mod client_state;
 pub mod error;
-mod protocol;
 pub mod runtime;
 pub mod types;
 

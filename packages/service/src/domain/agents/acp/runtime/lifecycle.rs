@@ -13,7 +13,11 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use agent_client_protocol::schema::{
+    ClientCapabilities, FileSystemCapabilities, Implementation, InitializeRequest, McpServer,
+    NewSessionRequest, ProtocolVersion,
+};
+use serde_json::Value;
 
 use crate::domain::agents::acp::runtime::mcp::build_stdio_mcp_payload;
 use crate::domain::agents::acp::AcpClient;
@@ -21,7 +25,6 @@ use crate::domain::agents::adapter::{
     RuntimeError, RuntimeMcpServerConfig, RuntimeMcpServerStatus, RuntimeSpawnConfig,
 };
 
-const PROTOCOL_VERSION: u64 = 1;
 const INIT_TIMEOUT: Duration = Duration::from_secs(15);
 const SESSION_SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -54,10 +57,12 @@ pub async fn negotiate_session(
     context_window: Option<u64>,
 ) -> Result<NegotiatedSession, RuntimeError> {
     let init_result = client
-        .request_with_timeout("initialize", initialize_params(client), INIT_TIMEOUT)
+        .send_request_typed(initialize_request(client), INIT_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP initialize failed: {e}")))?;
-    let capabilities = parse_agent_capabilities(&init_result);
+    let init_value = serde_json::to_value(init_result)
+        .map_err(|e| RuntimeError::new(format!("ACP initialize response invalid: {e}")))?;
+    let capabilities = parse_agent_capabilities(&init_value);
 
     let model_id = config.model.clone();
     let mcp_servers = build_stdio_mcp_payload(config.mcp_servers.as_ref());
@@ -85,23 +90,20 @@ pub async fn negotiate_session(
     })
 }
 
-fn initialize_params(client: &AcpClient) -> Value {
+fn initialize_request(client: &AcpClient) -> InitializeRequest {
     let info = client.client_info();
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "clientCapabilities": {
-            "fs": {
-                "readTextFile": true,
-                "writeTextFile": true,
-            },
-            "terminal": true,
-        },
-        "clientInfo": {
-            "name": info.name,
-            "title": info.title,
-            "version": info.version,
-        }
-    })
+    InitializeRequest::new(ProtocolVersion::V1)
+        .client_capabilities(
+            ClientCapabilities::new()
+                .fs(FileSystemCapabilities::new()
+                    .read_text_file(true)
+                    .write_text_file(true))
+                .terminal(true),
+        )
+        .client_info(
+            Implementation::new(info.name.clone(), info.version.clone())
+                .title(Some(info.title.clone())),
+        )
 }
 
 fn parse_agent_capabilities(init_response: &Value) -> AgentCapabilities {
@@ -118,23 +120,24 @@ async fn start_new_session(
     cwd: &Path,
     mcp_servers: &Value,
 ) -> Result<(String, Option<String>), RuntimeError> {
+    let request = NewSessionRequest::new(cwd.to_path_buf()).mcp_servers(
+        serde_json::from_value::<Vec<McpServer>>(mcp_servers.clone())
+            .map_err(|e| RuntimeError::new(format!("ACP MCP server config invalid: {e}")))?,
+    );
     let result = client
-        .request_with_timeout(
-            "session/new",
-            json!({
-                "cwd": cwd.to_string_lossy(),
-                "mcpServers": mcp_servers,
-            }),
-            SESSION_SETUP_TIMEOUT,
-        )
+        .send_request_typed(request, SESSION_SETUP_TIMEOUT)
         .await
         .map_err(|e| RuntimeError::new(format!("ACP session/new failed: {e}")))?;
-    let session_id = extract_session_id(&result, "")?;
-    Ok((session_id, extract_current_mode(&result)))
+    let current_mode = result
+        .modes
+        .as_ref()
+        .map(|modes| modes.current_mode_id.to_string());
+    Ok((result.session_id.to_string(), current_mode))
 }
 
 /// Extract `modes.currentModeId` from a `session/new` response, or `None`
 /// when the agent omits it.
+#[cfg(test)]
 fn extract_current_mode(value: &Value) -> Option<String> {
     value
         .get("modes")
@@ -143,6 +146,7 @@ fn extract_current_mode(value: &Value) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+#[cfg(test)]
 fn extract_session_id(value: &Value, fallback: &str) -> Result<String, RuntimeError> {
     if let Some(session_id) = value
         .get("sessionId")

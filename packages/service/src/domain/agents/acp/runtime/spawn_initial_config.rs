@@ -56,9 +56,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::session::AcpRuntimeSession;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
-    use crate::domain::agents::adapter::{
-        RuntimePermissionDecision, RuntimePermissionMode, RuntimeSpawnConfig,
-    };
+    use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex as StdMutex};
     use std::time::Duration;
@@ -74,18 +72,12 @@ mod tests {
         fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
             input
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
     }
 
-    fn build_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
+    async fn build_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
         let (cs_out, ag_out) = duplex(64 * 1024);
         let (ag_in, cs_in) = duplex(64 * 1024);
         let client = AcpClient::spawn_with_streams(
@@ -93,7 +85,9 @@ mod tests {
             cs_out,
             tokio::io::empty(),
             AcpClientInfo::default(),
-        );
+        )
+        .await
+        .unwrap();
         (client, ag_out, BufReader::new(ag_in))
     }
 
@@ -128,7 +122,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_initial_model_sends_set_config_option_when_intent_present() {
-        let (client, mut stdout, mut stdin) = build_client();
+        let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-1");
         let cfg = RuntimeSpawnConfig {
             model: Some("openai/gpt-5.4".to_string()),
@@ -150,7 +144,7 @@ mod tests {
         assert_eq!(req["params"]["configId"], "model");
         assert_eq!(req["params"]["type"], "string");
         assert_eq!(req["params"]["value"], "openai/gpt-5.4");
-        let id = req["id"].as_u64().unwrap();
+        let id = req["id"].clone();
         let mut frame = serde_json::to_vec(&json!({ "id": id, "result": {} })).unwrap();
         frame.push(b'\n');
         stdout.write_all(&frame).await.unwrap();
@@ -161,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_initial_model_is_noop_when_config_model_unset() {
-        let (client, _o, mut stdin) = build_client();
+        let (client, _o, mut stdin) = build_client().await;
         let n = neg("s-1");
         let cfg = RuntimeSpawnConfig::default();
         let s = assemble_session(&client, &n);
@@ -171,7 +165,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_initial_thinking_effort_sends_set_config_option_when_intent_present() {
-        let (client, mut stdout, mut stdin) = build_client();
+        let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-2");
         let cfg = RuntimeSpawnConfig {
             thinking_effort: Some("high".to_string()),
@@ -190,7 +184,7 @@ mod tests {
         assert_eq!(req["params"]["configId"], "effort");
         assert_eq!(req["params"]["type"], "string");
         assert_eq!(req["params"]["value"], "high");
-        let id = req["id"].as_u64().unwrap();
+        let id = req["id"].clone();
         let mut frame = serde_json::to_vec(&json!({ "id": id, "result": {} })).unwrap();
         frame.push(b'\n');
         stdout.write_all(&frame).await.unwrap();
@@ -201,7 +195,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_initial_thinking_effort_is_noop_when_config_effort_unset() {
-        let (client, _o, mut stdin) = build_client();
+        let (client, _o, mut stdin) = build_client().await;
         let n = neg("s-2");
         let cfg = RuntimeSpawnConfig::default();
         let s = assemble_session(&client, &n);
@@ -215,7 +209,7 @@ mod tests {
         // writes current_model so that the legacy ride-along path can carry
         // the value on the next prompt. This test verifies the spawn-time
         // entry point inherits that property.
-        let (client, mut stdout, mut stdin) = build_client();
+        let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-3");
         let cfg = RuntimeSpawnConfig {
             model: Some("openai/gpt-5.4".to_string()),
@@ -228,7 +222,7 @@ mod tests {
         let mut line = String::new();
         stdin.read_line(&mut line).await.unwrap();
         let req: Value = serde_json::from_str(line.trim()).unwrap();
-        let id = req["id"].as_u64().unwrap();
+        let id = req["id"].clone();
         let mut frame = serde_json::to_vec(&json!({
             "id": id,
             "error": { "code": -32601, "message": "method not found" }
@@ -257,7 +251,7 @@ mod tests {
     /// shared-lock contention or task ordering breaks the parallel path.
     #[tokio::test]
     async fn try_join_pushes_both_model_and_effort_concurrently() {
-        let (client, mut stdout, mut stdin) = build_client();
+        let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-join");
         let cfg = RuntimeSpawnConfig {
             model: Some("openai/gpt-5.4".to_string()),
@@ -287,7 +281,7 @@ mod tests {
             assert_eq!(req["params"]["type"], "string");
             let cid = req["params"]["configId"].as_str().unwrap().to_owned();
             assert!(seen.insert(cid.clone()), "duplicate configId on the wire");
-            let id = req["id"].as_u64().unwrap();
+            let id = req["id"].clone();
             let mut frame = serde_json::to_vec(&json!({ "id": id, "result": {} })).unwrap();
             frame.push(b'\n');
             stdout.write_all(&frame).await.unwrap();

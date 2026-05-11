@@ -24,6 +24,7 @@ use super::permissions::{
     dispatch_permission_request, permission_request_from_acp, PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
+use super::schema_bridge::validate_known_server_request;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
 
@@ -161,6 +162,12 @@ async fn handle_server_request(
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: &EventLoopConfig,
 ) {
+    if let Err(message) = validate_known_server_request(method, params) {
+        if let Err(error) = client.reject_server_request(id, -32602, &message).await {
+            tracing::error!(%error, method, "failed to reject malformed ACP request");
+        }
+        return;
+    }
     match method {
         "session/request_permission" => {
             handle_permission_request(client, id, params, tx, config).await;

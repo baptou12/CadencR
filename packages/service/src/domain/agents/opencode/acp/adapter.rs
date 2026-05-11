@@ -75,27 +75,6 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         flatten_tool_result_content(blocks)
     }
 
-    fn permission_decision_for_kind(&self, kind: &str) -> RuntimePermissionDecision {
-        // OpenCode follows the canonical ACP option kinds. We surface the
-        // session-vs-always split as distinct decisions so the runtime
-        // routes the right `optionId` back to the agent — collapsing them
-        // here would silently turn a "session" approval into a persistent
-        // grant.
-        match kind {
-            "allow_once" => RuntimePermissionDecision::AllowOnce,
-            "allow_for_session" => RuntimePermissionDecision::AllowForSession,
-            "allow_always" => RuntimePermissionDecision::AllowFuture,
-            "reject_once" | "reject_always" => RuntimePermissionDecision::Deny,
-            other => {
-                tracing::warn!(
-                    kind = other,
-                    "unknown ACP permission option kind; falling back to reject"
-                );
-                RuntimePermissionDecision::Deny
-            }
-        }
-    }
-
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<&'static str> {
         // OpenCode primary agents are `build` (default/acceptEdits) and `plan`.
         // `supports_permission_mode` already restricts the public surface to
@@ -104,10 +83,6 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
             RuntimePermissionMode::Plan => "plan",
             _ => "build",
         })
-    }
-
-    fn decorate_system_prompt(&self, _base: Option<&str>) -> Option<String> {
-        None
     }
 
     fn tool_call_start_override(

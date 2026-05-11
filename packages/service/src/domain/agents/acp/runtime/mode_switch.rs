@@ -8,13 +8,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
+use agent_client_protocol::schema::SetSessionModeRequest;
 use tokio::sync::RwLock;
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::RuntimeError;
 
-use super::capability_probe::{request_optional_method, ProbeResult};
+use super::capability_probe::{request_optional_typed, ProbeResult};
 
 const SET_MODE_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -39,16 +39,8 @@ async fn send_set_mode(
     supports_flag: &Arc<AtomicBool>,
     mode_id: &str,
 ) -> Result<(), RuntimeError> {
-    let params = json!({ "sessionId": session_id, "modeId": mode_id });
-    match request_optional_method(
-        client,
-        "session/set_mode",
-        params,
-        SET_MODE_TIMEOUT,
-        supports_flag,
-    )
-    .await?
-    {
+    let request = SetSessionModeRequest::new(session_id.to_string(), mode_id.to_string());
+    match request_optional_typed(client, request, SET_MODE_TIMEOUT, supports_flag).await? {
         ProbeResult::Supported | ProbeResult::AlreadyUnsupported => Ok(()),
         ProbeResult::NewlyUnsupported => {
             tracing::warn!(

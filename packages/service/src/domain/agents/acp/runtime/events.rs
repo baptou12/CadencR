@@ -32,12 +32,13 @@ pub fn session_update_to_events(
     session_id: Option<&str>,
     hooks: &dyn AcpProviderHooks,
 ) -> MappedUpdate {
-    let kind = params
+    let raw_kind = params
         .get("update")
         .and_then(|u| u.get("sessionUpdate"))
         .or_else(|| params.get("sessionUpdate"))
         .and_then(Value::as_str)
         .unwrap_or("");
+    let kind = raw_kind;
 
     // Nested under `update` for OpenCode; some adapters embed at top level.
     // Borrowed (no clone) — the inner mappers all take `&Value`. The single

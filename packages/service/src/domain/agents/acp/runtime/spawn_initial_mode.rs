@@ -54,9 +54,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::session::AcpRuntimeSession;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
-    use crate::domain::agents::adapter::{
-        RuntimePermissionDecision, RuntimePermissionMode, RuntimeSpawnConfig,
-    };
+    use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex as StdMutex};
     use std::time::Duration;
@@ -72,9 +70,6 @@ mod tests {
         fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
             input
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<&'static str> {
             Some(if matches!(mode, RuntimePermissionMode::Plan) {
                 "plan"
@@ -82,12 +77,9 @@ mod tests {
                 "build"
             })
         }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
-            None
-        }
     }
 
-    fn build_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
+    async fn build_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
         let (cs_out, ag_out) = duplex(64 * 1024);
         let (ag_in, cs_in) = duplex(64 * 1024);
         let client = AcpClient::spawn_with_streams(
@@ -95,7 +87,9 @@ mod tests {
             cs_out,
             tokio::io::empty(),
             AcpClientInfo::default(),
-        );
+        )
+        .await
+        .unwrap();
         (client, ag_out, BufReader::new(ag_in))
     }
 
@@ -130,10 +124,10 @@ mod tests {
 
     #[tokio::test]
     async fn assemble_seeds_current_mode_from_negotiated_value() {
-        let (client, _o, _i) = build_client();
+        let (client, _o, _i) = build_client().await;
         let s = assemble_session(&client, &neg("s", Some("plan")));
         assert_eq!(s.current_mode.read().await.as_str(), "plan");
-        let (client, _o, _i) = build_client();
+        let (client, _o, _i) = build_client().await;
         let s = assemble_session(&client, &neg("s", None));
         assert_eq!(s.current_mode.read().await.as_str(), "build");
     }
@@ -141,14 +135,14 @@ mod tests {
     #[tokio::test]
     async fn skips_wire_when_unset_or_already_in_target() {
         // permission_mode=None: nothing to do.
-        let (client, _o, mut stdin) = build_client();
+        let (client, _o, mut stdin) = build_client().await;
         let n = neg("s", Some("build"));
         let c = RuntimeSpawnConfig::default();
         let s = assemble_session(&client, &n);
         apply_initial_permission_mode(&s, &n, &c).await.unwrap();
         assert_no_frame(&mut stdin).await;
         // Already in target mode: compare-and-skip in `set_session_mode`.
-        let (client, _o, mut stdin) = build_client();
+        let (client, _o, mut stdin) = build_client().await;
         let n = neg("s", Some("plan"));
         let c = RuntimeSpawnConfig {
             permission_mode: Some(RuntimePermissionMode::Plan),
@@ -161,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn sends_set_mode_for_plan() {
-        let (client, mut stdout, mut stdin) = build_client();
+        let (client, mut stdout, mut stdin) = build_client().await;
         let n = neg("s-plan", Some("build"));
         let c = RuntimeSpawnConfig {
             permission_mode: Some(RuntimePermissionMode::Plan),
@@ -175,7 +169,7 @@ mod tests {
         assert_eq!(req["method"], "session/set_mode");
         assert_eq!(req["params"]["sessionId"], "s-plan");
         assert_eq!(req["params"]["modeId"], "plan");
-        let id = req["id"].as_u64().unwrap();
+        let id = req["id"].clone();
         let mut frame = serde_json::to_vec(&json!({ "id": id, "result": {} })).unwrap();
         frame.push(b'\n');
         stdout.write_all(&frame).await.unwrap();

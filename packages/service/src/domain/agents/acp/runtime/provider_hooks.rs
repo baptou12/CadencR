@@ -12,8 +12,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand,
+    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionMode,
+    RuntimePermissionResponse, RuntimeSlashCommand,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -30,14 +30,8 @@ impl AcpProviderHooks for DefaultFlattenHooks {
     fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
         input
     }
-    fn permission_decision_for_kind(&self, _kind: &str) -> RuntimePermissionDecision {
-        RuntimePermissionDecision::Deny
-    }
     fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<&'static str> {
         None
-    }
-    fn decorate_system_prompt(&self, base: Option<&str>) -> Option<String> {
-        base.map(ToOwned::to_owned)
     }
 }
 
@@ -59,26 +53,11 @@ pub trait AcpProviderHooks: Send + Sync {
         flatten_tool_result_content_with(blocks, unwrap_text_block)
     }
 
-    /// Turn an ACP option `kind` (`allow_once`, `allow_always`, …) into a
-    /// runtime decision — provider can rename kinds.
-    #[allow(dead_code)]
-    fn permission_decision_for_kind(&self, kind: &str) -> RuntimePermissionDecision;
-
-    /// Map a Cadencr permission mode onto the provider's mode id (OpenCode
-    /// uses `"plan"` / `"build"`; other ACP providers may have different
-    /// mode catalogs). Returning `None` means "this mode is not supported".
+    /// Map a Cadencr permission mode onto the provider's mode id.
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<&'static str>;
 
-    /// Optionally decorate the system prompt the agent will receive.
-    #[allow(dead_code)]
-    fn decorate_system_prompt(&self, base: Option<&str>) -> Option<String>;
-
     /// Provider-specific hook for `AskUserQuestion`-style tool calls. Returns
-    /// `Some(event)` to short-circuit the normal `tool_call` start mapping
-    /// (e.g. emit a permission/question event instead). Returning `None`
-    /// lets the runtime continue with the default tool-call event flow.
-    ///
-    /// Default implementation: no override.
+    /// `Some(event)` to short-circuit the normal `tool_call` start mapping.
     fn tool_call_start_override(
         &self,
         _tool_call_id: &str,

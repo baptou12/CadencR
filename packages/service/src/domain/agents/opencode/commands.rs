@@ -187,7 +187,6 @@ async fn probe_inner(cwd: &str) -> Result<Vec<RuntimeSlashCommand>, RuntimeError
     let client = AcpClient::spawn(AcpSpawnOptions {
         command,
         client_info: AcpClientInfo::default(),
-        request_timeout: Some(HANDSHAKE_TIMEOUT),
         max_line_bytes: None,
         spawn_guard: Some(Box::new(port_reservation)),
     })

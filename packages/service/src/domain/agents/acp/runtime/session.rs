@@ -7,8 +7,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
+use agent_client_protocol::schema::CancelNotification;
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 
@@ -165,7 +166,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
     async fn interrupt(&self) -> Result<(), RuntimeError> {
         let session_id = self.require_session_id().await?;
         self.client
-            .notify("session/cancel", json!({ "sessionId": session_id }))
+            .send_notification_typed(CancelNotification::new(session_id))
             .await
             .map_err(|e| RuntimeError::new(format!("session/cancel failed: {e}")))?;
         self.prompt_cancel.cancel_current_turn();
@@ -178,7 +179,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         if let Some(session_id) = self.current_session_id().await {
             let _ = self
                 .client
-                .notify("session/cancel", json!({ "sessionId": session_id }))
+                .send_notification_typed(CancelNotification::new(session_id))
                 .await;
         }
         reject_all_pending(&self.client, &self.pending_permissions).await;

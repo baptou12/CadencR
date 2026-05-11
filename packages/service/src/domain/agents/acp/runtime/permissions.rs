@@ -12,7 +12,7 @@
 //! "allow_once"/"allow_always"/"reject_once" strings when the agent didn't
 //! advertise an explicit id.
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
@@ -20,6 +20,9 @@ use crate::domain::agents::adapter::{
 
 pub use super::permissions_dispatch::{
     dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
+};
+use super::schema_bridge::{
+    default_option_id, permission_response_value, resolve_permission_option,
 };
 
 /// Convert an ACP `session/request_permission` server-request payload into a
@@ -76,35 +79,18 @@ pub fn permission_request_from_acp(
 fn convert_options(raw: &[Value]) -> Vec<RuntimePermissionOption> {
     let mut out = Vec::new();
     for option in raw {
-        // ACP defines five canonical kinds; we surface four distinct
-        // decisions so the frontend (and the backend response routing)
-        // can distinguish "remember this session" from "remember always".
-        let decision = match option.get("kind").and_then(Value::as_str).unwrap_or("") {
-            "allow_once" => RuntimePermissionDecision::AllowOnce,
-            "allow_for_session" => RuntimePermissionDecision::AllowForSession,
-            "allow_always" => RuntimePermissionDecision::AllowFuture,
-            // `reject_always` collapses to the same on-the-wire response
-            // ("deny + remember"). The runtime doesn't track persistent
-            // rejections separately yet; the agent owns persistence via the
-            // echoed `optionId`.
-            "reject_once" | "reject_always" => RuntimePermissionDecision::Deny,
-            _ => continue,
+        let Some(option) = resolve_permission_option(option) else {
+            continue;
         };
-        let option_id = option
-            .get("optionId")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned);
         let label = option
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or_else(|| default_label(decision))
-            .to_string();
+            .name
+            .unwrap_or_else(|| default_label(option.decision).into());
         out.push(RuntimePermissionOption {
-            decision,
-            option_id,
+            decision: option.decision,
+            option_id: option.option_id,
             label,
-            description: default_description(decision).to_string(),
-            collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
+            description: default_description(option.decision).to_string(),
+            collect_feedback: matches!(option.decision, RuntimePermissionDecision::Deny),
         });
     }
     if out.is_empty() {
@@ -128,15 +114,6 @@ fn default_options() -> Vec<RuntimePermissionOption> {
         collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
     })
     .collect()
-}
-
-fn default_option_id(decision: RuntimePermissionDecision) -> &'static str {
-    match decision {
-        RuntimePermissionDecision::AllowOnce => "allow_once",
-        RuntimePermissionDecision::AllowFuture => "allow_always",
-        RuntimePermissionDecision::AllowForSession => "allow_for_session",
-        RuntimePermissionDecision::Deny => "reject_once",
-    }
 }
 
 fn default_label(decision: RuntimePermissionDecision) -> &'static str {
@@ -199,30 +176,12 @@ pub fn acp_permission_response_payload(
     option_id: Option<&str>,
     feedback: Option<&str>,
 ) -> Value {
-    let id = option_id.unwrap_or_else(|| default_option_id(decision));
-    let mut payload = json!({
-        "outcome": { "outcome": "selected", "optionId": id }
-    });
-    if let Some(text) = feedback.filter(|s| !s.is_empty()) {
-        payload["feedback"] = Value::String(text.to_string());
-        payload["_meta"] = json!({ "feedback": text });
-    }
-    payload
-}
-
-/// Payload used when the user dismisses the permission drawer without
-/// picking an option. W2/W3 will wire this through `cancel_pending`.
-#[allow(dead_code)]
-pub fn acp_permission_cancel_payload() -> Value {
-    json!({ "outcome": { "outcome": "cancelled" } })
+    permission_response_value(decision, option_id, feedback)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        acp_permission_cancel_payload, acp_permission_response_payload, default_options,
-        permission_request_from_acp,
-    };
+    use super::{acp_permission_response_payload, default_options, permission_request_from_acp};
     use crate::domain::agents::adapter::RuntimePermissionDecision;
     use serde_json::json;
 
@@ -277,6 +236,33 @@ mod tests {
     }
 
     #[test]
+    fn parse_accepts_minimal_raw_canonical_options() {
+        let req = permission_request_from_acp(
+            "p",
+            &json!({
+                "toolCall": { "toolName": "Read", "toolInput": { "filePath": "/x" } },
+                "options": [
+                    { "kind": "allow_once" },
+                    { "kind": "allow_for_session", "optionId": "session" },
+                    { "kind": "reject_always" }
+                ]
+            }),
+        )
+        .unwrap();
+        assert_eq!(req.options.len(), 3);
+        assert_eq!(
+            req.options[0].decision,
+            RuntimePermissionDecision::AllowOnce
+        );
+        assert_eq!(
+            req.options[1].decision,
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(req.options[1].option_id.as_deref(), Some("session"));
+        assert_eq!(req.options[2].decision, RuntimePermissionDecision::Deny);
+    }
+
+    #[test]
     fn allow_once_response_payload_has_selected_outcome() {
         let payload =
             acp_permission_response_payload(RuntimePermissionDecision::AllowOnce, None, None);
@@ -319,14 +305,6 @@ mod tests {
             acp_permission_response_payload(RuntimePermissionDecision::Deny, None, Some(""));
         assert!(payload.get("feedback").is_none());
         assert!(payload.get("_meta").is_none());
-    }
-
-    #[test]
-    fn cancel_payload_uses_cancelled_outcome() {
-        assert_eq!(
-            acp_permission_cancel_payload()["outcome"]["outcome"],
-            "cancelled"
-        );
     }
 
     #[test]

@@ -57,7 +57,6 @@ pub async fn spawn_acp_runtime_session(
     let client = AcpClient::spawn(AcpSpawnOptions {
         command,
         client_info,
-        request_timeout: None,
         max_line_bytes: None,
         spawn_guard,
     })

@@ -204,7 +204,7 @@ mod tests {
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
     use tokio::sync::{mpsc, Mutex as AsyncMutex, RwLock};
 
-    fn build_in_memory_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
+    async fn build_in_memory_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
         let (client_reads_stdout, agent_writes_stdout) = duplex(64 * 1024);
         let (agent_reads_stdin, client_writes_stdin) = duplex(64 * 1024);
         let client = AcpClient::spawn_with_streams(
@@ -212,7 +212,9 @@ mod tests {
             client_reads_stdout,
             tokio::io::empty(),
             AcpClientInfo::default(),
-        );
+        )
+        .await
+        .unwrap();
         (
             client,
             agent_writes_stdout,
@@ -226,7 +228,7 @@ mod tests {
         serde_json::from_str(line.trim()).unwrap()
     }
 
-    async fn reply_with_stop(stdout: &mut DuplexStream, id: u64, stop_reason: &str) {
+    async fn reply_with_stop(stdout: &mut DuplexStream, id: Value, stop_reason: &str) {
         let frame = format!(
             "{}\n",
             json!({ "id": id, "result": { "stopReason": stop_reason } })
@@ -308,7 +310,7 @@ mod tests {
         // `stream_input` calls) must hit the wire in sequence: first call
         // sends, the second blocks on the lock until the first response
         // returns and its drain runs.
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let session_id = Arc::new(RwLock::new(Some("s-1".to_string())));
         let model = Arc::new(RwLock::new(None));
         let effort = Arc::new(RwLock::new(None));
@@ -343,13 +345,11 @@ mod tests {
             }
         });
 
-        // Read the first request so we know the lock is held.
         let first_req = read_one_request(&mut agent_stdin).await;
         assert_eq!(first_req["params"]["prompt"][0]["text"], "first");
-        let first_id = first_req["id"].as_u64().unwrap();
+        let first_id = first_req["id"].clone();
 
-        // Launch the second caller; it should block on the lock and NOT
-        // emit a request to the wire yet.
+        // Second caller should block on the lock and not emit yet.
         let second = tokio::spawn({
             let client = client.clone();
             let session_id = Arc::clone(&session_id);
@@ -383,16 +383,14 @@ mod tests {
             "second caller must wait for the lock; saw: {peek}"
         );
 
-        // Resolve the first turn — the second caller should now proceed.
         reply_with_stop(&mut agent_stdout, first_id, "end_turn").await;
         first.await.unwrap().unwrap();
-        // First Result event drains through.
         let first_evt = rx.recv().await.unwrap().unwrap();
         assert!(first_evt.is_result());
 
         let second_req = read_one_request(&mut agent_stdin).await;
         assert_eq!(second_req["params"]["prompt"][0]["text"], "second");
-        let second_id = second_req["id"].as_u64().unwrap();
+        let second_id = second_req["id"].clone();
         reply_with_stop(&mut agent_stdout, second_id, "end_turn").await;
         second.await.unwrap().unwrap();
     }

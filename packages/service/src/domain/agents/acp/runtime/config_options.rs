@@ -159,7 +159,7 @@ mod tests {
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::sync::RwLock;
 
-    fn build_in_memory_client() -> (
+    async fn build_in_memory_client() -> (
         AcpClient,
         tokio::io::DuplexStream,
         BufReader<tokio::io::DuplexStream>,
@@ -171,7 +171,9 @@ mod tests {
             client_reads_stdout,
             tokio::io::empty(),
             AcpClientInfo::default(),
-        );
+        )
+        .await
+        .unwrap();
         (
             client,
             agent_writes_stdout,
@@ -185,12 +187,17 @@ mod tests {
         serde_json::from_str(line.trim()).unwrap()
     }
 
-    async fn reply_ok(stdout: &mut tokio::io::DuplexStream, id: u64, result: Value) {
+    async fn reply_ok(stdout: &mut tokio::io::DuplexStream, id: Value, result: Value) {
         let frame = format!("{}\n", json!({ "id": id, "result": result }));
         stdout.write_all(frame.as_bytes()).await.unwrap();
     }
 
-    async fn reply_error(stdout: &mut tokio::io::DuplexStream, id: u64, code: i64, message: &str) {
+    async fn reply_error(
+        stdout: &mut tokio::io::DuplexStream,
+        id: Value,
+        code: i64,
+        message: &str,
+    ) {
         let frame = format!(
             "{}\n",
             json!({ "id": id, "error": { "code": code, "message": message } })
@@ -204,7 +211,7 @@ mod tests {
     /// `value` discriminators, no nested envelope.
     #[tokio::test]
     async fn wire_payload_uses_top_level_config_id_type_value_no_envelope() {
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_model = Arc::new(RwLock::new(None));
         let supports = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn({
@@ -225,14 +232,14 @@ mod tests {
         assert_eq!(params["configId"], "model");
         assert_eq!(params["type"], "string");
         assert_eq!(params["value"], "openai/gpt-5.4");
-        let id = parsed["id"].as_u64().unwrap();
+        let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
     }
 
     #[tokio::test]
     async fn set_model_issues_set_config_option_and_updates_state() {
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_model = Arc::new(RwLock::new(Some("old-model".to_string())));
         let supports = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn({
@@ -250,7 +257,7 @@ mod tests {
         assert_eq!(parsed["params"]["configId"], "model");
         assert_eq!(parsed["params"]["type"], "string");
         assert_eq!(parsed["params"]["value"], "new-model");
-        let id = parsed["id"].as_u64().unwrap();
+        let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
         assert_eq!(
@@ -266,7 +273,7 @@ mod tests {
 
     #[tokio::test]
     async fn method_not_found_flips_supports_flag_and_returns_ok() {
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_model = Arc::new(RwLock::new(Some("old-model".to_string())));
         let supports = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn({
@@ -279,7 +286,7 @@ mod tests {
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
-        let id = parsed["id"].as_u64().unwrap();
+        let id = parsed["id"].clone();
         reply_error(&mut agent_stdout, id, -32601, "method not found").await;
         task.await.unwrap().expect("MethodNotFound is not an error");
         assert!(
@@ -295,7 +302,7 @@ mod tests {
 
     #[tokio::test]
     async fn already_current_short_circuits_without_request() {
-        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_model = Arc::new(RwLock::new(Some("same-model".to_string())));
         let supports = Arc::new(AtomicBool::new(true));
         set_config_option_model(&client, "s-1", &current_model, &supports, "same-model")
@@ -313,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn supports_false_skips_round_trip_but_still_updates_state() {
-        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_effort = Arc::new(RwLock::new(Some("low".to_string())));
         let supports = Arc::new(AtomicBool::new(false));
         set_config_option_thinking_effort(&client, "s-1", &current_effort, &supports, Some("high"))
@@ -328,7 +335,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_thinking_effort_carries_value_under_thinking_effort_name() {
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client();
+        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_effort = Arc::new(RwLock::new(None));
         let supports = Arc::new(AtomicBool::new(true));
         let task = tokio::spawn({
@@ -352,7 +359,7 @@ mod tests {
         assert_eq!(parsed["params"]["configId"], "effort");
         assert_eq!(parsed["params"]["type"], "string");
         assert_eq!(parsed["params"]["value"], "high");
-        let id = parsed["id"].as_u64().unwrap();
+        let id = parsed["id"].clone();
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
         assert_eq!(current_effort.read().await.as_deref(), Some("high"));

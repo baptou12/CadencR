@@ -246,8 +246,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{
-        RuntimeContentDelta, RuntimeEventMetadata, RuntimePermissionDecision,
-        RuntimePermissionMode, RuntimeStreamEvent,
+        RuntimeContentDelta, RuntimeEventMetadata, RuntimePermissionMode, RuntimeStreamEvent,
     };
     use serde_json::{json, Value};
 
@@ -263,13 +262,7 @@ mod tests {
         fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
             json!(blocks)
         }
-        fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-            RuntimePermissionDecision::AllowOnce
-        }
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-            None
-        }
-        fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
             None
         }
     }

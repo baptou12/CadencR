@@ -11,8 +11,8 @@ use super::super::events_stream_blocks::EventIndexer;
 use super::super::provider_hooks::AcpProviderHooks;
 use super::{mirror_session_info_update, session_update_to_events};
 use crate::domain::agents::adapter::{
-    RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimeStreamEvent,
+    RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimePermissionMode,
+    RuntimeStreamEvent,
 };
 use serde_json::{json, Value};
 
@@ -28,13 +28,7 @@ impl AcpProviderHooks for PlainHooks {
     fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
         json!(blocks)
     }
-    fn permission_decision_for_kind(&self, _: &str) -> RuntimePermissionDecision {
-        RuntimePermissionDecision::AllowOnce
-    }
     fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
-        None
-    }
-    fn decorate_system_prompt(&self, _: Option<&str>) -> Option<String> {
         None
     }
 }
