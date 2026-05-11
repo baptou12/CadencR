@@ -1,12 +1,11 @@
 ## FIX
 - [~] [opencode] Not sync on command updates
 - [~] [opencode] inline diff broken sometimes
-- [ ] [git] when selecting a branch without worktree, we don't checkout the branch 
-- [ ] [codex] keeps asking for the same permissions all the time
+- [~] [codex] keeps asking for the same permissions all the time
 - [ ] [feature] remove feature workflow
-- [ ] [agent] scroll jumps
-- [ ] [terminal] some terminal becomes dead
-- [ ] [terminal] cmd+d and cmd+shift+d don't split anymore?
+- [~] [agent] scroll jumps
+- [~] [terminal] some terminal becomes dead
+- [~] [terminal] cmd+d and cmd+shift+d don't split anymore?
 
 
 ## FEAT
