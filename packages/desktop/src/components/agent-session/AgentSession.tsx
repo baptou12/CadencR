@@ -147,7 +147,12 @@ export const AgentSession = memo(
       autoScrollEnabled,
       isLoadingOlder,
       scrollToBottom,
-    } = useAgentSessionScroll({ blocks, hasMore, onLoadOlder });
+    } = useAgentSessionScroll({
+      blocks,
+      conversationKey: wsSessionId ?? null,
+      hasMore,
+      onLoadOlder,
+    });
 
     useAutoScrollShortcut({
       enabled: agentTabActive && !disableShortcuts,
