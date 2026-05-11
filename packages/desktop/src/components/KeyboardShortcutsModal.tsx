@@ -32,7 +32,6 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Navigation",
     shortcuts: [
-      { keys: ["⌘", "⌥", "←/→"], description: "Cycle focus zones" },
       { keys: ["⌘", "⌥", "↑/↓"], description: "Navigate within zone" },
       { keys: ["⌘", "1–9"], description: "Activate visible sidebar row" },
       { keys: ["⌘", "⌥", "Z"], description: "Reset focus to workflow" },

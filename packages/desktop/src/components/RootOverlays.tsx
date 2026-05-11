@@ -1,7 +1,6 @@
 import type { Dispatch, ReactElement, SetStateAction } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { FocusRing } from "@/components/FocusRing";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
@@ -51,7 +50,6 @@ export function RootOverlays({
       <UnifiedAgentsShortcut />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <Toaster position="top-center" richColors />
-      <FocusRing />
       <ConfirmDialog
         open={confirmAction != null}
         onOpenChange={(open) => {

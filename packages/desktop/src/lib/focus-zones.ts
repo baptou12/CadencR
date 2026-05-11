@@ -2,6 +2,13 @@
  * Returns the closest (most specific) focus zone name for the currently active element.
  * Walks up the DOM tree from document.activeElement to find the nearest
  * data-focus-zone attribute, so nested zones are correctly resolved.
+ *
+ * `data-focus-zone` is still used to gate keyboard handlers in a few places
+ * (e.g. agent letter-focus only fires in main-content; sidebar shortcuts
+ * fire only in left-sidebar). The previous app-wide CMD+ALT+arrow cycle
+ * between zones — and the visible focus ring that travelled with it — has
+ * been removed, but this lookup helper stays because it's still needed for
+ * those scope checks.
  */
 export function getActiveFocusZone(): string | null {
   let el = document.activeElement as HTMLElement | null;
@@ -11,28 +18,4 @@ export function getActiveFocusZone(): string | null {
     el = el.parentElement;
   }
   return null;
-}
-
-const ZONE_ORDER = ["left-sidebar", "main-content", "terminal", "right-sidebar"] as const;
-
-export function focusZoneByDirection(direction: "left" | "right"): void {
-  const currentZone = getActiveFocusZone();
-  const currentIndex = currentZone
-    ? ZONE_ORDER.indexOf(currentZone as (typeof ZONE_ORDER)[number])
-    : -1;
-  const step = direction === "right" ? 1 : -1;
-  for (let next = currentIndex + step; next >= 0 && next < ZONE_ORDER.length; next += step) {
-    const nextEl = document.querySelector(
-      `[data-focus-zone="${ZONE_ORDER[next]}"]`,
-    ) as HTMLElement | null;
-    if (nextEl) {
-      nextEl.focus();
-      if (ZONE_ORDER[next] === "main-content") {
-        requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent("cadencr:focus-prompt"));
-        });
-      }
-      return;
-    }
-  }
 }

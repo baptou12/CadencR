@@ -57,10 +57,6 @@ vi.mock("@/components/CommandPalette", () => ({
     open ? <div data-testid="command-palette">CommandPalette</div> : null,
 }));
 
-vi.mock("@/components/FocusRing", () => ({
-  FocusRing: () => <div data-testid="focus-ring" />,
-}));
-
 vi.mock("@/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="panel-group">{children}</div>
