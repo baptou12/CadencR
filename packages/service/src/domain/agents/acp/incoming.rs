@@ -48,14 +48,7 @@ impl AcpNotification {
         }
     }
 
-    pub fn method(&self) -> &str {
-        match self {
-            Self::SessionUpdate { .. } => "session/update",
-            Self::Extension { method, .. } => method,
-        }
-    }
-
-    pub fn params(&self) -> &Value {
+    pub(crate) fn params(&self) -> &Value {
         match self {
             Self::SessionUpdate { raw, .. } => raw,
             Self::Extension { params, .. } => params,
@@ -92,25 +85,25 @@ impl AcpServerRequest {
         }
     }
 
-    pub fn id(&self) -> &Value {
+    pub(crate) fn id(&self) -> &Value {
         match self {
             Self::Known { id, .. } | Self::Extension { id, .. } => id,
         }
     }
 
-    pub fn method(&self) -> &str {
+    pub(crate) fn method(&self) -> &str {
         match self {
             Self::Known { method, .. } | Self::Extension { method, .. } => method,
         }
     }
 
-    pub fn params(&self) -> &Value {
+    pub(crate) fn params(&self) -> &Value {
         match self {
             Self::Known { raw, .. } | Self::Extension { params: raw, .. } => raw,
         }
     }
 
-    pub fn typed_as<T>(&self, extract: fn(&AgentRequest) -> Option<&T>) -> Option<&T> {
+    pub(crate) fn typed_as<T>(&self, extract: fn(&AgentRequest) -> Option<&T>) -> Option<&T> {
         match self {
             Self::Known {
                 typed: Some(typed), ..

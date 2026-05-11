@@ -29,8 +29,8 @@ impl Default for AcpClientInfo {
 /// fail the official-schema deserializer.
 #[derive(Debug, Clone)]
 pub enum AcpEvent {
-    /// One-way notification from the agent (no `id`). Examples: `session/update`,
-    /// `current_mode_update`. Adapters route on `notification.method()`.
+    /// One-way notification from the agent (no `id`). Examples:
+    /// `session/update`, `current_mode_update`.
     Notification(AcpNotification),
     /// A request initiated *by the agent* that we (the client) must answer.
     /// Used for `session/request_permission`, `fs/*`, `terminal/*`. The

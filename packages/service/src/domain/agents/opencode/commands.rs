@@ -33,6 +33,7 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
 
 use super::acp::port::reserve_local_port;
+use crate::domain::agents::acp::incoming::AcpNotification;
 use crate::domain::agents::acp::runtime::events::parse_available_commands;
 use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent, AcpSpawnOptions};
 use crate::domain::agents::adapter::{RuntimeError, RuntimeSlashCommand};
@@ -238,11 +239,10 @@ async fn wait_for_catalog(
     loop {
         match events.recv().await {
             Ok(AcpEvent::Notification(notification)) => {
-                if notification.method() != "session/update" {
+                let AcpNotification::SessionUpdate { raw: params } = notification else {
                     continue;
-                }
-                let params = notification.params();
-                let body = params.get("update").unwrap_or(params);
+                };
+                let body = params.get("update").unwrap_or(&params);
                 let kind = body.get("sessionUpdate").and_then(Value::as_str);
                 if kind == Some("available_commands_update") {
                     return Ok(parse_available_commands(body));
