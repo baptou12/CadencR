@@ -63,3 +63,33 @@ pub fn permission_request_event(id: &Value, method: &str, params: &Value) -> Run
 pub fn request_key(id: &Value) -> String {
     request_id_from_value(id)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::permission_request_event;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_exec_approval_exposes_session_approval_option() {
+        let event = permission_request_event(
+            &json!(7),
+            "execCommandApproval",
+            &json!({
+                "conversationId": "thread",
+                "callId": "call-1",
+                "command": ["git", "status"],
+                "cwd": "/tmp/repo",
+                "parsedCmd": []
+            }),
+        );
+
+        let raw = event.raw_json();
+
+        assert_eq!(raw["tool_name"], "Bash");
+        assert_eq!(raw["tool_use_id"], "call-1");
+        assert!(raw["options"].as_array().unwrap().iter().any(|option| {
+            option["decision"] == "allow_future"
+                && option["label"].as_str().unwrap().contains("session")
+        }));
+    }
+}

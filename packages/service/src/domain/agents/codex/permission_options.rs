@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+use super::command_decisions::synthesized_command_decisions;
+use super::legacy_permissions::legacy_permission_options;
 use super::permissions::{DECISION_ACCEPT_FOR_SESSION, DECISION_CANCEL, DECISION_DECLINE};
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 
@@ -12,12 +14,15 @@ pub(super) fn permission_options(
     params: &Value,
     supports_allow_future: bool,
 ) -> Vec<RuntimePermissionOption> {
+    if let Some(options) = legacy_permission_options(method) {
+        return options;
+    }
     match method {
         "item/commandExecution/requestApproval" if params.get("availableDecisions").is_some() => {
-            command_permission_options(params)
+            command_permission_options(params, supports_allow_future)
         }
         "item/commandExecution/requestApproval" => {
-            fallback_permission_options(supports_allow_future)
+            command_permission_options(params, supports_allow_future)
         }
         "item/fileChange/requestApproval" => file_permission_options(),
         "item/permissions/requestApproval" => permissions_request_options(),
@@ -55,13 +60,12 @@ pub(super) fn fallback_permission_options(
     options
 }
 
-fn command_permission_options(params: &Value) -> Vec<RuntimePermissionOption> {
-    let decisions = available_decision_values(params).unwrap_or_else(|| {
-        vec![
-            Value::String("accept".to_string()),
-            Value::String(DECISION_CANCEL.to_string()),
-        ]
-    });
+pub(super) fn command_permission_options(
+    params: &Value,
+    supports_allow_future: bool,
+) -> Vec<RuntimePermissionOption> {
+    let decisions = available_decision_values(params)
+        .unwrap_or_else(|| synthesized_command_decisions(params, supports_allow_future));
     decisions
         .into_iter()
         .filter_map(|decision| command_decision_option(decision, params))
@@ -304,15 +308,30 @@ fn native_option(
 }
 
 fn decision_key(decision: &Value) -> Option<&str> {
-    decision
-        .as_str()
-        .or_else(|| decision.as_object()?.get("type")?.as_str())
+    if let Some(key) = decision.as_str() {
+        return Some(key);
+    }
+    let object = decision.as_object()?;
+    object.get("type").and_then(Value::as_str).or_else(|| {
+        [
+            "acceptWithExecpolicyAmendment",
+            "applyNetworkPolicyAmendment",
+        ]
+        .into_iter()
+        .find(|key| object.contains_key(*key))
+    })
 }
 
 fn network_policy_decision(decision: &Value) -> RuntimePermissionDecision {
-    let action = decision
+    let amendment = decision
         .get("networkPolicyAmendment")
         .or_else(|| decision.get("network_policy_amendment"))
+        .or_else(|| {
+            decision
+                .get("applyNetworkPolicyAmendment")
+                .and_then(|value| value.get("network_policy_amendment"))
+        });
+    let action = amendment
         .and_then(|value| value.get("action"))
         .and_then(Value::as_str);
     if action == Some("deny") {

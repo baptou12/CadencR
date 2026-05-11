@@ -1,3 +1,4 @@
+mod command_decisions;
 mod commands;
 mod event_command_actions;
 mod event_inputs;
@@ -15,11 +16,14 @@ mod event_usage;
 mod events;
 mod input;
 mod instructions;
+mod legacy_permissions;
 mod mcp;
 mod mcp_status;
 mod model;
 mod permission_details;
 mod permission_options;
+#[cfg(test)]
+mod permission_options_tests;
 mod permissions;
 mod raw_tool_names;
 mod responses;
