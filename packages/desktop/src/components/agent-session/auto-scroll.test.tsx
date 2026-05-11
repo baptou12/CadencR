@@ -507,6 +507,72 @@ describe("AgentSession auto-scroll", () => {
     });
   });
 
+  // Conversation switch: the same `AgentSession` instance is reused when the
+  // user navigates to a different session (the route only swaps params).
+  // Stick state must reset to "engaged" so the new conversation lands at the
+  // bottom — without this, a "scrolled up" state from the previous
+  // conversation leaks into the next one and the user lands mid-history.
+  it("re-engages stick and pins to bottom when the conversation switches", () => {
+    const baseProps = {
+      agentType: "session" as const,
+      status: "agent" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    };
+    const { rerender } = render(
+      <AgentSession {...baseProps} wsSessionId="A" blocks={[makeBlock("a1", "First")]} />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+
+    // Switch to a different conversation. The reset effect runs in the same
+    // commit as the blocks swap, so the new conversation pins to its bottom.
+    stubGeometry(scroller, 800, 400);
+    rerender(<AgentSession {...baseProps} wsSessionId="B" blocks={[makeBlock("b1", "Second")]} />);
+
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    expect(scroller.scrollTop).toBe(800);
+  });
+
+  // Regression: while the new conversation's content lays out asynchronously,
+  // `scrollHeight` can shrink relative to the previous conversation. The
+  // browser clamps `scrollTop` downward and fires a scroll event whose
+  // `scrollTop` is less than the value we just pushed. The direction-aware
+  // `onScroll` would otherwise read that clamp as the user scrolling up; the
+  // swap window must suppress that disengage so the user lands at the bottom.
+  it("does not disengage stick on a scrollHeight-shrink clamp during a conversation swap", () => {
+    const baseProps = {
+      agentType: "session" as const,
+      status: "agent" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    };
+    const { rerender } = render(
+      <AgentSession {...baseProps} wsSessionId="A" blocks={[makeBlock("a1", "First")]} />,
+    );
+
+    const scroller = getScroller();
+    // Land at the bottom of conversation A (tall content).
+    stubGeometry(scroller, 2000, 400);
+    dispatchScroll(scroller, 1600);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+
+    // Switch to a shorter conversation B. The swap reset pins scrollTop to
+    // scrollHeight=500 → 500.
+    stubGeometry(scroller, 500, 400);
+    rerender(<AgentSession {...baseProps} wsSessionId="B" blocks={[makeBlock("b1", "Short")]} />);
+    expect(scroller.scrollTop).toBe(500);
+
+    // Simulate the browser's post-swap clamp echo: a scroll event arrives
+    // with the smaller `scrollTop` against the new `scrollHeight`. Pre-fix,
+    // this read as the user scrolling up and disengaged stick.
+    dispatchScroll(scroller, 100);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("collapses concurrent intersection fires while a load is in flight", async () => {
     let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { AgentBlockData } from "../AgentBlock";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
 
 /**
@@ -33,6 +34,14 @@ import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
  */
 
 const STICK_THRESHOLD_PX = 16;
+// After a conversation switch the new content lays out asynchronously
+// (Virtuoso measures items lazily, markdown / code highlighting settles).
+// `scrollHeight` can shrink relative to the previous conversation, the
+// browser clamps `scrollTop` downward, and the direction-aware `onScroll`
+// would otherwise misread that as the user scrolling up. The swap window
+// suppresses that disengage and is re-armed on every layout shift, closing
+// only after this many ms of stable layout.
+const SWAP_SETTLE_MS = 400;
 
 interface UseAgentSessionScrollOptions {
   /**
@@ -42,6 +51,14 @@ interface UseAgentSessionScrollOptions {
    * sees the same `firstBlockId` change React does.
    */
   blocks: AgentBlockData[];
+  /**
+   * Identifier for the active conversation. When this changes, the hook
+   * resets stick state to `true` and re-anchors to the bottom — the
+   * `AgentSession` instance is reused across session switches, so without an
+   * explicit reset, a "scrolled up" state from the previous conversation
+   * would leak into the next one and the user would land mid-history.
+   */
+  conversationKey: string | null;
   hasMore?: boolean;
   /** Resolves with the number of prepended blocks (or `void`). */
   onLoadOlder?: () => Promise<number | void>;
@@ -67,6 +84,7 @@ interface UseAgentSessionScrollResult {
 
 export function useAgentSessionScroll({
   blocks,
+  conversationKey,
   hasMore,
   onLoadOlder,
 }: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
@@ -87,6 +105,11 @@ export function useAgentSessionScroll({
   const lastScrollTopRef = useRef(0);
   const pendingPrependRef = useRef<{ prevH: number; prevT: number } | null>(null);
   const prevFirstBlockIdRef = useRef<string | null>(firstBlockId);
+  const prevConversationKeyRef = useRef<string | null>(conversationKey);
+  // Open during a conversation-switch settle window — suppresses the
+  // direction-aware `onScroll` disengage so a `scrollHeight` shrink in the
+  // new conversation's async layout isn't misread as the user scrolling up.
+  const swapInProgressRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
@@ -112,6 +135,33 @@ export function useAgentSessionScroll({
     setAutoScrollEnabled(true);
     stickToBottom();
   }, [setAutoScrollEnabled, stickToBottom]);
+
+  // Close the swap window once layout has been stable for `SWAP_SETTLE_MS`.
+  // The debounced callback resets on every call, so every content-size change
+  // during the swap pushes the close-out further. We don't pin to bottom on
+  // close: while stick is engaged the content `ResizeObserver` already pins
+  // on every shift, and a stable layout means we're already at the bottom.
+  const closeSwapWindow = useDebouncedCallback((): void => {
+    swapInProgressRef.current = false;
+  }, SWAP_SETTLE_MS);
+
+  // Conversation switch: the parent reuses this hook instance across
+  // sessionId changes, so a "scrolled up" stick state would otherwise leak
+  // into the next conversation. Reset to bottom + stick before the
+  // bottom-anchor layout effect below runs in the same commit.
+  useLayoutEffect(() => {
+    if (prevConversationKeyRef.current === conversationKey) return;
+    prevConversationKeyRef.current = conversationKey;
+    pendingPrependRef.current = null;
+    prevFirstBlockIdRef.current = firstBlockId;
+    lastScrollTopRef.current = 0;
+    stickRef.current = true;
+    setAutoScrollEnabledState(true);
+    swapInProgressRef.current = true;
+    closeSwapWindow();
+    const el = scrollerElRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [conversationKey, firstBlockId, closeSwapWindow]);
 
   useLayoutEffect(() => {
     const el = scrollerElRef.current;
@@ -152,11 +202,11 @@ export function useAgentSessionScroll({
       return;
     }
     // Disengage only on a genuine upward scroll (scrollbar drag, PageUp,
-    // Home). Programmatic `scrollTop = scrollHeight` echoes can fire a
-    // scroll event whose stale `scrollTop` reads as below-threshold after
-    // Virtuoso expanded the content — those never decreased `scrollTop`,
-    // so they fall through here without disengaging.
-    if (wentUp) setAutoScrollEnabled(false);
+    // Home). Programmatic-anchor echoes only ever increase `scrollTop`, so
+    // they fall through. During a conversation swap a `scrollHeight` shrink
+    // can clamp `scrollTop` downward — `swapInProgressRef` suppresses the
+    // disengage in that window; wheel / touchmove still react to real input.
+    if (wentUp && !swapInProgressRef.current) setAutoScrollEnabled(false);
   }, [setAutoScrollEnabled]);
   const onWheel = useCallback(
     (e: WheelEvent): void => {
@@ -205,24 +255,31 @@ export function useAgentSessionScroll({
     [onScroll, onWheel, onTouchStart, onTouchMove],
   );
 
-  const scrollContentRef = useCallback<DivRef>((el) => {
-    if (contentElRef.current === el) return;
-    contentObserverRef.current?.disconnect();
-    contentObserverRef.current = null;
-    contentElRef.current = el;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      // Skip the per-frame re-anchor while a resize-handle drag is in
-      // flight; the catch-up subscription above runs one pass on release.
-      if (isResizing()) return;
-      if (!stickRef.current || pendingPrependRef.current !== null) return;
-      const scroller = scrollerElRef.current;
-      if (!scroller) return;
-      scroller.scrollTop = scroller.scrollHeight;
-    });
-    observer.observe(el);
-    contentObserverRef.current = observer;
-  }, []);
+  const scrollContentRef = useCallback<DivRef>(
+    (el) => {
+      if (contentElRef.current === el) return;
+      contentObserverRef.current?.disconnect();
+      contentObserverRef.current = null;
+      contentElRef.current = el;
+      if (!el || typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(() => {
+        // Skip the per-frame re-anchor while a resize-handle drag is in
+        // flight; the catch-up subscription above runs one pass on release.
+        if (isResizing()) return;
+        // While a conversation-switch swap is settling, every layout shift
+        // pushes the close-out further so the window covers Virtuoso's
+        // async measurement pass even if it spills past `SWAP_SETTLE_MS`.
+        if (swapInProgressRef.current) closeSwapWindow();
+        if (!stickRef.current || pendingPrependRef.current !== null) return;
+        const scroller = scrollerElRef.current;
+        if (!scroller) return;
+        scroller.scrollTop = scroller.scrollHeight;
+      });
+      observer.observe(el);
+      contentObserverRef.current = observer;
+    },
+    [closeSwapWindow],
+  );
 
   const topSentinelRef = useCallback<DivRef>((el) => {
     if (sentinelElRef.current === el) return;
