@@ -1,8 +1,11 @@
 import { memo, useMemo, type ReactElement, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Loader2Icon, TerminalIcon } from "lucide-react";
+import { getGetMessageFullContentQueryKey, getMessageFullContent } from "@/api/generated";
 import { cn } from "@/lib/utils";
 import { parseAnsi } from "@/lib/ansi-to-html";
 import { copyToClipboard } from "@/lib/clipboard";
+import { extractBashResultOutput } from "@/lib/tool-adapter";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import {
   ContextMenu,
@@ -24,6 +27,8 @@ export interface BashBlockProps {
   running?: boolean;
   isError?: boolean;
   maxLines?: number;
+  messageId?: number;
+  truncatedContent?: boolean;
   bodyExtraClassName?: string;
   runningFooter?: ReactNode;
 }
@@ -34,6 +39,8 @@ export const BashBlock = memo(function BashBlock({
   running,
   isError,
   maxLines = DEFAULT_BASH_LINES,
+  messageId,
+  truncatedContent,
   bodyExtraClassName,
   runningFooter,
 }: BashBlockProps): ReactElement {
@@ -84,6 +91,8 @@ export const BashBlock = memo(function BashBlock({
                   maxLines={maxLines}
                   showAll={showAll}
                   running={running}
+                  messageId={messageId}
+                  truncatedContent={truncatedContent === true}
                   runningFooter={runningFooter}
                 />
               ) : running ? (
@@ -132,6 +141,8 @@ interface BashBodyContentProps {
   maxLines: number;
   showAll: boolean;
   running?: boolean;
+  messageId?: number;
+  truncatedContent: boolean;
   runningFooter?: ReactNode;
 }
 
@@ -140,17 +151,123 @@ function BashBodyContent({
   maxLines,
   showAll,
   running,
+  messageId,
+  truncatedContent,
   runningFooter,
 }: BashBodyContentProps): ReactElement {
+  if (showAll && truncatedContent && messageId !== undefined) {
+    return (
+      <FetchedBashBodyContent
+        content={content}
+        maxLines={maxLines}
+        showAll={showAll}
+        running={running}
+        messageId={messageId}
+        runningFooter={runningFooter}
+      />
+    );
+  }
+  return (
+    <ParsedBashBodyContent
+      content={content}
+      displayedContent={content}
+      maxLines={maxLines}
+      showAll={showAll}
+      running={running}
+      runningFooter={runningFooter}
+    />
+  );
+}
+
+interface FetchedBashBodyContentProps {
+  content: string;
+  maxLines: number;
+  showAll: boolean;
+  running?: boolean;
+  messageId: number;
+  runningFooter?: ReactNode;
+}
+
+function FetchedBashBodyContent({
+  content,
+  maxLines,
+  showAll,
+  running,
+  messageId,
+  runningFooter,
+}: FetchedBashBodyContentProps): ReactElement {
+  const fullContentQuery = useQuery({
+    queryKey: getGetMessageFullContentQueryKey(messageId),
+    queryFn: ({ signal }) => getMessageFullContent(messageId, signal),
+    // The full payload is immutable for a given message id, so once fetched
+    // we don't need to refetch it. `cacheTime` (react-query v4) caps how long
+    // an unmounted entry stays in cache — bash outputs can run into megabytes
+    // per message, and a long session could otherwise accumulate the whole
+    // transcript in memory after the user collapses each one.
+    staleTime: Number.POSITIVE_INFINITY,
+    cacheTime: 5 * 60 * 1000,
+  });
+  const fetchedContent = fullContentQuery.data
+    ? extractBashResultOutput(fullContentQuery.data.content)
+    : undefined;
+  return (
+    <>
+      {fullContentQuery.isFetching && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-[var(--block-bash-muted-fg)]">
+          <Loader2Icon className="size-3 animate-spin" />
+          <span>Loading full output…</span>
+        </div>
+      )}
+      {fullContentQuery.isError && (
+        <div className="mb-2 text-xs text-destructive">
+          Could not load full output: {errorMessage(fullContentQuery.error)}
+        </div>
+      )}
+      <ParsedBashBodyContent
+        content={content}
+        displayedContent={fetchedContent ?? content}
+        maxLines={maxLines}
+        showAll={showAll}
+        running={running}
+        runningFooter={runningFooter}
+      />
+    </>
+  );
+}
+
+interface ParsedBashBodyContentProps {
+  content: string;
+  displayedContent: string;
+  maxLines: number;
+  showAll: boolean;
+  running?: boolean;
+  runningFooter?: ReactNode;
+}
+
+function ParsedBashBodyContent({
+  content,
+  displayedContent,
+  maxLines,
+  showAll,
+  running,
+  runningFooter,
+}: ParsedBashBodyContentProps): ReactElement {
   const truncatedAnsi = useMemo(
     () => parseAnsi(content.split("\n").slice(-maxLines).join("\n")),
     [content, maxLines],
   );
-  const fullAnsi = useMemo(() => (showAll ? parseAnsi(content) : null), [content, showAll]);
+  const fullAnsi = useMemo(
+    () => (showAll ? parseAnsi(displayedContent) : null),
+    [displayedContent, showAll],
+  );
   return (
     <>
       <pre className="whitespace-pre">{showAll ? fullAnsi : truncatedAnsi}</pre>
       {running && runningFooter}
     </>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }

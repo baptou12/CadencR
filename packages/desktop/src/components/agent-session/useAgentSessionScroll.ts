@@ -10,10 +10,20 @@ import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
  *   2. User scrolls up → stop auto-scrolling.
  *   3. User clicks the chip → scroll to bottom (rule 1 re-engages).
  *
- * We disengage stick on `wheel` / `touchmove` synchronously (before the
- * browser updates `scrollTop`) so a streaming-token re-anchor in the same
- * commit can't undo the user's scroll. We re-engage stick from the `scroll`
- * listener when the user reaches the bottom band.
+ * Disengage triggers:
+ *   - `wheel` / `touchmove` up — synchronous, before the browser updates
+ *     `scrollTop`, so a streaming-token re-anchor in the same commit can't
+ *     undo the user's scroll.
+ *   - `scroll` events where `scrollTop` actually *decreased* (scrollbar
+ *     drag up, PageUp, Home, keyboard ArrowUp). We compare against the
+ *     previous `scrollTop` and only disengage when the user moved upward.
+ *
+ * We do NOT disengage just because `distanceFromBottom > threshold`: with
+ * virtualization (Virtuoso `customScrollParent`), item measurement settles
+ * asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
+ * event after Virtuoso has expanded the content, so the stale `scrollTop`
+ * reads as "scrolled away" against the new `scrollHeight`. A direction-aware
+ * check ignores those echoes because `scrollTop` only ever increased.
  *
  * Prepend-restore: when older history is loaded, we capture
  * `scrollHeight` / `scrollTop` synchronously *before* invoking the loader,
@@ -72,6 +82,9 @@ export function useAgentSessionScroll({
   const stickRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const touchStartYRef = useRef(0);
+  // Last `scrollTop` we saw on the scroller — used by `onScroll` to detect
+  // an actual user-driven upward scroll vs. a programmatic re-anchor echo.
+  const lastScrollTopRef = useRef(0);
   const pendingPrependRef = useRef<{ prevH: number; prevT: number } | null>(null);
   const prevFirstBlockIdRef = useRef<string | null>(firstBlockId);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
@@ -131,9 +144,19 @@ export function useAgentSessionScroll({
   const onScroll = useCallback((): void => {
     const el = scrollerElRef.current;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD_PX) {
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const wentUp = el.scrollTop < lastScrollTopRef.current;
+    lastScrollTopRef.current = el.scrollTop;
+    if (distanceFromBottom < STICK_THRESHOLD_PX) {
       setAutoScrollEnabled(true);
+      return;
     }
+    // Disengage only on a genuine upward scroll (scrollbar drag, PageUp,
+    // Home). Programmatic `scrollTop = scrollHeight` echoes can fire a
+    // scroll event whose stale `scrollTop` reads as below-threshold after
+    // Virtuoso expanded the content — those never decreased `scrollTop`,
+    // so they fall through here without disengaging.
+    if (wentUp) setAutoScrollEnabled(false);
   }, [setAutoScrollEnabled]);
   const onWheel = useCallback(
     (e: WheelEvent): void => {

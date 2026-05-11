@@ -9,8 +9,8 @@ import {
 import {
   extractBashCommand,
   extractBashOutput,
+  extractBashResultOutput,
   extractInlineDiffPreview,
-  isStructuredBashPayload,
   isFileChangeTool,
   isToolCallRunning,
   normalizeToolName,
@@ -78,6 +78,8 @@ export interface AgentBlockData {
   model?: string;
   /** Plan approval status — set after user approves or rejects */
   planApprovalStatus?: "approved" | "rejected";
+  /** Whether `content` was server-side truncated and needs full-content fetch on expand. */
+  truncatedContent?: boolean;
 }
 
 interface AgentBlockProps {
@@ -127,13 +129,15 @@ export const AgentBlock = memo(function AgentBlock({
       if (block.toolName === "Bash") {
         const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
         const running = !result && isToolCallRunning(block.toolArgs);
-        const resultOutput = result ? bashResultOutput(result.content) : undefined;
+        const resultOutput = result ? extractBashResultOutput(result.content) : undefined;
         return (
           <BashBlock
             command={extractBashCommand(block.toolArgs)}
             content={resultOutput ?? extractBashOutput(block.toolArgs)}
             running={running}
             isError={result?.isError}
+            messageId={result ? messageIdFromBlockId(result.id) : undefined}
+            truncatedContent={result?.truncatedContent === true}
           />
         );
       }
@@ -188,12 +192,14 @@ export const AgentBlock = memo(function AgentBlock({
   }
 });
 
-function bashResultOutput(content: string): string | undefined {
-  return extractBashOutput(content) ?? (isStructuredBashPayload(content) ? undefined : content);
-}
-
 function isPlanPresentationTool(toolName: string | undefined): boolean {
   return toolName === "ExitPlanMode" || isCadencrPlanPresentationTool(toolName);
+}
+
+function messageIdFromBlockId(id: string): number | undefined {
+  if (!id.startsWith("msg-")) return undefined;
+  const parsed = Number(id.slice(4));
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function hasAttachedPlanContent(args: string | undefined): boolean {

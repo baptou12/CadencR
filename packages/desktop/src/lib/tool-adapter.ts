@@ -24,6 +24,7 @@ export function isFileChangeTool(toolName: string | undefined): boolean {
 export function extractBashOutput(toolArgs?: string): string | undefined {
   const args = parseToolArgsObject(toolArgs);
   if (!args) return undefined;
+  if (typeof args.aggregatedOutput === "string") return args.aggregatedOutput;
   const output = args.output;
   if (typeof output === "string") return output;
   if (output && typeof output === "object") {
@@ -36,6 +37,10 @@ export function extractBashOutput(toolArgs?: string): string | undefined {
     if (typeof legacyOutput === "string") return legacyOutput;
   }
   return undefined;
+}
+
+export function extractBashResultOutput(content: string): string | undefined {
+  return extractBashOutput(content) ?? (isStructuredBashPayload(content) ? undefined : content);
 }
 
 export function extractBashCommand(toolArgs?: string): string | undefined {
