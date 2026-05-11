@@ -305,9 +305,6 @@ export function CommandPalette({
           >
             <FilePlusIcon className="mr-2" />
             New Feature
-            <span className="ml-auto">
-              <KbdShortcut keys={["cmd", "N"]} />
-            </span>
           </CommandItem>
           <CommandItem
             onSelect={() => {

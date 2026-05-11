@@ -244,7 +244,7 @@ export function useWorkflowKeyboard(
   );
 
   useScopedHotkeys(
-    "meta+1",
+    "meta+y",
     (e) => {
       e.preventDefault();
       const entry = getFocusedEntry();
@@ -255,7 +255,7 @@ export function useWorkflowKeyboard(
   );
 
   useScopedHotkeys(
-    "meta+2",
+    "meta+n",
     (e) => {
       e.preventDefault();
       const entry = getFocusedEntry();

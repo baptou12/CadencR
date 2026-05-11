@@ -33,7 +33,7 @@ export function PlanApprovalBar({
   };
 
   useScopedGlobalShortcut(
-    "meta+1",
+    "meta+y",
     (e) => {
       e.preventDefault();
       onApprove();
@@ -43,7 +43,7 @@ export function PlanApprovalBar({
   );
 
   useScopedGlobalShortcut(
-    "meta+2",
+    "meta+n",
     (e) => {
       e.preventDefault();
       openFeedback();
@@ -131,7 +131,7 @@ export function PlanApprovalBar({
           <Button variant="default" size="sm" onClick={onApprove} className="gap-1.5">
             <Play className="size-3.5" />
             {approveLabel ?? "Approve & Execute"}
-            <KbdShortcut keys={["cmd", "1"]} />
+            <KbdShortcut keys={["cmd", "Y"]} />
           </Button>
           <Button
             variant="ghost"
@@ -141,7 +141,7 @@ export function PlanApprovalBar({
           >
             <MessageSquare className="size-3.5" />
             Request Changes
-            <KbdShortcut keys={["cmd", "2"]} />
+            <KbdShortcut keys={["cmd", "N"]} />
           </Button>
           {onReject && (
             <Button
