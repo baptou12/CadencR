@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 
 describe("PlanApprovalBar", () => {
@@ -104,5 +104,31 @@ describe("PlanApprovalBar", () => {
       />,
     );
     expect(screen.getByText("run tests")).toBeInTheDocument();
+  });
+
+  it("uses command-y to approve", () => {
+    const onApprove = vi.fn();
+    render(<PlanApprovalBar onApprove={onApprove} onRequestChanges={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: "y", code: "KeyY", metaKey: true });
+
+    expect(onApprove).toHaveBeenCalledOnce();
+  });
+
+  it("uses command-n to request changes with a reason", () => {
+    render(<PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: "n", code: "KeyN", metaKey: true });
+
+    expect(screen.getByPlaceholderText(/describe the changes/i)).toBeInTheDocument();
+  });
+
+  it("does not use command-number for plan approval", () => {
+    const onApprove = vi.fn();
+    render(<PlanApprovalBar onApprove={onApprove} onRequestChanges={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: "1", metaKey: true });
+
+    expect(onApprove).not.toHaveBeenCalled();
   });
 });
