@@ -66,14 +66,7 @@ impl AcpNotification {
 impl AcpServerRequest {
     pub fn from_parts(id: Value, method: String, params: Value) -> Self {
         match method.as_str() {
-            "session/request_permission"
-            | "fs/read_text_file"
-            | "fs/write_text_file"
-            | "terminal/create"
-            | "terminal/output"
-            | "terminal/wait_for_exit"
-            | "terminal/kill"
-            | "terminal/release" => {
+            "session/request_permission" | "fs/read_text_file" | "fs/write_text_file" => {
                 let typed = AgentRequest::parse_message(&method, &params).ok();
                 Self::Known {
                     id,
@@ -82,6 +75,19 @@ impl AcpServerRequest {
                     typed,
                 }
             }
+            // Terminal traffic stays raw: OpenCode sends provider extensions
+            // such as object-shaped `env`, and the runtime terminal registry
+            // already consumes the raw ACP-compatible payload directly.
+            "terminal/create"
+            | "terminal/output"
+            | "terminal/wait_for_exit"
+            | "terminal/kill"
+            | "terminal/release" => Self::Known {
+                id,
+                method,
+                raw: params,
+                typed: None,
+            },
             _ => Self::Extension { id, method, params },
         }
     }
@@ -197,5 +203,26 @@ mod tests {
         };
         assert!(typed.is_none());
         assert_eq!(raw["env"]["ACP_PARITY"], "ok");
+    }
+
+    #[test]
+    fn terminal_create_skips_typed_parse_even_for_schema_clean_payload() {
+        let request = AcpServerRequest::from_parts(
+            json!("term-2"),
+            "terminal/create".to_string(),
+            json!({
+                "sessionId": "s-1",
+                "command": "sh",
+                "args": ["-c", "echo ok"],
+                "env": [{ "name": "ACP_PARITY", "value": "ok" }],
+                "outputByteLimit": 64
+            }),
+        );
+
+        let AcpServerRequest::Known { typed, raw, .. } = request else {
+            panic!("expected known request");
+        };
+        assert!(typed.is_none());
+        assert_eq!(raw["env"][0]["name"], "ACP_PARITY");
     }
 }
