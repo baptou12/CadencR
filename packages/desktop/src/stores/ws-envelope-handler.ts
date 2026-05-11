@@ -493,6 +493,7 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
       ...blocksPatchWithDerived(freshState, clearedBlocks),
       lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
       streamingState: freshState,
+      historyPrependDisplayOffset: 0,
       pendingPermission: null,
       pendingPermissionQueue: [],
       pendingRequestId: "",

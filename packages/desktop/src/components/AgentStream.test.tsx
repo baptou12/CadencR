@@ -4,6 +4,16 @@ import { render, screen } from "@/test-utils";
 import { AgentStream } from "./AgentStream";
 import type { AgentBlockData } from "./AgentBlock";
 
+const virtuosoState = vi.hoisted(() => ({
+  firstItemIndex: undefined as number | undefined,
+  customScrollParent: undefined as HTMLElement | undefined,
+  hasScrollerRef: false,
+  startReached: undefined as (() => void) | undefined,
+  rangeChanged: undefined as
+    | ((range: { startIndex: number; endIndex: number }) => void)
+    | undefined,
+}));
+
 // Mock Virtuoso so JSDOM tests render all items synchronously instead of
 // relying on layout/IntersectionObserver. Real virtualization is exercised
 // in the running app; here we just need block content reachable in the DOM.
@@ -11,16 +21,42 @@ vi.mock("react-virtuoso", () => ({
   Virtuoso: ({
     data,
     itemContent,
+    firstItemIndex,
+    computeItemKey,
+    customScrollParent,
+    scrollerRef,
+    startReached,
+    rangeChanged,
+    components,
+    context,
   }: {
     data?: AgentBlockData[];
     itemContent?: (index: number, block: AgentBlockData) => ReactNode;
-  }) => (
-    <div data-testid="virtuoso-mock">
-      {data?.map((item, i) => (
-        <div key={item.id}>{itemContent?.(i, item)}</div>
-      ))}
-    </div>
-  ),
+    firstItemIndex?: number;
+    computeItemKey?: (index: number, block: AgentBlockData) => string;
+    customScrollParent?: HTMLElement;
+    scrollerRef?: (ref: HTMLElement | null) => void;
+    startReached?: () => void;
+    rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
+    components?: { Footer?: (props: { context?: unknown }) => ReactNode };
+    context?: unknown;
+  }) => {
+    virtuosoState.firstItemIndex = firstItemIndex;
+    virtuosoState.customScrollParent = customScrollParent;
+    virtuosoState.hasScrollerRef = typeof scrollerRef === "function";
+    virtuosoState.startReached = startReached;
+    virtuosoState.rangeChanged = rangeChanged;
+    return (
+      <div data-testid="virtuoso-mock">
+        {data?.map((item, i) => (
+          <div key={computeItemKey?.((firstItemIndex ?? 0) + i, item) ?? item.id}>
+            {itemContent?.((firstItemIndex ?? 0) + i, item)}
+          </div>
+        ))}
+        {components?.Footer ? <components.Footer context={context} /> : null}
+      </div>
+    );
+  },
 }));
 
 // Per-block render counts captured by the AgentBlock mock. Tests that care
@@ -49,6 +85,11 @@ function makeBlock(
 describe("AgentStream", () => {
   beforeEach(() => {
     blockRenderCounts.clear();
+    virtuosoState.firstItemIndex = undefined;
+    virtuosoState.customScrollParent = undefined;
+    virtuosoState.hasScrollerRef = false;
+    virtuosoState.startReached = undefined;
+    virtuosoState.rangeChanged = undefined;
   });
 
   it("renders blocks", () => {
@@ -121,7 +162,7 @@ describe("AgentStream", () => {
     expect(screen.queryByTestId("block-2")).not.toBeInTheDocument();
   });
 
-  it("coalesces persisted text chunks split by hidden blocks", () => {
+  it("filters hidden blocks without merging neighboring visible rows", () => {
     const createdAt = "2026-04-12T12:09:36Z";
     const blocks: AgentBlockData[] = [
       { ...makeBlock("1", "Hello "), createdAt, model: "openai/gpt-5.3-codex" },
@@ -129,14 +170,68 @@ describe("AgentStream", () => {
       { ...makeBlock("3", "world"), createdAt, model: "openai/gpt-5.3-codex" },
     ];
     render(<AgentStream blocks={blocks} />);
-    expect(screen.getByTestId("block-1")).toHaveTextContent("Hello world");
+    expect(screen.getByTestId("block-1")).toHaveTextContent("Hello");
     expect(screen.queryByTestId("block-2")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("block-3")).not.toBeInTheDocument();
+    expect(screen.getByTestId("block-3")).toHaveTextContent("world");
+  });
+
+  it("does not coalesce text blocks from different timestamps", () => {
+    const blocks: AgentBlockData[] = [
+      {
+        ...makeBlock("1", "First"),
+        createdAt: "2026-04-12T12:09:36Z",
+        model: "openai/gpt-5.3-codex",
+      },
+      {
+        ...makeBlock("2", "Second"),
+        createdAt: "2026-04-12T12:10:01Z",
+        model: "openai/gpt-5.3-codex",
+      },
+    ];
+
+    render(<AgentStream blocks={blocks} />);
+
+    expect(screen.getByTestId("block-1")).toBeInTheDocument();
+    expect(screen.getByTestId("block-2")).toBeInTheDocument();
   });
 
   it("renders the loading-older spinner above the list when isLoadingOlder is true", () => {
     const { container } = render(<AgentStream blocks={[makeBlock("1", "Hello")]} isLoadingOlder />);
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+  });
+
+  it("decrements Virtuoso firstItemIndex by the prepended display-row offset", () => {
+    render(
+      <AgentStream
+        blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]}
+        historyPrependDisplayOffset={37}
+      />,
+    );
+
+    expect(virtuosoState.firstItemIndex).toBe(999_963);
+  });
+
+  it("lets Virtuoso own the scroller and uses startReached for top pagination", () => {
+    const onStartReached = vi.fn();
+
+    render(<AgentStream blocks={[makeBlock("1", "Hello")]} onStartReached={onStartReached} />);
+
+    expect(virtuosoState.customScrollParent).toBeUndefined();
+    expect(virtuosoState.hasScrollerRef).toBe(true);
+    virtuosoState.startReached?.();
+    expect(onStartReached).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefetches older history before the viewport reaches the exact first row", () => {
+    const onStartReached = vi.fn();
+
+    render(<AgentStream blocks={[makeBlock("1", "Hello")]} onStartReached={onStartReached} />);
+
+    virtuosoState.rangeChanged?.({ startIndex: 1_000_015, endIndex: 1_000_020 });
+    expect(onStartReached).not.toHaveBeenCalled();
+
+    virtuosoState.rangeChanged?.({ startIndex: 1_000_012, endIndex: 1_000_017 });
+    expect(onStartReached).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-render unchanged AgentStreamItem blocks during streaming", () => {

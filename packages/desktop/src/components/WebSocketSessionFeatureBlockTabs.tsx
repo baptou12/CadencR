@@ -64,6 +64,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           blocks={controls.ws.blocks}
           rootBlocks={controls.ws.rootBlocks}
           toolResultMap={controls.ws.toolResultMap}
+          historyPrependDisplayOffset={controls.ws.historyPrependDisplayOffset}
           status={controls.ws.status}
           onSend={onSend}
           onStop={controls.ws.interrupt}

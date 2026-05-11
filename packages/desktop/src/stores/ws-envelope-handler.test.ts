@@ -74,6 +74,27 @@ describe("handleEnvelope turn_complete", () => {
   });
 });
 
+describe("handleEnvelope cleared", () => {
+  it("resets prepend anchoring state when a clear divider starts a new turn history", () => {
+    const session = createSessionEntry();
+    session.blocks = [{ id: "old", type: "text", content: "old content" }];
+    session.rootBlocks = session.blocks;
+    session.historyPrependDisplayOffset = 42;
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "cleared",
+      payload: { previous_session_id: "previous-session" },
+    });
+
+    const updated = ctx.getSession("s1");
+    expect(updated.historyPrependDisplayOffset).toBe(0);
+    expect(updated.blocks.map((block) => block.type)).toEqual(["text", "clear_divider"]);
+    expect(updated.rootBlocks.map((block) => block.type)).toEqual(["text", "clear_divider"]);
+  });
+});
+
 describe("handleEnvelope mode.changed", () => {
   it("accepts a mode that exists in the active provider's catalog", () => {
     const session = createSessionEntry();

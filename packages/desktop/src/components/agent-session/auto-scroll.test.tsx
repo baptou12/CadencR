@@ -5,31 +5,8 @@ import { AgentSession } from "./AgentSession";
 import type { AgentBlockData } from "../AgentBlock";
 import { toast } from "sonner";
 
-// Replace the global IntersectionObserver mock with one that does NOT
-// auto-fire, so prepend tests have explicit control over the "user reached
-// the top" signal.
-let lastTopObserver: { fire: () => void } | null = null;
-class TopSentinelObserverMock {
-  private target: Element | null = null;
-  observe = (el: Element): void => {
-    this.target = el;
-  };
-  disconnect = (): void => {
-    lastTopObserver = null;
-  };
-  unobserve = (): void => {};
-  constructor(cb: IntersectionObserverCallback) {
-    lastTopObserver = {
-      fire: () => {
-        if (!this.target) return;
-        cb(
-          [{ isIntersecting: true, target: this.target } as IntersectionObserverEntry],
-          this as unknown as IntersectionObserver,
-        );
-      },
-    };
-  }
-}
+// The global react-virtuoso test mock exposes a custom event so tests
+// can deterministically simulate Virtuoso reaching the top item.
 
 vi.mock("react-hotkeys-hook", () => ({
   useHotkeys: vi.fn(),
@@ -115,6 +92,13 @@ function dispatchScroll(el: HTMLElement, scrollTop: number): void {
 }
 
 /** Simulate a real wheel-up: wheel listener disengages stick synchronously. */
+
+function fireStartReached(): void {
+  act(() => {
+    getScroller().dispatchEvent(new Event("virtuoso-start-reached", { bubbles: true }));
+  });
+}
+
 function userWheelUp(el: HTMLElement, scrollTop: number): void {
   act(() => {
     el.dispatchEvent(new WheelEvent("wheel", { deltaY: -50, bubbles: true }));
@@ -125,11 +109,6 @@ function userWheelUp(el: HTMLElement, scrollTop: number): void {
 describe("AgentSession auto-scroll", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    lastTopObserver = null;
-    Object.defineProperty(window, "IntersectionObserver", {
-      writable: true,
-      value: TopSentinelObserverMock,
-    });
   });
 
   it("shows the auto-scroll chip and scrolls to bottom on click", async () => {
@@ -306,7 +285,7 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(1000);
   });
 
-  // Regression: with Virtuoso `customScrollParent`, item measurement settles
+  // Regression: with Virtuoso, item measurement settles
   // asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
   // event AFTER Virtuoso has expanded the content, so the stale `scrollTop`
   // reads as below-threshold against the new `scrollHeight`. Older symmetric
@@ -363,7 +342,7 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(50);
   });
 
-  it("loads older history when the top sentinel becomes visible", async () => {
+  it("loads older history when Virtuoso reaches the first item", async () => {
     const onLoadOlder = vi.fn(async () => 0);
     render(
       <AgentSession
@@ -378,8 +357,7 @@ describe("AgentSession auto-scroll", () => {
     );
 
     stubGeometry(getScroller(), 1000, 400);
-    expect(lastTopObserver).not.toBeNull();
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
 
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
   });
@@ -398,8 +376,7 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    expect(lastTopObserver).not.toBeNull();
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
     expect(onLoadOlder).not.toHaveBeenCalled();
   });
 
@@ -427,7 +404,7 @@ describe("AgentSession auto-scroll", () => {
     stubGeometry(getScroller(), 1000, 400);
     expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
 
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
     await waitFor(() => {
       expect(container.querySelector(".animate-spin")).toBeInTheDocument();
     });
@@ -454,16 +431,16 @@ describe("AgentSession auto-scroll", () => {
     );
 
     stubGeometry(getScroller(), 1000, 400);
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
   });
 
-  // The chat-app prepend-restore pattern: capture scrollHeight/scrollTop
-  // when the loader fires, then after the prepended blocks render, restore
-  // anchor via `newScrollHeight − prevScrollHeight + prevScrollTop`. The
-  // user stays glued to the same content.
-  it("preserves the user's scroll position after older messages are prepended", async () => {
+  // Prepend anchoring is owned by Virtuoso's `firstItemIndex`; the scroll
+  // hook must not also apply a manual scrollHeight delta or the real browser
+  // path double-adjusts. The component-level AgentStream test asserts the
+  // `firstItemIndex` decrement that preserves the visible content.
+  it("does not manually adjust scrollTop after older messages are prepended", async () => {
     let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
@@ -488,11 +465,11 @@ describe("AgentSession auto-scroll", () => {
     stubGeometry(scroller, 600, 200);
     userWheelUp(scroller, 80);
 
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
 
-    // Older blocks land at the front. scrollHeight grows from 600 to 1000.
-    // newScrollTop = 1000 − 600 + 80 = 480.
+    // Older blocks land at the front. The hook leaves scrollTop alone;
+    // Virtuoso receives the prepend offset and performs the real anchoring.
     act(() => resolveLoad());
     stubGeometry(scroller, 1000, 200);
     rerender(
@@ -502,9 +479,7 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(scroller.scrollTop).toBe(480);
-    });
+    await waitFor(() => expect(scroller.scrollTop).toBe(80));
   });
 
   // Conversation switch: the same `AgentSession` instance is reused when the
@@ -595,8 +570,8 @@ describe("AgentSession auto-scroll", () => {
     );
 
     stubGeometry(getScroller(), 1000, 400);
-    act(() => lastTopObserver!.fire());
-    act(() => lastTopObserver!.fire());
+    fireStartReached();
+    fireStartReached();
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
 
     act(() => resolveLoad());

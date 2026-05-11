@@ -51,6 +51,7 @@ export const AgentSession = memo(
       blocks,
       rootBlocks,
       toolResultMap,
+      historyPrependDisplayOffset,
       status,
       onSend,
       onStop,
@@ -142,8 +143,7 @@ export const AgentSession = memo(
 
     const {
       scrollContainerRef,
-      topSentinelRef,
-      scrollContentRef,
+      onStartReached,
       autoScrollEnabled,
       isLoadingOlder,
       scrollToBottom,
@@ -332,9 +332,9 @@ export const AgentSession = memo(
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}
           scrollContainerRef={scrollContainerRef}
-          topSentinelRef={topSentinelRef}
-          scrollContentRef={scrollContentRef}
+          onStartReached={onStartReached}
           isLoadingOlder={isLoadingOlder}
+          historyPrependDisplayOffset={historyPrependDisplayOffset}
         />
       ) : null;
 
