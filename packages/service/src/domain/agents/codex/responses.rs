@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::legacy_permissions::legacy_response_value;
 use super::permissions::{
     available_decisions, codex_decision_from_option_id, codex_elicitation_response_from_option_id,
     supports_accept_for_session, DECISION_CANCEL, DECISION_DECLINE, STRICT_AUTO_REVIEW_OPTION_ID,
@@ -11,6 +12,9 @@ pub(super) fn response_value(
     params: &Value,
     response: &RuntimePermissionResponse,
 ) -> Value {
+    if let Some(value) = legacy_response_value(method, params, response) {
+        return value;
+    }
     match method {
         "mcpServer/elicitation/request" => elicitation_response(response),
         "item/tool/requestUserInput" => user_input_response(params, response),

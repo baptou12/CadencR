@@ -56,6 +56,7 @@ fn item_id(params: &Value) -> Option<String> {
         .get("itemId")
         .and_then(Value::as_str)
         .or_else(|| params.get("item_id").and_then(Value::as_str))
+        .or_else(|| params.get("callId").and_then(Value::as_str))
         .map(ToOwned::to_owned)
 }
 
@@ -261,7 +262,20 @@ mod tests {
         );
 
         assert!(has_allow_future(&request));
-        assert_eq!(request.options.len(), 3);
+        let labels = request
+            .options
+            .iter()
+            .map(|option| option.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            vec![
+                "Approve",
+                "Approve for session",
+                "Deny and continue",
+                "Deny with feedback"
+            ]
+        );
     }
 
     #[test]

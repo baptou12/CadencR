@@ -1,6 +1,7 @@
 use serde_json::{Map, Value};
 
 use super::event_inputs::mcp_tool_name_from_parts;
+use super::legacy_permissions::legacy_permission_details;
 use super::permissions::supports_accept_for_session;
 
 pub(super) struct PermissionDetails {
@@ -11,6 +12,9 @@ pub(super) struct PermissionDetails {
 }
 
 pub(super) fn permission_details(method: &str, params: &Value) -> PermissionDetails {
+    if let Some(details) = legacy_permission_details(method, params) {
+        return details;
+    }
     match method {
         "item/commandExecution/requestApproval" => command_permission_details(params),
         "item/fileChange/requestApproval" => file_permission_details(params),
@@ -120,7 +124,7 @@ fn command_permission_input(params: &Value) -> Value {
     Value::Object(input)
 }
 
-fn insert_param_or_null(input: &mut Map<String, Value>, params: &Value, key: &str) {
+pub(super) fn insert_param_or_null(input: &mut Map<String, Value>, params: &Value, key: &str) {
     input.insert(
         key.to_string(),
         params.get(key).cloned().unwrap_or(Value::Null),
@@ -134,7 +138,7 @@ fn insert_optional_param(input: &mut Map<String, Value>, params: &Value, key: &s
     input.insert(key.to_string(), value.clone());
 }
 
-fn description(params: &Value, fallback: &str) -> Option<String> {
+pub(super) fn description(params: &Value, fallback: &str) -> Option<String> {
     Some(
         params
             .get("reason")
