@@ -18,6 +18,7 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::domain::agents::acp::client::{server_request_key, AcpClient, AcpSpawnOptions};
 use crate::domain::agents::acp::error::AcpError;
+use crate::domain::agents::acp::incoming::{AcpNotification, AcpServerRequest};
 use crate::domain::agents::acp::types::{AcpClientInfo, AcpEvent};
 
 const DEFAULT_MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
@@ -232,7 +233,8 @@ impl HandleDispatchFrom<agent_client_protocol::Agent> for BroadcastHandler {
         match message {
             Dispatch::Notification(notification) => {
                 let (method, params) = notification.into_parts();
-                let _ = self.events.send(AcpEvent::Notification { method, params });
+                let event = AcpNotification::from_parts(method, params);
+                let _ = self.events.send(AcpEvent::Notification(event));
                 Ok(Handled::Yes)
             }
             Dispatch::Request(request, responder) => {
@@ -243,11 +245,8 @@ impl HandleDispatchFrom<agent_client_protocol::Agent> for BroadcastHandler {
                     .lock()
                     .map_err(|_| agent_client_protocol::Error::internal_error())?
                     .insert(key.clone(), responder);
-                if self
-                    .events
-                    .send(AcpEvent::ServerRequest { id, method, params })
-                    .is_err()
-                {
+                let event = AcpServerRequest::from_parts(id, method, params);
+                if self.events.send(AcpEvent::ServerRequest(event)).is_err() {
                     let responder = self
                         .server_responders
                         .lock()

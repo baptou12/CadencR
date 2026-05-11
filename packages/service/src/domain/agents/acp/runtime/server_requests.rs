@@ -4,27 +4,37 @@
 //! notifications through the events.rs mapper, routes server-initiated requests
 //! through the appropriate handler module (permissions / fs / terminal), and
 //! turns `ProcessExited` into a visible `RuntimeError` on the runtime channel.
+//!
+//! Notifications and server-requests arrive as typed envelopes
+//! (`AcpNotification` / `AcpServerRequest`) that retain raw JSON. Handlers
+//! prefer the typed payload when present and fall back to raw access for
+//! OpenCode-style provider extensions.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use agent_client_protocol::schema::AgentRequest;
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::domain::agents::acp::incoming::{AcpNotification, AcpServerRequest};
 use crate::domain::agents::acp::{AcpClient, AcpEvent};
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamStatus};
 
 use super::event_loop_state::sync_session_state_from_update;
 use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
-use super::fs::{handle_read_text_file, handle_write_text_file, FsOutcome};
+use super::fs::{
+    handle_read_text_file, handle_read_text_file_typed, handle_write_text_file,
+    handle_write_text_file_typed, FsOutcome,
+};
 use super::permissions::{
-    dispatch_permission_request, permission_request_from_acp, PendingPermissions,
+    dispatch_permission_request, permission_request_from_acp, permission_request_from_typed,
+    PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
-use super::schema_bridge::validate_known_server_request;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
 
@@ -64,19 +74,19 @@ pub fn spawn_event_loop(
         let mut degraded = false;
         loop {
             match source_rx.recv().await {
-                Ok(AcpEvent::Notification { method, params }) => {
+                Ok(AcpEvent::Notification(notification)) => {
                     if degraded {
                         emit_recovered(&tx).await;
                         degraded = false;
                     }
-                    handle_notification(&method, &params, &tx, &config).await;
+                    handle_notification(&notification, &tx, &config).await;
                 }
-                Ok(AcpEvent::ServerRequest { id, method, params }) => {
+                Ok(AcpEvent::ServerRequest(request)) => {
                     if degraded {
                         emit_recovered(&tx).await;
                         degraded = false;
                     }
-                    handle_server_request(&client, id, &method, &params, &tx, &config).await;
+                    handle_server_request(&client, request, &tx, &config).await;
                 }
                 Ok(AcpEvent::ProcessExited { status, signal }) => {
                     if !config.closing.load(Ordering::SeqCst) {
@@ -115,13 +125,13 @@ pub fn spawn_event_loop(
 }
 
 async fn handle_notification(
-    method: &str,
-    params: &Value,
+    notification: &AcpNotification,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: &EventLoopConfig,
 ) {
-    match method {
-        "session/update" => {
+    match notification {
+        AcpNotification::SessionUpdate { .. } => {
+            let params = notification.params();
             sync_session_state_from_update(params, config).await;
             let session_id = config.session_id.read().await.clone();
             let model = config.current_model.read().await.clone();
@@ -148,59 +158,73 @@ async fn handle_notification(
                 }
             }
         }
-        other => {
-            tracing::debug!(method = other, "unhandled ACP notification");
+        AcpNotification::Extension { method, .. } => {
+            tracing::debug!(method, "unhandled ACP notification");
         }
     }
 }
 
 async fn handle_server_request(
     client: &AcpClient,
-    id: Value,
-    method: &str,
-    params: &Value,
+    request: AcpServerRequest,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: &EventLoopConfig,
 ) {
-    if let Err(message) = validate_known_server_request(method, params) {
-        if let Err(error) = client.reject_server_request(id, -32602, &message).await {
-            tracing::error!(%error, method, "failed to reject malformed ACP request");
-        }
-        return;
-    }
-    match method {
+    let id = request.id().clone();
+    match request.method() {
         "session/request_permission" => {
-            handle_permission_request(client, id, params, tx, config).await;
+            handle_permission_request(client, id, &request, tx, config).await;
         }
         "fs/read_text_file" => {
-            let outcome = handle_read_text_file(&config.cwd, params).await;
+            let outcome = match &request {
+                AcpServerRequest::Known {
+                    typed: Some(AgentRequest::ReadTextFileRequest(typed)),
+                    ..
+                } => handle_read_text_file_typed(&config.cwd, typed).await,
+                _ => handle_read_text_file(&config.cwd, request.params()).await,
+            };
             respond_or_reject(client, id, outcome).await;
         }
         "fs/write_text_file" => {
-            let outcome = handle_write_text_file(&config.cwd, params).await;
+            let outcome = match &request {
+                AcpServerRequest::Known {
+                    typed: Some(AgentRequest::WriteTextFileRequest(typed)),
+                    ..
+                } => handle_write_text_file_typed(&config.cwd, typed).await,
+                _ => handle_write_text_file(&config.cwd, request.params()).await,
+            };
             respond_or_reject(client, id, outcome).await;
         }
         "terminal/create" => {
-            let result = config.terminals.create(params, &config.cwd).await;
+            let result = config.terminals.create(request.params(), &config.cwd).await;
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         "terminal/output" => {
-            let result = config.terminals.output(terminal_id_param(params)).await;
+            let result = config
+                .terminals
+                .output(terminal_id_param(request.params()))
+                .await;
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         "terminal/wait_for_exit" => {
             let result = config
                 .terminals
-                .wait_for_exit(terminal_id_param(params))
+                .wait_for_exit(terminal_id_param(request.params()))
                 .await;
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         "terminal/kill" => {
-            let result = config.terminals.kill(terminal_id_param(params)).await;
+            let result = config
+                .terminals
+                .kill(terminal_id_param(request.params()))
+                .await;
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         "terminal/release" => {
-            let result = config.terminals.release(terminal_id_param(params)).await;
+            let result = config
+                .terminals
+                .release(terminal_id_param(request.params()))
+                .await;
             respond_or_reject(client, id, fs_outcome_from(result)).await;
         }
         other => {
@@ -218,7 +242,7 @@ async fn handle_server_request(
 async fn handle_permission_request(
     client: &AcpClient,
     id: Value,
-    params: &Value,
+    request: &AcpServerRequest,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: &EventLoopConfig,
 ) {
@@ -226,7 +250,14 @@ async fn handle_permission_request(
         .as_str()
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| id.to_string());
-    let Some(request) = permission_request_from_acp(&request_id, params) else {
+    let parsed = match request {
+        AcpServerRequest::Known {
+            typed: Some(AgentRequest::RequestPermissionRequest(typed)),
+            ..
+        } => permission_request_from_typed(&request_id, typed),
+        _ => permission_request_from_acp(&request_id, request.params()),
+    };
+    let Some(permission) = parsed else {
         if let Err(error) = client
             .reject_server_request(id, -32602, "missing toolCall")
             .await
@@ -241,8 +272,8 @@ async fn handle_permission_request(
         session_id,
         &request_id,
         id.clone(),
-        request,
-        params,
+        permission,
+        request.params(),
         tx,
     )
     .await;

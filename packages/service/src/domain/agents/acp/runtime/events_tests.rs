@@ -290,6 +290,33 @@ fn available_commands_update_emits_empty_list_when_array_empty() {
 }
 
 #[test]
+fn current_mode_update_carries_raw_provider_extension_into_metadata() {
+    // OpenCode-style provider extensions (here `providerExtension`) survive
+    // routing because the mapper stores the raw payload on the event metadata
+    // — the strict ACP schema would drop them.
+    let mut idx = EventIndexer::default();
+    let mapped = session_update_to_events(
+        &json!({
+            "sessionId": "s-1",
+            "update": {
+                "sessionUpdate": "current_mode_update",
+                "currentModeId": "edit",
+                "providerExtension": "preserved"
+            }
+        }),
+        &mut idx,
+        Some("gpt-5"),
+        Some("s-1"),
+        &PlainHooks,
+    );
+
+    assert_eq!(mapped.events.len(), 1);
+    let raw = mapped.events[0].raw_json();
+    assert_eq!(raw["update"]["providerExtension"], "preserved");
+    assert_eq!(raw["update"]["currentModeId"], "edit");
+}
+
+#[test]
 fn available_commands_update_skips_entries_without_name() {
     let mut idx = EventIndexer::default();
     let result = session_update_to_events(

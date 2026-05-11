@@ -14,6 +14,7 @@
 pub mod client;
 mod client_spawn;
 pub mod error;
+pub mod incoming;
 pub mod runtime;
 pub mod types;
 

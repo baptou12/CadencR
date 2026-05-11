@@ -21,6 +21,7 @@ use crate::domain::agents::adapter::{
 pub use super::permissions_dispatch::{
     dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
 };
+pub use super::permissions_typed::permission_request_from_typed;
 use super::schema_bridge::{
     default_option_id, permission_response_value, resolve_permission_option,
 };
@@ -99,7 +100,7 @@ fn convert_options(raw: &[Value]) -> Vec<RuntimePermissionOption> {
     out
 }
 
-fn default_options() -> Vec<RuntimePermissionOption> {
+pub(super) fn default_options() -> Vec<RuntimePermissionOption> {
     [
         RuntimePermissionDecision::AllowOnce,
         RuntimePermissionDecision::AllowFuture,
@@ -125,7 +126,7 @@ fn default_label(decision: RuntimePermissionDecision) -> &'static str {
     }
 }
 
-fn default_description(decision: RuntimePermissionDecision) -> &'static str {
+pub(super) fn default_description(decision: RuntimePermissionDecision) -> &'static str {
     match decision {
         RuntimePermissionDecision::AllowOnce => "Approve this single request",
         RuntimePermissionDecision::AllowFuture => {
@@ -140,7 +141,7 @@ fn default_description(decision: RuntimePermissionDecision) -> &'static str {
 
 /// Best-effort extraction of a one-line preview ("read README.md", "rm -rf
 /// /") for the permission drawer.
-fn derive_preview(tool_input: &Value) -> Option<String> {
+pub(super) fn derive_preview(tool_input: &Value) -> Option<String> {
     let common_keys = ["command", "cmd", "path", "filePath", "file_path", "url"];
     for key in common_keys {
         if let Some(value) = tool_input.get(key) {

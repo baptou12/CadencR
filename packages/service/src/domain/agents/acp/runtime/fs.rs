@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use agent_client_protocol::schema::{ReadTextFileRequest, WriteTextFileRequest};
 use serde_json::{json, Value};
 
 /// Outcome of an `fs/*` handler. Either a successful result `Value` to send
@@ -16,16 +17,33 @@ pub enum FsOutcome {
     Error { code: i64, message: String },
 }
 
-/// Handle an `fs/read_text_file` request. Reads the file at the requested
-/// path and returns `{ content }`. Honors `line` (1-based) and `limit`.
-pub async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
-    let Some(path) = params.get("path").and_then(Value::as_str) else {
-        return FsOutcome::Error {
-            code: -32602,
-            message: "fs/read_text_file: missing 'path'".to_string(),
-        };
-    };
-    let path = match sandboxed_path(cwd, path).await {
+/// Typed variant of [`handle_read_text_file`] used when the inbound request
+/// deserializes cleanly into the official ACP schema. Shares scaffolding
+/// with the raw handler via [`read_text_file_at_path`].
+pub async fn handle_read_text_file_typed(cwd: &Path, request: &ReadTextFileRequest) -> FsOutcome {
+    read_text_file_at_path(
+        cwd,
+        &request.path.to_string_lossy(),
+        request.line.map(u64::from),
+        request.limit.map(u64::from),
+    )
+    .await
+}
+
+/// Typed variant of [`handle_write_text_file`] used when the inbound request
+/// deserializes cleanly into the official ACP schema. Shares scaffolding
+/// with the raw handler via [`write_text_file_at_path`].
+pub async fn handle_write_text_file_typed(cwd: &Path, request: &WriteTextFileRequest) -> FsOutcome {
+    write_text_file_at_path(cwd, &request.path.to_string_lossy(), &request.content).await
+}
+
+async fn read_text_file_at_path(
+    cwd: &Path,
+    requested: &str,
+    line: Option<u64>,
+    limit: Option<u64>,
+) -> FsOutcome {
+    let path = match sandboxed_path(cwd, requested).await {
         Ok(p) => p,
         Err(message) => {
             return FsOutcome::Error {
@@ -34,8 +52,6 @@ pub async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
             }
         }
     };
-    let line = params.get("line").and_then(Value::as_u64);
-    let limit = params.get("limit").and_then(Value::as_u64);
     match tokio::fs::read_to_string(&path).await {
         Ok(content) => {
             FsOutcome::Ok(json!({ "content": apply_line_window(&content, line, limit) }))
@@ -47,19 +63,8 @@ pub async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
     }
 }
 
-/// Handle an `fs/write_text_file` request. Writes `content` to `path`,
-/// creating parent directories as needed. Returns `null` on success.
-pub async fn handle_write_text_file(cwd: &Path, params: &Value) -> FsOutcome {
-    let (Some(path), Some(content)) = (
-        params.get("path").and_then(Value::as_str),
-        params.get("content").and_then(Value::as_str),
-    ) else {
-        return FsOutcome::Error {
-            code: -32602,
-            message: "fs/write_text_file: missing 'path' or 'content'".to_string(),
-        };
-    };
-    let path = match sandboxed_path(cwd, path).await {
+async fn write_text_file_at_path(cwd: &Path, requested: &str, content: &str) -> FsOutcome {
+    let path = match sandboxed_path(cwd, requested).await {
         Ok(p) => p,
         Err(message) => {
             return FsOutcome::Error {
@@ -76,13 +81,42 @@ pub async fn handle_write_text_file(cwd: &Path, params: &Value) -> FsOutcome {
             };
         }
     }
-    match tokio::fs::write(&path, content).await {
+    match tokio::fs::write(path, content).await {
         Ok(()) => FsOutcome::Ok(Value::Null),
         Err(error) => FsOutcome::Error {
             code: -32000,
             message: format!("fs/write_text_file: {error}"),
         },
     }
+}
+
+/// Handle an `fs/read_text_file` request. Reads the file at the requested
+/// path and returns `{ content }`. Honors `line` (1-based) and `limit`.
+pub async fn handle_read_text_file(cwd: &Path, params: &Value) -> FsOutcome {
+    let Some(path) = params.get("path").and_then(Value::as_str) else {
+        return FsOutcome::Error {
+            code: -32602,
+            message: "fs/read_text_file: missing 'path'".to_string(),
+        };
+    };
+    let line = params.get("line").and_then(Value::as_u64);
+    let limit = params.get("limit").and_then(Value::as_u64);
+    read_text_file_at_path(cwd, path, line, limit).await
+}
+
+/// Handle an `fs/write_text_file` request. Writes `content` to `path`,
+/// creating parent directories as needed. Returns `null` on success.
+pub async fn handle_write_text_file(cwd: &Path, params: &Value) -> FsOutcome {
+    let (Some(path), Some(content)) = (
+        params.get("path").and_then(Value::as_str),
+        params.get("content").and_then(Value::as_str),
+    ) else {
+        return FsOutcome::Error {
+            code: -32602,
+            message: "fs/write_text_file: missing 'path' or 'content'".to_string(),
+        };
+    };
+    write_text_file_at_path(cwd, path, content).await
 }
 
 /// Resolve `requested` against `cwd` and ensure the result stays inside it.
@@ -270,5 +304,38 @@ mod tests {
     fn line_window_applies_offset_and_limit() {
         let content = "a\nb\nc\nd\ne\n";
         assert_eq!(apply_line_window(content, Some(2), Some(2)), "b\nc");
+    }
+
+    #[tokio::test]
+    async fn typed_read_request_returns_file_contents() {
+        use super::handle_read_text_file_typed;
+        use agent_client_protocol::schema::ReadTextFileRequest;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("foo.txt");
+        tokio::fs::write(&path, "hello\nworld\n").await.unwrap();
+        let request = ReadTextFileRequest::new("s-1", path.clone())
+            .line(1_u32)
+            .limit(1_u32);
+
+        let FsOutcome::Ok(result) = handle_read_text_file_typed(dir.path(), &request).await else {
+            panic!("expected ok");
+        };
+        assert_eq!(result["content"], "hello");
+    }
+
+    #[tokio::test]
+    async fn typed_write_request_creates_file() {
+        use super::handle_write_text_file_typed;
+        use agent_client_protocol::schema::WriteTextFileRequest;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("typed/write.txt");
+        let request = WriteTextFileRequest::new("s-1", path.clone(), "ok");
+
+        let FsOutcome::Ok(_) = handle_write_text_file_typed(dir.path(), &request).await else {
+            panic!("expected ok");
+        };
+        assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "ok");
     }
 }

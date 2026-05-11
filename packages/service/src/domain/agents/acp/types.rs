@@ -1,4 +1,4 @@
-use serde_json::Value;
+use crate::domain::agents::acp::incoming::{AcpNotification, AcpServerRequest};
 
 /// Identification block included in `initialize` requests so agents can log
 /// who called them. Matches the Codex SDK shape; used here verbatim because
@@ -23,21 +23,20 @@ impl Default for AcpClientInfo {
 /// Events fanned out by the ACP transport to subscribers.
 ///
 /// Provider-neutral. Adapters subscribe via `AcpClient::subscribe()` and
-/// translate these into `RuntimeEvent`s.
+/// translate these into `RuntimeEvent`s. The notification/request payloads
+/// are typed envelopes (`AcpNotification`/`AcpServerRequest`) that retain raw
+/// JSON so OpenCode-style provider extensions survive routing even when they
+/// fail the official-schema deserializer.
 #[derive(Debug, Clone)]
 pub enum AcpEvent {
     /// One-way notification from the agent (no `id`). Examples: `session/update`,
-    /// `current_mode_update`. Adapters route on `method`.
-    Notification { method: String, params: Value },
+    /// `current_mode_update`. Adapters route on `notification.method()`.
+    Notification(AcpNotification),
     /// A request initiated *by the agent* that we (the client) must answer.
     /// Used for `session/request_permission`, `fs/*`, `terminal/*`. The
-    /// adapter handles `method`, then calls `respond_server_request(id, ...)`
-    /// or `reject_server_request(id, ...)`.
-    ServerRequest {
-        id: Value,
-        method: String,
-        params: Value,
-    },
+    /// adapter handles `request.method()`, then calls
+    /// `respond_server_request(id, ...)` or `reject_server_request(id, ...)`.
+    ServerRequest(AcpServerRequest),
     /// The subprocess exited. Sent at most once (idempotent via `exit_sent`
     /// AtomicBool in the reader). Pending requests are drained with
     /// `AcpError::ProcessExited` immediately before this fires.

@@ -237,11 +237,12 @@ async fn wait_for_catalog(
 ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
     loop {
         match events.recv().await {
-            Ok(AcpEvent::Notification { method, params }) => {
-                if method != "session/update" {
+            Ok(AcpEvent::Notification(notification)) => {
+                if notification.method() != "session/update" {
                     continue;
                 }
-                let body = params.get("update").unwrap_or(&params);
+                let params = notification.params();
+                let body = params.get("update").unwrap_or(params);
                 let kind = body.get("sessionUpdate").and_then(Value::as_str);
                 if kind == Some("available_commands_update") {
                     return Ok(parse_available_commands(body));

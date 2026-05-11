@@ -279,11 +279,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let AcpEvent::ServerRequest { id, method, .. } = evt else {
+        let AcpEvent::ServerRequest(request) = evt else {
             panic!("expected server request");
         };
-        assert_eq!(id, json!("perm-7"));
-        assert_eq!(method, "session/request_permission");
+        assert_eq!(request.id(), &json!("perm-7"));
+        assert_eq!(request.method(), "session/request_permission");
+        assert_eq!(request.params()["ok"], true);
     }
 
     #[tokio::test]
