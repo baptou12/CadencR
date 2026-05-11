@@ -256,6 +256,80 @@ fn validate_required_env_keys(display_path: &str, required_keys: &[&str]) -> any
     )
 }
 
+fn build_cors_layer(frontend_port: u16) -> CorsLayer {
+    let mut origins = vec!["null".parse().expect("static origin")];
+    if cfg!(debug_assertions) {
+        origins.push(
+            format!("http://localhost:{frontend_port}")
+                .parse()
+                .expect("frontend origin"),
+        );
+        origins.push(
+            format!("http://127.0.0.1:{frontend_port}")
+                .parse()
+                .expect("frontend origin"),
+        );
+    }
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_headers([
+            HeaderName::from_static(api::middleware::AUTH_HEADER),
+            CONTENT_TYPE,
+        ])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::PATCH,
+        ])
+}
+
+/// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.
+fn init_tracing(to_stderr: bool) {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "cadencr_service=info".into());
+
+    if to_stderr {
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(filter).init();
+    }
+}
+
+async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("Shutdown signal received, shutting down gracefully...");
+
+    crate::domain::ws_session::handler::workflow::pause_all_engines().await;
+    pty_manager.kill_all();
+    crate::domain::agents::shutdown_runtime_servers().await;
+
+    tracing::info!("All workflow agents paused and runtime servers stopped.");
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -332,78 +406,4 @@ mod tests {
         assert!(message.contains("CADENCR_AUTH_TOKEN"));
         clear_env(&REQUIRED_DEV_ENV_KEYS);
     }
-}
-
-fn build_cors_layer(frontend_port: u16) -> CorsLayer {
-    let mut origins = vec!["null".parse().expect("static origin")];
-    if cfg!(debug_assertions) {
-        origins.push(
-            format!("http://localhost:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-        origins.push(
-            format!("http://127.0.0.1:{frontend_port}")
-                .parse()
-                .expect("frontend origin"),
-        );
-    }
-
-    CorsLayer::new()
-        .allow_origin(origins)
-        .allow_headers([
-            HeaderName::from_static(api::middleware::AUTH_HEADER),
-            CONTENT_TYPE,
-        ])
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::DELETE,
-            Method::PATCH,
-        ])
-}
-
-/// MCP subprocess mode writes to stderr to keep stdout clean for JSON-RPC.
-fn init_tracing(to_stderr: bool) {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "cadencr_service=info".into());
-
-    if to_stderr {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::io::stderr)
-            .init();
-    } else {
-        tracing_subscriber::fmt().with_env_filter(filter).init();
-    }
-}
-
-async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to install Ctrl+C handler");
-    };
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to install SIGTERM handler")
-            .recv()
-            .await;
-    };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {},
-        _ = terminate => {},
-    }
-    tracing::info!("Shutdown signal received, shutting down gracefully...");
-
-    crate::domain::ws_session::handler::workflow::pause_all_engines().await;
-    pty_manager.kill_all();
-    crate::domain::agents::shutdown_runtime_servers().await;
-
-    tracing::info!("All workflow agents paused and runtime servers stopped.");
 }

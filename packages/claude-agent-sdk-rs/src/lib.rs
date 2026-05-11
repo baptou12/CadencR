@@ -1,3 +1,11 @@
+#![allow(
+    clippy::empty_line_after_doc_comments,
+    clippy::large_enum_variant,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::vec_init_then_push
+)]
+
 pub mod commands;
 pub mod error;
 pub mod mcp;

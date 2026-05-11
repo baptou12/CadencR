@@ -11,6 +11,8 @@
 //! `opencode acp --port` subprocess we spawn). Anything broader belongs in
 //! a separate transport.
 
+#![allow(clippy::should_implement_trait)]
+
 pub mod client;
 pub mod client_payload;
 pub mod error;

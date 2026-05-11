@@ -7,13 +7,10 @@
 //! helpers (`default_options`, `default_description`, `derive_preview`).
 
 use agent_client_protocol::schema::RequestPermissionRequest;
-use serde_json::Value;
 
-use crate::domain::agents::adapter::{
-    RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
-};
+use crate::domain::agents::adapter::RuntimePermissionRequest;
 
-use super::permissions::{default_description, default_options, derive_preview};
+use super::permissions::{permission_option, permission_request_at};
 use super::schema_bridge::decision_for_official_kind;
 
 /// Typed-payload variant of `permission_request_from_acp`.
@@ -27,44 +24,31 @@ pub fn permission_request_from_typed(
     request_id: &str,
     request: &RequestPermissionRequest,
 ) -> Option<RuntimePermissionRequest> {
-    let tool_input = request
-        .tool_call
-        .fields
-        .raw_input
-        .clone()
-        .unwrap_or(Value::Null);
-    let description = request.tool_call.fields.title.clone();
-    let tool_name = description.clone().unwrap_or_else(|| "tool".to_string());
-    let preview = derive_preview(&tool_input);
+    Some(permission_request_at(
+        request_id,
+        Some(request.tool_call.tool_call_id.to_string()),
+        request.tool_call.fields.title.clone(),
+        request.tool_call.fields.title.clone(),
+        request
+            .tool_call
+            .fields
+            .raw_input
+            .clone()
+            .unwrap_or_default(),
+        typed_options(request),
+    ))
+}
 
-    let options: Vec<RuntimePermissionOption> = request
-        .options
-        .iter()
-        .filter_map(|option| {
-            let decision = decision_for_official_kind(option.kind)?;
-            Some(RuntimePermissionOption {
-                decision,
-                option_id: Some(option.option_id.to_string()),
-                label: option.name.clone(),
-                description: default_description(decision).to_string(),
-                collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
-            })
-        })
-        .collect();
-
-    Some(RuntimePermissionRequest {
-        request_id: request_id.to_string(),
-        tool_use_id: Some(request.tool_call.tool_call_id.to_string()),
-        tool_name,
-        tool_input,
-        description,
-        pattern: None,
-        preview,
-        options: if options.is_empty() {
-            default_options()
-        } else {
-            options
-        },
+fn typed_options(
+    request: &RequestPermissionRequest,
+) -> impl Iterator<Item = crate::domain::agents::adapter::RuntimePermissionOption> + '_ {
+    request.options.iter().filter_map(|option| {
+        let decision = decision_for_official_kind(option.kind)?;
+        Some(permission_option(
+            decision,
+            Some(option.option_id.to_string()),
+            Some(option.name.clone()),
+        ))
     })
 }
 

@@ -37,67 +37,100 @@ pub fn permission_request_from_acp(
     params: &Value,
 ) -> Option<RuntimePermissionRequest> {
     let tool_call = params.get("toolCall")?;
-    let tool_use_id = tool_call
-        .get("toolCallId")
-        .or_else(|| tool_call.get("id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let tool_name = tool_call
-        .get("toolName")
-        .or_else(|| tool_call.get("title"))
-        .and_then(Value::as_str)
-        .unwrap_or("tool")
-        .to_string();
-    let tool_input = tool_call
-        .get("toolInput")
-        .or_else(|| tool_call.get("rawInput"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let description = tool_call
-        .get("title")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let preview = derive_preview(&tool_input);
+    Some(permission_request_at(
+        request_id,
+        raw_tool_use_id(tool_call),
+        raw_tool_name(tool_call),
+        raw_title(tool_call),
+        raw_tool_input(tool_call),
+        raw_options(params),
+    ))
+}
 
-    let options = params
-        .get("options")
-        .and_then(Value::as_array)
-        .map(|opts| convert_options(opts))
-        .unwrap_or_else(default_options);
-
-    Some(RuntimePermissionRequest {
+pub(super) fn permission_request_at(
+    request_id: &str,
+    tool_use_id: Option<String>,
+    tool_name: Option<String>,
+    description: Option<String>,
+    tool_input: Value,
+    options: impl IntoIterator<Item = RuntimePermissionOption>,
+) -> RuntimePermissionRequest {
+    let options = options.into_iter().collect::<Vec<_>>();
+    RuntimePermissionRequest {
         request_id: request_id.to_string(),
         tool_use_id,
-        tool_name,
+        tool_name: tool_name.unwrap_or_else(|| "tool".to_string()),
+        preview: derive_preview(&tool_input),
         tool_input,
         description,
         pattern: None,
-        preview,
-        options,
-    })
+        options: if options.is_empty() {
+            default_options()
+        } else {
+            options
+        },
+    }
 }
 
-fn convert_options(raw: &[Value]) -> Vec<RuntimePermissionOption> {
-    let mut out = Vec::new();
-    for option in raw {
-        let Some(option) = resolve_permission_option(option) else {
-            continue;
-        };
-        let label = option
-            .name
-            .unwrap_or_else(|| default_label(option.decision).into());
-        out.push(RuntimePermissionOption {
-            decision: option.decision,
-            option_id: option.option_id,
-            label,
-            description: default_description(option.decision).to_string(),
-            collect_feedback: matches!(option.decision, RuntimePermissionDecision::Deny),
-        });
+fn raw_tool_use_id(tool_call: &Value) -> Option<String> {
+    tool_call
+        .get("toolCallId")
+        .or_else(|| tool_call.get("id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn raw_tool_name(tool_call: &Value) -> Option<String> {
+    tool_call
+        .get("toolName")
+        .or_else(|| tool_call.get("title"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn raw_title(tool_call: &Value) -> Option<String> {
+    tool_call
+        .get("title")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn raw_tool_input(tool_call: &Value) -> Value {
+    tool_call
+        .get("toolInput")
+        .or_else(|| tool_call.get("rawInput"))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+fn raw_options(params: &Value) -> impl Iterator<Item = RuntimePermissionOption> + '_ {
+    params
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            let option = resolve_permission_option(option)?;
+            Some(permission_option(
+                option.decision,
+                option.option_id,
+                option.name,
+            ))
+        })
+}
+
+pub(super) fn permission_option(
+    decision: RuntimePermissionDecision,
+    option_id: Option<String>,
+    label: Option<String>,
+) -> RuntimePermissionOption {
+    RuntimePermissionOption {
+        decision,
+        option_id,
+        label: label.unwrap_or_else(|| default_label(decision).to_string()),
+        description: default_description(decision).to_string(),
+        collect_feedback: matches!(decision, RuntimePermissionDecision::Deny),
     }
-    if out.is_empty() {
-        return default_options();
-    }
-    out
 }
 
 pub(super) fn default_options() -> Vec<RuntimePermissionOption> {
