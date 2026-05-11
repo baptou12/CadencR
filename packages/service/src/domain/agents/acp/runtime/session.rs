@@ -241,7 +241,7 @@ mod tests {
             hooks: Arc::new(PlainHooks),
             indexer: Arc::clone(&indexer),
         };
-        let _loop_handles = spawn_event_loop(client.clone(), event_rx, tx.clone(), cfg);
+        let _loop_task = spawn_event_loop(client.clone(), event_rx, tx.clone(), cfg);
 
         let driver = tokio::spawn({
             let client = client.clone();

@@ -90,7 +90,7 @@ pub async fn spawn_acp_runtime_session(
     )?;
 
     emit_init_event(&tx, &negotiated).await;
-    let handles = spawn_event_loop(
+    let loop_task = spawn_event_loop(
         client.clone(),
         event_rx,
         tx.clone(),
@@ -107,7 +107,7 @@ pub async fn spawn_acp_runtime_session(
             indexer: Arc::clone(&session.indexer),
         },
     );
-    session.loop_task = Some(handles.task);
+    session.loop_task = Some(loop_task);
 
     // Provider-spawned side channel (e.g. OpenCode's HTTP/SSE listener for
     // sub-agent child-session events). Started after the event loop so the

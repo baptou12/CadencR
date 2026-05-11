@@ -33,10 +33,6 @@ use super::provider_hooks::AcpProviderHooks;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
 
-pub struct EventLoopHandles {
-    pub task: JoinHandle<()>,
-}
-
 #[derive(Clone)]
 pub struct EventLoopConfig {
     pub session_id: Arc<RwLock<Option<String>>>,
@@ -60,8 +56,8 @@ pub fn spawn_event_loop(
     mut source_rx: broadcast::Receiver<AcpEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     config: EventLoopConfig,
-) -> EventLoopHandles {
-    let task = tokio::spawn(async move {
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
         // Tracks whether we've previously emitted a `Degraded` banner so we
         // can pair it with a `Recovered` banner once the next regular event
         // arrives. Without this the FE sees a stuck Degraded indicator
@@ -115,8 +111,7 @@ pub fn spawn_event_loop(
                 }
             }
         }
-    });
-    EventLoopHandles { task }
+    })
 }
 
 async fn handle_notification(
