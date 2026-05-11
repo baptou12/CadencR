@@ -1,7 +1,7 @@
 //! Question-tool mapping helpers for ACP tool calls.
 //!
 //! OpenCode-specific UX: kept in `opencode/acp/` because the question
-//! payload shape and the synthetic `opencode_permission_request` envelope
+//! payload shape and the synthetic `acp_permission_request` envelope
 //! we emit on the runtime channel are OpenCode quirks. The shared ACP
 //! runtime delegates here through `OpenCodeAcpAdapter`'s tool-call
 //! overrides.
@@ -80,7 +80,7 @@ fn question_permission_event(
     let mut event = RuntimeEvent::new(
         RuntimeEventMetadata {
             raw: json!({
-                "type": "opencode_permission_request",
+                "type": "acp_permission_request",
                 "transport": "acp",
                 "request_id": tool_call_id,
                 "call_id": tool_call_id,
@@ -144,7 +144,7 @@ mod tests {
         .expect("permission event");
 
         let raw = update.raw_json();
-        assert_eq!(raw["type"], "opencode_permission_request");
+        assert_eq!(raw["type"], "acp_permission_request");
         assert_eq!(raw["tool_name"], "AskUserQuestion");
         assert_eq!(raw["request_id"], "q-2");
         assert_eq!(

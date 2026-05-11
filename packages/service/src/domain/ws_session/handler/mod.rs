@@ -1385,7 +1385,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stream_reader_routes_opencode_permission_request() {
+    async fn test_stream_reader_routes_acp_permission_request() {
         let app_state = make_test_app_state().await;
         let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
         let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
@@ -1405,7 +1405,7 @@ mod tests {
                 usage: None,
                 context_window: None,
                 raw: serde_json::json!({
-                    "type": "opencode_permission_request",
+                    "type": "acp_permission_request",
                     "request_id": "perm-1",
                     "tool_name": "Write",
                     "tool_input": { "file_path": "/tmp/a.txt" },

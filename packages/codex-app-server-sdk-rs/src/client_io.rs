@@ -211,11 +211,9 @@ mod tests {
     };
     use crate::types::AppServerEvent;
 
-    fn reader_state() -> (
-        ReaderState,
-        broadcast::Receiver<AppServerEvent>,
-        Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, SdkError>>>>>,
-    ) {
+    type PendingMap = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, SdkError>>>>>;
+
+    fn reader_state() -> (ReaderState, broadcast::Receiver<AppServerEvent>, PendingMap) {
         let (events, event_rx) = broadcast::channel(8);
         let pending = Arc::new(StdMutex::new(HashMap::new()));
         (

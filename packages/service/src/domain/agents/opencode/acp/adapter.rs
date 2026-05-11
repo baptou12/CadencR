@@ -376,7 +376,7 @@ mod tests {
             )
             .expect("event");
         let raw = event.raw_json();
-        assert_eq!(raw["type"], "opencode_permission_request");
+        assert_eq!(raw["type"], "acp_permission_request");
         assert_eq!(raw["tool_name"], "AskUserQuestion");
     }
 

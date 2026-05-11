@@ -33,7 +33,8 @@ pub fn opencode_discovery_spec() -> DiscoverySpec {
 static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
 
 #[cfg(test)]
-static TEST_DISCOVERY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static TEST_DISCOVERY_LOCK: Lazy<tokio::sync::Mutex<()>> =
+    Lazy::new(|| tokio::sync::Mutex::new(()));
 
 /// Set (or clear, with `None`) the override path for the `opencode` binary.
 ///
@@ -67,13 +68,6 @@ mod tests {
         current_binary_override, opencode_discovery_spec, resolve_binary, set_binary_override,
         TEST_DISCOVERY_LOCK,
     };
-    use std::sync::MutexGuard;
-
-    fn test_lock() -> MutexGuard<'static, ()> {
-        TEST_DISCOVERY_LOCK
-            .lock()
-            .expect("discovery test lock poisoned")
-    }
 
     #[test]
     fn opencode_discovery_spec_includes_user_install_and_homebrew() {
@@ -85,7 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn binary_override_round_trips() {
-        let _guard = test_lock();
+        let _guard = TEST_DISCOVERY_LOCK.lock().await;
         // Save and restore so this test doesn't leak state into the shared
         // singleton used by other tests in the same process.
         let prior = current_binary_override();

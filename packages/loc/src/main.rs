@@ -348,7 +348,7 @@ fn render_chart(day_commits: &[(NaiveDate, git2::Oid)], snapshots: &[DaySnapshot
     }
 
     // Render rows top to bottom
-    for row in 0..chart_height {
+    for (row, cells) in grid.iter().enumerate().take(chart_height) {
         // Y-axis label: show LOC value at certain rows
         let y_label = if row == 0 {
             format_loc(max_loc)
@@ -362,8 +362,8 @@ fn render_chart(day_commits: &[(NaiveDate, git2::Oid)], snapshots: &[DaySnapshot
 
         let mut line = format!("{:>width$} │", y_label, width = y_label_width - 2);
 
-        for col in 0..num_days {
-            let cell = match grid[row][col] {
+        for (col, cell) in cells.iter().enumerate().take(num_days) {
+            let cell = match *cell {
                 Some(idx) if idx < COLORS.len() => {
                     let (r, g, b) = COLORS[idx];
                     "█".repeat(col_width).truecolor(r, g, b).to_string()

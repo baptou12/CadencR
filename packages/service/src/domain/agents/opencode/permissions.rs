@@ -44,7 +44,7 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
 }
 
 pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest> {
-    if raw.get("type").and_then(Value::as_str) != Some("opencode_permission_request") {
+    if raw.get("type").and_then(Value::as_str) != Some("acp_permission_request") {
         return None;
     }
 
@@ -111,9 +111,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn parses_opencode_permission_request_payload() {
+    fn parses_acp_permission_request_payload() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-1",
             "tool_name": "Bash",
             "tool_input": { "command": "git status" },
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn parses_call_id_when_present() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "per_1",
             "call_id": "call_1",
             "tool_name": "cadencr-plan_show_plan",
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn parses_nested_opencode_command_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-1",
             "tool_name": "bash",
             "tool_input": { "metadata": { "command": "git status" } },
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn parses_nested_opencode_path_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-2",
             "tool_name": "external_directory",
             "tool_input": { "metadata": { "path": "/etc/hosts" } },
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn parses_upstream_metadata_filepath_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-actual",
             "tool_name": "external_directory",
             "tool_input": {
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn prefers_exact_always_entry_over_pattern_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-3",
             "tool_name": "external_directory",
             "tool_input": {
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn prefers_nested_metadata_args_path_over_pattern_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-4",
             "tool_name": "external_directory",
             "tool_input": {

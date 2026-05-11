@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 
 use self::permissions::{
-    parse_permission_request as parse_opencode_permission_request, permission_options,
+    parse_permission_request as parse_acp_permission_request, permission_options,
 };
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError,
@@ -35,7 +35,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
     }
 
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
-        parse_opencode_permission_request(raw).map(|request| RuntimePermissionRequest {
+        parse_acp_permission_request(raw).map(|request| RuntimePermissionRequest {
             request_id: request.request_id,
             tool_use_id: request.call_id,
             tool_name: request.tool_name,
@@ -171,11 +171,11 @@ mod tests {
     }
 
     #[test]
-    fn adapter_parses_opencode_permission_request() {
+    fn adapter_parses_acp_permission_request() {
         let adapter = OpenCodeAdapter;
         let parsed = adapter
             .parse_permission_request(&json!({
-                "type": "opencode_permission_request",
+                "type": "acp_permission_request",
                 "request_id": "req-1",
                 "tool_name": "Read",
                 "tool_input": { "filePath": "README.md" },

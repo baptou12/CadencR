@@ -34,7 +34,7 @@ pub type PendingPermissions = Arc<RwLock<HashMap<String, PendingPermission>>>;
 /// `parse_permission_request` on the raw envelope.
 pub fn permission_raw_event(request: &RuntimePermissionRequest, params: &Value) -> Value {
     json!({
-        "type": "opencode_permission_request",
+        "type": "acp_permission_request",
         "transport": "acp",
         "request_id": request.request_id,
         "call_id": request.tool_use_id,
