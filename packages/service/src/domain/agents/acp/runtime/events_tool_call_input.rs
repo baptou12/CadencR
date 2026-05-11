@@ -12,7 +12,7 @@
 use serde_json::{json, Value};
 
 use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent, RuntimeEventMetadata};
-use crate::domain::agents::opencode::events::stream_delta_event as http_stream_delta_event;
+use crate::domain::agents::opencode::events::stream_delta_event;
 
 use super::events_stream_blocks::EventIndexer;
 use super::provider_hooks::AcpProviderHooks;
@@ -69,7 +69,7 @@ pub(super) fn synthesize_input_delta_event(
     // Build the event via the shared Claude-shape helper so the WS bridge
     // ships an `input_json_delta` envelope the FE can merge into the
     // existing tool block. See events_tool_call.rs for the rationale.
-    let event = http_stream_delta_event(
+    let event = stream_delta_event(
         metadata.session_id.as_deref().unwrap_or(""),
         index,
         RuntimeContentDelta::InputJson { partial_json },

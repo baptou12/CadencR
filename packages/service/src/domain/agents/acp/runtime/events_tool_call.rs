@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
 };
-use crate::domain::agents::opencode::events::stream_start_event as http_stream_start_event;
+use crate::domain::agents::opencode::events::stream_start_event;
 
 use super::events_stream_blocks::EventIndexer;
 use super::events_tool_call_input::is_empty_value;
@@ -90,7 +90,7 @@ pub fn map_tool_call_start(
         name: tool_name,
         input,
     };
-    let event = http_stream_start_event(
+    let event = stream_start_event(
         metadata.session_id.as_deref().unwrap_or(""),
         index,
         block,

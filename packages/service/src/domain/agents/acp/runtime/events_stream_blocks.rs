@@ -16,10 +16,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent};
-use crate::domain::agents::opencode::events::{
-    message_start_event, stream_delta_event as http_stream_delta_event,
-    stream_start_event as http_stream_start_event, stream_stop_event as http_stream_stop_event,
-};
+use crate::domain::agents::opencode::events as opencode_events;
+use crate::domain::agents::opencode::events::message_start_event;
 
 #[derive(Default)]
 pub struct EventIndexer {
@@ -172,11 +170,11 @@ pub fn stream_start_event(index: u64, is_thinking: bool, session_id: Option<&str
             text: String::new(),
         }
     };
-    http_stream_start_event(session_id.unwrap_or(""), index, block, None)
+    opencode_events::stream_start_event(session_id.unwrap_or(""), index, block, None)
 }
 
 pub fn stream_stop_event(index: u64, session_id: Option<&str>) -> RuntimeEvent {
-    http_stream_stop_event(session_id.unwrap_or(""), index, None)
+    opencode_events::stream_stop_event(session_id.unwrap_or(""), index, None)
 }
 
 pub fn stream_delta_event(
@@ -184,7 +182,7 @@ pub fn stream_delta_event(
     delta: RuntimeContentDelta,
     session_id: Option<&str>,
 ) -> RuntimeEvent {
-    http_stream_delta_event(session_id.unwrap_or(""), index, delta, None)
+    opencode_events::stream_delta_event(session_id.unwrap_or(""), index, delta, None)
 }
 
 /// Synthesize the per-message envelope the FE uses to allocate a new
