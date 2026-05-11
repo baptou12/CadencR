@@ -23,10 +23,7 @@ pub mod types;
 
 pub use client::OpenCodeClient;
 pub use error::SdkError;
-pub use parsing::{
-    parse_message_from, parse_part_from, parse_permission_from, parse_question_from,
-    parse_session_from,
-};
+pub use parsing::{parse_message_from, parse_session_from};
 pub use process::{opencode_discovery_spec, resolve_binary, set_binary_override};
 pub use types::{
     Agent, Command, ConfigModelLimit, ConfigProvider, ConfigProviderModel, ConfigProvidersResponse,
