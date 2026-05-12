@@ -7,8 +7,8 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use crate::domain::agents::adapter::{
-    RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeSlashCommand,
-    RuntimeSlashCommandKind, RuntimeUsage,
+    RuntimeCompactMetadata, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind,
+    RuntimeEventMetadata, RuntimeSlashCommand, RuntimeSlashCommandKind, RuntimeUsage,
 };
 
 use super::super::events_config_option::map_config_option_update;
@@ -70,7 +70,7 @@ pub fn session_update_to_events(
             events: vec![map_available_commands_update(body, metadata)],
         },
         "user_message_chunk" => MappedUpdate {
-            events: vec![map_user_message_chunk(body, metadata)],
+            events: vec![map_user_message_chunk(body, indexer, metadata)],
         },
         "session_info_update" => MappedUpdate {
             events: vec![map_session_info_update(body, metadata)],
@@ -99,10 +99,10 @@ fn prepend_streaming_stops(
     next: MappedUpdate,
 ) -> MappedUpdate {
     let mut events = drain_streaming_block_stops(indexer, metadata.session_id.as_deref());
-    indexer.message_started = false;
     if events.is_empty() {
         return next;
     }
+    indexer.message_started = false;
     events.extend(next.events);
     MappedUpdate { events }
 }
@@ -224,8 +224,45 @@ fn map_usage_update(body: &Value, mut metadata: RuntimeEventMetadata) -> Runtime
 /// `metadata.raw` (which already carries the full original payload, including
 /// the `content` block) so the chunk is not dropped on the floor and can be
 /// inspected by downstream consumers without inventing a new public variant.
-fn map_user_message_chunk(body: &Value, metadata: RuntimeEventMetadata) -> RuntimeEvent {
+fn map_user_message_chunk(
+    body: &Value,
+    indexer: &mut EventIndexer,
+    mut metadata: RuntimeEventMetadata,
+) -> RuntimeEvent {
     let content = body.get("content").cloned().unwrap_or(Value::Null);
+    if content.get("type").and_then(Value::as_str) == Some("compaction") {
+        indexer.mark_compact_boundary_emitted();
+        let trigger = if content
+            .get("auto")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            Some("auto".to_string())
+        } else {
+            Some("manual".to_string())
+        };
+        let compact_metadata = RuntimeCompactMetadata {
+            trigger,
+            pre_tokens: None,
+        };
+        let provider_raw = metadata.raw.clone();
+        metadata.raw = serde_json::json!({
+            "type": "system",
+            "subtype": "compact_boundary",
+            "session_id": metadata.session_id,
+            "compact_metadata": {
+                "trigger": compact_metadata.trigger.clone(),
+                "pre_tokens": compact_metadata.pre_tokens,
+            },
+            "provider_raw": provider_raw,
+        });
+        return RuntimeEvent::new(
+            metadata,
+            RuntimeEventKind::CompactBoundary {
+                metadata: Some(compact_metadata),
+            },
+        );
+    }
     let (text, _kind) = extract_chunk_text(&content);
     if !text.is_empty() {
         tracing::debug!(len = text.len(), "ACP user_message_chunk received");

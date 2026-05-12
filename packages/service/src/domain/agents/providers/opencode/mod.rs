@@ -19,6 +19,7 @@ const PROVIDER_ID: &str = "opencode";
 const PROVIDER_LABEL: &str = "OpenCode";
 const FALLBACK_MODEL_ID: &str = "default/default";
 const OPENCODE_FALLBACK_CONTEXT_WINDOW: u64 = 200_000;
+const OPENAI_REASONING_EFFORT_LEVELS: [&str; 4] = ["low", "medium", "high", "xhigh"];
 
 /// Static catalog used before the live probe has run (and as the
 /// failure fallback inside `cache::live_catalog_entry_with`).
@@ -88,12 +89,13 @@ fn catalog_from_response(
             if default_model_from_wire.is_none() && wire_default == Some(&model.id) {
                 default_model_from_wire = Some(id.clone());
             }
+            let supported_effort_levels = opencode_supported_effort_levels(&provider.id, &model.id);
             models.push(ModelCatalogEntry {
                 id,
                 label: format!("{provider_label}: {model_label}"),
                 description: None,
-                supports_effort: None,
-                supported_effort_levels: None,
+                supports_effort: Some(supported_effort_levels.is_some()),
+                supported_effort_levels,
                 supports_adaptive_thinking: None,
                 supports_fast_mode: None,
                 supports_auto_mode: None,
@@ -114,6 +116,23 @@ fn catalog_from_response(
         default_model,
     };
     (catalog, context_windows)
+}
+
+fn opencode_supported_effort_levels(provider_id: &str, model_id: &str) -> Option<Vec<String>> {
+    let provider = provider_id.to_ascii_lowercase();
+    let model = model_id.to_ascii_lowercase();
+    let is_openai_reasoning_model = provider == "openai"
+        && (model.starts_with("gpt-5")
+            || model.starts_with("o1")
+            || model.starts_with("o3")
+            || model.starts_with("o4"));
+
+    is_openai_reasoning_model.then(|| {
+        OPENAI_REASONING_EFFORT_LEVELS
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    })
 }
 
 #[cfg(test)]
@@ -138,7 +157,19 @@ mod tests {
         assert_eq!(entry.id, "opencode");
         assert_eq!(entry.status, ProviderStatus::Available);
         assert_eq!(entry.default_model.as_deref(), Some(FALLBACK_MODEL_ID));
+        assert!(entry
+            .models
+            .iter()
+            .any(|model| model.id == FALLBACK_MODEL_ID));
+    }
+
+    #[test]
+    fn fallback_catalog_has_only_provider_default_model() {
+        let entry = catalog_entry();
         assert_eq!(entry.models.len(), 1);
+        assert_eq!(entry.models[0].id, FALLBACK_MODEL_ID);
+        assert_eq!(entry.models[0].supports_effort, Some(false));
+        assert!(entry.models[0].supported_effort_levels.is_none());
     }
 
     #[test]
@@ -178,6 +209,42 @@ mod tests {
             Some(200_000)
         );
         assert!(!windows.contains_key("anthropic/claude-haiku-4-5"));
+    }
+
+    #[test]
+    fn catalog_from_response_marks_openai_reasoning_models_as_effort_capable() {
+        let response = parse(json!({
+            "providers": [
+                {
+                    "id": "openai",
+                    "name": "OpenAI",
+                    "models": {
+                        "gpt-5.4": {
+                            "name": "GPT-5.4",
+                            "limit": { "context": 200000 }
+                        }
+                    }
+                }
+            ],
+            "default": { "openai": "gpt-5.4" }
+        }));
+        let (catalog, _) = catalog_from_response(response);
+        let model = catalog
+            .models
+            .iter()
+            .find(|model| model.id == "openai/gpt-5.4")
+            .expect("gpt-5.4 entry");
+        assert_eq!(model.supports_effort, Some(true));
+        let expected_levels = vec![
+            "low".to_string(),
+            "medium".to_string(),
+            "high".to_string(),
+            "xhigh".to_string(),
+        ];
+        assert_eq!(
+            model.supported_effort_levels.as_deref(),
+            Some(expected_levels.as_slice())
+        );
     }
 
     #[test]

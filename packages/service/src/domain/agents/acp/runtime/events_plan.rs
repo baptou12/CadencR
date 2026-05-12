@@ -33,6 +33,9 @@ pub fn map_plan(
         .map(|entries| entries.iter().map(normalize_plan_entry).collect())
         .unwrap_or_default();
     let synthetic_id = format!("acp-plan-{}", indexer.next_anonymous());
+    if !todos.is_empty() {
+        indexer.mark_plan_todowrite_emitted();
+    }
     let model = active_model.map(ToOwned::to_owned);
     MappedUpdate {
         events: vec![RuntimeEvent::new(
@@ -75,8 +78,29 @@ fn normalize_plan_entry(entry: &Value) -> Value {
 mod tests {
     use super::map_plan;
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
-    use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEventMetadata};
-    use serde_json::json;
+    use crate::domain::agents::acp::runtime::events_tool_call::map_tool_call_start;
+    use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
+    use crate::domain::agents::adapter::{
+        RuntimeContentBlock, RuntimeEventMetadata, RuntimePermissionMode,
+    };
+    use serde_json::{json, Value};
+
+    struct PlainHooks;
+
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for PlainHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+
+        fn normalize_tool_input(&self, _tool_name: &str, input: Value) -> Value {
+            input
+        }
+
+        fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
+            None
+        }
+    }
 
     #[test]
     fn map_plan_normalizes_entries_into_frontend_todowrite_shape() {
@@ -136,5 +160,79 @@ mod tests {
             RuntimeEventMetadata::default(),
         );
         assert!(result.events.is_empty());
+    }
+
+    #[test]
+    fn plan_before_todowrite_tool_call_does_not_duplicate_todo_ui() {
+        let mut idx = EventIndexer::default();
+        let plan = map_plan(
+            &json!({
+                "entries": [{ "content": "Step", "status": "pending" }]
+            }),
+            &mut idx,
+            None,
+            RuntimeEventMetadata::default(),
+        );
+        assert_eq!(plan.events.len(), 1);
+
+        let tool_call = map_tool_call_start(
+            &json!({
+                "toolCallId": "todo-after-plan",
+                "toolName": "TodoWrite",
+                "rawInput": {}
+            }),
+            &mut idx,
+            RuntimeEventMetadata::default(),
+            &PlainHooks,
+        );
+
+        assert!(tool_call.events.is_empty());
+    }
+
+    #[test]
+    fn empty_plan_does_not_suppress_later_todowrite_tool_call() {
+        let mut idx = EventIndexer::default();
+        let plan = map_plan(&json!({}), &mut idx, None, RuntimeEventMetadata::default());
+        assert_eq!(plan.events.len(), 1);
+
+        let tool_call = map_tool_call_start(
+            &json!({
+                "toolCallId": "todo-after-empty-plan",
+                "toolName": "TodoWrite",
+                "rawInput": {}
+            }),
+            &mut idx,
+            RuntimeEventMetadata::default(),
+            &PlainHooks,
+        );
+
+        assert_eq!(tool_call.events.len(), 1);
+    }
+
+    #[test]
+    fn populated_plan_does_not_suppress_real_todowrite_tool_call_input() {
+        let mut idx = EventIndexer::default();
+        let plan = map_plan(
+            &json!({
+                "entries": [{ "content": "Step", "status": "pending" }]
+            }),
+            &mut idx,
+            None,
+            RuntimeEventMetadata::default(),
+        );
+        assert_eq!(plan.events.len(), 1);
+
+        let tool_call = map_tool_call_start(
+            &json!({
+                "toolCallId": "todo-real-after-plan",
+                "toolName": "TodoWrite",
+                "rawInput": { "todos": [{ "content": "Next", "status": "pending" }] }
+            }),
+            &mut idx,
+            RuntimeEventMetadata::default(),
+            &PlainHooks,
+        );
+
+        assert_eq!(tool_call.events.len(), 1);
     }
 }

@@ -64,7 +64,6 @@ impl SessionPermissions {
         self.inner.write().await.insert(key, decision);
     }
 
-    #[cfg(test)]
     pub async fn lookup(&self, key: &PermissionKey) -> Option<RuntimePermissionDecision> {
         self.inner.read().await.get(key).copied()
     }

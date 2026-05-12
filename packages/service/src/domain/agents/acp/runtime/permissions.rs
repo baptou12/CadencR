@@ -20,8 +20,10 @@ use crate::domain::agents::adapter::{
     RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,
 };
 
+#[cfg(test)]
+pub use super::permissions_dispatch::dispatch_permission_request;
 pub use super::permissions_dispatch::{
-    dispatch_permission_request, reject_all_pending, take_pending, PendingPermissions,
+    dispatch_permission_request_with_cache, reject_all_pending, take_pending, PendingPermissions,
 };
 use super::permissions_typed::permission_request_from_typed;
 use super::schema_bridge::{permission_response_value, resolve_permission_option};

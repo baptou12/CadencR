@@ -16,8 +16,8 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimePermissionDecision, RuntimePermissionResponse, RuntimePermissionResponseKind,
-    RuntimeSessionHandle, RuntimeSpawnConfig,
+    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
+    RuntimeSpawnConfig,
 };
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
@@ -196,11 +196,9 @@ pub(super) async fn handle_permission_respond(
 
     let runtime_response = RuntimePermissionResponse {
         request_id: payload.request_id.clone(),
-        decision: match payload.decision {
-            PermissionDecision::AllowOnce => RuntimePermissionDecision::AllowOnce,
-            PermissionDecision::AllowFuture => RuntimePermissionDecision::AllowFuture,
-            PermissionDecision::Deny => RuntimePermissionDecision::Deny,
-        },
+        decision: payload
+            .decision
+            .to_runtime_decision(payload.option_id.as_deref()),
         option_id: payload.option_id.clone(),
         feedback: payload.feedback.clone(),
         updated_input: payload.updated_input.clone(),

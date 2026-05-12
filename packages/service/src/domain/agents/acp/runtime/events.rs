@@ -90,6 +90,32 @@ mod tests {
     }
 
     #[test]
+    fn thought_chunk_emits_thinking_block_and_delta() {
+        let mut idx = EventIndexer::default();
+        let events = run_chunk(&mut idx, "agent_thought_chunk", "considering");
+
+        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            events[0].stream_event(),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        ));
+        assert!(matches!(
+            events[1].stream_event(),
+            Some(RuntimeStreamEvent::ContentBlockStart {
+                block: RuntimeContentBlock::Thinking { .. },
+                ..
+            })
+        ));
+        match events[2].stream_event() {
+            Some(RuntimeStreamEvent::ContentBlockDelta {
+                delta: RuntimeContentDelta::Thinking { thinking },
+                ..
+            }) => assert_eq!(thinking, "considering"),
+            other => panic!("unexpected variant: {other:?}"),
+        }
+    }
+
+    #[test]
     fn tool_call_after_text_flushes_streaming_block_first() {
         let mut idx = EventIndexer::default();
         let _ = run_chunk(&mut idx, "agent_message_chunk", "hi");
@@ -187,6 +213,27 @@ mod tests {
             json!("echoed prompt"),
             "raw payload must surface the chunk so it isn't dropped",
         );
+    }
+
+    #[test]
+    fn user_message_chunk_compaction_emits_compact_boundary() {
+        let mut idx = EventIndexer::default();
+        let result = session_update_to_events(
+            &json!({
+                "update": {
+                    "sessionUpdate": "user_message_chunk",
+                    "content": { "type": "compaction", "auto": false, "overflow": false }
+                }
+            }),
+            &mut idx,
+            None,
+            Some("s-1"),
+            &PlainHooks,
+        );
+
+        assert_eq!(result.events.len(), 1);
+        assert!(result.events[0].is_compact_boundary());
+        assert_eq!(result.events[0].session_id(), Some("s-1"));
     }
 
     #[test]
@@ -337,5 +384,27 @@ mod tests {
         assert_eq!(commands.len(), 1);
         assert_eq!(commands[0].name, "valid");
         assert!(commands[0].description.is_none());
+    }
+
+    #[test]
+    fn non_streaming_update_without_open_blocks_preserves_message_start() {
+        let mut idx = EventIndexer::default();
+        idx.message_started = true;
+        let result = session_update_to_events(
+            &json!({
+                "update": {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "missing-start",
+                    "status": "pending"
+                }
+            }),
+            &mut idx,
+            Some("openai/gpt-5.4"),
+            Some("s-1"),
+            &PlainHooks,
+        );
+
+        assert_eq!(result.events.len(), 1);
+        assert!(idx.message_started);
     }
 }

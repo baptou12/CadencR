@@ -34,6 +34,9 @@ pub struct EventIndexer {
     /// existing tool block (OpenCode emits `tool_call(todowrite)` with an
     /// empty `rawInput`, then sends the actual entries via `plan`).
     pub last_todowrite_call_id: Option<String>,
+    plan_todowrite_emitted: bool,
+    suppressed_tool_call_ids: HashSet<String>,
+    compact_boundary_emitted: bool,
     pub current_text_index: Option<u64>,
     pub current_thinking_index: Option<u64>,
     /// True once we've emitted a `message_start` for the current assistant
@@ -74,6 +77,33 @@ impl EventIndexer {
 
     pub fn tool_name_for(&self, tool_call_id: &str) -> Option<&str> {
         self.tool_names.get(tool_call_id).map(String::as_str)
+    }
+
+    pub fn mark_plan_todowrite_emitted(&mut self) {
+        self.plan_todowrite_emitted = true;
+    }
+
+    pub fn has_plan_todowrite_emitted(&self) -> bool {
+        self.plan_todowrite_emitted
+    }
+
+    pub fn suppress_tool_call(&mut self, tool_call_id: &str) {
+        self.suppressed_tool_call_ids
+            .insert(tool_call_id.to_string());
+    }
+
+    pub fn is_tool_call_suppressed(&self, tool_call_id: &str) -> bool {
+        self.suppressed_tool_call_ids.contains(tool_call_id)
+    }
+
+    pub fn mark_compact_boundary_emitted(&mut self) {
+        self.compact_boundary_emitted = true;
+    }
+
+    pub fn take_compact_boundary_emitted(&mut self) -> bool {
+        let emitted = self.compact_boundary_emitted;
+        self.compact_boundary_emitted = false;
+        emitted
     }
 
     pub fn mark_question_prompt_emitted(&mut self, tool_call_id: &str) -> bool {
@@ -131,6 +161,9 @@ impl EventIndexer {
             .into_iter()
             .map(|index| stream_stop_event(index, session_id))
             .collect();
+        self.last_todowrite_call_id = None;
+        self.plan_todowrite_emitted = false;
+        self.suppressed_tool_call_ids.clear();
         if !stops.is_empty() {
             self.message_started = false;
         }
@@ -259,5 +292,17 @@ mod tests {
         assert!(events.is_empty());
         // No-op drain must not clobber message_started.
         assert!(idx.message_started);
+    }
+
+    #[test]
+    fn drain_open_blocks_resets_todowrite_dedup_state() {
+        let mut idx = EventIndexer::default();
+        idx.record_tool_name("todo-1", "TodoWrite");
+        assert_eq!(idx.last_todowrite_call_id.as_deref(), Some("todo-1"));
+
+        let events = idx.drain_open_blocks(Some("s-1"));
+
+        assert!(events.is_empty());
+        assert!(idx.last_todowrite_call_id.is_none());
     }
 }

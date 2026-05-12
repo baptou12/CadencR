@@ -27,8 +27,8 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
             collect_feedback: false,
         },
         RuntimePermissionOption {
-            decision: RuntimePermissionDecision::AllowFuture,
-            option_id: None,
+            decision: RuntimePermissionDecision::AllowForSession,
+            option_id: Some("allow_for_session".to_string()),
             label: "Allow for this session".to_string(),
             description: "Let OpenCode allow similar requests during this session".to_string(),
             collect_feedback: false,
@@ -75,6 +75,7 @@ fn parse_options(raw: Option<&Value>) -> Option<Vec<RuntimePermissionOption>> {
         .filter_map(|option| {
             let decision = match option.get("decision").and_then(Value::as_str)? {
                 "allow_once" => RuntimePermissionDecision::AllowOnce,
+                "allow_for_session" => RuntimePermissionDecision::AllowForSession,
                 "allow_future" => RuntimePermissionDecision::AllowFuture,
                 "deny" => RuntimePermissionDecision::Deny,
                 _ => return None,
@@ -108,6 +109,7 @@ fn parse_options(raw: Option<&Value>) -> Option<Vec<RuntimePermissionOption>> {
 #[cfg(test)]
 mod tests {
     use super::{parse_permission_request, permission_options};
+    use crate::domain::agents::adapter::RuntimePermissionDecision;
     use serde_json::json;
 
     #[test]
@@ -224,7 +226,38 @@ mod tests {
     #[test]
     fn opencode_permission_options_label_always_as_session_scoped() {
         let options = permission_options();
+        assert_eq!(
+            options[1].decision,
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(options[1].option_id.as_deref(), Some("allow_for_session"));
         assert_eq!(options[1].label, "Allow for this session");
+    }
+
+    #[test]
+    fn parses_allow_for_session_permission_option() {
+        let payload = parse_permission_request(&json!({
+            "type": "acp_permission_request",
+            "request_id": "req-session",
+            "tool_name": "bash",
+            "tool_input": {},
+            "options": [
+                {
+                    "decision": "allow_for_session",
+                    "option_id": "session",
+                    "label": "Allow for this session",
+                    "description": "Allow similar requests this session"
+                }
+            ]
+        }))
+        .unwrap();
+
+        let options = payload.options.unwrap();
+        assert_eq!(
+            options[0].decision,
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(options[0].option_id.as_deref(), Some("session"));
     }
 
     #[test]

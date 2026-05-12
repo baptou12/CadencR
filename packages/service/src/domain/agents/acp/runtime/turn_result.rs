@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeUsage,
+    RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
 };
 
 /// Forward a `RuntimeEventKind::Result` envelope to the message channel
@@ -18,7 +18,6 @@ pub async fn emit_turn_result(
     stop_reason: &str,
     response: &Value,
 ) {
-    let usage = parse_prompt_response_usage(response);
     let raw = json!({
         "type": "result",
         "session_id": session_id.clone(),
@@ -28,7 +27,7 @@ pub async fn emit_turn_result(
     });
     let metadata = RuntimeEventMetadata {
         session_id,
-        usage,
+        usage: None,
         context_window,
         raw,
     };
@@ -38,38 +37,9 @@ pub async fn emit_turn_result(
     }
 }
 
-/// Pull the per-turn usage carried by the `session/prompt` response.
-///
-/// Wire shape (observed against `opencode acp` 1.14):
-/// `usage: { totalTokens, inputTokens, outputTokens, thoughtTokens }`.
-/// We fold `thoughtTokens` into `output_tokens` so reasoning tokens are
-/// billed against the assistant turn.
-pub(super) fn parse_prompt_response_usage(response: &Value) -> Option<RuntimeUsage> {
-    let usage = response.get("usage")?;
-    let input = usage
-        .get("inputTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let output = usage
-        .get("outputTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let reasoning = usage
-        .get("thoughtTokens")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    if input == 0 && output == 0 && reasoning == 0 {
-        return None;
-    }
-    Some(RuntimeUsage {
-        input_tokens: input,
-        output_tokens: output.saturating_add(reasoning),
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{emit_turn_result, parse_prompt_response_usage};
+    use super::emit_turn_result;
     use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
     use serde_json::json;
     use tokio::sync::mpsc;
@@ -99,7 +69,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn emit_turn_result_carries_usage_from_response() {
+    async fn emit_turn_result_does_not_treat_prompt_response_usage_as_context_usage() {
         let (tx, mut rx) = mpsc::channel(4);
         emit_turn_result(
             &tx,
@@ -117,21 +87,10 @@ mod tests {
         )
         .await;
         let event = rx.recv().await.unwrap().unwrap();
-        let usage = event.usage().expect("usage should be carried on result");
-        assert_eq!(usage.input_tokens, 10_653);
-        assert_eq!(usage.output_tokens, 16);
-    }
-
-    #[test]
-    fn parse_prompt_response_usage_returns_none_when_absent() {
-        assert!(parse_prompt_response_usage(&json!({})).is_none());
-    }
-
-    #[test]
-    fn parse_prompt_response_usage_skips_all_zero_payloads() {
-        let result = parse_prompt_response_usage(&json!({
-            "usage": { "totalTokens": 0, "inputTokens": 0, "outputTokens": 0, "thoughtTokens": 0 }
-        }));
-        assert!(result.is_none());
+        assert!(
+            event.usage().is_none(),
+            "session/prompt usage is per-turn accounting, not a context-budget snapshot",
+        );
+        assert_eq!(event.context_window(), Some(200_000));
     }
 }

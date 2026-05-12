@@ -206,14 +206,14 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         &self,
         response: RuntimePermissionResponse,
     ) -> Result<bool, RuntimeError> {
-        if response.updated_input.is_none() && response.feedback.is_none() {
-            return Ok(false);
-        }
         if matches!(response.decision, RuntimePermissionDecision::Deny) {
             self.question_sidecar
                 .reject_tool_call(&response.request_id)
                 .await?;
             return Ok(true);
+        }
+        if response.updated_input.is_none() && response.feedback.is_none() {
+            return Ok(false);
         }
         let answers = extract_question_answers(
             response.updated_input.as_ref(),

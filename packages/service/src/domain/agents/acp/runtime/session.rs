@@ -1,3 +1,4 @@
+mod compact;
 mod implementation;
 
 pub use implementation::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
@@ -9,6 +10,7 @@ mod tests {
     use super::super::permissions::PendingPermissions;
     use super::super::provider_hooks::AcpProviderHooks;
     use super::super::server_requests::{spawn_event_loop, EventLoopConfig};
+    use super::super::session_permissions::SessionPermissions;
     use super::super::terminal_registry::TerminalRegistry;
     use super::super::turn_lifecycle::{drive_initial_prompt, PromptCancel};
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
@@ -237,6 +239,7 @@ mod tests {
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: pending,
+            session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: Arc::new(PlainHooks),
             indexer: Arc::clone(&indexer),

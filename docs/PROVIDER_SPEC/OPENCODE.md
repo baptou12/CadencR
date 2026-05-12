@@ -31,20 +31,20 @@ removal. This document covers the ACP transport only.
 |---|---|---|---|
 | 1 | Modes: plan / build / accept-edits | ✅ | Both spawn-time and mid-session paths wired. `negotiate_session` parses `currentModeId` from `session/new`; `apply_initial_permission_mode` pushes the user-selected mode to the agent post-handshake when it differs. `mode_switch::send_set_mode` capability-probes `session/set_mode` via `request_optional_method` so older builds degrade to a warn log instead of a raw RPC error. |
 | 2 | Thinking | ✅ | `agent_thought_chunk` mapped to `RuntimeContentDelta::Thinking` with sticky indices in `EventIndexer`. |
-| 3 | Partial / streaming messages | 🟡 | Streams correctly. `message_started` resets on **every** `tool_call_update` even when no streaming blocks were drained, fragmenting one assistant turn into multiple chat bubbles. |
+| 3 | Partial / streaming messages | ✅ | Streams correctly. `message_started` is preserved for non-streaming no-op updates and only reset when an open streaming block is actually drained. |
 | 4 | Bash tool calls + outputs | ✅ | `terminal/create` + enrich pipeline works correctly. |
 | 5 | Edits / Writes / Patch | ✅ | `Edit` and `Write` both work correctly. **Tool descriptions are not visible** — Read, Grep, and other tools render without their description text in the UI. |
-| 6 | Sub-agents | 🟡 | `parent_tool_use_id` plumbed. **`subAgentSessionId` is mis-mapped to `parent_tool_use_id`** (the FE expects a tool_use_id, gets a session id; child events drop on the floor). No `thread_id → parent_tool_use_id` registry; spec § 6 child final-text synthesis under the parent `Agent` block is missing. |
-| 7 | Todo | 🟡 | `TodoWrite` and `plan` updates normalized to canonical shape. **`last_todowrite_call_id` is never reset across turns** — once any turn sees a TodoWrite, every subsequent `plan` update for the rest of the session is silently dropped. **Reverse-order plan-then-tool_call duplicates the UI.** |
-| 8 | Thinking level changes | ✅ | `set_thinking_effort` wired through `session/set_config_option { configId: "effort", type: "string", value }` with legacy ride-along fallback. `apply_initial_thinking_effort` (`spawn_initial_config.rs`) pushes effort to the agent right after `session/new`, so the first turn already reflects the user's selection. `current_effort` starts as `None` (decoupled from intent) and is only written when the agent acks. |
+| 6 | Sub-agents | ✅ | `parent_tool_use_id` plumbed. `subAgentSessionId` is intentionally not treated as a parent tool id; OpenCode Task/Agent completions synthesize child final text under the parent tool block, and the side-channel listener maintains child-session to parent-tool mapping for live child messages. |
+| 7 | Todo | ✅ | `TodoWrite` and `plan` updates normalized to canonical shape. Turn-scoped Todo dedup state is reset at turn end; reverse-order `plan` then empty `tool_call(TodoWrite)` suppresses the duplicate direct tool block. |
+| 8 | Thinking level changes | ✅ | `set_thinking_effort` wired through `session/set_config_option { configId: "effort", type: "string", value }` with legacy ride-along fallback. OpenCode reasoning models such as `openai/gpt-5.4` now advertise supported effort levels in the catalog, so the FE renders the thinking-effort control. `apply_initial_thinking_effort` (`spawn_initial_config.rs`) pushes effort to the agent right after `session/new`, so the first turn already reflects the user's selection. `current_effort` starts as `None` (decoupled from intent) and is only written when the agent acks. |
 | 9 | Model selection changes | ✅ | `set_model` and `apply_initial_model` (`spawn_initial_config.rs`) both send `session/set_config_option { configId: "model", type: "string", value }` — the schema OpenCode actually accepts (top-level `configId`/`type`/`value`, *not* a nested `configOption` envelope). `current_model` starts as `None` and is only written once the agent has acknowledged, so the short-circuit is keyed off real acknowledgement rather than Cadencr's intent. The "Talking to gpt-5.4-mini while the prompt says gpt-5.4" regression is fixed. |
-| 10 | Permissions: yes / no / always / session | 🟡 | Bridge pattern wired via `permission_bridge`; question sidecar HTTP endpoint functional. **Deny on a question hangs the agent** (`respond_permission_fallback` early-returns when both `updated_input` and `feedback` are `None`, never calling `reject_tool_call`). **`AllowForSession` collapses onto `AllowFuture`** on the WS wire (a "session" decision is routed back to ACP as a permanent grant). Close cancellation uses JSON-RPC `-32800` instead of the spec'd `outcome: cancelled`. |
+| 10 | Permissions: yes / no / always / session | ✅ | Bridge pattern wired via `permission_bridge`; question sidecar HTTP endpoint functional. No-feedback Deny now routes to `reject_tool_call` instead of hanging. `AllowForSession` is preserved through the runtime response path, OpenCode fallback options carry `allow_for_session`, and cached session/always grants pre-flight repeated matching ACP requests. Close cancellation still uses JSON-RPC `-32800` rather than the spec's `outcome: cancelled`. |
 | 11 | MCP | ❌ | **MCP servers do not load.** OpenCode reads MCP config from `opencode.json` on disk regardless of transport; the ACP spawn path skips the `ensure_worktree_opencode_config` step the HTTP path runs. Plus `mcp_status_list` reports every configured server as `connected` before any health probe (spec § 11 status field is meaningless). |
 | 12 | Plan approval | ❌ | **Not implemented at all.** No code synthesises an `ExitPlanMode` `ToolUse`. `AcpRuntimeSession::permission_response_kind` is not overridden, so it defaults to `Normal`; `should_transition_after_plan_approval` always returns `false`. Plan-approval bar never closes after Approve; session stays in plan. |
-| 13 | Context usage | 🟡 | Window plumbed correctly through `RuntimeEventMetadata.context_window`. **`usage_update.used` (cumulative occupancy) is mis-treated as per-turn `input_tokens`**, garbling the FE's `used / context_window` math. `output_tokens` are forced to `0` on every snapshot. Wire shape used by `parse_prompt_response_usage` (`{inputTokens,outputTokens,thoughtTokens}`) is unverified against the real `opencode acp` reply. |
-| 14 | Compaction | ❌ | `compaction_strategy` returns `LiveRuntime`, but `AcpRuntimeSession::compact()` is **not overridden** so `/compact` errors with "compaction is not supported". **No code emits `RuntimeEventKind::CompactBoundary` from ACP** — the FE `compact_divider` block never renders. |
-| 15 | Command + skill list | 🟡 | Filesystem commands listed via `OpenCodeClient::list_commands_in_directory` — which **boots `opencode serve` even in ACP-only mode** (wastes a port + process; breaks for users without HTTP support). The agent-pushed `available_commands_update` notification is mapped to `Other` and discarded — mid-session command catalog never reaches the FE. Built-in commands (`/help`, `/init`, `/share`, …) are missing from the menu. |
-| 16 | Replay / send-target detection | ❌ | **CONFIRMED BUG (user-reported).** `resume_session_id` is always discarded by design (`lifecycle.rs` ignores it; `is_valid_resume_session_id` not overridden). Conversation continuity broken across turns: a follow-up message that requires context from earlier in the conversation reports "I have no context about this." Likely cause: `OpenCodeAdapter::session_finished_text` dispatches to the HTTP-side prober even in ACP mode, returning stale data from an HTTP server that never received the conversation; the WS-layer dispatch then treats the slot as drained and starts a new turn without the prior history. Needs root-cause investigation. |
+| 13 | Context usage | ✅ | Window plumbed through `RuntimeEventMetadata.context_window`. OpenCode context snapshots come from `usage_update.used/size` and `session_info_update.contextWindow`; per-turn `session/prompt` usage is no longer treated as context-budget usage. |
+| 14 | Compaction | ✅ | `compaction_strategy` returns `LiveRuntime`; `AcpRuntimeSession::compact()` issues OpenCode `/compact` through `session/prompt` and emits a manual `RuntimeEventKind::CompactBoundary` so the FE compact divider renders and persists. |
+| 15 | Command + skill list | ✅ | Slash menu merges Cadencr built-ins/skills with OpenCode's ACP `available_commands_update` catalog. Cold refresh uses a short-lived `opencode acp` probe, not `opencode serve`, and live sessions mirror catalog pushes into the per-cwd snapshot. |
+| 16 | Replay / send-target detection | ✅ | Live ACP send-targeting is verified: follow-up prompts are routed through the active `AcpRuntimeSession::stream_input`, `session_finished` stays false for ACP turn completion, and the second turn retains prior-turn context. Stale resume ids are explicitly rejected for OpenCode because ACP sessions are subprocess-scoped; continuity after app/process restart is intentionally not claimed. |
 
 Legend: ✅ implemented · 🟡 partial · ❌ missing.
 
@@ -160,23 +160,16 @@ The runtime extracts a parent linkage from
 it onto every event via `RuntimeEvent::set_parent_tool_use_id`. The FE
 nests child events under the parent tool block.
 
-**Known issues:**
+Codex implementation notes:
 
-- *`subAgentSessionId` is mis-mapped.* The FE looks up
-  `parent_tool_use_id` in a tool_use map; a child *session* id will
-  never key into that map. **Fix:** drop `subAgentSessionId` from the
-  fallback chain, or maintain a `child_session_id → parent_tool_use_id`
-  registry per spec § 6 and translate before stamping.
-- *No registry for concurrent children.* Spec § 6 requires
-  `thread_id → parent_tool_use_id` mapping for the lifetime of the
-  parent turn.
-- *Child final text not synthesised under parent.* Spec § 6 explicitly
-  requires it when the provider only delivers final text via a tool
-  result.
-- *`Task` / `Agent` input not derived from content.*
-  `derive_input_from_content` only handles `Edit`/`Write`/`MultiEdit`/
-  `ApplyPatch`. Sub-agent panel renders without prompt context if
-  OpenCode emits `Task` with empty `toolInput`.
+- `subAgentSessionId` is intentionally excluded from the fallback chain
+  because it carries a child session id, not a parent tool-use id.
+- OpenCode `Task` / `Agent` completions synthesize a cleaned child text
+  message under `parent_tool_use_id == <task tool_call_id>`.
+- The OpenCode side-channel listener tracks `child_session_id →
+  parent_tool_use_id` for live child messages.
+- `Task` / `Agent` input can be derived from `content[]` when `toolInput`
+  is empty, so the sub-agent panel has prompt context.
 
 ### 7. Todo
 
@@ -192,13 +185,14 @@ Status values are normalised to snake_case; entries with no
 `activeForm` reuse `content` as a fallback (acceptable per spec, ugly
 in the UI).
 
-**Known issues:**
+Codex implementation notes:
 
-- *`last_todowrite_call_id` never reset.* Once any turn records a
-  TodoWrite, every subsequent `plan` update across the entire session
-  is silently dropped. **Fix:** reset in `drain_open_blocks` (turn end).
-- *Reverse-order ordering bug.* If `plan` arrives before
-  `tool_call(todowrite)`, both produce TodoWrite blocks → duplicate UI.
+- `drain_open_blocks` resets turn-scoped Todo dedup state so one turn's
+  `TodoWrite` cannot suppress later plan-only updates.
+- If a `plan` update arrives before an empty duplicate
+  `tool_call(TodoWrite)`, the direct tool call and later updates are
+  suppressed to avoid duplicate Todo UI; non-empty TodoWrite input still
+  renders as a real tool call.
 
 ### 8. Thinking level changes
 
@@ -220,6 +214,14 @@ spawn-time push — see § 9 for the same architectural pattern applied to
 model. The `configId` discriminator on the wire is `"effort"` (not
 `"thinkingEffort"`); the translation lives in
 `set_config_option_thinking_effort`.
+
+OpenCode's model catalog marks known OpenAI reasoning models
+(`gpt-5*`, `o1*`, `o3*`, `o4*`) as effort-capable with
+`low` / `medium` / `high` / `xhigh`. The FE reads this catalog metadata
+to render the `Cycle thinking effort` control in the model chip.
+Browser QA with OpenCode `openai/gpt-5.4` verified the control appears,
+cycles to `Low`, emits `session effort.set`, and the first runtime spawn
+uses `desired_effort=Some("low")`.
 
 **Known issues:**
 
@@ -291,8 +293,10 @@ ACP's five canonical option kinds map to four runtime decisions:
 | `reject_once` / `reject_always` | `Deny` |
 
 `SessionPermissions` caches `AllowForSession` and `AllowFuture` grants
-keyed by `(tool_name, canonical_input)` for the session's lifetime, but
-the cache is never consulted (`lookup` is `#[allow(dead_code)]`).
+keyed by `(tool_name, canonical_input)` for the session's lifetime.
+Before surfacing a repeated matching ACP permission request, the event
+loop consults this cache and responds directly to the agent with the
+matching selected option id.
 
 The OpenCode-specific `AskUserQuestion` tool is routed through a
 side-channel: `OpenCodeAcpAdapter::tool_call_update_override` synthesises
@@ -300,24 +304,21 @@ an `opencode_permission_request` envelope from the `rawInput.questions`
 payload, and `respond_permission_fallback` posts the user's answer to
 the question sidecar HTTP endpoint via `QuestionSidecar`.
 
-**Known issues:**
+**Known issue:**
 
-- *Deny on a question hangs the agent.* `respond_permission_fallback`
-  early-returns `Ok(false)` when both `updated_input` and `feedback` are
-  `None` — exactly the case for a no-feedback Deny. The runtime emits
-  "no pending ACP permission for request_id …" and the agent waits
-  forever. **Fix:** route `Deny` to `reject_tool_call` regardless of
-  payload.
-- *`AllowForSession` collapsed onto wire `AllowFuture`.* `protocol.rs`
-  has only three wire discriminants. A "session" decision is routed
-  back to the agent as a permanent grant (different `optionId`s
-  preserve the distinction agent-side, but the runtime-cached intent
-  is wrong).
 - *`reject_all_pending` on close.* Uses `-32800` JSON-RPC error rather
   than `acp_permission_cancel_payload()`. Some agents may treat that
   as a fatal RPC failure.
-- *No pre-flight short-circuit.* `SessionPermissions::lookup` is
-  unused; the agent re-prompts even after the user said "Always".
+
+Codex implementation note: no-feedback Deny on the OpenCode
+question-sidecar fallback now routes to `QuestionSidecar::reject_tool_call`
+before the empty-payload early return. Browser QA verified a rejected
+external file write clears the permission prompt and leaves the target
+file absent. The WS payload still uses the existing `allow_future`
+discriminant for the frontend button, but `option_id` now carries
+`allow_for_session`/`session`, and `handle_permission_respond` maps that
+back to `RuntimePermissionDecision::AllowForSession` before responding to
+ACP.
 
 ### 11. MCP
 
@@ -379,25 +380,22 @@ Three sources populate `RuntimeEventMetadata.context_window`:
    resolves the model via the OpenCode catalog before
    `negotiate_session`.
 2. **`usage_update` notifications** — `body.size` updates the window;
-   `body.used` updates per-turn usage.
+   `body.used` updates the cumulative context occupancy.
 3. **`session_info_update` notifications** — `body.contextWindow.{tokenUsed,maxTokens}`.
 
-Per-turn usage is parsed from the `session/prompt` response body by
-`turn_result::parse_prompt_response_usage`, which folds `thoughtTokens`
-into `output_tokens`.
+Codex implementation notes:
 
-**Known issues:**
-
-- *`usage_update.used` mis-treated as `input_tokens`.* `used` is the
-  cumulative context occupancy, not the current turn's input. Treating
-  it as `input_tokens` garbles the FE's `used / context_window` math
-  and forces `output_tokens` to `0` on every snapshot.
-- *Wire shape unverified.* `parse_prompt_response_usage` reads
-  `{inputTokens,outputTokens,thoughtTokens}` based on a comment about
-  `opencode acp 1.14`. OpenCode's HTTP path uses
-  `tokens.{input,output,reasoning}`; if ACP follows HTTP rather than
-  ACP convention, per-turn usage drops on the floor. Add a real-fixture
-  test.
+- `usage_update.used` is represented as `input_tokens = used` and
+  `output_tokens = 0` because the existing frontend bar computes
+  `(input + output) / context_window`; this preserves the real context
+  occupancy without inventing a second usage shape.
+- `turn_result::emit_turn_result` keeps the raw `session/prompt` usage
+  payload for inspection but does not attach it to `RuntimeEventMetadata`
+  as context usage. That prevents small per-turn accounting from
+  overwriting the cumulative context snapshot.
+- Browser QA with OpenCode `openai/gpt-5.4` showed the context bar at
+  `6%` and the DB row at `input_tokens=12497`, `output_tokens=0`,
+  `context_window=200000`.
 
 ### 14. Compaction
 
@@ -405,45 +403,36 @@ into `output_tokens`.
 (the comment says: until OpenCode's ACP advertises `loadSession`,
 `SummaryReplay` would silently lose context).
 
-**Known issues — feature is non-functional:**
+Codex implementation notes:
 
-- *`AcpRuntimeSession::compact()` is not overridden.* The trait
-  default returns `Err("compaction is not supported")`. User `/compact`
-  surfaces that error.
-- *No emission of `RuntimeEventKind::CompactBoundary`.* Grep across
-  `agents/{acp,opencode}` finds no producer. The FE's compact_divider
-  block never renders during ACP turns. Provider-initiated compaction
-  signals from OpenCode (if any) are dropped.
-
-**Fix:** implement `compact()` to issue OpenCode's `/compact` via
-`session/prompt` (or whatever ACP exposes). When `usage_update.used`
-drops sharply between consecutive notifications, or when the agent
-explicitly signals compaction, emit
-`RuntimeEventKind::CompactBoundary { trigger, pre_tokens }`.
+- `AcpRuntimeSession::compact()` now sends `/compact` via `session/prompt`.
+- After the compact prompt completes, ACP emits a manual
+  `RuntimeEventKind::CompactBoundary` so the FE renders and persists the
+  compact divider even when OpenCode returns only summary text.
+- If OpenCode emits a `user_message_chunk` whose content type is
+  `compaction`, the mapper also turns that provider marker into a compact
+  boundary.
+- Browser QA with OpenCode `openai/gpt-5.4` showed the summary text plus a
+  `manual / Compacted` divider; the DB row had `was_compacted=1` and a
+  `compact_divider` message with `{"trigger":"manual"}`.
 
 ### 15. Command + skill list
 
-`OpenCodeAdapter::runtime_slash_commands` lists filesystem commands by
-calling `OpenCodeClient::list_commands_in_directory(cwd)` over HTTP.
+OpenCode command discovery is ACP-native:
 
-**Known issues:**
-
-- *HTTP server boots even in ACP-only mode.* `OpenCodeClient::init()`
-  spawns `opencode serve`. The ACP transport doesn't need that server
-  for anything; this wastes a port and a long-lived process and breaks
-  for users without HTTP support. **Fix:** in ACP mode, scan
-  `.opencode/command/` directly and union with the agent-pushed
-  catalog (next item).
-- *`available_commands_update` notification is dropped.* Mapped to
-  `Other` in `events.rs::session_update_to_events`; the agent's
-  mid-session command catalog never reaches the FE. **Fix:** parse
-  `availableCommands` into `RuntimeSlashCommand` and surface via a
-  new `RuntimeEventKind` (e.g. `SlashCommandsUpdated`) the WS bridge
-  can broadcast.
-- *Built-in commands missing.* The HTTP `list_commands_in_directory`
-  path doesn't surface OpenCode's built-ins (`/help`, `/init`,
-  `/share`, …) — they only arrive via `available_commands_update`,
-  which is dropped.
+- Live `available_commands_update` notifications are parsed into
+  `RuntimeSlashCommand` values and forwarded as `commands.updated`.
+- `OpenCodeAcpAdapter::record_available_commands` mirrors each live
+  push into a per-cwd snapshot so synchronous `commands.get` calls can
+  return immediately.
+- Cold refresh uses a short-lived `opencode acp` subprocess that runs
+  `initialize` / `session/new`, captures the first
+  `available_commands_update`, stores the snapshot, and exits. It does
+  not boot `opencode serve`.
+- The resolver merges the OpenCode catalog with Cadencr commands and
+  skills. Browser QA showed `/compact`, OpenCode built-ins (`/init`,
+  `/review`), project commands (`/item-*`, `/finish-job`), and skills
+  (`/qa`, `/db`) in the fresh OpenCode slash menu.
 
 ### 16. Replay / send-target detection
 
@@ -457,37 +446,30 @@ process exit is signalled separately via `AcpEvent::ProcessExited`.
 "ACP sessions are subprocess-scoped" — `session/load` for unknown ids
 hangs silently rather than erroring.
 
-**Known issues — confirmed user-reported bug:**
+Codex verification notes:
 
-> User: "Conversation continuity. I sent a first message, quick
-> response, then a message that took into account the agent could read
-> the whole conversation, but he says 'I have no context about this'."
+- Active follow-up prompts reuse the live ACP session through
+  `AcpRuntimeSession::stream_input`; the session id captured at
+  handshake is used on each `session/prompt`.
+- `OpenCodeAdapter::session_finished` always returns `false` for ACP
+  turn completion, so the WS reconciler does not treat a completed turn
+  as a completed runtime session. The trait default for
+  `session_finished_text` therefore returns `None`, avoiding the old
+  HTTP-side final-text probe path.
+- `OpenCodeAdapter::is_valid_resume_session_id` and
+  `resolve_resume_session_id` reject stored runtime session ids. That
+  makes the unsupported restart-resume behavior explicit instead of
+  passing a stale id into `lifecycle.rs`, where ACP ignores it.
+- Browser QA with OpenCode `openai/gpt-5.4` created a fresh session,
+  asked the agent to remember `ALPHA_CONTEXT_1131`, then asked a second
+  turn to repeat it. The response was exactly
+  `TOKEN ALPHA_CONTEXT_1131`, confirming live conversation continuity.
 
-Symptoms point to a follow-up turn losing access to the prior turn's
-history. Hypothesised causes (need root-cause investigation before
-fixing):
-
-1. **`OpenCodeAdapter::session_finished_text` dispatches to the
-   HTTP-side prober even in ACP mode** (`opencode/mod.rs:206-208`).
-   The HTTP server has no record of the ACP-only conversation, so the
-   prober may return a stale "session looks done" answer that causes
-   the WS dispatch layer to treat the slot as drained and start a new
-   turn without prior history. **Fix:** dispatch
-   `session_finished_text` per-transport too (return `None` in ACP
-   mode).
-2. **Subprocess respawn between turns.** Nothing in the spawn path
-   should respawn while the session is alive, but if the
-   `AcpEvent::ProcessExited` path fires spuriously (e.g. the dispatcher
-   loop misses a heartbeat), the WS layer will resurrect the session
-   with a fresh subprocess — and a fresh ACP session id with no memory.
-3. **`resume_session_id` always discarded.** Even on intentional reload
-   (close/reopen the app), the ACP runtime always starts a fresh
-   session. `is_valid_resume_session_id` is not overridden, so a stale
-   id passes through and is then silently ignored.
-
-**Fix path:** rule out #1 first by overriding `session_finished_text`
-on the OpenCode adapter to return `None` for ACP. Then trace the WS
-dispatch logic to confirm it's not respawning between turns.
+Known limitation: if the ACP subprocess is gone because the app or
+service restarted, OpenCode does not currently restore that session from
+the stored runtime id. Supporting that would require an upstream
+load/replay mechanism; Cadencr currently starts a fresh ACP session in
+that case.
 
 ---
 
@@ -499,10 +481,10 @@ Issues that don't fit a single feature row:
    implementation.** Every future ACP provider must reimplement
    text-joining from scratch. The `PlainHooks` test fixture shows the
    recipe; lift it into the trait as a default.
-2. **`is_valid_resume_session_id` not overridden on the OpenCode
-   adapter.** The default returns `true`, so a stale resume id passes
-   through and is then ignored by `lifecycle.rs` — masking the
-   missing-resume problem from upstream.
+2. **OpenCode ACP cannot resume after process restart.** Stored runtime
+   session ids are rejected explicitly because `session/load` for an
+   unknown ACP id hangs silently and OpenCode has no reliable ACP replay
+   mechanism yet.
 3. **`reserve_local_port` TOCTOU race.** The reserved listener is
    dropped before `opencode acp` binds the port; another process can
    steal it on busy machines, producing intermittent
@@ -520,8 +502,9 @@ Issues that don't fit a single feature row:
    `resolve_resume_session_id`, the spawn fallthrough) are unreachable.
    Excise the variant + the dead arms + the `providers::opencode::*`
    HTTP adapter as a follow-up cleanup.
-6. **`OpenCodeAdapter::session_finished_text` always uses the HTTP
-   prober.** Returns stale/wrong text in ACP mode (see § 16 above).
+6. **OpenCode ACP session replay is missing.** Live follow-up turns keep
+   context, but reopening after the subprocess dies starts a fresh ACP
+   session by design until upstream exposes a reliable load/replay path.
 7. **`opencode acp --hostname --port` flag-set is not version-gated.**
    Older OpenCode binaries reject these flags and spawn fails with a
    cryptic error. Discover a minimum version or fall back to disabling
@@ -536,22 +519,17 @@ Issues that don't fit a single feature row:
 - § 11 — wire `ensure_worktree_opencode_config` into the ACP spawn path.
 - § 12 — synthesise `ExitPlanMode` + override
   `permission_response_kind`.
-- § 16 / Architecture #7 — return `None` from `session_finished_text`
-  in ACP mode and trace the conversation-continuity regression.
-- § 10 — route `Deny` to `reject_tool_call` unconditionally.
+- Architecture #6 — design a real restart replay/load path if upstream
+  OpenCode ACP exposes one.
 
 **Round 2 — visible UX bugs in normal use:**
 
-- § 3 — guard the `message_started` reset.
-- § 13 — stop mis-treating `usage_update.used` as `input_tokens`.
-- § 7 — reset `last_todowrite_call_id` per turn.
-- § 14 — implement `compact()` and emit `CompactBoundary`.
-- § 15 — surface `available_commands_update`; skip HTTP boot in ACP.
 - § 5 — surface tool descriptions (Read, Grep, …) from the ACP payload.
 
 **Round 3 — edge cases and future-provider polish:**
 
-- § 10 — wire `AllowForSession` distinct from `AllowFuture` end-to-end.
+- § 10 — use ACP's `outcome: cancelled` when closing pending
+  permission requests.
 - § 6 — child-session registry; child-final-text synthesis.
 - § 16 — durable-session strategy when OpenCode advertises
   `loadSession`.

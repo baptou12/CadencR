@@ -56,6 +56,7 @@ pub struct AcpRuntimeSession {
     /// Cleared on session close.
     pub(in crate::domain::agents::acp::runtime) session_permissions: SessionPermissions,
     pub(in crate::domain::agents::acp::runtime) closing: Arc<AtomicBool>,
+    pub(in crate::domain::agents::acp::runtime) manual_compact_running: Arc<AtomicBool>,
     pub(in crate::domain::agents::acp::runtime) pid: Option<u32>,
     pub(in crate::domain::agents::acp::runtime) context_window: Option<u64>,
     pub(in crate::domain::agents::acp::runtime) message_rx: Option<RuntimeMessageRx>,
@@ -83,7 +84,7 @@ impl AcpRuntimeSession {
         self.session_id.read().await.clone()
     }
 
-    async fn require_session_id(&self) -> Result<String, RuntimeError> {
+    pub(super) async fn require_session_id(&self) -> Result<String, RuntimeError> {
         self.current_session_id()
             .await
             .ok_or_else(|| RuntimeError::new("ACP session id not yet known"))
@@ -114,14 +115,6 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // releases the lock through the same drain path below.
         let _guard = self.prompt_turn_lock.lock().await;
         let session_id = self.require_session_id().await?;
-        // TEMP-ACP-WIRE-LOG: per-turn ACP session id. Lets us see whether a
-        // follow-up turn reuses the original `session/new` id or got a
-        // fresh subprocess. Remove with the other TEMP-ACP-WIRE-LOG calls.
-        tracing::info!(
-            acp_wire = "stream_input",
-            %session_id,
-            "ACP stream_input — sending session/prompt"
-        );
         let prompt = acp_prompt_blocks_from_content(content);
         let supports = self.supports_set_config_option.load(Ordering::SeqCst);
         let model = self.current_model.read().await.clone();
@@ -171,6 +164,11 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             .await
             .map_err(|e| RuntimeError::new(format!("session/cancel failed: {e}")))?;
         self.prompt_cancel.cancel_current_turn();
+        Ok(())
+    }
+
+    async fn compact(&self) -> Result<(), RuntimeError> {
+        super::compact::spawn_compact_turn(self).await?;
         Ok(())
     }
 

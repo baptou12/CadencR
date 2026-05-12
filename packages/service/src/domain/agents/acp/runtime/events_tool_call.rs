@@ -43,8 +43,6 @@ pub fn map_tool_call_start(
         .and_then(Value::as_str)
         .unwrap_or("tool");
     let tool_name = hooks.normalize_tool_name(raw_tool_name);
-    indexer.record_tool_name(tool_call_id, &tool_name);
-    hooks.record_tool_call_start(tool_call_id, &tool_name);
     // Per the official ACP schema (`ToolCall.rawInput`), `rawInput` is the
     // spec-canonical opaque agent input. `toolInput` is a legacy non-spec
     // field some adapters (and our terminal enrichment) write into for
@@ -59,6 +57,14 @@ pub fn map_tool_call_start(
         .or_else(|| body.get("toolInput"))
         .cloned()
         .unwrap_or(Value::Null);
+    let is_empty_raw = is_empty_value(&raw);
+    if tool_name == "TodoWrite" && indexer.has_plan_todowrite_emitted() && is_empty_raw {
+        indexer.suppress_tool_call(tool_call_id);
+        return MappedUpdate { events: vec![] };
+    }
+
+    indexer.record_tool_name(tool_call_id, &tool_name);
+    hooks.record_tool_call_start(tool_call_id, &tool_name);
     let input = hooks.normalize_tool_input(&tool_name, raw);
     let parent = parent_tool_use_id(body);
     if let Some(event) = hooks.tool_call_start_override(

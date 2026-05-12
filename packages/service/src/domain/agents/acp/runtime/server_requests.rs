@@ -27,9 +27,11 @@ use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
 use super::fs::{handle_read_text_file, handle_write_text_file, FsOutcome};
 use super::permissions::{
-    dispatch_permission_request, permission_request_from_server_request, PendingPermissions,
+    dispatch_permission_request_with_cache, permission_request_from_server_request,
+    PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
+use super::session_permissions::SessionPermissions;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
 
@@ -42,6 +44,7 @@ pub struct EventLoopConfig {
     pub cwd: PathBuf,
     pub closing: Arc<AtomicBool>,
     pub pending_permissions: PendingPermissions,
+    pub session_permissions: SessionPermissions,
     pub terminals: Arc<TerminalRegistry>,
     pub hooks: Arc<dyn AcpProviderHooks>,
     /// Shared streaming-block indexer. Owned jointly by the event loop (which
@@ -239,8 +242,10 @@ async fn handle_permission_request(
         return;
     };
     let session_id = config.session_id.read().await.clone();
-    dispatch_permission_request(
+    dispatch_permission_request_with_cache(
+        client,
         &config.pending_permissions,
+        &config.session_permissions,
         session_id,
         &request_id,
         id.clone(),

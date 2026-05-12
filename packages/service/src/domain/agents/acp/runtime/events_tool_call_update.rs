@@ -34,6 +34,9 @@ pub fn map_tool_call_update(
         };
     };
     let status = body.get("status").and_then(Value::as_str).unwrap_or("");
+    if indexer.is_tool_call_suppressed(tool_call_id) {
+        return MappedUpdate { events: vec![] };
+    }
     let mut events = Vec::new();
     let index = indexer.index_for_tool(tool_call_id);
     let parent = parent_tool_use_id(body);

@@ -13,6 +13,23 @@ pub enum PermissionDecision {
     Deny,
 }
 
+impl PermissionDecision {
+    pub fn to_runtime_decision(&self, option_id: Option<&str>) -> RuntimePermissionDecision {
+        match self {
+            Self::AllowOnce => RuntimePermissionDecision::AllowOnce,
+            Self::AllowFuture if is_allow_for_session_option(option_id) => {
+                RuntimePermissionDecision::AllowForSession
+            }
+            Self::AllowFuture => RuntimePermissionDecision::AllowFuture,
+            Self::Deny => RuntimePermissionDecision::Deny,
+        }
+    }
+}
+
+fn is_allow_for_session_option(option_id: Option<&str>) -> bool {
+    matches!(option_id, Some("allow_for_session" | "session"))
+}
+
 /// Envelope — every message in both directions uses this shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
@@ -761,6 +778,34 @@ pub struct WorkflowAutonomyUpdatedPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_decision_to_runtime_maps_allow_once_and_deny() {
+        assert_eq!(
+            PermissionDecision::AllowOnce.to_runtime_decision(None),
+            RuntimePermissionDecision::AllowOnce
+        );
+        assert_eq!(
+            PermissionDecision::Deny.to_runtime_decision(Some("deny")),
+            RuntimePermissionDecision::Deny
+        );
+    }
+
+    #[test]
+    fn permission_decision_to_runtime_maps_allow_future_variants_by_option_id() {
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("allow_for_session")),
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("session")),
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("allow_always")),
+            RuntimePermissionDecision::AllowFuture
+        );
+    }
 
     #[test]
     fn test_envelope_roundtrip() {

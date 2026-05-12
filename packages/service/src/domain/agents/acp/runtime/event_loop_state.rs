@@ -64,6 +64,7 @@ mod tests {
     use crate::domain::agents::acp::runtime::permissions::PendingPermissions;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::EventLoopConfig;
+    use crate::domain::agents::acp::runtime::session_permissions::SessionPermissions;
     use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
     use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSlashCommand};
     use serde_json::{json, Value};
@@ -127,6 +128,7 @@ mod tests {
             cwd: PathBuf::from("/tmp"),
             closing: Arc::new(AtomicBool::new(false)),
             pending_permissions: PendingPermissions::default(),
+            session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: Arc::new(PlainHooks),
             indexer: Arc::new(Mutex::new(EventIndexer::default())),
