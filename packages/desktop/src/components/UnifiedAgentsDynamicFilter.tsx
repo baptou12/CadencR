@@ -182,9 +182,9 @@ function UnifiedAgentsDynamicFilterInner({
     <div className="relative min-w-0 flex-1">
       <div
         className={cn(
-          "titlebar-no-drag flex min-h-9 min-w-0 items-center gap-2 rounded-xl border border-border/80 bg-background/90 px-2.5",
-          "shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04)] transition-[border-color,box-shadow]",
-          "focus-within:border-primary/70 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),inset_0_1px_0_hsl(var(--foreground)/0.05)]",
+          "titlebar-no-drag flex min-h-9 min-w-0 items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-2.5",
+          "shadow-[inset_0_1px_0_hsl(var(--foreground)/0.04)] transition-[border-color,background-color,box-shadow]",
+          "focus-within:border-primary/70 focus-within:bg-muted/55 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.16),inset_0_1px_0_hsl(var(--foreground)/0.05)]",
         )}
         onMouseDown={handleShellMouseDown}
       >
@@ -267,6 +267,9 @@ function FilterEditorShell({
           <ContentEditable
             className="min-h-8 min-w-0 flex-1 py-1.5 font-mono text-[12.5px] leading-5 text-foreground outline-none"
             aria-label="Filter agents"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
             onFocus={() => onFocusChange(true)}
             onBlur={() => onFocusChange(false)}
           />

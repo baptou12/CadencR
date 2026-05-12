@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
   type ReactElement,
   type Ref,
   type RefObject,
@@ -59,15 +58,14 @@ export function UnifiedAgentsView(): ReactElement {
   const columns = agentsPerRow.value;
   const { activeIndex, activeAgent, setActiveSessionId } = useActiveAgent(data.agents);
   const activePinControls = useUnifiedAgentPinControls(activeAgent, { showProgressToast: true });
-  const { focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate } =
-    useUnifiedAgentsKeyboard({
-      activeIndex,
-      activePinControls,
-      agents: data.agents,
-      columns,
-      searchInputRef,
-      setActiveSessionId,
-    });
+  const { focusVersion, focusFirstMatchedAgent, handleActivate } = useUnifiedAgentsKeyboard({
+    activeIndex,
+    activePinControls,
+    agents: data.agents,
+    columns,
+    searchInputRef,
+    setActiveSessionId,
+  });
   const [searchEnterFocusRequest, setSearchEnterFocusRequest] = useState(0);
   const pendingSearchEnterFocusRef = useRef(false);
   const commitFilterText = useCallback(
@@ -91,7 +89,7 @@ export function UnifiedAgentsView(): ReactElement {
   }, [data.agents, focusFirstMatchedAgent, searchEnterFocusRequest]);
 
   return (
-    <div className="flex h-full flex-col bg-background" onKeyDownCapture={handleKeyDownCapture}>
+    <div className="flex h-full flex-col bg-background">
       <UnifiedAgentsHeader
         projects={projects}
         projectsError={projectsQuery.isError ? projectsQuery.error : null}
@@ -160,7 +158,6 @@ interface UnifiedAgentsKeyboardArgs {
 interface UnifiedAgentsKeyboardState {
   focusVersion: number;
   focusFirstMatchedAgent: () => void;
-  handleKeyDownCapture: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
   handleActivate: (index: number) => void;
 }
 
@@ -180,26 +177,40 @@ function useUnifiedAgentsKeyboard({
     setFocusVersion((current) => current + 1);
   }, [agents, searchInputRef, setActiveSessionId]);
 
-  const handleKeyDownCapture = useCallback(
-    (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-      if (isPinShortcut(event)) {
-        event.preventDefault();
-        event.stopPropagation();
-        activePinControls.toggle();
-        return;
-      }
-      if (!event.metaKey || !event.altKey || event.shiftKey || event.ctrlKey) return;
-      const direction = directionFromKey(event.key);
-      if (!direction) return;
-      event.preventDefault();
-      event.stopPropagation();
+  const moveFocus = useCallback(
+    (direction: "left" | "right" | "up" | "down"): void => {
+      if (agents.length === 0) return;
       const next = nextAgentIndex(activeIndex, direction, agents.length, columns);
       if (next === activeIndex) return;
       setActiveSessionId(agents[next]?.session.sessionDbId ?? null);
       setFocusVersion((current) => current + 1);
     },
-    [activeIndex, activePinControls, agents, columns, setActiveSessionId],
+    [activeIndex, agents, columns, setActiveSessionId],
   );
+
+  // Window-level capture-phase listeners so navigation/pin work even when
+  // focus is inside an xterm or CodeMirror (which stopPropagation native
+  // keydown before React's delegated listeners see it).
+  useGlobalShortcut("meta+alt+left", (e) => {
+    consumeKeyEvent(e);
+    moveFocus("left");
+  });
+  useGlobalShortcut("meta+alt+right", (e) => {
+    consumeKeyEvent(e);
+    moveFocus("right");
+  });
+  useGlobalShortcut("meta+alt+up", (e) => {
+    consumeKeyEvent(e);
+    moveFocus("up");
+  });
+  useGlobalShortcut("meta+alt+down", (e) => {
+    consumeKeyEvent(e);
+    moveFocus("down");
+  });
+  useGlobalShortcut("meta+shift+p", (e) => {
+    consumeKeyEvent(e);
+    activePinControls.toggle();
+  });
 
   const handleActivate = useCallback(
     (index: number): void => setActiveSessionId(agents[index]?.session.sessionDbId ?? null),
@@ -207,9 +218,15 @@ function useUnifiedAgentsKeyboard({
   );
 
   return useMemo(
-    () => ({ focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate }),
-    [focusVersion, focusFirstMatchedAgent, handleKeyDownCapture, handleActivate],
+    () => ({ focusVersion, focusFirstMatchedAgent, handleActivate }),
+    [focusVersion, focusFirstMatchedAgent, handleActivate],
   );
+}
+
+function consumeKeyEvent(event: KeyboardEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
 }
 
 interface UnifiedAgentsContentProps {
@@ -312,32 +329,6 @@ function UnifiedAgentsHeader({
         </p>
       ) : null}
     </header>
-  );
-}
-
-function directionFromKey(key: string): "left" | "right" | "up" | "down" | null {
-  if (key === "ArrowLeft") return "left";
-  if (key === "ArrowRight") return "right";
-  if (key === "ArrowUp") return "up";
-  if (key === "ArrowDown") return "down";
-  return null;
-}
-
-interface UnifiedAgentsShortcutEvent {
-  altKey: boolean;
-  ctrlKey: boolean;
-  key: string;
-  metaKey: boolean;
-  shiftKey: boolean;
-}
-
-function isPinShortcut(event: UnifiedAgentsShortcutEvent): boolean {
-  return (
-    event.metaKey &&
-    event.shiftKey &&
-    !event.altKey &&
-    !event.ctrlKey &&
-    event.key.toLowerCase() === "p"
   );
 }
 

@@ -106,7 +106,7 @@ function UnifiedAgentsRow({
   );
 
   return (
-    <div className="px-4 pt-4">
+    <div className={cn("px-1.5", rowIndex === 0 && "pt-2")}>
       <div style={{ height: rowHeight }} className="min-h-[420px]">
         <ResizablePanelGroup
           orientation="horizontal"
@@ -193,7 +193,7 @@ function RowResizeHandle({
       aria-orientation="horizontal"
       aria-label={`Resize agent row ${rowIndex + 1}`}
       className={cn(
-        "group relative mt-1 flex h-5 cursor-row-resize items-center justify-center",
+        "group relative mt-1 flex h-3 cursor-row-resize items-center justify-center",
         "before:absolute before:left-0 before:right-0 before:top-1/2 before:h-px before:-translate-y-1/2 before:opacity-0 before:transition-opacity",
         "before:[background:repeating-linear-gradient(to_right,var(--border)_0_4px,transparent_4px_8px)]",
         "before:[mask-image:linear-gradient(to_right,transparent,black_20%,black_80%,transparent)]",
@@ -225,7 +225,12 @@ function RowPanel({
 }): ReactElement {
   return (
     <>
-      <ResizablePanel id={panelId} defaultSize={defaultSize} minSize={12} className="min-w-0 px-3">
+      <ResizablePanel
+        id={panelId}
+        defaultSize={defaultSize}
+        minSize={12}
+        className="min-w-0 px-1.5"
+      >
         <UnifiedAgentCard entry={entry} index={index} isActive={isActive} onActivate={onActivate} />
       </ResizablePanel>
       {!isLast && <ResizableHandle className="bg-transparent" />}

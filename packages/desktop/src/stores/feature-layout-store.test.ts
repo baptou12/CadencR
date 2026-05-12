@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  activateFeatureTab,
   findHostFor,
   findLeafById,
   findPaneContaining,
@@ -193,5 +194,26 @@ describe("feature-layout-store", () => {
     store.setPaneActiveTab(FEATURE, ROOT_LEAF_ID, "agent");
     expect(getFocusedTab(getState())).toBe("agent");
     expect(newLeaf.id).not.toBe(ROOT_LEAF_ID);
+  });
+
+  it("activateFeatureTab works for an unhydrated feature by falling back to the empty layout", () => {
+    // Regression test: the unified agent view skips layout hydration for its
+    // embedded cards, so `features[featureId]` is missing when the hotkey
+    // fires. The helper must still locate the tab and update state.
+    expect(useFeatureLayoutStore.getState().features[FEATURE]).toBeUndefined();
+    expect(activateFeatureTab(FEATURE, "terminal")).toBe(true);
+    const layout = getState();
+    expect(layout.splitRoot.type).toBe("leaf");
+    if (layout.splitRoot.type === "leaf") {
+      expect(layout.splitRoot.activeTabId).toBe("terminal");
+    }
+  });
+
+  it("activateFeatureTab switches the active tab for a hydrated feature", () => {
+    const store = useFeatureLayoutStore.getState();
+    store.splitTabAt(FEATURE, "git", ROOT_LEAF_ID, "right");
+    expect(activateFeatureTab(FEATURE, "git")).toBe(true);
+    const gitLeaf = getLeaves(getState().splitRoot).find((l) => l.tabIds.includes("git"))!;
+    expect(gitLeaf.activeTabId).toBe("git");
   });
 });

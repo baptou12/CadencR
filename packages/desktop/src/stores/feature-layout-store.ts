@@ -303,8 +303,11 @@ export function findHostFor(state: FeatureLayoutState, tab: TabKind): string | n
 }
 
 export function activateFeatureTab(featureId: number, tab: TabKind): boolean {
-  const state = useFeatureLayoutStore.getState().features[featureId];
-  if (!state) return false;
+  // `selectFeatureLayout` falls back to `EMPTY_LAYOUT_STATE`, so this also
+  // works for features whose layout hasn't been hydrated yet (e.g. embedded
+  // cards in the unified agent view). `setPaneActiveTab` seeds the entry on
+  // first write.
+  const state = selectFeatureLayout(featureId)(useFeatureLayoutStore.getState());
   const paneId = findHostFor(state, tab);
   if (!paneId) return false;
   useFeatureLayoutStore.getState().setPaneActiveTab(featureId, paneId, tab);

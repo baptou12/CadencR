@@ -43,8 +43,11 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
   const activate = (): void => onActivate(index);
   const baseClass = cn(
     "group/card relative flex h-full min-h-[420px] flex-col overflow-hidden rounded-[10px] border bg-card shadow-sm outline-none transition-[border-color,box-shadow]",
-    "focus-visible:ring-2 focus-visible:ring-ring",
-    isActive ? "border-primary/45" : "border-border hover:border-primary/30",
+    // Gate the focus ring on `!isActive` — active state already paints a
+    // primary border, so layering both produces a doubled-up border on focus.
+    isActive
+      ? "border-primary/45"
+      : "border-border hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring",
   );
 
   if (entry.feature.type === "ws-session") {
