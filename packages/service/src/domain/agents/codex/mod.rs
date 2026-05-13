@@ -30,6 +30,7 @@ mod permissions;
 mod raw_tool_names;
 mod responses;
 mod session;
+mod session_permissions;
 mod thread_params;
 mod turn_start;
 mod worktree_config;
@@ -84,10 +85,18 @@ pub(super) async fn with_timeout<T>(
     operation: &'static str,
     future: impl Future<Output = Result<T, codex_app_server_sdk_rs::SdkError>>,
 ) -> Result<T, RuntimeError> {
+    with_timeout_sdk(operation, future)
+        .await
+        .map_err(RuntimeError::from)
+}
+
+pub(super) async fn with_timeout_sdk<T>(
+    operation: &'static str,
+    future: impl Future<Output = Result<T, codex_app_server_sdk_rs::SdkError>>,
+) -> Result<T, codex_app_server_sdk_rs::SdkError> {
     tokio::time::timeout(PROBE_TIMEOUT, future)
         .await
-        .map_err(|_| RuntimeError::new(format!("{operation} timed out")))?
-        .map_err(RuntimeError::from)
+        .map_err(|_| codex_app_server_sdk_rs::SdkError::Timeout(operation))?
 }
 
 fn catalog_from_models(models: Vec<CodexModel>) -> ProviderCatalogEntry {

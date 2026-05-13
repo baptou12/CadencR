@@ -203,7 +203,7 @@ impl CodexAppServerClient {
         &self,
         thread_id: &str,
         turn_id: &str,
-        input: Vec<Value>,
+        input: &[Value],
     ) -> Result<(), SdkError> {
         self.request(
             "turn/steer",

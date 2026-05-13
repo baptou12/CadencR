@@ -3,6 +3,7 @@ use serde_json::Value;
 use super::event_items::stream_start_event;
 use super::event_json::{metadata, thread_id};
 use super::event_state::IndexState;
+use super::session_permissions::PLAN_APPROVAL_REQUEST_PREFIX;
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEvent, RuntimeEventKind};
 
 pub(super) fn plan_item(
@@ -18,7 +19,7 @@ pub(super) fn plan_item(
     }
     let text = item.get("text").and_then(Value::as_str).unwrap_or("Plan");
     let sid = thread_id(&params).to_string();
-    let id = format!("codex_plan_approval_{}", item_id(item));
+    let id = format!("{PLAN_APPROVAL_REQUEST_PREFIX}{}", item_id(item));
     let input = serde_json::json!({ "plan": text });
     let block = RuntimeContentBlock::ToolUse {
         id: id.clone(),

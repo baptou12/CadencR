@@ -16,12 +16,14 @@ use super::event_turn_state::RootTurnTracker;
 use super::input::user_input_from_content;
 use super::permissions::PendingCodexRequest;
 use super::responses::response_value;
+use super::session_permissions::{
+    is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt, take_pending,
+};
 use super::turn_start::turn_start_params;
-use super::with_timeout;
+use super::{with_timeout, with_timeout_sdk};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionResponse,
-    RuntimePermissionResponseKind,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimePermissionResponseKind,
 };
 
 pub(super) struct CodexSession {
@@ -88,11 +90,11 @@ impl CodexSession {
     }
 
     pub(super) async fn start_initial_turn(&self, content: Value) -> Result<(), RuntimeError> {
-        self.start_turn(content).await
+        let input = self.convert_input(content).await?;
+        self.start_turn(input).await
     }
 
-    async fn start_turn(&self, content: Value) -> Result<(), RuntimeError> {
-        let input = self.convert_input(content).await?;
+    async fn start_turn(&self, input: Vec<Value>) -> Result<(), RuntimeError> {
         let model = self.model.read().await.clone();
         let effort = self.effort.read().await.clone();
         let permission_mode = self.permission_mode.read().await.clone();
@@ -158,16 +160,8 @@ impl AgentRuntimeSession for CodexSession {
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
-        let input = self.convert_input(content.clone()).await?;
-        let active = self.active_turn_id.read().await.clone();
-        if let Some(turn_id) = active {
-            return with_timeout(
-                "Codex turn/steer",
-                self.client.turn_steer(&self.thread_id, &turn_id, input),
-            )
-            .await;
-        }
-        self.start_turn(content).await
+        let input = self.convert_input(content).await?;
+        self.stream_converted_input(input).await
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
@@ -257,6 +251,49 @@ fn error_receiver(message: &'static str) -> RuntimeMessageRx {
 }
 
 impl CodexSession {
+    async fn stream_converted_input(&self, input: Vec<Value>) -> Result<(), RuntimeError> {
+        loop {
+            let Some(turn_id) = self.active_turn_id.read().await.clone() else {
+                return self.start_turn(input).await;
+            };
+
+            let result = with_timeout_sdk(
+                "Codex turn/steer",
+                self.client.turn_steer(&self.thread_id, &turn_id, &input),
+            )
+            .await;
+            match result {
+                Ok(()) => return Ok(()),
+                Err(error) if error.is_no_active_turn_to_steer() => {
+                    if self.clear_stale_active_turn(&turn_id).await {
+                        continue;
+                    }
+                    warn!(
+                        thread_id = %self.thread_id,
+                        turn_id = %turn_id,
+                        "Codex turn/steer stale failure ignored because active turn changed"
+                    );
+                    continue;
+                }
+                Err(error) => return Err(RuntimeError::from(error)),
+            }
+        }
+    }
+
+    async fn clear_stale_active_turn(&self, turn_id: &str) -> bool {
+        let mut active_turn_id = self.active_turn_id.write().await;
+        if active_turn_id.as_deref() != Some(turn_id) {
+            return false;
+        }
+        warn!(
+            thread_id = %self.thread_id,
+            turn_id = %turn_id,
+            "Codex turn/steer found no active turn; starting a new turn"
+        );
+        *active_turn_id = None;
+        true
+    }
+
     async fn respond_plan_approval(
         &self,
         response: RuntimePermissionResponse,
@@ -277,131 +314,4 @@ fn spawn_local_forwarder(
             }
         }
     });
-}
-
-async fn take_pending(
-    pending_requests: &Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
-    request_id: &str,
-) -> Result<PendingCodexRequest, RuntimeError> {
-    if let Some(request) = pending_requests.lock().await.remove(request_id) {
-        return Ok(request);
-    }
-    Err(RuntimeError::new(
-        "received permission response for unknown Codex request",
-    ))
-}
-
-fn is_plan_approval_request_id(request_id: &str) -> bool {
-    request_id.starts_with("codex_plan_approval_")
-}
-
-fn permission_kind_for_request_id(request_id: &str) -> RuntimePermissionResponseKind {
-    if is_plan_approval_request_id(request_id) {
-        RuntimePermissionResponseKind::PlanApproval
-    } else {
-        RuntimePermissionResponseKind::ContinueOnDeny
-    }
-}
-
-fn plan_approval_prompt(decision: RuntimePermissionDecision, feedback: Option<String>) -> String {
-    match decision {
-        RuntimePermissionDecision::AllowOnce | RuntimePermissionDecision::AllowFuture => {
-            "Plan approved. Proceed with execution.".to_string()
-        }
-        RuntimePermissionDecision::Deny => feedback
-            .filter(|feedback| !feedback.trim().is_empty())
-            .map(|feedback| format!("User feedback on plan rejection:\n\n{feedback}"))
-            .unwrap_or_else(|| "Plan rejected. Revise the plan.".to_string()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use serde_json::json;
-    use tokio::sync::Mutex;
-
-    use super::super::permissions::PendingCodexRequest;
-    use super::{
-        is_plan_approval_request_id, permission_kind_for_request_id, plan_approval_prompt,
-        take_pending,
-    };
-    use crate::domain::agents::adapter::{
-        RuntimePermissionDecision, RuntimePermissionResponseKind,
-    };
-
-    #[test]
-    fn identifies_synthetic_plan_approval_requests() {
-        assert!(is_plan_approval_request_id("codex_plan_approval_plan_1"));
-        assert!(!is_plan_approval_request_id("approval_1"));
-    }
-
-    #[test]
-    fn codex_permission_denials_keep_turn_running() {
-        assert_eq!(
-            permission_kind_for_request_id("approval_1"),
-            RuntimePermissionResponseKind::ContinueOnDeny
-        );
-        assert_eq!(
-            permission_kind_for_request_id("codex_plan_approval_plan_1"),
-            RuntimePermissionResponseKind::PlanApproval
-        );
-    }
-
-    #[tokio::test]
-    async fn take_pending_requires_exact_request_id() {
-        let pending = Arc::new(Mutex::new(HashMap::from([(
-            "approval_1".to_string(),
-            PendingCodexRequest {
-                id: json!("approval_1"),
-                method: "item/commandExecution/requestApproval".to_string(),
-                params: json!({}),
-            },
-        )])));
-
-        let error = take_pending(&pending, "wrong_id")
-            .await
-            .expect_err("unknown id should fail");
-        assert!(error.to_string().contains("unknown Codex request"));
-    }
-
-    #[tokio::test]
-    async fn take_pending_removes_request_atomically() {
-        let pending = Arc::new(Mutex::new(HashMap::from([(
-            "approval_1".to_string(),
-            PendingCodexRequest {
-                id: json!("approval_1"),
-                method: "item/commandExecution/requestApproval".to_string(),
-                params: json!({}),
-            },
-        )])));
-
-        let request = take_pending(&pending, "approval_1")
-            .await
-            .expect("pending request should resolve");
-        assert_eq!(request.method, "item/commandExecution/requestApproval");
-        assert!(pending.lock().await.is_empty());
-        assert!(take_pending(&pending, "approval_1").await.is_err());
-    }
-
-    #[test]
-    fn plan_approval_prompt_preserves_rejection_feedback() {
-        assert_eq!(
-            plan_approval_prompt(RuntimePermissionDecision::AllowOnce, None),
-            "Plan approved. Proceed with execution."
-        );
-        assert_eq!(
-            plan_approval_prompt(
-                RuntimePermissionDecision::Deny,
-                Some("Please inspect package scripts first".to_string())
-            ),
-            "User feedback on plan rejection:\n\nPlease inspect package scripts first"
-        );
-        assert_eq!(
-            plan_approval_prompt(RuntimePermissionDecision::Deny, Some("  ".to_string())),
-            "Plan rejected. Revise the plan."
-        );
-    }
 }
