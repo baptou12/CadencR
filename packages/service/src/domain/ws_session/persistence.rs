@@ -110,6 +110,7 @@ pub struct WsSessionPersistence {
 }
 
 include!("persistence/session_bootstrap.rs");
+include!("persistence/session_tool_input_buffer.rs");
 include!("persistence/session_mergeable_blocks.rs");
 include!("persistence/session_events.rs");
 include!("persistence/session_error_messages.rs");

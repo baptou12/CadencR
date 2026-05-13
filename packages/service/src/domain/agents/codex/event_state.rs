@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use serde_json::Value;
+
 #[derive(Default)]
 pub(super) struct IndexState {
     next: u64,
@@ -7,7 +9,8 @@ pub(super) struct IndexState {
     canonical_by_id: HashMap<String, String>,
     results: HashSet<String>,
     command_action_items: HashSet<String>,
-    delayed_command_items: HashSet<String>,
+    delayed_command_inputs: HashMap<String, Value>,
+    command_output_snapshots: HashMap<String, String>,
     suppressed_raw_tool_items: HashSet<String>,
     /// Maps a sub-agent's `threadId` to the `tool_use_id` of the parent
     /// `spawn_agent` collab tool call. Codex routes sub-agent traffic on the
@@ -50,7 +53,8 @@ impl IndexState {
         self.canonical_by_id.clear();
         self.results.clear();
         self.command_action_items.clear();
-        self.delayed_command_items.clear();
+        self.delayed_command_inputs.clear();
+        self.command_output_snapshots.clear();
         self.suppressed_raw_tool_items.clear();
         // `subagent_threads` is intentionally not cleared: sub-agent threads
         // may continue streaming across multiple root turns.
@@ -99,12 +103,31 @@ impl IndexState {
         self.command_action_items.contains(id)
     }
 
-    pub(super) fn record_delayed_command_item(&mut self, id: &str) {
-        self.delayed_command_items.insert(id.to_string());
+    pub(super) fn record_delayed_command_item(&mut self, id: &str, input: Value) {
+        self.delayed_command_inputs.insert(id.to_string(), input);
     }
 
-    pub(super) fn has_delayed_command_item(&self, id: &str) -> bool {
-        self.delayed_command_items.contains(id)
+    pub(super) fn take_delayed_command_input(&mut self, id: &str) -> Option<Value> {
+        self.delayed_command_inputs.remove(id)
+    }
+
+    pub(super) fn clear_delayed_command_input(&mut self, id: &str) {
+        self.delayed_command_inputs.remove(id);
+    }
+
+    pub(super) fn command_output_delta_from_snapshot(
+        &mut self,
+        id: &str,
+        snapshot: &str,
+    ) -> String {
+        let previous = self
+            .command_output_snapshots
+            .insert(id.to_string(), snapshot.to_string())
+            .unwrap_or_default();
+        snapshot
+            .strip_prefix(&previous)
+            .unwrap_or(snapshot)
+            .to_string()
     }
 
     pub(super) fn record_suppressed_raw_tool_item(&mut self, id: &str) {

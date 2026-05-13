@@ -1,18 +1,23 @@
 use serde_json::Value;
 
-use super::event_command_actions::{command_action_events, has_exploring_command_actions};
-use super::event_inputs::{
-    collab_tool_input, collab_tool_name, command_input, dynamic_tool_input, dynamic_tool_name,
-    file_input, patch_from_changes,
+pub(super) use super::event_command_execution::{
+    command_execution_events, command_output_delta_event,
 };
-use super::event_json::{compact_event, metadata, stream_event_raw, thread_id, user_raw};
+use super::event_inputs::{
+    collab_tool_input, collab_tool_name, dynamic_tool_input, dynamic_tool_name, file_input,
+    patch_from_changes,
+};
+use super::event_json::{
+    compact_event, input_json_delta_event, metadata, stream_event_raw, thread_id, user_raw,
+};
 use super::event_mcp_items::mcp_tool_item;
+use super::event_plan_item::plan_item;
 use super::event_state::IndexState;
 use super::event_subagents::{
     agent_tool_input, synthesize_subagent_messages, synthesize_subagent_prompt,
 };
 use crate::domain::agents::adapter::{
-    RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
+    RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
     RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
@@ -46,21 +51,7 @@ pub(super) fn item_events(
         // Codex has emitted both casings while the plan item API is settling.
         Some("plan" | "Plan") => plan_item(params, completed, index_state),
         Some("reasoning") => thinking_item(params, completed, index_state),
-        Some("commandExecution") => {
-            let id = item_id(item);
-            if has_exploring_command_actions(&params) {
-                index_state.record_command_action_item(&id);
-                return command_action_events(&params, completed, index_state);
-            }
-            if index_state.has_command_action_item(&id) {
-                return Vec::new();
-            }
-            if !completed {
-                index_state.record_delayed_command_item(&id);
-                return Vec::new();
-            }
-            tool_item(params, "Bash", command_input, completed, index_state)
-        }
+        Some("commandExecution") => command_execution_events(params, completed, index_state),
         Some("fileChange") => tool_item(params, "ApplyPatch", file_input, completed, index_state),
         Some("mcpToolCall") => mcp_tool_item(params, completed, index_state),
         Some("dynamicToolCall") => {
@@ -131,34 +122,6 @@ pub(super) fn tool_json_delta_event(
     input_json_delta_event(params, &item_id, partial_json, index_state)
 }
 
-pub(super) fn command_output_delta_event(
-    params: Value,
-    index_state: &mut IndexState,
-) -> Vec<RuntimeEvent> {
-    let Some(item_id) = params
-        .get("itemId")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-    else {
-        return Vec::new();
-    };
-    if index_state.has_command_action_item(&item_id)
-        || index_state.has_delayed_command_item(&item_id)
-        || !index_state.has_index(&item_id)
-    {
-        return Vec::new();
-    }
-    let output = params
-        .get("aggregatedOutput")
-        .or_else(|| params.get("delta"))
-        .or_else(|| params.get("message"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    let partial_json = serde_json::to_string(&serde_json::json!({ "output": output }))
-        .unwrap_or_else(|_| "{}".to_string());
-    input_json_delta_event(params, &item_id, partial_json, index_state)
-}
-
 pub(super) fn file_patch_updated_event(
     params: Value,
     index_state: &mut IndexState,
@@ -204,28 +167,6 @@ fn thinking_item(
         completed,
         index_state,
     )
-}
-
-fn plan_item(params: Value, completed: bool, index_state: &mut IndexState) -> Vec<RuntimeEvent> {
-    let Some(item) = item(&params) else {
-        return Vec::new();
-    };
-    if !completed {
-        return Vec::new();
-    }
-    let text = item.get("text").and_then(Value::as_str).unwrap_or("Plan");
-    let sid = thread_id(&params).to_string();
-    let id = format!("codex_plan_approval_{}", item_id(item));
-    let input = serde_json::json!({ "plan": text });
-    let block = RuntimeContentBlock::ToolUse {
-        id: id.clone(),
-        name: "ExitPlanMode".to_string(),
-        input: input.clone(),
-    };
-    vec![
-        stream_start_event(&sid, index_state.index_for(&id), block),
-        plan_permission_request_event(&sid, &id, input),
-    ]
 }
 
 fn content_item(
@@ -332,24 +273,6 @@ pub(super) fn stream_start_event(
     )
 }
 
-fn plan_permission_request_event(session_id: &str, request_id: &str, input: Value) -> RuntimeEvent {
-    RuntimeEvent::new(
-        metadata(
-            session_id,
-            serde_json::json!({
-                "type": "codex_permission_request",
-                "request_id": request_id,
-                "tool_use_id": request_id,
-                "tool_name": "ExitPlanMode",
-                "tool_input": input,
-                "description": "Plan is ready for approval",
-                "preview": null,
-            }),
-        ),
-        RuntimeEventKind::Other,
-    )
-}
-
 fn tool_result_event(params: &Value, id: String, input: Value) -> RuntimeEvent {
     let is_error = input.get("error").is_some_and(|error| !error.is_null());
     tool_result_event_with_error(params, id, input, is_error)
@@ -389,21 +312,7 @@ pub(super) fn tool_result_event_with_error(
     )
 }
 
-/// Specialized handler for the `spawn_agent` collab item. Diverges from
-/// the generic `tool_item` path in two ways:
-///   1. The tool_use input is the cleaned `{description, prompt}` shape so
-///      the Agent block's header is meaningful and we don't ship a JSON
-///      bag of bookkeeping fields to the FE.
-///   2. We deliberately suppress the tool_result event. Its content would
-///      be the raw item (`agentsStates`, `senderThreadId`, ...) which the
-///      frontend's `AgentResultBlock` can't decode as content blocks and
-///      would dump as a literal JSON string inside the Agent block. The
-///      sub-agent's actual output flows in later via wait_agent /
-///      close_agent and is rendered by `synthesize_subagent_messages`.
-///
-/// On completion we still mark the canonical id as "result recorded" so a
-/// late-arriving raw `function_call_output` for the same call_id can't
-/// re-emit the suppressed JSON dump through the raw path.
+/// Specialized `spawn_agent` collab handler with cleaned input and no JSON-dump result.
 fn spawn_agent_collab_events(
     params: Value,
     completed: bool,
@@ -444,12 +353,7 @@ fn spawn_agent_collab_events(
     events
 }
 
-/// When a `collabAgentToolCall` is the `spawn_agent` op (normalized to
-/// `Agent`), record every spawned threadId under the spawning call's
-/// `tool_use_id`. The codex docs reference `newThreadId` as the canonical
-/// field, but the actual wire JSON uses `receiverThreadIds` (array) plus
-/// `agentsStates` (object whose keys are threadIds). We harvest from all
-/// three so we don't break if Codex's schema shifts.
+/// Record every spawned threadId under the spawning `Agent` call's id.
 fn record_subagent_thread_for_collab_call(
     item: &Value,
     canonical_tool_name: &str,
@@ -481,24 +385,4 @@ fn record_subagent_thread_for_collab_call(
             index_state.record_subagent_thread(tid, &canonical);
         }
     }
-}
-
-fn input_json_delta_event(
-    params: Value,
-    item_id: &str,
-    partial_json: String,
-    index_state: &mut IndexState,
-) -> Vec<RuntimeEvent> {
-    let event = RuntimeStreamEvent::ContentBlockDelta {
-        index: index_state.index_for(item_id),
-        delta: RuntimeContentDelta::InputJson { partial_json },
-    };
-    let sid = thread_id(&params).to_string();
-    vec![RuntimeEvent::new(
-        metadata(&sid, stream_event_raw(&sid, None, &event)),
-        RuntimeEventKind::StreamEvent {
-            event,
-            parent_tool_use_id: None,
-        },
-    )]
 }

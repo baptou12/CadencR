@@ -115,6 +115,26 @@ pub(super) fn compact_event(params: Value) -> RuntimeEvent {
     )
 }
 
+pub(super) fn input_json_delta_event(
+    params: Value,
+    item_id: &str,
+    partial_json: String,
+    index_state: &mut super::event_state::IndexState,
+) -> Vec<RuntimeEvent> {
+    let event = RuntimeStreamEvent::ContentBlockDelta {
+        index: index_state.index_for(item_id),
+        delta: RuntimeContentDelta::InputJson { partial_json },
+    };
+    let sid = thread_id(&params).to_string();
+    vec![RuntimeEvent::new(
+        metadata(&sid, stream_event_raw(&sid, None, &event)),
+        RuntimeEventKind::StreamEvent {
+            event,
+            parent_tool_use_id: None,
+        },
+    )]
+}
+
 pub(super) fn content_block_json(block: &RuntimeContentBlock) -> Value {
     match block {
         RuntimeContentBlock::Text { text } => json!({ "type": "text", "text": text }),

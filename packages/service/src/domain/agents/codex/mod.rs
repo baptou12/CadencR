@@ -1,12 +1,14 @@
 mod command_decisions;
 mod commands;
 mod event_command_actions;
+mod event_command_execution;
 mod event_inputs;
 mod event_items;
 mod event_json;
 mod event_loop;
 mod event_mcp_items;
 mod event_plan;
+mod event_plan_item;
 mod event_raw;
 mod event_state;
 mod event_subagents;
