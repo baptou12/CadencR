@@ -101,6 +101,12 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
 vi.mock("react-virtuoso", async () => {
   const React = await import("react");
   type ItemContent = (index: number, data?: unknown) => unknown;
+  type FollowOutputScalar = "auto" | "smooth" | boolean;
+  type FollowOutputCallback = (isAtBottom: boolean) => FollowOutputScalar;
+  type FollowOutputProp = FollowOutputCallback | FollowOutputScalar;
+  interface VirtuosoHandleMock {
+    scrollToIndex: (location: { index: "LAST" | number } | number) => void;
+  }
   interface VirtuosoProps {
     totalCount?: number;
     data?: unknown[];
@@ -112,11 +118,14 @@ vi.mock("react-virtuoso", async () => {
     context?: unknown;
     scrollerRef?: (ref: HTMLElement | null) => void;
     startReached?: () => void;
+    followOutput?: FollowOutputProp;
+    atBottomStateChange?: (atBottom: boolean) => void;
+    totalListHeightChanged?: (height: number) => void;
     style?: React.CSSProperties;
     className?: string;
     "data-testid"?: string;
   }
-  const Virtuoso = React.forwardRef<unknown, VirtuosoProps>(function VirtuosoMock(
+  const Virtuoso = React.forwardRef<VirtuosoHandleMock, VirtuosoProps>(function VirtuosoMock(
     {
       totalCount,
       data,
@@ -125,24 +134,92 @@ vi.mock("react-virtuoso", async () => {
       context,
       scrollerRef,
       startReached,
+      followOutput,
+      atBottomStateChange,
+      totalListHeightChanged,
       style,
       className,
       "data-testid": testId,
     },
-    _ref,
+    ref,
   ) {
     const rootRef = React.useRef<HTMLDivElement | null>(null);
+    const followOutputRef = React.useRef(followOutput);
+    const atBottomChangeRef = React.useRef(atBottomStateChange);
+    const totalListHeightChangedRef = React.useRef(totalListHeightChanged);
+    followOutputRef.current = followOutput;
+    atBottomChangeRef.current = atBottomStateChange;
+    totalListHeightChangedRef.current = totalListHeightChanged;
+
+    // Mimic Virtuoso's bottom-pin: set scrollTop = scrollHeight and fire
+    // atBottomStateChange(true). Tests that stub `scrollHeight` see the
+    // expected scrollTop value after a programmatic scroll-to-end.
+    const pinToBottom = React.useCallback((): void => {
+      const root = rootRef.current;
+      if (!root) return;
+      root.scrollTop = root.scrollHeight;
+      atBottomChangeRef.current?.(true);
+    }, []);
+
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        scrollToIndex: (location) => {
+          const index = typeof location === "number" ? location : location.index;
+          if (index === "LAST") pinToBottom();
+        },
+      }),
+      [pinToBottom],
+    );
+
     React.useEffect(() => {
       const root = rootRef.current;
       scrollerRef?.(root);
-      if (!root || !startReached) return () => scrollerRef?.(null);
-      root.addEventListener("virtuoso-start-reached", startReached);
+      if (!root) return () => scrollerRef?.(null);
+      const handleStart = (): void => startReached?.();
+      const handleDataChange = (): void => {
+        const out = followOutputRef.current;
+        const result = typeof out === "function" ? out(true) : out;
+        if (result) pinToBottom();
+      };
+      const handleAtBottomChange = (e: Event): void => {
+        const detail = (e as CustomEvent<{ atBottom: boolean }>).detail;
+        atBottomChangeRef.current?.(detail?.atBottom ?? false);
+      };
+      const handleTotalHeightChange = (e: Event): void => {
+        const detail = (e as CustomEvent<{ height: number }>).detail;
+        totalListHeightChangedRef.current?.(detail?.height ?? 0);
+      };
+      root.addEventListener("virtuoso-start-reached", handleStart);
+      root.addEventListener("virtuoso-data-changed", handleDataChange);
+      root.addEventListener("virtuoso-at-bottom-change", handleAtBottomChange);
+      root.addEventListener("virtuoso-total-height-change", handleTotalHeightChange);
       return () => {
-        root.removeEventListener("virtuoso-start-reached", startReached);
+        root.removeEventListener("virtuoso-start-reached", handleStart);
+        root.removeEventListener("virtuoso-data-changed", handleDataChange);
+        root.removeEventListener("virtuoso-at-bottom-change", handleAtBottomChange);
+        root.removeEventListener("virtuoso-total-height-change", handleTotalHeightChange);
         scrollerRef?.(null);
       };
-    }, [scrollerRef, startReached]);
-    const count = data?.length ?? totalCount ?? 0;
+    }, [scrollerRef, startReached, pinToBottom]);
+
+    // Replay `followOutput` whenever the `data` prop reference changes —
+    // Virtuoso re-evaluates the callback on each data update AND after async
+    // measurement settles. The mock has no async measurement; firing on data
+    // reference change is a close-enough proxy (covers both length changes
+    // and in-place content growth, since AgentStream rebuilds `displayBlocks`
+    // every render where `rootBlocks` changes).
+    const prevDataRef = React.useRef<unknown[] | undefined>(undefined);
+    const currentLength = data?.length ?? totalCount ?? 0;
+    React.useEffect(() => {
+      if (prevDataRef.current === data) return;
+      prevDataRef.current = data;
+      const out = followOutputRef.current;
+      const result = typeof out === "function" ? out(true) : out;
+      if (result) pinToBottom();
+    }, [data, pinToBottom]);
+
+    const count = currentLength;
     const headerEl = components?.Header
       ? React.createElement(components.Header, { context } as { context?: unknown })
       : null;

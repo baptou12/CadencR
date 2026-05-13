@@ -6,7 +6,16 @@
  * standalone session view).
  */
 
-import { useState, useEffect, useMemo, useRef, useImperativeHandle, forwardRef, memo } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useImperativeHandle,
+  useCallback,
+  forwardRef,
+  memo,
+} from "react";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { parseThinkingEffort } from "@/shared/thinking-effort";
 import { LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
@@ -142,8 +151,12 @@ export const AgentSession = memo(
     const isOpen = isControlled ? controlledOpen : internalOpen;
 
     const {
+      virtuosoRef,
       scrollContainerRef,
       onStartReached,
+      followOutput,
+      onAtBottomStateChange,
+      onTotalListHeightChanged,
       autoScrollEnabled,
       isLoadingOlder,
       scrollToBottom,
@@ -158,6 +171,19 @@ export const AgentSession = memo(
       enabled: agentTabActive && !disableShortcuts,
       onEnableAutoScroll: scrollToBottom,
     });
+
+    // Sending a message is an explicit user action — they expect to see
+    // their prompt land at the bottom and the agent's reply stream in next
+    // to it. Force the chip back on and scroll before deferring to the
+    // caller's send handler so the new user_prompt block, when it arrives
+    // via WS, lands in view (followOutput keeps it pinned thereafter).
+    const handleSend = useCallback<typeof onSend>(
+      (message, images) => {
+        scrollToBottom();
+        return onSend(message, images);
+      },
+      [onSend, scrollToBottom],
+    );
 
     // Auto-open when agent starts running (uncontrolled mode only)
     useEffect(() => {
@@ -332,6 +358,10 @@ export const AgentSession = memo(
           showStreamingIndicator={shouldShowStreamingIndicator}
           basePath={projectPath}
           scrollContainerRef={scrollContainerRef}
+          virtuosoRef={virtuosoRef}
+          followOutput={followOutput}
+          onAtBottomStateChange={onAtBottomStateChange}
+          onTotalListHeightChanged={onTotalListHeightChanged}
           onStartReached={onStartReached}
           isLoadingOlder={isLoadingOlder}
           historyPrependDisplayOffset={historyPrependDisplayOffset}
@@ -341,7 +371,7 @@ export const AgentSession = memo(
     const promptBar = shouldShowPromptBar ? (
       <AgentPromptBar
         ref={promptBarRef}
-        onSend={onSend}
+        onSend={handleSend}
         onStop={onStop}
         status={status}
         disabled={disabled}

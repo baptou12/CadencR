@@ -1,9 +1,67 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
 import userEvent from "@testing-library/user-event";
-import { act, render, screen, waitFor } from "@/test-utils";
+import { act, fireEvent, render, screen, waitFor } from "@/test-utils";
 import { AgentSession } from "./AgentSession";
 import type { AgentBlockData } from "../AgentBlock";
 import { toast } from "sonner";
+
+// PromptEditor renders a contenteditable surface backed by CodeMirror, which
+// jsdom can't drive. Swap in a real <textarea> so the send-flow test can
+// type and trigger onSend.
+vi.mock("../prompt-editor/PromptEditor", () => {
+  const MockPromptEditor = forwardRef(function MockPromptEditor(
+    {
+      initialText,
+      onChange,
+      placeholder,
+      disabled,
+    }: {
+      initialText?: string;
+      onChange?: (text: string) => void;
+      placeholder?: string;
+      disabled?: boolean;
+    },
+    ref: ForwardedRef<{
+      focus: () => void;
+      clear: () => void;
+      setText: (text: string) => void;
+      getText: () => string;
+    }>,
+  ) {
+    const [value, setValue] = useState(initialText ?? "");
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => textareaRef.current?.focus(),
+        clear: () => {
+          setValue("");
+          onChange?.("");
+        },
+        setText: (text: string) => {
+          setValue(text);
+          onChange?.(text);
+        },
+        getText: () => value,
+      }),
+      [onChange, value],
+    );
+    return (
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={(event) => {
+          setValue(event.target.value);
+          onChange?.(event.target.value);
+        }}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+    );
+  });
+  return { PromptEditor: MockPromptEditor };
+});
 
 // The global react-virtuoso test mock exposes a custom event so tests
 // can deterministically simulate Virtuoso reaching the top item.
@@ -88,6 +146,24 @@ function dispatchScroll(el: HTMLElement, scrollTop: number): void {
   el.scrollTop = scrollTop;
   act(() => {
     el.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+}
+
+/** Drive Virtuoso's measurement-aware `atBottomStateChange` callback. */
+function fireAtBottomChange(atBottom: boolean): void {
+  act(() => {
+    getScroller().dispatchEvent(
+      new CustomEvent("virtuoso-at-bottom-change", { detail: { atBottom }, bubbles: true }),
+    );
+  });
+}
+
+/** Drive Virtuoso's `totalListHeightChanged` callback. */
+function fireTotalHeightChange(height: number): void {
+  act(() => {
+    getScroller().dispatchEvent(
+      new CustomEvent("virtuoso-total-height-change", { detail: { height }, bubbles: true }),
+    );
   });
 }
 
@@ -201,7 +277,10 @@ describe("AgentSession auto-scroll", () => {
   });
 
   // Rule 1: scrolling back into the bottom band re-enables auto-scroll.
-  it("rule 1: scrolling back into the bottom band re-enables auto-scroll", () => {
+  // Virtuoso owns the measurement-aware bottom detection (`atBottomThreshold`)
+  // — when the user lands within it, Virtuoso fires `atBottomStateChange(true)`
+  // and the hook re-engages stick.
+  it("rule 1: returning to the bottom re-enables auto-scroll", () => {
     render(
       <AgentSession
         agentType="session"
@@ -217,8 +296,7 @@ describe("AgentSession auto-scroll", () => {
     userWheelUp(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
 
-    // 1000 - 590 - 400 = 10px from bottom < 16 threshold → re-engages.
-    dispatchScroll(scroller, 590);
+    fireAtBottomChange(true);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -266,8 +344,9 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(1000);
   });
 
-  // Headline bug: the last block grows token-by-token. The scroll hook
-  // re-anchors via `useLayoutEffect` keyed on the last block's content length.
+  // Headline bug: the last block grows token-by-token. Virtuoso's
+  // `followOutput` returns `'auto'` while stick is engaged and re-pins after
+  // each data update + measurement settle.
   it("re-anchors at the bottom when the last block's content grows in place", () => {
     const baseProps = {
       agentType: "session" as const,
@@ -285,15 +364,42 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(1000);
   });
 
-  // Regression: with Virtuoso, item measurement settles
-  // asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
-  // event AFTER Virtuoso has expanded the content, so the stale `scrollTop`
-  // reads as below-threshold against the new `scrollHeight`. Older symmetric
-  // `onScroll` would call `setAutoScrollEnabled(false)` here, and the next
-  // ResizeObserver re-anchor would be skipped — the user would see content
-  // landing off-screen even though the chip looked engaged. The current
-  // implementation only disengages when `scrollTop` actually decreased.
-  it("does not disengage stick when a programmatic re-anchor echo arrives after content grew", () => {
+  // Sending a message is an explicit user action — even if the user has
+  // scrolled up, they want to see their prompt land at the bottom and the
+  // reply stream below it. The send handler re-engages stick and pins.
+  it("re-engages auto-scroll and pins to bottom when the user sends a message", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn(async () => {});
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="idle"
+        onSend={onSend}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Hi there" } });
+    await user.click(screen.getByLabelText("Send message"));
+
+    expect(onSend).toHaveBeenCalled();
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    expect(scroller.scrollTop).toBe(1000);
+  });
+
+  // On cold-open, item heights start at `defaultItemHeight` (96px) and grow
+  // as markdown / code highlighting / async sub-components remeasure. After
+  // we land at the bottom once, the total list height keeps growing — the
+  // view ends up "almost" at the bottom but a few hundred pixels short. The
+  // hook subscribes to Virtuoso's `totalListHeightChanged` and re-pins on
+  // every settle step until the list stabilises.
+  it("re-pins to bottom while item heights settle on first paint", () => {
     render(
       <AgentSession
         agentType="session"
@@ -305,20 +411,98 @@ describe("AgentSession auto-scroll", () => {
     );
 
     const scroller = getScroller();
-    // We were at the bottom of a 1000px-tall list (scrollTop=600).
-    stubGeometry(scroller, 1000, 400);
-    dispatchScroll(scroller, 600);
+    // Initial measurement: tiny list, we're at the bottom.
+    stubGeometry(scroller, 500, 400);
+    scroller.scrollTop = 100;
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
 
-    // Simulate Virtuoso settling: content grew from 1000 to 1400 without any
-    // user gesture. The next scroll event arrives with the OLD `scrollTop`
-    // (600) against the NEW `scrollHeight` (1400). distance = 400, > 16.
-    // `scrollTop` did not decrease — stick must stay engaged so the next
-    // ResizeObserver pass re-anchors to the new bottom.
+    // Markdown / code blocks remeasure and the list grows to 1200.
+    stubGeometry(scroller, 1200, 400);
+    fireTotalHeightChange(1200);
+    expect(scroller.scrollTop).toBe(1200);
+
+    // A second remeasure pass pushes height further out.
+    stubGeometry(scroller, 1800, 400);
+    fireTotalHeightChange(1800);
+    expect(scroller.scrollTop).toBe(1800);
+  });
+
+  // If the user has scrolled away (stick disengaged), an async height
+  // settle must NOT yank them back down — that's the whole point of the
+  // stick gating.
+  it("does not re-pin on height changes when the user has scrolled up", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "false");
+
+    stubGeometry(scroller, 1800, 400);
+    fireTotalHeightChange(1800);
+    expect(scroller.scrollTop).toBe(100);
+  });
+
+  // First-paint catch-up: when blocks arrive after AgentSession has mounted
+  // (the common case for opening an existing conversation), Virtuoso's
+  // `initialTopMostItemIndex` is already past. The hook fires a one-shot
+  // `scrollToIndex({ index: 'LAST' })` on the first non-empty paint.
+  it("scrolls to the bottom when blocks first arrive after mount", () => {
+    const baseProps = {
+      agentType: "session" as const,
+      status: "agent" as const,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    };
+    const { rerender } = render(<AgentSession {...baseProps} blocks={[]} />);
+
+    // Blocks arrive — landing must be at the bottom and chip engaged.
+    rerender(
+      <AgentSession {...baseProps} blocks={[makeBlock("1", "Hello"), makeBlock("2", "World")]} />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1200, 400);
+    // Trigger the first-paint scroll path (mock pins to bottom).
+    rerender(
+      <AgentSession {...baseProps} blocks={[makeBlock("1", "Hello"), makeBlock("2", "World!")]} />,
+    );
+
+    expect(scroller.scrollTop).toBe(1200);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+  });
+
+  // Regression: raw browser `scroll` events (whether from a programmatic
+  // re-anchor echo or async Virtuoso measurement) must NOT disengage stick.
+  // Only synchronous user input (`wheel`/`touchmove` upward) disengages.
+  // Bottom-state is owned by Virtuoso's `atBottomStateChange`.
+  it("does not disengage stick on a raw scroll event during async measurement settles", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+
+    // Simulate Virtuoso settling: content grew from 1000 to 1400, a stale
+    // scroll event arrives. Pre-fix this was misread as the user scrolling up.
     stubGeometry(scroller, 1400, 400);
-    act(() => {
-      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
-    });
+    dispatchScroll(scroller, 600);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -512,13 +696,12 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(800);
   });
 
-  // Regression: while the new conversation's content lays out asynchronously,
-  // `scrollHeight` can shrink relative to the previous conversation. The
-  // browser clamps `scrollTop` downward and fires a scroll event whose
-  // `scrollTop` is less than the value we just pushed. The direction-aware
-  // `onScroll` would otherwise read that clamp as the user scrolling up; the
-  // swap window must suppress that disengage so the user lands at the bottom.
-  it("does not disengage stick on a scrollHeight-shrink clamp during a conversation swap", () => {
+  // Regression: switching to a shorter conversation triggered raw `scroll`
+  // events with a smaller `scrollTop` against the new `scrollHeight`. Pre-fix
+  // the direction-aware `onScroll` misread that as the user scrolling up. The
+  // current implementation routes bottom-state through Virtuoso's
+  // `atBottomStateChange`, so raw scroll events can't disengage stick at all.
+  it("does not disengage stick on a raw scroll event during a conversation swap", () => {
     const baseProps = {
       agentType: "session" as const,
       status: "agent" as const,
@@ -530,20 +713,13 @@ describe("AgentSession auto-scroll", () => {
     );
 
     const scroller = getScroller();
-    // Land at the bottom of conversation A (tall content).
     stubGeometry(scroller, 2000, 400);
-    dispatchScroll(scroller, 1600);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
 
-    // Switch to a shorter conversation B. The swap reset pins scrollTop to
-    // scrollHeight=500 → 500.
     stubGeometry(scroller, 500, 400);
     rerender(<AgentSession {...baseProps} wsSessionId="B" blocks={[makeBlock("b1", "Short")]} />);
-    expect(scroller.scrollTop).toBe(500);
 
-    // Simulate the browser's post-swap clamp echo: a scroll event arrives
-    // with the smaller `scrollTop` against the new `scrollHeight`. Pre-fix,
-    // this read as the user scrolling up and disengaged stick.
+    // A stale scroll event from the post-swap clamp must NOT disengage stick.
     dispatchScroll(scroller, 100);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
   });

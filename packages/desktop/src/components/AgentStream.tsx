@@ -1,6 +1,12 @@
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, type Ref } from "react";
 import { Loader2Icon } from "lucide-react";
-import { Virtuoso, type Components, type ListRange } from "react-virtuoso";
+import {
+  Virtuoso,
+  type Components,
+  type FollowOutput,
+  type ListRange,
+  type VirtuosoHandle,
+} from "react-virtuoso";
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { buildDisplayBlockKeys, filterRenderableBlocks } from "./agentStreamDisplay";
@@ -37,6 +43,22 @@ interface AgentStreamProps {
   basePath?: string;
   /** Callback ref for the scrollable container (auto-scroll listeners attach here). */
   scrollContainerRef?: ScrollRef;
+  /** Imperative handle to Virtuoso (used to scroll to the true last item). */
+  virtuosoRef?: Ref<VirtuosoHandle>;
+  /**
+   * Virtuoso `followOutput` callback. Returns `'auto'` while auto-scroll is
+   * engaged so the view stays pinned to the bottom across async item
+   * measurement (markdown highlighting, BashBlock query loads, etc.).
+   */
+  followOutput?: FollowOutput;
+  /** Virtuoso's measurement-aware bottom-state callback. */
+  onAtBottomStateChange?: (atBottom: boolean) => void;
+  /**
+   * Fires whenever Virtuoso recomputes the total list height (i.e. after an
+   * item remeasures). Used by the auto-scroll hook to keep the view pinned
+   * to the bottom while measurements settle on cold-open.
+   */
+  onTotalListHeightChanged?: (height: number) => void;
   /** Called by Virtuoso when the first rendered item is reached. */
   onStartReached?: () => void;
   /** When true, a spinner is shown above the first item (older history loading). */
@@ -111,6 +133,10 @@ export const AgentStream = memo(function AgentStream({
   showStreamingIndicator = true,
   basePath,
   scrollContainerRef,
+  virtuosoRef,
+  followOutput,
+  onAtBottomStateChange,
+  onTotalListHeightChanged,
   onStartReached,
   isLoadingOlder = false,
   historyPrependDisplayOffset = 0,
@@ -172,6 +198,7 @@ export const AgentStream = memo(function AgentStream({
         data-testid="agent-stream-scroller"
         className="h-full overflow-x-hidden"
         style={{ height: "100%" }}
+        ref={virtuosoRef}
         scrollerRef={onScroller}
         data={displayBlocks}
         firstItemIndex={firstItemIndex}
@@ -184,6 +211,10 @@ export const AgentStream = memo(function AgentStream({
         skipAnimationFrameInResizeObserver
         components={VIRTUOSO_COMPONENTS}
         context={virtuosoContext}
+        followOutput={followOutput}
+        atBottomStateChange={onAtBottomStateChange}
+        atBottomThreshold={16}
+        totalListHeightChanged={onTotalListHeightChanged}
         startReached={onStartReached}
         rangeChanged={onRangeChanged}
         itemContent={renderItem}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { VirtuosoHandle, FollowOutputCallback } from "react-virtuoso";
 import type { AgentBlockData } from "../AgentBlock";
-import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { subscribeResize } from "@/lib/resize-coordinator";
 
 /**
@@ -11,42 +11,34 @@ import { subscribeResize } from "@/lib/resize-coordinator";
  *   2. User scrolls up → stop auto-scrolling.
  *   3. User clicks the chip → scroll to bottom (rule 1 re-engages).
  *
- * Disengage triggers:
- *   - `wheel` / `touchmove` up — synchronous, before the browser updates
- *     `scrollTop`, so a streaming-token re-anchor in the same commit can't
- *     undo the user's scroll.
- *   - `scroll` events where `scrollTop` actually *decreased* (scrollbar
- *     drag up, PageUp, Home, keyboard ArrowUp). We compare against the
- *     previous `scrollTop` and only disengage when the user moved upward.
+ * Implementation note: with virtualization, `scrollerEl.scrollHeight` only
+ * reflects items Virtuoso has already measured. Items below the rendered
+ * window use an estimated height, and async sub-components (markdown
+ * highlighting, BashBlock `useQuery`) re-measure later. A single
+ * `scrollTop = scrollHeight` is therefore stale by the next paint and the
+ * scroller lands mid-list. We delegate bottom-pinning to react-virtuoso's
+ * measurement-aware APIs:
  *
- * We do NOT disengage just because `distanceFromBottom > threshold`: with
- * virtualization, item measurement settles
- * asynchronously. A programmatic `scrollTop = scrollHeight` fires its scroll
- * event after Virtuoso has expanded the content, so the stale `scrollTop`
- * reads as "scrolled away" against the new `scrollHeight`. A direction-aware
- * check ignores those echoes because `scrollTop` only ever increased.
+ *   - `followOutput`: returns 'auto' while stick is engaged. Virtuoso re-runs
+ *     it on every data change AND after async measurement settles, so the
+ *     view stays pinned through markdown / code highlighting / query loads.
+ *   - `atBottomStateChange`: Virtuoso's measurement-aware bottom detection.
+ *     We use it to re-engage when the user lands at the bottom — we never
+ *     disengage here, because async height settles must not flip stick off.
+ *   - `scrollToIndex({ index: 'LAST', align: 'end' })`: the only correct way
+ *     to programmatically reach the true last item; Virtuoso renders forward
+ *     until it actually arrives. Used by the chip and conversation-switch.
  *
- * Older-history pagination is triggered by Virtuoso's `startReached`, and
- * prepend anchoring is owned by Virtuoso's `firstItemIndex`. This hook only
- * owns bottom-stick state and the guarded older-history request.
+ * Disengage stays on synchronous user input (`wheel` / `touchmove` upward) so
+ * a streaming-token re-anchor in the same commit can't undo the user's
+ * scroll.
  */
-
-const STICK_THRESHOLD_PX = 16;
-// After a conversation switch the new content lays out asynchronously
-// (Virtuoso measures items lazily, markdown / code highlighting settles).
-// `scrollHeight` can shrink relative to the previous conversation, the
-// browser clamps `scrollTop` downward, and the direction-aware `onScroll`
-// would otherwise misread that as the user scrolling up. The swap window
-// suppresses that disengage and is re-armed on every layout shift, closing
-// only after this many ms of stable layout.
-const SWAP_SETTLE_MS = 400;
 
 interface UseAgentSessionScrollOptions {
   /**
-   * Conversation contents. The hook reads `length`, the last block's
-   * `content.length`, and the first block's `id` to drive its layout-effect
-   * deps. Pass the same array `<AgentStream>` renders so bottom anchoring
-   * sees the same content changes React does.
+   * Conversation contents. The hook reads `length` to detect the first
+   * non-empty paint (so we can scroll to bottom once blocks arrive after
+   * mount). Pass the same array `<AgentStream>` renders.
    */
   blocks: AgentBlockData[];
   /**
@@ -65,8 +57,12 @@ interface UseAgentSessionScrollOptions {
 type ScrollRef = (el: HTMLElement | null) => void;
 
 interface UseAgentSessionScrollResult {
+  virtuosoRef: React.RefObject<VirtuosoHandle | null>;
   scrollContainerRef: ScrollRef;
   onStartReached: () => void;
+  followOutput: FollowOutputCallback;
+  onAtBottomStateChange: (atBottom: boolean) => void;
+  onTotalListHeightChanged: (height: number) => void;
   autoScrollEnabled: boolean;
   isLoadingOlder: boolean;
   scrollToBottom: () => void;
@@ -79,21 +75,17 @@ export function useAgentSessionScroll({
   onLoadOlder,
 }: UseAgentSessionScrollOptions): UseAgentSessionScrollResult {
   const blocksLength = blocks.length;
-  const lastBlockContentLength = blocks[blocksLength - 1]?.content.length ?? 0;
-  const firstBlockId = blocks[0]?.id ?? null;
 
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const scrollerElRef = useRef<HTMLElement | null>(null);
   const stickRef = useRef(true);
   const loadingOlderRef = useRef(false);
   const touchStartYRef = useRef(0);
-  // Last `scrollTop` we saw on the scroller — used by `onScroll` to detect
-  // an actual user-driven upward scroll vs. a programmatic re-anchor echo.
-  const lastScrollTopRef = useRef(0);
   const prevConversationKeyRef = useRef<string | null>(conversationKey);
-  // Open during a conversation-switch settle window — suppresses the
-  // direction-aware `onScroll` disengage so a `scrollHeight` shrink in the
-  // new conversation's async layout isn't misread as the user scrolling up.
-  const swapInProgressRef = useRef(false);
+  // Tracks whether we've already fired the one-shot first-paint scroll. We
+  // only need to bottom-pin via `scrollToIndex` once after blocks first
+  // become non-empty; subsequent appends are handled by `followOutput`.
+  const didFirstPaintScrollRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
@@ -110,85 +102,96 @@ export function useAgentSessionScroll({
     setAutoScrollEnabledState(enabled);
   }, []);
 
-  const stickToBottom = useCallback((): void => {
-    const el = scrollerElRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+  const pinToEnd = useCallback((): void => {
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
   }, []);
 
   const scrollToBottom = useCallback((): void => {
     setAutoScrollEnabled(true);
-    stickToBottom();
-  }, [setAutoScrollEnabled, stickToBottom]);
+    pinToEnd();
+  }, [setAutoScrollEnabled, pinToEnd]);
 
-  // Close the swap window once layout has been stable for `SWAP_SETTLE_MS`.
-  // The debounced callback resets on every call, so every content-size change
-  // during the swap pushes the close-out further. We don't pin to bottom on
-  // close: while stick is engaged the content `ResizeObserver` already pins
-  // on every shift, and a stable layout means we're already at the bottom.
-  const closeSwapWindow = useDebouncedCallback((): void => {
-    swapInProgressRef.current = false;
-  }, SWAP_SETTLE_MS);
+  // Virtuoso re-evaluates `followOutput` whenever `data` changes AND after
+  // async item measurement settles. Returning 'auto' while stick is engaged
+  // keeps the view pinned across markdown highlighting, `useQuery` resolves,
+  // and any other deferred-height updates.
+  const followOutput = useCallback<FollowOutputCallback>(() => {
+    return stickRef.current ? "auto" : false;
+  }, []);
 
-  // Conversation switch: the parent reuses this hook instance across
-  // sessionId changes, so a "scrolled up" stick state would otherwise leak
-  // into the next conversation. Reset to bottom + stick before the
-  // bottom-anchor layout effect below runs in the same commit.
+  // Measurement-aware re-engagement. We do NOT disengage here: Virtuoso also
+  // calls this with `false` during transient measurement settles, and using
+  // it for disengage would defeat the whole point of switching off raw
+  // `scroll` events.
+  const onAtBottomStateChange = useCallback(
+    (atBottom: boolean): void => {
+      if (atBottom) setAutoScrollEnabled(true);
+    },
+    [setAutoScrollEnabled],
+  );
+
+  // The "opens almost at the bottom" gap on cold-open comes from Virtuoso
+  // re-measuring items after the first paint: markdown highlighting, code
+  // blocks, and any block whose final height differs from
+  // `defaultItemHeight={96}` shift the total list height after we've already
+  // scrolled. `totalListHeightChanged` is Virtuoso's measurement-aware signal
+  // — fired once per height delta after items remeasure — so re-pinning here
+  // catches every settle step until the list stabilises. Gated on
+  // `stickRef.current` so it never fights older-history prepend (stick is
+  // off when the user is scrolled up).
+  const onTotalListHeightChanged = useCallback((_height: number): void => {
+    if (!stickRef.current) return;
+    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
+  }, []);
+
+  // Conversation switch: parent reuses this hook instance across sessionId
+  // changes, so a "scrolled up" stick state would otherwise leak into the
+  // next conversation. Reset to bottom + stick before any block-driven
+  // re-anchor runs in the same commit. `scrollToIndex` is measurement-aware
+  // — no manual `scrollTop` math, no swap-window timer needed.
   useLayoutEffect(() => {
     if (prevConversationKeyRef.current === conversationKey) return;
     prevConversationKeyRef.current = conversationKey;
-    lastScrollTopRef.current = 0;
     stickRef.current = true;
     setAutoScrollEnabledState(true);
-    swapInProgressRef.current = true;
-    closeSwapWindow();
-    const el = scrollerElRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [conversationKey, closeSwapWindow]);
+    didFirstPaintScrollRef.current = false;
+    pinToEnd();
+  }, [conversationKey, pinToEnd]);
 
-  useLayoutEffect(() => {
-    const el = scrollerElRef.current;
-    if (!el) return;
-
-    if (stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [blocksLength, lastBlockContentLength, firstBlockId]);
+  // First-paint catch-up: when blocks arrive after mount (the common case for
+  // opening an existing conversation), Virtuoso's `initialTopMostItemIndex`
+  // is already past. Fire a single `scrollToIndex` on the first non-empty
+  // paint so we land at the bottom; subsequent appends are owned by
+  // `followOutput`.
+  useEffect(() => {
+    if (didFirstPaintScrollRef.current || blocksLength === 0) return;
+    didFirstPaintScrollRef.current = true;
+    if (!stickRef.current) return;
+    pinToEnd();
+  }, [blocksLength, pinToEnd]);
 
   // Catch up after a panel-resize drag ends. The RO callback skips work
   // while `isResizing()` is true (per the global rule in
   // `lib/resize-coordinator.ts`), so the moment the drag ends we run a
-  // single re-anchor pass.
+  // single re-anchor pass via Virtuoso so it accounts for measurement.
   useEffect(
     () =>
       subscribeResize((active) => {
         if (active || !stickRef.current) return;
-        stickToBottom();
+        pinToEnd();
       }),
-    [stickToBottom],
+    [pinToEnd],
   );
 
-  const onScroll = useCallback((): void => {
-    const el = scrollerElRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const wentUp = el.scrollTop < lastScrollTopRef.current;
-    lastScrollTopRef.current = el.scrollTop;
-    if (distanceFromBottom < STICK_THRESHOLD_PX) {
-      setAutoScrollEnabled(true);
-      return;
-    }
-    // Disengage only on a genuine upward scroll (scrollbar drag, PageUp,
-    // Home). Programmatic-anchor echoes only ever increase `scrollTop`, so
-    // they fall through. During a conversation swap a `scrollHeight` shrink
-    // can clamp `scrollTop` downward — `swapInProgressRef` suppresses the
-    // disengage in that window; wheel / touchmove still react to real input.
-    if (wentUp && !swapInProgressRef.current) setAutoScrollEnabled(false);
-  }, [setAutoScrollEnabled]);
+  // Synchronous user-input disengage: `wheel` up / `touchmove` up fire
+  // before the browser repaints, so a streaming-token re-anchor in the same
+  // commit can't undo the user's scroll. We only disengage when the
+  // viewport can actually scroll — wheel-up on a short session is idle
+  // intent, not a request to leave the bottom.
   const onWheel = useCallback(
     (e: WheelEvent): void => {
       if (e.deltaY >= 0) return;
       const el = scrollerElRef.current;
-      // Only disengage stick when the viewport can actually scroll. Wheel-up
-      // on an empty / short session would otherwise silently kill auto-scroll
-      // before the conversation overflows.
       if (!el || el.scrollHeight <= el.clientHeight) return;
       setAutoScrollEnabled(false);
     },
@@ -213,20 +216,18 @@ export function useAgentSessionScroll({
       const prev = scrollerElRef.current;
       if (prev === el) return;
       if (prev) {
-        prev.removeEventListener("scroll", onScroll);
         prev.removeEventListener("wheel", onWheel);
         prev.removeEventListener("touchstart", onTouchStart);
         prev.removeEventListener("touchmove", onTouchMove);
       }
       scrollerElRef.current = el;
       if (el) {
-        el.addEventListener("scroll", onScroll, { passive: true });
         el.addEventListener("wheel", onWheel, { passive: true });
         el.addEventListener("touchstart", onTouchStart, { passive: true });
         el.addEventListener("touchmove", onTouchMove, { passive: true });
       }
     },
-    [onScroll, onWheel, onTouchStart, onTouchMove],
+    [onWheel, onTouchStart, onTouchMove],
   );
 
   const onStartReached = useCallback((): void => {
@@ -247,8 +248,12 @@ export function useAgentSessionScroll({
   }, []);
 
   return {
+    virtuosoRef,
     scrollContainerRef,
     onStartReached,
+    followOutput,
+    onAtBottomStateChange,
+    onTotalListHeightChanged,
     autoScrollEnabled,
     isLoadingOlder,
     scrollToBottom,
