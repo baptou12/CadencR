@@ -69,7 +69,7 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
 
     fn spawn_startup_warmup(&self) {
         // Warm the live catalog cache off the request path. The probe
-        // spawns a short-lived `opencode acp` subprocess; running it at
+        // runs a short-lived `opencode models --verbose`; running it at
         // startup means the first FE provider-picker render hits a
         // populated cache instead of waiting on a fresh probe.
         tokio::spawn(async {

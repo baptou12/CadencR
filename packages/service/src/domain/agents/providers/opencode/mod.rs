@@ -1,10 +1,8 @@
 //! OpenCode provider catalog & model lookup.
 //!
-//! The live catalog comes from a short-lived `opencode serve` subprocess
-//! (see `probe.rs`) that we spawn just long enough to hit
-//! `GET /config/providers` on its embedded HTTP backend. That endpoint
-//! is a pure config listing — no upstream model API calls, no token
-//! usage. Results are cached with a 30s TTL (see `cache.rs`).
+//! The live catalog comes from a short-lived `opencode models --verbose`
+//! probe. It lists local OpenCode config/cache data without starting an
+//! agent session. Results are cached with a 30s TTL (see `cache.rs`).
 
 mod cache;
 mod probe;
@@ -78,7 +76,10 @@ fn catalog_from_response(
     let mut context_windows = HashMap::new();
     let mut default_model_from_wire = None;
     for provider in &response.providers {
-        let provider_label = provider.name.clone().unwrap_or_else(|| provider.id.clone());
+        let provider_label = provider
+            .name
+            .clone()
+            .unwrap_or_else(|| provider_display_label(&provider.id));
         let wire_default = response.default.get(&provider.id);
         for model in &provider.models {
             let id = format!("{}/{}", provider.id, model.id);
@@ -116,6 +117,14 @@ fn catalog_from_response(
         default_model,
     };
     (catalog, context_windows)
+}
+
+fn provider_display_label(provider_id: &str) -> String {
+    match provider_id {
+        "opencode" => "OpenCode".to_string(),
+        "openai" => "OpenAI".to_string(),
+        _ => provider_id.to_string(),
+    }
 }
 
 fn opencode_supported_effort_levels(provider_id: &str, model_id: &str) -> Option<Vec<String>> {
@@ -245,6 +254,28 @@ mod tests {
             model.supported_effort_levels.as_deref(),
             Some(expected_levels.as_slice())
         );
+    }
+
+    #[test]
+    fn catalog_from_response_labels_known_providers_without_wire_names() {
+        let response = parse(json!({
+            "providers": [
+                {
+                    "id": "openai",
+                    "models": {
+                        "gpt-5.4": { "name": "GPT-5.4" }
+                    }
+                }
+            ],
+            "default": { "openai": "gpt-5.4" }
+        }));
+        let (catalog, _) = catalog_from_response(response);
+        let model = catalog
+            .models
+            .iter()
+            .find(|model| model.id == "openai/gpt-5.4")
+            .expect("gpt-5.4 entry");
+        assert_eq!(model.label, "OpenAI: GPT-5.4");
     }
 
     #[test]

@@ -26,6 +26,7 @@ export type MetaBarModelProps = Required<
     | "currentModelId"
     | "currentProviderId"
     | "currentModelLabel"
+    | "isModelCatalogLoading"
     | "canChangeProvider"
     | "models"
     | "providers"
@@ -96,6 +97,7 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
     activeProviderId,
     visibleModels,
     currentModelLabel,
+    isCatalogLoading,
     canChangeProvider,
     supportedThinkingEfforts,
   } = useAgentSessionModelState({
@@ -114,6 +116,7 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
       currentModelId,
       currentProviderId: activeProviderId,
       currentModelLabel,
+      isModelCatalogLoading: isCatalogLoading,
       canChangeProvider,
       models: visibleModels,
       providers: providerOptions,
@@ -128,6 +131,7 @@ export function useMetaBarModelProps(params: UseMetaBarModelPropsParams): MetaBa
       canChangeProvider,
       currentModelId,
       currentModelLabel,
+      isCatalogLoading,
       currentThinkingEffort,
       onModelChange,
       onProviderChange,

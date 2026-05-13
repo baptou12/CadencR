@@ -16,6 +16,7 @@
 pub mod client;
 pub mod client_payload;
 pub mod error;
+pub mod models;
 pub mod parsing;
 pub mod process;
 mod tool_input;
@@ -23,6 +24,7 @@ pub mod types;
 
 pub use client::OpenCodeClient;
 pub use error::SdkError;
+pub use models::{list_models_from_cli, parse_models_verbose_output};
 pub use parsing::{parse_message_from, parse_session_from};
 pub use process::{opencode_discovery_spec, resolve_binary, set_binary_override};
 pub use types::{

@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, Loader2Icon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ interface ModelMetaChipProps {
   currentProviderId?: string;
   currentModelId?: string;
   currentModelLabel: string;
+  isModelCatalogLoading?: boolean;
   pickerProviders: RuntimeModelPickerProvider[];
   canChangeProvider: boolean;
   onProviderChange?: (providerId: string) => void;
@@ -44,6 +45,7 @@ export function ModelMetaChip({
   currentProviderId,
   currentModelId,
   currentModelLabel,
+  isModelCatalogLoading = false,
   pickerProviders,
   canChangeProvider,
   onProviderChange,
@@ -84,30 +86,43 @@ export function ModelMetaChip({
             trigger={
               <button
                 type="button"
+                aria-label={isModelCatalogLoading ? "Loading model catalog" : undefined}
+                disabled={isModelCatalogLoading}
                 className={cn(
                   MODEL_SEGMENT,
-                  "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16",
+                  "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16 disabled:cursor-wait disabled:opacity-80",
                 )}
               >
-                <ProviderIcon
-                  providerId={currentProviderId}
-                  alt={currentModelLabel}
-                  className="size-3.5 rounded-sm shrink-0"
-                />
+                {isModelCatalogLoading ? (
+                  <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+                ) : (
+                  <ProviderIcon
+                    providerId={currentProviderId}
+                    alt={currentModelLabel}
+                    className="size-3.5 rounded-sm shrink-0"
+                  />
+                )}
                 <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
-                <ChevronDownIcon className="size-3 shrink-0" />
+                {!isModelCatalogLoading && <ChevronDownIcon className="size-3 shrink-0" />}
               </button>
             }
           />
         </ShortcutTooltip>
       ) : (
         <ShortcutTooltip label={`Model: ${currentModelLabel}`}>
-          <div className={cn(MODEL_SEGMENT, "min-w-0 rounded-md")}>
-            <ProviderIcon
-              providerId={currentProviderId}
-              alt={currentModelLabel}
-              className="size-3.5 rounded-sm shrink-0"
-            />
+          <div
+            className={cn(MODEL_SEGMENT, "min-w-0 rounded-md")}
+            aria-busy={isModelCatalogLoading}
+          >
+            {isModelCatalogLoading ? (
+              <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+            ) : (
+              <ProviderIcon
+                providerId={currentProviderId}
+                alt={currentModelLabel}
+                className="size-3.5 rounded-sm shrink-0"
+              />
+            )}
             <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
           </div>
         </ShortcutTooltip>

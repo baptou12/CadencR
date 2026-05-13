@@ -259,6 +259,7 @@ export const AgentSession = memo(
       activeProviderId,
       visibleModels,
       currentModelLabel,
+      isCatalogLoading,
       canChangeProvider,
       supportedThinkingEfforts,
     } = useAgentSessionModelState({
@@ -329,6 +330,7 @@ export const AgentSession = memo(
         showReadOnlyModel={showReadOnlyModel}
         currentModelId={currentModelId}
         currentModelLabel={currentModelLabel}
+        isModelCatalogLoading={isCatalogLoading}
         models={visibleModels}
         providers={
           canChangeProvider
