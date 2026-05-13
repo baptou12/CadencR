@@ -1,11 +1,16 @@
 import { useEffect, useRef, type RefObject } from "react";
 
 const BADGE_SELECTOR = "[data-nav-shortcut-badge]";
+const STALE_MODIFIER_HINT_MS = 1_000;
 
 function shortcutIndex(event: KeyboardEvent): number | null {
   if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
   if (!/^[1-9]$/.test(event.key)) return null;
   return Number(event.key) - 1;
+}
+
+function isAppSwitcherShortcut(event: KeyboardEvent): boolean {
+  return event.key === "Tab" && event.metaKey && !event.ctrlKey && !event.altKey;
 }
 
 function visibleNavItems(container: HTMLElement | null): HTMLElement[] {
@@ -36,8 +41,15 @@ export function useProjectTreeNumberShortcuts(
   enabled = true,
 ): void {
   const hintsVisibleRef = useRef(false);
+  const staleHideTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const clearStaleHideTimer = (): void => {
+      if (staleHideTimerRef.current == null) return;
+      window.clearTimeout(staleHideTimerRef.current);
+      staleHideTimerRef.current = null;
+    };
+
     const showHints = (): void => {
       if (hintsVisibleRef.current) return;
       setShortcutHints(treeRef.current, true);
@@ -50,9 +62,18 @@ export function useProjectTreeNumberShortcuts(
     };
 
     const hideHints = (): void => {
+      clearStaleHideTimer();
       if (!hintsVisibleRef.current) return;
       setShortcutHints(treeRef.current, false);
       hintsVisibleRef.current = false;
+    };
+
+    const scheduleStaleHide = (): void => {
+      clearStaleHideTimer();
+      staleHideTimerRef.current = window.setTimeout(() => {
+        staleHideTimerRef.current = null;
+        hideHints();
+      }, STALE_MODIFIER_HINT_MS);
     };
 
     if (!enabled) {
@@ -61,8 +82,15 @@ export function useProjectTreeNumberShortcuts(
     }
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if ((event.key === "Meta" || event.metaKey) && !hintsVisibleRef.current) {
+      if (isAppSwitcherShortcut(event)) {
+        hideHints();
+        return;
+      }
+
+      const shouldShowHints = event.key === "Meta" || event.metaKey;
+      if (shouldShowHints && !hintsVisibleRef.current) {
         showHints();
+        scheduleStaleHide();
       }
 
       const index = shortcutIndex(event);
@@ -80,15 +108,17 @@ export function useProjectTreeNumberShortcuts(
       if (event.key === "Meta") hideHints();
     };
 
-    const handleBlur = (): void => hideHints();
+    const handleWindowFocusChange = (): void => hideHints();
 
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp, true);
-    window.addEventListener("blur", handleBlur);
+    window.addEventListener("blur", handleWindowFocusChange);
+    window.addEventListener("focus", handleWindowFocusChange);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
-      window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("blur", handleWindowFocusChange);
+      window.removeEventListener("focus", handleWindowFocusChange);
       hideHints();
     };
   }, [enabled, treeRef]);
