@@ -32,6 +32,11 @@ pub struct ClaudeCodeAdapter {
     /// lets the probe run again after a failure or empty response — the UI
     /// would otherwise be stuck on fallback aliases until service restart.
     probe_state: tokio::sync::Mutex<ProbeState>,
+    /// Cache of CLI built-in slash commands. Cwd-invariant, so one cache
+    /// serves every session; per-cwd filesystem entries are scanned fresh.
+    /// Same retry-on-failure semantics as `cached_models` / `probe_state`.
+    cached_slash_commands: std::sync::OnceLock<std::sync::RwLock<Vec<RuntimeSlashCommand>>>,
+    slash_commands_probe_state: tokio::sync::Mutex<ProbeState>,
 }
 
 #[derive(Default)]
@@ -42,6 +47,8 @@ struct ProbeState {
 pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
     cached_models: std::sync::OnceLock::new(),
     probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
+    cached_slash_commands: std::sync::OnceLock::new(),
+    slash_commands_probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
 };
 
 /// Seed the static `CLAUDE_CODE_ADAPTER`'s model catalog from a test.
@@ -258,6 +265,9 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         tokio::spawn(async {
             let _ = CLAUDE_CODE_ADAPTER.load_models().await;
         });
+        tokio::spawn(async {
+            let _ = CLAUDE_CODE_ADAPTER.load_builtin_slash_commands().await;
+        });
     }
 
     fn worktree_config_paths(&self) -> &'static [&'static str] {
@@ -272,20 +282,27 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         &self,
         cwd: &str,
     ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
-        let commands = claude_agent_sdk_rs::list_commands(cwd, None)
-            .await
-            .map_err(RuntimeError::from)?;
-        Ok(commands
+        // Filesystem entries are cwd-specific and re-scanned per call;
+        // built-ins are cwd-invariant and cached. The two probes are
+        // independent, so run them concurrently. Filesystem entries come
+        // first so `resolve_commands`'s downstream first-seen dedup keeps
+        // user-defined commands over identically-named built-ins.
+        let (filesystem, builtins) = tokio::join!(
+            claude_agent_sdk_rs::list_filesystem_commands(cwd),
+            self.load_builtin_slash_commands(),
+        );
+        let filesystem = filesystem.map_err(RuntimeError::from)?;
+
+        let mut commands: Vec<RuntimeSlashCommand> = filesystem
             .into_iter()
             .map(|command| RuntimeSlashCommand {
                 name: command.name,
                 description: command.description,
-                // Claude Code exposes skills and slash commands through the
-                // same init `slash_commands` list, so the backend intentionally
-                // keeps them as `/` commands for this provider.
                 kind: RuntimeSlashCommandKind::Command,
             })
-            .collect())
+            .collect();
+        commands.extend(builtins);
+        Ok(commands)
     }
 
     fn supports_permission_mode(&self, _mode: &RuntimePermissionMode) -> bool {
@@ -426,13 +443,17 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 #[cfg(test)]
 mod tests {
     use super::{map_permission_mode, ClaudeCodeAdapter, ProbeState};
-    use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimePermissionMode};
+    use crate::domain::agents::adapter::{
+        AgentRuntimeAdapter, RuntimePermissionMode, RuntimeSlashCommand, RuntimeSlashCommandKind,
+    };
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
     fn new_test_adapter() -> ClaudeCodeAdapter {
         ClaudeCodeAdapter {
             cached_models: std::sync::OnceLock::new(),
             probe_state: tokio::sync::Mutex::new(ProbeState::default()),
+            cached_slash_commands: std::sync::OnceLock::new(),
+            slash_commands_probe_state: tokio::sync::Mutex::new(ProbeState::default()),
         }
     }
 
@@ -714,5 +735,29 @@ mod tests {
             None
         );
         assert_eq!(adapter.post_plan_approval_fallback_mode_wire("plan"), None);
+    }
+
+    /// Cache hit must skip the CLI spawn — otherwise every popover open
+    /// pays the probe cost.
+    #[tokio::test]
+    async fn load_builtin_slash_commands_short_circuits_after_live_probe() {
+        let adapter = new_test_adapter();
+        let seeded = vec![RuntimeSlashCommand {
+            name: "goal".to_string(),
+            description: Some("set or view the goal".to_string()),
+            kind: RuntimeSlashCommandKind::Command,
+        }];
+        {
+            let cell = adapter.slash_commands_cell();
+            let mut guard = cell.write().expect("cache lock");
+            *guard = seeded.clone();
+        }
+        {
+            let mut guard = adapter.slash_commands_probe_state.lock().await;
+            guard.live = true;
+        }
+
+        let returned = adapter.load_builtin_slash_commands().await;
+        assert_eq!(returned, seeded);
     }
 }
