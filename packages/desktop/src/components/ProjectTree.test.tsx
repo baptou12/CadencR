@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@/test-utils";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, fireEvent, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
 import { ProjectTree } from "./ProjectTree";
 import { resetMockIds } from "@/test-fixtures";
@@ -85,11 +85,21 @@ vi.mock("./ProjectSettingsDialog", () => ({
   ProjectSettingsDialog: () => null,
 }));
 
+function visibleShortcutBadgeTexts(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll("[data-nav-shortcut-badge]"))
+    .map((badge) => badge.textContent ?? "")
+    .filter(Boolean);
+}
+
 describe("ProjectTree", () => {
   beforeEach(() => {
     resetMockIds();
     mockNavigate.mockClear();
     mockCreateFeature.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders project list", () => {
@@ -157,10 +167,7 @@ describe("ProjectTree", () => {
     const { container } = render(
       <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
     );
-    const badges = (): string[] =>
-      Array.from(container.querySelectorAll("[data-nav-shortcut-badge]"))
-        .map((badge) => badge.textContent ?? "")
-        .filter(Boolean);
+    const badges = (): string[] => visibleShortcutBadgeTexts(container);
 
     expect(badges()).toEqual([]);
 
@@ -169,6 +176,49 @@ describe("ProjectTree", () => {
     expect(badges()).toEqual(["1", "2", "3"]);
 
     fireEvent.keyUp(window, { key: "Meta", metaKey: false });
+
+    expect(badges()).toEqual([]);
+  });
+
+  it("hides command-number hints when Cmd+Tab opens the app switcher", () => {
+    const { container } = render(
+      <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
+    );
+    const badges = (): string[] => visibleShortcutBadgeTexts(container);
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+    expect(badges()).toEqual(["1", "2", "3"]);
+
+    fireEvent.keyDown(window, { key: "Tab", metaKey: true });
+
+    expect(badges()).toEqual([]);
+  });
+
+  it("clears command-number hints when window focus returns without Meta keyup", () => {
+    const { container } = render(
+      <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
+    );
+    const badges = (): string[] => visibleShortcutBadgeTexts(container);
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+    expect(badges()).toEqual(["1", "2", "3"]);
+
+    fireEvent.focus(window);
+
+    expect(badges()).toEqual([]);
+  });
+
+  it("clears stale command-number hints when macOS swallows Meta keyup", () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
+    );
+    const badges = (): string[] => visibleShortcutBadgeTexts(container);
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+    expect(badges()).toEqual(["1", "2", "3"]);
+
+    act(() => vi.runOnlyPendingTimers());
 
     expect(badges()).toEqual([]);
   });
