@@ -14,6 +14,7 @@ import {
 } from "./sidecar";
 import { createSplashWindow, type SplashHandle } from "./splash";
 import { installContextMenu } from "./context-menu";
+import { sendToWindow } from "./safe-send";
 
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
@@ -46,7 +47,7 @@ async function prepareRuntime(): Promise<void> {
 }
 
 function sendCloseRequest(): void {
-  mainWindow?.webContents.send("app:close-requested");
+  sendToWindow(mainWindow, "app:close-requested");
 }
 
 function requestQuit(): void {
@@ -113,7 +114,7 @@ function createWindow(): BrowserWindow {
     if (allowClose) return;
     event.preventDefault();
     pendingQuit = false;
-    win.webContents.send("app:close-requested");
+    sendToWindow(win, "app:close-requested");
   });
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
