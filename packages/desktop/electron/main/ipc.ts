@@ -17,6 +17,7 @@ import {
   sendTestNotification,
   type NotifyOptions,
 } from "./notifications";
+import { sendToWindow } from "./safe-send";
 
 const MAX_READ_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_FILE_HANDLES = 128;
@@ -85,7 +86,8 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
 
 export function registerThemeEvents(getMainWindow: () => BrowserWindow | null): void {
   nativeTheme.on("updated", () => {
-    getMainWindow()?.webContents.send(
+    sendToWindow(
+      getMainWindow(),
       "theme:updated",
       nativeTheme.shouldUseDarkColors ? "dark" : "light",
     );

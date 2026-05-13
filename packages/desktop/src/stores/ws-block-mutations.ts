@@ -7,6 +7,7 @@ import type { AgentBlockData } from "@/components/AgentBlock";
 import { isFileChangeTool } from "@/lib/tool-adapter";
 import type { TodoItem } from "@/types/agent";
 import type { BlockMutation, ParserSignals, StreamingState } from "./ws-message-processing";
+import { latestValidJsonSnapshot, mergeToolContent } from "./ws-tool-content";
 
 export type ParsedTodo = TodoItem;
 type InternalRootMutation =
@@ -318,28 +319,6 @@ function applyChildUpdate(streamState: StreamingState, mut: BlockMutation): void
   }
 }
 
-function latestValidJsonSnapshot(content: string): string | undefined {
-  try {
-    JSON.parse(content);
-    return content;
-  } catch {
-    // Fall through to recover the last full JSON object from concatenated snapshots.
-  }
-
-  for (let index = content.lastIndexOf("{"); index >= 0; ) {
-    const candidate = content.slice(index);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Keep scanning backward.
-    }
-    const nextSearchStart = index - 1;
-    index = nextSearchStart >= 0 ? content.lastIndexOf("{", nextSearchStart) : -1;
-  }
-  return undefined;
-}
-
 function syncToolUseMap(streamState: StreamingState, block: AgentBlockData): void {
   if (block.type !== "tool_call") return;
   const latest = latestValidJsonSnapshot(block.content);
@@ -350,34 +329,5 @@ function syncToolUseMap(streamState: StreamingState, block: AgentBlockData): voi
   if (canonical && canonical !== block) {
     canonical.toolArgs = block.toolArgs;
     canonical.content = block.content;
-  }
-}
-
-function mergeToolContent(existing: AgentBlockData, incoming: string, action: string): string {
-  if (shouldMergeObjectDeltas(existing.toolName) && action !== "replace") {
-    const merged = mergeJsonObjects(existing.toolArgs || existing.content, incoming);
-    if (merged) return merged;
-  }
-  return action === "replace" ? incoming : existing.content + incoming;
-}
-
-function mergeJsonObjects(baseJson: string, deltaJson: string): string | undefined {
-  const base = parseRecord(baseJson);
-  const delta = parseRecord(deltaJson);
-  if (!base || !delta) return undefined;
-  return JSON.stringify({ ...base, ...delta });
-}
-
-function shouldMergeObjectDeltas(toolName: string | undefined): boolean {
-  return toolName === "Bash" || isFileChangeTool(toolName);
-}
-
-function parseRecord(json: string): Record<string, unknown> | undefined {
-  try {
-    const parsed: unknown = JSON.parse(json);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    return parsed as Record<string, unknown>;
-  } catch {
-    return undefined;
   }
 }

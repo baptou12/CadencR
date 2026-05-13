@@ -175,68 +175,8 @@ impl WsSessionPersistence {
     }
 }
 
-impl ToolInputBuffer {
-    fn apply_delta(&mut self, partial_json: &str) -> Option<serde_json::Value> {
-        if self.merge_object_deltas {
-            if let Some(parsed) = self.apply_object_delta(partial_json) {
-                return Some(parsed);
-            }
-        }
-
-        let appended = format!("{}{partial_json}", self.accumulated);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&appended) {
-            self.accumulated = appended;
-            self.replacement_candidate = None;
-            return Some(parsed);
-        }
-
-        if self.replacement_candidate.is_some() || partial_json.trim_start().starts_with('{') {
-            let replacement = self.replacement_candidate.get_or_insert_with(String::new);
-            replacement.push_str(partial_json);
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(replacement) {
-                self.accumulated = replacement.clone();
-                self.replacement_candidate = None;
-                return Some(parsed);
-            }
-        }
-
-        None
-    }
-
-    fn apply_object_delta(&mut self, partial_json: &str) -> Option<serde_json::Value> {
-        let delta = serde_json::from_str::<serde_json::Value>(partial_json).ok()?;
-        let delta_object = delta.as_object()?;
-        let mut base = if self.accumulated.is_empty() {
-            serde_json::Map::new()
-        } else {
-            serde_json::from_str::<serde_json::Value>(&self.accumulated)
-                .ok()?
-                .as_object()
-                .cloned()?
-        };
-        for (key, value) in delta_object {
-            base.insert(key.clone(), value.clone());
-        }
-        let parsed = serde_json::Value::Object(base);
-        self.accumulated = serde_json::to_string(&parsed).ok()?;
-        self.replacement_candidate = None;
-        Some(parsed)
-    }
-}
-
 fn runtime_stream_key(runtime_session_id: Option<&str>) -> String {
     runtime_session_id.unwrap_or_default().to_string()
-}
-
-fn should_merge_tool_object_deltas(tool_name: &str) -> bool {
-    tool_name == "Bash" || is_file_change_tool_name(tool_name)
-}
-
-fn is_file_change_tool_name(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "Write" | "Edit" | "NotebookEdit" | "ApplyPatch" | "apply_patch"
-    )
 }
 
 /// Serialize a compaction metadata payload into the `content` column of the

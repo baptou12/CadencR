@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn delayed_command_without_actions_emits_bash_on_completion() {
+    fn unstreamed_command_without_actions_emits_bash_on_completion() {
         let mut indexes = IndexState::default();
         let started = notification_events(
             "item/started",
@@ -349,16 +349,6 @@ mod tests {
                     "id": "cmd",
                     "command": "/bin/zsh -lc 'cat /etc/hosts'"
                 }
-            }),
-            None,
-            &mut indexes,
-        );
-        let delta = notification_events(
-            "item/commandExecution/outputDelta",
-            json!({
-                "threadId": "thread",
-                "itemId": "cmd",
-                "aggregatedOutput": "127.0.0.1 localhost"
             }),
             None,
             &mut indexes,
@@ -380,7 +370,6 @@ mod tests {
         );
 
         assert!(started.is_empty());
-        assert!(delta.is_empty());
         assert_eq!(tool_names(&completed), vec!["Bash"]);
         assert_eq!(completed.len(), 2);
     }

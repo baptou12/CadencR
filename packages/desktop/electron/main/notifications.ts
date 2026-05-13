@@ -1,4 +1,5 @@
 import { app, Notification, type BrowserWindow } from "electron";
+import { sendToWindow } from "./safe-send";
 
 export type NotifyMode = "native" | "in_app";
 
@@ -20,7 +21,7 @@ export function notificationPermission(): boolean {
 
 export function sendNotification(mainWindow: BrowserWindow, opts: NotifyOptions): void {
   if (shouldRenderInApp(opts.mode)) {
-    safeSend(mainWindow, "notification-fallback", {
+    sendToWindow(mainWindow, "notification-fallback", {
       title: opts.title,
       body: opts.body,
       click: {
@@ -32,7 +33,7 @@ export function sendNotification(mainWindow: BrowserWindow, opts: NotifyOptions)
     return;
   }
   showNotification(mainWindow, opts.title, opts.body, () => {
-    safeSend(mainWindow, "notification-clicked", {
+    sendToWindow(mainWindow, "notification-clicked", {
       feature_id: opts.featureId,
       project_id: opts.projectId,
       route_type: opts.routeType,
@@ -50,7 +51,7 @@ export function sendTestNotification(mainWindow: BrowserWindow): void {
   const title = "Cadencr test notification";
   const body = "If you can see this, system notifications are working.";
   if (!app.isPackaged) {
-    safeSend(mainWindow, "notification-fallback", { title, body, click: null });
+    sendToWindow(mainWindow, "notification-fallback", { title, body, click: null });
     return;
   }
   showNotification(mainWindow, title, body);
@@ -77,7 +78,7 @@ function showNotification(
   onClick?: () => void,
 ): void {
   if (!Notification.isSupported()) {
-    safeSend(mainWindow, "notification-failed", {
+    sendToWindow(mainWindow, "notification-failed", {
       reason: "Notifications are not supported on this system.",
     });
     return;
@@ -86,7 +87,7 @@ function showNotification(
   const notification = new Notification({ title, body, silent: true });
   if (onClick) notification.on("click", onClick);
   notification.on("failed", (_event, error) => {
-    safeSend(mainWindow, "notification-failed", { reason: friendlyFailureReason(error) });
+    sendToWindow(mainWindow, "notification-failed", { reason: friendlyFailureReason(error) });
   });
   notification.show();
 }
@@ -104,9 +105,4 @@ export function friendlyFailureReason(rawError: string | undefined): string {
     return "macOS refused to deliver this notification because the app isn't code-signed. Use the production build, or rebuild locally so an ad-hoc signature is applied.";
   }
   return error;
-}
-
-function safeSend(mainWindow: BrowserWindow, channel: string, payload: unknown): void {
-  if (mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
-  mainWindow.webContents.send(channel, payload);
 }
