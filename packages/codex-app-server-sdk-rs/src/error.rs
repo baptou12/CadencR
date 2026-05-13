@@ -21,3 +21,37 @@ pub enum SdkError {
     #[error("response channel closed")]
     ResponseClosed,
 }
+
+impl SdkError {
+    pub fn is_no_active_turn_to_steer(&self) -> bool {
+        matches!(
+            self,
+            Self::Rpc { message, .. } if message == "no active turn to steer"
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SdkError;
+
+    #[test]
+    fn detects_no_active_turn_to_steer_rpc_error() {
+        let error = SdkError::Rpc {
+            code: -32600,
+            message: "no active turn to steer".to_string(),
+        };
+
+        assert!(error.is_no_active_turn_to_steer());
+    }
+
+    #[test]
+    fn ignores_unrelated_rpc_errors() {
+        let error = SdkError::Rpc {
+            code: -32600,
+            message: "invalid input".to_string(),
+        };
+
+        assert!(!error.is_no_active_turn_to_steer());
+    }
+}
