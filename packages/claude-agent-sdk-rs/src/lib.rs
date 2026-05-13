@@ -9,7 +9,7 @@ pub mod transport;
 pub mod types;
 
 // Re-export key public types for convenient top-level access.
-pub use commands::list_commands;
+pub use commands::{list_builtin_commands, list_commands, list_filesystem_commands};
 pub use error::SdkError;
 pub use mcp::McpServerConfig;
 pub use messages::{

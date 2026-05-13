@@ -79,12 +79,16 @@ fn compact_command() -> SlashCommand {
     }
 }
 
+/// Hand-maintained: Codex's app-server protocol has no `commands/list` RPC
+/// (verified via `codex app-server generate-json-schema`), so we can't
+/// discover these the way we do Claude Code's built-ins.
 fn codex_app_builtin_commands() -> Vec<SlashCommand> {
     [
         (
             "feedback",
             "Open a form to send feedback about the current Codex session",
         ),
+        ("goal", "set or view the goal for a long-running task"),
         (
             "mcp",
             "Show configured Model Context Protocol servers and tools",
@@ -164,6 +168,7 @@ mod tests {
             vec![
                 "compact",
                 "feedback",
+                "goal",
                 "mcp",
                 "plan-mode",
                 "review",

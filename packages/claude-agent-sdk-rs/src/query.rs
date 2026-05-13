@@ -924,29 +924,18 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
 
 // ── Supported commands ───────────────────────────────────────────────────────
 
-/// Fetch available slash commands for a given working directory.
-///
-/// Spawns a lightweight CLI subprocess, reads the first `system.init` message
-/// to extract the `slash_commands` list, then kills the subprocess. This avoids
-/// starting a full query/session just to discover available commands.
-///
-/// The CLI's init message only provides command names (strings), so the returned
-/// `SlashCommand` values have `description: None`.
-///
-/// # Timeout
-///
-/// If the CLI doesn't emit an init message within 10 seconds, returns
-/// [`SdkError::Timeout`].
+/// Fetch slash commands via the `initialize` control-request — a pure local
+/// metadata handshake (no prompt, no tokens). Returns [`SdkError::Timeout`]
+/// if the CLI doesn't reply within 10 seconds. `argumentHint` is dropped:
+/// [`SlashCommand`](crate::types::SlashCommand) doesn't carry it yet.
 pub async fn supported_commands(
     cwd: &str,
     path_to_cli: Option<&std::path::Path>,
 ) -> Result<Vec<crate::types::SlashCommand>, SdkError> {
-    use crate::messages::{SdkMessage, SystemMessage};
     use crate::transport::{find_cli, CliProcess};
 
     let cli_path = find_cli(path_to_cli).await?;
 
-    // Build minimal options — just enough to spawn the CLI and get init message.
     let options = Options {
         cwd: std::path::PathBuf::from(cwd),
         ..Options::default()
@@ -954,7 +943,6 @@ pub async fn supported_commands(
 
     let mut process = CliProcess::spawn(&cli_path, &options).await?;
 
-    // Write the initialize control request + a dummy prompt to trigger init.
     let stdin = process.take_stdin();
     let process_stdin = tokio::sync::Mutex::new(stdin);
 
@@ -972,24 +960,25 @@ pub async fn supported_commands(
     });
     write_to_stdin(&process_stdin, &init_msg).await?;
 
-    let prompt_msg = serde_json::json!({
-        "type": "user",
-        "message": { "role": "user", "content": "noop" },
-        "parent_tool_use_id": null,
-        "session_id": ""
-    });
-    write_to_stdin(&process_stdin, &prompt_msg).await?;
-
-    // Read messages until we get the system init, with a 10s timeout.
     let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             match process.read_message().await? {
                 Some(raw) => {
-                    // Skip control_response messages
                     if raw.get("type").and_then(|t| t.as_str()) == Some("control_response") {
+                        let req_id = raw.pointer("/response/request_id").and_then(|v| v.as_str());
+                        if req_id == Some(init_request_id.as_str()) {
+                            let commands = raw
+                                .pointer("/response/response/commands")
+                                .cloned()
+                                .unwrap_or(serde_json::Value::Array(Vec::new()));
+                            return Ok::<Vec<crate::types::SlashCommand>, SdkError>(
+                                parse_supported_commands(&commands),
+                            );
+                        }
                         continue;
                     }
-                    // Handle initialize control_request from CLI
+                    // CLI sometimes sends its own `initialize`; ack it so the
+                    // CLI keeps going while we await our own response.
                     if control_request_subtype(&raw) == Some("initialize") {
                         let request_id = raw
                             .get("request_id")
@@ -1007,27 +996,8 @@ pub async fn supported_commands(
                         write_to_stdin(&process_stdin, &response_json).await?;
                         continue;
                     }
-                    // Try parsing as SdkMessage
-                    let message: SdkMessage = match serde_json::from_value(raw) {
-                        Ok(msg) => msg,
-                        Err(_) => continue,
-                    };
-                    if let SdkMessage::System(SystemMessage::Init { slash_commands, .. }) = message
-                    {
-                        return Ok::<Vec<crate::types::SlashCommand>, SdkError>(
-                            slash_commands
-                                .into_iter()
-                                .map(|name| crate::types::SlashCommand {
-                                    name,
-                                    description: None,
-                                })
-                                .collect(),
-                        );
-                    }
-                    // Not the init message, keep reading
                 }
                 None => {
-                    // EOF before init
                     let (code, stderr) = process.wait_with_stderr().await;
                     return Err(SdkError::ProcessExit { code, stderr });
                 }
@@ -1036,13 +1006,40 @@ pub async fn supported_commands(
     })
     .await;
 
-    // Kill the subprocess regardless of outcome.
     let _ = process.kill().await;
 
     match result {
         Ok(commands) => commands,
         Err(_elapsed) => Err(SdkError::Timeout),
     }
+}
+
+/// Decode the `commands` array from the `initialize` control-response.
+/// Non-array shapes yield an empty Vec so callers can apply their own
+/// fallback (e.g. [`crate::commands::list_builtin_commands`]).
+fn parse_supported_commands(commands: &serde_json::Value) -> Vec<crate::types::SlashCommand> {
+    let Some(entries) = commands.as_array() else {
+        tracing::warn!(
+            "initialize control_response `commands` was not an array; treating as empty"
+        );
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Some(name) = entry.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let description = entry
+            .get("description")
+            .and_then(|v| v.as_str())
+            .filter(|d| !d.is_empty())
+            .map(ToOwned::to_owned);
+        out.push(crate::types::SlashCommand {
+            name: name.to_string(),
+            description,
+        });
+    }
+    out
 }
 
 // ── Supported models ─────────────────────────────────────────────────────────
@@ -1978,12 +1975,13 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_dl","d
         let dir = TempDir::new().unwrap();
         let script_path = dir.path().join("claude");
 
-        // Mock CLI: read init + prompt, emit system init with slash_commands, then exit
+        // Mock CLI: echo a control_response matching the real CLI wire
+        // format (verified by manual probe against `claude` 2.1.139).
         let script = r#"#!/bin/sh
 read -r INIT_REQ
-read -r USER_PROMPT
-echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_cmd","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":["compact","review","init"],"output_style":"stream","skills":[],"plugins":[]}'
-echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cmd","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+REQ_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"commands":[{"name":"compact","description":"Free up context","argumentHint":""},{"name":"review","description":"Review a PR","argumentHint":""},{"name":"goal","description":"Set a goal","argumentHint":""},{"name":"nodesc","argumentHint":""}],"models":[],"account":{}}}}\n' "$REQ_ID"
+sleep 60
 "#;
 
         std::fs::write(&script_path, script).unwrap();
@@ -1995,10 +1993,12 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cmd","
             .await
             .unwrap();
 
-        assert_eq!(commands.len(), 3);
+        assert_eq!(commands.len(), 4);
         assert_eq!(commands[0].name, "compact");
-        assert_eq!(commands[1].name, "review");
-        assert_eq!(commands[2].name, "init");
-        assert!(commands[0].description.is_none());
+        assert_eq!(commands[0].description.as_deref(), Some("Free up context"));
+        assert_eq!(commands[2].name, "goal");
+        assert_eq!(commands[2].description.as_deref(), Some("Set a goal"));
+        assert_eq!(commands[3].name, "nodesc");
+        assert!(commands[3].description.is_none());
     }
 }
