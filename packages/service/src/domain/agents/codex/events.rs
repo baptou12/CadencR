@@ -18,15 +18,23 @@ pub fn notification_events(
     model: Option<&str>,
     index_state: &mut IndexState,
 ) -> Vec<RuntimeEvent> {
-    // Hot path: most turns never spawn a sub-agent. Pull the threadId only
-    // when we actually have something to look it up against, so the common
-    // case avoids a per-notification String allocation.
-    let event_thread_id = index_state
-        .has_any_subagents()
-        .then(|| thread_id(&params).to_string());
+    let subagent_parent_tool_use_id = if index_state.has_any_subagents() {
+        params
+            .get("threadId")
+            .and_then(Value::as_str)
+            .and_then(|thread_id| index_state.subagent_parent_tool_use_id(thread_id))
+            .map(ToOwned::to_owned)
+    } else {
+        None
+    };
+
+    if method == "turn/completed" && subagent_parent_tool_use_id.is_some() {
+        return Vec::new();
+    }
+
     let mut events = dispatch_notification(method, params, model, index_state);
-    if let Some(event_thread_id) = event_thread_id {
-        apply_subagent_parent_tool_use_id(&mut events, &event_thread_id, index_state);
+    if let Some(parent_tool_use_id) = subagent_parent_tool_use_id {
+        apply_subagent_parent_tool_use_id(&mut events, &parent_tool_use_id);
     }
     events
 }
@@ -64,24 +72,14 @@ fn dispatch_notification(
 /// stamp every emitted event with the spawning `Agent` tool_use's id so the
 /// frontend nests them under that block. Provider-neutral nesting (Claude's
 /// `Task`, OpenCode's `Agent`) keys off the same `parent_tool_use_id` field.
-fn apply_subagent_parent_tool_use_id(
-    events: &mut [RuntimeEvent],
-    event_thread_id: &str,
-    index_state: &IndexState,
-) {
-    let Some(parent_tool_use_id) = index_state
-        .subagent_parent_tool_use_id(event_thread_id)
-        .map(ToOwned::to_owned)
-    else {
-        return;
-    };
+fn apply_subagent_parent_tool_use_id(events: &mut [RuntimeEvent], parent_tool_use_id: &str) {
     for event in events.iter_mut() {
         // Don't override an already-set parent (defends against nested
         // sub-agents already correctly tagged by inner handlers).
         if event.parent_tool_use_id().is_some() {
             continue;
         }
-        event.set_parent_tool_use_id(Some(parent_tool_use_id.clone()));
+        event.set_parent_tool_use_id(Some(parent_tool_use_id.to_string()));
     }
 }
 
@@ -555,6 +553,51 @@ mod tests {
             &mut indexes,
         );
         assert!(root_text[0].parent_tool_use_id().is_none());
+    }
+
+    #[test]
+    fn subagent_turn_completed_does_not_emit_root_result() {
+        let mut indexes = IndexState::default();
+        notification_events(
+            "rawResponseItem/completed",
+            json!({
+                "threadId": "thread_root",
+                "item": {
+                    "type": "function_call",
+                    "call_id": "call_spawn_1",
+                    "name": "spawn_agent",
+                    "arguments": "{\"message\":\"do work\"}"
+                }
+            }),
+            None,
+            &mut indexes,
+        );
+        notification_events(
+            "rawResponseItem/completed",
+            json!({
+                "threadId": "thread_root",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": "call_spawn_1",
+                    "output": {
+                        "agentsStates": {
+                            "thread_child": { "status": "completed", "message": "done" }
+                        }
+                    }
+                }
+            }),
+            None,
+            &mut indexes,
+        );
+
+        let events = notification_events(
+            "turn/completed",
+            json!({ "threadId": "thread_child" }),
+            None,
+            &mut indexes,
+        );
+
+        assert!(events.is_empty());
     }
 
     #[test]
