@@ -1,15 +1,16 @@
 use super::adapter_normalize::normalize_edit_input;
 use super::events_subagent_synthesis::{extract_subagent_body, synthesize_subagent_text_event};
 use super::events_tool_call_question::{question_start_event, question_update_event};
+use super::prompt_usage::prompt_response_usage;
 use super::question_sidecar::QuestionSidecar;
-use super::upstream_workaround::{spawn_subagent_listener, PendingSubagentTasks};
+use super::upstream_workaround::{spawn_side_channel_listeners, PendingSubagentTasks};
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
 use crate::domain::agents::acp::runtime::provider_hooks::{
     flatten_tool_result_content_with, AcpProviderHooks,
 };
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
 };
 use crate::domain::agents::opencode::questions::extract_question_answers;
 use crate::domain::agents::opencode::tool_names::{
@@ -64,6 +65,9 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     }
     fn compact_prompt(&self) -> Option<&'static str> {
         Some("/compact")
+    }
+    fn prompt_response_usage(&self, response: &Value) -> Option<RuntimeUsage> {
+        prompt_response_usage(response)
     }
     fn tool_call_start_override(
         &self,
@@ -138,12 +142,14 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         &self,
         session_id: &str,
         cwd: &Path,
+        context_window: Option<u64>,
         tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     ) -> Option<JoinHandle<()>> {
-        Some(spawn_subagent_listener(
+        Some(spawn_side_channel_listeners(
             self.opencode_http_port,
             cwd.to_path_buf(),
             session_id.to_string(),
+            context_window,
             Arc::clone(&self.pending_subagent_calls),
             tx,
         ))

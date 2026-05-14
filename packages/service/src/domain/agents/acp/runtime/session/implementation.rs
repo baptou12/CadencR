@@ -136,6 +136,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
                 &self.indexer,
                 self.current_session_id().await,
                 self.context_window,
+                self.hooks.prompt_response_usage(&response),
                 reason,
                 &response,
             )

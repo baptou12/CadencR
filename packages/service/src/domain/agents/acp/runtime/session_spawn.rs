@@ -114,8 +114,12 @@ pub async fn spawn_acp_runtime_session(
     // sub-agent child-session events). Started after the event loop so the
     // listener's emitted events queue behind any spawn-time init events the
     // FE expects to see first.
-    session.side_channel_task =
-        hooks.start_side_channel(&negotiated.session_id, config.cwd.as_path(), tx.clone());
+    session.side_channel_task = hooks.start_side_channel(
+        &negotiated.session_id,
+        config.cwd.as_path(),
+        session.context_window,
+        tx.clone(),
+    );
 
     if !initial_content.is_null() {
         spawn_initial_prompt(&session, &tx, initial_content);
@@ -141,6 +145,7 @@ fn spawn_initial_prompt(
     let local_tx = tx.clone();
     let indexer_arc = Arc::clone(&session.indexer);
     let context_window = session.context_window;
+    let hooks = Arc::clone(&session.hooks);
     let prompt_turn_lock = Arc::clone(&session.prompt_turn_lock);
     let prompt_cancel = session.prompt_cancel.clone();
     tokio::spawn(async move {
@@ -153,6 +158,7 @@ fn spawn_initial_prompt(
             &local_tx,
             &indexer_arc,
             context_window,
+            hooks.as_ref(),
             &prompt_turn_lock,
             &prompt_cancel,
         )

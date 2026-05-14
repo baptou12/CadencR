@@ -13,6 +13,9 @@
 //!
 //! ## Current modules
 //!
+//! - **`root_usage_listener`** — OpenCode ACP only forwards context usage
+//!   after `session/prompt` resolves. We poll the root session's HTTP message
+//!   snapshot and emit token updates as soon as OpenCode persists them.
 //! - **`subagent_listener`** — OpenCode's `ACPSessionManager`
 //!   (`opencode/src/acp/agent.ts`) silently drops `message.part.updated`
 //!   events for sessions not registered with it. The `Task` tool spawns
@@ -44,10 +47,13 @@
 //! A future engineer doing the former should leave this directory
 //! untouched.
 
+mod root_usage_listener;
+mod side_channel;
 mod subagent_listener;
 
 // Re-export the symbols the OpenCode ACP adapter consumes. Keeping the
 // re-exports here (rather than `pub(in …)` on the items themselves) means
 // the adapter's import path is `super::upstream_workaround::{…}` — short,
 // and a grep for `upstream_workaround::` lands directly on every consumer.
-pub(super) use subagent_listener::{spawn_subagent_listener, PendingSubagentTasks};
+pub(super) use side_channel::spawn_side_channel_listeners;
+pub(super) use subagent_listener::PendingSubagentTasks;
