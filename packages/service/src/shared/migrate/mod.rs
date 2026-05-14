@@ -1,10 +1,12 @@
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use sqlx::SqlitePool;
 use tracing::{info, warn};
 
 mod seed;
+mod support;
+
+use support::{backup_database, emit_phase, has_pending_migrations, table_exists};
 
 /// Inputs for a single startup migration pass.
 pub struct MigrationContext<'a> {
@@ -38,14 +40,7 @@ impl<'a> MigrationContext<'a> {
 pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     let migrator = sqlx::migrate!("./migrations");
 
-    let has_old_migrations = sqlx::query_scalar::<_, i32>(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='migrations'",
-    )
-    .fetch_one(ctx.pool)
-    .await?
-        > 0;
-
-    if has_old_migrations {
+    if table_exists(ctx.pool, "migrations").await? {
         seed::seed_sqlx_migrations(ctx.pool, &migrator).await?;
     }
 
@@ -71,84 +66,6 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
 
     info!("Database migrations completed successfully");
     Ok(())
-}
-
-/// Marker line consumed by the Electron sidecar to drive the splash status.
-/// One line, fixed prefix; keep the format stable — the parser in
-/// `packages/desktop/electron/main/sidecar.ts::parsePhaseLine` matches it.
-fn emit_phase(name: &str, detail: &str) {
-    if detail.is_empty() {
-        println!("CADENCR_PHASE {name}");
-    } else {
-        println!("CADENCR_PHASE {name} {detail}");
-    }
-}
-
-async fn has_pending_migrations(
-    pool: &SqlitePool,
-    migrator: &sqlx::migrate::Migrator,
-) -> anyhow::Result<bool> {
-    let table_present = sqlx::query_scalar::<_, i32>(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_sqlx_migrations'",
-    )
-    .fetch_one(pool)
-    .await?
-        > 0;
-
-    if !table_present {
-        return Ok(true);
-    }
-
-    let applied: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations")
-        .fetch_all(pool)
-        .await?;
-    let applied: HashSet<i64> = applied.into_iter().collect();
-    for migration in migrator.iter() {
-        if !applied.contains(&migration.version) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-async fn backup_database(
-    pool: &SqlitePool,
-    db_path: &Path,
-    app_version: Option<&str>,
-) -> anyhow::Result<Option<PathBuf>> {
-    if !db_path.is_file() {
-        return Ok(None);
-    }
-    let dir = db_path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("db path has no parent directory: {}", db_path.display()))?;
-    let version = app_version.unwrap_or("unknown");
-    let timestamp = chrono::Local::now().format("%Y-%m-%d-%H").to_string();
-    let backup = dir.join(format!("{version}.{timestamp}.cadencr.backup.db"));
-    if backup.exists() {
-        return Ok(Some(backup));
-    }
-    // `VACUUM INTO` produces a single consistent snapshot that includes
-    // anything pending in the WAL — a plain file copy of the `.db` would
-    // miss uncommitted data in the `.db-wal` sibling. SQLite writes to a
-    // staging path it owns and finalizes atomically; if the process is
-    // killed mid-vacuum, only the partial staging file is left behind, never
-    // a half-written file with the final name.
-    let staging = dir.join(format!("{version}.{timestamp}.cadencr.backup.db.partial"));
-    if staging.exists() {
-        std::fs::remove_file(&staging)?;
-    }
-    // SQLite requires a string literal for VACUUM INTO; the path components
-    // (`dir`, `version`, `timestamp`) are all under our control and contain
-    // no quotes, so concatenation is safe — no SQL-injection vector.
-    let staging_str = staging
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("backup path is not valid UTF-8: {}", staging.display()))?;
-    sqlx::query(&format!("VACUUM INTO '{staging_str}'"))
-        .execute(pool)
-        .await?;
-    std::fs::rename(&staging, &backup)?;
-    Ok(Some(backup))
 }
 
 #[cfg(test)]
@@ -266,6 +183,19 @@ mod tests {
             INSERT INTO feature_settings (feature_id, key, value) VALUES
                 (1, 'worktree_path', '/tmp/p'),
                 (1, 'model_qa', 'default');"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::raw_sql(
+            r#"PRAGMA foreign_keys = OFF;
+            INSERT INTO workflow_queue (id, feature_id, agent_session_id) VALUES (788, 663, 2163);
+            INSERT INTO agent_sessions (id, feature_id) VALUES (2163, 663);
+            INSERT INTO workflow_queue (id, feature_id, agent_session_id) VALUES (789, 1, 2164);
+            INSERT INTO agent_sessions (id, feature_id) VALUES (2164, 664);
+            INSERT INTO workflow_dependencies (id, queue_item_id, depends_on_item_id) VALUES (1, 789, 788);
+            PRAGMA foreign_keys = ON;"#,
         )
         .execute(&pool)
         .await
@@ -415,7 +345,7 @@ mod tests {
                 agent_autonomy TEXT, parallel_execution TEXT DEFAULT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            CREATE TABLE workflow_queue (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), agent_session_id INTEGER);
+            CREATE TABLE workflow_queue (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), agent_session_id INTEGER REFERENCES agent_sessions(id));
             CREATE TABLE workflow_dependencies (id INTEGER PRIMARY KEY, queue_item_id INTEGER NOT NULL REFERENCES workflow_queue(id), depends_on_item_id INTEGER NOT NULL REFERENCES workflow_queue(id));
             CREATE TABLE phases (id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL);
             CREATE TABLE plans (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));

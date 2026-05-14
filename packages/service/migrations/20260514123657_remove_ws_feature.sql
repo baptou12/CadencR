@@ -19,15 +19,17 @@
 CREATE TEMP TABLE _ws_feature_ids AS
 SELECT id FROM features WHERE type IS NULL OR type IN ('ws-feature', 'feature');
 
+CREATE TEMP TABLE _ws_feature_queue_ids AS
+SELECT id FROM workflow_queue WHERE feature_id IN (SELECT id FROM _ws_feature_ids);
+
 -- Dependent rows ----------------------------------------------------------
 
 DELETE FROM workflow_dependencies
-WHERE queue_item_id IN (
-    SELECT id FROM workflow_queue WHERE feature_id IN (SELECT id FROM _ws_feature_ids)
-);
+WHERE queue_item_id IN (SELECT id FROM _ws_feature_queue_ids)
+OR depends_on_item_id IN (SELECT id FROM _ws_feature_queue_ids);
 
 DELETE FROM workflow_queue
-WHERE feature_id IN (SELECT id FROM _ws_feature_ids);
+WHERE id IN (SELECT id FROM _ws_feature_queue_ids);
 
 DELETE FROM phases
 WHERE plan_id IN (
@@ -72,33 +74,44 @@ DELETE FROM features
 WHERE id IN (SELECT id FROM _ws_feature_ids);
 
 -- Some development databases predate strict FK handling and can already carry
--- orphaned legacy workflow sessions. They are unreachable through ws-session
--- because their feature row is gone, so remove their children and the orphan
--- parent rows while leaving every session attached to a live feature intact.
+-- orphaned legacy workflow rows and sessions. They are unreachable through
+-- ws-session because their feature row is gone, so remove their children and
+-- the orphan parent rows while leaving every session attached to a live feature
+-- intact.
+CREATE TEMP TABLE _orphan_agent_session_ids AS
+SELECT s.id
+FROM agent_sessions s
+LEFT JOIN features f ON f.id = s.feature_id
+WHERE f.id IS NULL;
+
+CREATE TEMP TABLE _orphan_workflow_queue_ids AS
+SELECT q.id
+FROM workflow_queue q
+LEFT JOIN features f ON f.id = q.feature_id
+LEFT JOIN agent_sessions s ON s.id = q.agent_session_id
+WHERE f.id IS NULL
+    OR (q.agent_session_id IS NOT NULL AND s.id IS NULL)
+    OR q.agent_session_id IN (SELECT id FROM _orphan_agent_session_ids);
+
+DELETE FROM workflow_dependencies
+WHERE queue_item_id IN (SELECT id FROM _orphan_workflow_queue_ids)
+OR depends_on_item_id IN (SELECT id FROM _orphan_workflow_queue_ids);
+
+DELETE FROM workflow_queue
+WHERE id IN (SELECT id FROM _orphan_workflow_queue_ids);
+
 DELETE FROM session_runtime_ids
-WHERE session_id IN (
-    SELECT s.id
-    FROM agent_sessions s
-    LEFT JOIN features f ON f.id = s.feature_id
-    WHERE f.id IS NULL
-);
+WHERE session_id IN (SELECT id FROM _orphan_agent_session_ids);
 
 DELETE FROM agent_messages
-WHERE session_id IN (
-    SELECT s.id
-    FROM agent_sessions s
-    LEFT JOIN features f ON f.id = s.feature_id
-    WHERE f.id IS NULL
-);
+WHERE session_id IN (SELECT id FROM _orphan_agent_session_ids);
 
 DELETE FROM agent_sessions
-WHERE id IN (
-    SELECT s.id
-    FROM agent_sessions s
-    LEFT JOIN features f ON f.id = s.feature_id
-    WHERE f.id IS NULL
-);
+WHERE id IN (SELECT id FROM _orphan_agent_session_ids);
 
+DROP TABLE _orphan_workflow_queue_ids;
+DROP TABLE _orphan_agent_session_ids;
+DROP TABLE _ws_feature_queue_ids;
 DROP TABLE _ws_feature_ids;
 
 -- ---------------------------------------------------------------------------

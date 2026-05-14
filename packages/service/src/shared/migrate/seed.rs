@@ -6,20 +6,15 @@
 use sqlx::{Row, SqlitePool};
 use tracing::info;
 
+use super::support::table_exists;
+
 /// Seed the `_sqlx_migrations` table so sqlx considers existing migrations already applied.
 /// One-time operation for databases originally created by the Electron migration runner.
 pub(super) async fn seed_sqlx_migrations(
     pool: &SqlitePool,
     migrator: &sqlx::migrate::Migrator,
 ) -> anyhow::Result<()> {
-    let has_sqlx_table = sqlx::query_scalar::<_, i32>(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_sqlx_migrations'",
-    )
-    .fetch_one(pool)
-    .await?
-        > 0;
-
-    if has_sqlx_table {
+    if table_exists(pool, "_sqlx_migrations").await? {
         return Ok(());
     }
 
@@ -77,15 +72,6 @@ pub(super) async fn repair_agent_sessions_pin_column(pool: &SqlitePool) -> anyho
     .execute(pool)
     .await?;
     Ok(())
-}
-
-async fn table_exists(pool: &SqlitePool, table_name: &str) -> anyhow::Result<bool> {
-    let count: i32 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?")
-            .bind(table_name)
-            .fetch_one(pool)
-            .await?;
-    Ok(count > 0)
 }
 
 async fn table_has_column(
