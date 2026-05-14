@@ -5,6 +5,7 @@ import {
   extractTaskOutput,
   isToolCallRunning,
   extractInlineDiffPreview,
+  extractInlineDiffPreviews,
   isFileChangeTool,
   isStructuredBashPayload,
   normalizeToolName,
@@ -186,6 +187,33 @@ describe("extractInlineDiffPreview", () => {
       oldContent: "before",
       newContent: "after",
     });
+  });
+
+  it("extracts every OpenCode ApplyPatch preview from multi-file patchText args", () => {
+    expect(
+      extractInlineDiffPreviews(
+        "ApplyPatch",
+        JSON.stringify({
+          patchText:
+            "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** Update File: src/b.ts\n@@\n-c\n+d\n*** End Patch",
+        }),
+      ),
+    ).toEqual([
+      { filePath: "src/a.ts", oldContent: "a", newContent: "b" },
+      { filePath: "src/b.ts", oldContent: "c", newContent: "d" },
+    ]);
+  });
+
+  it("keeps singular ApplyPatch preview behavior for multi-file patchText args", () => {
+    expect(
+      extractInlineDiffPreview(
+        "ApplyPatch",
+        JSON.stringify({
+          patchText:
+            "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** Update File: src/b.ts\n@@\n-c\n+d\n*** End Patch",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("falls back to the partial extractor for streaming ApplyPatch JSON", () => {

@@ -1,4 +1,8 @@
-import { extractApplyPatchPreviewPartial, isApplyPatchToolName } from "@/lib/apply-patch";
+import {
+  extractApplyPatchPreviewPartial,
+  extractApplyPatchPreviewsPartial,
+  isApplyPatchToolName,
+} from "@/lib/apply-patch";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
 
 export interface InlineDiffPreview {
@@ -136,32 +140,42 @@ export function extractInlineDiffPreview(
   toolArgs?: string,
 ): InlineDiffPreview | null {
   if (isApplyPatchToolName(toolName)) {
+    return toolArgs ? extractApplyPatchPreviewPartial(toolArgs) : null;
+  }
+  return extractInlineDiffPreviews(toolName, toolArgs)[0] ?? null;
+}
+
+export function extractInlineDiffPreviews(
+  toolName: string,
+  toolArgs?: string,
+): InlineDiffPreview[] {
+  if (isApplyPatchToolName(toolName)) {
     // The tolerant extractor already does a fast `JSON.parse` first and falls
     // back to a streaming-friendly scanner — calling `parseToolArgsObject`
     // here would just parse the same bytes a second time on every render.
-    return toolArgs ? extractApplyPatchPreviewPartial(toolArgs) : null;
+    return toolArgs ? extractApplyPatchPreviewsPartial(toolArgs) : [];
   }
 
   const args = parseToolArgsObject(toolArgs);
-  if (!args) return null;
+  if (!args) return [];
 
   const filePath = stringArg(args, "file_path", "filePath", "path");
-  if (!filePath) return null;
+  if (!filePath) return [];
 
   if (toolName === "Edit") {
     const oldString = stringArg(args, "old_string", "oldString") ?? "";
     const newString = stringArg(args, "new_string", "newString") ?? "";
     if (oldString || newString) {
-      return { filePath, oldContent: oldString, newContent: newString };
+      return [{ filePath, oldContent: oldString, newContent: newString }];
     }
   }
 
   if (toolName === "Write") {
     const content = stringArg(args, "content") ?? "";
     if (content) {
-      return { filePath, oldContent: "", newContent: content };
+      return [{ filePath, oldContent: "", newContent: content }];
     }
   }
 
-  return null;
+  return [];
 }

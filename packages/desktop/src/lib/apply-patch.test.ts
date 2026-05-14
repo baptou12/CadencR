@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   extractApplyPatchPreview,
   extractApplyPatchPreviewPartial,
+  extractApplyPatchPreviews,
+  extractApplyPatchPreviewsPartial,
   extractApplyPatchPrimaryPath,
   parseApplyPatchChanges,
 } from "./apply-patch";
@@ -88,6 +90,37 @@ describe("extractApplyPatchPreview", () => {
       newContent: "",
     });
   });
+
+  it("keeps legacy singular behavior for multi-file patches", () => {
+    expect(
+      extractApplyPatchPreview({
+        patchText:
+          "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** Update File: src/b.ts\n@@\n-c\n+d\n*** End Patch",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("extractApplyPatchPreviews", () => {
+  it("builds previews for every file in a multi-file patchText payload", () => {
+    expect(
+      extractApplyPatchPreviews({
+        patchText:
+          "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-old a\n+new a\n*** Update File: src/b.ts\n@@\n-old b\n+new b\n*** End Patch",
+      }),
+    ).toEqual([
+      {
+        filePath: "src/a.ts",
+        oldContent: "old a",
+        newContent: "new a",
+      },
+      {
+        filePath: "src/b.ts",
+        oldContent: "old b",
+        newContent: "new b",
+      },
+    ]);
+  });
 });
 
 describe("extractApplyPatchPreviewPartial", () => {
@@ -173,5 +206,36 @@ describe("extractApplyPatchPreviewPartial", () => {
       oldContent: "old",
       newContent: "new",
     });
+  });
+
+  it("keeps legacy singular behavior for multi-file patchText JSON", () => {
+    const raw = JSON.stringify({
+      patchText:
+        "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-a\n+b\n*** Update File: src/b.ts\n@@\n-c\n+d\n*** End Patch",
+    });
+
+    expect(extractApplyPatchPreviewPartial(raw)).toBeNull();
+  });
+});
+
+describe("extractApplyPatchPreviewsPartial", () => {
+  it("recognises camelCase multi-file patchText JSON", () => {
+    const raw = JSON.stringify({
+      patchText:
+        "*** Begin Patch\n*** Update File: provider_hooks.rs\n@@\n-RuntimeSlashCommand\n+RuntimeSlashCommand, RuntimeUsage\n*** Update File: turn_result.rs\n@@\n-usage: None\n+usage\n*** End Patch",
+    });
+
+    expect(extractApplyPatchPreviewsPartial(raw)).toEqual([
+      {
+        filePath: "provider_hooks.rs",
+        oldContent: "RuntimeSlashCommand",
+        newContent: "RuntimeSlashCommand, RuntimeUsage",
+      },
+      {
+        filePath: "turn_result.rs",
+        oldContent: "usage: None",
+        newContent: "usage",
+      },
+    ]);
   });
 });
