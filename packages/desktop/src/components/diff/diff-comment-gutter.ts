@@ -37,7 +37,7 @@ const gutterTheme = EditorView.theme(
     },
     ".cm-add-comment-marker": {
       cursor: "pointer",
-      color: "var(--editor-fg)",
+      color: "oklch(0.99 0 0)",
       background: "var(--editor-purple)",
       fontWeight: "bold",
       fontSize: "12px",
