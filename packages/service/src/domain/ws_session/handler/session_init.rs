@@ -16,6 +16,8 @@ use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
 
+#[path = "session_init_feature.rs"]
+mod session_init_feature;
 #[path = "session_init_restore.rs"]
 mod session_init_restore;
 
@@ -82,6 +84,17 @@ pub(super) async fn handle_init(
         .register(feature_id, sender.clone())
         .await;
 
+    let Some(project_id) = session_init_feature::require_feature_project_id(
+        app_state,
+        sender,
+        &envelope.id,
+        feature_id,
+    )
+    .await
+    else {
+        return;
+    };
+
     // Find or create DB session row
     info!(
         feature_id,
@@ -127,17 +140,11 @@ pub(super) async fn handle_init(
         );
     }
 
-    let project_id = sqlx::query_scalar::<_, i64>("SELECT project_id FROM features WHERE id = ?")
-        .bind(feature_id)
-        .fetch_optional(&app_state.read_pool)
-        .await
-        .ok()
-        .flatten();
     let configured_provider = settings::resolve_setting(
         &app_state.read_pool,
         &crate::domain::agents::runtime::runtime_setting_key("session"),
         Some(feature_id),
-        project_id,
+        Some(project_id),
         Some(DEFAULT_PROVIDER),
     )
     .await
@@ -256,7 +263,7 @@ pub(super) async fn handle_init(
             &app_state.read_pool,
             "bypass_acknowledged",
             Some(feature_id),
-            project_id,
+            Some(project_id),
             Some("false"),
         )
         .await

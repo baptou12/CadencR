@@ -71,7 +71,7 @@ impl WsSessionPersistence {
                 Some(id)
             }
             Err(e) => {
-                error!(error = %e, "failed to create agent_sessions row");
+                error!(error = %e, feature_id = self.feature_id, "failed to create agent_sessions row");
                 None
             }
         }
@@ -111,9 +111,24 @@ mod session_bootstrap_tests {
             .unwrap();
 
         sqlx::query(
+            r#"CREATE TABLE features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL DEFAULT ''
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO features (id, title) VALUES (1, 'One'), (2, 'Two')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        sqlx::query(
             r#"CREATE TABLE agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                feature_id INTEGER NOT NULL,
+                feature_id INTEGER NOT NULL REFERENCES features(id),
                 agent_type TEXT NOT NULL DEFAULT 'session',
                 status TEXT NOT NULL DEFAULT 'idle',
                 runtime_provider TEXT,

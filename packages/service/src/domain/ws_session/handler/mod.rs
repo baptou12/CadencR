@@ -211,8 +211,10 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert a default feature for tests that reference feature_id = 1
-        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'Test Feature')")
+        // Insert default features for tests that reference feature_id = 1 or 2.
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title) VALUES (1, 1, 'Test Feature'), (2, 1, 'Second Feature')",
+        )
             .execute(&pool)
             .await
             .unwrap();
@@ -445,6 +447,36 @@ mod tests {
         } else {
             panic!("expected text message");
         }
+    }
+
+    #[tokio::test]
+    async fn test_init_missing_feature_returns_error() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+
+        let envelope = make_envelope(
+            "session",
+            "init",
+            serde_json::json!({ "feature_id": 999, "cwd": "/tmp/test" }),
+        );
+        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+        let msg = rx.recv().await.unwrap();
+        if let Message::Text(text) = msg {
+            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+            assert_eq!(env.action, "error");
+            let payload: SessionErrorPayload = serde_json::from_value(env.payload).unwrap();
+            assert_eq!(payload.code, "FEATURE_NOT_FOUND");
+        } else {
+            panic!("expected text message");
+        }
+
+        let session_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_sessions")
+            .fetch_one(&app_state.read_pool)
+            .await
+            .unwrap();
+        assert_eq!(session_count, 0);
     }
 
     #[tokio::test]
