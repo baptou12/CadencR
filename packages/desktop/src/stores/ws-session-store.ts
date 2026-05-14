@@ -105,6 +105,36 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     if (session.queuedPrompts.length === 0) return;
     set(updateSession(get(), sessionId, { queuedPrompts: [] }));
   }
+
+  /**
+   * Re-emit `session.init` after a transport reconnect so the backend's
+   * per-connection `sdk_sessions` map gets rebuilt for this session id.
+   *
+   * Only fires when:
+   *  - We already have a `featureId` (the init payload requires it).
+   *  - This is a reconnect, not the first connect — detected by the
+   *    presence of a previously-established `serverSessionId`.
+   *
+   * Provider-neutral: replays whatever provider/model/effort/mode the
+   * session was last using. The backend `session.init` handler is
+   * idempotent for an existing DB session — it re-binds the in-memory
+   * handle from the DB row rather than creating a new one.
+   */
+  function reinitOnReconnect(sessionId: string): void {
+    const session = get().sessions[sessionId];
+    if (!session) return;
+    if (!session.featureId || !session.serverSessionId) return;
+    sendRaw(
+      sessionId,
+      createSessionInit({
+        featureId: session.featureId,
+        provider: session.currentProviderId || undefined,
+        model: session.currentModelId || undefined,
+        thinkingEffort: session.currentThinkingEffort,
+        permissionMode: session.permissionMode,
+      }),
+    );
+  }
   const ctx: StoreAccessors = { get, set, getSession };
 
   return {
@@ -127,6 +157,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           useConnectionStatusStore
             .getState()
             .reportSource(wsSessionSourceKey(sessionId), "connected");
+          // If we already have a `serverSessionId`, this is a *reconnect*
+          // (e.g. after OS sleep), not a fresh init. The backend's
+          // `sdk_sessions` map is per-connection, so the new socket has
+          // no idea about this session yet. Re-emit `session.init` with
+          // the cached config so the backend rebuilds its in-memory
+          // handle from the DB — otherwise every subsequent envelope
+          // returns `SESSION_NOT_FOUND` (or, when `serverSessionId` is
+          // wiped, the more confusing `INVALID_SESSION_ID`).
+          // Provider-neutral: applies to Claude Code, OpenCode, Codex.
+          reinitOnReconnect(sessionId);
         },
         onClose: () => {
           const session = get().sessions[sessionId];
@@ -156,13 +196,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             updateSession(get(), sessionId, {
               conn: null,
               isConnected: false,
-              serverSessionId: "",
-              // Do not clear `runtimeSessionId` here: the WS is just transport
-              // between the desktop app and the local service. Dropping it
-              // does not invalidate the underlying agent runtime session
-              // (e.g. Codex thread id), which is persisted in the DB and
-              // re-emitted on the next stream. Clearing it here makes the
-              // session info chip blink off on transient reconnects.
+              // Do not clear `serverSessionId` or `runtimeSessionId` on a
+              // transient close: the WS is just transport between the
+              // desktop app and the local service. The `serverSessionId`
+              // is a stable DB primary key — wiping it makes the renderer
+              // send envelopes with `session_id: ""`, which the backend
+              // rejects as `INVALID_SESSION_ID`. The next `onOpen`
+              // re-emits `session.init` to rebuild the backend's per-
+              // connection handle (see `reinitOnReconnect` above).
               lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
                 type: "connection_lost",
               }),
@@ -184,8 +225,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             updateSession(get(), sessionId, {
               conn: null,
               isConnected: false,
-              serverSessionId: "",
-              // See onClose above: `runtimeSessionId` survives transport hiccups.
+              // See onClose above: `serverSessionId` and `runtimeSessionId`
+              // are stable across transport hiccups; the reconnect path
+              // re-emits `session.init` instead of wiping them.
               lifecycle: transitionTurn(session?.lifecycle ?? createSessionEntry().lifecycle, {
                 type: "turn_errored",
               }),
