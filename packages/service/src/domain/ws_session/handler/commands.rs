@@ -1,5 +1,7 @@
 use axum::extract::ws::Message;
+use tracing::warn;
 
+use crate::domain::agents::runtime_adapter;
 use crate::domain::ws_session::slash_commands::SlashCommandKind;
 
 use super::super::protocol::*;
@@ -62,9 +64,15 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         return;
     }
 
-    let resolved = super::super::slash_commands::resolve_commands(&payload.cwd, provider).await;
-
-    let commands: Vec<SlashCommandPayload> = resolved
+    // Two-stage response. First, send the cached snapshot immediately
+    // with `refreshing: true` so the FE picker renders instantly and
+    // shows a small "updating" indicator. Then, if the adapter
+    // supports a true re-resolve, spawn an ephemeral probe and push
+    // the fresh catalog via `commands.updated` when it lands. If
+    // there's no adapter, or the adapter has no probe (default impl),
+    // we just reply with `refreshing: false`.
+    let cached = super::super::slash_commands::resolve_commands(&payload.cwd, provider).await;
+    let cached_payload_commands: Vec<SlashCommandPayload> = cached
         .into_iter()
         .map(|c| SlashCommandPayload {
             name: c.name,
@@ -73,13 +81,61 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
         })
         .collect();
 
+    let adapter = runtime_adapter(provider);
+    let refreshing = adapter
+        .as_ref()
+        .map(|adapter| adapter.supports_runtime_slash_command_refresh())
+        .unwrap_or(false);
+
     let reply = WsEnvelope::reply(
         &envelope.id,
         "commands",
         "list",
-        serde_json::to_value(CommandsListPayload { commands }).unwrap(),
+        serde_json::to_value(CommandsListPayload {
+            commands: cached_payload_commands,
+            refreshing,
+        })
+        .unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+
+    if let Some(adapter) = adapter.filter(|a| a.supports_runtime_slash_command_refresh()) {
+        let cwd = payload.cwd.clone();
+        let provider = provider.to_string();
+        let sender = sender.clone();
+        tokio::spawn(async move {
+            if let Err(error) = adapter.refresh_runtime_slash_commands(&cwd).await {
+                warn!(
+                    cwd,
+                    provider,
+                    error = %error,
+                    "slash-command refresh probe failed; FE keeps cached snapshot"
+                );
+                return;
+            }
+            // Re-resolve through the shared resolver so built-ins
+            // (e.g. `/compact`) stay merged on top of the refreshed
+            // adapter catalog.
+            let merged = super::super::slash_commands::resolve_commands(&cwd, &provider).await;
+            let merged_payload: Vec<SlashCommandPayload> = merged
+                .into_iter()
+                .map(|c| SlashCommandPayload {
+                    name: c.name,
+                    description: c.description,
+                    kind: c.kind.into(),
+                })
+                .collect();
+            let env = WsEnvelope::new(
+                "commands",
+                "updated",
+                serde_json::to_value(CommandsUpdatedPayload {
+                    commands: merged_payload,
+                })
+                .unwrap(),
+            );
+            let _ = sender.send(Message::Text(String::from(env).into()));
+        });
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +195,60 @@ mod tests {
         let payload = recv_error(&mut rx);
         assert_eq!(payload.code, "INVALID_PAYLOAD");
         assert!(payload.message.contains("provider is required"));
+    }
+
+    #[tokio::test]
+    async fn commands_get_advertises_refreshing_for_opencode() {
+        // OpenCode opts into runtime-slash-command refresh. The cached
+        // reply must carry `refreshing: true` so the FE shows a
+        // spinner while the background ACP probe runs.
+        let temp = tempfile::TempDir::new().unwrap();
+        let (tx, mut rx) = sender();
+        handle_commands_get(
+            envelope(serde_json::json!({
+                "cwd": temp.path().to_str().unwrap(),
+                "provider": crate::domain::agents::opencode::PROVIDER_ID
+            })),
+            &tx,
+        )
+        .await;
+
+        let Message::Text(text) = rx.try_recv().expect("expected commands reply") else {
+            panic!("expected text message");
+        };
+        let reply: WsEnvelope = serde_json::from_str(&text).unwrap();
+        let payload: CommandsListPayload = serde_json::from_value(reply.payload).unwrap();
+        assert!(
+            payload.refreshing,
+            "opencode should advertise refreshing=true"
+        );
+    }
+
+    #[tokio::test]
+    async fn commands_get_does_not_advertise_refreshing_for_non_refresh_providers() {
+        // Codex doesn't opt into refresh, so `refreshing` stays false
+        // and no background task is spawned.
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".git")).unwrap();
+        let (tx, mut rx) = sender();
+        handle_commands_get(
+            envelope(serde_json::json!({
+                "cwd": temp.path().to_str().unwrap(),
+                "provider": crate::domain::agents::codex::PROVIDER_ID
+            })),
+            &tx,
+        )
+        .await;
+
+        let Message::Text(text) = rx.try_recv().expect("expected commands reply") else {
+            panic!("expected text message");
+        };
+        let reply: WsEnvelope = serde_json::from_str(&text).unwrap();
+        let payload: CommandsListPayload = serde_json::from_value(reply.payload).unwrap();
+        assert!(
+            !payload.refreshing,
+            "codex should not advertise refreshing=true"
+        );
     }
 
     #[tokio::test]

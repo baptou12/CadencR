@@ -337,7 +337,17 @@ mod tests {
             .unwrap();
 
         let settings = get_model_settings(&pool).await.unwrap();
-        assert_eq!(settings.plan, "default/default");
+        // `plan` used to assert on the OpenCode stub's `"default/default"`
+        // value, but the adapter now derives its default from
+        // `/config/providers`. The contract this test cares about is
+        // that the OpenCode provider supplied *some* default — not the
+        // exact id — so check shape rather than a literal.
+        assert!(!settings.plan.is_empty(), "expected OpenCode default");
+        assert!(
+            settings.plan.contains('/'),
+            "expected provider/model id, got {:?}",
+            settings.plan,
+        );
         assert!(!settings.prd.is_empty());
     }
 

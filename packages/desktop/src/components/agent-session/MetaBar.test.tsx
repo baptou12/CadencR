@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { PROVIDER_IDS } from "@/lib/providers";
 import { MetaBar, type MetaBarProps } from "./MetaBar";
+import { MODEL_CATALOG_LOADING_LABEL } from "./useAgentSessionModelState";
 
 /**
  * The mode chip is the central UI of the per-provider mode alignment work, so
@@ -77,6 +78,23 @@ describe("MetaBar mode chip", () => {
   it("hides the chip entirely when no toggle handler is wired (kickoff scenarios)", () => {
     renderChip({ onPermissionModeToggle: undefined });
     expect(screen.queryByRole("button", { name: /Permission mode/i })).toBeNull();
+  });
+
+  it("renders a disabled loader in the model chip while the catalog loads", () => {
+    renderChip({
+      onModelChange: vi.fn(),
+      currentProviderId: PROVIDER_IDS.OPENCODE,
+      currentModelId: "default/default",
+      currentModelLabel: MODEL_CATALOG_LOADING_LABEL,
+      isModelCatalogLoading: true,
+      models: [],
+      providers: [],
+    });
+
+    const loader = screen.getByRole("button", { name: "Loading model catalog" });
+    expect(loader).toBeDisabled();
+    expect(screen.getByText(MODEL_CATALOG_LOADING_LABEL)).toBeInTheDocument();
+    expect(screen.queryByText("default/default")).toBeNull();
   });
 });
 

@@ -1,7 +1,12 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SdkError {
+    #[error("opencode CLI not found; searched {} location(s)", searched.len())]
+    CliNotFound { searched: Vec<PathBuf> },
+
     #[error("http request failed: {0}")]
     Http(#[from] reqwest::Error),
 
@@ -22,10 +27,4 @@ pub enum SdkError {
 
     #[error("protocol error: {0}")]
     Protocol(String),
-}
-
-impl From<reqwest_eventsource::Error> for SdkError {
-    fn from(value: reqwest_eventsource::Error) -> Self {
-        SdkError::Protocol(value.to_string())
-    }
 }

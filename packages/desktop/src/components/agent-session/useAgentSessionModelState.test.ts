@@ -1,6 +1,9 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { useAgentSessionModelState } from "./useAgentSessionModelState";
+import {
+  MODEL_CATALOG_LOADING_LABEL,
+  useAgentSessionModelState,
+} from "./useAgentSessionModelState";
 import type { AgentCatalog } from "@/api/agentRuntime";
 
 const catalog: AgentCatalog = {
@@ -17,6 +20,21 @@ const catalog: AgentCatalog = {
 };
 
 describe("useAgentSessionModelState.canChangeProvider", () => {
+  it("shows a loading label instead of a fallback model before catalog data arrives", () => {
+    const { result } = renderHook(() =>
+      useAgentSessionModelState({
+        agentCatalog: undefined,
+        currentProviderId: "opencode",
+        currentModelId: "default/default",
+        onProviderChange: () => {},
+        hasConversation: false,
+      }),
+    );
+    expect(result.current.currentModelLabel).toBe(MODEL_CATALOG_LOADING_LABEL);
+    expect(result.current.isCatalogLoading).toBe(true);
+    expect(result.current.visibleModels).toEqual([]);
+  });
+
   it("allows provider change on a fresh conversation", () => {
     const { result } = renderHook(() =>
       useAgentSessionModelState({

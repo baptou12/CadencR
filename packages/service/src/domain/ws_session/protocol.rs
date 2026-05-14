@@ -13,6 +13,23 @@ pub enum PermissionDecision {
     Deny,
 }
 
+impl PermissionDecision {
+    pub fn to_runtime_decision(&self, option_id: Option<&str>) -> RuntimePermissionDecision {
+        match self {
+            Self::AllowOnce => RuntimePermissionDecision::AllowOnce,
+            Self::AllowFuture if is_allow_for_session_option(option_id) => {
+                RuntimePermissionDecision::AllowForSession
+            }
+            Self::AllowFuture => RuntimePermissionDecision::AllowFuture,
+            Self::Deny => RuntimePermissionDecision::Deny,
+        }
+    }
+}
+
+fn is_allow_for_session_option(option_id: Option<&str>) -> bool {
+    matches!(option_id, Some("allow_for_session" | "session"))
+}
+
 /// Envelope — every message in both directions uses this shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WsEnvelope {
@@ -216,7 +233,14 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
         Self {
             decision: match option.decision {
                 RuntimePermissionDecision::AllowOnce => PermissionDecision::AllowOnce,
-                RuntimePermissionDecision::AllowFuture => PermissionDecision::AllowFuture,
+                // The WS protocol predates the runtime split between
+                // session-scoped and persistent grants and only exposes a
+                // single `AllowFuture` discriminant; both runtime flavours
+                // collapse onto it for backwards compatibility. Distinct
+                // labels/descriptions still let the FE render two separate
+                // buttons when the agent advertises both kinds.
+                RuntimePermissionDecision::AllowFuture
+                | RuntimePermissionDecision::AllowForSession => PermissionDecision::AllowFuture,
                 RuntimePermissionDecision::Deny => PermissionDecision::Deny,
             },
             option_id: option.option_id,
@@ -343,6 +367,24 @@ pub enum SlashCommandKindPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandsListPayload {
+    pub commands: Vec<SlashCommandPayload>,
+    /// `true` when the server is currently re-resolving the catalog in
+    /// the background (the FE returned cached data instantly; a fresh
+    /// `commands.updated` envelope will follow when the probe
+    /// completes). The FE renders a small spinner / loader while this
+    /// is set so the user knows the picker is being refreshed.
+    #[serde(default)]
+    pub refreshing: bool,
+}
+
+/// Server → Client: live slash-command catalog the agent advertised
+/// over the runtime stream (today: ACP `available_commands_update`).
+///
+/// Emitted whenever a `RuntimeEventKind::SlashCommandsUpdated` arrives
+/// on a session's runtime channel. The full catalog is sent every time
+/// — frontends should replace, not merge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandsUpdatedPayload {
     pub commands: Vec<SlashCommandPayload>,
 }
 
@@ -736,6 +778,34 @@ pub struct WorkflowAutonomyUpdatedPayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_decision_to_runtime_maps_allow_once_and_deny() {
+        assert_eq!(
+            PermissionDecision::AllowOnce.to_runtime_decision(None),
+            RuntimePermissionDecision::AllowOnce
+        );
+        assert_eq!(
+            PermissionDecision::Deny.to_runtime_decision(Some("deny")),
+            RuntimePermissionDecision::Deny
+        );
+    }
+
+    #[test]
+    fn permission_decision_to_runtime_maps_allow_future_variants_by_option_id() {
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("allow_for_session")),
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("session")),
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(
+            PermissionDecision::AllowFuture.to_runtime_decision(Some("allow_always")),
+            RuntimePermissionDecision::AllowFuture
+        );
+    }
 
     #[test]
     fn test_envelope_roundtrip() {

@@ -1,5 +1,5 @@
 pub(super) const CONFIG_PATHS: &[&str] = &[
-    super::mcp_config::CONFIG_FILE,
+    "opencode.json",
     ".opencode/agents",
     ".opencode/commands",
     ".opencode/skills",

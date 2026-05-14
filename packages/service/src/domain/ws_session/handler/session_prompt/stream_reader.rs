@@ -12,8 +12,9 @@ use crate::domain::ws_session::persistence::{
     raw_event_with_agent_message_id, PendingUserInput, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
-    PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload, SessionMessagePayload,
-    SessionStreamStatusPayload, SessionUsageUpdatePayload, StreamStatusState, WsEnvelope,
+    CommandsUpdatedPayload, PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload,
+    SessionMessagePayload, SessionStreamStatusPayload, SessionUsageUpdatePayload,
+    SlashCommandKindPayload, SlashCommandPayload, StreamStatusState, WsEnvelope,
 };
 
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
@@ -118,6 +119,42 @@ pub(crate) fn spawn_stream_reader(
             match msg {
                 Some(Ok(runtime_event)) => {
                     last_runtime_activity = Instant::now();
+
+                    if let Some(commands) = runtime_event.slash_commands_updated() {
+                        let payload = CommandsUpdatedPayload {
+                            commands: commands
+                                .iter()
+                                .map(|command| SlashCommandPayload {
+                                    name: command.name.clone(),
+                                    description: command.description.clone(),
+                                    kind: match command.kind {
+                                        crate::domain::agents::adapter::RuntimeSlashCommandKind::Command => {
+                                            SlashCommandKindPayload::Command
+                                        }
+                                        crate::domain::agents::adapter::RuntimeSlashCommandKind::Skill => {
+                                            SlashCommandKindPayload::Skill
+                                        }
+                                    },
+                                })
+                                .collect(),
+                        };
+                        let env = WsEnvelope::new(
+                            "commands",
+                            "updated",
+                            serde_json::to_value(payload).unwrap(),
+                        );
+                        if sender
+                            .send(Message::Text(String::from(env).into()))
+                            .is_err()
+                        {
+                            debug!(
+                                db_session_id,
+                                "WebSocket sender closed during commands.updated forward"
+                            );
+                            break;
+                        }
+                        continue;
+                    }
 
                     if let Some(status) = runtime_event.stream_status() {
                         let payload = match status {

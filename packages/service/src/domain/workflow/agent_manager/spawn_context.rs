@@ -277,8 +277,8 @@ impl AgentManager {
             );
         }
 
-        // Only Claude Code consumes profile env today; OpenCode speaks HTTP
-        // and would ignore it anyway. One DB hit resolves both the name (for
+        // Only Claude Code consumes profile env today; OpenCode ACP spawn does
+        // not consume profile env directly. One DB hit resolves both the name (for
         // logging) and the env map — never log the values, they can contain
         // API keys.
         let env = if provider == crate::domain::agents::claude_code::PROVIDER_ID {

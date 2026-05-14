@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::ws::Message;
 use tracing::{error, info, warn};
 
-use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionResponse};
+use crate::domain::agents::adapter::RuntimePermissionResponse;
 use crate::domain::agents::runtime_adapter;
 use crate::domain::features::repository as repo;
 use crate::domain::mcp::servers::AgentType;
@@ -33,17 +33,9 @@ impl AgentManager {
         };
         let runtime_response = RuntimePermissionResponse {
             request_id: response.request_id.clone(),
-            decision: match response.decision {
-                crate::domain::ws_session::protocol::PermissionDecision::AllowOnce => {
-                    RuntimePermissionDecision::AllowOnce
-                }
-                crate::domain::ws_session::protocol::PermissionDecision::AllowFuture => {
-                    RuntimePermissionDecision::AllowFuture
-                }
-                crate::domain::ws_session::protocol::PermissionDecision::Deny => {
-                    RuntimePermissionDecision::Deny
-                }
-            },
+            decision: response
+                .decision
+                .to_runtime_decision(response.option_id.as_deref()),
             option_id: response.option_id.clone(),
             feedback: response.feedback.clone(),
             updated_input: response.updated_input.clone(),

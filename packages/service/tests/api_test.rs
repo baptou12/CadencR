@@ -121,7 +121,7 @@ async fn test_list_files() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body.as_array().unwrap().len() > 0);
+    assert!(!body.as_array().unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -138,7 +138,7 @@ async fn test_commit_log() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert!(body["commits"].as_array().unwrap().len() > 0);
+    assert!(!body["commits"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

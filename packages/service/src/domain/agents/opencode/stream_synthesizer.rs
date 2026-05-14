@@ -1,3 +1,12 @@
+//! Per-source streaming-block synthesizer used by the OpenCode ACP
+//! sub-agent listener.
+//!
+//! Originally shared by both the removed long-lived transport (cumulative-message polling) and the ACP sub-agent listener. With the long-lived transport gone,
+//! the only consumer is `acp/upstream_workaround/subagent_listener.rs`,
+//! which polls each child session's full message list and feeds every
+//! `MessagePart` through `ingest_part` to emit just the new
+//! `ContentBlockStart` / `ContentBlockDelta` events.
+
 mod part_blocks;
 
 use std::collections::{BTreeSet, HashMap};
@@ -5,10 +14,9 @@ use std::collections::{BTreeSet, HashMap};
 use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent};
 
 use self::part_blocks::{
-    delta_from_field, delta_is_empty, empty_runtime_block_for_part, infer_part_block,
-    part_block_from_message_part, runtime_block_from_part_block, PartBlock,
+    delta_is_empty, empty_runtime_block_for_part, part_block_from_message_part, PartBlock,
 };
-use super::events::{stream_delta_event, stream_start_event, stream_stop_event};
+use crate::domain::agents::acp::runtime::stream_events::{stream_delta_event, stream_start_event};
 
 pub struct StreamSynthesizer {
     next_index: u64,
@@ -16,32 +24,17 @@ pub struct StreamSynthesizer {
     part_text: HashMap<String, String>,
     part_blocks: HashMap<String, PartBlock>,
     open_indices: BTreeSet<u64>,
-    current_model: Option<String>,
 }
 
 impl StreamSynthesizer {
-    pub fn new(model: Option<String>) -> Self {
+    pub fn new(_model: Option<String>) -> Self {
         Self {
             next_index: 0,
             part_index: HashMap::new(),
             part_text: HashMap::new(),
             part_blocks: HashMap::new(),
             open_indices: BTreeSet::new(),
-            current_model: model,
         }
-    }
-
-    pub fn current_model(&self) -> Option<String> {
-        self.current_model.clone()
-    }
-
-    pub fn reset_for_turn(&mut self, model: Option<String>) {
-        self.next_index = 0;
-        self.part_index.clear();
-        self.part_text.clear();
-        self.part_blocks.clear();
-        self.open_indices.clear();
-        self.current_model = model;
     }
 
     pub fn assign_index(&mut self, part_id: &str) -> u64 {
@@ -74,19 +67,6 @@ impl StreamSynthesizer {
         };
         self.part_text.insert(part_id.to_string(), text.to_string());
         delta
-    }
-
-    pub fn stop_events_with_parent(
-        &mut self,
-        session_id: &str,
-        parent_tool_use_id: Option<&str>,
-    ) -> Vec<RuntimeEvent> {
-        let indices: Vec<u64> = self.open_indices.iter().copied().collect();
-        self.open_indices.clear();
-        indices
-            .into_iter()
-            .map(|index| stream_stop_event(session_id, index, parent_tool_use_id))
-            .collect()
     }
 
     pub fn ingest_part(
@@ -141,53 +121,6 @@ impl StreamSynthesizer {
         output
     }
 
-    pub fn ingest_delta(
-        &mut self,
-        session_id: &str,
-        part_id: &str,
-        field: &str,
-        delta: &str,
-        parent_tool_use_id: Option<&str>,
-    ) -> Vec<RuntimeEvent> {
-        let part_block = self
-            .part_blocks
-            .get(part_id)
-            .cloned()
-            .or_else(|| infer_part_block(field, part_id));
-        let Some(delta_kind) = delta_from_field(field, delta, part_block.as_ref()) else {
-            return Vec::new();
-        };
-        let (index, is_new) = self.ensure_index(part_id);
-        let mut output = Vec::new();
-
-        if is_new {
-            let Some(part_block) = part_block else {
-                return Vec::new();
-            };
-            self.part_blocks
-                .insert(part_id.to_string(), part_block.clone());
-            self.mark_open(index);
-            output.push(stream_start_event(
-                session_id,
-                index,
-                runtime_block_from_part_block(&part_block),
-                parent_tool_use_id,
-            ));
-        }
-
-        self.record_delta(part_id, &delta_kind);
-        if !is_new {
-            self.mark_open(index);
-        }
-        output.push(stream_delta_event(
-            session_id,
-            index,
-            delta_kind,
-            parent_tool_use_id,
-        ));
-        output
-    }
-
     fn part_delta(
         &mut self,
         part_id: &str,
@@ -211,16 +144,6 @@ impl StreamSynthesizer {
             }
             _ => None,
         }
-    }
-
-    fn record_delta(&mut self, part_id: &str, delta: &RuntimeContentDelta) {
-        let previous = self.part_text.get(part_id).cloned().unwrap_or_default();
-        let next = match delta {
-            RuntimeContentDelta::Text { text } => format!("{previous}{text}"),
-            RuntimeContentDelta::Thinking { thinking } => format!("{previous}{thinking}"),
-            RuntimeContentDelta::InputJson { partial_json } => format!("{previous}{partial_json}"),
-        };
-        self.part_text.insert(part_id.to_string(), next);
     }
 }
 
@@ -300,74 +223,6 @@ mod tests {
                 ..
             }) if partial_json.contains("-la")
         ));
-    }
-
-    #[test]
-    fn ingest_delta_uses_known_part_metadata_for_reasoning() {
-        let mut synth = StreamSynthesizer::new(None);
-        let _ = synth.ingest_part(
-            "ses_1",
-            &opencode_sdk_rs::MessagePart::Thinking {
-                id: "part_1".to_string(),
-                thinking: String::new(),
-            },
-            None,
-        );
-
-        let events = synth.ingest_delta("ses_1", "part_1", "reasoning_content", "step 1", None);
-        assert_eq!(events.len(), 1);
-        assert!(matches!(
-            events[0].stream_event(),
-            Some(RuntimeStreamEvent::ContentBlockDelta {
-                delta: crate::domain::agents::adapter::RuntimeContentDelta::Thinking {
-                    thinking
-                },
-                ..
-            }) if thinking == "step 1"
-        ));
-    }
-
-    #[test]
-    fn ingest_delta_can_bootstrap_text_block_from_field_name() {
-        let mut synth = StreamSynthesizer::new(None);
-        let events = synth.ingest_delta("ses_1", "part_1", "text", "hello", None);
-        assert_eq!(events.len(), 2);
-        assert!(matches!(
-            events[0].stream_event(),
-            Some(RuntimeStreamEvent::ContentBlockStart { .. })
-        ));
-        assert!(matches!(
-            events[1].stream_event(),
-            Some(RuntimeStreamEvent::ContentBlockDelta {
-                delta: crate::domain::agents::adapter::RuntimeContentDelta::Text { text },
-                ..
-            }) if text == "hello"
-        ));
-    }
-
-    #[test]
-    fn ingest_delta_ignores_unknown_field_without_known_part_type() {
-        let mut synth = StreamSynthesizer::new(None);
-        let events = synth.ingest_delta("ses_1", "part_1", "mystery_field", "hello", None);
-        assert!(events.is_empty());
-    }
-
-    #[test]
-    fn ingest_delta_then_full_text_update_does_not_duplicate_content() {
-        let mut synth = StreamSynthesizer::new(None);
-        let delta_events = synth.ingest_delta("ses_1", "part_1", "text", "hello", None);
-        assert_eq!(delta_events.len(), 2);
-
-        let update_events = synth.ingest_part(
-            "ses_1",
-            &opencode_sdk_rs::MessagePart::Text {
-                id: "part_1".to_string(),
-                text: "hello".to_string(),
-            },
-            None,
-        );
-
-        assert!(update_events.is_empty());
     }
 
     #[test]

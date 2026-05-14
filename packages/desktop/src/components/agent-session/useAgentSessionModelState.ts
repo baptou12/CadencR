@@ -3,6 +3,8 @@ import type { AgentCatalog } from "@/api/agentRuntime";
 import { DEFAULT_PROVIDER } from "@/shared/models";
 import { supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 
+export const MODEL_CATALOG_LOADING_LABEL = "Loading model…";
+
 interface UseAgentSessionModelStateParams {
   agentCatalog: AgentCatalog | undefined;
   currentProviderId?: string;
@@ -32,6 +34,7 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
       })),
     [agentCatalog?.providers],
   );
+  const isCatalogLoading = agentCatalog === undefined;
 
   const allModels = useMemo(
     () =>
@@ -75,7 +78,10 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
   const activeProvider = providerOptions.find((provider) => provider.id === activeProviderId);
   const visibleModels = activeProvider?.models ?? [];
   const currentModelLabel =
-    allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)?.label ??
+    (isCatalogLoading
+      ? MODEL_CATALOG_LOADING_LABEL
+      : allModels.find((m) => m.id === currentModelId && m.providerId === activeProviderId)
+          ?.label) ??
     visibleModels.find((m) => m.id === currentModelId)?.label ??
     currentModelId ??
     "Model";
@@ -90,6 +96,7 @@ export function useAgentSessionModelState(params: UseAgentSessionModelStateParam
   );
 
   return {
+    isCatalogLoading,
     providerOptions,
     activeProviderId,
     visibleModels,

@@ -1,3 +1,5 @@
+#![allow(clippy::single_match)]
+
 pub mod db;
 pub mod git_cli;
 pub mod login_env;

@@ -60,6 +60,7 @@ export interface MetaBarProps {
   showReadOnlyModel?: boolean;
   currentModelId?: string;
   currentModelLabel: string;
+  isModelCatalogLoading?: boolean;
   models: Model[];
   providers?: Provider[];
   canChangeProvider?: boolean;
@@ -116,6 +117,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     showReadOnlyModel = false,
     currentModelId,
     currentModelLabel,
+    isModelCatalogLoading = false,
     models,
     providers = [],
     canChangeProvider = false,
@@ -265,6 +267,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           currentProviderId={displayProviderId}
           currentModelId={currentModelId}
           currentModelLabel={currentModelLabel}
+          isModelCatalogLoading={isModelCatalogLoading}
           pickerProviders={pickerProviders}
           canChangeProvider={canChangeProvider}
           onProviderChange={onProviderChange}

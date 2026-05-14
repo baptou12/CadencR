@@ -1,3 +1,4 @@
+pub mod acp;
 pub mod adapter;
 pub mod claude_code;
 pub mod codex;

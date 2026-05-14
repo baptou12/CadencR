@@ -365,7 +365,12 @@ pub(super) fn permission_option_values(options: &[RuntimePermissionOption]) -> V
             serde_json::json!({
                 "decision": match option.decision {
                     RuntimePermissionDecision::AllowOnce => "allow_once",
-                    RuntimePermissionDecision::AllowFuture => "allow_future",
+                    // Codex doesn't construct `AllowForSession` itself, but
+                    // share the same wire discriminant so a future ACP-style
+                    // option can flow through this serializer without an
+                    // unreachable! panic.
+                    RuntimePermissionDecision::AllowFuture
+                    | RuntimePermissionDecision::AllowForSession => "allow_future",
                     RuntimePermissionDecision::Deny => "deny",
                 },
                 "option_id": option.option_id.clone(),

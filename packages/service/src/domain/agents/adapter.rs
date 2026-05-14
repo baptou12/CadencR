@@ -59,7 +59,7 @@ pub struct RuntimeSpawnConfig {
     pub permission_handler: Option<Arc<dyn RuntimeToolPermissionHandler>>,
     /// Extra env vars injected into the spawned runtime. Adapters decide how
     /// to apply this (Claude Code merges it into the CLI subprocess env;
-    /// OpenCode currently ignores it since it speaks HTTP).
+    /// ACP-backed providers may ignore it when configuration is handled elsewhere).
     pub env: Option<HashMap<String, String>>,
 }
 
@@ -152,7 +152,12 @@ impl From<claude_agent_sdk_rs::SdkError> for RuntimeError {
 
 impl From<opencode_sdk_rs::SdkError> for RuntimeError {
     fn from(value: opencode_sdk_rs::SdkError) -> Self {
-        Self::Generic(value.to_string())
+        match value {
+            opencode_sdk_rs::SdkError::CliNotFound { searched } => {
+                Self::cli_not_found("opencode", searched)
+            }
+            other => Self::Generic(other.to_string()),
+        }
     }
 }
 
@@ -170,7 +175,18 @@ impl From<codex_app_server_sdk_rs::SdkError> for RuntimeError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimePermissionDecision {
     AllowOnce,
+    /// Persist the decision across sessions/runs. Maps to ACP's
+    /// `allow_always` option kind. OpenCode ACP session permission caching persists this
+    /// via an always-allow decision; ACP-side, the agent owns persistence
+    /// via the `optionId` we echo back.
     AllowFuture,
+    /// Allow for the lifetime of the current session only. Maps to ACP's
+    /// `allow_for_session` option kind. The runtime keeps a per-session map
+    /// in `AcpRuntimeSession`; the agent additionally enforces it server-
+    /// side via the echoed `optionId`. Distinct from `AllowFuture` so we
+    /// can route different `optionId`s back to ACP without conflating
+    /// "remember forever" with "remember this session only".
+    AllowForSession,
     Deny,
 }
 
@@ -205,8 +221,10 @@ pub enum RuntimeSlashCommandKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeCompactionStrategy {
+    /// The runtime drives compaction itself (e.g. via an SDK `compact()`
+    /// call) and pushes a summary back to the FE through the regular
+    /// event stream.
     LiveRuntime,
-    SummaryReplay,
 }
 
 #[derive(Debug, Clone)]
@@ -309,13 +327,17 @@ pub enum RuntimeEventKind {
     /// "Reconnecting…" banner instead of an infinite silent loader.
     /// Hard failures stay on the existing `RuntimeError` channel.
     StreamStatus(RuntimeStreamStatus),
+    /// Live slash-command catalog pushed by the agent (today: the ACP
+    /// `available_commands_update` notification). Carries the full
+    /// list, not a delta — every push replaces the prior snapshot.
+    /// `Arc` so the WS bridge can fan out without cloning the vec
+    /// per subscriber.
+    SlashCommandsUpdated(Arc<Vec<RuntimeSlashCommand>>),
     Other,
 }
 
 /// Lifecycle of the agent's underlying transport, surfaced provider-neutral
-/// so any adapter (today only OpenCode emits these) can opt in. See
-/// `domain::agents::opencode::stream_loop` for the OpenCode mapping from
-/// `opencode_sdk_rs::DispatcherStatus`.
+/// so any adapter (today only OpenCode emits these) can opt in. OpenCode ACP emits this from provider-specific workaround paths when needed.
 #[derive(Debug, Clone)]
 pub enum RuntimeStreamStatus {
     /// The transport is degraded (reconnecting, no heartbeat, reconcile
@@ -530,6 +552,17 @@ impl RuntimeEvent {
         }
     }
 
+    /// Live slash-command catalog snapshot pushed by the agent over
+    /// ACP `available_commands_update`. The WS bridge fans these out
+    /// to subscribers so the FE picker reflects the agent's current
+    /// catalog without re-querying.
+    pub fn slash_commands_updated(&self) -> Option<&[RuntimeSlashCommand]> {
+        match &self.kind {
+            RuntimeEventKind::SlashCommandsUpdated(commands) => Some(commands.as_slice()),
+            _ => None,
+        }
+    }
+
     /// Convenience constructor for stream-status events. Emitters don't
     /// have meaningful session_id / usage / context_window metadata for
     /// these — the WS bridge ignores those fields for status envelopes.
@@ -594,10 +627,6 @@ pub trait AgentRuntimeSession: Send + Sync {
 
 #[async_trait]
 pub trait AgentRuntimeAdapter: Send + Sync {
-    async fn init(&self) -> Result<(), RuntimeError> {
-        Ok(())
-    }
-
     fn is_valid_resume_session_id(&self, _session_id: &str) -> bool {
         true
     }
@@ -703,6 +732,35 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         ))
     }
 
+    /// Whether `refresh_runtime_slash_commands` performs a real
+    /// re-resolve (vs. a no-op default). The WS `commands.get` handler
+    /// reads this to decide whether to advertise `refreshing: true`
+    /// and spawn a background refresh task. Default `false` — providers
+    /// that can re-resolve (today: OpenCode via an ephemeral ACP probe)
+    /// override.
+    fn supports_runtime_slash_command_refresh(&self) -> bool {
+        false
+    }
+
+    /// Force a fresh re-resolve of the slash-command catalog (typically
+    /// by spawning a short-lived discovery probe). Used by the WS
+    /// `commands.get` handler to background-refresh the cached snapshot
+    /// every time the FE opens the `/` menu, so the picker stays in
+    /// sync with on-disk command changes without the user having to
+    /// reload the session.
+    ///
+    /// Default implementation is a no-op error so providers that don't
+    /// opt in don't pay the cost of `runtime_slash_commands` (which
+    /// for some adapters spawns a subprocess).
+    async fn refresh_runtime_slash_commands(
+        &self,
+        _cwd: &str,
+    ) -> Result<Vec<RuntimeSlashCommand>, RuntimeError> {
+        Err(RuntimeError::new(
+            "runtime slash command refresh is not supported by this provider",
+        ))
+    }
+
     fn compaction_strategy(&self) -> Option<RuntimeCompactionStrategy> {
         None
     }
@@ -766,7 +824,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// `None` if the session is still running.
     ///
     /// Default delegates to `session_finished` and returns no text — adapters
-    /// whose drain loop can race ahead of SSE (e.g. OpenCode short turns)
+    /// whose drain loop can race ahead of streamed text (e.g. short turns)
     /// should override to return the actual text so callers can recover from
     /// a probe-wins-the-race exit.
     async fn session_finished_text(&self, runtime_session_id: &str) -> Option<String> {
@@ -817,6 +875,21 @@ mod tests {
                 parent_tool_use_id: None,
             },
         )
+    }
+
+    #[test]
+    fn opencode_cli_not_found_maps_to_structured_runtime_error() {
+        let searched = vec![std::path::PathBuf::from("/custom/opencode")];
+        let error = RuntimeError::from(opencode_sdk_rs::SdkError::CliNotFound {
+            searched: searched.clone(),
+        });
+        assert!(matches!(
+            error,
+            RuntimeError::CliNotFound {
+                provider: "opencode",
+                searched: actual,
+            } if actual == searched
+        ));
     }
 
     #[test]

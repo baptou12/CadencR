@@ -1,46 +1,13 @@
-use serde_json::{json, Value};
+//! OpenCode question-tool answer extraction.
+//!
+//! `build_question_tool_input` and the rest of the question-construction
+//! helpers were HTTP-transport-only and have been removed; the ACP path
+//! consumes the OpenCode question shape directly via the `question_sidecar`
+//! and `events_tool_call_question` modules. Only the answer extractor
+//! survives here because the adapter still needs it to translate the
+//! frontend's reply back into OpenCode's expected `Vec<Vec<String>>` shape.
 
-pub fn build_question_tool_input(question: &opencode_sdk_rs::Question) -> Value {
-    let questions = question
-        .questions
-        .iter()
-        .map(|item| {
-            json!({
-                "question": item.question,
-                "header": item.header,
-                "options": item.options.as_ref().map(|options| {
-                    options
-                        .iter()
-                        .map(|option| json!({
-                            "label": option.label,
-                            "description": option.description,
-                        }))
-                        .collect::<Vec<Value>>()
-                }),
-                "multiSelect": item.multiple,
-            })
-        })
-        .collect::<Vec<Value>>();
-
-    if let Some(first) = question.questions.first() {
-        json!({
-            "question": first.question,
-            "options": first.options.as_ref().map(|options| {
-                options
-                    .iter()
-                    .map(|option| json!({
-                        "label": option.label,
-                        "description": option.description,
-                    }))
-                    .collect::<Vec<Value>>()
-            }),
-            "multiSelect": first.multiple,
-            "questions": questions,
-        })
-    } else {
-        json!({ "questions": questions })
-    }
-}
+use serde_json::Value;
 
 pub fn extract_question_answers(
     updated_input: Option<&Value>,
@@ -59,101 +26,22 @@ pub fn extract_question_answers(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_question_tool_input, extract_question_answers};
-    use opencode_sdk_rs::{Question, QuestionItem, QuestionOption};
-    use serde_json::json;
+    use super::extract_question_answers;
+
+    // The structured-shape extraction is exercised by
+    // `domain::ws_session::question_answers::extract_answer_lists` in its
+    // own test module — no need to duplicate the parser fixture here.
+    // These two cases just pin the fallback contract owned by this wrapper.
 
     #[test]
-    fn build_question_tool_input_preserves_multi_question_shape() {
-        let tool_input = build_question_tool_input(&Question {
-            id: "que_1".to_string(),
-            session_id: "ses_1".to_string(),
-            questions: vec![
-                QuestionItem {
-                    question: "First?".to_string(),
-                    header: Some("One".to_string()),
-                    options: Some(vec![QuestionOption {
-                        label: "A".to_string(),
-                        description: Some("alpha".to_string()),
-                    }]),
-                    multiple: false,
-                },
-                QuestionItem {
-                    question: "Second?".to_string(),
-                    header: Some("Two".to_string()),
-                    options: None,
-                    multiple: false,
-                },
-            ],
-        });
-
-        assert_eq!(tool_input["questions"][0]["question"], "First?");
-        assert_eq!(tool_input["questions"][0]["options"][0]["label"], "A");
-        assert_eq!(tool_input["questions"][1]["question"], "Second?");
+    fn extract_question_answers_falls_back_to_feedback_when_extraction_yields_nothing() {
+        let answers = extract_question_answers(None, Some("custom feedback"));
+        assert_eq!(answers, vec![vec!["custom feedback".to_string()]]);
     }
 
     #[test]
-    fn extract_question_answers_parses_structured_multi_question_response() {
-        let answers = extract_question_answers(
-            Some(&json!({
-                "questions": [
-                    { "question": "First?" },
-                    { "question": "Second?" }
-                ],
-                "answers": [
-                    ["Alpha"],
-                    ["Beta"]
-                ]
-            })),
-            None,
-        );
-
-        assert_eq!(
-            answers,
-            vec![vec!["Alpha".to_string()], vec!["Beta".to_string()]]
-        );
-    }
-
-    #[test]
-    fn extract_question_answers_keeps_legacy_object_answers_compatible() {
-        let answers = extract_question_answers(
-            Some(&json!({
-                "question": "Only?",
-                "answers": { "0": "Legacy answer" }
-            })),
-            None,
-        );
-
-        assert_eq!(answers, vec![vec!["Legacy answer".to_string()]]);
-    }
-
-    #[test]
-    fn extract_question_answers_handles_question_text_keyed_map() {
-        // OpenCode must accept the canonical `AskUserQuestionOutput` shape
-        // produced by the frontend (question text → comma-separated answer).
-        let answers = extract_question_answers(
-            Some(&json!({
-                "questions": [
-                    { "question": "First?" },
-                    { "question": "Second?" }
-                ],
-                "answers": {
-                    "First?": "Alpha",
-                    "Second?": "Beta, Gamma"
-                }
-            })),
-            None,
-        );
-
-        assert_eq!(
-            answers,
-            vec![vec!["Alpha".to_string()], vec!["Beta, Gamma".to_string()],]
-        );
-    }
-
-    #[test]
-    fn extract_question_answers_falls_back_when_payload_is_empty() {
-        let answers = extract_question_answers(None, Some("Manual reply"));
-        assert_eq!(answers, vec![vec!["Manual reply".to_string()]]);
+    fn extract_question_answers_uses_default_label_when_neither_input_nor_feedback() {
+        let answers = extract_question_answers(None, None);
+        assert_eq!(answers, vec![vec!["Approved".to_string()]]);
     }
 }

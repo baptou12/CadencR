@@ -304,9 +304,7 @@ impl CodexAppServerClient {
                 "params": params,
             }))
             .await;
-        if let Err(error) = write_result {
-            return Err(error);
-        }
+        write_result?;
         let result = tokio::time::timeout(timeout, rx)
             .await
             .map_err(|_| SdkError::Timeout("request"))?

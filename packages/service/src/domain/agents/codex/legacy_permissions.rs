@@ -160,7 +160,9 @@ fn legacy_review_decision_from_option_id(option_id: Option<&str>) -> Option<&'st
 fn fallback_review_decision(decision: RuntimePermissionDecision) -> &'static str {
     match decision {
         RuntimePermissionDecision::AllowOnce => REVIEW_APPROVED,
-        RuntimePermissionDecision::AllowFuture => REVIEW_APPROVED_FOR_SESSION,
+        RuntimePermissionDecision::AllowFuture | RuntimePermissionDecision::AllowForSession => {
+            REVIEW_APPROVED_FOR_SESSION
+        }
         RuntimePermissionDecision::Deny => REVIEW_DENIED,
     }
 }
@@ -177,6 +179,22 @@ mod tests {
         let response = RuntimePermissionResponse {
             request_id: "exec-1".to_string(),
             decision: RuntimePermissionDecision::AllowFuture,
+            option_id: None,
+            feedback: None,
+            updated_input: None,
+        };
+
+        let value = super::legacy_response_value("execCommandApproval", &Value::Null, &response)
+            .expect("legacy response");
+
+        assert_eq!(value, json!({ "decision": "approved_for_session" }));
+    }
+
+    #[test]
+    fn legacy_exec_allow_for_session_maps_to_approved_for_session() {
+        let response = RuntimePermissionResponse {
+            request_id: "exec-1".to_string(),
+            decision: RuntimePermissionDecision::AllowForSession,
             option_id: None,
             feedback: None,
             updated_input: None,

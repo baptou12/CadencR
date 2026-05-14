@@ -1,8 +1,6 @@
 use axum::extract::ws::Message;
 
-use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
-use super::session_compact_opencode::handle_opencode_compact;
 use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeCompactionStrategy;
@@ -12,7 +10,7 @@ pub(super) async fn handle_compact(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
-    app_state: &AppState,
+    _app_state: &AppState,
 ) {
     let payload = match compact_payload(&envelope, sender) {
         Some(payload) => payload,
@@ -31,22 +29,9 @@ pub(super) async fn handle_compact(
         }
     };
 
-    let session_row =
-        WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await;
     match compaction_strategy(sdk_sessions, db_session_id).await {
         Ok(RuntimeCompactionStrategy::LiveRuntime) => {
             handle_active_runtime_compact(&envelope.id, sender, sdk_sessions, db_session_id).await;
-        }
-        Ok(RuntimeCompactionStrategy::SummaryReplay) => {
-            handle_opencode_compact(
-                &envelope.id,
-                sender,
-                sdk_sessions,
-                app_state,
-                db_session_id,
-                session_row.as_ref(),
-            )
-            .await;
         }
         Err(message) => send_error(sender, &envelope.id, "INVALID_STATE", &message),
     }
@@ -125,15 +110,62 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use tokio::sync::Mutex;
+    use async_trait::async_trait;
+    use axum::extract::ws::Message;
+    use serde_json::Value;
+    use tokio::sync::{mpsc, Mutex};
 
-    use super::compaction_strategy;
-    use crate::domain::agents::adapter::{RuntimeCompactionStrategy, RuntimeSpawnConfig};
+    use super::{compaction_strategy, handle_active_runtime_compact};
+    use crate::domain::agents::adapter::{
+        AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError, RuntimeEvent,
+        RuntimePermissionMode, RuntimeSpawnConfig,
+    };
     use crate::domain::ws_session::handler::{QueryState, SdkHandle, SdkSessions, SessionConfig};
 
-    fn handle_for_provider(provider: &str) -> SdkHandle {
+    struct CompactRuntime {
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl AgentRuntimeSession for CompactRuntime {
+        fn take_message_rx(&mut self) -> crate::domain::agents::adapter::RuntimeMessageRx {
+            let (_tx, rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+            rx
+        }
+        async fn session_id(&self) -> Option<String> {
+            Some("runtime".to_string())
+        }
+        async fn stream_input(&self, _content: Value) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+        async fn interrupt(&self) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+        async fn compact(&self) -> Result<(), RuntimeError> {
+            if self.fail {
+                Err(RuntimeError::new("compact failed"))
+            } else {
+                Ok(())
+            }
+        }
+        async fn close(&mut self) {}
+        async fn set_model(&self, _model: &str) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+        async fn set_permission_mode(
+            &self,
+            _mode: RuntimePermissionMode,
+        ) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    fn handle_for_provider(provider: &str, state: QueryState) -> SdkHandle {
         SdkHandle {
-            state: QueryState::Pending(RuntimeSpawnConfig::default()),
+            state,
             feature_id: 1,
             runtime_provider: provider.to_string(),
             desired_model: None,
@@ -143,7 +175,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::new(),
@@ -158,15 +189,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compaction_strategy_dispatches_by_adapter() {
+    async fn compaction_strategy_returns_live_runtime_for_all_providers() {
+        // Both supported providers (Codex / OpenCode-ACP) compact via the
+        // live runtime path. SummaryReplay was the legacy OpenCode HTTP
+        // strategy and is gone with the removed long-lived transport.
         let sessions: SdkSessions = Arc::new(Mutex::new(HashMap::from([
             (
                 1,
-                handle_for_provider(crate::domain::agents::codex::PROVIDER_ID),
+                handle_for_provider(
+                    crate::domain::agents::codex::PROVIDER_ID,
+                    QueryState::Pending(RuntimeSpawnConfig::default()),
+                ),
             ),
             (
                 2,
-                handle_for_provider(crate::domain::agents::opencode::PROVIDER_ID),
+                handle_for_provider(
+                    crate::domain::agents::opencode::PROVIDER_ID,
+                    QueryState::Pending(RuntimeSpawnConfig::default()),
+                ),
             ),
         ])));
 
@@ -176,7 +216,45 @@ mod tests {
         );
         assert_eq!(
             compaction_strategy(&sessions, 2).await.unwrap(),
-            RuntimeCompactionStrategy::SummaryReplay
+            RuntimeCompactionStrategy::LiveRuntime
         );
+    }
+
+    fn active_sessions(fail: bool) -> SdkSessions {
+        let (permission_tx, _permission_rx) = mpsc::channel(1);
+        let runtime = Box::new(CompactRuntime { fail }) as Box<dyn AgentRuntimeSession>;
+        Arc::new(Mutex::new(HashMap::from([(
+            1,
+            handle_for_provider(
+                crate::domain::agents::opencode::PROVIDER_ID,
+                QueryState::Active {
+                    query: Arc::new(Mutex::new(runtime)),
+                    permission_tx,
+                },
+            ),
+        )])))
+    }
+
+    #[tokio::test]
+    async fn active_runtime_compact_sends_started_reply() {
+        let (sender, mut rx) = mpsc::unbounded_channel();
+        handle_active_runtime_compact("req-1", &sender, &active_sessions(false), 1).await;
+        let message = rx.recv().await.unwrap();
+        let Message::Text(text) = message else {
+            panic!("expected text reply");
+        };
+        assert!(text.contains("compact.started"));
+    }
+
+    #[tokio::test]
+    async fn active_runtime_compact_sends_error_reply() {
+        let (sender, mut rx) = mpsc::unbounded_channel();
+        handle_active_runtime_compact("req-2", &sender, &active_sessions(true), 1).await;
+        let message = rx.recv().await.unwrap();
+        let Message::Text(text) = message else {
+            panic!("expected text reply");
+        };
+        assert!(text.contains("\"error\""));
+        assert!(text.contains("compact failed"));
     }
 }

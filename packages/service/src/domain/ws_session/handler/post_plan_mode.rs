@@ -277,7 +277,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),
@@ -384,7 +383,6 @@ mod tests {
             desired_thinking_effort: None,
             spawned_thinking_effort: None,
             runtime_control_endpoint: None,
-            manual_compact_running: Arc::new(AtomicBool::new(false)),
             resume_session_id: None,
             config: SessionConfig {
                 cwd: PathBuf::from("/tmp/test"),

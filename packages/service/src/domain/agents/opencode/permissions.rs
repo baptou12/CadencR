@@ -3,7 +3,7 @@ use serde_json::Value;
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
 use crate::domain::permission_bridge::extract_permission_preview;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct OpenCodePermissionRequest {
     pub request_id: String,
     /// OpenCode's tool-invocation id (`call_...`). Distinct from `request_id`
@@ -14,6 +14,7 @@ pub struct OpenCodePermissionRequest {
     pub tool_input: Value,
     pub description: Option<String>,
     pub preview: Option<String>,
+    pub options: Option<Vec<RuntimePermissionOption>>,
 }
 
 pub fn permission_options() -> Vec<RuntimePermissionOption> {
@@ -26,8 +27,8 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
             collect_feedback: false,
         },
         RuntimePermissionOption {
-            decision: RuntimePermissionDecision::AllowFuture,
-            option_id: None,
+            decision: RuntimePermissionDecision::AllowForSession,
+            option_id: Some("allow_for_session".to_string()),
             label: "Allow for this session".to_string(),
             description: "Let OpenCode allow similar requests during this session".to_string(),
             collect_feedback: false,
@@ -43,7 +44,7 @@ pub fn permission_options() -> Vec<RuntimePermissionOption> {
 }
 
 pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest> {
-    if raw.get("type").and_then(Value::as_str) != Some("opencode_permission_request") {
+    if raw.get("type").and_then(Value::as_str) != Some("acp_permission_request") {
         return None;
     }
 
@@ -63,18 +64,58 @@ pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
         preview: raw.get("tool_input").and_then(extract_permission_preview),
+        options: parse_options(raw.get("options")),
     })
+}
+
+fn parse_options(raw: Option<&Value>) -> Option<Vec<RuntimePermissionOption>> {
+    let options = raw?.as_array()?;
+    let parsed = options
+        .iter()
+        .filter_map(|option| {
+            let decision = match option.get("decision").and_then(Value::as_str)? {
+                "allow_once" => RuntimePermissionDecision::AllowOnce,
+                "allow_for_session" => RuntimePermissionDecision::AllowForSession,
+                "allow_future" => RuntimePermissionDecision::AllowFuture,
+                "deny" => RuntimePermissionDecision::Deny,
+                _ => return None,
+            };
+            Some(RuntimePermissionOption {
+                decision,
+                option_id: option
+                    .get("option_id")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+                label: option
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Option")
+                    .to_string(),
+                description: option
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                collect_feedback: option
+                    .get("collect_feedback")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            })
+        })
+        .collect::<Vec<_>>();
+    (!parsed.is_empty()).then_some(parsed)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_permission_request, permission_options, OpenCodePermissionRequest};
+    use super::{parse_permission_request, permission_options};
+    use crate::domain::agents::adapter::RuntimePermissionDecision;
     use serde_json::json;
 
     #[test]
-    fn parses_opencode_permission_request_payload() {
+    fn parses_acp_permission_request_payload() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-1",
             "tool_name": "Bash",
             "tool_input": { "command": "git status" },
@@ -82,23 +123,19 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(
-            payload,
-            OpenCodePermissionRequest {
-                request_id: "req-1".to_string(),
-                call_id: None,
-                tool_name: "Bash".to_string(),
-                tool_input: json!({ "command": "git status" }),
-                description: Some("Run git status".to_string()),
-                preview: Some("git status".to_string()),
-            }
-        );
+        assert_eq!(payload.request_id, "req-1");
+        assert_eq!(payload.call_id, None);
+        assert_eq!(payload.tool_name, "Bash");
+        assert_eq!(payload.tool_input, json!({ "command": "git status" }));
+        assert_eq!(payload.description.as_deref(), Some("Run git status"));
+        assert_eq!(payload.preview.as_deref(), Some("git status"));
+        assert!(payload.options.is_none());
     }
 
     #[test]
     fn parses_call_id_when_present() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "per_1",
             "call_id": "call_1",
             "tool_name": "cadencr-plan_show_plan",
@@ -111,7 +148,7 @@ mod tests {
     #[test]
     fn parses_nested_opencode_command_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-1",
             "tool_name": "bash",
             "tool_input": { "metadata": { "command": "git status" } },
@@ -125,7 +162,7 @@ mod tests {
     #[test]
     fn parses_nested_opencode_path_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-2",
             "tool_name": "external_directory",
             "tool_input": { "metadata": { "path": "/etc/hosts" } },
@@ -139,7 +176,7 @@ mod tests {
     #[test]
     fn parses_upstream_metadata_filepath_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-actual",
             "tool_name": "external_directory",
             "tool_input": {
@@ -155,7 +192,7 @@ mod tests {
     #[test]
     fn prefers_exact_always_entry_over_pattern_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-3",
             "tool_name": "external_directory",
             "tool_input": {
@@ -171,7 +208,7 @@ mod tests {
     #[test]
     fn prefers_nested_metadata_args_path_over_pattern_preview() {
         let payload = parse_permission_request(&json!({
-            "type": "opencode_permission_request",
+            "type": "acp_permission_request",
             "request_id": "req-4",
             "tool_name": "external_directory",
             "tool_input": {
@@ -189,7 +226,38 @@ mod tests {
     #[test]
     fn opencode_permission_options_label_always_as_session_scoped() {
         let options = permission_options();
+        assert_eq!(
+            options[1].decision,
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(options[1].option_id.as_deref(), Some("allow_for_session"));
         assert_eq!(options[1].label, "Allow for this session");
+    }
+
+    #[test]
+    fn parses_allow_for_session_permission_option() {
+        let payload = parse_permission_request(&json!({
+            "type": "acp_permission_request",
+            "request_id": "req-session",
+            "tool_name": "bash",
+            "tool_input": {},
+            "options": [
+                {
+                    "decision": "allow_for_session",
+                    "option_id": "session",
+                    "label": "Allow for this session",
+                    "description": "Allow similar requests this session"
+                }
+            ]
+        }))
+        .unwrap();
+
+        let options = payload.options.unwrap();
+        assert_eq!(
+            options[0].decision,
+            RuntimePermissionDecision::AllowForSession
+        );
+        assert_eq!(options[0].option_id.as_deref(), Some("session"));
     }
 
     #[test]
