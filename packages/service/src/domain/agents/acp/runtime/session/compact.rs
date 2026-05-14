@@ -17,8 +17,7 @@ use crate::domain::agents::adapter::{
 use super::super::events_stream_blocks::EventIndexer;
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::super::turn_lifecycle::{
-    finalize_cancelled_turn, finalize_turn, request_prompt_with_cancel, PromptCancel,
-    PromptRequestOutcome, PromptTurnLock,
+    finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
 };
 use super::implementation::AcpRuntimeSession;
 
@@ -47,6 +46,7 @@ pub(super) async fn spawn_compact_turn(session: &AcpRuntimeSession) -> Result<()
         closing: Arc::clone(&session.closing),
         running: Arc::clone(&session.manual_compact_running),
         initial_session_id: session_id,
+        compact_prompt: session.hooks.compact_prompt(),
     };
 
     tokio::spawn(async move {
@@ -72,6 +72,7 @@ struct CompactTurn {
     closing: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
     initial_session_id: String,
+    compact_prompt: Option<&'static str>,
 }
 
 impl CompactTurn {
@@ -92,7 +93,10 @@ impl CompactTurn {
             .await
             .clone()
             .unwrap_or(self.initial_session_id);
-        let prompt = acp_prompt_blocks_from_content(Value::String("/compact".to_string()));
+        let compact_prompt = self
+            .compact_prompt
+            .ok_or_else(|| RuntimeError::new("ACP provider does not support manual compaction"))?;
+        let prompt = acp_prompt_blocks_from_content(Value::String(compact_prompt.to_string()));
         let supports = self.supports_set_config_option.load(Ordering::SeqCst);
         let model = self.current_model.read().await.clone();
         let effort = self.current_effort.read().await.clone();
@@ -104,19 +108,7 @@ impl CompactTurn {
             supports,
         );
         let response =
-            match request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await? {
-                PromptRequestOutcome::Completed(response) => response,
-                PromptRequestOutcome::Cancelled => {
-                    finalize_cancelled_turn(
-                        &self.local_tx,
-                        &self.indexer,
-                        Some(session_id),
-                        self.context_window,
-                    )
-                    .await;
-                    return Ok(());
-                }
-            };
+            request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await?;
         if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
             finalize_turn(
                 &self.local_tx,
@@ -216,6 +208,10 @@ mod tests {
 
         fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
             None
+        }
+
+        fn compact_prompt(&self) -> Option<&'static str> {
+            Some("/compact")
         }
     }
 

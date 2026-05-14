@@ -25,12 +25,15 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamSt
 use super::event_loop_state::sync_session_state_from_update;
 use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
-use super::fs::{handle_read_text_file, handle_write_text_file, FsOutcome};
+use super::fs::{handle_read_text_file, handle_write_text_file};
 use super::permissions::{
     dispatch_permission_request_with_cache, permission_request_from_server_request,
     PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
+use super::server_request_response::{
+    describe_exit, fs_outcome_from, respond_or_reject, terminal_id_param,
+};
 use super::session_permissions::SessionPermissions;
 use super::terminal_enrich::enrich_session_update;
 use super::terminal_registry::TerminalRegistry;
@@ -242,7 +245,7 @@ async fn handle_permission_request(
         return;
     };
     let session_id = config.session_id.read().await.clone();
-    dispatch_permission_request_with_cache(
+    if let Err(error) = dispatch_permission_request_with_cache(
         client,
         &config.pending_permissions,
         &config.session_permissions,
@@ -253,40 +256,16 @@ async fn handle_permission_request(
         request.params(),
         tx,
     )
-    .await;
-}
-
-async fn respond_or_reject(client: &AcpClient, id: Value, outcome: FsOutcome) {
-    match outcome {
-        FsOutcome::Ok(value) => {
-            if let Err(error) = client.respond_server_request(id, value).await {
-                tracing::warn!(%error, "failed to send ACP response");
-            }
-        }
-        FsOutcome::Error { code, message } => {
-            if let Err(error) = client.reject_server_request(id, code, &message).await {
-                tracing::warn!(%error, "failed to send ACP error");
-            }
+    .await
+    {
+        tracing::error!(%error, "failed to surface ACP permission request");
+        if let Err(reject_error) = client
+            .reject_server_request(id, -32800, "permission request could not be surfaced")
+            .await
+        {
+            tracing::error!(%reject_error, "failed to reject unsurfaced ACP permission request");
         }
     }
-}
-
-/// Bridge a terminal-registry result (ok value or `(code, message)`) to the
-/// shared `FsOutcome` shape used by `respond_or_reject`.
-fn fs_outcome_from(result: Result<Value, (i64, String)>) -> FsOutcome {
-    match result {
-        Ok(value) => FsOutcome::Ok(value),
-        Err((code, message)) => FsOutcome::Error { code, message },
-    }
-}
-
-/// Extract `terminalId` from a `terminal/*` server-request payload, defaulting
-/// to "" so the registry surfaces a clear "unknown id" error if missing.
-fn terminal_id_param(params: &Value) -> &str {
-    params
-        .get("terminalId")
-        .and_then(Value::as_str)
-        .unwrap_or("")
 }
 
 /// Send a `RuntimeStreamStatus::Recovered` banner. The event loop pairs
@@ -298,26 +277,4 @@ async fn emit_recovered(tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>) {
             RuntimeStreamStatus::Recovered,
         )))
         .await;
-}
-
-/// Render an exit-status pair `(code, signal)` into a human-readable
-/// reason string for surface envelopes.
-pub fn describe_exit(status: Option<i32>, signal: Option<i32>) -> String {
-    match (status, signal) {
-        (Some(code), _) => format!("exit code {code}"),
-        (_, Some(sig)) => format!("signal {sig}"),
-        _ => "unknown reason".to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::describe_exit;
-
-    #[test]
-    fn describe_exit_prefers_status_then_signal() {
-        assert_eq!(describe_exit(Some(0), None), "exit code 0");
-        assert_eq!(describe_exit(None, Some(9)), "signal 9");
-        assert_eq!(describe_exit(None, None), "unknown reason");
-    }
 }

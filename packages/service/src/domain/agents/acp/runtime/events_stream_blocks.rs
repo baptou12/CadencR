@@ -7,17 +7,12 @@
 //! fresh content block per delta, which fragments persisted assistant
 //! messages and breaks streaming render.
 //!
-//! The `Start/Delta/Stop` raw envelopes delegate to the OpenCode helpers
-//! in `domain::agents::opencode::events`. They are provider-neutral
-//! constructors (they only build `RuntimeEvent`s) — kept where they live
-//! today so the HTTP path keeps using them too. Future workstreams may
-//! lift them into `acp/runtime` directly.
 
 use std::collections::{HashMap, HashSet};
 
+use super::stream_events;
+use super::stream_events::message_start_event;
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent};
-use crate::domain::agents::opencode::events as opencode_events;
-use crate::domain::agents::opencode::events::message_start_event;
 
 #[derive(Default)]
 pub struct EventIndexer {
@@ -203,11 +198,11 @@ pub fn stream_start_event(index: u64, is_thinking: bool, session_id: Option<&str
             text: String::new(),
         }
     };
-    opencode_events::stream_start_event(session_id.unwrap_or(""), index, block, None)
+    stream_events::stream_start_event(session_id.unwrap_or(""), index, block, None)
 }
 
 pub fn stream_stop_event(index: u64, session_id: Option<&str>) -> RuntimeEvent {
-    opencode_events::stream_stop_event(session_id.unwrap_or(""), index, None)
+    stream_events::stream_stop_event(session_id.unwrap_or(""), index, None)
 }
 
 pub fn stream_delta_event(
@@ -215,7 +210,7 @@ pub fn stream_delta_event(
     delta: RuntimeContentDelta,
     session_id: Option<&str>,
 ) -> RuntimeEvent {
-    opencode_events::stream_delta_event(session_id.unwrap_or(""), index, delta, None)
+    stream_events::stream_delta_event(session_id.unwrap_or(""), index, delta, None)
 }
 
 /// Synthesize the per-message envelope the FE uses to allocate a new

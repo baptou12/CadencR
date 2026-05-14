@@ -23,6 +23,7 @@ pub(super) async fn apply_initial_model(
         &negotiated.session_id,
         &session.current_model,
         &session.supports_set_config_option,
+        session.hooks.model_config_id(),
         model,
     )
     .await
@@ -43,6 +44,7 @@ pub(super) async fn apply_initial_thinking_effort(
         &negotiated.session_id,
         &session.current_effort,
         &session.supports_set_config_option,
+        session.hooks.thinking_effort_config_id(),
         Some(effort),
     )
     .await
@@ -74,6 +76,12 @@ mod tests {
         }
         fn mode_for_permission_mode(&self, _mode: RuntimePermissionMode) -> Option<&'static str> {
             None
+        }
+        fn model_config_id(&self) -> Option<&'static str> {
+            Some("model")
+        }
+        fn thinking_effort_config_id(&self) -> Option<&'static str> {
+            Some("effort")
         }
     }
 

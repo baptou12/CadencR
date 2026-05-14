@@ -50,11 +50,6 @@ impl PromptCancel {
     }
 }
 
-pub enum PromptRequestOutcome {
-    Completed(Value),
-    Cancelled,
-}
-
 /// Send the very first `session/prompt` for a freshly-spawned ACP session.
 ///
 /// Runs detached from the spawn flow so the caller can return before the
@@ -90,13 +85,7 @@ pub async fn drive_initial_prompt(
         effort.as_deref(),
         false,
     );
-    let response = match request_prompt_with_cancel(client, params, prompt_cancel).await? {
-        PromptRequestOutcome::Completed(response) => response,
-        PromptRequestOutcome::Cancelled => {
-            finalize_cancelled_turn(tx, indexer, Some(session_id), context_window).await;
-            return Ok(());
-        }
-    };
+    let response = request_prompt_with_cancel(client, params, prompt_cancel).await?;
     if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
         finalize_turn(
             tx,
@@ -114,52 +103,21 @@ pub async fn drive_initial_prompt(
 pub async fn request_prompt_with_cancel(
     client: &AcpClient,
     params: Value,
-    prompt_cancel: &PromptCancel,
-) -> Result<PromptRequestOutcome, RuntimeError> {
-    let start_epoch = prompt_cancel.epoch.load(Ordering::Relaxed);
-    let request = client.request_with_timeout(
-        "session/prompt",
-        params,
-        std::time::Duration::from_secs(60 * 60),
-    );
-    tokio::pin!(request);
-    loop {
-        let notified = prompt_cancel.notify.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        if prompt_cancel.epoch.load(Ordering::Relaxed) != start_epoch {
-            return Ok(PromptRequestOutcome::Cancelled);
-        }
-        tokio::select! {
-            result = &mut request => {
-                return result
-                    .map(PromptRequestOutcome::Completed)
-                    .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")));
-            }
-            () = &mut notified => {
-                if prompt_cancel.epoch.load(Ordering::Relaxed) != start_epoch {
-                    return Ok(PromptRequestOutcome::Cancelled);
-                }
-            }
-        }
-    }
-}
-
-pub async fn finalize_cancelled_turn(
-    tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-    indexer: &Arc<StdMutex<EventIndexer>>,
-    session_id: Option<String>,
-    context_window: Option<u64>,
-) {
-    finalize_turn(
-        tx,
-        indexer,
-        session_id,
-        context_window,
-        "cancelled",
-        &serde_json::json!({}),
-    )
-    .await;
+    _prompt_cancel: &PromptCancel,
+) -> Result<Value, RuntimeError> {
+    // `session/cancel` is delivered on the same ACP connection as a
+    // notification, but the in-flight `session/prompt` still owns the turn
+    // until the agent resolves it. Do not drop the prompt future on local
+    // cancellation: doing so releases `PromptTurnLock` early and lets a
+    // follow-up prompt overtake the cancelled turn on the wire.
+    client
+        .request_with_timeout(
+            "session/prompt",
+            params,
+            std::time::Duration::from_secs(60 * 60),
+        )
+        .await
+        .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))
 }
 
 /// Single funnel for everything that must happen at turn end:

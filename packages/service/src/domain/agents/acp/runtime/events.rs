@@ -1,11 +1,8 @@
 mod implementation;
-
 pub(crate) use implementation::parse_available_commands;
 pub use implementation::{mirror_session_info_update, session_update_to_events};
-
 #[cfg(test)]
 mod tests {
-    //! Inline unit tests for `events.rs`.
     use super::super::events_stream_blocks::EventIndexer;
     use super::super::provider_hooks::AcpProviderHooks;
     use super::{mirror_session_info_update, session_update_to_events};
@@ -14,9 +11,7 @@ mod tests {
         RuntimeStreamEvent,
     };
     use serde_json::{json, Value};
-
     struct PlainHooks;
-
     impl AcpProviderHooks for PlainHooks {
         fn normalize_tool_name(&self, raw: &str) -> String {
             raw.to_string()
@@ -31,7 +26,6 @@ mod tests {
             None
         }
     }
-
     fn run_chunk(idx: &mut EventIndexer, kind: &str, text: &str) -> Vec<RuntimeEvent> {
         session_update_to_events(
             &json!({
@@ -44,7 +38,6 @@ mod tests {
         )
         .events
     }
-
     #[test]
     fn first_text_chunk_emits_message_start_then_block_start_then_delta() {
         let mut idx = EventIndexer::default();
@@ -69,7 +62,6 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
     #[test]
     fn consecutive_text_chunks_share_index_and_emit_only_deltas() {
         let mut idx = EventIndexer::default();
@@ -88,12 +80,10 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
     #[test]
     fn thought_chunk_emits_thinking_block_and_delta() {
         let mut idx = EventIndexer::default();
         let events = run_chunk(&mut idx, "agent_thought_chunk", "considering");
-
         assert_eq!(events.len(), 3);
         assert!(matches!(
             events[0].stream_event(),
@@ -114,7 +104,6 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
     #[test]
     fn tool_call_after_text_flushes_streaming_block_first() {
         let mut idx = EventIndexer::default();
@@ -146,7 +135,6 @@ mod tests {
             })
         ));
     }
-
     #[test]
     fn usage_update_populates_metadata_for_context_budget() {
         let mut idx = EventIndexer::default();
@@ -172,7 +160,6 @@ mod tests {
         assert_eq!(usage.output_tokens, 0);
         assert_eq!(event.context_window(), Some(200_000));
     }
-
     #[test]
     fn unknown_variant_falls_back_to_other_without_panicking() {
         let mut idx = EventIndexer::default();
@@ -186,7 +173,6 @@ mod tests {
         assert_eq!(result.events.len(), 1);
         assert!(result.events[0].init().is_none());
     }
-
     #[test]
     fn user_message_chunk_emits_event_carrying_raw_content() {
         let mut idx = EventIndexer::default();
@@ -204,7 +190,6 @@ mod tests {
         );
         assert_eq!(result.events.len(), 1);
         let event = &result.events[0];
-        // No clean typed home for plain user text; we attach via raw metadata.
         assert!(event.user_message().is_none());
         assert!(event.assistant_message().is_none());
         let raw = event.raw_json();
@@ -214,7 +199,6 @@ mod tests {
             "raw payload must surface the chunk so it isn't dropped",
         );
     }
-
     #[test]
     fn user_message_chunk_compaction_emits_compact_boundary() {
         let mut idx = EventIndexer::default();
@@ -230,12 +214,10 @@ mod tests {
             Some("s-1"),
             &PlainHooks,
         );
-
         assert_eq!(result.events.len(), 1);
         assert!(result.events[0].is_compact_boundary());
         assert_eq!(result.events[0].session_id(), Some("s-1"));
     }
-
     #[test]
     fn session_info_update_populates_context_window_metadata() {
         let mut idx = EventIndexer::default();
@@ -261,7 +243,6 @@ mod tests {
             .expect("session_info_update must surface usage");
         assert_eq!(usage.input_tokens, 4242);
     }
-
     #[tokio::test]
     async fn mirror_session_info_update_writes_current_model() {
         use std::sync::Arc;
@@ -274,7 +255,6 @@ mod tests {
         mirror_session_info_update(&body, &model).await;
         assert_eq!(model.read().await.as_deref(), Some("anthropic/claude-4.7"));
     }
-
     #[tokio::test]
     async fn mirror_session_info_update_leaves_model_alone_when_absent() {
         use std::sync::Arc;
@@ -284,7 +264,6 @@ mod tests {
         mirror_session_info_update(&body, &model).await;
         assert_eq!(model.read().await.as_deref(), Some("keep"));
     }
-
     #[test]
     fn available_commands_update_emits_typed_slash_commands_event() {
         let mut idx = EventIndexer::default();
@@ -312,7 +291,6 @@ mod tests {
         assert_eq!(commands[0].description.as_deref(), Some("summarize"));
         assert_eq!(commands[1].name, "init");
     }
-
     #[test]
     fn available_commands_update_emits_empty_list_when_array_empty() {
         let mut idx = EventIndexer::default();
@@ -334,12 +312,8 @@ mod tests {
             .expect("expected SlashCommandsUpdated event");
         assert!(commands.is_empty());
     }
-
     #[test]
     fn current_mode_update_carries_raw_provider_extension_into_metadata() {
-        // OpenCode-style provider extensions (here `providerExtension`) survive
-        // routing because the mapper stores the raw payload on the event metadata
-        // — the strict ACP schema would drop them.
         let mut idx = EventIndexer::default();
         let mapped = session_update_to_events(
             &json!({
@@ -355,13 +329,11 @@ mod tests {
             Some("s-1"),
             &PlainHooks,
         );
-
         assert_eq!(mapped.events.len(), 1);
         let raw = mapped.events[0].raw_json();
         assert_eq!(raw["update"]["providerExtension"], "preserved");
         assert_eq!(raw["update"]["currentModeId"], "edit");
     }
-
     #[test]
     fn available_commands_update_skips_entries_without_name() {
         let mut idx = EventIndexer::default();
@@ -385,7 +357,6 @@ mod tests {
         assert_eq!(commands[0].name, "valid");
         assert!(commands[0].description.is_none());
     }
-
     #[test]
     fn non_streaming_update_without_open_blocks_preserves_message_start() {
         let mut idx = EventIndexer::default();
@@ -403,7 +374,6 @@ mod tests {
             Some("s-1"),
             &PlainHooks,
         );
-
         assert_eq!(result.events.len(), 1);
         assert!(idx.message_started);
     }

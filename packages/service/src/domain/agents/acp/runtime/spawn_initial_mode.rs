@@ -77,6 +77,9 @@ mod tests {
                 "build"
             })
         }
+        fn default_mode_id(&self) -> Option<&'static str> {
+            Some("build")
+        }
     }
 
     async fn build_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {

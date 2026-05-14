@@ -1,27 +1,15 @@
-//! Tool-call mapping helpers for ACP `tool_call` / `tool_call_update`.
-//!
-//! Provider-neutral. Provider-specific normalization (tool-name aliases,
-//! edit-key renaming, content-envelope unwrap) flows through
-//! `AcpProviderHooks` so adapters keep their quirks isolated.
-
-use serde_json::Value;
-
-use crate::domain::agents::adapter::{
-    RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
-};
-use crate::domain::agents::opencode::events::stream_start_event;
-
 use super::events_stream_blocks::EventIndexer;
 use super::events_tool_call_input::is_empty_value;
 use super::events_tool_call_parent::parent_tool_use_id;
 use super::provider_hooks::AcpProviderHooks;
-
-/// Result of mapping a single `session/update`. Most updates produce 1
-/// event; tool calls may produce 2 (result + stop in the same notification).
+use super::stream_events::stream_start_event;
+use crate::domain::agents::adapter::{
+    RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
+};
+use serde_json::Value;
 pub struct MappedUpdate {
     pub events: Vec<RuntimeEvent>,
 }
-
 pub fn map_tool_call_start(
     body: &Value,
     indexer: &mut EventIndexer,
@@ -43,14 +31,6 @@ pub fn map_tool_call_start(
         .and_then(Value::as_str)
         .unwrap_or("tool");
     let tool_name = hooks.normalize_tool_name(raw_tool_name);
-    // Per the official ACP schema (`ToolCall.rawInput`), `rawInput` is the
-    // spec-canonical opaque agent input. `toolInput` is a legacy non-spec
-    // field some adapters (and our terminal enrichment) write into for
-    // back-compat. Pick the first non-empty source, then *always* run it
-    // through the provider's normalize hook so camelCase keys (e.g.
-    // OpenCode's `filePath` / `newText`) become the canonical snake_case
-    // keys the FE renderers expect — regardless of which envelope the
-    // agent populated.
     let raw = body
         .get("rawInput")
         .filter(|v| !is_empty_value(v))
@@ -62,7 +42,6 @@ pub fn map_tool_call_start(
         indexer.suppress_tool_call(tool_call_id);
         return MappedUpdate { events: vec![] };
     }
-
     indexer.record_tool_name(tool_call_id, &tool_name);
     hooks.record_tool_call_start(tool_call_id, &tool_name);
     let input = hooks.normalize_tool_input(&tool_name, raw);
@@ -80,17 +59,9 @@ pub fn map_tool_call_start(
         };
     }
     if tool_name == "AskUserQuestion" {
-        // Provider declined the override (no real payload yet) — swallow the
-        // empty-payload start so the FE doesn't render a half-built question
-        // drawer with no options.
         return MappedUpdate { events: vec![] };
     }
     let index = indexer.index_for_tool(tool_call_id);
-    // Build the event via the shared Claude-shape helper so the WS bridge
-    // ships a `{type:"stream_event", event:{type:"content_block_start",
-    // content_block:{type:"tool_use",…}}}` envelope the FE knows how to
-    // process. The ACP `session/update` raw shape is *not* understood by
-    // `processSdkMessage` and would silently drop the tool block.
     let block = RuntimeContentBlock::ToolUse {
         id: tool_call_id.to_string(),
         name: tool_name,
@@ -106,11 +77,9 @@ pub fn map_tool_call_start(
         events: vec![event],
     }
 }
-
 pub fn other_event(metadata: RuntimeEventMetadata) -> RuntimeEvent {
     RuntimeEvent::new(metadata, RuntimeEventKind::Other)
 }
-
 #[cfg(test)]
 mod tests {
     use super::map_tool_call_start;
@@ -121,10 +90,7 @@ mod tests {
         RuntimeContentBlock, RuntimeEventMetadata, RuntimePermissionMode, RuntimeStreamEvent,
     };
     use serde_json::{json, Value};
-
-    /// Test hook that does no normalization and provides identity flatten.
     struct PlainHooks;
-
     #[async_trait::async_trait]
     impl AcpProviderHooks for PlainHooks {
         fn normalize_tool_name(&self, raw: &str) -> String {
@@ -134,8 +100,6 @@ mod tests {
             input
         }
         fn flatten_tool_result_content(&self, blocks: &[Value]) -> Value {
-            // Mimic the simple "join text blocks" path so the result test
-            // works without a provider-specific envelope wrap/unwrap.
             let texts: Option<Vec<String>> = blocks
                 .iter()
                 .map(|b| {
@@ -159,14 +123,12 @@ mod tests {
             None
         }
     }
-
     fn metadata() -> RuntimeEventMetadata {
         RuntimeEventMetadata {
             raw: json!({}),
             ..RuntimeEventMetadata::default()
         }
     }
-
     #[test]
     fn start_emits_content_block_start_with_tool_use() {
         let mut idx = EventIndexer::default();
@@ -189,15 +151,8 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
     #[test]
     fn start_raw_envelope_is_claude_shaped_for_frontend_dispatch() {
-        // The WS bridge ships `metadata.raw` verbatim to the FE. The FE only
-        // dispatches `{type:"stream_event", event:{type:"content_block_start",
-        // content_block:{type:"tool_use",…}}}` envelopes — anything else (notably
-        // the raw ACP `session/update` shape) is silently dropped. Lock that
-        // invariant in for tool starts so the visibility regression we just
-        // fixed cannot reappear.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -221,7 +176,6 @@ mod tests {
         assert_eq!(raw["event"]["content_block"]["name"], "bash");
         assert_eq!(raw["event"]["content_block"]["input"]["command"], "ls");
     }
-
     #[test]
     fn start_without_tool_call_id_falls_back_to_other() {
         let mut idx = EventIndexer::default();
@@ -234,7 +188,6 @@ mod tests {
         assert_eq!(result.events.len(), 1);
         assert!(result.events[0].stream_event().is_none());
     }
-
     #[test]
     fn start_preserves_parent_tool_use_id_from_nested_acp_call() {
         let mut idx = EventIndexer::default();
@@ -255,9 +208,6 @@ mod tests {
             "parent-1"
         );
     }
-
-    // --- W7 lifecycle audit (start-side) ---------------------------------
-
     #[test]
     fn pending_first_sight_emits_content_block_start_only() {
         let mut idx = EventIndexer::default();
@@ -278,16 +228,8 @@ mod tests {
             Some(RuntimeStreamEvent::ContentBlockStart { .. })
         ));
     }
-
-    // --- W7 raw I/O surfacing tests --------------------------------------
-
     #[test]
     fn start_routes_raw_input_through_normalize_hook() {
-        // `rawInput` is the spec field; with an identity normalize hook the
-        // payload reaches the FE unchanged. Provider hooks that perform key
-        // rewrites (e.g. OpenCode's adapter_normalize) get a chance to run
-        // regardless of which envelope (`rawInput` vs legacy `toolInput`)
-        // the agent populated.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -311,14 +253,8 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
     #[test]
     fn start_falls_back_to_tool_input_when_raw_input_empty() {
-        // OpenCode's bash flow emits `rawInput: {}` (the command is in
-        // `terminal/create`, surfaced via terminal_enrich into the legacy
-        // `toolInput.command`). The start path must fall through to the
-        // populated legacy field rather than locking in the empty
-        // spec-canonical envelope.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -341,21 +277,8 @@ mod tests {
             other => panic!("unexpected variant: {other:?}"),
         }
     }
-
-    // The "rawInput preferred over toolInput when both populated" case is
-    // implicitly covered by the combination of
-    // `start_routes_raw_input_through_normalize_hook` (rawInput-only path
-    // wins) and `start_falls_back_to_tool_input_when_raw_input_empty`
-    // (toolInput only used when rawInput is empty).
-
-    // --- W8 sub-agent metadata tests -------------------------------------
-
     #[test]
     fn start_does_not_propagate_sub_agent_session_id_as_parent() {
-        // Regression: `subAgentSessionId` carries a child *session* id, not a
-        // tool_use_id. Stamping it as `parent_tool_use_id` would orphan the
-        // event at the FE's tool_use_id map lookup. See
-        // `events_tool_call_parent.rs::parent_tool_use_id` for the rationale.
         let mut idx = EventIndexer::default();
         let result = map_tool_call_start(
             &json!({
@@ -370,13 +293,9 @@ mod tests {
         );
         assert!(result.events[0].parent_tool_use_id().is_none());
     }
-
     #[test]
     fn nested_chain_sets_child_parent_to_parent_tool_use_id() {
-        // Simulate a Task-tool spawning a child Bash tool. The child event's
-        // metadata.parent_tool_use_id must equal the parent's tool_use_id.
         let mut idx = EventIndexer::default();
-        // Parent: `Task` tool call (no parent of its own).
         let parent_start = map_tool_call_start(
             &json!({
                 "toolCallId": "task-parent",
@@ -395,8 +314,6 @@ mod tests {
             other => panic!("unexpected: {other:?}"),
         };
         assert!(parent_start.events[0].parent_tool_use_id().is_none());
-
-        // Child: spawned by the parent Task tool.
         let child_start = map_tool_call_start(
             &json!({
                 "toolCallId": "child-bash",
@@ -412,9 +329,6 @@ mod tests {
             child_start.events[0].parent_tool_use_id(),
             Some(parent_id.as_str())
         );
-
-        // And the child's terminal update inherits the same parent linkage
-        // so the FE keeps nesting the result under the parent block.
         let child_done = map_tool_call_update(
             &json!({
                 "toolCallId": "child-bash",

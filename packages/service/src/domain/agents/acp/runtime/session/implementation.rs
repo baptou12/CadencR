@@ -29,8 +29,7 @@ use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_par
 use super::super::provider_hooks::AcpProviderHooks;
 use super::super::session_permissions::SessionPermissions;
 use super::super::turn_lifecycle::{
-    finalize_cancelled_turn, finalize_turn, request_prompt_with_cancel, PromptCancel,
-    PromptRequestOutcome, PromptTurnLock,
+    finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
 };
 
 /// Channel buffer for the per-session runtime stream. Matches the size used
@@ -62,7 +61,7 @@ pub struct AcpRuntimeSession {
     pub(in crate::domain::agents::acp::runtime) message_rx: Option<RuntimeMessageRx>,
     pub(in crate::domain::agents::acp::runtime) loop_task: Option<JoinHandle<()>>,
     /// Optional provider-spawned listener (e.g. OpenCode subscribes to its
-    /// HTTP/SSE event stream so live sub-agent child-session events that the
+    /// HTTP polling channel so live sub-agent child-session events that the
     /// ACP transport silently drops can be injected into the runtime
     /// channel). Aborted on `close()`.
     pub(in crate::domain::agents::acp::runtime) side_channel_task: Option<JoinHandle<()>>,
@@ -129,19 +128,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // `session/prompt` represents a whole agent turn — sit-idle ceilings
         // need to be huge (minutes of permission drawers + long tools).
         let response =
-            match request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await? {
-                PromptRequestOutcome::Completed(response) => response,
-                PromptRequestOutcome::Cancelled => {
-                    finalize_cancelled_turn(
-                        &self.local_tx,
-                        &self.indexer,
-                        Some(session_id),
-                        self.context_window,
-                    )
-                    .await;
-                    return Ok(());
-                }
-            };
+            request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await?;
         if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
             tracing::debug!(stop_reason = reason, "session/prompt completed");
             finalize_turn(
@@ -203,6 +190,7 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             &session_id,
             &self.current_model,
             &self.supports_set_config_option,
+            self.hooks.model_config_id(),
             model,
         )
         .await
@@ -219,13 +207,18 @@ impl AgentRuntimeSession for AcpRuntimeSession {
             &session_id,
             &self.current_effort,
             &self.supports_set_config_option,
+            self.hooks.thinking_effort_config_id(),
             effort.as_deref(),
         )
         .await
     }
 
     async fn set_permission_mode(&self, mode: RuntimePermissionMode) -> Result<(), RuntimeError> {
-        let mode_id = self.hooks.mode_for_permission_mode(mode).unwrap_or("build");
+        let mode_id = self
+            .hooks
+            .mode_for_permission_mode(mode)
+            .or_else(|| self.hooks.default_mode_id())
+            .ok_or_else(|| RuntimeError::new("ACP provider does not support permission modes"))?;
         let session_id = self.require_session_id().await?;
         set_session_mode(
             &self.client,

@@ -64,7 +64,7 @@ pub struct SdkHandle {
     /// Thinking effort the runtime was last spawned with.
     pub(super) spawned_thinking_effort: Option<String>,
     /// Provider-local control endpoint for runtimes with a sidecar HTTP API.
-    /// Currently only ever populated by the legacy OpenCode HTTP transport;
+    /// Currently populated by live runtime adapters when available;
     /// retained on the struct so the wider session-handle plumbing keeps
     /// compiling, but no remaining code path reads it. Drop once a follow-up
     /// removes the `runtime_control_endpoint` field from `SdkHandle` setters.

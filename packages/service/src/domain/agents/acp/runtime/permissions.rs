@@ -335,7 +335,8 @@ mod tests {
             request.params(),
             &tx,
         )
-        .await;
+        .await
+        .unwrap();
         let event = rx.recv().await.unwrap().unwrap();
         assert_eq!(event.session_id(), Some("s-typed"));
         assert_eq!(event.raw_json()["acp"]["sessionId"], "s-typed");

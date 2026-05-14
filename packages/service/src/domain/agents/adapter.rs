@@ -59,7 +59,7 @@ pub struct RuntimeSpawnConfig {
     pub permission_handler: Option<Arc<dyn RuntimeToolPermissionHandler>>,
     /// Extra env vars injected into the spawned runtime. Adapters decide how
     /// to apply this (Claude Code merges it into the CLI subprocess env;
-    /// OpenCode currently ignores it since it speaks HTTP).
+    /// ACP-backed providers may ignore it when configuration is handled elsewhere).
     pub env: Option<HashMap<String, String>>,
 }
 
@@ -176,8 +176,8 @@ impl From<codex_app_server_sdk_rs::SdkError> for RuntimeError {
 pub enum RuntimePermissionDecision {
     AllowOnce,
     /// Persist the decision across sessions/runs. Maps to ACP's
-    /// `allow_always` option kind. OpenCode's HTTP transport persists this
-    /// via `PermissionReply::Always`; ACP-side, the agent owns persistence
+    /// `allow_always` option kind. OpenCode ACP session permission caching persists this
+    /// via an always-allow decision; ACP-side, the agent owns persistence
     /// via the `optionId` we echo back.
     AllowFuture,
     /// Allow for the lifetime of the current session only. Maps to ACP's
@@ -337,9 +337,7 @@ pub enum RuntimeEventKind {
 }
 
 /// Lifecycle of the agent's underlying transport, surfaced provider-neutral
-/// so any adapter (today only OpenCode emits these) can opt in. See
-/// `domain::agents::opencode::stream_loop` for the OpenCode mapping from
-/// `opencode_sdk_rs::DispatcherStatus`.
+/// so any adapter (today only OpenCode emits these) can opt in. OpenCode ACP emits this from provider-specific workaround paths when needed.
 #[derive(Debug, Clone)]
 pub enum RuntimeStreamStatus {
     /// The transport is degraded (reconnecting, no heartbeat, reconcile
@@ -826,7 +824,7 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// `None` if the session is still running.
     ///
     /// Default delegates to `session_finished` and returns no text — adapters
-    /// whose drain loop can race ahead of SSE (e.g. OpenCode short turns)
+    /// whose drain loop can race ahead of streamed text (e.g. short turns)
     /// should override to return the actual text so callers can recover from
     /// a probe-wins-the-race exit.
     async fn session_finished_text(&self, runtime_session_id: &str) -> Option<String> {

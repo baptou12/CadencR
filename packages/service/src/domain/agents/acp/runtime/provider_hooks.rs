@@ -56,6 +56,32 @@ pub trait AcpProviderHooks: Send + Sync {
     /// Map a Cadencr permission mode onto the provider's mode id.
     fn mode_for_permission_mode(&self, mode: RuntimePermissionMode) -> Option<&'static str>;
 
+    /// Provider config id for model changes over `session/set_config_option`.
+    fn model_config_id(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Provider config id for thinking-effort changes over `session/set_config_option`.
+    fn thinking_effort_config_id(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Fallback provider mode id when a session response omits `currentModeId`.
+    fn default_mode_id(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Prompt text used for manual compaction, when the provider supports it.
+    fn compact_prompt(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Whether a provider's ACP sessions can be durably restored across a
+    /// newly spawned subprocess via `session/load`.
+    fn supports_durable_resume(&self) -> bool {
+        false
+    }
+
     /// Provider-specific hook for `AskUserQuestion`-style tool calls. Returns
     /// `Some(event)` to short-circuit the normal `tool_call` start mapping.
     fn tool_call_start_override(
@@ -127,7 +153,7 @@ pub trait AcpProviderHooks: Send + Sync {
 
     /// Provider opt-in: spawn a side-channel that pushes additional
     /// `RuntimeEvent`s onto the same runtime channel. Used by OpenCode to
-    /// subscribe to the underlying HTTP/SSE event stream for live sub-agent
+    /// subscribe to the underlying HTTP polling channel for live sub-agent
     /// child-session events (which OpenCode's ACP transport silently drops
     /// today because its session manager only forwards events for sessions
     /// it has explicitly registered).
@@ -147,7 +173,7 @@ pub trait AcpProviderHooks: Send + Sync {
     /// Provider opt-in: invoked at the start of every `tool_call` (after the
     /// canonical name has been resolved) so adapters can record state for
     /// later use by their side-channel — e.g. OpenCode tracks pending
-    /// `Task`/`Agent` call ids so its SSE listener can pair freshly-spawned
+    /// `Task`/`Agent` call ids so its polling listener can pair freshly-spawned
     /// child sessions with the right parent tool block.
     ///
     /// Default implementation is a no-op. This is intentionally separate from

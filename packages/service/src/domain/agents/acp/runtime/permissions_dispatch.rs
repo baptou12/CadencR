@@ -82,7 +82,7 @@ pub async fn dispatch_permission_request(
     request: RuntimePermissionRequest,
     params: &Value,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-) {
+) -> Result<(), RuntimeError> {
     let key = PermissionKey::new(&request.tool_name, &request.tool_input);
     pending.write().await.insert(
         request_id.to_string(),
@@ -99,7 +99,13 @@ pub async fn dispatch_permission_request(
         raw,
     };
     let event = RuntimeEvent::new(metadata, RuntimeEventKind::Other);
-    let _ = tx.send(Ok(event)).await;
+    if tx.send(Ok(event)).await.is_err() {
+        pending.write().await.remove(request_id);
+        return Err(RuntimeError::new(
+            "ACP permission request could not be surfaced because the runtime channel is closed",
+        ));
+    }
+    Ok(())
 }
 
 pub async fn dispatch_permission_request_with_cache(
@@ -112,13 +118,13 @@ pub async fn dispatch_permission_request_with_cache(
     request: RuntimePermissionRequest,
     params: &Value,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-) {
+) -> Result<(), RuntimeError> {
     let key = PermissionKey::new(&request.tool_name, &request.tool_input);
     if let Some(decision) = session_permissions.lookup(&key).await {
         if let Some(option_id) = option_id_for_decision(&request, decision) {
             let payload = permission_response_value(decision, Some(option_id), None);
             match client.respond_server_request(raw_id.clone(), payload).await {
-                Ok(()) => return,
+                Ok(()) => return Ok(()),
                 Err(error) => {
                     tracing::warn!(
                         %error,
@@ -136,7 +142,7 @@ pub async fn dispatch_permission_request_with_cache(
         }
     }
 
-    dispatch_permission_request(pending, session_id, request_id, raw_id, request, params, tx).await;
+    dispatch_permission_request(pending, session_id, request_id, raw_id, request, params, tx).await
 }
 
 fn option_id_for_decision(
@@ -288,7 +294,8 @@ mod tests {
             &json!({}),
             &tx,
         )
-        .await;
+        .await
+        .unwrap();
 
         let response = read_frame(&mut agent_stdin).await;
         assert_eq!(response["id"], "perm-cache");
@@ -330,7 +337,8 @@ mod tests {
             &json!({}),
             &tx,
         )
-        .await;
+        .await
+        .unwrap();
 
         let event = tokio::time::timeout(Duration::from_secs(1), rx.recv())
             .await
@@ -342,5 +350,31 @@ mod tests {
             .read()
             .await
             .contains_key("perm-cache-missing-option"));
+    }
+
+    #[tokio::test]
+    async fn closed_runtime_channel_removes_pending_permission_and_errors() {
+        let (client, _agent_stdout, _agent_stdin) = build_in_memory_client().await;
+        let pending = PendingPermissions::default();
+        let session_permissions = SessionPermissions::new();
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+
+        let error = dispatch_permission_request_with_cache(
+            &client,
+            &pending,
+            &session_permissions,
+            Some("s-closed".to_string()),
+            "perm-closed",
+            json!("perm-closed"),
+            permission_request(),
+            &json!({}),
+            &tx,
+        )
+        .await
+        .expect_err("closed runtime channel should surface an error");
+
+        assert!(error.to_string().contains("runtime channel is closed"));
+        assert!(pending.read().await.is_empty());
     }
 }

@@ -64,7 +64,7 @@ pub async fn spawn_acp_runtime_session(
     .map_err(|e| RuntimeError::new(format!("failed to spawn ACP subprocess: {e}")))?;
     let pid = client.pid();
     let event_rx = client.subscribe();
-    let negotiated = negotiate_session(&client, &config, context_window).await?;
+    let negotiated = negotiate_session(&client, &config, context_window, hooks.as_ref()).await?;
 
     let (tx, rx) = mpsc::channel(MESSAGE_CHANNEL_CAPACITY);
     let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
@@ -110,7 +110,7 @@ pub async fn spawn_acp_runtime_session(
     );
     session.loop_task = Some(loop_task);
 
-    // Provider-spawned side channel (e.g. OpenCode's HTTP/SSE listener for
+    // Provider-spawned side channel (e.g. OpenCode's HTTP polling listener for
     // sub-agent child-session events). Started after the event loop so the
     // listener's emitted events queue behind any spawn-time init events the
     // FE expects to see first.
@@ -190,7 +190,8 @@ impl AcpRuntimeSession {
                 negotiated
                     .current_mode
                     .clone()
-                    .unwrap_or_else(|| "build".to_string()),
+                    .or_else(|| hooks.default_mode_id().map(ToOwned::to_owned))
+                    .unwrap_or_default(),
             )),
             supports_set_config_option: Arc::new(AtomicBool::new(true)),
             supports_set_mode: Arc::new(AtomicBool::new(true)),

@@ -16,6 +16,7 @@ mod events_tool_call_input;
 mod events_tool_call_parent;
 mod events_tool_call_result;
 pub mod events_tool_call_update;
+mod events_tool_call_update_result;
 pub mod fs;
 pub mod lifecycle;
 pub mod mcp;
@@ -26,12 +27,18 @@ pub mod permissions_typed;
 pub mod prompt_turn;
 pub mod provider_hooks;
 pub mod schema_bridge;
+#[cfg(test)]
+mod server_request_event_loop_tests;
+mod server_request_response;
 pub mod server_requests;
 pub mod session;
 pub mod session_permissions;
 pub mod session_spawn;
+#[cfg(test)]
+mod session_spawn_integration_tests;
 mod spawn_initial_config;
 mod spawn_initial_mode;
+pub mod stream_events;
 mod terminal_enrich;
 mod terminal_io;
 pub mod terminal_registry;

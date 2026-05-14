@@ -1,80 +1,56 @@
-//! `session/set_config_option` plumbing.
-//!
-//! Implements the schema-correct path for switching model / thinking effort
-//! mid-session: a JSON-RPC request `session/set_config_option` per option,
-//! falling back to the legacy "ride along on the next prompt" behaviour when
-//! the agent advertises `MethodNotFound (-32601)`.
-//!
-//! Once a fallback has been observed for a given session we flip an atomic
-//! `supports_set_config_option` flag to false and stop trying — subsequent
-//! `set_model` / `set_thinking_effort` calls just update the local state and
-//! let `build_prompt_params` carry `model` / `_meta.thinkingEffort`.
-
+use super::capability_probe::{request_optional_method, ProbeResult};
+use crate::domain::agents::acp::AcpClient;
+use crate::domain::agents::adapter::RuntimeError;
+use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
-
-use serde_json::{json, Value};
 use tokio::sync::RwLock;
-
-use crate::domain::agents::acp::AcpClient;
-use crate::domain::agents::adapter::RuntimeError;
-
-use super::capability_probe::{request_optional_method, ProbeResult};
-
 const SET_CONFIG_OPTION_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Set the active model for this session via `session/set_config_option`.
-///
-/// On success: updates `current_model`. On `MethodNotFound`: flips
-/// `supports_set_config_option` to false, sets `current_model` so the legacy
-/// fallback (ride-along on the next prompt) kicks in, and returns `Ok(())`.
 pub async fn set_config_option_model(
     client: &AcpClient,
     session_id: &str,
     current_model: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
+    config_id: Option<&str>,
     new_model: &str,
 ) -> Result<(), RuntimeError> {
+    let Some(config_id) = config_id else {
+        set_local_config_value(current_model, Some(new_model)).await;
+        return Ok(());
+    };
     set_config_option(
         client,
         session_id,
         current_model,
         supports_flag,
-        "model",
+        config_id,
         Some(new_model),
     )
     .await
 }
-
-/// Set the active thinking effort for this session via
-/// `session/set_config_option`. `effort` is the raw provider string (e.g.
-/// "low" / "medium" / "high"); `None` clears the override.
-///
-/// The wire `configId` is `"effort"` (not `"thinkingEffort"`) — that's
-/// the discriminator OpenCode's handler matches against. See
-/// `send_set_config_option` for the full payload shape.
 pub async fn set_config_option_thinking_effort(
     client: &AcpClient,
     session_id: &str,
     current_effort: &Arc<RwLock<Option<String>>>,
     supports_flag: &Arc<AtomicBool>,
+    config_id: Option<&str>,
     new_effort: Option<&str>,
 ) -> Result<(), RuntimeError> {
+    let Some(config_id) = config_id else {
+        set_local_config_value(current_effort, new_effort).await;
+        return Ok(());
+    };
     set_config_option(
         client,
         session_id,
         current_effort,
         supports_flag,
-        "effort",
+        config_id,
         new_effort,
     )
     .await
 }
-
-/// Shared body of `set_config_option_*`: short-circuit when the local value
-/// already matches, otherwise send the request and update local state on
-/// success or `MethodNotFound` fallback.
 async fn set_config_option(
     client: &AcpClient,
     session_id: &str,
@@ -87,25 +63,9 @@ async fn set_config_option(
         return Ok(());
     }
     send_set_config_option(client, session_id, supports_flag, config_id, new_value).await?;
-    // Always update local state so the legacy fallback (and the FE) sees the
-    // user's intent even when the agent doesn't acknowledge the option.
     *current.write().await = new_value.map(ToOwned::to_owned);
     Ok(())
 }
-
-/// Issue a `session/set_config_option` request. Returns `Ok(())` regardless
-/// of whether the agent ack'd or returned `MethodNotFound` — the caller's
-/// local state update is the ground truth either way. Other RPC errors
-/// propagate.
-///
-/// Wire shape per OpenCode's handler (the only ACP provider today):
-/// ```json
-/// { "sessionId": "...", "configId": "model"|"effort", "type": "string", "value": "..." }
-/// ```
-/// `configId` and `type` are top-level discriminators — *not* nested under
-/// a `configOption` envelope. `type` is always `"string"` for our two
-/// callsites (model and effort); the schema also accepts `"boolean"` but
-/// no current configId uses it.
 async fn send_set_config_option(
     client: &AcpClient,
     session_id: &str,
@@ -140,14 +100,18 @@ async fn send_set_config_option(
         }
     }
 }
-
 async fn value_is_already_current(
     current: &Arc<RwLock<Option<String>>>,
     new_value: Option<&str>,
 ) -> bool {
     current.read().await.as_deref() == new_value
 }
-
+async fn set_local_config_value(current: &Arc<RwLock<Option<String>>>, new_value: Option<&str>) {
+    if value_is_already_current(current, new_value).await {
+        return;
+    }
+    *current.write().await = new_value.map(ToOwned::to_owned);
+}
 #[cfg(test)]
 mod tests {
     use super::{set_config_option_model, set_config_option_thinking_effort};
@@ -158,7 +122,6 @@ mod tests {
     use std::time::Duration;
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::sync::RwLock;
-
     async fn build_in_memory_client() -> (
         AcpClient,
         tokio::io::DuplexStream,
@@ -180,18 +143,15 @@ mod tests {
             BufReader::new(agent_reads_stdin),
         )
     }
-
     async fn read_one_request(reader: &mut BufReader<tokio::io::DuplexStream>) -> Value {
         let mut line = String::new();
         reader.read_line(&mut line).await.unwrap();
         serde_json::from_str(line.trim()).unwrap()
     }
-
     async fn reply_ok(stdout: &mut tokio::io::DuplexStream, id: Value, result: Value) {
         let frame = format!("{}\n", json!({ "id": id, "result": result }));
         stdout.write_all(frame.as_bytes()).await.unwrap();
     }
-
     async fn reply_error(
         stdout: &mut tokio::io::DuplexStream,
         id: Value,
@@ -204,11 +164,6 @@ mod tests {
         );
         stdout.write_all(frame.as_bytes()).await.unwrap();
     }
-
-    /// Regression: OpenCode rejects the legacy `{configOption: {name, value}}`
-    /// envelope with `-32602 Invalid params`. The runtime must serialise the
-    /// shape OpenCode actually validates: top-level `configId` / `type` /
-    /// `value` discriminators, no nested envelope.
     #[tokio::test]
     async fn wire_payload_uses_top_level_config_id_type_value_no_envelope() {
         let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
@@ -219,8 +174,15 @@ mod tests {
             let current_model = Arc::clone(&current_model);
             let supports = Arc::clone(&supports);
             async move {
-                set_config_option_model(&client, "s-x", &current_model, &supports, "openai/gpt-5.4")
-                    .await
+                set_config_option_model(
+                    &client,
+                    "s-x",
+                    &current_model,
+                    &supports,
+                    Some("model"),
+                    "openai/gpt-5.4",
+                )
+                .await
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
@@ -236,7 +198,6 @@ mod tests {
         reply_ok(&mut agent_stdout, id, json!({})).await;
         task.await.unwrap().unwrap();
     }
-
     #[tokio::test]
     async fn set_model_issues_set_config_option_and_updates_state() {
         let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
@@ -247,8 +208,15 @@ mod tests {
             let current_model = Arc::clone(&current_model);
             let supports = Arc::clone(&supports);
             async move {
-                set_config_option_model(&client, "s-1", &current_model, &supports, "new-model")
-                    .await
+                set_config_option_model(
+                    &client,
+                    "s-1",
+                    &current_model,
+                    &supports,
+                    Some("model"),
+                    "new-model",
+                )
+                .await
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
@@ -270,7 +238,6 @@ mod tests {
             "supports flag stays true on success"
         );
     }
-
     #[tokio::test]
     async fn method_not_found_flips_supports_flag_and_returns_ok() {
         let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
@@ -281,8 +248,15 @@ mod tests {
             let current_model = Arc::clone(&current_model);
             let supports = Arc::clone(&supports);
             async move {
-                set_config_option_model(&client, "s-1", &current_model, &supports, "new-model")
-                    .await
+                set_config_option_model(
+                    &client,
+                    "s-1",
+                    &current_model,
+                    &supports,
+                    Some("model"),
+                    "new-model",
+                )
+                .await
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
@@ -299,16 +273,21 @@ mod tests {
             "local state still updates so the legacy fallback can carry it"
         );
     }
-
     #[tokio::test]
     async fn already_current_short_circuits_without_request() {
         let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_model = Arc::new(RwLock::new(Some("same-model".to_string())));
         let supports = Arc::new(AtomicBool::new(true));
-        set_config_option_model(&client, "s-1", &current_model, &supports, "same-model")
-            .await
-            .unwrap();
-        // No request should have been emitted; reading should time out.
+        set_config_option_model(
+            &client,
+            "s-1",
+            &current_model,
+            &supports,
+            Some("model"),
+            "same-model",
+        )
+        .await
+        .unwrap();
         let mut buf = String::new();
         let read_result =
             tokio::time::timeout(Duration::from_millis(50), agent_stdin.read_line(&mut buf)).await;
@@ -317,22 +296,27 @@ mod tests {
             "no-op set should not emit a request, got: {buf}"
         );
     }
-
     #[tokio::test]
     async fn supports_false_skips_round_trip_but_still_updates_state() {
         let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let current_effort = Arc::new(RwLock::new(Some("low".to_string())));
         let supports = Arc::new(AtomicBool::new(false));
-        set_config_option_thinking_effort(&client, "s-1", &current_effort, &supports, Some("high"))
-            .await
-            .unwrap();
+        set_config_option_thinking_effort(
+            &client,
+            "s-1",
+            &current_effort,
+            &supports,
+            Some("effort"),
+            Some("high"),
+        )
+        .await
+        .unwrap();
         assert_eq!(current_effort.read().await.as_deref(), Some("high"));
         let mut buf = String::new();
         let read_result =
             tokio::time::timeout(Duration::from_millis(50), agent_stdin.read_line(&mut buf)).await;
         assert!(read_result.is_err(), "should not have written a frame");
     }
-
     #[tokio::test]
     async fn set_thinking_effort_carries_value_under_thinking_effort_name() {
         let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
@@ -348,14 +332,13 @@ mod tests {
                     "s-1",
                     &current_effort,
                     &supports,
+                    Some("effort"),
                     Some("high"),
                 )
                 .await
             }
         });
         let parsed = read_one_request(&mut agent_stdin).await;
-        // OpenCode's handler matches on `configId === "effort"`, NOT
-        // `"thinkingEffort"`. The runtime translates this for callers.
         assert_eq!(parsed["params"]["configId"], "effort");
         assert_eq!(parsed["params"]["type"], "string");
         assert_eq!(parsed["params"]["value"], "high");

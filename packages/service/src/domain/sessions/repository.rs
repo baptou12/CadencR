@@ -767,7 +767,7 @@ pub async fn get_feature_agent_state(
     }
 
     // OpenCode HTTP-server hydration used to run here. Removed with the
-    // legacy HTTP transport: ACP sessions are subprocess-scoped and
+    // removed long-lived transport: ACP sessions are subprocess-scoped and
     // there's no remote server to query for child-session messages once
     // the session ends. If parent/child relationships need to be
     // recovered post-shutdown for ACP, add a database-backed hydration

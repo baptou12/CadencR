@@ -49,8 +49,8 @@ impl std::fmt::Display for DrainExit {
 /// if everything misbehaves.
 ///
 /// The reconciler probe also returns the latest assistant text so we can
-/// recover when SSE hadn't yet flushed Text events into the channel before
-/// the run finished — without that recovery, OpenCode short turns can race
+/// recover when streaming text has not yet reached the channel before
+/// the run finishes — without that recovery, short turns can race
 /// past the 500 ms recv window with `accumulated_text` still empty, which
 /// leaves the feature stuck on its default "Session N" title.
 pub(super) async fn drain_text(
@@ -127,9 +127,9 @@ pub(super) async fn drain_text(
             Err(_) => {
                 // No event this tick — ask the provider whether the
                 // session is done. The probe also returns the latest
-                // assistant text so we can recover from the SSE-vs-finish
-                // race; the `is_empty()` guard keeps SSE-delivered text
-                // winning so partial SSE + fallback can't duplicate.
+                // assistant text so we can recover from the stream-vs-finish
+                // race; the `is_empty()` guard keeps stream-delivered text
+                // winning so partial stream + fallback can't duplicate.
                 if let Some(sid) = runtime_session_id.as_deref() {
                     if let Some(final_text) = runtime_session_finished_text(provider_id, sid).await
                     {
