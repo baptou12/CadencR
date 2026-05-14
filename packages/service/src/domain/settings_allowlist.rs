@@ -14,27 +14,8 @@
 /// columns on the `features` table plus a small set of EAV keys the frontend
 /// writes into `feature_settings`.
 pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
-    "model_plan",
-    "model_prd",
-    "model_execute",
-    "model_risk",
-    "model_review",
-    "model_review-fixer",
     "model_session",
-    "model_qa",
-    "model_retro",
-    "model_workflow",
-    "agent_runtime_plan",
-    "agent_runtime_prd",
-    "agent_runtime_execute",
-    "agent_runtime_risk",
-    "agent_runtime_review",
-    "agent_runtime_review-fixer",
     "agent_runtime_session",
-    "agent_runtime_qa",
-    "agent_runtime_retro",
-    "agent_autonomy",
-    "parallel_execution",
     "skip_worktree",
     "bypass_acknowledged",
     "layout_state",
@@ -56,29 +37,9 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
 
 /// Keys writable via `PUT /api/projects/{id}/settings`.
 pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
-    "model_plan",
-    "model_prd",
-    "model_execute",
-    "model_risk",
-    "model_review",
-    "model_review-fixer",
     "model_session",
-    "model_qa",
-    "model_retro",
-    "model_workflow",
-    "agent_runtime_plan",
-    "agent_runtime_prd",
-    "agent_runtime_execute",
-    "agent_runtime_risk",
-    "agent_runtime_review",
-    "agent_runtime_review-fixer",
     "agent_runtime_session",
-    "agent_runtime_qa",
-    "agent_runtime_retro",
-    "agent_autonomy",
-    "parallel_execution",
     "branch_prefix",
-    "qa_prompt",
     "color",
     "setup_worktree",
     "bypass_acknowledged",
@@ -127,32 +88,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // "in_app" (Sonner toast inside Cadencr), or "off". Mirrors
     // NOTIFICATION_MODE_KEY in packages/desktop/src/lib/notification-mode.ts.
     "notification_mode",
-    // Workspace-scope agent defaults (mirror the per-project / per-feature keys)
-    "agent_autonomy",
-    "parallel_execution",
-    "model_plan",
-    "model_prd",
-    "model_execute",
-    "model_risk",
-    "model_review",
-    "model_review-fixer",
+    // Workspace-scope agent defaults. `auto_name` is global-only.
     "model_session",
-    "model_qa",
-    "model_retro",
-    "model_workflow",
     "model_auto_name",
-    "model_brainstorm",
-    "agent_runtime_plan",
-    "agent_runtime_prd",
-    "agent_runtime_execute",
-    "agent_runtime_risk",
-    "agent_runtime_review",
-    "agent_runtime_review-fixer",
     "agent_runtime_session",
-    "agent_runtime_qa",
-    "agent_runtime_retro",
     "agent_runtime_auto_name",
-    "agent_runtime_brainstorm",
     // First-run onboarding overlay state.
     // `onboarding_step` is one of the values defined in
     // packages/desktop/src/lib/onboarding-step.ts; missing/unset is treated as
@@ -215,15 +155,17 @@ mod tests {
         assert!(!is_feature_key_allowed("setup_worktree"));
         assert!(!is_feature_key_allowed("worktree_path"));
         assert!(!is_feature_key_allowed("arbitrary_injected_key"));
+        assert!(!is_feature_key_allowed("agent_autonomy"));
+        assert!(!is_feature_key_allowed("parallel_execution"));
+        assert!(!is_feature_key_allowed("model_qa"));
+        assert!(!is_feature_key_allowed("agent_runtime_qa"));
     }
 
     #[test]
     fn accepts_known_feature_keys() {
-        assert!(is_feature_key_allowed("agent_autonomy"));
-        assert!(is_feature_key_allowed("parallel_execution"));
         assert!(is_feature_key_allowed("bypass_acknowledged"));
         assert!(is_feature_key_allowed("skip_worktree"));
-        assert!(is_feature_key_allowed("model_plan"));
+        assert!(is_feature_key_allowed("model_session"));
         assert!(is_feature_key_allowed("layout_state"));
     }
 
@@ -386,10 +328,8 @@ mod tests {
     fn workspace_accepts_agent_defaults() {
         // These flow through the global Settings page + useDebouncedSetting.
         for k in [
-            "agent_autonomy",
-            "parallel_execution",
-            "model_plan",
-            "model_execute",
+            "model_session",
+            "model_auto_name",
             "agent_runtime_session",
             "agent_runtime_auto_name",
             "sidebar_right_collapsed",

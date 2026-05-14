@@ -149,7 +149,6 @@ pub struct WorktreeFeatureLookup {
     pub worktree_path: String,
     pub feature_id: i64,
     pub feature_title: String,
-    pub feature_status: String,
 }
 
 /// Per-feature worktree setting row for a project.
@@ -190,7 +189,7 @@ pub async fn get_worktree_feature_lookup(
     project_id: i64,
 ) -> Result<Vec<WorktreeFeatureLookup>, AppError> {
     let rows: Vec<WorktreeFeatureLookup> = sqlx::query_as(
-        "SELECT fs.value AS worktree_path, f.id AS feature_id, f.title AS feature_title, f.status AS feature_status \
+        "SELECT fs.value AS worktree_path, f.id AS feature_id, f.title AS feature_title \
          FROM feature_settings fs \
          JOIN features f ON f.id = fs.feature_id \
          WHERE fs.key = 'worktree_path' AND f.project_id = ?",
@@ -217,7 +216,7 @@ mod tests {
             "CREATE TABLE projects (id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/')"
         ).execute(&pool).await.unwrap();
         sqlx::query(
-            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')"
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, type TEXT NOT NULL DEFAULT 'ws-session')"
         ).execute(&pool).await.unwrap();
         sqlx::query(
             "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))"
@@ -347,11 +346,11 @@ mod tests {
         // filtered out. Feature 4 has no worktree settings and must not
         // appear even though it's in the target project.
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, status) VALUES \
-             (1, 1, 'a', 'in-progress'), \
-             (2, 1, 'b', 'archived'), \
-             (3, 2, 'c', 'draft'), \
-             (4, 1, 'd', 'draft')",
+            "INSERT INTO features (id, project_id, title) VALUES \
+             (1, 1, 'a'), \
+             (2, 1, 'b'), \
+             (3, 2, 'c'), \
+             (4, 1, 'd')",
         )
         .execute(&pool)
         .await

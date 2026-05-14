@@ -16,15 +16,15 @@
  *   status — go through the live store for that.
  *
  * Pending-input gate kinds are surfaced separately via `PendingKind`
- * so the UI can show permission / question / plan-approval /
- * prd-approval labels alongside the question icon.
+ * so the UI can show permission / question labels alongside the
+ * question icon.
  */
 
 export type LiveAgentStatus = "idle" | "agent" | "question";
 
 export type AgentStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
 
-export type PendingKind = "permission" | "question" | "plan-approval" | "prd-approval";
+export type PendingKind = "permission" | "question";
 
 export interface TodoItem {
   content: string;

@@ -8,32 +8,10 @@ pub fn thinking_effort_model_key(provider_id: &str, model_id: &str) -> String {
 }
 
 /// Columns that exist on both `features` and `projects` tables.
-const SHARED_COLUMNS: &[&str] = &[
-    "model_plan",
-    "model_prd",
-    "model_execute",
-    "model_risk",
-    "model_review",
-    "model_review-fixer",
-    "model_session",
-    "model_qa",
-    "model_retro",
-    "model_workflow",
-    "agent_runtime_plan",
-    "agent_runtime_prd",
-    "agent_runtime_execute",
-    "agent_runtime_risk",
-    "agent_runtime_review",
-    "agent_runtime_review-fixer",
-    "agent_runtime_session",
-    "agent_runtime_qa",
-    "agent_runtime_retro",
-    "agent_autonomy",
-    "parallel_execution",
-];
+const SHARED_COLUMNS: &[&str] = &["model_session", "agent_runtime_session"];
 
 /// Columns that only exist on the `projects` table.
-const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix", "qa_prompt"];
+const PROJECT_ONLY_COLUMNS: &[&str] = &["branch_prefix"];
 
 async fn resolve_table_kv_setting(
     pool: &SqlitePool,
@@ -153,35 +131,26 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 project_id INTEGER,
                 title TEXT,
-                agent_autonomy TEXT,
-                parallel_execution TEXT,
-                model_plan TEXT, model_prd TEXT, model_execute TEXT,
-                model_risk TEXT, model_review TEXT, "model_review-fixer" TEXT,
-                model_session TEXT, model_qa TEXT, model_retro TEXT,
-                model_workflow TEXT,
-                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
-                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
-                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
+                model_session TEXT,
+                agent_runtime_session TEXT
             )"#,
-        ).execute(&pool).await.unwrap();
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query(
             r#"CREATE TABLE projects (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 path TEXT NOT NULL,
-                agent_autonomy TEXT,
-                parallel_execution TEXT,
                 branch_prefix TEXT,
-                qa_prompt TEXT,
-                model_plan TEXT, model_prd TEXT, model_execute TEXT,
-                model_risk TEXT, model_review TEXT,
-                model_session TEXT, model_qa TEXT, model_retro TEXT,
-                model_workflow TEXT,
-                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
-                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
-                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
+                model_session TEXT,
+                agent_runtime_session TEXT
             )"#,
-        ).execute(&pool).await.unwrap();
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
             .execute(&pool)
             .await
@@ -205,27 +174,34 @@ mod tests {
     async fn test_feature_level_wins() {
         let pool = test_pool().await;
         sqlx::query(
-            "INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '3')",
+            "INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'project-model')",
         )
         .execute(&pool)
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, agent_autonomy) VALUES (1, 1, 'f', '1')",
+            "INSERT INTO features (id, project_id, title, model_session) VALUES (1, 1, 'f', 'feature-model')",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
-        assert_eq!(result, Some("1".to_string()));
+        let result = resolve_setting(
+            &pool,
+            "model_session",
+            Some(1),
+            Some(1),
+            Some("default-model"),
+        )
+        .await;
+        assert_eq!(result, Some("feature-model".to_string()));
     }
 
     #[tokio::test]
     async fn test_project_level_fallback() {
         let pool = test_pool().await;
         sqlx::query(
-            "INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', '2')",
+            "INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'project-model')",
         )
         .execute(&pool)
         .await
@@ -235,8 +211,15 @@ mod tests {
             .await
             .unwrap();
 
-        let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
-        assert_eq!(result, Some("2".to_string()));
+        let result = resolve_setting(
+            &pool,
+            "model_session",
+            Some(1),
+            Some(1),
+            Some("default-model"),
+        )
+        .await;
+        assert_eq!(result, Some("project-model".to_string()));
     }
 
     #[tokio::test]
@@ -250,13 +233,20 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO settings (key, value) VALUES ('agent_autonomy', '2')")
+        sqlx::query("INSERT INTO settings (key, value) VALUES ('model_session', 'global-model')")
             .execute(&pool)
             .await
             .unwrap();
 
-        let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("3")).await;
-        assert_eq!(result, Some("2".to_string()));
+        let result = resolve_setting(
+            &pool,
+            "model_session",
+            Some(1),
+            Some(1),
+            Some("default-model"),
+        )
+        .await;
+        assert_eq!(result, Some("global-model".to_string()));
     }
 
     #[tokio::test]
@@ -271,8 +261,15 @@ mod tests {
             .await
             .unwrap();
 
-        let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("1")).await;
-        assert_eq!(result, Some("1".to_string()));
+        let result = resolve_setting(
+            &pool,
+            "model_session",
+            Some(1),
+            Some(1),
+            Some("default-model"),
+        )
+        .await;
+        assert_eq!(result, Some("default-model".to_string()));
     }
 
     #[tokio::test]
@@ -306,13 +303,20 @@ mod tests {
     #[tokio::test]
     async fn test_default_value_is_not_special() {
         let pool = test_pool().await;
-        sqlx::query("INSERT INTO projects (id, name, path, agent_autonomy) VALUES (1, 'p', '/tmp', 'default')")
+        sqlx::query("INSERT INTO projects (id, name, path, model_session) VALUES (1, 'p', '/tmp', 'default')")
             .execute(&pool).await.unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title, agent_autonomy) VALUES (1, 1, 'f', 'default')")
+        sqlx::query("INSERT INTO features (id, project_id, title, model_session) VALUES (1, 1, 'f', 'default')")
             .execute(&pool).await.unwrap();
 
         // "default" is a regular value, not a magic keyword — feature level wins
-        let result = resolve_setting(&pool, "agent_autonomy", Some(1), Some(1), Some("1")).await;
+        let result = resolve_setting(
+            &pool,
+            "model_session",
+            Some(1),
+            Some(1),
+            Some("default-model"),
+        )
+        .await;
         assert_eq!(result, Some("default".to_string()));
     }
 
@@ -320,14 +324,14 @@ mod tests {
     async fn test_project_only_column() {
         let pool = test_pool().await;
         sqlx::query(
-            "INSERT INTO projects (id, name, path, qa_prompt) VALUES (1, 'p', '/tmp', 'run tests')",
+            "INSERT INTO projects (id, name, path, branch_prefix) VALUES (1, 'p', '/tmp', 'feature/')",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        let result = resolve_setting(&pool, "qa_prompt", None, Some(1), None).await;
-        assert_eq!(result, Some("run tests".to_string()));
+        let result = resolve_setting(&pool, "branch_prefix", None, Some(1), None).await;
+        assert_eq!(result, Some("feature/".to_string()));
     }
 
     #[tokio::test]

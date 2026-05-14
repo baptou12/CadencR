@@ -2,7 +2,6 @@
 
 use axum::extract::ws::Message;
 use serde_json::Value;
-use tracing::info;
 
 use super::super::super::persistence::WsSessionPersistence;
 use super::super::super::protocol::{PermissionRequestPayload, WsEnvelope};
@@ -19,10 +18,6 @@ pub(super) async fn restore_pending_or_idle(
     if let Some(row) =
         WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await
     {
-        if row.pending_plan_approval.is_some() {
-            restore_plan_approval(app_state, sender, db_session_id, feature_id, &row).await;
-            return;
-        }
         if let Some(payload) = row
             .pending_permission
             .as_deref()
@@ -55,41 +50,6 @@ pub(super) async fn restore_pending_or_idle(
         }
     }
     clear_stale_pending(app_state, db_session_id, feature_id).await;
-}
-
-async fn restore_plan_approval(
-    app_state: &AppState,
-    sender: &WsSender,
-    db_session_id: i64,
-    feature_id: i64,
-    row: &crate::domain::ws_session::persistence::SessionRow,
-) {
-    info!(
-        db_session_id,
-        feature_id, "restoring pending plan approval from DB"
-    );
-    let plan_input: Value = row
-        .pending_plan_approval
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or(serde_json::json!({}));
-    let payload = PermissionRequestPayload {
-        request_id: format!("plan_restore_{db_session_id}"),
-        tool_name: "ExitPlanMode".to_string(),
-        tool_input: plan_input,
-        description: Some("Plan is ready for approval".to_string()),
-        pattern: None,
-        preview: None,
-        options: Vec::new(),
-    };
-    send_pending(
-        app_state,
-        sender,
-        db_session_id,
-        feature_id,
-        payload,
-        PendingKind::PlanApproval,
-    );
 }
 
 fn send_pending(
@@ -181,8 +141,6 @@ mod tests {
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT,
                 pending_permission TEXT,
                 pending_questions TEXT,
                 thinking_effort TEXT

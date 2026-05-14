@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 function makeSession(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     sessionDbId: 1,
-    agentType: "plan",
+    agentType: "session",
     status: "completed",
     subprocessId: null,
     model: "claude-opus-4-5",
@@ -43,12 +43,8 @@ function makeSession(overrides: Record<string, unknown> = {}): Record<string, un
     hasFileChanges: false,
     resumable: false,
     runtimeSessionId: null,
-    runId: null,
-    phaseId: null,
-    phaseTitle: null,
     todos: null,
     permissionMode: "acceptEdits",
-    pendingPlanApproval: null,
     pendingPermission: null,
     inputTokens: 0,
     outputTokens: 0,

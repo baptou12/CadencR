@@ -98,14 +98,7 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
   }
 }
 
-export function persistedStatusToLifecycle(
-  status: DbSessionStatus | string,
-  pendingPlanApproval: unknown,
-): TurnLifecycle {
-  if (pendingPlanApproval != null) {
-    return { phase: "paused", reason: "planApproval" };
-  }
-
+export function persistedStatusToLifecycle(status: DbSessionStatus | string): TurnLifecycle {
   switch (status) {
     case "paused":
       return { phase: "paused", reason: "user" };

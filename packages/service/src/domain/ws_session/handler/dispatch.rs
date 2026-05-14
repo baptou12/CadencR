@@ -11,7 +11,6 @@ use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
 use super::types::{SdkSessions, WsSender};
 use super::{
     app, commands, session_compact, session_control, session_data, session_init, session_prompt,
-    workflow,
 };
 
 /// Dispatch an envelope to the appropriate domain handler.
@@ -28,9 +27,6 @@ pub(super) async fn dispatch_envelope(
         }
         "commands" => {
             commands::handle_commands_action(envelope, sender).await;
-        }
-        "workflow" => {
-            workflow::handle_workflow_action(envelope, sender, sdk_sessions, app_state).await;
         }
         "app" => {
             app::handle_app_action(envelope, sender, app_state).await;

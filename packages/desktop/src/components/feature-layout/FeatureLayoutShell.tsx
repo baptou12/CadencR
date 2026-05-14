@@ -30,7 +30,7 @@ interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
 }
 
 /**
- * Top-level component consumed by ws-session and FeatureWorkflowView. Owns:
+ * Top-level component consumed by ws-session. Owns:
  *   - DnD context (one per page) with sensors, collision detection, overlay.
  *   - Tab content registry (mounts every tab body once, portals it).
  *   - Layout hydration on mount (`useFeatureLayoutHydration`).

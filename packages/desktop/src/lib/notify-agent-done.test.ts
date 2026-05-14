@@ -66,7 +66,7 @@ function bridge(): CadencrDesktopBridge {
   };
 }
 
-const baseOpts = { featureId: 1, projectId: 2, routeType: "workflow" as const };
+const baseOpts = { featureId: 1, projectId: 2, routeType: "session" as const };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -97,7 +97,7 @@ describe("notifyAgentDone", () => {
     expect(mockNotify).not.toHaveBeenCalled();
   });
 
-  it("does not send when user is on the workflow feature page", async () => {
+  it("sends when user is on a legacy project feature page", async () => {
     mockNotifyPermission.mockResolvedValue(true);
     mockNotify.mockResolvedValue(undefined);
     await initNotificationPermission();
@@ -109,7 +109,14 @@ describe("notifyAgentDone", () => {
     });
 
     notifyAgentDone({ status: "completed", featureTitle: "My Feature", ...baseOpts });
-    expect(mockNotify).not.toHaveBeenCalled();
+    expect(mockNotify).toHaveBeenCalledWith({
+      title: "Agent finished",
+      body: "My Feature",
+      featureId: 1,
+      projectId: 2,
+      routeType: "session",
+      mode: "native",
+    });
   });
 
   it("does not send when user is on the session page", async () => {
@@ -147,16 +154,16 @@ describe("notifyAgentDone", () => {
     notifyAgentDone({
       status: "completed",
       featureTitle: "My Feature",
-      agentKind: "Execute",
+      agentKind: "Session",
       agentTitle: "Build login",
       ...baseOpts,
     });
     expect(mockNotify).toHaveBeenCalledWith({
       title: "Agent finished",
-      body: "My Feature\nExecute: Build login",
+      body: "My Feature\nSession: Build login",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
   });
@@ -175,15 +182,15 @@ describe("notifyAgentDone", () => {
     notifyAgentDone({
       status: "error",
       featureTitle: "Broken Feature",
-      agentKind: "Execute",
+      agentKind: "Session",
       ...baseOpts,
     });
     expect(mockNotify).toHaveBeenCalledWith({
       title: "Agent error",
-      body: "Broken Feature\nExecute",
+      body: "Broken Feature\nSession",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
   });
@@ -205,7 +212,7 @@ describe("notifyAgentDone", () => {
       body: "Waiting Feature",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
   });
@@ -227,7 +234,7 @@ describe("notifyAgentDone", () => {
       body: "My Feature",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
   });
@@ -313,14 +320,14 @@ describe("listenForNotificationFallbacks", () => {
 
     captured[0]({
       title: "Agent finished",
-      body: "My Feature\nExecute",
-      click: { feature_id: 9, project_id: 2, route_type: "workflow" },
+      body: "My Feature\nSession",
+      click: { feature_id: 9, project_id: 2, route_type: "session" },
     });
 
     expect(mockToastMessage).toHaveBeenCalledWith(
       "Agent finished",
       expect.objectContaining({
-        description: "My Feature\nExecute",
+        description: "My Feature\nSession",
         action: expect.objectContaining({ label: "Open" }),
       }),
     );
@@ -328,8 +335,9 @@ describe("listenForNotificationFallbacks", () => {
     const action = mockToastMessage.mock.calls[0][1].action as { onClick: () => void };
     action.onClick();
     expect(navigate).toHaveBeenCalledWith({
-      to: "/projects/$projectId/features/$featureId",
-      params: { projectId: "2", featureId: "9" },
+      to: "/ws-session/$sessionId",
+      params: { sessionId: "ws-feature-9" },
+      search: { cwd: "", featureId: 9, projectId: 2 },
     });
 
     unsubscribe();
@@ -372,13 +380,13 @@ describe("notifyAgentNeedsInput", () => {
       writable: true,
     });
 
-    notifyAgentNeedsInput({ featureTitle: "My Feature", agentKind: "Plan", ...baseOpts });
+    notifyAgentNeedsInput({ featureTitle: "My Feature", agentKind: "Session", ...baseOpts });
     expect(mockNotify).toHaveBeenCalledWith({
       title: "Agent needs input",
-      body: "My Feature\nPlan",
+      body: "My Feature\nSession",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
   });

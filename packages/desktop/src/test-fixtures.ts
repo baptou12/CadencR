@@ -3,14 +3,7 @@
  * Each factory returns realistic data matching DB schema types.
  */
 
-import type {
-  ProjectRow,
-  FeatureRow,
-  PlanRow,
-  PhaseRow,
-  AgentMessageRow,
-  AgentSessionRow,
-} from "./types/db-rows";
+import type { ProjectRow, FeatureRow, AgentMessageRow, AgentSessionRow } from "./types/db-rows";
 
 // ---------------------------------------------------------------------------
 // Project
@@ -25,17 +18,8 @@ export function createMockProject(overrides: Partial<ProjectRow> = {}): ProjectR
     name: `Test Project ${id}`,
     path: `/home/user/projects/test-project-${id}`,
     created_at: "2024-01-01T00:00:00.000Z",
-    model_plan: null,
-    model_prd: null,
-    model_execute: null,
-    model_risk: null,
-    model_review: null,
     model_session: null,
-    model_qa: null,
-    agent_autonomy: null,
-    parallel_execution: null,
     branch_prefix: "feature/",
-    qa_prompt: null,
     ...overrides,
   };
 }
@@ -52,70 +36,9 @@ export function createMockFeature(overrides: Partial<FeatureRow> = {}): FeatureR
     id,
     project_id: 1,
     title: `Test Feature ${id}`,
-    type: "ws-feature",
-    status: "draft",
+    type: "ws-session",
     created_at: "2024-01-01T00:00:00.000Z",
-    model_plan: null,
-    model_prd: null,
-    model_execute: null,
-    model_risk: null,
-    model_review: null,
     model_session: null,
-    model_qa: null,
-    agent_autonomy: null,
-    parallel_execution: null,
-    prd: null,
-    workflow_step: null,
-    workflow_config: null,
-    ...overrides,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Plan
-// ---------------------------------------------------------------------------
-
-let _planId = 1;
-
-export function createMockPlan(overrides: Partial<PlanRow> = {}): PlanRow {
-  const id = overrides.id ?? _planId++;
-  return {
-    id,
-    feature_id: 1,
-    title: `Test Plan ${id}`,
-    status: "pending",
-    raw_markdown: null,
-    summary: "A test plan summary.",
-    context: "Some context about the plan.",
-    clarifications: null,
-    completion_conditions: null,
-    created_at: "2024-01-01T00:00:00.000Z",
-    updated_at: "2024-01-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Phase
-// ---------------------------------------------------------------------------
-
-let _phaseId = 1;
-
-export function createMockPhase(overrides: Partial<PhaseRow> = {}): PhaseRow {
-  const id = overrides.id ?? _phaseId++;
-  return {
-    id,
-    plan_id: 1,
-    step_number: 1,
-    title: `Phase ${id}: Implement something`,
-    status: "pending",
-    complexity: 3,
-    commit_message: `feat: implement phase ${id}`,
-    prompt: "Implement the following feature...",
-    order_index: id,
-    implementation_notes: null,
-    deviations: null,
-    phase_type: "implementation",
     ...overrides,
   };
 }
@@ -154,20 +77,16 @@ export function createMockAgentSession(overrides: Partial<AgentSessionRow> = {})
   return {
     id,
     feature_id: 1,
-    agent_type: "plan",
+    agent_type: "session",
     runtime_session_id: null,
     status: "completed",
     started_at: "2024-01-01T00:00:00.000Z",
     ended_at: "2024-01-01T00:05:00.000Z",
-    run_id: null,
-    phase_id: null,
     subprocess_id: null,
     model: "claude-opus-4-5",
     pending_questions: null,
     has_file_changes: 0,
     permission_mode: "acceptEdits",
-    pending_plan_approval: null,
-    pending_prd_approval: null,
     pending_permission: null,
     input_tokens: 1000,
     output_tokens: 500,
@@ -234,8 +153,6 @@ export function createMockDiffFile(overrides: Partial<MockDiffFile> = {}): MockD
 export function resetMockIds() {
   _projectId = 1;
   _featureId = 1;
-  _planId = 1;
-  _phaseId = 1;
   _messageId = 1;
   _sessionId = 1;
 }

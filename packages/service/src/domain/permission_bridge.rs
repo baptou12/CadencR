@@ -441,8 +441,9 @@ fn apply_decision(
 }
 
 /// Wait for a user response on the permission channel and convert an
-/// allow/deny into a `PermissionResult`. Used for approval gates
-/// (show_plan, show_prd, ExitPlanMode) that bypass normal resolution.
+/// allow/deny into a `PermissionResult`. Used for approval gates such as
+/// `ExitPlanMode` that bypass normal resolution.
+#[allow(dead_code)]
 pub async fn wait_for_approval(
     response_rx: &Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
     tool_use_id: &str,

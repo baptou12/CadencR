@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import type { TabKind } from "@/stores/feature-layout-schema";
 
 /**
- * Per-tab metadata supplied by consumers (ws-session / FeatureWorkflowView).
+ * Per-tab metadata supplied by ws-session consumers.
  *
  * The `content` is mounted exactly once at the top of `<FeatureLayoutShell>`
  * and projected via `createPortal` into whichever pane currently hosts it —

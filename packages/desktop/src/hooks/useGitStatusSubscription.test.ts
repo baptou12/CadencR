@@ -137,7 +137,7 @@ describe("useGitStatusSubscription", () => {
     // it sees `worktree.created`/`worktree.ready` — and including the epoch
     // in the effect deps forces a re-subscribe so the backend re-resolves
     // to the freshly-created path. The epoch is driven by the WS envelope
-    // directly so this works for both the workflow view and ws-session.
+    // directly so ws-session rebinds without relying on local status fields.
     const ws = makeFakeWs();
     storeState.ws = ws;
     storeState.isConnected = true;

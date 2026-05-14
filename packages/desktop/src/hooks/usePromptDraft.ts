@@ -11,7 +11,7 @@ import { useSaveSessionDraft, useGetSessionDraft } from "@/api/generated";
 import { createDraftGet, createDraftSave } from "@/lib/ws-envelope";
 
 interface UsePromptDraftOptions {
-  /** DB session ID (for workflow agents that know it). */
+  /** DB session ID when known; ws-session can also derive it from serverSessionId. */
   sessionId: number | undefined;
   /** WS store key — when provided, derives DB session ID from serverSessionId. */
   wsSessionId?: string | undefined;

@@ -13,9 +13,8 @@ interface ResolvedModelProviderProps {
 
 /**
  * Hosts a single `useResolvedModel(featureId, projectId)` call at the route
- * level. Both `WebSocketSessionFeatureBlock` and `FeatureWorkflowView` used to
- * mount the hook separately, doubling the six settings/provider fetches on
- * cold open. They now read from this context instead.
+ * level so tab bodies can share the same settings/provider fetches on cold
+ * open.
  */
 export function ResolvedModelProvider({
   featureId,

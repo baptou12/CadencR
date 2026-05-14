@@ -1,37 +1,39 @@
 use sqlx::{Row, SqlitePool};
 
-use super::super::models::Feature;
+use super::super::models::{Feature, FeatureStatus};
 use crate::error::AppError;
 
-pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
-    let rows = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status, label,
-           prd, workflow_step, workflow_config,
-           model_plan, model_prd, model_execute, model_risk, model_review,
-           "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
-           agent_autonomy, parallel_execution,
-           COALESCE(created_at, datetime('now')) as created_at
-           FROM features WHERE project_id = ? ORDER BY created_at DESC"#,
-    )
-    .bind(project_id)
-    .fetch_all(pool)
-    .await?;
+const FEATURE_COLUMNS: &str = r#"id, project_id, title, status,
+           COALESCE(type, 'ws-session') as type_, label,
+           model_session,
+           COALESCE(created_at, datetime('now')) as created_at"#;
+
+pub async fn list_by_project(
+    pool: &SqlitePool,
+    project_id: i64,
+    include_archived: bool,
+) -> Result<Vec<Feature>, AppError> {
+    let status_filter = if include_archived {
+        ""
+    } else {
+        " AND status = 'active'"
+    };
+    let sql = format!(
+        "SELECT {FEATURE_COLUMNS} FROM features WHERE project_id = ?{status_filter} ORDER BY created_at DESC"
+    );
+    let rows = sqlx::query_as::<_, Feature>(&sql)
+        .bind(project_id)
+        .fetch_all(pool)
+        .await?;
     Ok(rows)
 }
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
-    let row = sqlx::query_as::<_, Feature>(
-        r#"SELECT id, project_id, title, COALESCE(type, 'ws-feature') as type_, status, label,
-           prd, workflow_step, workflow_config,
-           model_plan, model_prd, model_execute, model_risk, model_review,
-           "model_review-fixer" as model_review_fixer, model_session, model_qa, model_retro,
-           agent_autonomy, parallel_execution,
-           COALESCE(created_at, datetime('now')) as created_at
-           FROM features WHERE id = ?"#,
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
+    let sql = format!("SELECT {FEATURE_COLUMNS} FROM features WHERE id = ?");
+    let row = sqlx::query_as::<_, Feature>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?;
     Ok(row)
 }
 
@@ -42,12 +44,14 @@ pub async fn create_feature(
     title: &str,
     type_: &str,
 ) -> Result<i64, AppError> {
-    let result = sqlx::query("INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)")
-        .bind(project_id)
-        .bind(title)
-        .bind(type_)
-        .execute(pool)
-        .await?;
+    let result = sqlx::query(
+        "INSERT INTO features (project_id, title, status, type) VALUES (?, ?, 'active', ?)",
+    )
+    .bind(project_id)
+    .bind(title)
+    .bind(type_)
+    .execute(pool)
+    .await?;
     Ok(result.last_insert_rowid())
 }
 
@@ -59,20 +63,6 @@ pub async fn get_max_session_num(pool: &SqlitePool, project_id: i64) -> Result<i
     .fetch_optional(pool)
     .await?;
     Ok(row.and_then(|r| r.0).unwrap_or(0))
-}
-
-pub async fn update_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE features SET status = ? WHERE id = ?")
-        .bind(status)
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-    if status == "archived" {
-        clear_agent_session_pins(&mut tx, id).await?;
-    }
-    tx.commit().await?;
-    Ok(())
 }
 
 async fn clear_agent_session_pins(
@@ -114,6 +104,22 @@ pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(),
     Ok(())
 }
 
+pub async fn update_status(
+    pool: &SqlitePool,
+    id: i64,
+    status: FeatureStatus,
+) -> Result<(), AppError> {
+    let result = sqlx::query("UPDATE features SET status = ? WHERE id = ?")
+        .bind(status.as_str())
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("feature {id} not found")));
+    }
+    Ok(())
+}
+
 pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Result<(), AppError> {
     let result = sqlx::query("UPDATE features SET label = ? WHERE id = ?")
         .bind(label)
@@ -126,71 +132,18 @@ pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Re
     Ok(())
 }
 
-pub async fn get_prd(pool: &SqlitePool, id: i64) -> Result<Option<String>, AppError> {
-    let row: Option<(Option<String>,)> = sqlx::query_as("SELECT prd FROM features WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-    Ok(row.and_then(|r| r.0))
-}
-
-pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
-    let feature_row: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT COALESCE(type, 'ws-feature'), prd FROM features WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
-
-    let (ftype, prd) = match feature_row {
-        None => return Ok(true),
-        Some(r) => r,
-    };
-
-    // For ws-sessions, emptiness is purely based on whether messages exist
-    // (a paused session with no messages is still empty).
-    if ftype == "ws-session" {
-        let msg: Option<(i64,)> = sqlx::query_as(
-            "SELECT 1 FROM agent_messages WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
-        )
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
-        return Ok(msg.is_none());
-    }
-
-    // Never consider empty if there are active sessions (for non-ws-session features)
-    let active: Option<(i64,)> = sqlx::query_as(
-        "SELECT 1 FROM agent_sessions WHERE feature_id = ? AND status IN ('running', 'paused', 'waiting') LIMIT 1",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    if active.is_some() {
-        return Ok(false);
-    }
-
-    let has_prd = prd.map(|p| !p.trim().is_empty()).unwrap_or(false);
-    let has_plan: Option<(i64,)> =
-        sqlx::query_as("SELECT 1 FROM plans WHERE feature_id = ? LIMIT 1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
-    Ok(!has_prd && has_plan.is_none())
-}
-
 pub async fn resolve_working_dir(
     pool: &SqlitePool,
     feature_id: i64,
     project_id: i64,
 ) -> Result<Option<String>, AppError> {
     let feature_row: Option<(String,)> =
-        sqlx::query_as("SELECT COALESCE(type, 'ws-feature') FROM features WHERE id = ?")
+        sqlx::query_as("SELECT COALESCE(type, 'ws-session') FROM features WHERE id = ?")
             .bind(feature_id)
             .fetch_optional(pool)
             .await?;
 
     if feature_row.is_some() {
-        // Check worktree path for all feature types (ws-feature and ws-session)
         let setting: Option<(String,)> = sqlx::query_as(
             "SELECT value FROM feature_settings WHERE feature_id = ? AND key = 'worktree_path'",
         )
@@ -212,31 +165,10 @@ pub async fn resolve_working_dir(
 pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
     let mut tx = pool.begin().await?;
 
-    // Delete workflow_queue first — it has FKs to phases, agent_sessions, and features
-    sqlx::query("DELETE FROM workflow_queue WHERE feature_id = ?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
+    // Clear pinned-session bookkeeping (no-op when the column doesn't exist).
+    clear_agent_session_pins(&mut tx, id).await?;
 
-    // Delete phases (FK to plans)
-    let plan_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM plans WHERE feature_id = ?")
-        .bind(id)
-        .fetch_all(&mut *tx)
-        .await?;
-
-    for (plan_id,) in plan_ids {
-        sqlx::query("DELETE FROM phases WHERE plan_id = ?")
-            .bind(plan_id)
-            .execute(&mut *tx)
-            .await?;
-    }
-
-    sqlx::query("DELETE FROM plans WHERE feature_id = ?")
-        .bind(id)
-        .execute(&mut *tx)
-        .await?;
-
-    // Delete session children, then sessions
+    // Delete session children, then sessions.
     sqlx::query(
         "DELETE FROM session_runtime_ids WHERE session_id IN (SELECT id FROM agent_sessions WHERE feature_id = ?)",
     )
@@ -280,67 +212,9 @@ pub async fn delete_feature(pool: &SqlitePool, id: i64) -> Result<(), AppError> 
     Ok(())
 }
 
-pub async fn get_workflow_status(
-    pool: &SqlitePool,
-    feature_id: i64,
-) -> Result<crate::domain::workflow::status::WorkflowStatus, AppError> {
-    let row: Option<(String,)> =
-        sqlx::query_as("SELECT COALESCE(workflow_status, 'idle') FROM features WHERE id = ?")
-            .bind(feature_id)
-            .fetch_optional(pool)
-            .await?;
-
-    let status_str = row.map(|r| r.0).unwrap_or_else(|| "idle".to_string());
-    status_str
-        .parse()
-        .map_err(|e: String| AppError::BadRequest(e))
-}
-
-pub async fn set_workflow_status(
-    pool: &SqlitePool,
-    feature_id: i64,
-    new_status: crate::domain::workflow::status::WorkflowStatus,
-) -> Result<crate::domain::workflow::status::WorkflowStatus, AppError> {
-    use crate::domain::workflow::status::WorkflowStatus;
-
-    // Read current status
-    let current = get_workflow_status(pool, feature_id)
-        .await
-        .unwrap_or(WorkflowStatus::Idle);
-
-    // Validate transition
-    current.transition(new_status).map_err(|e| {
-        tracing::warn!(feature_id, from = %current, to = %new_status, "invalid workflow transition (forcing)");
-        AppError::BadRequest(e)
-    })?;
-
-    // Write to DB
-    sqlx::query("UPDATE features SET workflow_status = ? WHERE id = ?")
-        .bind(new_status.to_string())
-        .bind(feature_id)
-        .execute(pool)
-        .await?;
-
-    Ok(new_status)
-}
-
-/// Force-set workflow status without transition validation.
-/// Used for recovery/reconnect scenarios where the DB state may be stale.
-pub async fn force_workflow_status(
-    pool: &SqlitePool,
-    feature_id: i64,
-    status: crate::domain::workflow::status::WorkflowStatus,
-) -> Result<(), AppError> {
-    sqlx::query("UPDATE features SET workflow_status = ? WHERE id = ?")
-        .bind(status.to_string())
-        .bind(feature_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::super::models::FeatureStatus;
     use super::*;
 
     async fn setup_pool() -> SqlitePool {
@@ -350,9 +224,11 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 project_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
-                status TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
                 label TEXT,
-                type TEXT NOT NULL
+                type TEXT NOT NULL DEFAULT 'ws-session',
+                model_session TEXT,
+                created_at TEXT
             )"#,
         )
         .execute(&pool)
@@ -373,27 +249,61 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn archive_clears_agent_session_pins() {
+    async fn get_by_id_returns_feature() {
         let pool = setup_pool().await;
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, status, type) VALUES (1, 1, 'f', 'draft', 'ws-session')",
+            "INSERT INTO features (id, project_id, title, status, type) VALUES (1, 1, 'f', 'active', 'ws-session')",
         )
         .execute(&pool)
         .await
         .unwrap();
+        let f = get_by_id(&pool, 1).await.unwrap().unwrap();
+        assert_eq!(f.title, "f");
+        assert_eq!(f.type_, "ws-session");
+    }
+
+    #[tokio::test]
+    async fn list_by_project_hides_archived_features() {
+        let pool = setup_pool().await;
         sqlx::query(
-            "INSERT INTO agent_sessions (id, feature_id, status, is_pinned) VALUES (10, 1, 'completed', 1)",
+            "INSERT INTO features (id, project_id, title, status, type) VALUES \
+             (1, 1, 'active', 'active', 'ws-session'), \
+             (2, 1, 'hidden', 'archived', 'ws-session')",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        update_status(&pool, 1, "archived").await.unwrap();
+        let features = list_by_project(&pool, 1, false).await.unwrap();
+        assert_eq!(features.len(), 1);
+        assert_eq!(features[0].id, 1);
+        assert_eq!(features[0].status, FeatureStatus::Active);
+    }
 
-        let pinned: i64 = sqlx::query_scalar("SELECT is_pinned FROM agent_sessions WHERE id = 10")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(pinned, 0);
+    #[tokio::test]
+    async fn list_by_project_can_include_archived_features() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type, created_at) VALUES \
+             (1, 1, 'active', 'active', 'ws-session', '2026-01-01T00:00:00Z'), \
+             (2, 1, 'archived', 'archived', 'ws-session', '2026-01-02T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let features = list_by_project(&pool, 1, true).await.unwrap();
+        let statuses: Vec<FeatureStatus> = features.iter().map(|feature| feature.status).collect();
+        assert_eq!(features.len(), 2);
+        assert_eq!(
+            statuses,
+            vec![FeatureStatus::Archived, FeatureStatus::Active]
+        );
+    }
+
+    #[tokio::test]
+    async fn get_by_id_missing_returns_none() {
+        let pool = setup_pool().await;
+        assert!(get_by_id(&pool, 99).await.unwrap().is_none());
     }
 }

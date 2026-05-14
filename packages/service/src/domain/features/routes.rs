@@ -11,12 +11,14 @@ use crate::domain::features::worktree_settings::{
 };
 use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
-use crate::domain::workflow::engine::{send_feature_updated_envelope, WsSender};
+use crate::domain::workflow::ws_sender::send_feature_updated_envelope;
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ListFeaturesParams {
     pub project_id: i64,
+    #[serde(default)]
+    pub include_archived: bool,
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -32,7 +34,8 @@ pub async fn list_features_handler(
     Query(params): Query<ListFeaturesParams>,
 ) -> Result<Json<Vec<Feature>>, AppError> {
     Ok(Json(
-        service::list_by_project(&state.read_pool, params.project_id).await?,
+        service::list_by_project(&state.read_pool, params.project_id, params.include_archived)
+            .await?,
     ))
 }
 
@@ -88,19 +91,6 @@ pub async fn delete_feature_handler(
     Ok(Json(SuccessResponse { success: true }))
 }
 
-#[utoipa::path(put, path = "/api/features/{id}/status",
-    params(("id" = i64, Path,)),
-    request_body = UpdateStatusRequest,
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn update_feature_status_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<UpdateStatusRequest>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    service::update_status(&state.write_pool, id, &body.status).await?;
-    Ok(Json(SuccessResponse { success: true }))
-}
-
 #[utoipa::path(put, path = "/api/features/{id}/title",
     params(("id" = i64, Path,)),
     request_body = UpdateTitleRequest,
@@ -111,6 +101,19 @@ pub async fn update_feature_title_handler(
     Json(body): Json<UpdateTitleRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::update_title(&state.write_pool, id, &body.title).await?;
+    Ok(Json(SuccessResponse { success: true }))
+}
+
+#[utoipa::path(put, path = "/api/features/{id}/status",
+    params(("id" = i64, Path,)),
+    request_body = UpdateStatusRequest,
+    responses((status = 200, body = SuccessResponse)))]
+pub async fn update_feature_status_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateStatusRequest>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    service::update_status(&state.write_pool, id, body.status).await?;
     Ok(Json(SuccessResponse { success: true }))
 }
 
@@ -135,76 +138,8 @@ pub async fn update_feature_label_handler(
 
 async fn broadcast_label_update(state: &AppState, feature_id: i64) {
     for sender in state.ws_feature_senders.get_senders(feature_id).await {
-        send_feature_updated_envelope(&WsSender::new(sender), feature_id, &["label"]);
+        send_feature_updated_envelope(&sender, feature_id, &["label"]);
     }
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/prd",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = PrdResponse)))]
-pub async fn get_prd_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<PrdResponse>, AppError> {
-    Ok(Json(service::get_prd(&state.read_pool, id).await?))
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/empty",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = IsEmptyResponse)))]
-pub async fn is_empty_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<IsEmptyResponse>, AppError> {
-    Ok(Json(service::is_empty(&state.read_pool, id).await?))
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/plan",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = Option<PlanWithPhases>)))]
-pub async fn get_plan_with_phases_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<Option<PlanWithPhases>>, AppError> {
-    Ok(Json(
-        service::get_plan_with_phases(&state.read_pool, id).await?,
-    ))
-}
-
-#[utoipa::path(get, path = "/api/features/{id}/plan/progress",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = PlanProgress)))]
-pub async fn get_plan_progress_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<PlanProgress>, AppError> {
-    Ok(Json(
-        service::get_plan_progress(&state.read_pool, id).await?,
-    ))
-}
-
-#[utoipa::path(put, path = "/api/phases/{id}/reset",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn reset_phase_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    service::reset_phase(&state.write_pool, id).await?;
-    Ok(Json(SuccessResponse { success: true }))
-}
-
-#[utoipa::path(put, path = "/api/phases/{id}/status",
-    params(("id" = i64, Path,)),
-    request_body = OverridePhaseStatusRequest,
-    responses((status = 200, body = SuccessResponse)))]
-pub async fn override_phase_status_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-    Json(body): Json<OverridePhaseStatusRequest>,
-) -> Result<Json<SuccessResponse>, AppError> {
-    service::override_phase_status(&state.write_pool, id, &body.status).await?;
-    Ok(Json(SuccessResponse { success: true }))
 }
 
 #[utoipa::path(get, path = "/api/features/{id}/settings",
@@ -310,18 +245,6 @@ pub async fn get_working_dir_handler(
     ))
 }
 
-#[utoipa::path(get, path = "/api/features/{id}/snapshot",
-    params(("id" = i64, Path,)),
-    responses((status = 200, body = FeatureSnapshotResponse)))]
-pub async fn get_feature_snapshot_handler(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Json<FeatureSnapshotResponse>, AppError> {
-    Ok(Json(
-        service::get_feature_snapshot(&state.read_pool, id).await?,
-    ))
-}
-
 #[derive(serde::Serialize, utoipa::ToSchema)]
 #[schema(as = FeaturesSuccessResponse)]
 pub struct SuccessResponse {
@@ -339,28 +262,16 @@ pub fn features_router() -> Router<AppState> {
             get(get_feature_handler).delete(delete_feature_handler),
         )
         .route(
-            "/api/features/{id}/status",
-            put(update_feature_status_handler),
-        )
-        .route(
             "/api/features/{id}/title",
             put(update_feature_title_handler),
         )
         .route(
+            "/api/features/{id}/status",
+            put(update_feature_status_handler),
+        )
+        .route(
             "/api/features/{id}/label",
             put(update_feature_label_handler),
-        )
-        .route("/api/features/{id}/prd", get(get_prd_handler))
-        .route("/api/features/{id}/empty", get(is_empty_handler))
-        .route("/api/features/{id}/plan", get(get_plan_with_phases_handler))
-        .route(
-            "/api/features/{id}/plan/progress",
-            get(get_plan_progress_handler),
-        )
-        .route("/api/phases/{id}/reset", put(reset_phase_handler))
-        .route(
-            "/api/phases/{id}/status",
-            put(override_phase_status_handler),
         )
         .route(
             "/api/features/{id}/settings",
@@ -373,10 +284,6 @@ pub fn features_router() -> Router<AppState> {
         .route(
             "/api/features/{id}/provider-settings",
             get(get_feature_provider_settings_handler).put(set_feature_provider_setting_handler),
-        )
-        .route(
-            "/api/features/{id}/snapshot",
-            get(get_feature_snapshot_handler),
         )
         .route(
             "/api/features/{id}/working-dir",

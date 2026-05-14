@@ -82,7 +82,7 @@ mod tests {
     fn thread_config_merges_developer_instructions_with_mcp_servers() {
         let mut servers = HashMap::new();
         servers.insert(
-            "cadencr-plan".to_string(),
+            "cadencr-session".to_string(),
             RuntimeMcpServerConfig::Stdio {
                 command: "svc".to_string(),
                 args: None,
@@ -94,13 +94,13 @@ mod tests {
 
         assert_eq!(config["developer_instructions"], json!("Use Markdown"));
         assert_eq!(
-            config["mcp_servers"]["cadencr-plan"]["command"],
+            config["mcp_servers"]["cadencr-session"]["command"],
             json!("svc")
         );
     }
 
     #[test]
-    fn approval_elicitation_env_is_limited_to_cadencr_servers() {
+    fn approval_elicitation_env_is_not_set_after_ws_feature_removal() {
         let server = |name| {
             mcp_server_value(
                 name,
@@ -112,10 +112,7 @@ mod tests {
             )
         };
 
-        assert_eq!(
-            server("cadencr-plan")["env"]["CADENCR_MCP_APPROVAL_MODE"],
-            json!("elicitation")
-        );
+        assert!(server("cadencr-session")["env"]["CADENCR_MCP_APPROVAL_MODE"].is_null());
         assert!(server("custom")["env"]["CADENCR_MCP_APPROVAL_MODE"].is_null());
     }
 }

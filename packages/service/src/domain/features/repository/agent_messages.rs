@@ -2,6 +2,7 @@ use sqlx::SqlitePool;
 use tracing::warn;
 
 /// Extra WHERE filter for `retry_update_agent_message_content`.
+#[allow(dead_code)]
 pub enum ToolCallFilter {
     /// Match by `tool_name = ?`  (e.g. "ExitPlanMode")
     ToolName(String),

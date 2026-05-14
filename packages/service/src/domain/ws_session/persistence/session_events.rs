@@ -253,7 +253,7 @@ mod session_events_tests {
 
         sqlx::query(
             "INSERT INTO agent_sessions (feature_id, agent_type, status)
-             VALUES (1, 'execute', 'running')",
+             VALUES (1, 'session', 'running')",
         )
         .execute(&pool)
         .await

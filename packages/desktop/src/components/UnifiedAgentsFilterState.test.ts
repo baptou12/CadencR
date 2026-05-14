@@ -59,7 +59,6 @@ describe("UnifiedAgentsFilterState", () => {
     expect(toUnifiedAgentsQueryParams({ mode: "all", freshMinutes: 240 }, 100)).toEqual({
       mode: "all",
       fresh_minutes: undefined,
-      include_archived: false,
       message_limit: 100,
     });
   });

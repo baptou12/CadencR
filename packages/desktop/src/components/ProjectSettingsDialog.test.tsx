@@ -64,11 +64,13 @@ describe("ProjectSettingsDialog", () => {
     expect(screen.getByPlaceholderText(/pnpm install/i)).toHaveClass("font-mono");
   });
 
-  it("renders agent autonomy selector", () => {
+  it("does not render removed autonomy, parallel, or QA settings", () => {
     render(
       <ProjectSettingsDialog projectId={1} projectName="Test" open={true} onOpenChange={vi.fn()} />,
     );
-    expect(screen.getByRole("radiogroup", { name: /agent autonomy/i })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /agent autonomy/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Parallel agent execution/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/QA testing procedure/i)).not.toBeInTheDocument();
   });
 
   it("closes dialog when escape is pressed", async () => {

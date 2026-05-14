@@ -82,13 +82,11 @@ export function toUnifiedAgentsQueryParams(
 ): {
   mode: UnifiedAgentsMode;
   fresh_minutes?: number;
-  include_archived: boolean;
   message_limit: number;
 } {
   return {
     mode: filters.mode as UnifiedAgentsMode,
     fresh_minutes: filters.mode === "recent" ? filters.freshMinutes : undefined,
-    include_archived: false,
     message_limit: messageLimit,
   };
 }

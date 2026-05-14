@@ -8,7 +8,7 @@ export interface NotifyOptions {
   body: string;
   featureId: number;
   projectId: number;
-  routeType: "workflow" | "session";
+  routeType: "session";
   mode: NotifyMode;
 }
 

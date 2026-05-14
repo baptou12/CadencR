@@ -18,11 +18,11 @@ interface ToolSummary {
 
 /** Parsed Cadencr MCP tool name */
 export interface CadencrMcpTool {
-  /** Server name without prefix, e.g. "prd", "plan", "execute" */
+  /** Server name without prefix, currently "session" */
   server: string;
-  /** Raw tool name, e.g. "create_phase", "show_prd" */
+  /** Raw tool name, e.g. "mark_agent_done" */
   tool: string;
-  /** Human-readable label, e.g. "Creating phase" */
+  /** Human-readable label, e.g. "Marking done" */
   label: string;
   /** Detail extracted from args */
   detail?: string;
@@ -33,22 +33,7 @@ const CADENCR_MCP_NAMESPACE_PREFIX = "mcp__cadencr_";
 
 /** Human-readable labels for known Cadencr MCP tools. Falls back to title-casing the tool name. */
 const cadencrToolLabels: Record<string, string> = {
-  read_plan: "Reading plan",
-  create_phase: "Creating phase",
-  update_phase: "Updating phase",
-  remove_phase: "Removing phase",
-  list_phases: "Listing phases",
-  read_phase: "Reading phase",
-  update_plan: "Updating plan",
-  show_plan: "Showing plan",
-  finalize_plan: "Finalizing plan",
-  finalize_phases: "Finalizing phases",
-  create_prd: "Creating PRD",
-  edit_prd: "Editing PRD",
-  show_prd: "Showing PRD",
-  read_prd: "Reading PRD",
   mark_agent_done: "Marking done",
-  mark_phase_done: "Marking phase done",
   list_conversations: "Listing conversations",
   read_conversation: "Reading conversation",
 };
@@ -74,10 +59,8 @@ function cadencrDetail(tool: string, args: Record<string, unknown>): string | un
   if (commitMessage) return commitMessage;
   const prompt = nonEmptyString(args.prompt);
   if (prompt) return prompt.slice(0, 80);
-  const prd = nonEmptyString(args.prd);
-  if (prd) return prd.slice(0, 80);
-  if (tool === "read_phase" || tool === "mark_phase_done") {
-    if (typeof args.phase_id === "number") return `Phase #${args.phase_id}`;
+  if (tool === "read_conversation" && typeof args.session_id === "number") {
+    return `Session #${args.session_id}`;
   }
   return undefined;
 }
@@ -114,10 +97,8 @@ export function parseCadencrMcpTool(
   };
 }
 
-export function isCadencrPlanPresentationTool(toolName: string | undefined): boolean {
-  if (!toolName) return false;
-  const parsed = parseCadencrMcpToolName(toolName);
-  return parsed?.tool === "show_plan" || parsed?.tool === "show_prd";
+export function isCadencrPlanPresentationTool(_toolName: string | undefined): boolean {
+  return false;
 }
 
 function parseCadencrMcpToolName(toolName: string): { server: string; tool: string } | undefined {
@@ -147,6 +128,7 @@ function parsedMcpParts(
   const server = rest.slice(0, sep);
   const tool = rest.slice(sep + separatorLength);
   if (!server || !tool) return undefined;
+  if (server !== "session") return undefined;
   return { server, tool };
 }
 

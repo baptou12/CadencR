@@ -21,7 +21,6 @@ mod commands;
 mod connection;
 mod dispatch;
 pub(crate) mod helpers;
-pub(crate) mod mcp_spawn;
 pub(crate) mod post_plan_mode;
 mod session_compact;
 mod session_control;
@@ -29,9 +28,6 @@ mod session_data;
 mod session_init;
 pub(crate) mod session_prompt;
 mod types;
-pub(crate) mod workflow;
-mod workflow_complex;
-mod workflow_interact;
 
 pub use connection::ws_handler;
 
@@ -164,9 +160,6 @@ mod tests {
                 ended_at TEXT,
                 pending_questions TEXT,
                 pending_permission TEXT,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT,
-                plan_approval_result TEXT,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
@@ -211,8 +204,6 @@ mod tests {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL DEFAULT 1,
                 title TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'draft',
-                workflow_status TEXT NOT NULL DEFAULT 'idle',
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )"#,
         )
@@ -1500,7 +1491,7 @@ mod tests {
                 status_rx.try_recv(),
                 Err(tokio::sync::broadcast::error::TryRecvError::Empty)
             ),
-            "turn result must not broadcast idle while permission/question/plan/prd input is pending"
+            "turn result must not broadcast idle while permission/question input is pending"
         );
     }
 
@@ -1675,71 +1666,6 @@ mod tests {
         } else {
             panic!("expected text message");
         }
-    }
-
-    #[tokio::test]
-    async fn test_session_delete_plan_agent_resets_workflow_status() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
-        let app_state = make_test_app_state().await;
-
-        // Create a feature with plan_approval status
-        sqlx::query("UPDATE features SET workflow_status = 'plan_approval' WHERE id = 1")
-            .execute(&app_state.write_pool)
-            .await
-            .unwrap();
-
-        // Insert a plan-type session and pause it
-        sqlx::query("INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'paused')")
-            .execute(&app_state.write_pool).await.unwrap();
-        let (session_id,): (i64,) = sqlx::query_as(
-            "SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'",
-        )
-        .fetch_one(&app_state.write_pool)
-        .await
-        .unwrap();
-
-        let envelope = make_envelope(
-            "session",
-            "delete",
-            serde_json::json!({ "session_id": session_id.to_string() }),
-        );
-        dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
-
-        // First message: status_changed to idle
-        let msg1 = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg1 {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.domain, "workflow");
-            assert_eq!(env.action, "status_changed");
-            let status: String = env
-                .payload
-                .get("status")
-                .unwrap()
-                .as_str()
-                .unwrap()
-                .to_string();
-            assert_eq!(status, "idle");
-        } else {
-            panic!("expected status_changed message");
-        }
-
-        // Second message: session deleted confirmation
-        let msg2 = rx.recv().await.unwrap();
-        if let Message::Text(text) = msg2 {
-            let env: WsEnvelope = serde_json::from_str(&text).unwrap();
-            assert_eq!(env.action, "deleted");
-        } else {
-            panic!("expected deleted message");
-        }
-
-        // Verify workflow status is reset in DB
-        let (ws_status,): (String,) =
-            sqlx::query_as("SELECT workflow_status FROM features WHERE id = 1")
-                .fetch_one(&app_state.read_pool)
-                .await
-                .unwrap();
-        assert_eq!(ws_status, "idle");
     }
 
     // ----- parse_permission_mode + provider_supports_mode -----

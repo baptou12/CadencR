@@ -19,8 +19,8 @@ async function openLabelEditor(user: UserEvent, featureText: string): Promise<vo
 
 const mockNavigate = vi.fn();
 const _mockInvalidate = vi.fn();
-const mockUpdateStatus = vi.fn();
 const mockUpdateLabel = vi.fn();
+const mockUpdateStatus = vi.fn();
 const mockDelete = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
@@ -31,31 +31,42 @@ const mockFeatures = [
   {
     id: 1,
     title: "Feature One",
+    status: "active",
     label: "Review",
-    type: "ws-feature",
-    status: "draft",
+    type: "ws-session",
     project_id: 1,
+    created_at: "2026-01-01T00:00:00Z",
   },
   {
     id: 2,
     title: "Feature Two",
+    status: "active",
     label: "Blocked",
-    type: "ws-feature",
-    status: "in-progress",
+    type: "ws-session",
     project_id: 1,
+    created_at: "2026-01-02T00:00:00Z",
   },
-  { id: 3, title: "Session One", type: "ws-session", status: "draft", project_id: 1 },
-  { id: 4, title: "Archived Feature", type: "ws-feature", status: "archived", project_id: 1 },
+  {
+    id: 3,
+    title: "Session One",
+    status: "active",
+    type: "ws-session",
+    project_id: 1,
+    created_at: "2026-01-03T00:00:00Z",
+  },
+  {
+    id: 4,
+    title: "Archived Session",
+    status: "archived",
+    type: "ws-session",
+    project_id: 1,
+    created_at: "2026-01-04T00:00:00Z",
+  },
 ];
 
 vi.mock("@/api/generated", () => ({
+  FeatureStatus: { active: "active", archived: "archived" },
   useListFeatures: vi.fn(() => ({ data: mockFeatures })),
-  useUpdateFeatureStatus: vi.fn((opts?: { onSuccess?: () => void }) => ({
-    mutate: (data: unknown) => {
-      mockUpdateStatus(data);
-      opts?.onSuccess?.();
-    },
-  })),
   useUpdateFeatureLabel: vi.fn(
     (opts?: { onSuccess?: (data: unknown, variables: unknown) => void }) => ({
       mutate: (data: unknown) => {
@@ -65,18 +76,20 @@ vi.mock("@/api/generated", () => ({
       isPending: false,
     }),
   ),
+  useUpdateFeatureStatus: vi.fn((opts?: { mutation?: { onSuccess?: () => void } }) => ({
+    mutate: (data: unknown) => {
+      mockUpdateStatus(data);
+      opts?.mutation?.onSuccess?.();
+    },
+  })),
   useDeleteFeature: vi.fn((opts?: { onSuccess?: () => void }) => ({
     mutate: (data: unknown) => {
       mockDelete(data);
       opts?.onSuccess?.();
     },
   })),
-  useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   getGetFeatureQueryKey: vi.fn((id: number) => ["features", "detail", id]),
-  getGetFeaturePrdQueryKey: vi.fn((id: number) => ["features", "prd", id]),
-  getGetFeaturePlanQueryKey: vi.fn((id: number) => ["features", "plan", id]),
-  getGetFeaturePlanProgressQueryKey: vi.fn((id: number) => ["features", "plan-progress", id]),
   getGetFeatureSettingsQueryKey: vi.fn((id: number) => ["features", "settings", id]),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
@@ -95,19 +108,12 @@ vi.mock("@/stores/ws-session-store", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn(
-    (selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
-      selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
-  ),
-}));
-
 describe("ProjectFeatures", () => {
   beforeEach(() => {
     resetMockIds();
     mockNavigate.mockClear();
-    mockUpdateStatus.mockClear();
     mockUpdateLabel.mockClear();
+    mockUpdateStatus.mockClear();
     mockDelete.mockClear();
     useFeatureLayoutStore.setState({ features: {} });
   });
@@ -124,9 +130,10 @@ describe("ProjectFeatures", () => {
     expect(screen.getByText("Feature One")).toBeInTheDocument();
     expect(screen.getByText("Feature Two")).toBeInTheDocument();
     expect(screen.getByText("Session One")).toBeInTheDocument();
+    expect(screen.queryByText("Archived Session")).not.toBeInTheDocument();
   });
 
-  it("does not show archived features by default", () => {
+  it("renders active features and a collapsed archived section", () => {
     render(
       <ProjectFeatures
         projectId={1}
@@ -135,7 +142,81 @@ describe("ProjectFeatures", () => {
         onSelectFeature={vi.fn()}
       />,
     );
-    expect(screen.queryByText("Archived Feature")).not.toBeInTheDocument();
+    expect(screen.getByText("Feature One")).toBeInTheDocument();
+    expect(screen.getByText("Feature Two")).toBeInTheDocument();
+    expect(screen.getByText("Session One")).toBeInTheDocument();
+    expect(screen.queryByText("Archived Session")).not.toBeInTheDocument();
+    expect(screen.getByText("Archived (1)")).toBeInTheDocument();
+  });
+
+  it("expands archived features when the archived section is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Archived (1)"));
+
+    expect(screen.getByText("Archived Session")).toBeInTheDocument();
+  });
+
+  it("auto-expands the archived section for the active archived session", () => {
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={4}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Archived Session")).toBeInTheDocument();
+  });
+
+  it("archives active features through the status mutation", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getAllByRole("button", { name: "Archive" })[0]);
+    await screen.findByText("Archive session?");
+    const archiveButtons = screen.getAllByRole("button", { name: "Archive" });
+    await user.click(archiveButtons[archiveButtons.length - 1]);
+
+    expect(mockUpdateStatus).toHaveBeenCalledWith({ id: 1, data: { status: "archived" } });
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it("deletes archived features from the archived section", async () => {
+    const user = userEvent.setup();
+    render(
+      <ProjectFeatures
+        projectId={1}
+        projectPath="/test/path"
+        activeFeatureId={null}
+        onSelectFeature={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByText("Archived (1)"));
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByText("Delete archived session?");
+    const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
+    await user.click(deleteButtons[deleteButtons.length - 1]);
+
+    expect(mockDelete).toHaveBeenCalledWith({ id: 4 });
+    expect(mockUpdateStatus).not.toHaveBeenCalled();
   });
 
   it("highlights active feature", () => {
@@ -165,7 +246,7 @@ describe("ProjectFeatures", () => {
     await user.click(screen.getByText("Feature One"));
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: "/projects/$projectId/features/$featureId",
+        to: "/ws-session/$sessionId",
       }),
     );
   });

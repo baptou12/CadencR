@@ -533,9 +533,9 @@ mod tests {
                 "threadId": "thread",
                 "item": {
                     "type": "function_call",
-                    "call_id": "call_plan",
-                    "namespace": "mcp__cadencr_plan__",
-                    "name": "read_plan",
+                    "call_id": "call_session",
+                    "namespace": "mcp__cadencr_session__",
+                    "name": "read_conversation",
                     "arguments": "{\"feature_id\":1086}"
                 }
             }),
@@ -549,6 +549,6 @@ mod tests {
         let RuntimeContentBlock::ToolUse { name, .. } = block else {
             panic!("expected tool use");
         };
-        assert_eq!(name, "mcp__cadencr-plan__read_plan");
+        assert_eq!(name, "mcp__cadencr-session__read_conversation");
     }
 }

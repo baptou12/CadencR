@@ -6,7 +6,6 @@ use tracing::{debug, error, info, warn};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 use crate::domain::agents::runtime_adapter;
-use crate::domain::workflow::engine::WsSender as WorkflowWsSender;
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
@@ -208,7 +207,6 @@ pub(crate) async fn handle_prompt_send(
                 }
 
                 // 2. Create worktree.
-                let wf_sender = WorkflowWsSender::new(sender.clone());
                 match worktree::get_project_id_for_feature(&app_state.read_pool, feature_id).await {
                     Ok(project_id) => {
                         match worktree::ensure_worktree(
@@ -216,7 +214,7 @@ pub(crate) async fn handle_prompt_send(
                             &write_pool,
                             feature_id,
                             project_id,
-                            &wf_sender,
+                            sender,
                         )
                         .await
                         {
@@ -232,10 +230,10 @@ pub(crate) async fn handle_prompt_send(
                                 if setup_step.as_deref() != Some("ready") {
                                     let rp = app_state.read_pool.clone();
                                     let wp = write_pool.clone();
-                                    let ws2 = WorkflowWsSender::new(sender.clone());
+                                    let ws = sender.clone();
                                     let p = wt_path.clone();
                                     tokio::spawn(async move {
-                                        worktree::run_setup_commands(rp, wp, feature_id, p, ws2)
+                                        worktree::run_setup_commands(rp, wp, feature_id, p, ws)
                                             .await;
                                     });
                                 }

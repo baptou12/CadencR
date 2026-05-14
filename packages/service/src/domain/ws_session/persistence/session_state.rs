@@ -38,6 +38,7 @@ impl WsSessionPersistence {
         }
     }
 
+    #[allow(dead_code)]
     pub async fn mark_error_static(pool: &SqlitePool, session_id: i64) {
         let now = chrono::Utc::now().to_rfc3339();
         if let Err(e) =
@@ -189,8 +190,6 @@ mod session_state_tests {
                 context_window INTEGER,
                 started_at TEXT,
                 ended_at TEXT,
-                pending_plan_approval TEXT,
-                plan_approval_result TEXT,
                 thinking_effort TEXT
             )"#,
         )

@@ -91,10 +91,10 @@ describe("usePromptDraft", () => {
     expect(result.current.initialDraft).toBe("restored text");
   });
 
-  it("restores draft from HTTP query for workflow agents", () => {
-    mockDraftQueryData.mockReturnValue({ draftPrompt: "workflow draft" });
+  it("restores draft from HTTP query when a DB session ID is known", () => {
+    mockDraftQueryData.mockReturnValue({ draftPrompt: "saved draft" });
     const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
-    expect(result.current.initialDraft).toBe("workflow draft");
+    expect(result.current.initialDraft).toBe("saved draft");
   });
 
   it("debounces multiple saves — only persists the last one", () => {

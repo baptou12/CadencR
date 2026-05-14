@@ -1,8 +1,5 @@
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeEvent, RuntimePermissionRequest};
-use crate::domain::workflow::engine::AgentSlot;
-use crate::domain::ws_session::protocol::{
-    PermissionRequestPayload, WorkflowPermissionRequestPayload,
-};
+use crate::domain::ws_session::protocol::PermissionRequestPayload;
 
 mod subagent_window;
 mod usage_state;
@@ -20,26 +17,6 @@ pub(crate) fn permission_request_payload(
         pattern: request.pattern,
         preview: request.preview,
         options: request.options.into_iter().map(Into::into).collect(),
-    }
-}
-
-pub(crate) fn workflow_permission_request_payload(
-    feature_id: i64,
-    agent_slot: AgentSlot,
-    request: RuntimePermissionRequest,
-) -> WorkflowPermissionRequestPayload {
-    let payload = permission_request_payload(request);
-
-    WorkflowPermissionRequestPayload {
-        feature_id,
-        agent_slot,
-        request_id: payload.request_id,
-        tool_name: payload.tool_name,
-        tool_input: payload.tool_input,
-        description: payload.description,
-        pattern: payload.pattern,
-        preview: payload.preview,
-        options: payload.options,
     }
 }
 
@@ -105,17 +82,13 @@ pub(crate) async fn persist_usage(
 mod tests {
     use serde_json::json;
 
-    use super::{
-        capture_runtime_session_id, permission_request_payload, update_context_window,
-        workflow_permission_request_payload,
-    };
+    use super::{capture_runtime_session_id, permission_request_payload, update_context_window};
     use crate::domain::agents::adapter::{
         RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
         RuntimeInitEvent, RuntimePermissionDecision, RuntimePermissionOption,
         RuntimePermissionRequest,
     };
     use crate::domain::agents::claude_code::CLAUDE_CODE_ADAPTER;
-    use crate::domain::workflow::engine::AgentSlot;
 
     #[test]
     fn permission_request_payload_preserves_options() {
@@ -139,28 +112,6 @@ mod tests {
         assert_eq!(payload.request_id, "req-1");
         assert_eq!(payload.tool_name, "Read");
         assert_eq!(payload.options.len(), 1);
-    }
-
-    #[test]
-    fn workflow_permission_request_payload_keeps_workflow_fields_explicit() {
-        let payload = workflow_permission_request_payload(
-            42,
-            AgentSlot::Plan,
-            RuntimePermissionRequest {
-                request_id: "req-2".into(),
-                tool_use_id: None,
-                tool_name: "Write".into(),
-                tool_input: json!({ "path": "/tmp/file" }),
-                description: None,
-                pattern: None,
-                preview: None,
-                options: vec![],
-            },
-        );
-
-        assert_eq!(payload.feature_id, 42);
-        assert_eq!(payload.agent_slot, AgentSlot::Plan);
-        assert_eq!(payload.request_id, "req-2");
     }
 
     #[test]

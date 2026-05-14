@@ -578,7 +578,6 @@ pub async fn list_project_worktrees(
                 head: w.head,
                 feature_id: feat.map(|f| f.feature_id),
                 feature_title: feat.map(|f| f.feature_title.clone()),
-                feature_status: feat.map(|f| f.feature_status.clone()),
             }
         })
         .collect())
@@ -927,7 +926,7 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 3 3
         .await
         .unwrap();
         sqlx::query(
-            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature')",
+            "CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT, type TEXT NOT NULL DEFAULT 'ws-session')",
         )
         .execute(&pool)
         .await

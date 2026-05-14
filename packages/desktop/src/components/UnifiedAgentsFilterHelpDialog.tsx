@@ -39,7 +39,7 @@ export const UnifiedAgentsFilterHelpDialog = memo(function UnifiedAgentsFilterHe
             </h3>
             <div className="overflow-hidden rounded-lg border border-border/80">
               <HelpRow code="/last:5" detail="Agents active in the last 5 minutes." />
-              <HelpRow code="/last:all" detail="All non-archived agents." />
+              <HelpRow code="/last:all" detail="All agents." />
               <HelpRow
                 code='/project:"My Project"'
                 detail="Filter by project. Use | for multiple projects."

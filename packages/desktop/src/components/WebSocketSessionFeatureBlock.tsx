@@ -73,9 +73,9 @@ function WebSocketSessionFeatureBody(
   const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
 
-  // `useSaveLastOpenedFeature` is now mounted once at the route level
-  // (`FeatureWorkflowView`); we used to also call it here, which produced a
-  // duplicate `PUT /api/workspace/settings/lastOpenedFeature` on every open.
+  // `useSaveLastOpenedFeature` is mounted once at the route level; we used to
+  // also call it here, which produced a duplicate
+  // `PUT /api/workspace/settings/lastOpenedFeature` on every open.
   const gitVisible = isTabVisible(layoutState, "git");
   const data = useSessionFeatureData(sessionId, cwd, featureId, projectId, {
     gitMetadataEnabled: !embedded || gitVisible,

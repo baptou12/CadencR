@@ -2,18 +2,12 @@ import { describe, it, expect, vi } from "vitest";
 import { act, render, screen, waitFor } from "@/test-utils";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 
-const { mockGetSettings, mockRetryWorktreeSetup } = vi.hoisted(() => ({
+const { mockGetSettings } = vi.hoisted(() => ({
   mockGetSettings: vi.fn<() => { data: unknown }>(() => ({ data: null })),
-  mockRetryWorktreeSetup: vi.fn(),
 }));
 
 vi.mock("@/api/generated", () => ({
   useGetFeatureSettings: mockGetSettings,
-}));
-
-vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ retryWorktreeSetup: mockRetryWorktreeSetup }),
 }));
 
 function settingsArray(obj: Record<string, string>) {

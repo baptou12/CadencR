@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     sessionDbId: 1,
-    agentType: "plan",
+    agentType: "session",
     status: "completed",
     subprocessId: null,
     model: "claude-opus-4-5",
@@ -43,12 +43,8 @@ function makeSession(overrides: Record<string, unknown> = {}) {
     hasFileChanges: false,
     resumable: false,
     runtimeSessionId: null,
-    runId: null,
-    phaseId: null,
-    phaseTitle: null,
     todos: null,
     permissionMode: "acceptEdits",
-    pendingPlanApproval: null,
     pendingPermission: null,
     inputTokens: 0,
     outputTokens: 0,
@@ -100,7 +96,7 @@ describe("useFeatureAgentState", () => {
     expect(result.current.sessions).toHaveLength(1);
     const session = result.current.sessions[0];
     expect(session.sessionDbId).toBe(1);
-    expect(session.agentType).toBe("plan");
+    expect(session.agentType).toBe("session");
     expect(session.status).toBe("completed");
     expect(session.model).toBe("claude-opus-4-5");
     expect(session.inputTokens).toBe(100);
@@ -131,7 +127,7 @@ describe("useFeatureAgentState", () => {
   it("maps status=waiting to paused", () => {
     mockUseQuery.mockReturnValue({
       data: {
-        sessions: [makeSession({ agentType: "execute", status: "waiting" })],
+        sessions: [makeSession({ agentType: "session", status: "waiting" })],
       },
       isLoading: false,
       refetch: mockRefetch,

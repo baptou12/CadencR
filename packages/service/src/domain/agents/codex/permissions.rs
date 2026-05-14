@@ -335,13 +335,13 @@ mod tests {
             &json!("approval-6"),
             "mcpServer/elicitation/request",
             &json!({
-                "serverName": "cadencr-plan",
+                "serverName": "cadencr-session",
                 "_meta": {
-                    "tool_name": "mcp__cadencr-plan__show_plan"
+                    "tool_name": "mcp__cadencr-session__mark_agent_done"
                 }
             }),
         );
-        assert_eq!(canonical.tool_name, "mcp__cadencr-plan__show_plan");
+        assert_eq!(canonical.tool_name, "mcp__cadencr-session__mark_agent_done");
     }
 
     #[test]

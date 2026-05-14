@@ -34,6 +34,7 @@ pub enum RuntimePermissionMode {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum RuntimeMcpServerConfig {
     Stdio {
         command: String,
@@ -315,6 +316,7 @@ pub enum RuntimeEventKind {
         parent_tool_use_id: Option<String>,
     },
     ToolUseSummary {
+        #[allow(dead_code)]
         data: Value,
     },
     Result,
@@ -361,6 +363,7 @@ pub struct RuntimeCompactMetadata {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RuntimeInitEvent {
     pub model: Option<String>,
     pub mcp_servers: Vec<RuntimeMcpServerStatus>,
@@ -527,6 +530,7 @@ impl RuntimeEvent {
         }
     }
 
+    #[allow(dead_code)]
     pub fn tool_use_summary_data(&self) -> Option<&Value> {
         match &self.kind {
             RuntimeEventKind::ToolUseSummary { data } => Some(data),
@@ -622,6 +626,7 @@ pub trait AgentRuntimeSession: Send + Sync {
     fn permission_response_kind(&self, _request_id: &str) -> RuntimePermissionResponseKind {
         RuntimePermissionResponseKind::Normal
     }
+    #[allow(dead_code)]
     fn pid(&self) -> Option<u32>;
 }
 

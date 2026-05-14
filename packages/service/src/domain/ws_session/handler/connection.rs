@@ -20,7 +20,6 @@ use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
 use super::dispatch::dispatch_envelope;
 use super::helpers::persist_and_close_query;
 use super::types::{QueryState, SdkSessions};
-use super::workflow;
 
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -127,15 +126,6 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
         );
     }
     drop(sessions);
-
-    // Detach WS sender from workflow engines (keep engines alive for reconnect)
-    for feature_id in workflow::tracked_feature_ids() {
-        debug!(
-            feature_id,
-            "WS cleanup: detaching sender from workflow engine"
-        );
-        workflow::detach_engine_sender(feature_id);
-    }
 
     // Drop any `git.status` subscriptions for this WS. The sender-keyed sweep
     // catches half-open shutdowns where the explicit unsubscribe never arrived.

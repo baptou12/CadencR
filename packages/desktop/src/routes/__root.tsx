@@ -109,15 +109,16 @@ function RootLayout() {
     mutation: {
       onSuccess: (session) => {
         invalidateFeatures();
-        if (activeProjectId != null) {
-          void navigate({
-            to: "/projects/$projectId/features/$featureId",
-            params: {
-              projectId: String(activeProjectId),
-              featureId: String(session.id),
-            },
-          });
-        }
+        if (activeProjectId == null) return;
+        // Routes through the legacy feature route, which immediately redirects
+        // to the ws-session route once `useListProjects()` resolves the cwd.
+        void navigate({
+          to: "/projects/$projectId/features/$featureId",
+          params: {
+            projectId: String(activeProjectId),
+            featureId: String(session.id),
+          },
+        });
       },
     },
   });
@@ -149,14 +150,17 @@ function RootLayout() {
     },
   });
 
-  const archiveNavTargetRef = useRef<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
   const archiveFeatureMutation = useUpdateFeatureStatus({
     mutation: {
+      onError: () => {
+        toast.error("Failed to archive session");
+      },
       onSuccess: () => {
         invalidateFeatures();
         if (activeProjectId == null) return;
-        const targetId = archiveNavTargetRef.current;
-        archiveNavTargetRef.current = null;
+        const targetId = deleteNavTargetRef.current;
+        deleteNavTargetRef.current = null;
         if (targetId != null) {
           void navigate({
             to: "/projects/$projectId/features/$featureId",
@@ -171,18 +175,16 @@ function RootLayout() {
       },
     },
   });
-
-  const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
   const handleConfirmFeatureAction = useCallback((): void => {
     if (activeFeatureId == null) return;
-    if (confirmAction === "delete") {
-      deleteFeatureMutation.mutate({ id: activeFeatureId });
-    } else {
+    if (confirmAction === "archive") {
       archiveFeatureMutation.mutate({
         id: activeFeatureId,
         data: { status: "archived" },
       });
+      return;
     }
+    deleteFeatureMutation.mutate({ id: activeFeatureId });
   }, [activeFeatureId, archiveFeatureMutation, confirmAction, deleteFeatureMutation]);
 
   useZoomHotkeys();
@@ -252,7 +254,7 @@ function RootLayout() {
     { enableOnFormTags: true, enableOnContentEditable: true },
   );
 
-  // CMD+SHIFT+X -> archive or delete currently opened feature
+  // CMD+SHIFT+X -> archive active sessions, delete archived sessions.
   useHotkeys(
     "meta+shift+x",
     async (e) => {
@@ -261,33 +263,18 @@ function RootLayout() {
       try {
         const features = await customInstance<Feature[]>({
           method: "GET",
-          url: `/api/features?project_id=${activeProjectId}`,
+          url: `/api/features?project_id=${activeProjectId}&include_archived=true`,
         });
         const feature = features.find((f) => f.id === activeFeatureId);
         if (!feature) return;
-        // Pre-compute navigation target
-        const idx = features.findIndex((f) => f.id === activeFeatureId);
-        const remaining = features.filter((f) => f.id !== activeFeatureId);
-        const target = idx > 0 ? features[idx - 1] : (remaining[0] ?? null);
-        if (feature.status === "archived") {
-          deleteNavTargetRef.current = target?.id ?? null;
-          setConfirmAction("delete");
-        } else {
-          // Check if feature is empty — if so, skip archive and go straight to delete
-          const { empty } = await customInstance<{ empty: boolean }>({
-            method: "GET",
-            url: `/api/features/${activeFeatureId}/empty`,
-          });
-          if (empty) {
-            deleteNavTargetRef.current = target?.id ?? null;
-            setConfirmAction("delete");
-          } else {
-            archiveNavTargetRef.current = target?.id ?? null;
-            setConfirmAction("archive");
-          }
-        }
-      } catch {
-        // ignore fetch errors
+        const activeFeatures = features.filter((f) => f.status === "active");
+        const idx = activeFeatures.findIndex((f) => f.id === activeFeatureId);
+        const remaining = activeFeatures.filter((f) => f.id !== activeFeatureId);
+        const target = idx > 0 ? activeFeatures[idx - 1] : (remaining[0] ?? null);
+        deleteNavTargetRef.current = target?.id ?? null;
+        setConfirmAction(feature.status === "archived" ? "delete" : "archive");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to load features");
       }
     },
     { enableOnFormTags: true, enableOnContentEditable: true },

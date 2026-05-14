@@ -9,6 +9,7 @@ use std::sync::Arc;
 /// a task-local scope, so the earlier scope-based approach was unreliable.
 pub struct McpContext {
     pub read_pool: SqlitePool,
+    #[allow(dead_code)]
     pub write_pool: SqlitePool,
     pub feature_id: i64,
 }

@@ -93,17 +93,9 @@ export type AgentSessionRowOutputTokens = number | null;
 
 export type AgentSessionRowPendingPermission = string | null;
 
-export type AgentSessionRowPendingPlanApproval = string | null;
-
-export type AgentSessionRowPendingPrdApproval = string | null;
-
 export type AgentSessionRowPendingQuestions = string | null;
 
 export type AgentSessionRowPermissionMode = string | null;
-
-export type AgentSessionRowPhaseId = number | null;
-
-export type AgentSessionRowRunId = number | null;
 
 export type AgentSessionRowRuntimeProvider = string | null;
 
@@ -125,48 +117,14 @@ export interface AgentSessionRow {
   model?: AgentSessionRowModel;
   output_tokens?: AgentSessionRowOutputTokens;
   pending_permission?: AgentSessionRowPendingPermission;
-  pending_plan_approval?: AgentSessionRowPendingPlanApproval;
-  pending_prd_approval?: AgentSessionRowPendingPrdApproval;
   pending_questions?: AgentSessionRowPendingQuestions;
   permission_mode?: AgentSessionRowPermissionMode;
-  phase_id?: AgentSessionRowPhaseId;
-  run_id?: AgentSessionRowRunId;
   runtime_provider?: AgentSessionRowRuntimeProvider;
   runtime_session_id?: AgentSessionRowRuntimeSessionId;
   started_at?: AgentSessionRowStartedAt;
   status: string;
   subprocess_id?: AgentSessionRowSubprocessId;
   was_compacted: number;
-}
-
-export type AgentSessionSummaryContextWindow = number | null;
-
-export type AgentSessionSummaryModel = string | null;
-
-export type AgentSessionSummaryPermissionMode = string | null;
-
-export type AgentSessionSummaryQueueItemId = number | null;
-
-export type AgentSessionSummaryRuntimeProvider = string | null;
-
-export type AgentSessionSummaryRuntimeSessionId = string | null;
-
-export type AgentSessionSummaryUpdatedAt = string | null;
-
-export interface AgentSessionSummary {
-  agent_type: string;
-  context_window?: AgentSessionSummaryContextWindow;
-  created_at: string;
-  id: number;
-  input_tokens: number;
-  model?: AgentSessionSummaryModel;
-  output_tokens: number;
-  permission_mode?: AgentSessionSummaryPermissionMode;
-  queue_item_id?: AgentSessionSummaryQueueItemId;
-  runtime_provider?: AgentSessionSummaryRuntimeProvider;
-  runtime_session_id?: AgentSessionSummaryRuntimeSessionId;
-  status: string;
-  updated_at?: AgentSessionSummaryUpdatedAt;
 }
 
 /**
@@ -557,58 +515,20 @@ shell operations such as "Reveal in Finder". */
   root: string;
 }
 
-export type FeatureAgentAutonomy = string | null;
-
 export type FeatureLabel = string | null;
-
-export type FeatureModelExecute = string | null;
-
-export type FeatureModelPlan = string | null;
-
-export type FeatureModelPrd = string | null;
-
-export type FeatureModelQa = string | null;
-
-export type FeatureModelRetro = string | null;
-
-export type FeatureModelReview = string | null;
-
-export type FeatureModelReviewFixer = string | null;
-
-export type FeatureModelRisk = string | null;
 
 export type FeatureModelSession = string | null;
 
-export type FeatureParallelExecution = string | null;
-
-export type FeaturePrd = string | null;
-
-export type FeatureWorkflowConfig = string | null;
-
-export type FeatureWorkflowStep = string | null;
-
 export interface Feature {
-  agent_autonomy?: FeatureAgentAutonomy;
   created_at: string;
   id: number;
   label?: FeatureLabel;
-  model_execute?: FeatureModelExecute;
-  model_plan?: FeatureModelPlan;
-  model_prd?: FeatureModelPrd;
-  model_qa?: FeatureModelQa;
-  model_retro?: FeatureModelRetro;
-  model_review?: FeatureModelReview;
-  "model_review-fixer"?: FeatureModelReviewFixer;
-  model_risk?: FeatureModelRisk;
   model_session?: FeatureModelSession;
-  parallel_execution?: FeatureParallelExecution;
-  prd?: FeaturePrd;
   project_id: number;
-  status: string;
+  /** Feature archive state. Only `active` and `archived` are valid. */
+  status: FeatureStatus;
   title: string;
   type: string;
-  workflow_config?: FeatureWorkflowConfig;
-  workflow_step?: FeatureWorkflowStep;
 }
 
 export interface FeatureAgentStateResponse {
@@ -635,15 +555,10 @@ export interface FeatureLayoutsSuccessResponse {
   success: boolean;
 }
 
+/**
+ * Per-feature model overrides. ws-session uses `session`.
+ */
 export interface FeatureModelSettings {
-  execute: string;
-  plan: string;
-  prd: string;
-  qa: string;
-  retro: string;
-  review: string;
-  "review-fixer": string;
-  risk: string;
   session: string;
 }
 
@@ -652,19 +567,13 @@ export interface FeatureSetting {
   value: string;
 }
 
-export type FeatureSnapshotResponsePlan = null | PlanSnapshot;
+export type FeatureStatus = (typeof FeatureStatus)[keyof typeof FeatureStatus];
 
-export type FeatureSnapshotResponseWorktree = null | WorktreeSnapshot;
-
-export interface FeatureSnapshotResponse {
-  agent_sessions: AgentSessionSummary[];
-  /** @minimum 0 */
-  autonomy_level: number;
-  plan?: FeatureSnapshotResponsePlan;
-  queue: SnapshotQueueItem[];
-  workflow_status: string;
-  worktree?: FeatureSnapshotResponseWorktree;
-}
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const FeatureStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
 
 export type FeatureWorktreeInfoWorktreeBranch = string | null;
 
@@ -852,10 +761,6 @@ that grabbed our port before we could bind. */
   status: string;
 }
 
-export interface IsEmptyResponse {
-  empty: boolean;
-}
-
 export type LastRunSummaryEndedAt = string | null;
 
 /**
@@ -942,103 +847,12 @@ export interface ModelCatalogEntry {
 
 export interface ModelSettings {
   auto_name: string;
-  execute: string;
-  plan: string;
-  prd: string;
-  qa: string;
-  retro: string;
-  review: string;
-  "review-fixer": string;
-  risk: string;
   session: string;
 }
 
 export interface OriginalBranchResponse {
   original_branch: string;
   worktree_branch: string;
-}
-
-export interface OverridePhaseStatusRequest {
-  status: string;
-}
-
-export type PhaseCommitMessage = string | null;
-
-export type PhaseComplexity = number | null;
-
-export type PhaseDependsOn = string | null;
-
-export type PhaseDeviations = string | null;
-
-export type PhaseImplementationNotes = string | null;
-
-export type PhaseOrderIndex = number | null;
-
-export type PhasePhaseType = string | null;
-
-export type PhasePrompt = string | null;
-
-export interface Phase {
-  commit_message?: PhaseCommitMessage;
-  complexity?: PhaseComplexity;
-  depends_on?: PhaseDependsOn;
-  deviations?: PhaseDeviations;
-  id: number;
-  implementation_notes?: PhaseImplementationNotes;
-  order_index?: PhaseOrderIndex;
-  phase_type?: PhasePhaseType;
-  plan_id: number;
-  prompt?: PhasePrompt;
-  status: string;
-  step_number: number;
-  title: string;
-}
-
-export type PlanClarifications = string | null;
-
-export type PlanCompletionConditions = string | null;
-
-export type PlanContext = string | null;
-
-export type PlanStatus = string | null;
-
-export type PlanSummary = string | null;
-
-export type PlanTitle = string | null;
-
-export interface Plan {
-  clarifications?: PlanClarifications;
-  completion_conditions?: PlanCompletionConditions;
-  context?: PlanContext;
-  created_at: string;
-  feature_id: number;
-  id: number;
-  status?: PlanStatus;
-  summary?: PlanSummary;
-  title?: PlanTitle;
-}
-
-export interface PlanProgress {
-  done: number;
-  total: number;
-}
-
-export interface PlanSnapshot {
-  id: number;
-  phases: Phase[];
-  status: string;
-}
-
-export type PlanWithPhasesAllOf = {
-  phases: Phase[];
-};
-
-export type PlanWithPhases = Plan & PlanWithPhasesAllOf;
-
-export type PrdResponsePrd = string | null;
-
-export interface PrdResponse {
-  prd?: PrdResponsePrd;
 }
 
 export type ProfileViewEnv = { [key: string]: string };
@@ -1054,34 +868,17 @@ export interface ProfilesResponse {
   profiles: ProfileView[];
 }
 
-export type ProjectAgentAutonomy = string | null;
-
 export type ProjectBranchPrefix = string | null;
 
-export type ProjectParallelExecution = string | null;
-
-export type ProjectQaPrompt = string | null;
-
 export interface Project {
-  agent_autonomy?: ProjectAgentAutonomy;
   branch_prefix?: ProjectBranchPrefix;
   created_at: string;
   id: number;
   name: string;
-  parallel_execution?: ProjectParallelExecution;
   path: string;
-  qa_prompt?: ProjectQaPrompt;
 }
 
 export interface ProjectModelSettings {
-  execute: string;
-  plan: string;
-  prd: string;
-  qa: string;
-  retro: string;
-  review: string;
-  "review-fixer": string;
-  risk: string;
   session: string;
 }
 
@@ -1094,14 +891,11 @@ export interface ProjectSetting {
 
 export type ProjectWorktreeInfoFeatureId = number | null;
 
-export type ProjectWorktreeInfoFeatureStatus = string | null;
-
 export type ProjectWorktreeInfoFeatureTitle = string | null;
 
 export interface ProjectWorktreeInfo {
   branch: string;
   feature_id?: ProjectWorktreeInfoFeatureId;
-  feature_status?: ProjectWorktreeInfoFeatureStatus;
   feature_title?: ProjectWorktreeInfoFeatureTitle;
   head: string;
   path: string;
@@ -1141,14 +935,6 @@ export interface ProviderDiscovery {
 
 export interface ProviderSettings {
   auto_name: string;
-  execute: string;
-  plan: string;
-  prd: string;
-  qa: string;
-  retro: string;
-  review: string;
-  "review-fixer": string;
-  risk: string;
   session: string;
 }
 
@@ -1246,12 +1032,6 @@ export type SessionStateModel = string | null;
 
 export type SessionStateOldestMessageId = number | null;
 
-export type SessionStatePhaseId = number | null;
-
-export type SessionStatePhaseTitle = string | null;
-
-export type SessionStateRunId = number | null;
-
 export type SessionStateRuntimeProvider = string | null;
 
 export type SessionStateRuntimeSessionId = string | null;
@@ -1278,14 +1058,9 @@ export interface SessionState {
   oldestMessageId?: SessionStateOldestMessageId;
   outputTokens: number;
   pendingPermission?: unknown;
-  pendingPlanApproval?: unknown;
-  pendingPrdApproval?: unknown;
   pendingQuestions?: unknown;
   permissionMode: string;
-  phaseId?: SessionStatePhaseId;
-  phaseTitle?: SessionStatePhaseTitle;
   resumable: boolean;
-  runId?: SessionStateRunId;
   runtimeProvider?: SessionStateRuntimeProvider;
   runtimeSessionId?: SessionStateRuntimeSessionId;
   sessionDbId: number;
@@ -1385,28 +1160,6 @@ export interface SharedFeatureRef {
   title: string;
 }
 
-export type SnapshotQueueItemAgentSessionId = number | null;
-
-export type SnapshotQueueItemGroupIndex = number | null;
-
-export type SnapshotQueueItemPhaseId = number | null;
-
-export type SnapshotQueueItemPhaseTitle = string | null;
-
-export type SnapshotQueueItemResult = string | null;
-
-export interface SnapshotQueueItem {
-  agent_session_id?: SnapshotQueueItemAgentSessionId;
-  group_index?: SnapshotQueueItemGroupIndex;
-  id: number;
-  item_type: string;
-  order_index: number;
-  phase_id?: SnapshotQueueItemPhaseId;
-  phase_title?: SnapshotQueueItemPhaseTitle;
-  result?: SnapshotQueueItemResult;
-  status: string;
-}
-
 export interface SuccessResponse {
   success: boolean;
 }
@@ -1466,7 +1219,6 @@ export interface UnifiedAgentFeature {
   created_at: string;
   id: number;
   label?: UnifiedAgentFeatureLabel;
-  status: string;
   title: string;
   type: string;
 }
@@ -1534,7 +1286,7 @@ export interface UpdateLabelRequest {
 }
 
 export interface UpdateStatusRequest {
-  status: string;
+  status: FeatureStatus;
 }
 
 export interface UpdateTargetBranchBody {
@@ -1576,19 +1328,6 @@ export interface WorktreeInfo {
   path: string;
 }
 
-export type WorktreeSnapshotBranch = string | null;
-
-export type WorktreeSnapshotPath = string | null;
-
-export type WorktreeSnapshotSetupLog = string | null;
-
-export interface WorktreeSnapshot {
-  branch?: WorktreeSnapshotBranch;
-  path?: WorktreeSnapshotPath;
-  setup_log?: WorktreeSnapshotSetupLog;
-  status: string;
-}
-
 export type WriteFileRequestFeatureId = number | null;
 
 export interface WriteFileRequest {
@@ -1606,7 +1345,6 @@ export type GetUnifiedAgentsParams = {
   mode?: null | UnifiedAgentsMode;
   fresh_minutes?: number | null;
   project_id?: number | null;
-  include_archived?: boolean | null;
   message_limit?: number | null;
 };
 
@@ -1690,6 +1428,7 @@ export type FileTreeParams = {
 
 export type ListFeaturesParams = {
   project_id: number;
+  include_archived?: boolean;
 };
 
 export type GetFeatureAgentStateParams = {
@@ -1710,8 +1449,6 @@ export type GetFeatureAgentStateParams = {
 export type UnmarkDiffViewedParams = {
   file_path: string;
 };
-
-export type GetFeaturePlan200 = null | PlanWithPhases;
 
 export type GetFeatureWorkingDirParams = {
   project_id: number;
@@ -5237,58 +4974,6 @@ export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unkno
   return useMutation(mutationOptions);
 };
 
-export const isFeatureEmpty = (id: number, signal?: AbortSignal) => {
-  return customInstance<IsEmptyResponse>({
-    url: `/api/features/${id}/empty`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getIsFeatureEmptyQueryKey = (id?: number) => {
-  return [`/api/features/${id}/empty`] as const;
-};
-
-export const getIsFeatureEmptyQueryOptions = <
-  TData = Awaited<ReturnType<typeof isFeatureEmpty>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof isFeatureEmpty>>, TError, TData> },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getIsFeatureEmptyQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof isFeatureEmpty>>> = ({ signal }) =>
-    isFeatureEmpty(id, signal);
-
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof isFeatureEmpty>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type IsFeatureEmptyQueryResult = NonNullable<Awaited<ReturnType<typeof isFeatureEmpty>>>;
-export type IsFeatureEmptyQueryError = ErrorType<unknown>;
-
-export function useIsFeatureEmpty<
-  TData = Awaited<ReturnType<typeof isFeatureEmpty>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof isFeatureEmpty>>, TError, TData> },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getIsFeatureEmptyQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-
 export const updateFeatureLabel = (id: number, updateLabelRequest: UpdateLabelRequest) => {
   return customInstance<FeaturesSuccessResponse>({
     url: `/api/features/${id}/label`,
@@ -5489,164 +5174,6 @@ export const useSetFeatureModelSetting = <
 
   return useMutation(mutationOptions);
 };
-
-export const getFeaturePlan = (id: number, signal?: AbortSignal) => {
-  return customInstance<GetFeaturePlan200>({
-    url: `/api/features/${id}/plan`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getGetFeaturePlanQueryKey = (id?: number) => {
-  return [`/api/features/${id}/plan`] as const;
-};
-
-export const getGetFeaturePlanQueryOptions = <
-  TData = Awaited<ReturnType<typeof getFeaturePlan>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePlan>>, TError, TData> },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetFeaturePlanQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeaturePlan>>> = ({ signal }) =>
-    getFeaturePlan(id, signal);
-
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getFeaturePlan>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetFeaturePlanQueryResult = NonNullable<Awaited<ReturnType<typeof getFeaturePlan>>>;
-export type GetFeaturePlanQueryError = ErrorType<unknown>;
-
-export function useGetFeaturePlan<
-  TData = Awaited<ReturnType<typeof getFeaturePlan>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePlan>>, TError, TData> },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFeaturePlanQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-
-export const getFeaturePlanProgress = (id: number, signal?: AbortSignal) => {
-  return customInstance<PlanProgress>({
-    url: `/api/features/${id}/plan/progress`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getGetFeaturePlanProgressQueryKey = (id?: number) => {
-  return [`/api/features/${id}/plan/progress`] as const;
-};
-
-export const getGetFeaturePlanProgressQueryOptions = <
-  TData = Awaited<ReturnType<typeof getFeaturePlanProgress>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePlanProgress>>, TError, TData>;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetFeaturePlanProgressQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeaturePlanProgress>>> = ({ signal }) =>
-    getFeaturePlanProgress(id, signal);
-
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getFeaturePlanProgress>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetFeaturePlanProgressQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getFeaturePlanProgress>>
->;
-export type GetFeaturePlanProgressQueryError = ErrorType<unknown>;
-
-export function useGetFeaturePlanProgress<
-  TData = Awaited<ReturnType<typeof getFeaturePlanProgress>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePlanProgress>>, TError, TData>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFeaturePlanProgressQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
-
-export const getFeaturePrd = (id: number, signal?: AbortSignal) => {
-  return customInstance<PrdResponse>({ url: `/api/features/${id}/prd`, method: "GET", signal });
-};
-
-export const getGetFeaturePrdQueryKey = (id?: number) => {
-  return [`/api/features/${id}/prd`] as const;
-};
-
-export const getGetFeaturePrdQueryOptions = <
-  TData = Awaited<ReturnType<typeof getFeaturePrd>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePrd>>, TError, TData> },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetFeaturePrdQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeaturePrd>>> = ({ signal }) =>
-    getFeaturePrd(id, signal);
-
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getFeaturePrd>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetFeaturePrdQueryResult = NonNullable<Awaited<ReturnType<typeof getFeaturePrd>>>;
-export type GetFeaturePrdQueryError = ErrorType<unknown>;
-
-export function useGetFeaturePrd<
-  TData = Awaited<ReturnType<typeof getFeaturePrd>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getFeaturePrd>>, TError, TData> },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFeaturePrdQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
 
 export const getFeatureProviderSettings = (id: number, signal?: AbortSignal) => {
   return customInstance<ProviderSettings>({
@@ -5909,64 +5436,6 @@ export const useSetFeatureSetting = <TError = ErrorType<unknown>, TContext = unk
 
   return useMutation(mutationOptions);
 };
-
-export const getFeatureSnapshot = (id: number, signal?: AbortSignal) => {
-  return customInstance<FeatureSnapshotResponse>({
-    url: `/api/features/${id}/snapshot`,
-    method: "GET",
-    signal,
-  });
-};
-
-export const getGetFeatureSnapshotQueryKey = (id?: number) => {
-  return [`/api/features/${id}/snapshot`] as const;
-};
-
-export const getGetFeatureSnapshotQueryOptions = <
-  TData = Awaited<ReturnType<typeof getFeatureSnapshot>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getFeatureSnapshot>>, TError, TData>;
-  },
-) => {
-  const { query: queryOptions } = options ?? {};
-
-  const queryKey = queryOptions?.queryKey ?? getGetFeatureSnapshotQueryKey(id);
-
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getFeatureSnapshot>>> = ({ signal }) =>
-    getFeatureSnapshot(id, signal);
-
-  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getFeatureSnapshot>>,
-    TError,
-    TData
-  > & { queryKey: QueryKey };
-};
-
-export type GetFeatureSnapshotQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getFeatureSnapshot>>
->;
-export type GetFeatureSnapshotQueryError = ErrorType<unknown>;
-
-export function useGetFeatureSnapshot<
-  TData = Awaited<ReturnType<typeof getFeatureSnapshot>>,
-  TError = ErrorType<unknown>,
->(
-  id: number,
-  options?: {
-    query?: UseQueryOptions<Awaited<ReturnType<typeof getFeatureSnapshot>>, TError, TData>;
-  },
-): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetFeatureSnapshotQueryOptions(id, options);
-
-  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
-
-  query.queryKey = queryOptions.queryKey;
-
-  return query;
-}
 
 export const updateFeatureStatus = (id: number, updateStatusRequest: UpdateStatusRequest) => {
   return customInstance<FeaturesSuccessResponse>({
@@ -8208,132 +7677,6 @@ export function useOpenapiSpec<
 
   return query;
 }
-
-export const resetPhase = (id: number) => {
-  return customInstance<FeaturesSuccessResponse>({ url: `/api/phases/${id}/reset`, method: "PUT" });
-};
-
-export const getResetPhaseMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof resetPhase>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof resetPhase>>,
-  TError,
-  { id: number },
-  TContext
-> => {
-  const mutationKey = ["resetPhase"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetPhase>>, { id: number }> = (
-    props,
-  ) => {
-    const { id } = props ?? {};
-
-    return resetPhase(id);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ResetPhaseMutationResult = NonNullable<Awaited<ReturnType<typeof resetPhase>>>;
-
-export type ResetPhaseMutationError = ErrorType<unknown>;
-
-export const useResetPhase = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof resetPhase>>,
-    TError,
-    { id: number },
-    TContext
-  >;
-}): UseMutationResult<Awaited<ReturnType<typeof resetPhase>>, TError, { id: number }, TContext> => {
-  const mutationOptions = getResetPhaseMutationOptions(options);
-
-  return useMutation(mutationOptions);
-};
-
-export const overridePhaseStatus = (
-  id: number,
-  overridePhaseStatusRequest: OverridePhaseStatusRequest,
-) => {
-  return customInstance<FeaturesSuccessResponse>({
-    url: `/api/phases/${id}/status`,
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    data: overridePhaseStatusRequest,
-  });
-};
-
-export const getOverridePhaseStatusMutationOptions = <
-  TError = ErrorType<unknown>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof overridePhaseStatus>>,
-    TError,
-    { id: number; data: OverridePhaseStatusRequest },
-    TContext
-  >;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof overridePhaseStatus>>,
-  TError,
-  { id: number; data: OverridePhaseStatusRequest },
-  TContext
-> => {
-  const mutationKey = ["overridePhaseStatus"];
-  const { mutation: mutationOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey } };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof overridePhaseStatus>>,
-    { id: number; data: OverridePhaseStatusRequest }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return overridePhaseStatus(id, data);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type OverridePhaseStatusMutationResult = NonNullable<
-  Awaited<ReturnType<typeof overridePhaseStatus>>
->;
-export type OverridePhaseStatusMutationBody = OverridePhaseStatusRequest;
-export type OverridePhaseStatusMutationError = ErrorType<unknown>;
-
-export const useOverridePhaseStatus = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof overridePhaseStatus>>,
-    TError,
-    { id: number; data: OverridePhaseStatusRequest },
-    TContext
-  >;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof overridePhaseStatus>>,
-  TError,
-  { id: number; data: OverridePhaseStatusRequest },
-  TContext
-> => {
-  const mutationOptions = getOverridePhaseStatusMutationOptions(options);
-
-  return useMutation(mutationOptions);
-};
 
 export const listProjects = (signal?: AbortSignal) => {
   return customInstance<Project[]>({ url: `/api/projects`, method: "GET", signal });

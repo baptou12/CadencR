@@ -79,6 +79,7 @@ async fn read_override_setting(read_pool: &SqlitePool, key: &str) -> Option<Path
 /// User-facing message for `RuntimeError::CliNotFound`, surfaced via the WS
 /// error envelope when an agent fails to spawn. Returns `None` for any other
 /// error variant.
+#[allow(dead_code)]
 pub fn cli_not_found_message(error: &RuntimeError) -> Option<String> {
     let RuntimeError::CliNotFound { provider, searched } = error else {
         return None;

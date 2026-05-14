@@ -100,12 +100,9 @@ async fn create_schema(pool: &SqlitePool) {
     sqlx::query(
         r#"CREATE TABLE projects (
         id INTEGER PRIMARY KEY, name TEXT, path TEXT, branch_prefix TEXT DEFAULT 'feature/',
-        model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
-        model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
-        model_qa TEXT, model_retro TEXT,
-        agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
-        agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
-        agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT
+        model_session TEXT,
+        agent_runtime_session TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
     )"#,
     )
     .execute(pool)
@@ -114,17 +111,11 @@ async fn create_schema(pool: &SqlitePool) {
     sqlx::query(
         r#"CREATE TABLE features (
         id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, title TEXT,
-        status TEXT DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature',
+        status TEXT NOT NULL DEFAULT 'active',
+        type TEXT NOT NULL DEFAULT 'ws-session',
         label TEXT,
-        workflow_status TEXT DEFAULT 'idle',
-        model_plan TEXT, model_prd TEXT, model_execute TEXT, model_risk TEXT,
-        model_review TEXT, "model_review-fixer" TEXT, model_session TEXT,
-        model_qa TEXT, model_retro TEXT,
-        agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
-        agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
-        agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT,
-        agent_autonomy TEXT, parallel_execution TEXT,
-        prd TEXT, workflow_step TEXT, workflow_config TEXT,
+        model_session TEXT,
+        agent_runtime_session TEXT,
         created_at TEXT DEFAULT (datetime('now'))
     )"#,
     )
@@ -154,42 +145,6 @@ async fn create_schema(pool: &SqlitePool) {
     .execute(pool)
     .await
     .unwrap();
-    sqlx::query(
-        r#"CREATE TABLE workflow_queue (
-        id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL,
-        workflow_type TEXT NOT NULL DEFAULT 'feature_build', item_type TEXT NOT NULL,
-        phase_id INTEGER, status TEXT NOT NULL DEFAULT 'pending',
-        order_index INTEGER NOT NULL, group_index INTEGER, config JSON,
-        agent_session_id INTEGER, result JSON,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        started_at DATETIME, ended_at DATETIME, pid INTEGER,
-        max_retries INTEGER NOT NULL DEFAULT 1, retry_count INTEGER NOT NULL DEFAULT 0
-    )"#,
-    )
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"CREATE TABLE plans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL,
-        title TEXT, summary TEXT, context TEXT, clarifications TEXT, completion_conditions TEXT,
-        status TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )"#,
-    )
-    .execute(pool)
-    .await
-    .unwrap();
-    sqlx::query(
-        r#"CREATE TABLE phases (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER NOT NULL,
-        step_number INTEGER, title TEXT, status TEXT DEFAULT 'pending',
-        complexity TEXT, commit_message TEXT, description TEXT,
-        agent_count INTEGER DEFAULT 1
-    )"#,
-    )
-    .execute(pool)
-    .await
-    .unwrap();
 }
 
 async fn seed_basic_rows(pool: &SqlitePool, repo_path: &str) {
@@ -198,7 +153,7 @@ async fn seed_basic_rows(pool: &SqlitePool, repo_path: &str) {
         .execute(pool)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO features (id, project_id, title, status) VALUES (1, 1, 'Test Feature', 'in_progress')")
+    sqlx::query("INSERT INTO features (id, project_id, title, type) VALUES (1, 1, 'Test Feature', 'ws-session')")
         .execute(pool).await.unwrap();
     // Worktree settings point at the repo itself so feature_id=1 resolves to
     // the on-disk repo for git endpoints under the typical path.

@@ -27,16 +27,8 @@ interface FeatureGitTabProps {
   featureId: number;
   diffMode?: "worktree" | "branch";
   hotkeysEnabled?: boolean;
-  /**
-   * Sends formatted comments to the current agent (ws-session case).
-   * Mutually exclusive with `onStartReviewFixer`; if both are supplied the
-   * fixer wins.
-   */
+  /** Sends formatted comments to the current ws-session agent. */
   onSendComments?: (message: string) => void;
-  /**
-   * Starts the review-fixer agent with formatted comments (ws-feature case).
-   */
-  onStartReviewFixer?: (message: string) => void;
 }
 
 function isGitViewMode(v: string | undefined): v is GitViewMode {
@@ -48,7 +40,6 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   diffMode = "worktree",
   hotkeysEnabled = true,
   onSendComments,
-  onStartReviewFixer,
 }: FeatureGitTabProps) {
   const queryClient = useQueryClient();
   const { data: comments = [] } = useListDiffComments(featureId);
@@ -131,12 +122,11 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     target_branch: diffTargetBranch,
   });
 
-  const onSend = onStartReviewFixer ?? onSendComments;
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
     featureId,
     pendingComments,
-    onSend,
-    verb: onStartReviewFixer ? "Fix" : "Send",
+    onSend: onSendComments,
+    verb: "Send",
   });
 
   useScopedGlobalShortcut(

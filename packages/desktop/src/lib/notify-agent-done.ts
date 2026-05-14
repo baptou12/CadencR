@@ -61,7 +61,7 @@ interface NotifyOptions {
   featureTitle: string;
   featureId: number;
   projectId: number;
-  routeType: "workflow" | "session";
+  routeType: "session";
   /** Agent kind label, e.g. "Execute", "Review" */
   agentKind?: string;
   /** Agent-specific title, e.g. phase title */
@@ -70,14 +70,9 @@ interface NotifyOptions {
 
 function isViewingFeature(opts: NotifyOptions): boolean {
   const pathname = window.location.pathname;
-  if (
-    opts.routeType === "workflow" &&
-    pathname === `/projects/${opts.projectId}/features/${opts.featureId}`
-  )
-    return true;
-  if (opts.routeType === "session" && pathname === `/ws-session/ws-feature-${opts.featureId}`)
-    return true;
-  return false;
+  // `ws-feature-${id}` is a legacy WS session ID prefix and unrelated to the
+  // (removed) ws-feature feature type.
+  return pathname === `/ws-session/ws-feature-${opts.featureId}`;
 }
 
 function titleForStatus(status: NotifyOptions["status"]): string {
@@ -184,22 +179,16 @@ function openFromNotification(
   navigate: NavigateFn,
   queryClient: QueryClient,
 ): void {
-  const { feature_id, project_id, route_type } = payload;
-  const nav =
-    route_type === "session"
-      ? navigate({
-          to: "/ws-session/$sessionId",
-          params: { sessionId: `ws-feature-${feature_id}` },
-          search: {
-            cwd: lookupProjectPath(queryClient, project_id),
-            featureId: feature_id,
-            projectId: project_id,
-          },
-        })
-      : navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: { projectId: String(project_id), featureId: String(feature_id) },
-        });
+  const { feature_id, project_id } = payload;
+  const nav = navigate({
+    to: "/ws-session/$sessionId",
+    params: { sessionId: `ws-feature-${feature_id}` },
+    search: {
+      cwd: lookupProjectPath(queryClient, project_id),
+      featureId: feature_id,
+      projectId: project_id,
+    },
+  });
   void nav.then(() => {
     setTimeout(() => window.dispatchEvent(new CustomEvent("cadencr:focus-prompt")), 100);
   });

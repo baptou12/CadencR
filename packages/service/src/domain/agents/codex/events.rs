@@ -1164,8 +1164,8 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-plan",
-                    "tool": "show_plan",
+                    "server": "cadencr-session",
+                    "tool": "mark_agent_done",
                     "error": null,
                     "result": { "ok": true }
                 }

@@ -2,14 +2,17 @@ use sqlx::SqlitePool;
 
 use super::models::{
     CreateFeatureResponse, Feature, FeatureModelSettings, FeatureProviderSettings, FeatureSetting,
-    FeatureSnapshotResponse, IsEmptyResponse, PlanProgress, PlanWithPhases, PrdResponse,
-    WorkingDirResponse,
+    FeatureStatus, WorkingDirResponse,
 };
 use super::repository;
 use crate::error::AppError;
 
-pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Feature>, AppError> {
-    repository::list_by_project(pool, project_id).await
+pub async fn list_by_project(
+    pool: &SqlitePool,
+    project_id: i64,
+    include_archived: bool,
+) -> Result<Vec<Feature>, AppError> {
+    repository::list_by_project(pool, project_id, include_archived).await
 }
 
 pub async fn get_by_id(pool: &SqlitePool, id: i64) -> Result<Option<Feature>, AppError> {
@@ -27,7 +30,15 @@ pub async fn create_feature_with_worktree(
     worktree_mode: Option<String>,
     reuse_branch: Option<String>,
 ) -> Result<CreateFeatureResponse, AppError> {
-    let type_str = type_.as_deref().unwrap_or("ws-feature");
+    // After the ws-feature removal the only valid feature type is ws-session.
+    // Reject any other value defensively in case an old client tries to
+    // create one.
+    let type_str = type_.as_deref().unwrap_or("ws-session");
+    if type_str != "ws-session" {
+        return Err(AppError::BadRequest(format!(
+            "Unsupported feature type '{type_str}'. Only 'ws-session' is supported."
+        )));
+    }
     let title = match title {
         Some(t) if !t.trim().is_empty() => t,
         _ => {
@@ -36,12 +47,14 @@ pub async fn create_feature_with_worktree(
         }
     };
     let mut tx = pool.begin().await?;
-    let result = sqlx::query("INSERT INTO features (project_id, title, type) VALUES (?, ?, ?)")
-        .bind(project_id)
-        .bind(&title)
-        .bind(type_str)
-        .execute(&mut *tx)
-        .await?;
+    let result = sqlx::query(
+        "INSERT INTO features (project_id, title, status, type) VALUES (?, ?, 'active', ?)",
+    )
+    .bind(project_id)
+    .bind(&title)
+    .bind(type_str)
+    .execute(&mut *tx)
+    .await?;
     let id = result.last_insert_rowid();
     if let Some(mode) = worktree_mode.as_deref() {
         set_feature_setting_in_tx(&mut tx, id, "worktree_mode", mode).await?;
@@ -70,53 +83,20 @@ async fn set_feature_setting_in_tx(
     Ok(())
 }
 
-pub async fn update_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
-    repository::update_status(pool, id, status).await
-}
-
 pub async fn update_title(pool: &SqlitePool, id: i64, title: &str) -> Result<(), AppError> {
     repository::update_title(pool, id, title).await
 }
 
+pub async fn update_status(
+    pool: &SqlitePool,
+    id: i64,
+    status: FeatureStatus,
+) -> Result<(), AppError> {
+    repository::update_status(pool, id, status).await
+}
+
 pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Result<(), AppError> {
     repository::update_label(pool, id, label).await
-}
-
-pub async fn get_prd(pool: &SqlitePool, id: i64) -> Result<PrdResponse, AppError> {
-    let prd = repository::get_prd(pool, id).await?;
-    Ok(PrdResponse { prd })
-}
-
-pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<IsEmptyResponse, AppError> {
-    let empty = repository::is_empty(pool, id).await?;
-    Ok(IsEmptyResponse { empty })
-}
-
-pub async fn get_plan_with_phases(
-    pool: &SqlitePool,
-    feature_id: i64,
-) -> Result<Option<PlanWithPhases>, AppError> {
-    let result = repository::get_plan_with_phases(pool, feature_id).await?;
-    Ok(result.map(|(plan, phases)| PlanWithPhases { plan, phases }))
-}
-
-pub async fn get_plan_progress(
-    pool: &SqlitePool,
-    feature_id: i64,
-) -> Result<PlanProgress, AppError> {
-    repository::get_plan_progress(pool, feature_id).await
-}
-
-pub async fn reset_phase(pool: &SqlitePool, phase_id: i64) -> Result<(), AppError> {
-    repository::reset_phase(pool, phase_id).await
-}
-
-pub async fn override_phase_status(
-    pool: &SqlitePool,
-    phase_id: i64,
-    status: &str,
-) -> Result<(), AppError> {
-    repository::override_phase_status(pool, phase_id, status).await
 }
 
 pub async fn get_feature_settings(
@@ -183,13 +163,6 @@ pub async fn delete_feature(
     id: i64,
 ) -> Result<(), AppError> {
     repository::delete_feature(write_pool, id).await
-}
-
-pub async fn get_feature_snapshot(
-    pool: &SqlitePool,
-    feature_id: i64,
-) -> Result<FeatureSnapshotResponse, AppError> {
-    repository::get_feature_snapshot(pool, feature_id).await
 }
 
 /// Resolve the working directory for a feature without requiring the caller to

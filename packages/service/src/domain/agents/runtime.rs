@@ -1,18 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-pub const AGENT_TYPES: &[&str] = &[
-    "plan",
-    "prd",
-    "execute",
-    "risk",
-    "review",
-    "review-fixer",
-    "session",
-    "qa",
-    "retro",
-    "auto_name",
-];
+pub const AGENT_TYPES: &[&str] = &["session", "auto_name"];
 
 pub const DEFAULT_PROVIDER: &str = "claude_code";
 
@@ -79,16 +68,7 @@ pub struct AgentCatalogResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProviderSettings {
-    pub plan: String,
-    pub prd: String,
-    pub execute: String,
-    pub risk: String,
-    pub review: String,
-    #[serde(rename = "review-fixer")]
-    pub review_fixer: String,
     pub session: String,
-    pub qa: String,
-    pub retro: String,
     pub auto_name: String,
 }
 
@@ -123,15 +103,7 @@ pub fn runtime_setting_key(agent_type: &str) -> String {
 pub fn default_provider_settings() -> ProviderSettings {
     let default = DEFAULT_PROVIDER.to_string();
     ProviderSettings {
-        plan: default.clone(),
-        prd: default.clone(),
-        execute: default.clone(),
-        risk: default.clone(),
-        review: default.clone(),
-        review_fixer: default.clone(),
         session: default.clone(),
-        qa: default.clone(),
-        retro: default.clone(),
         auto_name: default,
     }
 }
@@ -146,16 +118,15 @@ mod tests {
 
     #[test]
     fn validates_supported_agent_types() {
-        assert!(validate_agent_type("plan"));
         assert!(validate_agent_type("session"));
         assert!(validate_agent_type("auto_name"));
+        assert!(!validate_agent_type("plan"));
         assert!(!validate_agent_type("unknown"));
     }
 
     #[test]
     fn auto_name_is_workspace_only() {
         assert!(is_workspace_only_agent_type("auto_name"));
-        assert!(!is_workspace_only_agent_type("plan"));
         assert!(!is_workspace_only_agent_type("session"));
     }
 
@@ -169,22 +140,14 @@ mod tests {
             }
             other => panic!("expected BadRequest, got {other:?}"),
         }
-        assert!(reject_workspace_only("plan", "feature").is_ok());
+        assert!(reject_workspace_only("session", "feature").is_ok());
     }
 
     #[test]
     fn default_provider_settings_use_default_for_all_agent_types() {
         let settings = default_provider_settings();
 
-        assert_eq!(settings.plan, DEFAULT_PROVIDER);
-        assert_eq!(settings.prd, DEFAULT_PROVIDER);
-        assert_eq!(settings.execute, DEFAULT_PROVIDER);
-        assert_eq!(settings.risk, DEFAULT_PROVIDER);
-        assert_eq!(settings.review, DEFAULT_PROVIDER);
-        assert_eq!(settings.review_fixer, DEFAULT_PROVIDER);
         assert_eq!(settings.session, DEFAULT_PROVIDER);
-        assert_eq!(settings.qa, DEFAULT_PROVIDER);
-        assert_eq!(settings.retro, DEFAULT_PROVIDER);
         assert_eq!(settings.auto_name, DEFAULT_PROVIDER);
     }
 }

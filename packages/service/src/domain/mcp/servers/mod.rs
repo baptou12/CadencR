@@ -1,55 +1,30 @@
-mod approval_elicitation;
-pub mod composable;
-pub mod plan;
 pub mod session;
-mod tool_catalog;
-pub mod tool_handlers;
-mod tool_specs;
 
 use std::sync::Arc;
 
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 
-use self::tool_specs::{approval_elicitation_tool_names_for_agent, required_tool_names_for_agent};
-use self::{composable::ComposableServer, plan::PlanServer, session::SessionServer};
+use self::session::SessionServer;
 use super::context::McpContext;
 
-/// Agent types that can be served
+/// Agent types that can be served.
+///
+/// After the ws-feature removal only the ws-session agent type is exposed —
+/// the legacy plan/prd/execute/qa/review/risk/retro multi-stage workflow is
+/// gone. The enum is kept as a single-variant type for forward-compatibility
+/// with future agent kinds and to preserve the existing `mcp_server_name`
+/// plumbing.
 #[derive(Debug, Clone, Copy)]
 pub enum AgentType {
-    Plan,
-    Prd,
-    Execute,
-    Qa,
-    Review,
-    Risk,
-    Retro,
     Session,
 }
 
 impl AgentType {
-    pub const ALL: &'static [AgentType] = &[
-        AgentType::Plan,
-        AgentType::Prd,
-        AgentType::Execute,
-        AgentType::Qa,
-        AgentType::Review,
-        AgentType::Risk,
-        AgentType::Retro,
-        AgentType::Session,
-    ];
+    pub const ALL: &'static [AgentType] = &[AgentType::Session];
 
-    /// Short identifier used in `opencode.json` permission keys and DB rows
-    /// (the suffix after `cadencr-` in `mcp_server_name`).
+    /// Short identifier used in MCP server names (`cadencr-<short>`).
     pub fn short_name(self) -> &'static str {
         match self {
-            Self::Plan => "plan",
-            Self::Prd => "prd",
-            Self::Execute => "execute",
-            Self::Qa => "qa",
-            Self::Review => "review",
-            Self::Risk => "risk",
-            Self::Retro => "retro",
             Self::Session => "session",
         }
     }
@@ -67,23 +42,32 @@ impl std::str::FromStr for AgentType {
     }
 }
 
-pub fn cadencr_mcp_uses_approval_elicitation(server_name: &str) -> bool {
-    cadencr_agent_type_from_server_name(server_name)
-        .is_some_and(|agent_type| !approval_elicitation_tool_names_for_agent(agent_type).is_empty())
-}
-
-pub fn cadencr_mcp_tool_requires_approval_elicitation(server_name: &str, tool_name: &str) -> bool {
-    cadencr_agent_type_from_server_name(server_name).is_some_and(|agent_type| {
-        approval_elicitation_tool_names_for_agent(agent_type)
-            .iter()
-            .any(|name| name == tool_name)
-    })
-}
-
+/// Names of tools that the agent must expose for the MCP server to be
+/// considered healthy. Today the only such tool is `mark_agent_done`.
 pub fn cadencr_mcp_required_tools(server_name: &str) -> Vec<String> {
-    cadencr_agent_type_from_server_name(server_name)
-        .map(required_tool_names_for_agent)
-        .unwrap_or_default()
+    if cadencr_agent_type_from_server_name(server_name).is_some() {
+        vec!["mark_agent_done".to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Whether the named server runs any tool that requires the elicitation
+/// approval flow. After the ws-feature removal no tools require approval
+/// elicitation; this always returns `false` but is kept so callers in the
+/// codex adapter don't have to be rewritten.
+pub fn cadencr_mcp_uses_approval_elicitation(_server_name: &str) -> bool {
+    false
+}
+
+/// Whether a specific tool requires approval elicitation. Always `false`
+/// in the post-cleanup world — see `cadencr_mcp_uses_approval_elicitation`.
+#[allow(dead_code)]
+pub fn cadencr_mcp_tool_requires_approval_elicitation(
+    _server_name: &str,
+    _tool_name: &str,
+) -> bool {
+    false
 }
 
 fn cadencr_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
@@ -91,28 +75,21 @@ fn cadencr_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
     short_name.parse().ok()
 }
 
-/// A type-erased MCP server wrapper that can hold any agent server type.
-/// Needed because `ServerHandler` is not dyn-compatible (requires `Self: Sized`).
+/// A type-erased MCP server wrapper. Only `Session` remains after the
+/// ws-feature cleanup.
 pub enum McpServer {
-    Composable(ComposableServer),
-    Plan(PlanServer),
     Session(SessionServer),
 }
 
-/// Create the appropriate MCP server for the given agent type.
+/// Create the MCP server for the given agent type.
 pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServer {
     match agent_type {
-        AgentType::Plan => McpServer::Plan(PlanServer::new(ctx)),
         AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
-        _ => McpServer::Composable(ComposableServer::new(
-            mcp_server_name(agent_type),
-            tool_handlers::registrations_for_agent(agent_type, &ctx),
-            ctx.feature_id,
-        )),
     }
 }
 
 /// Returns the MCP server name string for the given agent type.
+#[allow(dead_code)]
 pub fn mcp_server_name(agent_type: AgentType) -> String {
     format!("cadencr-{}", agent_type.short_name())
 }
@@ -124,42 +101,23 @@ fn server_info(name: &str) -> ServerInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        cadencr_mcp_required_tools, cadencr_mcp_tool_requires_approval_elicitation,
-        cadencr_mcp_uses_approval_elicitation, mcp_server_name, AgentType,
-    };
+    use super::{cadencr_mcp_required_tools, mcp_server_name, AgentType};
 
     #[test]
     fn mcp_server_name_uses_current_cadencr_prefix() {
-        assert_eq!(mcp_server_name(AgentType::Plan), "cadencr-plan");
+        assert_eq!(mcp_server_name(AgentType::Session), "cadencr-session");
     }
 
     #[test]
-    fn cadencr_mcp_metadata_is_derived_from_server_tool_catalog() {
-        let plan_tools = cadencr_mcp_required_tools("cadencr-plan");
-        assert!(plan_tools.contains(&"show_plan".to_string()));
-        assert!(plan_tools.contains(&"mark_agent_done".to_string()));
-        assert!(cadencr_mcp_uses_approval_elicitation("cadencr-plan"));
-        assert!(cadencr_mcp_tool_requires_approval_elicitation(
-            "cadencr-plan",
-            "show_plan"
-        ));
-        assert!(!cadencr_mcp_tool_requires_approval_elicitation(
-            "cadencr-plan",
-            "read_plan"
-        ));
-
-        let prd_tools = cadencr_mcp_required_tools("cadencr-prd");
-        assert!(prd_tools.contains(&"show_prd".to_string()));
-        assert!(cadencr_mcp_tool_requires_approval_elicitation(
-            "cadencr-prd",
-            "show_prd"
-        ));
+    fn required_tools_contains_mark_agent_done_for_cadencr_servers() {
+        assert_eq!(
+            cadencr_mcp_required_tools("cadencr-session"),
+            vec!["mark_agent_done".to_string()]
+        );
     }
 
     #[test]
-    fn cadencr_mcp_metadata_rejects_legacy_prefix() {
-        assert!(cadencr_mcp_required_tools("legacy-plan").is_empty());
-        assert!(cadencr_mcp_required_tools("cadencr-plan").contains(&"show_plan".to_string()));
+    fn required_tools_rejects_legacy_prefix() {
+        assert!(cadencr_mcp_required_tools("legacy-session").is_empty());
     }
 }

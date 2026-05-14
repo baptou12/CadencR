@@ -219,7 +219,7 @@ export function parseNotifyOptions(rawOpts: unknown): NotifyOptions {
   if (!rawOpts || typeof rawOpts !== "object") throw new Error("Expected notification options.");
   const opts = rawOpts as Record<string, unknown>;
   const routeType = opts.routeType;
-  if (routeType !== "workflow" && routeType !== "session") {
+  if (routeType !== "session") {
     throw new Error("Invalid notification route type.");
   }
   const mode = opts.mode;

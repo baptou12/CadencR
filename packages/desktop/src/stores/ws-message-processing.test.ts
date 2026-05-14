@@ -36,18 +36,6 @@ describe("injectPlanIntoBlocks", () => {
     expect(JSON.parse(result[1].toolArgs!)).toEqual({ plan: "# My Plan" });
   });
 
-  it("injects plan into Cadencr show_plan block", () => {
-    const blocks = [textBlock, makePlanBlock("mcp__cadencr-plan__show_plan")];
-    const result = injectPlanIntoBlocks(blocks, { plan: "# Plan" });
-    expect(JSON.parse(result[1].toolArgs!)).toEqual({ plan: "# Plan" });
-  });
-
-  it("injects plan into Cadencr show_prd block", () => {
-    const blocks = [textBlock, makePlanBlock("mcp__cadencr-prd__show_prd")];
-    const result = injectPlanIntoBlocks(blocks, { plan: "# PRD" });
-    expect(JSON.parse(result[1].toolArgs!)).toEqual({ plan: "# PRD" });
-  });
-
   it("targets the last plan block when multiple exist", () => {
     const blocks = [
       makePlanBlock("ExitPlanMode", JSON.stringify({ plan: "old plan" })),

@@ -52,7 +52,7 @@ export interface AgentSessionProps {
   onAnswerSubmit?: (response: AgentQuestionAnswers) => void;
   /** When true, disables keyboard shortcuts in the question drawer */
   disableShortcuts?: boolean;
-  /** Override label (e.g. "Execute 1" for parallel phases) */
+  /** Override label (e.g. for a named sub-agent) */
   label?: string;
   /** Override icon (lucide component) */
   icon?: typeof Loader2Icon;
@@ -144,7 +144,7 @@ export interface AgentSessionProps {
     feedback?: string,
     optionId?: string,
   ) => void;
-  /** Called when user clicks "Mark Done" (session agents in workflow) */
+  /** Called when user clicks "Mark Done" */
   onMarkDone?: () => void;
   /** Whether this agent is maximized (takes full height, hides others) */
   maximized?: boolean;

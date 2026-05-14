@@ -8,7 +8,7 @@ use sqlx::SqlitePool;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::domain::workflow::engine::WsSender;
+use crate::domain::workflow::ws_sender::WsSender;
 
 use super::db::set_setting;
 use super::envelope::send_envelope;

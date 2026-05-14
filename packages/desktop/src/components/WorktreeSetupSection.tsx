@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useGetFeatureSettings } from "@/api/generated";
 import type { WorktreeStatus } from "@/types/workflow";
-import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/CopyButton";
@@ -93,7 +92,8 @@ export function WorktreeSetupSection({
   wsWorktreeBranch?: string | null;
   wsWorktreeSetupOutput?: string[];
   wsWorktreeError?: string | null;
-  /** Override retry handler (used by ws-session). Falls back to workflow store. */
+  /** Retry handler invoked from the error state UI. ws-session callers always
+   *  supply this; if omitted the retry button silently no-ops. */
   onRetrySetup?: () => void;
 }) {
   const useWsMode = wsWorktreeStatus != null && wsWorktreeStatus !== "idle";
@@ -106,8 +106,7 @@ export function WorktreeSetupSection({
       ? Object.fromEntries(settingsArray.map((s) => [s.key, s.value]))
       : undefined;
 
-  const workflowRetry = useWorkflowStore((s) => s.retryWorktreeSetup);
-  const retryWorktreeSetup = onRetrySetup ?? workflowRetry;
+  const retryWorktreeSetup = onRetrySetup;
 
   const step = useWsMode
     ? wsStatusToStep(wsWorktreeStatus!)

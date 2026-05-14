@@ -259,8 +259,8 @@ mod tests {
         assert_eq!(adapter.normalize_tool_name("write"), "Write");
         assert_eq!(adapter.normalize_tool_name("question"), "AskUserQuestion");
         assert_eq!(
-            adapter.normalize_tool_name("cadencr-plan_update_plan"),
-            "mcp__cadencr-plan__update_plan"
+            adapter.normalize_tool_name("cadencr-session_mark_agent_done"),
+            "mcp__cadencr-session__mark_agent_done"
         );
     }
     #[test]

@@ -18,85 +18,12 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: mocks.mockUseParams,
   }),
   useNavigate: () => vi.fn(),
-  Navigate: () => null,
+  Navigate: ({ to }: { to: string }) => <div data-testid="navigate" data-to={to} />,
   useRouterState: () => ({ location: { pathname: "/" } }),
   Link: ({ children, to }: { children: unknown; to: string }) => {
     const React = require("react");
     return React.createElement("a", { href: to }, children);
   },
-}));
-
-vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
-
-vi.mock("@/components/FeatureTopBar", () => ({
-  FeatureTopBar: ({ featureId }: { featureId: string }) => (
-    <div data-testid="feature-top-bar">FeatureTopBar {featureId}</div>
-  ),
-}));
-
-vi.mock("@/components/AgentSession", () => ({
-  AgentSession: vi.fn(({ agentType }: { agentType: string }) => (
-    <div data-testid="agent-session">{agentType}</div>
-  )),
-}));
-
-vi.mock("@/components/FeatureWorkflowView", () => ({
-  FeatureWorkflowView: ({ featureId }: { featureId: number }) => (
-    <div data-testid="feature-workflow-view">FeatureWorkflowView {featureId}</div>
-  ),
-}));
-
-vi.mock("@/components/diff/DiffViewerModal", () => ({
-  DiffViewerModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="diff-modal" /> : null,
-}));
-
-vi.mock("@/components/terminal/TerminalPanel", () => ({
-  TerminalPanel: () => <div data-testid="terminal-panel" />,
-}));
-
-vi.mock("@/hooks/useFeatureAgentState", () => ({
-  useFeatureAgentState: vi.fn(() => ({ sessions: [], refetch: vi.fn() })),
-}));
-
-vi.mock("@/hooks/useResolvedModel", () => ({
-  useResolvedModel: vi.fn(() => ({
-    resolveModel: vi.fn(() => "claude-opus-4-5"),
-    handleModelChange: vi.fn(),
-  })),
-}));
-
-vi.mock("@/hooks/useDebouncedSetting", () => ({
-  useDebouncedSetting: vi.fn(() => ({ value: "300", setValue: vi.fn() })),
-}));
-
-vi.mock("@/hooks/useTerminalState", () => ({
-  useTerminalState: vi.fn(() => ({
-    isOpen: false,
-    isMinimized: false,
-    panes: [],
-    togglePanel: vi.fn(),
-    addPane: vi.fn(),
-    removePane: vi.fn(),
-    minimize: vi.fn(),
-  })),
-  useTerminalStore: vi.fn((selector) =>
-    selector({ sendToTerminal: vi.fn(), clearInitialCommand: vi.fn() }),
-  ),
-}));
-
-vi.mock("@/hooks/useAgentChat", () => ({
-  useAgentChat: vi.fn(() => ({
-    handleAnswerSubmit: vi.fn(),
-    handlePlanApprove: vi.fn(),
-    handlePlanRequestChanges: vi.fn(),
-    handlePermissionDecision: vi.fn(),
-  })),
-  usePermissionMode: vi.fn(() => ({
-    permissionMode: "acceptEdits",
-    handlePermissionModeToggle: vi.fn(),
-    setPermissionMode: vi.fn(),
-  })),
 }));
 
 vi.mock("@/api/generated", () => ({
@@ -129,17 +56,18 @@ describe("FeaturePage route", () => {
     mocks.mockSaveLastOpened.mockClear();
   });
 
-  it("renders FeatureWorkflowView for ws-feature", () => {
+  it("redirects to the ws-session route once feature loads", () => {
     mocks.mockGetByIdQuery.mockReturnValue({
-      data: { id: 1, type: "ws-feature", title: "My Feature" },
+      data: { id: 1, type: "ws-session", title: "My Feature" },
     });
     render(<FeaturePage />);
-    expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
+    const node = screen.getByTestId("navigate");
+    expect(node.getAttribute("data-to")).toBe("/ws-session/$sessionId");
   });
 
-  it("renders FeatureWorkflowView when feature data is loading (undefined)", () => {
-    render(<FeaturePage />);
-    expect(screen.getByTestId("feature-workflow-view")).toBeInTheDocument();
+  it("renders nothing while the feature query is loading", () => {
+    const { container } = render(<FeaturePage />);
+    expect(container.firstChild).toBeNull();
   });
 
   it("does not call useSaveLastOpenedFeature from route (handled by child views)", () => {
@@ -149,11 +77,6 @@ describe("FeaturePage route", () => {
   });
 
   it("renders a not-found state when the feature query 404s", () => {
-    // The backend now returns 404 (not 200-null) for missing features. Mounting
-    // FeatureWorkflowView with `feature=undefined` after a *confirmed* missing
-    // response would silently produce a half-broken UI keyed on a phantom id.
-    // `axios.isAxiosError` requires the `isAxiosError: true` brand to recognise
-    // the rejection — mirror that here so the route's narrowing path runs.
     const error = Object.assign(new Error("not found"), {
       isAxiosError: true,
       response: { status: 404 },
@@ -165,7 +88,7 @@ describe("FeaturePage route", () => {
       refetch: vi.fn(),
     });
     render(<FeaturePage />);
-    expect(screen.queryByTestId("feature-workflow-view")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("navigate")).not.toBeInTheDocument();
     expect(screen.getByText("Feature #1 not found")).toBeInTheDocument();
   });
 
@@ -178,7 +101,7 @@ describe("FeaturePage route", () => {
       refetch,
     });
     render(<FeaturePage />);
-    expect(screen.queryByTestId("feature-workflow-view")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("navigate")).not.toBeInTheDocument();
     expect(screen.getByText("network down")).toBeInTheDocument();
     screen.getByRole("button", { name: "Retry" }).click();
     expect(refetch).toHaveBeenCalled();

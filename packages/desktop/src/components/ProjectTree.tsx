@@ -9,7 +9,6 @@ import {
   getListProjectsQueryKey,
   useCreateFeature,
   useSetProjectSetting,
-  getListFeaturesQueryKey,
 } from "../api/generated";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,6 +26,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
+import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
@@ -85,14 +85,18 @@ export function ProjectTree({
   const createFeatureMutation = useCreateFeature({
     mutation: {
       onSuccess: (feature) => {
-        void queryClient.invalidateQueries({
-          queryKey: getListFeaturesQueryKey({ project_id: pendingProjectIdRef.current }),
-        });
+        void invalidateByUrlPrefix(queryClient, "/api/features");
+        // Every feature is ws-session now, so jump straight to the session
+        // route instead of taking the legacy redirect hop.
+        const projectId = pendingProjectIdRef.current;
+        const project = projects.find((p) => p.id === projectId);
         void navigate({
-          to: "/projects/$projectId/features/$featureId",
-          params: {
-            projectId: String(pendingProjectIdRef.current),
-            featureId: String(feature.id),
+          to: "/ws-session/$sessionId",
+          params: { sessionId: wsSessionIdFromFeature(feature.id) },
+          search: {
+            cwd: project?.path ?? "",
+            featureId: feature.id,
+            projectId,
           },
         });
       },
@@ -102,9 +106,7 @@ export function ProjectTree({
   const createWsSessionMutation = useCreateFeature({
     mutation: {
       onSuccess: (wsSession) => {
-        void queryClient.invalidateQueries({
-          queryKey: getListFeaturesQueryKey({ project_id: pendingProjectIdRef.current }),
-        });
+        void invalidateByUrlPrefix(queryClient, "/api/features");
         const wsSessionId = wsSessionIdFromFeature(wsSession.id);
         const projectId = pendingProjectIdRef.current;
         const project = projects.find((p) => p.id === projectId);
@@ -221,7 +223,7 @@ export function ProjectTree({
                                 }));
                                 pendingProjectIdRef.current = project.id;
                                 createFeatureMutation.mutate({
-                                  data: { project_id: project.id, type: "ws-feature" },
+                                  data: { project_id: project.id, type: "ws-session" },
                                 });
                               }}
                             >
@@ -292,7 +294,7 @@ export function ProjectTree({
                         setExpanded((prev) => ({ ...prev, [project.id]: true }));
                         pendingProjectIdRef.current = project.id;
                         createFeatureMutation.mutate({
-                          data: { project_id: project.id, type: "ws-feature" },
+                          data: { project_id: project.id, type: "ws-session" },
                         });
                       }}
                     >

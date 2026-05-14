@@ -78,10 +78,6 @@ async fn main() -> anyhow::Result<()> {
                 .clone()
                 .expect("--db-path or CADENCR_DB_PATH env var required");
 
-            // Publish the DB path in-process so MCP-spawn can read it back
-            // without a leaky `env::set_var`. See `mcp_spawn.rs` for the why.
-            domain::ws_session::handler::mcp_spawn::set_db_path(db_path.clone());
-
             let write_pool = db::create_write_pool(&db_path).await?;
             shared::migrate::run_migrations(&shared::migrate::MigrationContext {
                 pool: &write_pool,
@@ -323,11 +319,10 @@ async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
     }
     tracing::info!("Shutdown signal received, shutting down gracefully...");
 
-    crate::domain::ws_session::handler::workflow::pause_all_engines().await;
     pty_manager.kill_all();
     crate::domain::agents::shutdown_runtime_servers().await;
 
-    tracing::info!("All workflow agents paused and runtime servers stopped.");
+    tracing::info!("Runtime servers stopped.");
 }
 
 #[cfg(test)]

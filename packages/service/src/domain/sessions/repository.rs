@@ -617,8 +617,8 @@ pub async fn get_sessions(
 ) -> Result<Vec<AgentSessionRow>, AppError> {
     let rows = sqlx::query_as::<_, AgentSessionRow>(
         r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at,
-           run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
-           permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
+           subprocess_id, model, pending_questions, has_file_changes,
+           permission_mode, pending_permission,
            input_tokens, output_tokens, context_window, was_compacted, draft_prompt
            FROM agent_sessions WHERE feature_id = ? ORDER BY id DESC"#,
     )
@@ -637,8 +637,8 @@ pub async fn get_feature_agent_state(
 ) -> Result<FeatureAgentStateResponse, AppError> {
     let sessions = sqlx::query_as::<_, AgentSessionRow>(
         r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at,
-           run_id, phase_id, subprocess_id, model, pending_questions, has_file_changes,
-           permission_mode, pending_plan_approval, pending_prd_approval, pending_permission,
+           subprocess_id, model, pending_questions, has_file_changes,
+           permission_mode, pending_permission,
            input_tokens, output_tokens, context_window, was_compacted, draft_prompt
            FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC"#,
     )
@@ -648,32 +648,6 @@ pub async fn get_feature_agent_state(
 
     if sessions.is_empty() {
         return Ok(FeatureAgentStateResponse { sessions: vec![] });
-    }
-
-    // Batch-fetch phase titles for sessions that have a phase_id
-    let phase_ids: Vec<i64> = sessions
-        .iter()
-        .filter_map(|s| s.phase_id)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    let mut phase_title_map: HashMap<i64, String> = HashMap::new();
-    if !phase_ids.is_empty() {
-        // Build dynamic IN clause
-        let placeholders = phase_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
-            "SELECT id, title FROM phases WHERE id IN ({})",
-            placeholders
-        );
-        let mut q = sqlx::query_as::<_, PhaseTitle>(&sql);
-        for pid in &phase_ids {
-            q = q.bind(pid);
-        }
-        let phase_rows = q.fetch_all(pool).await?;
-        for p in phase_rows {
-            phase_title_map.insert(p.id, p.title);
-        }
     }
 
     let after_map = after_message_ids.unwrap_or_default();
@@ -889,14 +863,6 @@ pub async fn get_feature_agent_state(
                 .pending_questions
                 .as_deref()
                 .and_then(|pq| serde_json::from_str(pq).ok());
-            let pending_plan_approval = s
-                .pending_plan_approval
-                .as_deref()
-                .and_then(|p| serde_json::from_str(p).ok());
-            let pending_prd_approval = s
-                .pending_prd_approval
-                .as_deref()
-                .and_then(|p| serde_json::from_str(p).ok());
             let pending_permission = s
                 .pending_permission
                 .as_deref()
@@ -921,17 +887,10 @@ pub async fn get_feature_agent_state(
                 resumable,
                 runtime_provider: s.runtime_provider,
                 runtime_session_id: s.runtime_session_id,
-                run_id: s.run_id,
-                phase_id: s.phase_id,
-                phase_title: s
-                    .phase_id
-                    .and_then(|pid| phase_title_map.get(&pid).cloned()),
                 todos: todos_by_session.get(&s.id).cloned(),
                 permission_mode: s
                     .permission_mode
                     .unwrap_or_else(|| "acceptEdits".to_string()),
-                pending_plan_approval,
-                pending_prd_approval,
                 pending_permission,
                 input_tokens: s.input_tokens.unwrap_or(0),
                 output_tokens: s.output_tokens.unwrap_or(0),
@@ -972,15 +931,11 @@ pub async fn get_session_status_snapshot(
                   feature_id,
                   status,
                   pending_permission IS NOT NULL AS pending_permission,
-                  pending_questions IS NOT NULL AS pending_question,
-                  pending_plan_approval IS NOT NULL AS pending_plan_approval,
-                  pending_prd_approval IS NOT NULL AS pending_prd_approval
+                  pending_questions IS NOT NULL AS pending_question
            FROM agent_sessions
            WHERE status = 'running'
               OR pending_questions IS NOT NULL
-              OR pending_permission IS NOT NULL
-              OR pending_plan_approval IS NOT NULL
-              OR pending_prd_approval IS NOT NULL"#,
+              OR pending_permission IS NOT NULL"#,
     )
     .fetch_all(pool)
     .await?;
@@ -992,8 +947,6 @@ pub async fn get_session_status_snapshot(
                 status_col: &row.status,
                 pending_permission: row.pending_permission,
                 pending_question: row.pending_question,
-                pending_plan_approval: row.pending_plan_approval,
-                pending_prd_approval: row.pending_prd_approval,
             },
         );
         // Idle entries get filtered: a snapshot only carries sessions
@@ -1086,27 +1039,6 @@ mod tests {
         .unwrap();
 
         sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS plans (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                feature_id INTEGER NOT NULL
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"CREATE TABLE IF NOT EXISTS phases (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                plan_id INTEGER NOT NULL DEFAULT 1,
-                title TEXT NOT NULL DEFAULT ''
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
             r#"CREATE TABLE IF NOT EXISTS agent_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 feature_id INTEGER NOT NULL,
@@ -1116,15 +1048,11 @@ mod tests {
                 status TEXT NOT NULL DEFAULT 'running',
                 started_at TEXT,
                 ended_at TEXT,
-                run_id INTEGER,
-                phase_id INTEGER,
                 subprocess_id TEXT,
                 model TEXT,
                 pending_questions TEXT,
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 permission_mode TEXT,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT,
                 pending_permission TEXT,
                 input_tokens INTEGER,
                 output_tokens INTEGER,
@@ -1567,7 +1495,6 @@ mod tests {
         assert_eq!(s.session_db_id, session_id);
         assert_eq!(s.blocks.len(), 1);
         assert_eq!(s.blocks[0].content, "hello");
-        assert!(s.phase_title.is_none());
     }
 
     #[tokio::test]
@@ -1778,7 +1705,6 @@ mod tests {
         let fid1 = mk_feature("f1").await;
         let fid2 = mk_feature("f2").await;
         let fid3 = mk_feature("f3").await;
-        let fid4 = mk_feature("f4").await;
         let fid5 = mk_feature("f5").await;
 
         // Feature 1: running session with pending_questions → Question/Question
@@ -1795,22 +1721,11 @@ mod tests {
         let sid2 = insert_session(&pool, fid2, "running").await;
 
         // Feature 3: PAUSED session with pending_permission → Question/Permission
-        // (workflow agents awaiting input are persisted as 'paused')
         let sid3: i64 = sqlx::query_scalar(
             "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_permission) \
              VALUES (?, 'main', 'paused', '{\"request_id\":\"r\"}') RETURNING id",
         )
         .bind(fid3)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-
-        // Feature 4: PAUSED session with pending_prd_approval → Question/PrdApproval
-        let sid4: i64 = sqlx::query_scalar(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, pending_prd_approval) \
-             VALUES (?, 'prd', 'paused', '{\"prd\":\"...\"}') RETURNING id",
-        )
-        .bind(fid4)
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -1834,10 +1749,6 @@ mod tests {
         let s3 = states.get(&sid3.to_string()).unwrap();
         assert_eq!(s3.status, AgentStatus::Question);
         assert_eq!(s3.kind, Some(PendingKind::Permission));
-
-        let s4 = states.get(&sid4.to_string()).unwrap();
-        assert_eq!(s4.status, AgentStatus::Question);
-        assert_eq!(s4.kind, Some(PendingKind::PrdApproval));
 
         // Plain-paused must NOT appear (no pending → idle → filtered out).
         assert!(states.get(&sid5.to_string()).is_none());

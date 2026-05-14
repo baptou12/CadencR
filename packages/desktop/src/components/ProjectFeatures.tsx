@@ -1,10 +1,9 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useWsSessionStore } from "@/stores/ws-session-store";
-import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,16 +11,19 @@ import {
   useUpdateFeatureStatus,
   useUpdateFeatureLabel,
   useDeleteFeature,
-  useIsFeatureEmpty,
   useListFeatureWorktrees,
   type Feature,
+  type FeatureStatus,
 } from "@/api/generated";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { ProjectFeatureRow, type FeatureStatus } from "@/components/ProjectFeatureRow";
+import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
+
+const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
+const ARCHIVED_FEATURE_STATUS: FeatureStatus = "archived";
 
 export function ProjectFeatures({
   projectId,
@@ -40,7 +42,18 @@ export function ProjectFeatures({
   const [confirmFeatureId, setConfirmFeatureId] = useState<number | null>(null);
   const [editingLabelFeatureId, setEditingLabelFeatureId] = useState<number | null>(null);
   const [labelDraft, setLabelDraft] = useState("");
-  const { data: features = [] } = useListFeatures({ project_id: projectId });
+  const { data: features = [] } = useListFeatures({
+    project_id: projectId,
+    include_archived: true,
+  });
+  const activeFeatures = useMemo(
+    () => features.filter((feature) => feature.status === ACTIVE_FEATURE_STATUS),
+    [features],
+  );
+  const archivedFeatures = useMemo(
+    () => features.filter((feature) => feature.status === ARCHIVED_FEATURE_STATUS),
+    [features],
+  );
   const { data: featureWorktrees = [] } = useListFeatureWorktrees(
     { project_id: projectId },
     { query: { staleTime: 5 * 60 * 1000 } },
@@ -58,29 +71,28 @@ export function ProjectFeatures({
 
   // Live WS-pushed titles from auto-naming. Read raw store slices; derive per-feature inline.
   const wsSessions = useWsSessionStore((s) => s.sessions);
-  const workflowFeatureId = useWorkflowStore((s) => s.featureId);
-  const workflowTitle = useWorkflowStore((s) => s.featureTitle);
-  const workflowAutoNaming = useWorkflowStore((s) => s.isAutoNaming);
 
   /** Resolve the live WS title for a feature, or undefined to fall back to HTTP data. */
   const getLiveTitle = (id: number): string | undefined => {
-    if (workflowFeatureId === id && workflowTitle) return workflowTitle;
     return wsSessions[wsSessionIdFromFeature(id)]?.featureTitle ?? undefined;
   };
 
   /** True while auto-naming is running for the given feature. */
   const isAutoNaming = (id: number): boolean => {
-    if (workflowFeatureId === id && workflowAutoNaming) return true;
     return wsSessions[wsSessionIdFromFeature(id)]?.isAutoNaming ?? false;
   };
 
-  const activeFeatures = features.filter((f) => f.status !== "archived");
-  const archivedFeatures = features.filter((f) => f.status === "archived");
   const labelSuggestions = useMemo(() => uniqueLabels(features), [features]);
   const activeFeature = useMemo(
     () => features.find((feature) => feature.id === activeFeatureId),
     [activeFeatureId, features],
   );
+
+  useEffect(() => {
+    if (activeFeature?.status === ARCHIVED_FEATURE_STATUS) {
+      setShowArchived(true);
+    }
+  }, [activeFeature?.status]);
 
   const invalidateFeatures = () => {
     // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
@@ -90,6 +102,9 @@ export function ProjectFeatures({
   const updateStatusMutation = useUpdateFeatureStatus({
     mutation: {
       onSuccess: invalidateFeatures,
+      onError: (error) => {
+        toast.error(apiErrorMessage(error, "Failed to update feature status"));
+      },
     },
   });
 
@@ -98,8 +113,8 @@ export function ProjectFeatures({
       onSuccess: (_data, variables) => {
         const deletedId = variables.id;
         if (deletedId === activeFeatureId) {
-          const idx = features.findIndex((f) => f.id === deletedId);
-          const next = features[idx + 1] ?? features[idx - 1];
+          const idx = activeFeatures.findIndex((f) => f.id === deletedId);
+          const next = activeFeatures[idx + 1] ?? activeFeatures[idx - 1];
           if (next) {
             void navigate({
               to: "/projects/$projectId/features/$featureId",
@@ -133,29 +148,14 @@ export function ProjectFeatures({
   const handleNavigate = (feature: Feature) => {
     onSelectFeature(feature.id);
     const focusTab = getFocusedTabForFeature(activeFeatureId);
-    if (feature.type === "ws-session") {
-      const wsSessionId = wsSessionIdFromFeature(feature.id);
-      void navigate({
-        to: "/ws-session/$sessionId",
-        params: { sessionId: wsSessionId },
-        search: focusTab
-          ? { cwd: projectPath, featureId: feature.id, projectId, focusTab }
-          : { cwd: projectPath, featureId: feature.id, projectId },
-      });
-    } else {
-      void navigate({
-        to: "/projects/$projectId/features/$featureId",
-        params: {
-          projectId: String(projectId),
-          featureId: String(feature.id),
-        },
-        search: focusTab ? { focusTab } : undefined,
-      });
-    }
-  };
-
-  const handleStatusChange = (featureId: number, status: FeatureStatus) => {
-    updateStatusMutation.mutate({ id: featureId, data: { status } });
+    const wsSessionId = wsSessionIdFromFeature(feature.id);
+    void navigate({
+      to: "/ws-session/$sessionId",
+      params: { sessionId: wsSessionId },
+      search: focusTab
+        ? { cwd: projectPath, featureId: feature.id, projectId, focusTab }
+        : { cwd: projectPath, featureId: feature.id, projectId },
+    });
   };
 
   const handleStartLabelEdit = (feature: Feature): void => {
@@ -206,7 +206,6 @@ export function ProjectFeatures({
       labelSuggestions={labelSuggestions}
       isSavingLabel={updateLabelMutation.isPending && editingLabelFeatureId === feature.id}
       onNavigate={handleNavigate}
-      onStatusChange={handleStatusChange}
       onStartLabelEdit={handleStartLabelEdit}
       onLabelDraftChange={setLabelDraft}
       onSaveLabel={handleSaveLabel}
@@ -216,33 +215,29 @@ export function ProjectFeatures({
   );
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
-  const isConfirmDelete = confirmFeature?.status === "archived";
-  const isEmptyQuery = useIsFeatureEmpty(confirmFeatureId ?? 0, {
-    query: { enabled: confirmFeatureId != null && !isConfirmDelete },
-  });
-  const shouldDirectDelete = !isConfirmDelete && (isEmptyQuery.data?.empty ?? false);
+  const isConfirmDelete = confirmFeature?.status === ARCHIVED_FEATURE_STATUS;
 
   return (
     <div className="flex flex-col gap-0.5">
       {activeFeatures.map(renderFeature)}
 
       <ConfirmDialog
-        open={confirmFeatureId != null && (isConfirmDelete || !isEmptyQuery.isLoading)}
+        open={confirmFeatureId != null}
         onOpenChange={(open) => {
           if (!open) setConfirmFeatureId(null);
         }}
-        title={isConfirmDelete || shouldDirectDelete ? "Delete feature?" : "Archive feature?"}
-        description={isConfirmDelete || shouldDirectDelete ? "This cannot be undone." : undefined}
-        confirmText={isConfirmDelete || shouldDirectDelete ? "Delete" : "Archive"}
-        variant={isConfirmDelete || shouldDirectDelete ? "destructive" : "default"}
+        title={isConfirmDelete ? "Delete archived session?" : "Archive session?"}
+        description={isConfirmDelete ? "This cannot be undone." : undefined}
+        confirmText={isConfirmDelete ? "Delete" : "Archive"}
+        variant={isConfirmDelete ? "destructive" : "default"}
         onConfirm={() => {
           if (confirmFeatureId == null) return;
-          if (isConfirmDelete || shouldDirectDelete) {
+          if (isConfirmDelete) {
             deleteMutation.mutate({ id: confirmFeatureId });
           } else {
             updateStatusMutation.mutate({
               id: confirmFeatureId,
-              data: { status: "archived" },
+              data: { status: ARCHIVED_FEATURE_STATUS },
             });
           }
         }}
@@ -253,7 +248,7 @@ export function ProjectFeatures({
           <button
             type="button"
             className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => setShowArchived((v) => !v)}
+            onClick={() => setShowArchived((value) => !value)}
           >
             <span className="flex-1 border-t border-border/50" />
             {showArchived ? (

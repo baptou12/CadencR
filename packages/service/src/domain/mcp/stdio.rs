@@ -33,8 +33,6 @@ pub async fn run_mcp_stdio(
     let stdio = rmcp::transport::io::stdio();
 
     let quit_reason = match server {
-        McpServer::Composable(s) => s.serve(stdio).await?.waiting().await,
-        McpServer::Plan(s) => s.serve(stdio).await?.waiting().await,
         McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
     };
 

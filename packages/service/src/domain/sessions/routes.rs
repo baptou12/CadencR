@@ -27,7 +27,6 @@ pub struct UnifiedAgentsParams {
     pub mode: Option<UnifiedAgentsMode>,
     pub fresh_minutes: Option<i64>,
     pub project_id: Option<i64>,
-    pub include_archived: Option<bool>,
     pub message_limit: Option<i64>,
 }
 
@@ -85,7 +84,6 @@ pub async fn get_unified_agents_handler(
                 mode: params.mode.unwrap_or_default(),
                 fresh_minutes: params.fresh_minutes.unwrap_or(5).max(1),
                 project_id: params.project_id,
-                include_archived: params.include_archived.unwrap_or(false),
                 message_limit: normalize_message_limit(params.message_limit),
             },
         )

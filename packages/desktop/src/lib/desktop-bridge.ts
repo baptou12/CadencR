@@ -3,7 +3,7 @@ export interface RuntimeConfig {
   authToken: string | null;
 }
 
-export type RouteType = "workflow" | "session";
+export type RouteType = "session";
 export type DesktopTheme = "light" | "dark";
 
 export interface NotificationClickPayload {

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use axum::extract::ws::Message;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::domain::agents::adapter::{
     RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
@@ -56,9 +56,11 @@ pub(crate) fn build_persist_content(text: &str, images: &[ImagePayload]) -> Stri
 pub struct PermissionResponse {
     pub(crate) request_id: String,
     pub(crate) decision: PermissionDecision,
+    #[allow(dead_code)]
     pub(crate) option_id: Option<String>,
     pub(crate) feedback: Option<String>,
     pub(crate) updated_input: Option<serde_json::Value>,
+    #[allow(dead_code)]
     pub(crate) is_approval_gate: bool,
 }
 
@@ -115,34 +117,32 @@ impl WsBridgeCanUseTool {
         &self,
         request: &RuntimeToolPermissionRequest,
     ) -> RuntimeToolPermissionResult {
-        if let Some(result) = self.check_stored_approval(request).await {
-            return result;
-        }
+        info!("ExitPlanMode detected, sending permission request and blocking");
 
-        info!("ExitPlanMode detected, sending plan_approval and blocking");
-
+        let initial_payload = self.plan_permission_payload(request, request.input.clone());
         WsSessionPersistence::mark_awaiting_user_static(
             &self.write_pool,
             &self.session_status_tx,
             self.db_session_id,
             self.feature_id,
-            &PendingUserInput::PlanApproval(&request.input),
+            &PendingUserInput::Permission(&initial_payload),
         )
         .await;
 
-        self.send_plan_permission_request(request, request.input.clone());
+        self.send_permission_payload(initial_payload);
 
         let enriched_input = self.attach_plan_to_exit_block(request).await;
         if enriched_input != request.input {
             // Enriched retry: refresh the DB payload without re-broadcasting
             // askUser (still the same gate).
+            let enriched_payload = self.plan_permission_payload(request, enriched_input);
             WsSessionPersistence::set_pending_user_input_static(
                 &self.write_pool,
                 self.db_session_id,
-                &PendingUserInput::PlanApproval(&enriched_input),
+                &PendingUserInput::Permission(&enriched_payload),
             )
             .await;
-            self.send_plan_permission_request(request, enriched_input);
+            self.send_permission_payload(enriched_payload);
         }
 
         let mut rx = self.response_rx.lock().await;
@@ -164,7 +164,7 @@ impl WsBridgeCanUseTool {
                     &self.session_status_tx,
                     self.db_session_id,
                     self.feature_id,
-                    PendingUserInputKind::PlanApproval,
+                    PendingUserInputKind::Permission,
                     crate::domain::permission_bridge::status_after_approval(
                         decision,
                         response.feedback.as_deref(),
@@ -182,7 +182,7 @@ impl WsBridgeCanUseTool {
                     &self.session_status_tx,
                     self.db_session_id,
                     self.feature_id,
-                    PendingUserInputKind::PlanApproval,
+                    PendingUserInputKind::Permission,
                     crate::domain::session_status::AgentStatus::Idle,
                 )
                 .await;
@@ -192,68 +192,6 @@ impl WsBridgeCanUseTool {
                     tool_use_id: Some(request.tool_use_id.clone()),
                 }
             }
-        }
-    }
-
-    async fn check_stored_approval(
-        &self,
-        request: &RuntimeToolPermissionRequest,
-    ) -> Option<RuntimeToolPermissionResult> {
-        #[derive(sqlx::FromRow)]
-        struct ApprovalRow {
-            plan_approval_result: Option<String>,
-        }
-        let row = sqlx::query_as::<_, ApprovalRow>(
-            "SELECT plan_approval_result FROM agent_sessions WHERE id = ?",
-        )
-        .bind(self.db_session_id)
-        .fetch_optional(&self.write_pool)
-        .await
-        .ok()??;
-
-        let result_str = row.plan_approval_result.as_ref()?;
-        let result = serde_json::from_str::<serde_json::Value>(result_str).ok()?;
-
-        // plan_approval_result is a sibling column (not a pending_* gate) —
-        // clear it directly; the PlanApproval gate goes through the helper.
-        if let Err(e) =
-            sqlx::query("UPDATE agent_sessions SET plan_approval_result = NULL WHERE id = ?")
-                .bind(self.db_session_id)
-                .execute(&self.write_pool)
-                .await
-        {
-            warn!(session_id = self.db_session_id, error = %e, "failed to clear plan_approval_result");
-        }
-        WsSessionPersistence::clear_pending_user_input_static(
-            &self.write_pool,
-            self.db_session_id,
-            PendingUserInputKind::PlanApproval,
-        )
-        .await;
-
-        let approved = result
-            .get("approved")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if approved {
-            info!("ExitPlanMode: using stored approval result (approved)");
-            Some(RuntimeToolPermissionResult::Allow {
-                updated_input: request.input.clone(),
-                updated_permissions: None,
-                tool_use_id: Some(request.tool_use_id.clone()),
-            })
-        } else {
-            let feedback = result
-                .get("feedback")
-                .and_then(|v| v.as_str())
-                .unwrap_or("User requested changes to the plan.")
-                .to_string();
-            info!("ExitPlanMode: using stored approval result (denied)");
-            Some(RuntimeToolPermissionResult::Deny {
-                message: feedback,
-                interrupt: Some(false),
-                tool_use_id: Some(request.tool_use_id.clone()),
-            })
         }
     }
 
@@ -381,12 +319,12 @@ impl WsBridgeCanUseTool {
         enriched
     }
 
-    fn send_plan_permission_request(
+    fn plan_permission_payload(
         &self,
         request: &RuntimeToolPermissionRequest,
         tool_input: serde_json::Value,
-    ) {
-        let payload = PermissionRequestPayload {
+    ) -> PermissionRequestPayload {
+        PermissionRequestPayload {
             request_id: request.tool_use_id.clone(),
             tool_name: request.tool_name.clone(),
             tool_input,
@@ -394,7 +332,10 @@ impl WsBridgeCanUseTool {
             pattern: None,
             preview: None,
             options: Vec::new(),
-        };
+        }
+    }
+
+    fn send_permission_payload(&self, payload: PermissionRequestPayload) {
         let envelope = WsEnvelope::new(
             "session",
             "permission.request",

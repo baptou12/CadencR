@@ -126,9 +126,7 @@ mod session_bootstrap_tests {
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
                 started_at TEXT,
-                ended_at TEXT,
-                pending_plan_approval TEXT,
-                plan_approval_result TEXT
+                ended_at TEXT
             )"#,
         )
         .execute(&pool)

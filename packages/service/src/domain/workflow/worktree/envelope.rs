@@ -2,7 +2,7 @@
 
 use axum::extract::ws::Message;
 
-use crate::domain::workflow::engine::WsSender;
+use crate::domain::workflow::ws_sender::WsSender;
 use crate::domain::ws_session::protocol::WsEnvelope;
 
 pub(super) fn send_envelope(

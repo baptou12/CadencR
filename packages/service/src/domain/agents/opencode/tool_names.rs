@@ -69,24 +69,16 @@ mod tests {
     #[test]
     fn rewrites_opencode_cadencr_tool_names() {
         assert_eq!(
-            canonical_cadencr_tool_name("cadencr-plan_update_plan"),
-            "mcp__cadencr-plan__update_plan"
-        );
-        assert_eq!(
-            canonical_cadencr_tool_name("cadencr-execute_mark_phase_done"),
-            "mcp__cadencr-execute__mark_phase_done"
-        );
-        assert_eq!(
-            canonical_cadencr_tool_name("cadencr-session_create_phase"),
-            "mcp__cadencr-session__create_phase"
+            canonical_cadencr_tool_name("cadencr-session_mark_agent_done"),
+            "mcp__cadencr-session__mark_agent_done"
         );
     }
 
     #[test]
     fn passes_through_already_canonical_names() {
         assert_eq!(
-            canonical_cadencr_tool_name("mcp__cadencr-plan__update_plan"),
-            "mcp__cadencr-plan__update_plan"
+            canonical_cadencr_tool_name("mcp__cadencr-session__mark_agent_done"),
+            "mcp__cadencr-session__mark_agent_done"
         );
     }
 

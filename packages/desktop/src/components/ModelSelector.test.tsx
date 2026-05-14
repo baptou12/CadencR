@@ -186,16 +186,17 @@ describe("ModelSelector", () => {
     });
   });
 
-  it("renders agent type labels", () => {
+  it("renders only session and auto-naming at the global level", () => {
     render(<ModelSelector level="global" />);
-    expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText("Execute")).toBeInTheDocument();
-    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByText("Session")).toBeInTheDocument();
+    expect(screen.getByText("Auto-naming")).toBeInTheDocument();
+    expect(screen.queryByText("QA")).not.toBeInTheDocument();
   });
 
-  it("renders selects for all agent types", () => {
+  it("renders selects for the configurable agent types", () => {
     render(<ModelSelector level="global" />);
-    expect(screen.getAllByRole("combobox").length).toBeGreaterThanOrEqual(7);
+    // session + auto_name = 2 rows at the global level
+    expect(screen.getAllByRole("combobox").length).toBeGreaterThanOrEqual(2);
   });
 
   it("shows an error state when the provider catalog fails", () => {
@@ -210,18 +211,18 @@ describe("ModelSelector", () => {
 
   it("renders at project level without errors", () => {
     render(<ModelSelector level="project" projectId={1} />);
-    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText("Session")).toBeInTheDocument();
   });
 
   it("renders at feature level without errors", () => {
     render(<ModelSelector level="feature" featureId={1} projectId={1} />);
-    expect(screen.getByText("Execute")).toBeInTheDocument();
+    expect(screen.getByText("Session")).toBeInTheDocument();
   });
 
   it("uses mutation callbacks so provider success and error toasts track the actual result", async () => {
     const user = userEvent.setup();
     mockGetProjectProviderSettings.mockReturnValue({
-      data: { plan: "claude_code" },
+      data: { session: "claude_code" },
       isLoading: false,
     });
     projectProviderMutationImpl.mockImplementation((options) => ({
@@ -237,7 +238,7 @@ describe("ModelSelector", () => {
 
     expect(projectProviderMutate).toHaveBeenCalledWith({
       projectId: 42,
-      providerType: "plan",
+      providerType: "session",
       provider: "",
     });
     expect(toastError).toHaveBeenCalledWith("Failed to save provider setting");
@@ -257,7 +258,7 @@ describe("ModelSelector", () => {
 
   it("uses the selected provider default model instead of inheriting a Claude model id", () => {
     mockGetWorkspaceProviderSettings.mockReturnValue({
-      data: { plan: "opencode" },
+      data: { session: "opencode" },
       isLoading: false,
     });
     mockAgentCatalog.mockReturnValue({
