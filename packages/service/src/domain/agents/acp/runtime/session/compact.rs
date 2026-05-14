@@ -16,6 +16,7 @@ use crate::domain::agents::adapter::{
 
 use super::super::events_stream_blocks::EventIndexer;
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
+use super::super::provider_hooks::AcpProviderHooks;
 use super::super::turn_lifecycle::{
     finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
 };
@@ -47,6 +48,7 @@ pub(super) async fn spawn_compact_turn(session: &AcpRuntimeSession) -> Result<()
         running: Arc::clone(&session.manual_compact_running),
         initial_session_id: session_id,
         compact_prompt: session.hooks.compact_prompt(),
+        hooks: Arc::clone(&session.hooks),
     };
 
     tokio::spawn(async move {
@@ -73,6 +75,7 @@ struct CompactTurn {
     running: Arc<AtomicBool>,
     initial_session_id: String,
     compact_prompt: Option<&'static str>,
+    hooks: Arc<dyn AcpProviderHooks>,
 }
 
 impl CompactTurn {
@@ -115,6 +118,7 @@ impl CompactTurn {
                 &self.indexer,
                 self.session_id_lock.read().await.clone(),
                 self.context_window,
+                self.hooks.prompt_response_usage(&response),
                 reason,
                 &response,
             )

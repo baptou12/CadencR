@@ -2,77 +2,11 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 use crate::domain::agents::opencode::stream_synthesizer::StreamSynthesizer;
 use opencode_sdk_rs::{Message, MessagePart, MessageRole, OpenCodeClient, Session};
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 pub type PendingSubagentTasks = Arc<StdMutex<VecDeque<String>>>;
-const ACTIVE_INTERVAL: Duration = Duration::from_millis(250);
-const IDLE_INTERVAL: Duration = Duration::from_secs(2);
-pub fn spawn_subagent_listener(
-    opencode_http_port: u16,
-    cwd: PathBuf,
-    root_session_id: String,
-    pending_tasks: PendingSubagentTasks,
-    runtime_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-) -> JoinHandle<()> {
-    tracing::info!(
-        port = opencode_http_port,
-        cwd = %cwd.display(),
-        root_session_id = %root_session_id,
-        "OpenCode sub-agent listener: spawning HTTP polling task"
-    );
-    tokio::spawn(async move {
-        run_listener(
-            opencode_http_port,
-            cwd,
-            root_session_id,
-            pending_tasks,
-            runtime_tx,
-        )
-        .await;
-    })
-}
-async fn run_listener(
-    port: u16,
-    cwd: PathBuf,
-    root_session_id: String,
-    pending_tasks: PendingSubagentTasks,
-    runtime_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-) {
-    let client = OpenCodeClient::new(port);
-    let directory = cwd.to_string_lossy().to_string();
-    let mut state = ListenerState::new(root_session_id.clone());
-    loop {
-        let pending_present = pending_tasks
-            .lock()
-            .ok()
-            .map(|q| !q.is_empty())
-            .unwrap_or(false);
-        let active = pending_present || !state.is_empty();
-        if active {
-            if poll_once(
-                &client,
-                &directory,
-                &root_session_id,
-                &mut state,
-                &pending_tasks,
-                &runtime_tx,
-            )
-            .await
-            .is_err()
-            {
-                tracing::debug!("OpenCode sub-agent listener: runtime channel closed; exiting");
-                return;
-            }
-            tokio::time::sleep(ACTIVE_INTERVAL).await;
-        } else {
-            tokio::time::sleep(IDLE_INTERVAL).await;
-        }
-    }
-}
-async fn poll_once(
+
+pub(super) async fn poll_once(
     client: &OpenCodeClient,
     directory: &str,
     root_session_id: &str,
@@ -117,20 +51,20 @@ async fn poll_once(
     }
     Ok(())
 }
-struct ListenerState {
+pub(super) struct ListenerState {
     root_session_id: String,
     child_to_parent: HashMap<String, String>,
     synthesizers: HashMap<String, StreamSynthesizer>,
 }
 impl ListenerState {
-    fn new(root_session_id: String) -> Self {
+    pub(super) fn new(root_session_id: String) -> Self {
         Self {
             root_session_id,
             child_to_parent: HashMap::new(),
             synthesizers: HashMap::new(),
         }
     }
-    fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.child_to_parent.is_empty()
     }
     fn known_children(&self) -> Vec<String> {

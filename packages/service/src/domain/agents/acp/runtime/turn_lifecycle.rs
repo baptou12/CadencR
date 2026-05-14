@@ -17,10 +17,11 @@ use serde_json::Value;
 use tokio::sync::{mpsc, Mutex as AsyncMutex, Notify, RwLock};
 
 use crate::domain::agents::acp::AcpClient;
-use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
+use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeUsage};
 
 use super::events_stream_blocks::EventIndexer;
 use super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
+use super::provider_hooks::AcpProviderHooks;
 use super::turn_result::emit_turn_result;
 
 /// Per-session mutex that serialises prompt turns.
@@ -66,6 +67,7 @@ pub async fn drive_initial_prompt(
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     indexer: &Arc<StdMutex<EventIndexer>>,
     context_window: Option<u64>,
+    hooks: &dyn AcpProviderHooks,
     prompt_turn_lock: &PromptTurnLock,
     prompt_cancel: &PromptCancel,
 ) -> Result<(), RuntimeError> {
@@ -92,6 +94,7 @@ pub async fn drive_initial_prompt(
             indexer,
             Some(session_id),
             context_window,
+            hooks.prompt_response_usage(&response),
             reason,
             &response,
         )
@@ -136,6 +139,7 @@ pub async fn finalize_turn(
     indexer: &Arc<StdMutex<EventIndexer>>,
     session_id: Option<String>,
     context_window: Option<u64>,
+    prompt_response_usage: Option<RuntimeUsage>,
     stop_reason: &str,
     response: &Value,
 ) {
@@ -149,18 +153,43 @@ pub async fn finalize_turn(
             return;
         }
     }
-    emit_turn_result(tx, session_id, context_window, stop_reason, response).await;
+    emit_turn_result(
+        tx,
+        session_id,
+        context_window,
+        prompt_response_usage,
+        stop_reason,
+        response,
+    )
+    .await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::{drive_initial_prompt, finalize_turn, EventIndexer, PromptCancel, PromptTurnLock};
+    use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
+    use crate::domain::agents::adapter::RuntimePermissionMode;
     use serde_json::{json, Value};
     use std::sync::{Arc, Mutex as StdMutex};
     use std::time::Duration;
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
     use tokio::sync::{mpsc, Mutex as AsyncMutex, RwLock};
+
+    struct NoUsageHooks;
+
+    #[async_trait::async_trait]
+    impl AcpProviderHooks for NoUsageHooks {
+        fn normalize_tool_name(&self, raw: &str) -> String {
+            raw.to_string()
+        }
+        fn normalize_tool_input(&self, _: &str, input: Value) -> Value {
+            input
+        }
+        fn mode_for_permission_mode(&self, _: RuntimePermissionMode) -> Option<&'static str> {
+            None
+        }
+    }
 
     async fn build_in_memory_client() -> (AcpClient, DuplexStream, BufReader<DuplexStream>) {
         let (client_reads_stdout, agent_writes_stdout) = duplex(64 * 1024);
@@ -205,6 +234,7 @@ mod tests {
             &indexer,
             Some("s-1".into()),
             None,
+            None,
             "end_turn",
             &json!({}),
         )
@@ -229,6 +259,7 @@ mod tests {
             &indexer,
             Some("s-1".into()),
             None,
+            None,
             "cancelled",
             &json!({}),
         )
@@ -248,6 +279,7 @@ mod tests {
             &tx,
             &indexer,
             Some("s-1".into()),
+            None,
             None,
             "end_turn",
             &json!({}),
@@ -275,6 +307,7 @@ mod tests {
         let indexer = Arc::new(StdMutex::new(EventIndexer::default()));
         let lock = make_lock();
         let cancel = PromptCancel::new();
+        let hooks = Arc::new(NoUsageHooks);
         let (tx, mut rx) = mpsc::channel(16);
 
         let first = tokio::spawn({
@@ -286,6 +319,7 @@ mod tests {
             let lock = Arc::clone(&lock);
             let cancel = cancel.clone();
             let tx = tx.clone();
+            let hooks = Arc::clone(&hooks);
             async move {
                 drive_initial_prompt(
                     &client,
@@ -296,6 +330,7 @@ mod tests {
                     &tx,
                     &indexer,
                     None,
+                    hooks.as_ref(),
                     &lock,
                     &cancel,
                 )
@@ -316,6 +351,7 @@ mod tests {
             let indexer = Arc::clone(&indexer);
             let lock = Arc::clone(&lock);
             let cancel = cancel.clone();
+            let hooks = Arc::clone(&hooks);
             async move {
                 drive_initial_prompt(
                     &client,
@@ -326,6 +362,7 @@ mod tests {
                     &tx,
                     &indexer,
                     None,
+                    hooks.as_ref(),
                     &lock,
                     &cancel,
                 )

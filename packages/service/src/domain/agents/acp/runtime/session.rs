@@ -255,6 +255,7 @@ mod tests {
             let lock = Arc::clone(&lock);
             let cancel = cancel.clone();
             let tx = tx.clone();
+            let hooks = Arc::new(PlainHooks);
             async move {
                 drive_initial_prompt(
                     &client,
@@ -265,6 +266,7 @@ mod tests {
                     &tx,
                     &indexer,
                     None,
+                    hooks.as_ref(),
                     &lock,
                     &cancel,
                 )

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
+    RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimeUsage,
 };
 
 /// Forward a `RuntimeEventKind::Result` envelope to the message channel
@@ -15,6 +15,7 @@ pub async fn emit_turn_result(
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     session_id: Option<String>,
     context_window: Option<u64>,
+    usage: Option<RuntimeUsage>,
     stop_reason: &str,
     response: &Value,
 ) {
@@ -27,7 +28,7 @@ pub async fn emit_turn_result(
     });
     let metadata = RuntimeEventMetadata {
         session_id,
-        usage: None,
+        usage,
         context_window,
         raw,
     };
@@ -51,6 +52,7 @@ mod tests {
             &tx,
             Some("s-1".into()),
             Some(123_456),
+            None,
             "end_turn",
             &json!({}),
         )
@@ -65,7 +67,7 @@ mod tests {
     async fn emit_turn_result_silently_drops_when_channel_closed() {
         let (tx, rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
         drop(rx);
-        emit_turn_result(&tx, None, None, "cancelled", &json!({})).await;
+        emit_turn_result(&tx, None, None, None, "cancelled", &json!({})).await;
     }
 
     #[tokio::test]
@@ -75,6 +77,7 @@ mod tests {
             &tx,
             Some("s-1".into()),
             Some(200_000),
+            None,
             "end_turn",
             &json!({
                 "usage": {
@@ -92,5 +95,26 @@ mod tests {
             "session/prompt usage is per-turn accounting, not a context-budget snapshot",
         );
         assert_eq!(event.context_window(), Some(200_000));
+    }
+
+    #[tokio::test]
+    async fn emit_turn_result_can_attach_provider_usage_fallback() {
+        let (tx, mut rx) = mpsc::channel(4);
+        emit_turn_result(
+            &tx,
+            Some("s-1".into()),
+            Some(200_000),
+            Some(crate::domain::agents::adapter::RuntimeUsage {
+                input_tokens: 12_345,
+                output_tokens: 0,
+            }),
+            "end_turn",
+            &json!({}),
+        )
+        .await;
+        let event = rx.recv().await.unwrap().unwrap();
+        let usage = event.usage().expect("provider fallback usage is attached");
+        assert_eq!(usage.input_tokens, 12_345);
+        assert_eq!(usage.output_tokens, 0);
     }
 }

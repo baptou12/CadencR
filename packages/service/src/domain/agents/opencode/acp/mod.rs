@@ -10,6 +10,7 @@ mod adapter_normalize;
 mod events_subagent_synthesis;
 mod events_tool_call_question;
 pub(in crate::domain::agents) mod port;
+mod prompt_usage;
 mod question_sidecar;
 // Workarounds for ACP-wire limitations in upstream OpenCode. Anything
 // that talks to the embedded HTTP backend on `--port` to make up for an

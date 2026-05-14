@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionMode,
-    RuntimePermissionResponse, RuntimeSlashCommand,
+    RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -73,6 +73,13 @@ pub trait AcpProviderHooks: Send + Sync {
 
     /// Prompt text used for manual compaction, when the provider supports it.
     fn compact_prompt(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Provider-specific fallback for prompt-response usage. Generic ACP
+    /// ignores `session/prompt` usage because the protocol shape is per-turn;
+    /// providers may opt in when their response carries context occupancy.
+    fn prompt_response_usage(&self, _response: &Value) -> Option<RuntimeUsage> {
         None
     }
 
@@ -165,6 +172,7 @@ pub trait AcpProviderHooks: Send + Sync {
         &self,
         _session_id: &str,
         _cwd: &Path,
+        _context_window: Option<u64>,
         _tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     ) -> Option<JoinHandle<()>> {
         None
