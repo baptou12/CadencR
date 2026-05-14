@@ -39,7 +39,12 @@ class MockWebSocket {
     }
   }
 
-  simulateMessage(envelope: { domain: string; action: string; payload: unknown }): void {
+  simulateMessage(envelope: {
+    domain: string;
+    action: string;
+    payload: unknown;
+    ref?: string;
+  }): void {
     this.fireEvent("message", { data: JSON.stringify({ id: "srv-1", ...envelope }) });
   }
 }
@@ -100,11 +105,35 @@ describe("ws-session-store permission queue", () => {
     useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
 
     session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingPermission?.requestId).toBe("req-1");
+    expect(session.pendingPermissionQueue.map((permission) => permission.requestId)).toEqual([
+      "req-2",
+    ]);
+
+    const firstResponse = JSON.parse(ws.sent.at(-1)!);
+    ws.simulateMessage({
+      domain: "session",
+      action: "acknowledged",
+      ref: firstResponse.id,
+      payload: { action: "permission.respond" },
+    });
+    await Promise.resolve();
+
+    session = useWsSessionStore.getState().sessions["s1"];
     expect(session.pendingPermission?.requestId).toBe("req-2");
     expect(session.pendingPermission?.input).toEqual({ command: "pwd" });
     expect(session.pendingRequestId).toBe("req-2");
 
     useWsSessionStore.getState().respondToPermission("s1", "req-2", "deny");
+
+    const secondResponse = JSON.parse(ws.sent.at(-1)!);
+    ws.simulateMessage({
+      domain: "session",
+      action: "acknowledged",
+      ref: secondResponse.id,
+      payload: { action: "permission.respond" },
+    });
+    await Promise.resolve();
 
     session = useWsSessionStore.getState().sessions["s1"];
     expect(session.pendingPermission).toBeNull();

@@ -50,7 +50,7 @@ class MockWebSocket {
     }
   }
 
-  simulateMessage(envelope: { domain: string; action: string; payload: unknown }) {
+  simulateMessage(envelope: { domain: string; action: string; ref?: string; payload: unknown }) {
     const raw = JSON.stringify({ id: "srv-1", ...envelope });
     this.fireEvent("message", { data: raw });
   }
@@ -263,7 +263,7 @@ describe("useWebSocketSession", () => {
     expect(result.current.pendingRequestId).toBe("req_42");
   });
 
-  it("respondToPermission sends request_id in envelope and clears state", async () => {
+  it("respondToPermission sends request_id in envelope and clears after backend ack", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
       await Promise.resolve();
@@ -287,13 +287,24 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.respondToPermission("r1", "allow_once");
     });
-    expect(result.current.pendingPermission).toBeNull();
-    expect(result.current.pendingRequestId).toBe("");
+    expect(result.current.pendingPermission?.requestId).toBe("r1");
+    expect(result.current.pendingRequestId).toBe("r1");
     const sent = JSON.parse(getWs().sent[0]);
     expect(sent.domain).toBe("session");
     expect(sent.action).toBe("permission.respond");
     expect(sent.payload.request_id).toBe("r1");
     expect(sent.payload.decision).toBe("allow_once");
+    await act(async () => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: sent.id,
+        payload: { action: "permission.respond" },
+      });
+      await Promise.resolve();
+    });
+    expect(result.current.pendingPermission).toBeNull();
+    expect(result.current.pendingRequestId).toBe("");
   });
 
   it("deny permission response clears pending state and waits for backend", async () => {
@@ -319,10 +330,21 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.respondToPermission("r2", "deny");
     });
-    expect(result.current.pendingPermission).toBeNull();
+    expect(result.current.pendingPermission?.requestId).toBe("r2");
     expect(result.current.status).toBe("question");
     const sent = JSON.parse(getWs().sent[0]);
     expect(sent.payload.decision).toBe("deny");
+    await act(async () => {
+      getWs().simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: sent.id,
+        payload: { action: "permission.respond" },
+      });
+      await Promise.resolve();
+    });
+    expect(result.current.pendingPermission).toBeNull();
+    expect(result.current.pendingRequestId).toBe("");
   });
 
   it("session.error sets error status", async () => {

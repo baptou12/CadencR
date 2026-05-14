@@ -61,6 +61,16 @@ async fn persist_question_answer(
     p.persist_user_message(&answer_text).await;
 }
 
+fn acknowledge_permission_response(sender: &WsSender, envelope_id: &str) {
+    let ack = WsEnvelope::reply(
+        envelope_id,
+        "session",
+        "acknowledged",
+        serde_json::json!({ "action": "permission.respond" }),
+    );
+    let _ = sender.send(Message::Text(String::from(ack).into()));
+}
+
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -161,7 +171,7 @@ pub(super) async fn handle_permission_respond(
         updated_input: payload.updated_input.clone(),
     };
     let permission_kind = {
-        let q = query.lock().await;
+        let q = query.read().await;
         q.permission_response_kind(&payload.request_id)
     };
     if should_transition_after_plan_approval(permission_kind, runtime_response.decision) {
@@ -183,12 +193,18 @@ pub(super) async fn handle_permission_respond(
         }
     }
     let respond_result = {
-        let q = query.lock().await;
+        let q = query.read().await;
         q.respond_permission(runtime_response).await
     };
     let is_plan_approval = permission_kind == RuntimePermissionResponseKind::PlanApproval;
     match respond_result {
         Ok(()) => {
+            // Acknowledge the UI as soon as the runtime accepts the response.
+            // Permission handling must not wait behind SQLite cleanup,
+            // status broadcasts, or answer persistence; otherwise the
+            // frontend request/response timer can expire even though the
+            // ACP server request was already answered.
+            acknowledge_permission_response(sender, &envelope.id);
             let turn_feedback = if is_plan_approval {
                 Some(payload.feedback.as_deref().unwrap_or("Plan feedback"))
             } else {
@@ -278,6 +294,7 @@ pub(super) async fn handle_permission_respond(
             "Permission channel closed",
         );
     } else {
+        acknowledge_permission_response(sender, &envelope.id);
         persist_question_answer(
             app_state.write_pool.clone(),
             extracted.feature_id,
@@ -524,7 +541,7 @@ pub(super) async fn handle_model_set(
             }
         }
         QueryState::Active { query, .. } => {
-            let q = query.lock().await;
+            let q = query.read().await;
             if let Err(e) = q.set_model(&payload.model).await {
                 error!(db_session_id, error = %e, "failed to set model on active query");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
@@ -642,7 +659,7 @@ pub(super) async fn handle_mode_set(
             options.permission_mode = Some(new_mode);
         }
         QueryState::Active { query, .. } => {
-            let q = query.lock().await;
+            let q = query.read().await;
             if let Err(e) = q.set_permission_mode(new_mode.clone()).await {
                 // The CLI rejected (or never acked) the mode change.
                 // Per `no-optimistic-updates.md` we leave the FE chip
@@ -755,7 +772,7 @@ pub(super) async fn handle_effort_set(
     };
 
     if let Some(query) = active_query {
-        let q = query.lock().await;
+        let q = query.read().await;
         let applies_in_place = q.applies_thinking_effort_in_place();
         if let Err(error) = q.set_thinking_effort(payload.thinking_effort.clone()).await {
             error!(db_session_id, %error, "failed to set thinking effort on active query");
@@ -855,7 +872,7 @@ pub(super) async fn handle_interrupt(
 
     match &handle.state {
         QueryState::Active { query, .. } => {
-            let q = query.lock().await;
+            let q = query.read().await;
             if let Err(e) = q.interrupt().await {
                 error!(db_session_id, error = %e, "interrupt failed");
                 send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
@@ -1174,7 +1191,7 @@ pub(super) async fn handle_suspend(
     // Capture session id BEFORE interrupt: once the subprocess starts
     // tearing down, `session_id()` may return None for some adapters.
     let cli_sid = {
-        let q = query.lock().await;
+        let q = query.read().await;
         let sid = q.session_id().await;
         let interrupt_result = q.interrupt().await;
         drop(q);

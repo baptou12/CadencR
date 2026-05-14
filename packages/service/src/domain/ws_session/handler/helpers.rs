@@ -26,7 +26,7 @@ pub(super) async fn persist_and_close_query(
     db_session_id: i64,
     runtime_provider: &str,
 ) -> Option<String> {
-    let mut q = query.lock().await;
+    let mut q = query.write().await;
     let cli_sid = q.session_id().await;
     if let Some(ref sid) = cli_sid {
         debug!(

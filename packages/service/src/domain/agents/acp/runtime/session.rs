@@ -330,8 +330,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn interrupt_keeps_prompt_turn_serialized_until_agent_reply() {
-        let (client, mut agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+    async fn interrupt_unblocks_prompt_turn_when_agent_never_replies() {
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
         let negotiated = super::super::lifecycle::NegotiatedSession {
             session_id: "s-cancel".to_string(),
             model: None,
@@ -358,26 +358,16 @@ mod tests {
         });
         let prompt_req = read_one_request(&mut agent_stdin).await;
         assert_eq!(prompt_req["method"], "session/prompt");
-        let prompt_id = prompt_req["id"].clone();
 
         session.interrupt().await.unwrap();
         let cancel = read_one_request(&mut agent_stdin).await;
         assert_eq!(cancel["method"], "session/cancel");
 
-        let mut prompt = Box::pin(prompt);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(100), &mut prompt)
-                .await
-                .is_err(),
-            "cancel must not release prompt turn before the agent resolves session/prompt"
-        );
-
-        write_frame(
-            &mut agent_stdout,
-            json!({ "id": prompt_id, "result": { "stopReason": "cancelled" } }),
-        )
-        .await;
-        prompt.await.unwrap().unwrap();
+        tokio::time::timeout(Duration::from_millis(500), prompt)
+            .await
+            .expect("local cancel should unblock the prompt turn")
+            .unwrap()
+            .unwrap();
         let result = runtime_rx.recv().await.unwrap().unwrap();
         assert!(result.is_result());
         assert_eq!(result.raw_json()["stop_reason"], "cancelled");

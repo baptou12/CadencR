@@ -1,19 +1,10 @@
-//! Prompt-turn lifecycle helpers (W4).
-//!
-//! - [`PromptTurnLock`] serialises prompt turns so follow-up prompts wait
-//!   for the in-flight turn to resolve before sending `session/prompt`.
-//! - [`finalize_turn`] is the single funnel that runs at every terminal
-//!   `stopReason` (end_turn / max_tokens / cancelled / refusal / error).
-//!   It drains any open streaming text/thinking blocks (so the FE sees
-//!   `ContentBlockStop` boundaries) and emits the `Result` envelope.
-//!
-//! Lifted out of `prompt_turn.rs` so neither file exceeds the 400-line
-//! ceiling once W4's tests land.
+//! Prompt-turn lifecycle helpers.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::{mpsc, Mutex as AsyncMutex, Notify, RwLock};
 
 use crate::domain::agents::acp::AcpClient;
@@ -24,14 +15,6 @@ use super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::provider_hooks::AcpProviderHooks;
 use super::turn_result::emit_turn_result;
 
-/// Per-session mutex that serialises prompt turns.
-///
-/// Acquired in `stream_input` (and `drive_initial_prompt`) before sending
-/// `session/prompt`; released only after the response returns *and* the
-/// post-response drain has run. `interrupt()` deliberately does NOT take
-/// this lock — a `session/cancel` must be able to pre-empt the in-flight
-/// turn, which then releases the lock through the cancellation response
-/// path.
 pub type PromptTurnLock = Arc<AsyncMutex<()>>;
 
 #[derive(Clone, Default)]
@@ -49,14 +32,23 @@ impl PromptCancel {
         self.epoch.fetch_add(1, Ordering::Relaxed);
         self.notify.notify_waiters();
     }
+
+    fn current_epoch(&self) -> u64 {
+        self.epoch.load(Ordering::Relaxed)
+    }
+
+    async fn wait_for_cancel_after(&self, epoch: u64) {
+        loop {
+            if self.current_epoch() > epoch {
+                return;
+            }
+            self.notify.notified().await;
+        }
+    }
 }
 
-/// Send the very first `session/prompt` for a freshly-spawned ACP session.
-///
-/// Runs detached from the spawn flow so the caller can return before the
-/// agent finishes its turn. Routes through the same `PromptTurnLock` as
-/// `stream_input` so a follow-up FE prompt arriving before the initial
-/// turn resolves queues behind it (W4).
+const CANCEL_GRACE: Duration = Duration::from_millis(150);
+
 #[allow(clippy::too_many_arguments)]
 pub async fn drive_initial_prompt(
     client: &AcpClient,
@@ -106,21 +98,34 @@ pub async fn drive_initial_prompt(
 pub async fn request_prompt_with_cancel(
     client: &AcpClient,
     params: Value,
-    _prompt_cancel: &PromptCancel,
+    prompt_cancel: &PromptCancel,
 ) -> Result<Value, RuntimeError> {
-    // `session/cancel` is delivered on the same ACP connection as a
-    // notification, but the in-flight `session/prompt` still owns the turn
-    // until the agent resolves it. Do not drop the prompt future on local
-    // cancellation: doing so releases `PromptTurnLock` early and lets a
-    // follow-up prompt overtake the cancelled turn on the wire.
-    client
-        .request_with_timeout(
-            "session/prompt",
-            params,
-            std::time::Duration::from_secs(60 * 60),
-        )
-        .await
-        .map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))
+    let start_epoch = prompt_cancel.current_epoch();
+    let prompt =
+        client.request_with_timeout("session/prompt", params, Duration::from_secs(60 * 60));
+    tokio::pin!(prompt);
+
+    tokio::select! {
+        result = &mut prompt => prompt_result(result),
+        _ = prompt_cancel.wait_for_cancel_after(start_epoch) => {
+            match tokio::time::timeout(CANCEL_GRACE, &mut prompt).await {
+                Ok(result) => prompt_result(result),
+                Err(_) => {
+                    client.shutdown().await;
+                    Ok(json!({
+                        "stopReason": "cancelled",
+                        "cadencrSynthetic": true,
+                    }))
+                }
+            }
+        }
+    }
+}
+
+fn prompt_result(
+    result: Result<Value, crate::domain::agents::acp::error::AcpError>,
+) -> Result<Value, RuntimeError> {
+    result.map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))
 }
 
 /// Single funnel for everything that must happen at turn end:
