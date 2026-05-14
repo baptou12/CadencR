@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useMemo } from "react";
+import { useState, useCallback, memo, useMemo, type ReactElement } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, CopyIcon, CheckIcon } from "lucide-react";
 import {
@@ -10,7 +10,7 @@ import {
   extractBashCommand,
   extractBashOutput,
   extractBashResultOutput,
-  extractInlineDiffPreview,
+  extractInlineDiffPreviews,
   isFileChangeTool,
   isToolCallRunning,
   normalizeToolName,
@@ -143,18 +143,8 @@ export const AgentBlock = memo(function AgentBlock({
       }
       // Edit/Write: unified diff block (no separate ToolCallBlock header)
       if (isFileChangeTool(block.toolName)) {
-        const diff = extractInlineDiffPreview(block.toolName ?? "", block.toolArgs);
-        if (diff && !diff.filePath.includes("/.claude/plans/")) {
-          return (
-            <InlineDiffBlock
-              filePath={diff.filePath}
-              oldContent={diff.oldContent}
-              newContent={diff.newContent}
-              basePath={basePath}
-              toolName={normalizeToolName(block.toolName ?? "")}
-            />
-          );
-        }
+        const fileChangeBlocks = renderFileChangeBlocks(block.toolName, block.toolArgs, basePath);
+        if (fileChangeBlocks) return fileChangeBlocks;
       }
       return (
         <ToolCallBlock
@@ -204,6 +194,46 @@ function messageIdFromBlockId(id: string): number | undefined {
 
 function hasAttachedPlanContent(args: string | undefined): boolean {
   return !!stringArg(parseToolArgsObject(args), "plan");
+}
+
+function renderFileChangeBlocks(
+  toolName: string | undefined,
+  toolArgs: string | undefined,
+  basePath: string | undefined,
+): ReactElement | null {
+  const normalizedToolName = normalizeToolName(toolName ?? "");
+  const diffs = extractInlineDiffPreviews(toolName ?? "", toolArgs).filter(isVisibleInlineDiff);
+  if (diffs.length === 0) return null;
+  if (diffs.length === 1) {
+    return renderInlineDiffBlock(diffs[0], basePath, normalizedToolName);
+  }
+  return (
+    <div className="space-y-2">
+      {diffs.map((diff, index) => renderInlineDiffBlock(diff, basePath, normalizedToolName, index))}
+    </div>
+  );
+}
+
+function isVisibleInlineDiff(diff: { filePath: string }): boolean {
+  return !diff.filePath.includes(".claude/plans/");
+}
+
+function renderInlineDiffBlock(
+  diff: { filePath: string; oldContent: string; newContent: string },
+  basePath: string | undefined,
+  toolName: string,
+  index?: number,
+): ReactElement {
+  return (
+    <InlineDiffBlock
+      key={index === undefined ? undefined : `${diff.filePath}:${index}`}
+      filePath={diff.filePath}
+      oldContent={diff.oldContent}
+      newContent={diff.newContent}
+      basePath={basePath}
+      toolName={toolName}
+    />
+  );
 }
 
 /** Render the final text output from an Agent/Task tool_result (JSON content blocks). */

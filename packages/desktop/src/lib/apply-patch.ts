@@ -93,6 +93,12 @@ export function extractApplyPatchPreview(args: Record<string, unknown>): ApplyPa
   return previewFromPatchText(patchText);
 }
 
+export function extractApplyPatchPreviews(args: Record<string, unknown>): ApplyPatchPreview[] {
+  const patchText = extractApplyPatchText(args);
+  if (!patchText) return [];
+  return previewsFromPatchText(patchText);
+}
+
 /**
  * Build an ApplyPatch preview from a (possibly truncated) raw JSON string.
  *
@@ -108,21 +114,41 @@ export function extractApplyPatchPreview(args: Record<string, unknown>): ApplyPa
  * grows incrementally as more bytes stream in.
  */
 export function extractApplyPatchPreviewPartial(rawContent: string): ApplyPatchPreview | null {
-  if (!rawContent) return null;
+  const patchText = extractPatchTextFromRawContent(rawContent);
+  if (patchText === undefined) return null;
+  return previewFromPatchText(patchText);
+}
+
+export function extractApplyPatchPreviewsPartial(rawContent: string): ApplyPatchPreview[] {
+  const patchText = extractPatchTextFromRawContent(rawContent);
+  if (patchText === undefined) return [];
+  return previewsFromPatchText(patchText);
+}
+
+function extractPatchTextFromRawContent(rawContent: string): string | undefined {
+  if (!rawContent) return undefined;
 
   // Fast path — full JSON parses cleanly.
   try {
     const parsed: unknown = JSON.parse(rawContent);
     if (parsed && typeof parsed === "object") {
-      return extractApplyPatchPreview(parsed as Record<string, unknown>);
+      return extractApplyPatchText(parsed as Record<string, unknown>);
     }
   } catch {
     // Fall through to the tolerant scanner.
   }
 
-  const patchText = extractPatchTextFromPartialJson(rawContent);
-  if (patchText === undefined) return null;
-  return previewFromPatchText(patchText);
+  return extractPatchTextFromPartialJson(rawContent);
+}
+
+function previewsFromPatchText(patchText: string): ApplyPatchPreview[] {
+  const changes = parseApplyPatchChanges(patchText);
+  const previews: ApplyPatchPreview[] = [];
+  for (const change of changes) {
+    const preview = previewFromChange(change);
+    if (preview) previews.push(preview);
+  }
+  return previews;
 }
 
 function previewFromPatchText(patchText: string): ApplyPatchPreview | null {
