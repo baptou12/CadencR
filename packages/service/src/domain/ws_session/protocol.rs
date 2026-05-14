@@ -238,6 +238,33 @@ pub struct SessionEndedPayload {
     pub reason: String,
 }
 
+/// Discriminant for `SessionLifecyclePayload`.
+///
+/// Currently only carries OS-power-driven transitions. `SuspendRequested` is
+/// emitted after the WS handler has captured the runtime session id and
+/// interrupted the live process in response to a `session.suspend` envelope
+/// (driven by Electron's `powerMonitor.suspend`); `Resumed` is the matching
+/// acknowledgement after `session.resume`. The frontend turn-lifecycle state
+/// machine consumes these via `ws-envelope-handler` — UI never flips on the
+/// raw OS event, only on this backend-confirmed envelope (see
+/// `no-optimistic-updates.md`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionLifecycleKind {
+    SuspendRequested,
+    Resumed,
+}
+
+/// Server → Client: a lifecycle transition driven outside the normal turn
+/// flow (today: OS suspend/resume). Provider-neutral — every adapter emits
+/// the same shape and the frontend renders the same banner regardless of
+/// which provider is active.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLifecyclePayload {
+    pub session_id: String,
+    pub kind: SessionLifecycleKind,
+}
+
 /// Discriminant for `SessionStreamStatusPayload`.
 ///
 /// Hard failures stay on `session.error`; this enum only carries

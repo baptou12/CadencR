@@ -23,6 +23,9 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
+import { usePowerEvents } from "@/hooks/usePowerEvents";
+import { usePowerBusySignal } from "@/hooks/usePowerBusySignal";
+import { SuspendedBanner } from "@/components/SuspendedBanner";
 import {
   initNotificationPermission,
   listenForNotificationClicks,
@@ -43,6 +46,8 @@ function RootLayout() {
   useOperationToasts();
   useThemeSync();
   useConnectionWatchdog();
+  usePowerEvents();
+  usePowerBusySignal();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -360,6 +365,7 @@ function RootLayout() {
               </main>
             </ResizablePanel>
           </ResizablePanelGroup>
+          <SuspendedBanner />
           <RootOverlays
             commandPaletteOpen={commandPaletteOpen}
             setCommandPaletteOpen={setCommandPaletteOpen}

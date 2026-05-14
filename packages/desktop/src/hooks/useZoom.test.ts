@@ -30,6 +30,9 @@ function bridge(): CadencrDesktopBridge {
     setZoom: mockSetZoom,
     currentTheme: vi.fn(),
     onThemeChange: vi.fn(() => () => undefined),
+    setBusy: vi.fn(() => Promise.resolve()),
+    onPowerSuspend: vi.fn(() => () => undefined),
+    onPowerResume: vi.fn(() => () => undefined),
   };
 }
 

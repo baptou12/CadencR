@@ -28,6 +28,9 @@ function bridge(overrides: Partial<CadencrDesktopBridge>): CadencrDesktopBridge 
     setZoom: vi.fn(),
     currentTheme: vi.fn<() => Promise<DesktopTheme>>(() => Promise.resolve("dark")),
     onThemeChange: vi.fn(() => () => undefined),
+    setBusy: vi.fn(() => Promise.resolve()),
+    onPowerSuspend: vi.fn(() => () => undefined),
+    onPowerResume: vi.fn(() => () => undefined),
     ...overrides,
   };
 }

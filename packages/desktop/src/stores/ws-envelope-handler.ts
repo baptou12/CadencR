@@ -16,6 +16,7 @@ import {
   parseFeatureUpdatedPayload,
   parseEffortPayload,
   parseInitializedPayload,
+  parseLifecyclePayload,
   parseMessageBlocksPayload,
   parseModePayload,
   parseModelPayload,
@@ -264,6 +265,21 @@ function handleSessionAction(
     case "stream_status":
       handleStreamStatus(ctx, sessionId, envelope.payload);
       break;
+    case "lifecycle": {
+      // OS suspend / resume — backend-confirmed transitions. Per
+      // `no-optimistic-updates.md`, the FE flips lifecycle only here,
+      // never on the raw Electron power event.
+      const p = parseLifecyclePayload(envelope.payload);
+      if (!p) break;
+      const session = ctx.getSession(sessionId);
+      const event = p.kind === "suspend_requested" ? "suspended" : "resumed";
+      ctx.set(
+        updateSession(ctx.get(), sessionId, {
+          lifecycle: transitionTurn(session.lifecycle, { type: event }),
+        }),
+      );
+      break;
+    }
     case "feature.renamed": {
       const p = parseFeatureRenamePayload(envelope.payload);
       if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));

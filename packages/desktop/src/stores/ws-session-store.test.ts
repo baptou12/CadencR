@@ -3,6 +3,7 @@ import { FALLBACK_MODEL_ID } from "../shared/models";
 import { useWsSessionStore, applyMutations, createStreamingState } from "./ws-session-store";
 import { updateSession } from "./ws-session-types";
 import { invalidateWorktreeQueries } from "@/lib/worktreeQueries";
+import { forceReconnectAll } from "@/lib/ws-reconnect";
 
 vi.mock("@/lib/worktreeQueries", () => ({
   invalidateWorktreeQueries: vi.fn(),
@@ -324,7 +325,7 @@ describe("ws-session-store", () => {
     expect(sessionsAfterSecond["s1"].runtimeSessionId).toBe("uuid-abc-123");
   });
 
-  it("close clears server session identifiers so init can run again, but preserves runtimeSessionId across transient transport drops", async () => {
+  it("preserves serverSessionId and runtimeSessionId across transient transport drops", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -345,12 +346,57 @@ describe("ws-session-store", () => {
     ws.fireEvent("close");
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.isConnected).toBe(false);
-    expect(session.serverSessionId).toBe("");
-    // The WS is just transport; the underlying agent runtime session id
-    // (e.g. Codex thread id) is still valid on the backend, so the chip
-    // must not blink off on transient reconnects.
+    // The WS is just transport; both the DB session id (`serverSessionId`)
+    // and the underlying agent runtime session id (`runtimeSessionId`)
+    // remain valid on the backend across a transport hiccup. Wiping
+    // `serverSessionId` would cause the next user-initiated envelope to
+    // ship `session_id: ""`, which the backend rejects as
+    // `INVALID_SESSION_ID` (the post-OS-sleep failure mode users hit
+    // before this was fixed). The reconnect path re-emits `session.init`
+    // to rebuild the per-connection handle on the backend.
+    expect(session.serverSessionId).toBe("srv-1");
     expect(session.runtimeSessionId).toBe("uuid-abc-123");
     expect(session.conn).toBeNull();
+  });
+
+  it("re-emits session.init on reconnect to rebuild the backend handle", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const initialWs = getWs();
+    // Initialise the session: backend assigns a serverSessionId, the
+    // renderer learns featureId / provider / model.
+    store.initSession("s1", {
+      featureId: 42,
+      provider: "claude-code",
+      model: "claude-sonnet-4-5",
+    });
+    initialWs.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "claude-code", model: "claude-sonnet-4-5" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].serverSessionId).toBe("srv-1");
+
+    // Simulate the post-sleep transport drop + the watchdog's force
+    // reconnect (instead of waiting for the 1s exponential-backoff
+    // timer). The store should fire a fresh session.init carrying the
+    // cached config (provider, model, feature_id) so the new socket's
+    // backend sdk_sessions map gets rebuilt.
+    initialWs.fireEvent("close");
+    forceReconnectAll();
+    await tick();
+    const newWs = getWs();
+    expect(newWs).not.toBe(initialWs);
+    const reinitEnvelopes = newWs.sent
+      .map((raw) => JSON.parse(raw))
+      .filter((env) => env.domain === "session" && env.action === "init");
+    expect(reinitEnvelopes).toHaveLength(1);
+    expect(reinitEnvelopes[0].payload).toMatchObject({
+      feature_id: 42,
+      provider: "claude-code",
+      model: "claude-sonnet-4-5",
+    });
   });
 
   it("new session defaults currentModelId to FALLBACK_MODEL_ID", async () => {

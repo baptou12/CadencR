@@ -29,6 +29,9 @@ function makeElectronBridge(): CadencrDesktopBridge {
     setZoom: vi.fn(() => Promise.resolve()),
     currentTheme: vi.fn<() => Promise<"dark">>(() => Promise.resolve("dark")),
     onThemeChange: vi.fn(() => () => undefined),
+    setBusy: vi.fn(() => Promise.resolve()),
+    onPowerSuspend: vi.fn(() => () => undefined),
+    onPowerResume: vi.fn(() => () => undefined),
   };
 }
 

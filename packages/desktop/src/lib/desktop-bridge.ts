@@ -65,6 +65,17 @@ export interface CadencrDesktopBridge {
   setZoom: (factor: number) => Promise<void>;
   currentTheme: () => Promise<DesktopTheme>;
   onThemeChange: (cb: (appearance: DesktopTheme) => void) => () => void;
+  /**
+   * Tell the main process whether any agent turn is currently active. Main
+   * uses this to ref-count `powerSaveBlocker('prevent-app-suspension')` so
+   * the OS keeps the system awake while agents stream and lets it sleep
+   * normally when they don't (per `feature-sleep-aware-agent-reliability`).
+   */
+  setBusy: (busy: boolean) => Promise<void>;
+  /** Fired just before the OS suspends. Cleanup is up to the renderer. */
+  onPowerSuspend: (cb: () => void) => () => void;
+  /** Fired right after wake-from-suspend. */
+  onPowerResume: (cb: () => void) => () => void;
 }
 
 declare global {
@@ -104,6 +115,9 @@ const browserBridge: CadencrDesktopBridge = {
   setZoom: () => Promise.resolve(),
   currentTheme: () => Promise.resolve(browserTheme()),
   onThemeChange: () => () => undefined,
+  setBusy: () => Promise.resolve(),
+  onPowerSuspend: () => () => undefined,
+  onPowerResume: () => () => undefined,
 };
 
 function activeBridge(): CadencrDesktopBridge {
