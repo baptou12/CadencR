@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use crate::error::SdkError;
 use crate::parsing::{parse_message_from, parse_session_from};
-use crate::types::{ConfigProvidersResponse, Message, Session};
+use crate::types::{Message, Session};
 
 #[derive(Clone)]
 pub struct OpenCodeClient {
@@ -57,14 +57,7 @@ impl OpenCodeClient {
             .send()
             .await?;
         let body = ensure_success(response).await?;
-        let messages = body
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| parse_message_from(&value))
-            .collect();
-        Ok(messages)
+        parse_array(body, "message", parse_message_from)
     }
 
     /// `GET /session/{id}/children` — direct sub-sessions of a parent.
@@ -86,29 +79,7 @@ impl OpenCodeClient {
             .send()
             .await?;
         let body = ensure_success(response).await?;
-        Ok(body
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|value| parse_session_from(&value))
-            .collect())
-    }
-
-    /// `GET /config/providers` — opencode's resolved provider/model
-    /// list from models.dev + on-disk config.
-    ///
-    /// Read-only / no token usage: this endpoint is a pure config
-    /// listing and does not trigger upstream model API calls.
-    pub async fn list_config_providers(&self) -> Result<ConfigProvidersResponse, SdkError> {
-        let response = self
-            .http
-            .get(format!("{}/config/providers", self.base_url))
-            .send()
-            .await?;
-        let body = ensure_success(response).await?;
-        let parsed: ConfigProvidersResponse = serde_json::from_value(body)?;
-        Ok(parsed)
+        parse_array(body, "session", parse_session_from)
     }
 
     fn maybe_scoped_request(
@@ -123,6 +94,25 @@ impl OpenCodeClient {
             None => req,
         }
     }
+}
+
+fn parse_array<T>(
+    body: Value,
+    item_name: &str,
+    parse: impl Fn(&Value) -> Option<T>,
+) -> Result<Vec<T>, SdkError> {
+    let array = body.as_array().ok_or_else(|| {
+        SdkError::Protocol(format!("expected {item_name} list response to be an array"))
+    })?;
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            parse(value).ok_or_else(|| {
+                SdkError::Protocol(format!("malformed {item_name} at response index {index}"))
+            })
+        })
+        .collect()
 }
 
 async fn ensure_success(response: reqwest::Response) -> Result<Value, SdkError> {
@@ -146,57 +136,123 @@ fn deserialize_json<T: DeserializeOwned>(raw: &str) -> Result<T, SdkError> {
 
 #[cfg(test)]
 mod tests {
-    use super::OpenCodeClient;
+    use super::{parse_array, OpenCodeClient};
+    use axum::extract::State;
+    use axum::http::{HeaderMap, StatusCode, Uri};
+    use axum::response::IntoResponse;
     use axum::routing::get;
-    use axum::Json;
+    use axum::Router;
     use serde_json::json;
+    use std::sync::{Arc, Mutex};
+    use tokio::net::TcpListener;
 
-    /// Boots a one-shot axum stub server bound to an OS-assigned port,
-    /// answering `GET /config/providers` with the given fixture, and
-    /// returns the port the client should talk to.
-    async fn spawn_config_providers_stub(body: serde_json::Value) -> u16 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let app = axum::Router::new().route(
-            "/config/providers",
-            get(move || {
-                let body = body.clone();
-                async move { Json(body) }
-            }),
-        );
+    #[derive(Clone)]
+    struct ServerState {
+        body: Arc<str>,
+        status: StatusCode,
+        requests: Arc<Mutex<Vec<String>>>,
+    }
+
+    async fn test_client(
+        body: &str,
+        status: StatusCode,
+    ) -> (OpenCodeClient, Arc<Mutex<Vec<String>>>) {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let state = ServerState {
+            body: Arc::from(body),
+            status,
+            requests: Arc::clone(&requests),
+        };
+        let app = Router::new()
+            .route("/session/{id}/message", get(record_request))
+            .route("/session/{id}/children", get(record_request))
+            .with_state(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        port
+        (OpenCodeClient::with_base_url(base_url), requests)
+    }
+
+    async fn record_request(
+        State(state): State<ServerState>,
+        uri: Uri,
+        headers: HeaderMap,
+    ) -> impl IntoResponse {
+        let header = headers
+            .get("x-opencode-directory")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        state
+            .requests
+            .lock()
+            .unwrap()
+            .push(format!("{uri} header={header}"));
+        (state.status, state.body.to_string())
+    }
+
+    #[test]
+    fn parse_array_rejects_non_array_response() {
+        let error = parse_array::<()>(json!({ "not": "array" }), "message", |_| Some(()))
+            .expect_err("non-array response should error");
+        assert!(error.to_string().contains("expected message list response"));
+    }
+
+    #[test]
+    fn parse_array_rejects_malformed_items() {
+        let error = parse_array::<()>(json!([{}]), "session", |_| None)
+            .expect_err("malformed item should error");
+        assert!(error
+            .to_string()
+            .contains("malformed session at response index 0"));
+    }
+
+    #[test]
+    fn parse_array_returns_all_parsed_items() {
+        let parsed = parse_array(json!([1, 2]), "number", |value| value.as_i64())
+            .expect("valid array should parse");
+        assert_eq!(parsed, vec![1, 2]);
     }
 
     #[tokio::test]
-    async fn list_config_providers_parses_stub_response() {
-        let port = spawn_config_providers_stub(json!({
-            "providers": [
-                {
-                    "id": "anthropic",
-                    "name": "Anthropic",
-                    "models": {
-                        "claude-sonnet-4-5": {
-                            "name": "Claude Sonnet 4.5",
-                            "limit": { "context": 200000, "output": 64000 }
-                        }
-                    }
-                }
-            ],
-            "default": { "anthropic": "claude-sonnet-4-5" }
-        }))
-        .await;
+    async fn list_messages_errors_on_non_array_response() {
+        let (client, _requests) = test_client(r#"{"not":"array"}"#, StatusCode::OK).await;
+        let error = client.list_messages("ses_1").await.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("expected message list response to be an array"));
+    }
 
-        let client = OpenCodeClient::new(port);
-        let response = client.list_config_providers().await.expect("ok");
-        assert_eq!(response.providers.len(), 1);
-        assert_eq!(response.providers[0].id, "anthropic");
-        assert_eq!(response.providers[0].models[0].id, "claude-sonnet-4-5");
-        assert_eq!(
-            response.default.get("anthropic").map(String::as_str),
-            Some("claude-sonnet-4-5"),
-        );
+    #[tokio::test]
+    async fn list_messages_errors_on_malformed_item() {
+        let (client, _requests) = test_client("[{}]", StatusCode::OK).await;
+        let error = client.list_messages("ses_1").await.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("malformed message at response index 0"));
+    }
+
+    #[tokio::test]
+    async fn list_children_sends_directory_scope_and_errors_on_malformed_item() {
+        let (client, requests) = test_client("[{}]", StatusCode::OK).await;
+        let error = client
+            .list_children_in_directory("ses_1", Some("/tmp/project"))
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("malformed session at response index 0"));
+        let requests = requests.lock().unwrap();
+        assert!(requests[0].contains("/session/ses_1/children?directory=%2Ftmp%2Fproject"));
+        assert!(requests[0].contains("header=/tmp/project"));
+    }
+
+    #[tokio::test]
+    async fn non_success_response_includes_status_and_body() {
+        let (client, _requests) = test_client("bad gateway", StatusCode::BAD_GATEWAY).await;
+        let error = client.list_messages("ses_1").await.unwrap_err();
+        assert!(error.to_string().contains("http status 502"));
+        assert!(error.to_string().contains("bad gateway"));
     }
 }

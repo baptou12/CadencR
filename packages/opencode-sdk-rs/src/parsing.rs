@@ -1,14 +1,11 @@
 mod helpers;
 mod part_parsing;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use self::helpers::{maybe_string, maybe_timestamp, nested_object, parse_session_status};
 pub use self::part_parsing::parse_part_from;
-use crate::types::{
-    Message, MessagePart, MessageRole, PermissionRequest, Question, QuestionItem, QuestionOption,
-    Session, TokenCacheUsage, TokenUsage,
-};
+use crate::types::{Message, MessagePart, MessageRole, Session, TokenCacheUsage, TokenUsage};
 
 pub fn parse_session_from(payload: &Value) -> Option<Session> {
     let candidate = nested_object(payload, &["session", "info"]).unwrap_or(payload);
@@ -142,111 +139,9 @@ fn message_finished(value: &Value) -> bool {
             .is_some()
 }
 
-pub fn parse_permission_from(payload: &Value) -> Option<PermissionRequest> {
-    let candidate = nested_object(payload, &["permission"]).unwrap_or(payload);
-    let tool_name = maybe_string(candidate, &["tool_name", "tool"])
-        .or_else(|| maybe_string(candidate, &["permission"]))
-        .unwrap_or_default();
-    let tool_input = if candidate.get("permission").is_some()
-        || candidate.get("patterns").is_some()
-        || candidate.get("metadata").is_some()
-        || candidate.get("always").is_some()
-        || candidate.get("tool").is_some()
-    {
-        json!({
-            "permission": candidate.get("permission").cloned().unwrap_or(Value::Null),
-            "patterns": candidate.get("patterns").cloned().unwrap_or_else(|| json!([])),
-            "metadata": candidate.get("metadata").cloned().unwrap_or_else(|| json!({})),
-            "always": candidate.get("always").cloned().unwrap_or_else(|| json!([])),
-            "tool": candidate.get("tool").cloned().unwrap_or(Value::Null),
-        })
-    } else {
-        candidate
-            .get("tool_input")
-            .cloned()
-            .or_else(|| candidate.get("input").cloned())
-            .unwrap_or_else(|| json!({}))
-    };
-
-    Some(PermissionRequest {
-        id: maybe_string(candidate, &["id", "request_id", "requestID"])?,
-        session_id: maybe_string(candidate, &["session_id", "sessionID"])?,
-        call_id: maybe_string(candidate, &["call_id", "callID"]).or_else(|| {
-            candidate
-                .get("tool")
-                .and_then(|tool| maybe_string(tool, &["call_id", "callID"]))
-        }),
-        tool_name,
-        tool_input,
-        description: maybe_string(candidate, &["description"]).or_else(|| {
-            candidate
-                .get("metadata")
-                .and_then(|metadata| metadata.get("description"))
-                .and_then(Value::as_str)
-                .map(ToOwned::to_owned)
-        }),
-    })
-}
-
-pub fn parse_question_from(payload: &Value) -> Option<Question> {
-    let candidate = nested_object(payload, &["question"]).unwrap_or(payload);
-    let questions = candidate
-        .get("questions")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .map(parse_question_item)
-                .collect::<Vec<QuestionItem>>()
-        })
-        .filter(|items| !items.is_empty())
-        .unwrap_or_else(|| vec![parse_question_item(candidate)]);
-
-    Some(Question {
-        id: maybe_string(candidate, &["id", "request_id", "requestID"])?,
-        session_id: maybe_string(candidate, &["session_id", "sessionID"])?,
-        questions,
-    })
-}
-
-fn parse_question_item(value: &Value) -> QuestionItem {
-    QuestionItem {
-        question: maybe_string(value, &["question", "text"]).unwrap_or_default(),
-        header: maybe_string(value, &["header"]),
-        options: parse_question_options(value.get("options")),
-        multiple: value
-            .get("multiple")
-            .and_then(Value::as_bool)
-            .or_else(|| value.get("multiSelect").and_then(Value::as_bool))
-            .unwrap_or(false),
-    }
-}
-
-fn parse_question_options(value: Option<&Value>) -> Option<Vec<QuestionOption>> {
-    let items = value?.as_array()?;
-    Some(
-        items
-            .iter()
-            .map(|item| {
-                if let Some(label) = item.as_str() {
-                    return QuestionOption {
-                        label: label.to_string(),
-                        description: None,
-                    };
-                }
-
-                QuestionOption {
-                    label: maybe_string(item, &["label"]).unwrap_or_default(),
-                    description: maybe_string(item, &["description"]),
-                }
-            })
-            .collect(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{parse_message_from, parse_permission_from, parse_question_from};
+    use super::parse_message_from;
     use serde_json::json;
 
     #[test]
@@ -307,91 +202,6 @@ mod tests {
 
         assert!(message.finished);
     }
-    #[test]
-    fn parse_permission_from_supports_official_permission_shape() {
-        let request = parse_permission_from(&json!({
-            "id": "per_1",
-            "sessionID": "ses_1",
-            "permission": "bash",
-            "patterns": ["git *"],
-            "metadata": { "command": "git status" },
-            "always": ["git status"],
-            "tool": { "callID": "call_1" }
-        }))
-        .unwrap();
-
-        assert_eq!(request.tool_name, "bash");
-        assert_eq!(request.call_id.as_deref(), Some("call_1"));
-        assert_eq!(request.tool_input["metadata"]["command"], "git status");
-        assert_eq!(request.tool_input["patterns"][0], "git *");
-    }
-
-    #[test]
-    fn parse_question_from_supports_official_question_shape() {
-        let question = parse_question_from(&json!({
-            "id": "que_1",
-            "sessionID": "ses_1",
-            "questions": [
-                {
-                    "question": "Pick one",
-                    "header": "Choice",
-                    "options": [
-                        { "label": "A", "description": "first" },
-                        { "label": "B", "description": "second" }
-                    ],
-                    "multiple": false
-                }
-            ]
-        }))
-        .unwrap();
-
-        assert_eq!(question.questions.len(), 1);
-        assert_eq!(question.questions[0].question, "Pick one");
-        assert_eq!(question.questions[0].header.as_deref(), Some("Choice"));
-        assert_eq!(
-            question.questions[0].options.as_ref().unwrap()[0].label,
-            "A"
-        );
-    }
-
-    #[test]
-    fn zero_token_usage_is_filtered_out() {
-        let message = parse_message_from(&json!({
-            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
-            "tokens": { "input": 0, "output": 0 }
-        }))
-        .unwrap();
-        assert!(
-            message.tokens.is_none(),
-            "all-zero tokens should be filtered"
-        );
-    }
-
-    #[test]
-    fn empty_tokens_object_is_filtered_out() {
-        let message = parse_message_from(&json!({
-            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
-            "tokens": {}
-        }))
-        .unwrap();
-        assert!(
-            message.tokens.is_none(),
-            "empty tokens object should be filtered"
-        );
-    }
-
-    #[test]
-    fn nonzero_input_tokens_are_preserved() {
-        let message = parse_message_from(&json!({
-            "id": "msg_1", "sessionID": "ses_1", "role": "assistant",
-            "tokens": { "input": 10, "output": 5 }
-        }))
-        .unwrap();
-        let tokens = message.tokens.expect("should have tokens");
-        assert_eq!(tokens.input, 10);
-        assert_eq!(tokens.output, 5);
-    }
-
     #[test]
     fn cache_only_tokens_are_preserved() {
         let message = parse_message_from(&json!({

@@ -1,7 +1,7 @@
 //! OpenCode binary discovery + override.
 //!
 //! Used to also own the long-running OpenCode HTTP server (spawn,
-//! monitor, health-check, shutdown). With the HTTP transport retired,
+//! monitor, health-check, shutdown). With the long-lived transport retired,
 //! the only surviving responsibilities are the discovery spec the host
 //! app uses to find an `opencode` binary and the settings-backed path
 //! override the host can set on startup.
