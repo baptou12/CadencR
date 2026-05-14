@@ -22,7 +22,7 @@ pub(super) fn synthesize_input_delta_event(
     index: u64,
     body: &Value,
     parent_tool_use_id: Option<String>,
-    indexer: &EventIndexer,
+    indexer: &mut EventIndexer,
     metadata: RuntimeEventMetadata,
     hooks: &dyn AcpProviderHooks,
 ) -> Option<RuntimeEvent> {
@@ -38,6 +38,7 @@ pub(super) fn synthesize_input_delta_event(
         _ => return None,
     };
     let normalized = hooks.normalize_tool_input(&tool_name, derived_input);
+    indexer.record_tool_input(tool_call_id, normalized.clone());
     let partial_json = serde_json::to_string(&normalized).ok()?;
     let event = stream_delta_event(
         metadata.session_id.as_deref().unwrap_or(""),
@@ -307,14 +308,14 @@ mod tests {
     }
     #[test]
     fn synthesize_returns_none_when_tool_name_is_unrecorded() {
-        let idx = EventIndexer::default();
+        let mut idx = EventIndexer::default();
         let body = json!({ "toolInput": { "command": "ls" } });
         assert!(synthesize_input_delta_event(
             "t-1",
             0,
             &body,
             None,
-            &idx,
+            &mut idx,
             RuntimeEventMetadata::default(),
             &PlainHooks,
         )
@@ -330,7 +331,7 @@ mod tests {
             0,
             &body,
             None,
-            &idx,
+            &mut idx,
             RuntimeEventMetadata::default(),
             &PlainHooks,
         )
@@ -346,7 +347,7 @@ mod tests {
             7,
             &body,
             None,
-            &idx,
+            &mut idx,
             RuntimeEventMetadata::default(),
             &PlainHooks,
         )
@@ -378,7 +379,7 @@ mod tests {
             3,
             &body,
             None,
-            &idx,
+            &mut idx,
             RuntimeEventMetadata::default(),
             &PlainHooks,
         )

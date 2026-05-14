@@ -47,6 +47,11 @@ pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest
     if raw.get("type").and_then(Value::as_str) != Some("acp_permission_request") {
         return None;
     }
+    let tool_input = raw
+        .get("tool_input")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let preview = extract_permission_preview(&tool_input);
 
     Some(OpenCodePermissionRequest {
         request_id: raw.get("request_id").and_then(Value::as_str)?.to_string(),
@@ -55,15 +60,12 @@ pub fn parse_permission_request(raw: &Value) -> Option<OpenCodePermissionRequest
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
         tool_name: raw.get("tool_name").and_then(Value::as_str)?.to_string(),
-        tool_input: raw
-            .get("tool_input")
-            .cloned()
-            .unwrap_or_else(|| serde_json::json!({})),
+        tool_input,
         description: raw
             .get("description")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned),
-        preview: raw.get("tool_input").and_then(extract_permission_preview),
+        preview,
         options: parse_options(raw.get("options")),
     })
 }
@@ -157,6 +159,23 @@ mod tests {
         .unwrap();
 
         assert_eq!(payload.preview.as_deref(), Some("git status"));
+    }
+
+    #[test]
+    fn parses_nested_metadata_args_command_array_preview() {
+        let payload = parse_permission_request(&json!({
+            "type": "acp_permission_request",
+            "request_id": "req-array",
+            "tool_name": "bash",
+            "tool_input": {
+                "metadata": {
+                    "args": { "command": ["git", "status", "--short"] }
+                }
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(payload.preview.as_deref(), Some("git status --short"));
     }
 
     #[test]

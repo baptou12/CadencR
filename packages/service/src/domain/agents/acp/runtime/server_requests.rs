@@ -25,9 +25,11 @@ use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent, RuntimeStreamSt
 use super::event_loop_state::sync_session_state_from_update;
 use super::events::session_update_to_events;
 use super::events_stream_blocks::EventIndexer;
+use super::events_tool_call_input::is_empty_value;
 use super::fs::{handle_read_text_file, handle_write_text_file};
 use super::permissions::{
-    dispatch_permission_request_with_cache, permission_request_from_server_request,
+    derive_preview, dispatch_permission_request_with_cache, has_pending_permission_for_tool_call,
+    permission_request_from_server_request, refreshed_permission_event_for_tool_input,
     PendingPermissions,
 };
 use super::provider_hooks::AcpProviderHooks;
@@ -153,11 +155,49 @@ async fn handle_notification(
                     return;
                 }
             }
+            if let Some(event) = refreshed_pending_permission_event(payload, config).await {
+                let _ = tx.send(Ok(event)).await;
+            }
         }
         AcpNotification::Extension { method, .. } => {
             tracing::debug!(method, "unhandled ACP notification");
         }
     }
+}
+
+async fn refreshed_pending_permission_event(
+    session_update_params: &Value,
+    config: &EventLoopConfig,
+) -> Option<RuntimeEvent> {
+    let update = session_update_params.get("update")?;
+    if update.get("sessionUpdate").and_then(Value::as_str) != Some("tool_call_update") {
+        return None;
+    }
+    let tool_call_id = update
+        .get("toolCallId")
+        .or_else(|| update.get("toolUseId"))
+        .and_then(Value::as_str)?;
+    if !has_pending_permission_for_tool_call(&config.pending_permissions, tool_call_id).await {
+        return None;
+    }
+    let tool_input = {
+        config
+            .indexer
+            .lock()
+            .expect("EventIndexer poisoned")
+            .tool_input_for(tool_call_id)
+            .cloned()
+    }?;
+    if is_empty_value(&tool_input) {
+        return None;
+    }
+    refreshed_permission_event_for_tool_input(
+        &config.pending_permissions,
+        config.session_id.read().await.clone(),
+        tool_call_id,
+        tool_input,
+    )
+    .await
 }
 
 async fn handle_server_request(
@@ -235,7 +275,7 @@ async fn handle_permission_request(
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| id.to_string());
     let parsed = permission_request_from_server_request(&request_id, request);
-    let Some(permission) = parsed else {
+    let Some(mut permission) = parsed else {
         if let Err(error) = client
             .reject_server_request(id, -32602, "missing toolCall")
             .await
@@ -244,6 +284,7 @@ async fn handle_permission_request(
         }
         return;
     };
+    enrich_permission_from_recorded_tool_input(&mut permission, config);
     let session_id = config.session_id.read().await.clone();
     if let Err(error) = dispatch_permission_request_with_cache(
         client,
@@ -265,6 +306,33 @@ async fn handle_permission_request(
         {
             tracing::error!(%reject_error, "failed to reject unsurfaced ACP permission request");
         }
+    }
+}
+
+fn enrich_permission_from_recorded_tool_input(
+    permission: &mut crate::domain::agents::adapter::RuntimePermissionRequest,
+    config: &EventLoopConfig,
+) {
+    if !is_empty_value(&permission.tool_input) && permission.preview.is_some() {
+        return;
+    }
+    let Some(tool_use_id) = permission.tool_use_id.as_deref() else {
+        return;
+    };
+    let Some(recorded) = config
+        .indexer
+        .lock()
+        .expect("EventIndexer poisoned")
+        .tool_input_for(tool_use_id)
+        .cloned()
+    else {
+        return;
+    };
+    if is_empty_value(&permission.tool_input) {
+        permission.tool_input = recorded;
+    }
+    if permission.preview.is_none() {
+        permission.preview = derive_preview(&permission.tool_input);
     }
 }
 

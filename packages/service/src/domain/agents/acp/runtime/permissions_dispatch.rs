@@ -19,13 +19,13 @@ use super::session_permissions::PermissionKey;
 use super::session_permissions::SessionPermissions;
 
 /// One pending `session/request_permission` server request awaiting the
-/// user's decision. Tracks the raw ACP server-request id (so we can echo
-/// the response back) and the canonical `(tool_name, input)` key the
-/// session-permissions cache uses to remember the decision.
+/// user's decision. Tracks the raw ACP server-request id so we can echo the
+/// response back to the agent.
 #[derive(Debug, Clone)]
 pub struct PendingPermission {
     pub server_id: Value,
-    pub key: PermissionKey,
+    pub request: RuntimePermissionRequest,
+    pub params: Value,
 }
 
 /// Map keyed by Cadencr `request_id` (the ACP server-request id, stringified).
@@ -83,12 +83,12 @@ pub async fn dispatch_permission_request(
     params: &Value,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
 ) -> Result<(), RuntimeError> {
-    let key = PermissionKey::new(&request.tool_name, &request.tool_input);
     pending.write().await.insert(
         request_id.to_string(),
         PendingPermission {
             server_id: raw_id,
-            key,
+            request: request.clone(),
+            params: params.clone(),
         },
     );
     let raw = permission_raw_event(&request, params);
@@ -177,9 +177,8 @@ pub async fn reject_all_pending(client: &AcpClient, pending: &PendingPermissions
 }
 
 /// Look up and remove a pending permission entry. Returns the raw ACP
-/// server-request id and the canonical permission key so callers can both
-/// route the response through the `AcpClient` and record the decision in
-/// the session-permissions cache.
+/// server-request id so callers can route the response through the
+/// `AcpClient`.
 pub async fn take_pending(
     pending: &PendingPermissions,
     request_id: &str,
@@ -195,10 +194,8 @@ mod tests {
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
     use tokio::sync::mpsc;
 
-    use super::{
-        dispatch_permission_request_with_cache, PendingPermissions, PermissionKey,
-        SessionPermissions,
-    };
+    use super::{dispatch_permission_request_with_cache, PendingPermissions, SessionPermissions};
+    use crate::domain::agents::acp::runtime::session_permissions::PermissionKey;
     use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent};
     use crate::domain::agents::adapter::{
         RuntimePermissionDecision, RuntimePermissionOption, RuntimePermissionRequest,

@@ -27,7 +27,7 @@ use super::super::permissions::{
 };
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::super::provider_hooks::AcpProviderHooks;
-use super::super::session_permissions::SessionPermissions;
+use super::super::session_permissions::{PermissionKey, SessionPermissions};
 use super::super::turn_lifecycle::{
     finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
 };
@@ -242,8 +242,9 @@ impl AgentRuntimeSession for AcpRuntimeSession {
         // sidecar) before surfacing a "no pending" error.
         if let Some(pending) = take_pending(&self.pending_permissions, &response.request_id).await {
             // Cache session/always grants; one-shot variants are no-ops.
+            let key = PermissionKey::new(&pending.request.tool_name, &pending.request.tool_input);
             self.session_permissions
-                .record(pending.key, response.decision)
+                .record(key, response.decision)
                 .await;
             let payload = acp_permission_response_payload(
                 response.decision,

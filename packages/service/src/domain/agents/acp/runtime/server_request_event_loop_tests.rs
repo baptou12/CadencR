@@ -158,3 +158,157 @@ async fn event_loop_rejects_malformed_permission_server_request() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn permission_request_uses_recorded_tool_input_when_payload_is_empty() {
+    let (client, mut stdout, _stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let _loop = spawn_event_loop(
+        client.clone(),
+        client.subscribe(),
+        tx,
+        event_loop_config(PathBuf::from("/tmp")),
+    );
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-bash",
+                    "toolName": "Bash",
+                    "toolInput": { "command": "git status --short" }
+                }
+            }
+        }),
+    )
+    .await;
+    let _tool_event = rx.recv().await.expect("tool event").expect("ok");
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "id": "perm-1",
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s-1",
+                "toolCall": {
+                    "toolCallId": "call-bash",
+                    "toolName": "Bash",
+                    "toolInput": {}
+                }
+            }
+        }),
+    )
+    .await;
+    let permission_event = rx.recv().await.expect("permission event").expect("ok");
+    let raw = permission_event.raw_json();
+    assert_eq!(raw["tool_input"]["command"], "git status --short");
+    assert_eq!(raw["preview"], "git status --short");
+}
+
+#[tokio::test]
+async fn pending_permission_is_refreshed_when_opencode_sends_input_after_request() {
+    let (client, mut stdout, _stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let _loop = spawn_event_loop(
+        client.clone(),
+        client.subscribe(),
+        tx,
+        event_loop_config(PathBuf::from("/tmp")),
+    );
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s-1",
+                "update": {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "call-late-bash",
+                    "title": "bash",
+                    "kind": "execute",
+                    "status": "pending",
+                    "rawInput": {}
+                }
+            }
+        }),
+    )
+    .await;
+    let _tool_event = rx.recv().await.expect("tool event").expect("ok");
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session/request_permission",
+            "params": {
+                "sessionId": "s-1",
+                "toolCall": {
+                    "toolCallId": "call-late-bash",
+                    "status": "pending",
+                    "title": "bash",
+                    "rawInput": {},
+                    "kind": "execute"
+                },
+                "options": [
+                    { "optionId": "once", "name": "Allow once", "kind": "allow_once" },
+                    { "optionId": "reject", "name": "Reject", "kind": "reject_once" }
+                ]
+            }
+        }),
+    )
+    .await;
+    let initial_permission = rx.recv().await.expect("permission event").expect("ok");
+    assert_eq!(initial_permission.raw_json()["request_id"], "2");
+    assert_eq!(initial_permission.raw_json()["tool_input"], json!({}));
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "sessionId": "s-1",
+                "update": {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "call-late-bash",
+                    "status": "in_progress",
+                    "title": "bash",
+                    "kind": "execute",
+                    "rawInput": {
+                        "command": "opencode --version 2>/dev/null || which opencode 2>/dev/null",
+                        "description": "Get OpenCode version"
+                    }
+                }
+            }
+        }),
+    )
+    .await;
+
+    let refreshed = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+        loop {
+            let event = rx.recv().await.expect("refreshed permission").expect("ok");
+            if event.raw_json()["type"] == "acp_permission_request" {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for refreshed permission");
+    let raw = refreshed.raw_json();
+    assert_eq!(raw["request_id"], "2");
+    assert_eq!(
+        raw["tool_input"]["command"],
+        "opencode --version 2>/dev/null || which opencode 2>/dev/null"
+    );
+    assert_eq!(
+        raw["preview"],
+        "opencode --version 2>/dev/null || which opencode 2>/dev/null"
+    );
+}
