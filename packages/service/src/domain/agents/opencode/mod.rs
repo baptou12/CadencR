@@ -1,6 +1,5 @@
 pub(in crate::domain::agents) mod acp;
 pub(in crate::domain::agents::opencode) mod commands;
-pub(crate) mod events;
 pub(crate) mod permissions;
 mod questions;
 mod stream_synthesizer;

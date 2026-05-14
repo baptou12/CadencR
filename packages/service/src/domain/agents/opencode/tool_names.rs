@@ -50,8 +50,7 @@ pub(in crate::domain::agents::opencode) fn canonical_acp_tool_name(name: &str) -
         "grep" => "Grep".to_string(),
         "ls" | "list" => "LS".to_string(),
         "task" | "subagent" => "Task".to_string(),
-        // OpenCode's built-in interactive Q&A tool is named `question` on
-        // both HTTP (see `stream_state::turn_completion`) and ACP. Map it
+        // OpenCode's built-in interactive Q&A tool is named `question` in ACP. Map it
         // onto Cadencr's canonical `AskUserQuestion` name so the ACP
         // `tool_call` is routed to the question drawer pipeline rather
         // than rendered as a generic tool block.

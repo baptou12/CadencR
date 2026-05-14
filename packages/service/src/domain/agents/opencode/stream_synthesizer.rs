@@ -1,8 +1,7 @@
 //! Per-source streaming-block synthesizer used by the OpenCode ACP
 //! sub-agent listener.
 //!
-//! Originally shared by both the legacy HTTP transport (cumulative-message
-//! polling) and the ACP sub-agent listener. With the HTTP transport gone,
+//! Originally shared by both the removed long-lived transport (cumulative-message polling) and the ACP sub-agent listener. With the long-lived transport gone,
 //! the only consumer is `acp/upstream_workaround/subagent_listener.rs`,
 //! which polls each child session's full message list and feeds every
 //! `MessagePart` through `ingest_part` to emit just the new
@@ -17,7 +16,7 @@ use crate::domain::agents::adapter::{RuntimeContentDelta, RuntimeEvent};
 use self::part_blocks::{
     delta_is_empty, empty_runtime_block_for_part, part_block_from_message_part, PartBlock,
 };
-use super::events::{stream_delta_event, stream_start_event};
+use crate::domain::agents::acp::runtime::stream_events::{stream_delta_event, stream_start_event};
 
 pub struct StreamSynthesizer {
     next_index: u64,

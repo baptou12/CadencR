@@ -7,8 +7,7 @@
 //! flags (see `Server.listen({hostname, port})` in
 //! `opencode/src/cli/cmd/acp.ts` upstream — the same flags `acp/mod.rs`
 //! passes when spawning the subprocess). This is **not** the legacy
-//! OpenCode HTTP transport (`packages/service/.../opencode/http/` plus
-//! `opencode-sdk-rs/src/sse/**`); that transport is being retired and
+//! removed long-lived OpenCode transport; that transport is gone and
 //! its code is dead. The embedded HTTP backend is part of the ACP
 //! subprocess and stays for as long as the workarounds here need it.
 //!
@@ -40,7 +39,7 @@
 //!    embedded backend, so it would also need to migrate before the
 //!    `--port` flag can go.
 //!
-//! Do **not** confuse "delete the legacy HTTP transport" with "delete
+//! Do **not** confuse "delete the legacy long-lived transport" with "delete
 //! the embedded HTTP backend usage". Those are independent removals.
 //! A future engineer doing the former should leave this directory
 //! untouched.

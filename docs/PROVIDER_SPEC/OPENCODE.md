@@ -10,13 +10,7 @@ and is shared with future ACP providers; OpenCode-specific behaviour
 plugs in through the `AcpProviderHooks` trait
 (`opencode/acp/adapter.rs`).
 
-There is also a legacy HTTP/SSE transport
-(`opencode/{session,stream_loop,stream_supervisor,…}`). The
-`OpenCodeTransport` selector in `opencode/transport.rs` is now hardcoded
-to ACP — `opencode_transport_env` ignores
-`CADENCR_OPENCODE_TRANSPORT` and always returns `Acp`. The HTTP arms in
-`opencode/mod.rs` survive as unreachable dead code pending a follow-up
-removal. This document covers the ACP transport only.
+The legacy long-lived OpenCode transport (`opencode/{session,removed stream supervisor modules,…}`) has been removed. The OpenCode adapter now routes through ACP. This document covers the ACP transport only.
 
 > **This adapter is a freshly-landed first cut.** Many features are
 > wired but have known bugs that block parity with the spec. The
@@ -39,7 +33,7 @@ removal. This document covers the ACP transport only.
 | 8 | Thinking level changes | ✅ | `set_thinking_effort` wired through `session/set_config_option { configId: "effort", type: "string", value }` with legacy ride-along fallback. OpenCode reasoning models such as `openai/gpt-5.4` now advertise supported effort levels in the catalog, so the FE renders the thinking-effort control. `apply_initial_thinking_effort` (`spawn_initial_config.rs`) pushes effort to the agent right after `session/new`, so the first turn already reflects the user's selection. `current_effort` starts as `None` (decoupled from intent) and is only written when the agent acks. |
 | 9 | Model selection changes | ✅ | `set_model` and `apply_initial_model` (`spawn_initial_config.rs`) both send `session/set_config_option { configId: "model", type: "string", value }` — the schema OpenCode actually accepts (top-level `configId`/`type`/`value`, *not* a nested `configOption` envelope). `current_model` starts as `None` and is only written once the agent has acknowledged, so the short-circuit is keyed off real acknowledgement rather than Cadencr's intent. The "Talking to gpt-5.4-mini while the prompt says gpt-5.4" regression is fixed. |
 | 10 | Permissions: yes / no / always / session | ✅ | Bridge pattern wired via `permission_bridge`; question sidecar HTTP endpoint functional. No-feedback Deny now routes to `reject_tool_call` instead of hanging. `AllowForSession` is preserved through the runtime response path, OpenCode fallback options carry `allow_for_session`, and cached session/always grants pre-flight repeated matching ACP requests. Close cancellation still uses JSON-RPC `-32800` rather than the spec's `outcome: cancelled`. |
-| 11 | MCP | ❌ | **MCP servers do not load.** OpenCode reads MCP config from `opencode.json` on disk regardless of transport; the ACP spawn path skips the `ensure_worktree_opencode_config` step the HTTP path runs. Plus `mcp_status_list` reports every configured server as `connected` before any health probe (spec § 11 status field is meaningless). |
+| 11 | MCP | ❌ | **MCP servers do not load.** OpenCode reads MCP config from `opencode.json` on disk regardless of transport; the ACP spawn path skips the `ensure_worktree_opencode_config` step the HTTP path runs. `mcp_status_list` reports configured servers as `unknown` until a future health probe can provide observed status. |
 | 12 | Plan approval | ❌ | **Not implemented at all.** No code synthesises an `ExitPlanMode` `ToolUse`. `AcpRuntimeSession::permission_response_kind` is not overridden, so it defaults to `Normal`; `should_transition_after_plan_approval` always returns `false`. Plan-approval bar never closes after Approve; session stays in plan. |
 | 13 | Context usage | ✅ | Window plumbed through `RuntimeEventMetadata.context_window`. OpenCode context snapshots come from `usage_update.used/size` and `session_info_update.contextWindow`; per-turn `session/prompt` usage is no longer treated as context-budget usage. |
 | 14 | Compaction | ✅ | `compaction_strategy` returns `LiveRuntime`; `AcpRuntimeSession::compact()` issues OpenCode `/compact` through `session/prompt` and emits a manual `RuntimeEventKind::CompactBoundary` so the FE compact divider renders and persists. |
@@ -326,21 +320,21 @@ ACP.
 schema-correct ACP shape: `{ args: [], env: [{name, value}] }` per
 server, sorted by name for determinism. `negotiate_session` includes
 this in `session/new`. `mcp_status_list` synthesises the init-event
-status array.
+status array with `unknown` until a health probe exists.
 
 **Known issues:**
 
 - *MCP servers do not load.* OpenCode reads MCP config from
-  `opencode.json` on disk regardless of transport. The HTTP path calls
-  `mcp_config::ensure_worktree_opencode_config(&config.cwd, servers)`
-  before spawning the server; the ACP path (`opencode/acp/mod.rs::spawn_acp_session`)
-  skips this entirely. Cadencr-managed MCP tools won't work at all.
+  `opencode.json` on disk regardless of the ACP `session/new` payload.
+  The ACP path (`opencode/acp/mod.rs::spawn_acp_session`) still needs to
+  write that file before launching the subprocess. Cadencr-managed MCP
+  tools won't work at all without it.
   **Fix:** call `ensure_worktree_opencode_config` from the ACP spawn
   path before launching the subprocess.
-- *Status field is meaningless.* `mcp_status_list` marks every
-  configured server as `connected` before any health probe. A bad
-  config produces a green badge until the user tries the tool.
-  **Fix:** report `pending` initially; flip on first list/error.
+- *Status field is conservative.* `mcp_status_list` reports configured
+  servers as `unknown` because there is no health probe yet.
+  **Fix:** flip the status on first successful list or first error once
+  runtime-level MCP health is observable.
 - *No hot-swap.* `set_mcp_servers` is unimplemented for ACP; the
   session must be re-spawned to change MCP config.
 
@@ -495,13 +489,7 @@ Issues that don't fit a single feature row:
    `prompt_turn_lock` only releases when the agent's reply lands. If
    the agent is wedged, the next prompt blocks for up to 60 minutes.
    Race the prompt future against a cancel-completion oneshot.
-5. **HTTP transport dead code.** `opencode_transport_env` is hardcoded
-   to `Acp`; `OpenCodeTransport::Http` and the `match` arms in
-   `opencode/mod.rs` (`compaction_strategy`, `session_finished`,
-   `session_finished_text`, `is_valid_resume_session_id`,
-   `resolve_resume_session_id`, the spawn fallthrough) are unreachable.
-   Excise the variant + the dead arms + the `providers::opencode::*`
-   HTTP adapter as a follow-up cleanup.
+5. **Removed transport follow-through.** Keep future OpenCode work on the ACP path; do not reintroduce long-lived transport branches or SDK streaming payload types.
 6. **OpenCode ACP session replay is missing.** Live follow-up turns keep
    context, but reopening after the subprocess dies starts a fresh ACP
    session by design until upstream exposes a reliable load/replay path.

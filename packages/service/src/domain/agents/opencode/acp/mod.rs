@@ -14,9 +14,8 @@ mod question_sidecar;
 // Workarounds for ACP-wire limitations in upstream OpenCode. Anything
 // that talks to the embedded HTTP backend on `--port` to make up for an
 // ACP-wire gap lives here; see `upstream_workaround/mod.rs` for the
-// removal criteria. Distinct from the legacy OpenCode HTTP transport
-// under `opencode/http/` (and `opencode-sdk-rs/src/sse/**`), which is
-// being retired and whose removal must NOT take this directory with it.
+// removal criteria. Distinct from the removed legacy OpenCode long-lived transport;
+// do not remove this workaround directory just because the old transport is gone.
 mod upstream_workaround;
 
 use std::sync::Arc;
@@ -34,9 +33,8 @@ use self::question_sidecar::QuestionSidecar;
 
 /// ACP's answer to the runtime layer's "is this session finished?" probe.
 ///
-/// The HTTP transport answers by walking OpenCode's persisted message log
-/// for a terminal stop reason — that's appropriate when the runtime is a
-/// long-lived shared HTTP server we don't own. For ACP the runtime is the
+/// The removed long-lived transport answered by walking OpenCode's persisted
+/// message log for a terminal stop reason. For ACP the runtime is the
 /// `opencode acp` subprocess that *we* own, and a finished agent turn is
 /// not the same as a finished session: the subprocess stays alive across
 /// turns so follow-up prompts share an ACP `sessionId` and the agent keeps
@@ -49,7 +47,7 @@ pub(super) async fn session_finished(_runtime_session_id: &str) -> bool {
 }
 
 /// Entry point invoked by `OpenCodeAdapter::spawn`. ACP is the only
-/// supported OpenCode transport; see `transport.rs` for the hardcode.
+/// supported OpenCode transport.
 pub(super) async fn spawn_acp_session(
     content: Value,
     config: RuntimeSpawnConfig,
@@ -92,8 +90,7 @@ pub(super) async fn spawn_acp_session(
         None => None,
     };
     // `question_port` is also the OpenCode HTTP backend's port — the same
-    // server hosts both the question sidecar endpoints we already use and
-    // the `/event` SSE stream the sub-agent listener subscribes to. See
+    // server hosts both the question sidecar endpoints and polling endpoints. See
     // `opencode/src/cli/cmd/acp.ts` upstream: `Server.listen({hostname,port})`
     // is bound to the same `--hostname --port` flags Cadencr passes.
     spawn_acp_runtime_session(AcpRuntimeSpawnArgs {

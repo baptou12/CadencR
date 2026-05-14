@@ -159,8 +159,77 @@ pub(super) fn question_id_for_tool_call(questions: &Value, tool_call_id: &str) -
 
 #[cfg(test)]
 mod tests {
-    use super::question_id_for_tool_call;
+    use super::{question_id_for_tool_call, QuestionSidecar};
+    use axum::body::Bytes;
+    use axum::extract::State;
+    use axum::http::StatusCode;
+    use axum::routing::{get, post};
+    use axum::Router;
     use serde_json::json;
+    use std::path::Path;
+    use std::sync::{Arc, Mutex};
+    use tokio::net::TcpListener;
+
+    #[derive(Default)]
+    struct Calls {
+        requests: Vec<String>,
+    }
+
+    async fn question_server(status: StatusCode) -> (u16, Arc<Mutex<Calls>>) {
+        let calls = Arc::new(Mutex::new(Calls::default()));
+        let state = Arc::clone(&calls);
+        let app = Router::new()
+            .route("/question", get(list_questions))
+            .route("/question/{id}/reply", post(reply_question))
+            .route("/question/{id}/reject", post(reject_question))
+            .with_state((state, status));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (port, calls)
+    }
+
+    async fn list_questions(
+        State((calls, status)): State<(Arc<Mutex<Calls>>, StatusCode)>,
+    ) -> (StatusCode, String) {
+        calls
+            .lock()
+            .unwrap()
+            .requests
+            .push("GET /question".to_string());
+        if !status.is_success() {
+            return (status, "nope".to_string());
+        }
+        (
+            status,
+            json!([{ "id": "que_1", "tool": { "callID": "call_1" } }]).to_string(),
+        )
+    }
+
+    async fn reply_question(
+        State((calls, status)): State<(Arc<Mutex<Calls>>, StatusCode)>,
+        body: Bytes,
+    ) -> StatusCode {
+        calls
+            .lock()
+            .unwrap()
+            .requests
+            .push(format!("POST reply {}", String::from_utf8_lossy(&body)));
+        status
+    }
+
+    async fn reject_question(
+        State((calls, status)): State<(Arc<Mutex<Calls>>, StatusCode)>,
+    ) -> StatusCode {
+        calls
+            .lock()
+            .unwrap()
+            .requests
+            .push("POST reject".to_string());
+        status
+    }
 
     #[test]
     fn finds_question_id_by_acp_tool_call_id() {
@@ -205,5 +274,50 @@ mod tests {
             question_id_for_tool_call(&questions, "call_camel").as_deref(),
             Some("que_camel")
         );
+    }
+
+    #[tokio::test]
+    async fn reply_tool_call_uses_question_lookup_and_reply_endpoint() {
+        let (port, calls) = question_server(StatusCode::OK).await;
+        let sidecar = QuestionSidecar::new(port, Path::new("/tmp/project"));
+
+        sidecar
+            .reply_tool_call("call_1", vec![vec!["yes".to_string()]])
+            .await
+            .unwrap();
+
+        let calls = &calls.lock().unwrap().requests;
+        assert!(calls.iter().any(|call| call == "GET /question"));
+        assert!(calls
+            .iter()
+            .any(|call| call.contains("POST reply") && call.contains("\"yes\"")));
+    }
+
+    #[tokio::test]
+    async fn reject_tool_call_uses_question_lookup_and_reject_endpoint() {
+        let (port, calls) = question_server(StatusCode::OK).await;
+        let sidecar = QuestionSidecar::new(port, Path::new("/tmp/project"));
+
+        sidecar.reject_tool_call("call_1").await.unwrap();
+
+        assert!(calls
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .any(|call| call == "POST reject"));
+    }
+
+    #[tokio::test]
+    async fn non_success_question_response_is_surfaced() {
+        let (port, _calls) = question_server(StatusCode::INTERNAL_SERVER_ERROR).await;
+        let sidecar = QuestionSidecar::new(port, Path::new("/tmp/project"));
+
+        let error = sidecar
+            .reply_tool_call("call_1", vec![vec!["yes".to_string()]])
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("HTTP 500"));
     }
 }
