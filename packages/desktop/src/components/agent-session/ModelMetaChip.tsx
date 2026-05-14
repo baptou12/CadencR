@@ -1,5 +1,5 @@
 import { ChevronDownIcon, Loader2Icon } from "lucide-react";
-import type { ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { ProviderIcon } from "@/lib/provider-icons";
 import { cn } from "@/lib/utils";
 import {
@@ -84,27 +84,11 @@ export function ModelMetaChip({
               onModelChange(providerId, modelId);
             }}
             trigger={
-              <button
-                type="button"
-                aria-label={isModelCatalogLoading ? "Loading model catalog" : undefined}
-                disabled={isModelCatalogLoading}
-                className={cn(
-                  MODEL_SEGMENT,
-                  "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16 disabled:cursor-wait disabled:opacity-80",
-                )}
-              >
-                {isModelCatalogLoading ? (
-                  <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-                ) : (
-                  <ProviderIcon
-                    providerId={currentProviderId}
-                    alt={currentModelLabel}
-                    className="size-3.5 rounded-sm shrink-0"
-                  />
-                )}
-                <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
-                {!isModelCatalogLoading && <ChevronDownIcon className="size-3 shrink-0" />}
-              </button>
+              <ModelButton
+                currentProviderId={currentProviderId}
+                currentModelLabel={currentModelLabel}
+                isModelCatalogLoading={isModelCatalogLoading}
+              />
             }
           />
         </ShortcutTooltip>
@@ -114,45 +98,114 @@ export function ModelMetaChip({
             className={cn(MODEL_SEGMENT, "min-w-0 rounded-md")}
             aria-busy={isModelCatalogLoading}
           >
-            {isModelCatalogLoading ? (
-              <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-            ) : (
-              <ProviderIcon
-                providerId={currentProviderId}
-                alt={currentModelLabel}
-                className="size-3.5 rounded-sm shrink-0"
-              />
-            )}
+            <ModelIcon
+              providerId={currentProviderId}
+              label={currentModelLabel}
+              loading={isModelCatalogLoading}
+            />
             <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
           </div>
         </ShortcutTooltip>
       )}
 
       {supportedThinkingEfforts.length > 0 && onThinkingEffortChange && displayedThinkingEffort && (
-        <>
-          <div className="w-px bg-[var(--chip-violet-soft)]/15" aria-hidden="true" />
-          <ShortcutTooltip
-            label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
-            keys={["cmd", "T"]}
-          >
-            <button
-              type="button"
-              onClick={handleThinkingEffortCycle}
-              className={cn(
-                MODEL_SEGMENT,
-                "rounded-r-md px-2 text-[var(--chip-violet-soft)] hover:bg-[var(--chip-violet-bg)]/10",
-              )}
-              aria-label="Cycle thinking effort"
-            >
-              <ThinkingEffortBars
-                levels={supportedThinkingEfforts}
-                value={selectedThinkingEffort}
-                compact
-              />
-            </button>
-          </ShortcutTooltip>
-        </>
+        <ThinkingEffortSegment
+          displayedThinkingEffort={displayedThinkingEffort}
+          selectedThinkingEffort={selectedThinkingEffort}
+          supportedThinkingEfforts={supportedThinkingEfforts}
+          onCycle={handleThinkingEffortCycle}
+        />
       )}
     </div>
+  );
+}
+
+interface ModelButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  currentProviderId?: string;
+  currentModelLabel: string;
+  isModelCatalogLoading?: boolean;
+}
+
+const ModelButton = forwardRef<HTMLButtonElement, ModelButtonProps>(function ModelButton(
+  { currentProviderId, currentModelLabel, isModelCatalogLoading, className, ...buttonProps },
+  ref,
+): ReactNode {
+  return (
+    <button
+      {...buttonProps}
+      ref={ref}
+      type="button"
+      aria-label={isModelCatalogLoading ? "Loading model catalog" : undefined}
+      disabled={isModelCatalogLoading}
+      className={cn(
+        MODEL_SEGMENT,
+        "min-w-0 rounded-l-md hover:bg-[var(--chip-violet-bg)]/16 disabled:cursor-wait disabled:opacity-80",
+        className,
+      )}
+    >
+      <ModelIcon
+        providerId={currentProviderId}
+        label={currentModelLabel}
+        loading={isModelCatalogLoading}
+      />
+      <span className="truncate text-[11px] leading-none">{currentModelLabel}</span>
+      {!isModelCatalogLoading && <ChevronDownIcon className="size-3 shrink-0" />}
+    </button>
+  );
+});
+
+function ModelIcon({
+  providerId,
+  label,
+  loading,
+}: {
+  providerId?: string;
+  label: string;
+  loading?: boolean;
+}): ReactNode {
+  return loading ? (
+    <Loader2Icon className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+  ) : (
+    <ProviderIcon providerId={providerId} alt={label} className="size-3.5 rounded-sm shrink-0" />
+  );
+}
+
+interface ThinkingEffortSegmentProps {
+  displayedThinkingEffort: ThinkingEffortLevel;
+  selectedThinkingEffort?: ThinkingEffortLevel;
+  supportedThinkingEfforts: ThinkingEffortLevel[];
+  onCycle: () => void;
+}
+
+function ThinkingEffortSegment({
+  displayedThinkingEffort,
+  selectedThinkingEffort,
+  supportedThinkingEfforts,
+  onCycle,
+}: ThinkingEffortSegmentProps): ReactNode {
+  return (
+    <>
+      <div className="w-px bg-[var(--chip-violet-soft)]/15" aria-hidden="true" />
+      <ShortcutTooltip
+        label={`Thinking effort: ${THINKING_EFFORT_LABELS[displayedThinkingEffort]}`}
+        keys={["cmd", "T"]}
+      >
+        <button
+          type="button"
+          onClick={onCycle}
+          className={cn(
+            MODEL_SEGMENT,
+            "rounded-r-md px-2 text-[var(--chip-violet-soft)] hover:bg-[var(--chip-violet-bg)]/10",
+          )}
+          aria-label="Cycle thinking effort"
+        >
+          <ThinkingEffortBars
+            levels={supportedThinkingEfforts}
+            value={selectedThinkingEffort}
+            compact
+          />
+        </button>
+      </ShortcutTooltip>
+    </>
   );
 }
