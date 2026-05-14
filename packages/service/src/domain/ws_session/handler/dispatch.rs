@@ -80,6 +80,10 @@ async fn handle_session_action(
             session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
         }
         "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
+        "suspend" => {
+            session_control::handle_suspend(envelope, sender, sdk_sessions, app_state).await
+        }
+        "resume" => session_control::handle_resume(envelope, sender).await,
         "destroy" => {
             session_control::handle_destroy(envelope, sender, sdk_sessions, app_state).await
         }

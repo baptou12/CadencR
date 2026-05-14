@@ -116,4 +116,7 @@ contextBridge.exposeInMainWorld("cadencr", {
   currentTheme: (): Promise<DesktopTheme> => ipcRenderer.invoke("theme:current"),
   onThemeChange: (cb: (appearance: DesktopTheme) => void): (() => void) =>
     onIpc("theme:updated", cb),
+  setBusy: (busy: boolean): Promise<void> => ipcRenderer.invoke("power:set-busy", busy),
+  onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
+  onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
 });

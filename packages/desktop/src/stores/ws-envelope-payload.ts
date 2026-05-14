@@ -219,6 +219,22 @@ export function parseStreamStatusPayload(
   return { state, reason: optionalString(record, "reason") };
 }
 
+/**
+ * Parse the `session.lifecycle` envelope. Carries OS-power-driven
+ * transitions (suspend / resume). Anything other than the two known kinds
+ * is ignored — we'd rather drop than crash if the backend adds a new kind
+ * we don't yet handle in the renderer.
+ */
+export function parseLifecyclePayload(
+  payload: unknown,
+): { kind: "suspend_requested" | "resumed" } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const kind = optionalString(record, "kind");
+  if (kind !== "suspend_requested" && kind !== "resumed") return null;
+  return { kind };
+}
+
 export function parseUsagePayload(payload: unknown): {
   input_tokens: number;
   output_tokens: number;

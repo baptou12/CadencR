@@ -6,7 +6,15 @@
  */
 type DbSessionStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
 
-export type TurnPauseReason = "permission" | "question" | "planApproval" | "user";
+export type TurnPauseReason =
+  | "permission"
+  | "question"
+  | "planApproval"
+  | "user"
+  /** OS reported a pending suspend; the agent was interrupted while the
+   *  system was about to sleep. Cleared on `stream_activity` or when the
+   *  user starts the next turn. See `usePowerEvents`. */
+  | "suspended";
 export type TurnTerminalReason = "completed" | "denied" | "cleared" | "streamClosed";
 
 export type TurnLifecycle =
@@ -29,7 +37,15 @@ export type TurnEvent =
   | { type: "turn_cleared" }
   | { type: "turn_errored"; message?: string }
   | { type: "connection_lost" }
-  | { type: "stream_activity" };
+  | { type: "stream_activity" }
+  /** Backend-confirmed `session.lifecycle suspend_requested` — flips the
+   *  turn into the OS-suspend paused state. Emitted only after the WS
+   *  handler has captured the resume id and interrupted the runtime. */
+  | { type: "suspended" }
+  /** Backend-confirmed `session.lifecycle resumed`. Treated like
+   *  `stream_activity`: clears the suspended banner if nothing else has
+   *  moved the lifecycle in the meantime. */
+  | { type: "resumed" };
 
 export function createIdleTurnLifecycle(): TurnLifecycle {
   return { phase: "idle" };
@@ -65,6 +81,20 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
       return current;
     case "stream_activity":
       return current.phase === "active" ? current : { phase: "active" };
+    case "suspended":
+      // Don't override a terminal or error state — those are end-of-turn
+      // outcomes the user should still see. Otherwise flip to the paused/
+      // suspended banner regardless of whether the turn was active.
+      if (current.phase === "terminal" || current.phase === "error") return current;
+      return { phase: "paused", reason: "suspended" };
+    case "resumed":
+      // Only clear the suspended banner; leave any other paused/terminal
+      // state alone. If the runtime is back streaming, `stream_activity`
+      // arrives separately and flips us to "active".
+      if (current.phase === "paused" && current.reason === "suspended") {
+        return { phase: "idle" };
+      }
+      return current;
   }
 }
 

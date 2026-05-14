@@ -4,6 +4,7 @@ import { rendererCsp } from "./csp";
 import { loadDevEnv } from "./env";
 import { clearRegisteredFilePaths, registerIpc, registerThemeEvents } from "./ipc";
 import { installApplicationMenu } from "./menu";
+import { registerPower, shutdownPower } from "./power";
 import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { setRuntimeConfig } from "./runtime-config";
 import {
@@ -23,6 +24,7 @@ let allowClose = false;
 let pendingQuit = false;
 let ipcRegistered = false;
 let themeEventsRegistered = false;
+let powerRegistered = false;
 let sidecarStopPromise: Promise<void> | null = null;
 
 function installCsp(): void {
@@ -142,6 +144,10 @@ function wireMainProcess(): void {
     registerThemeEvents(() => mainWindow);
     themeEventsRegistered = true;
   }
+  if (!powerRegistered) {
+    registerPower({ getMainWindow: () => mainWindow });
+    powerRegistered = true;
+  }
 }
 
 async function bootstrap(): Promise<void> {
@@ -231,6 +237,11 @@ async function stopSidecarThenQuit(): Promise<void> {
     if (!currentSidecar) return;
     sidecar = null;
     closeAllWindowsForQuit();
+    // Release any held power-save-blocker and unwire power listeners before
+    // the sidecar stop awaits, so quit cleans up the OS-level state even
+    // if the sidecar takes a moment to shut down.
+    shutdownPower();
+    powerRegistered = false;
     sidecarStopPromise = currentSidecar.stop().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to stop cadencr-service cleanly: ${message}`);

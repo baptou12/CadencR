@@ -91,6 +91,20 @@ export function createInterrupt(sessionId: string): WsEnvelope {
   return createEnvelope("session", "interrupt", { session_id: sessionId });
 }
 
+/**
+ * Suspend / resume envelopes — sent per active session when Electron's
+ * `powerMonitor` fires. Provider-neutral: the backend handler interrupts the
+ * live runtime and persists the runtime session id regardless of which
+ * provider it belongs to. See `domain::ws_session::handler::session_control`.
+ */
+export function createSessionSuspend(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "suspend", { session_id: sessionId });
+}
+
+export function createSessionResume(sessionId: string): WsEnvelope {
+  return createEnvelope("session", "resume", { session_id: sessionId });
+}
+
 export function createModelSet(sessionId: string, model: string): WsEnvelope {
   return createEnvelope("session", "model.set", { session_id: sessionId, model });
 }
