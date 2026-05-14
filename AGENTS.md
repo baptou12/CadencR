@@ -76,6 +76,7 @@ Project-specific skills use agent-skills-compatible directories:
 If a task clearly matches one of these skills, read the matching skill and follow it before editing:
 
 - `db`
+- `migration-safety`
 - `qa`
 - `finish-job`
 
