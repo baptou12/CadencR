@@ -254,7 +254,6 @@ pub struct ProjectWorktreeInfo {
     pub head: String,
     pub feature_id: Option<i64>,
     pub feature_title: Option<String>,
-    pub feature_status: Option<String>,
 }
 
 /// Per-feature worktree metadata sourced from `feature_settings`.

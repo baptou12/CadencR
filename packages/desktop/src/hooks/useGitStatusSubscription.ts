@@ -22,10 +22,9 @@ import { selectGitWatcherEpoch, useGitStatusStore } from "@/stores/useGitStatusS
  * feature `watcherEpoch` whenever it sees `workflow/worktree.created` or
  * `workflow/worktree.ready`; including the epoch in the effect deps tears
  * down the old subscription and starts a new one, forcing the backend to
- * re-resolve and bind to the freshly-created worktree. This works for both
- * the workflow view and ws-session — the epoch is driven by the WS
- * envelope (single source of truth) rather than by either store's local
- * worktreeStatus field.
+ * re-resolve and bind to the freshly-created worktree. The epoch is driven
+ * by the WS envelope (single source of truth) rather than by local
+ * worktreeStatus fields.
  */
 export function useGitStatusSubscription(featureId: number | null | undefined): void {
   // Only re-run when the connection state, feature_id, or watcher epoch

@@ -83,6 +83,7 @@ pub fn format_answers_plain_text(updated_input: &Value) -> Option<String> {
     Some(formatted)
 }
 
+#[allow(dead_code)]
 pub fn format_answers_markdown(updated_input: &Value) -> Option<String> {
     let answers = extract_answer_lists(updated_input)?;
     let questions = extract_question_labels(updated_input);

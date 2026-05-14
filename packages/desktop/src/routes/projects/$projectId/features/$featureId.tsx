@@ -1,9 +1,6 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { isAxiosError } from "axios";
 import { useGetFeature, useListProjects } from "@/api/generated";
-import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
-import { FeatureWorkflowView } from "@/components/FeatureWorkflowView";
-import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { isTabKind, type TabKind } from "@/stores/feature-layout-schema";
 
@@ -21,33 +18,23 @@ export const Route = createFileRoute("/projects/$projectId/features/$featureId")
   }),
 });
 
+/**
+ * Legacy feature route. All features are ws-session now, so this is just a
+ * redirect to the ws-session route once the feature row has loaded.
+ *
+ * The backend now returns 404 when a feature has been deleted (instead of
+ * `200 null`); we surface that explicitly so we don't redirect with a phantom
+ * id.
+ */
 function FeaturePage() {
   const { featureId, projectId } = Route.useParams();
-  const { initialDescription, focusTab } = Route.useSearch();
+  const { focusTab } = Route.useSearch();
   const numericFeatureId = Number(featureId);
   const numericProjectId = Number(projectId);
 
   const featureQuery = useGetFeature(numericFeatureId);
   const feature = featureQuery.data ?? undefined;
 
-  // Both FeatureWorkflowView and ws-session route handle saving
-  // last-opened feature with activeTab, so skip here.
-  const isWsSession = feature?.type === "ws-session";
-
-  if (isWsSession) {
-    return (
-      <WsSessionRedirect
-        featureId={numericFeatureId}
-        projectId={numericProjectId}
-        focusTab={focusTab}
-      />
-    );
-  }
-
-  // The backend now returns 404 when a feature has been deleted (instead of
-  // `200 null`). Surface that explicitly so we never mount the workflow view
-  // with `feature === undefined` after a confirmed-missing response — the
-  // older behaviour produced a partially-broken UI keyed on a phantom id.
   if (featureQuery.isError) {
     if (isAxiosError(featureQuery.error) && featureQuery.error.response?.status === 404) {
       return <FeatureNotFound featureId={numericFeatureId} />;
@@ -55,17 +42,18 @@ function FeaturePage() {
     return <FeatureLoadError error={featureQuery.error} onRetry={() => featureQuery.refetch()} />;
   }
 
+  if (!feature) {
+    // Still loading the feature row — show nothing rather than redirecting with
+    // partial state. The query is small and resolves quickly.
+    return null;
+  }
+
   return (
-    <ResolvedModelProvider featureId={numericFeatureId} projectId={numericProjectId}>
-      <FeatureContentSearchShortcut featureId={numericFeatureId} projectId={numericProjectId} />
-      <FeatureWorkflowView
-        featureId={numericFeatureId}
-        projectId={numericProjectId}
-        feature={feature}
-        featureQuery={featureQuery}
-        initialDescription={initialDescription}
-      />
-    </ResolvedModelProvider>
+    <WsSessionRedirect
+      featureId={numericFeatureId}
+      projectId={numericProjectId}
+      focusTab={focusTab}
+    />
   );
 }
 
@@ -96,10 +84,6 @@ function FeatureLoadError({ error, onRetry }: { error: unknown; onRetry: () => v
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// WS session redirect — navigates to the WS session route
-// ---------------------------------------------------------------------------
 
 function WsSessionRedirect({
   featureId,

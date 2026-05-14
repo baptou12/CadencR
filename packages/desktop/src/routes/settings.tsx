@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Code2,
   Files,
-  GitFork,
   GitMerge,
   History,
   Info,
@@ -19,7 +18,6 @@ import {
   Save,
   Settings2,
   Sparkles,
-  Workflow,
   ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +40,6 @@ import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
 import { RadioCardGroup } from "@/components/settings/RadioCardGroup";
-import { AutonomyRadio } from "@/components/settings/AutonomyRadio";
 import {
   SettingsNavSidebar,
   type SettingsNavGroup,
@@ -52,7 +49,6 @@ import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { APP_VERSION } from "@/lib/app-version";
-import { AGENT_AUTONOMY_KEY, parseAgentAutonomy } from "@/lib/agent-autonomy";
 import {
   DEFAULT_LOADER_STYLE,
   LOADER_STYLE_DETAILS,
@@ -60,8 +56,6 @@ import {
   parseLoaderStyle,
   type LoaderStyle,
 } from "@/lib/loader-style";
-
-const PARALLEL_EXECUTION_KEY = "parallel_execution";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -85,7 +79,6 @@ const NAV_GROUPS: SettingsNavGroup[] = [
     label: "Agents",
     items: [
       { id: "runtime", label: "Runtime & Models", icon: <BrainCircuit className="size-4" /> },
-      { id: "feature-workflow", label: "Feature Workflow", icon: <Workflow className="size-4" /> },
     ],
   },
   {
@@ -180,7 +173,6 @@ function SettingsPage() {
           <InterfaceSection />
           <NotificationsSection />
           <RuntimeSection />
-          <FeatureWorkflowSection />
           <GitSection />
           <ProvidersSection />
           <AboutSection />
@@ -407,64 +399,12 @@ function RuntimeSection(): React.JSX.Element {
       id="runtime"
       title="Runtime & Models"
       subtitle="Per-agent provider & model"
-      description="Choose the runtime provider and model for each agent type."
+      description="Choose the runtime provider and model for sessions and auto-naming."
     >
       <SettingsCard>
         <ModelSelector level="global" />
       </SettingsCard>
     </SettingsSection>
-  );
-}
-
-/* ─── Feature Workflow (autonomy + parallel execution) ───────────────── */
-
-function FeatureWorkflowSection(): React.JSX.Element {
-  return (
-    <SettingsSection
-      id="feature-workflow"
-      title="Feature Workflow"
-      subtitle="Defaults for new features"
-      description="How features get built — how much automation the execute agent uses, and whether steps fan out in parallel. You can override per feature from its settings popover."
-    >
-      <SettingsCard padded className="space-y-5">
-        <AutonomyPicker />
-        <div className="border-t border-border" />
-        <ParallelExecutionRow />
-      </SettingsCard>
-    </SettingsSection>
-  );
-}
-
-function AutonomyPicker(): React.JSX.Element {
-  const autonomy = useDebouncedSetting(AGENT_AUTONOMY_KEY, 0);
-  const value = parseAgentAutonomy(autonomy.value);
-
-  return (
-    <div className="space-y-2">
-      <div>
-        <div className="text-sm font-medium">Autonomy</div>
-        <p className="text-xs text-muted-foreground">
-          How much automation the execute agent uses while building.
-        </p>
-      </div>
-      <AutonomyRadio value={value} onChange={autonomy.setValue} disabled={autonomy.isLoading} />
-    </div>
-  );
-}
-
-function ParallelExecutionRow(): React.JSX.Element {
-  const parallel = useDebouncedSetting(PARALLEL_EXECUTION_KEY, 0);
-  const isChecked = (parallel.value ?? "true") === "true";
-
-  return (
-    <SettingsSwitchRow
-      icon={<GitFork className="size-4" />}
-      iconTint="purple"
-      label="Parallel agent execution"
-      description="Run multiple agents in parallel within each execution step. Speeds up large features at the cost of more concurrent CLI processes."
-      checked={isChecked}
-      onCheckedChange={(checked) => parallel.setValue(checked ? "true" : "false")}
-    />
   );
 }
 

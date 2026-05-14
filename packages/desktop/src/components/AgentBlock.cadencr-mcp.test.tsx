@@ -18,60 +18,34 @@ function makeBlock(overrides: Partial<AgentBlockData>): AgentBlockData {
   };
 }
 
-describe("AgentBlock Cadencr MCP plan tools", () => {
-  it("renders a show_plan MCP call with custom styling before content is attached", () => {
+describe("AgentBlock Cadencr MCP session tools", () => {
+  it("renders a mark_agent_done MCP call with custom styling", () => {
     render(
       <AgentBlock
         block={makeBlock({
-          toolName: "mcp__cadencr-plan__show_plan",
-          toolArgs: JSON.stringify({ plan_id: 1 }),
+          toolName: "mcp__cadencr-session__mark_agent_done",
+          toolArgs: JSON.stringify({ summary: "Finished" }),
         })}
       />,
     );
 
-    expect(screen.getByText("plan")).toBeInTheDocument();
-    expect(screen.getByText("Showing plan")).toBeInTheDocument();
+    expect(screen.getByText("session")).toBeInTheDocument();
+    expect(screen.getByText("Marking done")).toBeInTheDocument();
+    expect(screen.getByText("Finished")).toBeInTheDocument();
   });
 
   it("renders a Codex namespace MCP call with custom styling", () => {
     render(
       <AgentBlock
         block={makeBlock({
-          toolName: "mcp__cadencr_plan____read_plan",
-          toolArgs: JSON.stringify({ feature_id: 1086 }),
+          toolName: "mcp__cadencr_session____read_conversation",
+          toolArgs: JSON.stringify({ session_id: 42 }),
         })}
       />,
     );
 
-    expect(screen.getByText("plan")).toBeInTheDocument();
-    expect(screen.getByText("Reading plan")).toBeInTheDocument();
-  });
-
-  it("renders attached show_plan content as the visible plan", () => {
-    render(
-      <AgentBlock
-        block={makeBlock({
-          toolName: "mcp__cadencr-plan__show_plan",
-          toolArgs: JSON.stringify({ plan: "# Build Plan" }),
-        })}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { level: 1, name: "Build Plan" })).toBeInTheDocument();
-  });
-
-  it("renders attached show_prd content as the visible PRD", () => {
-    render(
-      <AgentBlock
-        block={makeBlock({
-          toolName: "mcp__cadencr-prd__show_prd",
-          toolArgs: JSON.stringify({ plan: "# Product Requirements" }),
-        })}
-      />,
-    );
-
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Product Requirements" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("session")).toBeInTheDocument();
+    expect(screen.getByText("Reading conversation")).toBeInTheDocument();
+    expect(screen.getByText("Session #42")).toBeInTheDocument();
   });
 });

@@ -138,7 +138,7 @@ mod tests {
             "type": "acp_permission_request",
             "request_id": "per_1",
             "call_id": "call_1",
-            "tool_name": "cadencr-plan_show_plan",
+            "tool_name": "cadencr-session_mark_agent_done",
             "tool_input": {},
         }))
         .unwrap();

@@ -144,20 +144,13 @@ function splitAgentsByFilterVisibility(
   return { matching, pinnedExtras };
 }
 
-function isVisibleAgent(entry: UnifiedAgentEntry): boolean {
-  return entry.feature.status !== "archived";
+function isVisibleAgent(_entry: UnifiedAgentEntry): boolean {
+  return true;
 }
 
 function isFreshOrActive(entry: UnifiedAgentEntry, freshMinutes: number): boolean {
   if (entry.session.status === "running") return true;
-  if (
-    entry.session.pendingQuestions ||
-    entry.session.pendingPermission ||
-    entry.session.pendingPlanApproval ||
-    entry.session.pendingPrdApproval
-  ) {
-    return true;
-  }
+  if (entry.session.pendingQuestions || entry.session.pendingPermission) return true;
   const activityTime = entry.last_activity_at
     ? parseUTCDateTime(entry.last_activity_at).getTime()
     : NaN;

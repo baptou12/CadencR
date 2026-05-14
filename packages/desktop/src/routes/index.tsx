@@ -42,7 +42,7 @@ function HomePage() {
   const targetProjectId = searchProjectId ?? lastFeature?.projectId ?? fallbackProjectId;
 
   const featuresQuery = useListFeatures(
-    { project_id: targetProjectId ?? 0 },
+    { project_id: targetProjectId ?? 0, include_archived: true },
     { query: { enabled: targetProjectId != null } },
   );
 
@@ -74,7 +74,8 @@ function HomePage() {
     }
 
     // Fallback: first feature of target project
-    const firstFeatureId = features[0]?.id ?? null;
+    const firstFeatureId =
+      (features.find((feature) => feature.status === "active") ?? features[0])?.id ?? null;
     if (targetProjectId != null && firstFeatureId != null) {
       void navigate({
         to: "/projects/$projectId/features/$featureId",

@@ -2,18 +2,7 @@
  * Agent type definitions for frontend components.
  */
 
-export type AgentType =
-  | "plan"
-  | "prd"
-  | "execute"
-  | "risk"
-  | "review"
-  | "session"
-  | "qa"
-  | "review-fixer"
-  | "retro"
-  | "auto_name"
-  | (string & {}); // Custom workflow phase slugs (e.g. "specify", "analyze")
+export type AgentType = "session" | "auto_name";
 
 /** Image payload sent with prompts to agents. */
 interface ImagePayload {

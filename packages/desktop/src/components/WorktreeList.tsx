@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Trash2, GitBranch, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,14 +8,6 @@ import {
   useRemoveOrphanWorktree,
   getListProjectWorktreesQueryKey,
 } from "@/api/generated";
-
-const statusColors: Record<string, string> = {
-  planning: "bg-blue-500/15 text-blue-600",
-  "in-progress": "bg-yellow-500/15 text-yellow-600",
-  review: "bg-purple-500/15 text-purple-600",
-  done: "bg-green-500/15 text-green-600",
-  blocked: "bg-red-500/15 text-red-600",
-};
 
 export function WorktreeList({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
@@ -94,17 +85,7 @@ export function WorktreeList({ projectId }: { projectId: number }) {
             <div className="truncate text-[11px] font-mono text-muted-foreground/70">{wt.path}</div>
             <div className="truncate text-xs text-muted-foreground">
               {wt.feature_title ? (
-                <span className="flex items-center gap-1.5">
-                  {wt.feature_title}
-                  {wt.feature_status && (
-                    <Badge
-                      variant="outline"
-                      className={`px-1 py-0 text-[10px] leading-tight ${statusColors[wt.feature_status] ?? ""}`}
-                    >
-                      {wt.feature_status}
-                    </Badge>
-                  )}
-                </span>
+                <span>{wt.feature_title}</span>
               ) : (
                 <span className="italic">No linked feature</span>
               )}

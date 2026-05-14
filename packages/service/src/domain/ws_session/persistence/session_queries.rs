@@ -10,14 +10,12 @@ impl WsSessionPersistence {
             String,
             Option<String>,
             Option<String>,
-            Option<String>,
-            Option<String>,
             Option<i64>,
             Option<i64>,
             Option<i64>,
             Option<String>,
         )> = sqlx::query_as(
-            "SELECT id, feature_id, runtime_provider, runtime_session_id, model, permission_mode, status, pending_plan_approval, pending_prd_approval, pending_permission, pending_questions, input_tokens, output_tokens, context_window, thinking_effort FROM agent_sessions WHERE id = ?",
+            "SELECT id, feature_id, runtime_provider, runtime_session_id, model, permission_mode, status, pending_permission, pending_questions, input_tokens, output_tokens, context_window, thinking_effort FROM agent_sessions WHERE id = ?",
         )
         .bind(session_id)
         .fetch_optional(pool)
@@ -32,8 +30,6 @@ impl WsSessionPersistence {
                 model,
                 permission_mode,
                 status,
-                pending_plan_approval,
-                pending_prd_approval,
                 pending_permission,
                 pending_questions,
                 input_tokens,
@@ -48,8 +44,6 @@ impl WsSessionPersistence {
                 model,
                 permission_mode,
                 status,
-                pending_plan_approval,
-                pending_prd_approval,
                 pending_permission,
                 pending_questions,
                 input_tokens,
@@ -112,11 +106,8 @@ mod session_queries_tests {
                 context_window INTEGER NOT NULL DEFAULT 200000,
                 started_at TEXT,
                 ended_at TEXT,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT,
                 pending_permission TEXT,
                 pending_questions TEXT,
-                plan_approval_result TEXT,
                 thinking_effort TEXT
             )"#,
         )
@@ -182,66 +173,6 @@ mod session_queries_tests {
     }
 
     #[tokio::test]
-    async fn test_get_session_row_includes_pending_plan_approval() {
-        let pool = setup_test_db().await;
-        let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p
-            .find_or_create_session(Some("opus"), Some("plan"))
-            .await
-            .unwrap();
-
-        let row = WsSessionPersistence::get_session_row(&pool, id)
-            .await
-            .unwrap();
-        assert!(row.pending_plan_approval.is_none());
-
-        sqlx::query("UPDATE agent_sessions SET pending_plan_approval = ? WHERE id = ?")
-            .bind(r#"{"plan":"test"}"#)
-            .bind(id)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let row = WsSessionPersistence::get_session_row(&pool, id)
-            .await
-            .unwrap();
-        assert_eq!(row.pending_plan_approval.as_deref(), Some(r#"{"plan":"test"}"#));
-    }
-
-    #[tokio::test]
-    async fn test_plan_approval_result_roundtrip() {
-        let pool = setup_test_db().await;
-        let mut p = WsSessionPersistence::new(pool.clone(), 10);
-        let id = p
-            .find_or_create_session(Some("opus"), Some("plan"))
-            .await
-            .unwrap();
-
-        sqlx::query(
-            "UPDATE agent_sessions SET pending_plan_approval = ?, plan_approval_result = ? WHERE id = ?",
-        )
-        .bind(r#"{"plan":"test"}"#)
-        .bind(r#"{"approved":true}"#)
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            "UPDATE agent_sessions SET pending_plan_approval = NULL, plan_approval_result = NULL WHERE id = ?",
-        )
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let row = WsSessionPersistence::get_session_row(&pool, id)
-            .await
-            .unwrap();
-        assert!(row.pending_plan_approval.is_none());
-    }
-
-    #[tokio::test]
     async fn test_enter_plan_mode_persists_permission_mode() {
         let pool = setup_test_db().await;
         let mut p = WsSessionPersistence::new(pool.clone(), 10);
@@ -272,7 +203,7 @@ mod session_queries_tests {
             .unwrap();
 
         sqlx::query(
-            "UPDATE agent_sessions SET permission_mode = 'acceptEdits', pending_plan_approval = NULL WHERE id = ?",
+            "UPDATE agent_sessions SET permission_mode = 'acceptEdits' WHERE id = ?",
         )
         .bind(id)
         .execute(&pool)
@@ -283,7 +214,6 @@ mod session_queries_tests {
             .await
             .unwrap();
         assert_eq!(row.permission_mode.as_deref(), Some("acceptEdits"));
-        assert!(row.pending_plan_approval.is_none());
     }
 
     #[tokio::test]

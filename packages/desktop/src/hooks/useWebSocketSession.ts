@@ -138,10 +138,7 @@ export function useWebSocketSession(
     const lastSession = sessions[sessions.length - 1];
     const restoredBlocks = serverBlocksToAgentBlocks(lastSession.blocks);
 
-    const restoredLifecycle = persistedStatusToLifecycle(
-      lastSession.status,
-      lastSession.pendingPlanApproval,
-    );
+    const restoredLifecycle = persistedStatusToLifecycle(lastSession.status);
 
     const persistedContextUsage: ContextUsageState | null =
       lastSession.inputTokens > 0 ||
@@ -165,7 +162,6 @@ export function useWebSocketSession(
       currentModelId: lastSession.model ?? undefined,
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
-      pendingPlanApproval: lastSession.pendingPlanApproval as PendingPlanApproval | null,
       pendingPermission: lastSession.pendingPermission,
       pendingQuestions: lastSession.pendingQuestions,
       contextUsage: persistedContextUsage,

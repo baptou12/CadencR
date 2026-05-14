@@ -110,7 +110,6 @@ typography:
     bubble: { size: 13px, line_height: 1.55, role: "User bubble (.cds-user-bubble)" }
     tab: { size: 12.5px, weight: 500, role: "Tab strip label" }
     feature_row: { size: 12.5px, role: "Sidebar feature row" }
-    feature_archived: { size: 12px, style: italic, role: "Archived feature row" }
     chip: { size: 11.5px, weight: 500, role: "Action-bar chip" }
     tool_call: { size: 11.5px, family: mono, role: ".cds-tool — collapsed tool-call row" }
     tool_term: { size: 11px, family: mono, line_height: 1.65, role: "Bash tool output" }
@@ -301,16 +300,15 @@ Two-column grid: 200px file explorer + code area with tab strip and footer. Read
 - **Structure:** `.cds-sidebar > [.cds-sidebar-header, .cds-sidebar-nav, .cds-sidebar-scroll, .cds-sidebar-footer]`.
 - **Project group:** `.cds-project-group > [.cds-project-row, .cds-feature-list]`. The feature list has a left rail (`border-left: 1px solid var(--sidebar-border)`).
 - **Active feature:** `.cds-feature-row.active` gets a `--primary` 18% mix bg + a `.cds-active-rail` 2px primary bar at left:-11px.
-- **Archived:** dimmed, italic, smaller font; un-italics on hover.
 - **Tokens:** `--sidebar`, `--sidebar-border`, `--accent` (hover bg), `--primary`/`--primary-glow` (active state), `--muted-foreground` (eyebrows + counts), `--acc-green`/`--acc-pink`/`--acc-orange` (project dots).
 - **When to use vs alternative:** The sidebar is global navigation. Per-pane navigation goes in the tab strip, not here.
 
 ### TopBar
 
-52px-min-height bar above the split. Owns the feature title + status dot, the theme switcher, the new-action button, and the settings gear.
+52px-min-height bar above the split. Owns the feature title, the theme switcher, the new-action button, and the settings gear.
 
 - **Structure:** `.cds-topbar > [.feat-title, .cds-top-actions]`.
-- **Tokens:** `--background`, `--border`, `--status-ip` (dot), `--status-ip-bg` (dot halo).
+- **Tokens:** `--background`, `--border`.
 
 ### PromptBar
 

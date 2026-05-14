@@ -72,7 +72,7 @@ describe("ipc validators", () => {
         body: "Agent complete",
         featureId: 1,
         projectId: 2,
-        routeType: "workflow",
+        routeType: "session",
         mode: "native",
       }),
     ).toEqual({
@@ -80,7 +80,7 @@ describe("ipc validators", () => {
       body: "Agent complete",
       featureId: 1,
       projectId: 2,
-      routeType: "workflow",
+      routeType: "session",
       mode: "native",
     });
     expect(() => parseNotifyOptions({ routeType: "bad" })).toThrow(/route type/);
@@ -90,7 +90,7 @@ describe("ipc validators", () => {
         body: "Agent complete",
         featureId: 1,
         projectId: 2,
-        routeType: "workflow",
+        routeType: "session",
         mode: "bogus",
       }),
     ).toThrow(/notification mode/);

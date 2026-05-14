@@ -1,7 +1,6 @@
 import { useRef, useState, type Dispatch, type ReactElement, type SetStateAction } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { useAutoNameFeature, useGetFeature } from "@/api/generated";
 import { CustomActionsBar } from "./CustomActionsBar";
 import { EmbeddedSessionHeader } from "./FeatureTopBarEmbedded";
@@ -15,7 +14,6 @@ import type { WorktreeStatus } from "@/types/workflow";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
-import { STATUS_COLORS, type FeatureStatus } from "@/lib/feature-status";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -165,7 +163,6 @@ function StandardFeatureTopBar({
       className={className}
       featureTitle={title ?? feature.title}
       featureLabel={labelOverride !== undefined ? labelOverride : feature.label}
-      featureStatus={feature.status as FeatureStatus}
       isSession={isSession}
       isAutoNaming={isAutoNaming || autoNameMutation.isPending}
       canAutoRename={canAutoRename}
@@ -193,7 +190,6 @@ interface FeatureHeaderChromeProps {
   className?: string;
   featureTitle: string;
   featureLabel?: string | null;
-  featureStatus: FeatureStatus;
   isSession: boolean;
   isAutoNaming: boolean;
   canAutoRename: boolean;
@@ -219,7 +215,6 @@ function FeatureHeaderChrome({
   className,
   featureTitle,
   featureLabel,
-  featureStatus,
   isSession,
   isAutoNaming,
   canAutoRename,
@@ -246,11 +241,6 @@ function FeatureHeaderChrome({
         {showSidebarChrome && sidebarCollapsed && (
           <SidebarCollapsedChrome onExpand={onExpandSidebar} />
         )}
-        {!isSession && (
-          <Badge variant="secondary" className={STATUS_COLORS[featureStatus] ?? ""}>
-            {featureStatus}
-          </Badge>
-        )}
         <ProjectColorDot projectId={projectId} className="size-2.5" />
         {isAutoNaming ? (
           <Skeleton className="h-5 w-40" />
@@ -272,7 +262,7 @@ function FeatureHeaderChrome({
          * The session view drives the same `useGitStatusStore` (via
          * `useGitStatusSubscription` in `ws-session.$sessionId.tsx`), so the
          * commit / push / open-PR action and the current → target chip are
-         * just as relevant there as in the workflow view.
+         * relevant there too.
          */}
         <GitActionButton featureId={featureId} />
         <BranchChip featureId={featureId} projectId={projectId} />

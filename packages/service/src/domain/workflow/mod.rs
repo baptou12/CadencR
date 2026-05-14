@@ -1,16 +1,7 @@
-pub mod agent_errors;
-pub mod agent_manager;
-pub mod agent_slot;
-pub mod engine;
-pub mod gate_handler;
-pub mod permission_router;
-pub mod populate;
-pub mod prompts;
-pub mod queue_advancer;
-pub mod reconnect;
-pub mod spawn;
-pub mod status;
-pub mod strategies;
-pub mod stream_reader;
+//! Shared modules that survive the ws-feature removal. ws-session relies
+//! on the worktree setup and a couple of small helpers; the multi-stage
+//! workflow engine, agent manager, queue advancer, strategies, etc. were
+//! all part of ws-feature and have been deleted.
+
 pub mod worktree;
 pub mod ws_sender;

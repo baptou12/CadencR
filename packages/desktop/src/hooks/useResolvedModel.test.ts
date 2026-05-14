@@ -143,80 +143,79 @@ describe("useResolvedModel", () => {
 
   it("returns the catalog default model when no settings are configured", () => {
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveProvider("plan")).toBe("claude_code");
-    expect(result.current.resolveModel("plan")).toBe("default");
+    expect(result.current.resolveProvider("session")).toBe("claude_code");
+    expect(result.current.resolveModel("session")).toBe("default");
   });
 
   it("uses feature-level setting when available", () => {
-    mockFeatureSettings.mockReturnValue({ data: { plan: "claude-feature-model" } });
+    mockFeatureSettings.mockReturnValue({ data: { session: "claude-feature-model" } });
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("claude-feature-model");
+    expect(result.current.resolveModel("session")).toBe("claude-feature-model");
   });
 
   it("falls back to project-level setting when feature setting absent", () => {
     mockFeatureSettings.mockReturnValue({ data: {} });
-    mockProjectSettings.mockReturnValue({ data: { plan: "claude-project-model" } });
+    mockProjectSettings.mockReturnValue({ data: { session: "claude-project-model" } });
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("claude-project-model");
+    expect(result.current.resolveModel("session")).toBe("claude-project-model");
   });
 
   it("falls back to global setting when feature and project absent", () => {
     mockFeatureSettings.mockReturnValue({ data: {} });
     mockProjectSettings.mockReturnValue({ data: {} });
-    mockGlobalSettings.mockReturnValue({ data: { plan: "claude-global-model" } });
+    mockGlobalSettings.mockReturnValue({ data: { session: "claude-global-model" } });
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("claude-global-model");
+    expect(result.current.resolveModel("session")).toBe("claude-global-model");
   });
 
   it("feature setting takes precedence over project and global", () => {
-    mockFeatureSettings.mockReturnValue({ data: { plan: "feature-model" } });
-    mockProjectSettings.mockReturnValue({ data: { plan: "project-model" } });
-    mockGlobalSettings.mockReturnValue({ data: { plan: "global-model" } });
+    mockFeatureSettings.mockReturnValue({ data: { session: "feature-model" } });
+    mockProjectSettings.mockReturnValue({ data: { session: "project-model" } });
+    mockGlobalSettings.mockReturnValue({ data: { session: "global-model" } });
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("feature-model");
+    expect(result.current.resolveModel("session")).toBe("feature-model");
   });
 
   it("handleModelChange calls setModelMutation.mutate", () => {
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    result.current.handleModelChange("execute", "claude-3-5-sonnet");
+    result.current.handleModelChange("session", "claude-3-5-sonnet");
     expect(mockSetModelMutate).toHaveBeenCalledWith({
       id: 1,
-      data: { model_type: "execute", model: "claude-3-5-sonnet" },
+      data: { model_type: "session", model: "claude-3-5-sonnet" },
     });
   });
 
-  it("resolves different models for different agent types", () => {
+  it("resolves the session model", () => {
     mockFeatureSettings.mockReturnValue({
-      data: { plan: "plan-model", execute: "execute-model" },
+      data: { session: "session-model" },
     });
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("plan-model");
-    expect(result.current.resolveModel("execute")).toBe("execute-model");
+    expect(result.current.resolveModel("session")).toBe("session-model");
   });
 
   it("uses the new provider default when a nearer provider override changes providers", () => {
-    mockGlobalSettings.mockReturnValue({ data: { plan: "opus" } });
-    mockFeatureProviderSettings.mockReturnValue({ data: { plan: "opencode" } });
+    mockGlobalSettings.mockReturnValue({ data: { session: "opus" } });
+    mockFeatureProviderSettings.mockReturnValue({ data: { session: "opencode" } });
 
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveProvider("plan")).toBe("opencode");
-    expect(result.current.resolveModel("plan")).toBe("default/default");
+    expect(result.current.resolveProvider("session")).toBe("opencode");
+    expect(result.current.resolveModel("session")).toBe("default/default");
   });
 
   it("keeps the inherited model when the provider does not change", () => {
-    mockProjectProviderSettings.mockReturnValue({ data: { plan: "claude_code" } });
-    mockGlobalSettings.mockReturnValue({ data: { plan: "default" } });
+    mockProjectProviderSettings.mockReturnValue({ data: { session: "claude_code" } });
+    mockGlobalSettings.mockReturnValue({ data: { session: "default" } });
 
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    expect(result.current.resolveModel("plan")).toBe("default");
+    expect(result.current.resolveModel("session")).toBe("default");
   });
 
   it("handleProviderChange calls setProviderMutation.mutate", () => {
     const { result } = renderHook(() => useResolvedModel(1, 1), { wrapper });
-    result.current.handleProviderChange("plan", "opencode");
+    result.current.handleProviderChange("session", "opencode");
     expect(mockSetProviderMutate).toHaveBeenCalledWith({
       featureId: 1,
-      providerType: "plan",
+      providerType: "session",
       provider: "opencode",
     });
   });

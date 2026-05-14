@@ -76,8 +76,7 @@ export interface MetaBarProps {
   /**
    * Layout variant. `"session"` (default) fades into the agent stream above
    * via a negative margin + background gradient. `"standalone"` drops that
-   * styling so the bar can sit on its own inside a bordered container (used
-   * for pre-agent kickoff prompts in PlanInputView / NextStepsBar).
+   * styling so the bar can sit on its own inside a bordered container.
    */
   variant?: "session" | "standalone";
   /**

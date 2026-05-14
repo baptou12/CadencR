@@ -184,14 +184,14 @@ describe("getToolActivityLabel", () => {
   it("returns prefixed label for Cadencr MCP tools", () => {
     expect(
       getToolActivityLabel(
-        "mcp__cadencr-plan__create_phase",
-        JSON.stringify({ title: "Setup DB" }),
+        "mcp__cadencr-session__mark_agent_done",
+        JSON.stringify({ summary: "Finished setup" }),
       ),
-    ).toBe("[plan] Creating phase: Setup DB");
+    ).toBe("[session] Marking done: Finished setup");
   });
 
-  it("returns prefixed label without detail for Cadencr MCP tools", () => {
-    expect(getToolActivityLabel("mcp__cadencr-prd__read_prd")).toBe("[prd] Reading PRD");
+  it("falls back for unknown MCP tools", () => {
+    expect(getToolActivityLabel("mcp__unknown__read")).toBe("Running mcp__unknown__read");
   });
 });
 
@@ -203,85 +203,87 @@ describe("parseCadencrMcpTool", () => {
   });
 
   it("parses server and tool from cadencr MCP tool name", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-plan__create_phase");
+    const result = parseCadencrMcpTool("mcp__cadencr-session__mark_agent_done");
     expect(result).toBeDefined();
-    expect(result!.server).toBe("plan");
-    expect(result!.tool).toBe("create_phase");
+    expect(result!.server).toBe("session");
+    expect(result!.tool).toBe("mark_agent_done");
   });
 
   it("parses Cadencr MCP tool names", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-plan__show_plan");
+    const result = parseCadencrMcpTool("mcp__cadencr-session__list_conversations");
     expect(result).toBeDefined();
-    expect(result!.server).toBe("plan");
-    expect(result!.tool).toBe("show_plan");
-    expect(result!.label).toBe("Showing plan");
+    expect(result!.server).toBe("session");
+    expect(result!.tool).toBe("list_conversations");
+    expect(result!.label).toBe("Listing conversations");
   });
 
   it("parses Codex namespace MCP tool names as Cadencr tools", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr_plan____read_plan");
+    const result = parseCadencrMcpTool("mcp__cadencr_session____read_conversation");
     expect(result).toBeDefined();
-    expect(result!.server).toBe("plan");
-    expect(result!.tool).toBe("read_plan");
-    expect(result!.label).toBe("Reading plan");
+    expect(result!.server).toBe("session");
+    expect(result!.tool).toBe("read_conversation");
+    expect(result!.label).toBe("Reading conversation");
   });
 
   it("returns known human-readable label", () => {
-    expect(parseCadencrMcpTool("mcp__cadencr-plan__create_phase")!.label).toBe("Creating phase");
-    expect(parseCadencrMcpTool("mcp__cadencr-prd__show_prd")!.label).toBe("Showing PRD");
-    expect(parseCadencrMcpTool("mcp__cadencr-common__mark_agent_done")!.label).toBe("Marking done");
+    expect(parseCadencrMcpTool("mcp__cadencr-session__mark_agent_done")!.label).toBe(
+      "Marking done",
+    );
+    expect(parseCadencrMcpTool("mcp__cadencr-session__read_conversation")!.label).toBe(
+      "Reading conversation",
+    );
   });
 
-  it("identifies only Cadencr plan presentation tools", () => {
-    expect(isCadencrPlanPresentationTool("mcp__cadencr-plan__show_plan")).toBe(true);
-    expect(isCadencrPlanPresentationTool("mcp__cadencr_prd____show_prd")).toBe(true);
-    expect(isCadencrPlanPresentationTool("mcp__chrome_devtools____show_plan")).toBe(false);
+  it("does not identify MCP tools as plan presentation tools", () => {
+    expect(isCadencrPlanPresentationTool("mcp__cadencr-session__mark_agent_done")).toBe(false);
+    expect(isCadencrPlanPresentationTool("mcp__chrome_devtools____click")).toBe(false);
   });
 
   it("title-cases unknown tool names as fallback", () => {
-    expect(parseCadencrMcpTool("mcp__cadencr-plan__do_something_new")!.label).toBe(
+    expect(parseCadencrMcpTool("mcp__cadencr-session__do_something_new")!.label).toBe(
       "Do Something New",
     );
   });
 
   it("extracts title from args as detail", () => {
     const result = parseCadencrMcpTool(
-      "mcp__cadencr-plan__create_phase",
+      "mcp__cadencr-session__mark_agent_done",
       JSON.stringify({ title: "Setup DB" }),
     );
     expect(result!.detail).toBe("Setup DB");
   });
 
-  it("extracts phase_id as detail for read_phase", () => {
+  it("extracts session_id as detail for read_conversation", () => {
     const result = parseCadencrMcpTool(
-      "mcp__cadencr-execute__read_phase",
-      JSON.stringify({ phase_id: 42 }),
+      "mcp__cadencr-session__read_conversation",
+      JSON.stringify({ session_id: 42 }),
     );
-    expect(result!.detail).toBe("Phase #42");
+    expect(result!.detail).toBe("Session #42");
   });
 
   it("handles missing args gracefully", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-plan__list_phases");
+    const result = parseCadencrMcpTool("mcp__cadencr-session__list_conversations");
     expect(result).toBeDefined();
     expect(result!.detail).toBeUndefined();
   });
 
   it("handles malformed JSON args", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-plan__read_plan", "{bad json");
+    const result = parseCadencrMcpTool("mcp__cadencr-session__mark_agent_done", "{bad json");
     expect(result).toBeDefined();
-    expect(result!.label).toBe("Reading plan");
+    expect(result!.label).toBe("Marking done");
     expect(result!.detail).toBeUndefined();
   });
 
   it("handles null args", () => {
-    const result = parseCadencrMcpTool("mcp__cadencr-plan__read_plan", "null");
+    const result = parseCadencrMcpTool("mcp__cadencr-session__mark_agent_done", "null");
     expect(result).toBeDefined();
-    expect(result!.label).toBe("Reading plan");
+    expect(result!.label).toBe("Marking done");
     expect(result!.detail).toBeUndefined();
   });
 
   it("falls back past empty-string title to summary", () => {
     const result = parseCadencrMcpTool(
-      "mcp__cadencr-common__mark_agent_done",
+      "mcp__cadencr-session__mark_agent_done",
       JSON.stringify({ title: "", summary: "Explored the theme" }),
     );
     expect(result!.detail).toBe("Explored the theme");
@@ -289,7 +291,7 @@ describe("parseCadencrMcpTool", () => {
 
   it("falls back past empty title/summary to commit_message", () => {
     const result = parseCadencrMcpTool(
-      "mcp__cadencr-plan__create_phase",
+      "mcp__cadencr-session__mark_agent_done",
       JSON.stringify({ title: "", summary: "", commit_message: "feat: add one-dark theme" }),
     );
     expect(result!.detail).toBe("feat: add one-dark theme");
@@ -298,7 +300,7 @@ describe("parseCadencrMcpTool", () => {
   it("falls back to truncated prompt when title/summary/commit_message are empty", () => {
     const longPrompt = "a".repeat(120);
     const result = parseCadencrMcpTool(
-      "mcp__cadencr-plan__create_phase",
+      "mcp__cadencr-session__mark_agent_done",
       JSON.stringify({ title: "", prompt: longPrompt }),
     );
     expect(result!.detail).toHaveLength(80);

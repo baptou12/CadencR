@@ -30,7 +30,7 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
-use crate::domain::workflow::engine::WsSender;
+use crate::domain::workflow::ws_sender::WsSender;
 use crate::shared::worktree_paths::compute_worktree_path;
 
 use db::{lookup_project, read_base_branch};
@@ -243,8 +243,8 @@ async fn ensure_reuse(
     } else {
         notify_provider_worktree_created(&project_dir, &attached.worktree_path).await?;
     }
-    // Else: caller (workflow_complex / prompt_send) spawns `run_setup_commands`
-    // exactly as it does for the `New` path.
+    // Else: the ws-session prompt path spawns `run_setup_commands` exactly as
+    // it does for the `New` path.
 
     Ok(PathBuf::from(attached.worktree_path))
 }

@@ -27,8 +27,6 @@ pub struct SessionRow {
     pub model: Option<String>,
     pub permission_mode: Option<String>,
     pub status: String,
-    pub pending_plan_approval: Option<String>,
-    pub pending_prd_approval: Option<String>,
     pub pending_permission: Option<String>,
     pub pending_questions: Option<String>,
     pub input_tokens: Option<i64>,
@@ -39,10 +37,7 @@ pub struct SessionRow {
 
 impl SessionRow {
     pub fn has_pending_user_input(&self) -> bool {
-        self.pending_permission.is_some()
-            || self.pending_questions.is_some()
-            || self.pending_plan_approval.is_some()
-            || self.pending_prd_approval.is_some()
+        self.pending_permission.is_some() || self.pending_questions.is_some()
     }
 }
 

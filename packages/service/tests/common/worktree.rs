@@ -77,7 +77,7 @@ pub async fn insert_project_and_feature(pool: &SqlitePool, name: &str, project_p
 
 pub fn fresh_ws_sender() -> (WsSender, mpsc::UnboundedReceiver<Message>) {
     let (tx, rx) = mpsc::unbounded_channel::<Message>();
-    (WsSender::new(tx), rx)
+    (tx, rx)
 }
 
 /// Initialize a hermetic git repo with one empty commit on `main`.

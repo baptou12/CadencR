@@ -11,15 +11,12 @@ interface AgentOverrides {
   projectId?: number;
   projectName?: string;
   title?: string;
-  featureStatus?: string;
   sessionStatus?: string;
   isPinned?: boolean;
   lastActivityAt?: string | null;
   agentCreatedAt?: string;
   pendingQuestions?: unknown;
   pendingPermission?: unknown;
-  pendingPlanApproval?: unknown;
-  pendingPrdApproval?: unknown;
 }
 
 const ALL_FILTERS: UnifiedAgentFilterArgs = {
@@ -39,7 +36,6 @@ function buildAgent(overrides: AgentOverrides = {}): UnifiedAgentEntry {
     feature: {
       created_at: "2026-03-04 23:00:00",
       id,
-      status: overrides.featureStatus ?? "active",
       title: overrides.title ?? `Agent ${id}`,
       type: "feature",
     },
@@ -60,11 +56,8 @@ function buildAgent(overrides: AgentOverrides = {}): UnifiedAgentEntry {
       maxMessageId: 0,
       outputTokens: 0,
       pendingPermission: overrides.pendingPermission,
-      pendingPlanApproval: overrides.pendingPlanApproval,
-      pendingPrdApproval: overrides.pendingPrdApproval,
       pendingQuestions: overrides.pendingQuestions,
       permissionMode: "default",
-      phaseTitle: "Build",
       resumable: false,
       sessionDbId: id,
       status: overrides.sessionStatus ?? "completed",
@@ -82,19 +75,19 @@ describe("UnifiedAgentsViewData", () => {
     vi.useRealTimers();
   });
 
-  it("orders pinned agents first without user filters and excludes archived pins", () => {
+  it("orders pinned agents first without user filters", () => {
     const ordered = orderUnifiedAgentsForDisplay(
       [
         buildAgent({ id: 1 }),
         buildAgent({ id: 2, isPinned: true }),
-        buildAgent({ id: 3, isPinned: true, featureStatus: "archived" }),
+        buildAgent({ id: 3, isPinned: true }),
         buildAgent({ id: 4, isPinned: true }),
         buildAgent({ id: 5 }),
       ],
       ALL_FILTERS,
     );
 
-    expect(ids(ordered)).toEqual([4, 2, 5, 1]);
+    expect(ids(ordered)).toEqual([4, 3, 2, 5, 1]);
   });
 
   it("can order created agents oldest first", () => {
@@ -146,18 +139,18 @@ describe("UnifiedAgentsViewData", () => {
     expect(ids(ordered)).toEqual([3, 2, 4, 1]);
   });
 
-  it("keeps pinned extras visible for text filters while still excluding archived pins", () => {
+  it("keeps pinned extras visible for text filters", () => {
     const visible = getUnifiedAgentsMatchingFilters(
       [
         buildAgent({ id: 1, title: "Matches query" }),
         buildAgent({ id: 2, title: "Pinned extra", isPinned: true }),
-        buildAgent({ id: 3, title: "Archived pinned", isPinned: true, featureStatus: "archived" }),
+        buildAgent({ id: 3, title: "Pinned extra 2", isPinned: true }),
         buildAgent({ id: 4, title: "Other" }),
       ],
       { ...ALL_FILTERS, queryText: "matches" },
     );
 
-    expect(ids(visible)).toEqual([1, 2]);
+    expect(ids(visible)).toEqual([1, 2, 3]);
   });
 
   it("includes recent running, pending, and fresh completed sessions", () => {

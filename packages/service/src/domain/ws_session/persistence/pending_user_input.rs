@@ -1,12 +1,10 @@
 // Central persistence + broadcast API for "pending user input" gates.
 //
-// An agent turn can be paused on four kinds of user-input gates, each backed
+// An agent turn can be paused on two kinds of user-input gates, each backed
 // by its own column on `agent_sessions`:
 //
 // - PendingUserInputKind::Permission   → pending_permission
 // - PendingUserInputKind::Question     → pending_questions
-// - PendingUserInputKind::PlanApproval → pending_plan_approval
-// - PendingUserInputKind::PrdApproval  → pending_prd_approval
 //
 // This module is the single entry point for writing/clearing those columns.
 // Every "askUser" broadcast must be preceded by a DB write, and every
@@ -21,13 +19,11 @@
 // NOTE: this file is `include!`'d into ws_session/persistence.rs, so it may
 // not have top-level `use` statements. It relies on imports in the parent.
 
-/// The four DB-backed user-input gate kinds.
+/// The DB-backed user-input gate kinds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PendingUserInputKind {
     Permission,
     Question,
-    PlanApproval,
-    PrdApproval,
 }
 
 impl PendingUserInputKind {
@@ -35,8 +31,6 @@ impl PendingUserInputKind {
         match self {
             Self::Permission => "pending_permission",
             Self::Question => "pending_questions",
-            Self::PlanApproval => "pending_plan_approval",
-            Self::PrdApproval => "pending_prd_approval",
         }
     }
 
@@ -46,8 +40,6 @@ impl PendingUserInputKind {
         match self {
             Self::Permission => crate::domain::session_status::PendingKind::Permission,
             Self::Question => crate::domain::session_status::PendingKind::Question,
-            Self::PlanApproval => crate::domain::session_status::PendingKind::PlanApproval,
-            Self::PrdApproval => crate::domain::session_status::PendingKind::PrdApproval,
         }
     }
 }
@@ -65,10 +57,6 @@ pub enum PendingUserInput<'a> {
     /// same format used by `workflow/engine` restore so workflow and
     /// ws-session agree on a single wire format.
     Question(&'a serde_json::Value),
-    /// `ExitPlanMode` approval gate. Stores the enriched plan tool input.
-    PlanApproval(&'a serde_json::Value),
-    /// PRD approval gate (workflow-only today).
-    PrdApproval(&'a serde_json::Value),
 }
 
 impl<'a> PendingUserInput<'a> {
@@ -76,17 +64,13 @@ impl<'a> PendingUserInput<'a> {
         match self {
             Self::Permission(_) => PendingUserInputKind::Permission,
             Self::Question(_) => PendingUserInputKind::Question,
-            Self::PlanApproval(_) => PendingUserInputKind::PlanApproval,
-            Self::PrdApproval(_) => PendingUserInputKind::PrdApproval,
         }
     }
 
     fn serialize(&self) -> String {
         match self {
             Self::Permission(p) => serde_json::to_string(p).unwrap_or_default(),
-            Self::Question(v) | Self::PlanApproval(v) | Self::PrdApproval(v) => {
-                serde_json::to_string(v).unwrap_or_default()
-            }
+            Self::Question(v) => serde_json::to_string(v).unwrap_or_default(),
         }
     }
 }
@@ -146,9 +130,7 @@ impl WsSessionPersistence {
         if let Err(e) = sqlx::query(
             "UPDATE agent_sessions SET \
                 pending_permission = NULL, \
-                pending_questions = NULL, \
-                pending_plan_approval = NULL, \
-                pending_prd_approval = NULL \
+                pending_questions = NULL \
              WHERE id = ?",
         )
         .bind(session_id)
@@ -176,7 +158,7 @@ impl WsSessionPersistence {
         let kind = input.kind().as_session_kind();
         Self::set_pending_user_input_static(pool, session_id, input).await;
         // Propagate `kind` so live askUser listeners can identify the gate
-        // type (permission/question/plan/prd) without a DB snapshot round
+        // type (permission/question) without a DB snapshot round
         // trip.
         Self::broadcast_session_status(
             broadcaster,
@@ -227,9 +209,7 @@ mod pending_user_input_tests {
                 feature_id INTEGER NOT NULL,
                 status TEXT NOT NULL DEFAULT 'idle',
                 pending_permission TEXT,
-                pending_questions TEXT,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT
+                pending_questions TEXT
             )"#,
         )
         .execute(&pool)
@@ -279,14 +259,6 @@ mod pending_user_input_tests {
             PendingUserInputKind::Question.column(),
             "pending_questions",
         );
-        assert_eq!(
-            PendingUserInputKind::PlanApproval.column(),
-            "pending_plan_approval",
-        );
-        assert_eq!(
-            PendingUserInputKind::PrdApproval.column(),
-            "pending_prd_approval",
-        );
     }
 
     #[tokio::test]
@@ -304,8 +276,6 @@ mod pending_user_input_tests {
 
         assert!(column(&pool, id, "pending_permission").await.is_some());
         assert!(column(&pool, id, "pending_questions").await.is_none());
-        assert!(column(&pool, id, "pending_plan_approval").await.is_none());
-        assert!(column(&pool, id, "pending_prd_approval").await.is_none());
     }
 
     #[tokio::test]
@@ -328,30 +298,6 @@ mod pending_user_input_tests {
 
         assert!(column(&pool, id, "pending_questions").await.is_some());
         assert!(column(&pool, id, "pending_permission").await.is_none());
-    }
-
-    #[tokio::test]
-    async fn set_plan_and_prd_write_to_their_columns() {
-        let pool = setup_pool().await;
-        let id = insert_session(&pool).await;
-        let plan = serde_json::json!({"plan": "..."});
-        let prd = serde_json::json!({"prd": "..."});
-
-        WsSessionPersistence::set_pending_user_input_static(
-            &pool,
-            id,
-            &PendingUserInput::PlanApproval(&plan),
-        )
-        .await;
-        WsSessionPersistence::set_pending_user_input_static(
-            &pool,
-            id,
-            &PendingUserInput::PrdApproval(&prd),
-        )
-        .await;
-
-        assert!(column(&pool, id, "pending_plan_approval").await.is_some());
-        assert!(column(&pool, id, "pending_prd_approval").await.is_some());
     }
 
     #[tokio::test]
@@ -391,9 +337,6 @@ mod pending_user_input_tests {
         let id = insert_session(&pool).await;
         let payload = sample_permission_payload();
         let question = serde_json::json!({"tool_name": "AskUserQuestion"});
-        let plan = serde_json::json!({"plan": "..."});
-        let prd = serde_json::json!({"prd": "..."});
-
         WsSessionPersistence::set_pending_user_input_static(
             &pool,
             id,
@@ -406,25 +349,10 @@ mod pending_user_input_tests {
             &PendingUserInput::Question(&question),
         )
         .await;
-        WsSessionPersistence::set_pending_user_input_static(
-            &pool,
-            id,
-            &PendingUserInput::PlanApproval(&plan),
-        )
-        .await;
-        WsSessionPersistence::set_pending_user_input_static(
-            &pool,
-            id,
-            &PendingUserInput::PrdApproval(&prd),
-        )
-        .await;
-
         WsSessionPersistence::clear_all_pending_user_input_static(&pool, id).await;
 
         assert!(column(&pool, id, "pending_permission").await.is_none());
         assert!(column(&pool, id, "pending_questions").await.is_none());
-        assert!(column(&pool, id, "pending_plan_approval").await.is_none());
-        assert!(column(&pool, id, "pending_prd_approval").await.is_none());
     }
 
     fn test_broadcaster() -> (
@@ -467,15 +395,12 @@ mod pending_user_input_tests {
     }
 
     #[tokio::test]
-    async fn mark_awaiting_user_propagates_kind_for_question_and_plan() {
+    async fn mark_awaiting_user_propagates_kind_for_question() {
         use crate::domain::session_status::PendingKind;
         let pool = setup_pool().await;
         let id = insert_session(&pool).await;
         let (bc, mut rx) = test_broadcaster();
         let question = serde_json::json!({"tool_name": "AskUserQuestion"});
-        let plan = serde_json::json!({"plan": "..."});
-        let prd = serde_json::json!({"prd": "..."});
-
         WsSessionPersistence::mark_awaiting_user_static(
             &pool,
             &bc,
@@ -484,32 +409,7 @@ mod pending_user_input_tests {
             &PendingUserInput::Question(&question),
         )
         .await;
-        WsSessionPersistence::mark_awaiting_user_static(
-            &pool,
-            &bc,
-            id,
-            1,
-            &PendingUserInput::PlanApproval(&plan),
-        )
-        .await;
-        WsSessionPersistence::mark_awaiting_user_static(
-            &pool,
-            &bc,
-            id,
-            1,
-            &PendingUserInput::PrdApproval(&prd),
-        )
-        .await;
-
         assert_eq!(rx.recv().await.unwrap().kind, Some(PendingKind::Question));
-        assert_eq!(
-            rx.recv().await.unwrap().kind,
-            Some(PendingKind::PlanApproval),
-        );
-        assert_eq!(
-            rx.recv().await.unwrap().kind,
-            Some(PendingKind::PrdApproval),
-        );
     }
 
     #[tokio::test]
@@ -555,7 +455,7 @@ mod pending_user_input_tests {
             &bc,
             id,
             1,
-            PendingUserInputKind::PlanApproval,
+            PendingUserInputKind::Permission,
             AgentStatus::Idle,
         )
         .await;

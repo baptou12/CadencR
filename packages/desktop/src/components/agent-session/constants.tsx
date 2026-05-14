@@ -5,15 +5,8 @@ export type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 
 export const AGENT_LABELS: Partial<Record<AgentType, string>> = {
-  plan: "Plan",
-  prd: "PRD",
-  execute: "Execute",
-  risk: "Risk Analysis",
-  review: "Review",
   session: "Session",
-  qa: "QA",
-  "review-fixer": "Review Fixer",
-  retro: "Retro",
+  auto_name: "Auto Rename",
 };
 
 // 3-value status badge map. Mirrors the canonical `AgentStatus` enum

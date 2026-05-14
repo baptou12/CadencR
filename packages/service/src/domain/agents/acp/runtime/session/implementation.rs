@@ -56,6 +56,7 @@ pub struct AcpRuntimeSession {
     pub(in crate::domain::agents::acp::runtime) session_permissions: SessionPermissions,
     pub(in crate::domain::agents::acp::runtime) closing: Arc<AtomicBool>,
     pub(in crate::domain::agents::acp::runtime) manual_compact_running: Arc<AtomicBool>,
+    #[allow(dead_code)]
     pub(in crate::domain::agents::acp::runtime) pid: Option<u32>,
     pub(in crate::domain::agents::acp::runtime) context_window: Option<u64>,
     pub(in crate::domain::agents::acp::runtime) message_rx: Option<RuntimeMessageRx>,

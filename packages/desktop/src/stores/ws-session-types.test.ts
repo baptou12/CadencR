@@ -3,13 +3,13 @@ import { markLastPlanBlock } from "./ws-session-types";
 import type { AgentBlockData } from "@/components/AgentBlock";
 
 describe("markLastPlanBlock", () => {
-  it("marks show_prd blocks as approval blocks", () => {
+  it("marks ExitPlanMode blocks as approval blocks", () => {
     const blocks: AgentBlockData[] = [
       {
-        id: "prd",
+        id: "plan",
         type: "tool_call",
         content: "",
-        toolName: "mcp__cadencr-prd__show_prd",
+        toolName: "ExitPlanMode",
       },
     ];
 

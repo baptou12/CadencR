@@ -9,7 +9,6 @@ import { UnifiedAgentCard } from "./UnifiedAgentCard";
 
 const mocks = vi.hoisted(() => ({
   WebSocketSessionFeatureBlock: vi.fn(() => <div data-testid="ws-block" />),
-  AgentSession: vi.fn(() => null),
   togglePin: vi.fn(),
 }));
 
@@ -37,17 +36,12 @@ vi.mock("@/components/EmbeddedFeatureHeader", () => ({
   EmbeddedFeatureHeader: () => null,
 }));
 
-vi.mock("@/components/agent-session", () => ({
-  AgentSession: mocks.AgentSession,
-}));
-
 function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): UnifiedAgentEntry {
   return {
     agent_created_at: "2026-05-04T00:00:00Z",
     feature: {
       created_at: "2026-05-04T00:00:00Z",
       id: 7,
-      status: "active",
       title: "Session feature",
       type: "ws-session",
     },
@@ -68,14 +62,9 @@ function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): Unifi
       oldestMessageId: null,
       outputTokens: 0,
       pendingPermission: null,
-      pendingPlanApproval: null,
-      pendingPrdApproval: null,
       pendingQuestions: null,
       permissionMode: "default",
-      phaseId: null,
-      phaseTitle: null,
       resumable: false,
-      runId: null,
       runtimeProvider: null,
       runtimeSessionId: null,
       sessionDbId: 42,
@@ -155,27 +144,5 @@ describe("UnifiedAgentCard ws-session hydration", () => {
     expect(session?.lifecycle).toEqual({ phase: "paused", reason: "permission" });
     expect(session?.currentModelId).toBe("model-b");
     expect(session?.hasFileChanges).toBe(true);
-  });
-
-  it("passes read-only model metadata for ws-feature unified cards", () => {
-    const entry = makeEntry({
-      model: "openai/gpt-5.3-codex",
-      runtimeProvider: "opencode",
-      status: "completed",
-    });
-    entry.feature.type = "ws-feature";
-
-    render(<UnifiedAgentCard entry={entry} index={0} isActive={false} onActivate={vi.fn()} />);
-
-    type AgentSessionPropsCapture = {
-      showReadOnlyModel?: boolean;
-      currentModelId?: string;
-      currentProviderId?: string;
-    };
-    const calls = mocks.AgentSession.mock.calls as unknown as Array<[AgentSessionPropsCapture]>;
-    const props = calls.at(-1)?.[0];
-    expect(props?.showReadOnlyModel).toBe(true);
-    expect(props?.currentModelId).toBe("openai/gpt-5.3-codex");
-    expect(props?.currentProviderId).toBe("opencode");
   });
 });

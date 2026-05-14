@@ -5,67 +5,101 @@ use rmcp::{
     handler::server::ServerHandler,
     model::{
         CallToolRequestParams, CallToolResult, ErrorData, ListToolsResult, PaginatedRequestParams,
-        ServerInfo,
+        ServerInfo, Tool,
     },
     service::{RequestContext, RoleServer},
 };
+use serde_json::json;
 
 use crate::domain::mcp::context::McpContext;
 use crate::domain::mcp::tools::{
-    create_phase::CreatePhaseTool,
-    finalize_plan::FinalizePlanTool,
-    helpers::{
-        dispatch_tool, error_result, get_or_resolve_plan_id, pinned_feature_id, require_i64,
-        require_str,
-    },
-    list_phases::ListPhasesTool,
+    helpers::{dispatch_tool, error_result, pinned_feature_id, require_i64},
+    list_conversations::ListConversationsTool,
     mark_agent_done::MarkAgentDoneTool,
-    mark_phase_done::MarkPhaseDoneTool,
-    read_phase::ReadPhaseTool,
-    read_plan::ReadPlanTool,
-    read_prd::ReadPrdTool,
-    remove_phase::RemovePhaseTool,
-    show_plan::ShowPlanTool,
-    update_phase::UpdatePhaseTool,
-    update_plan::UpdatePlanTool,
+    read_conversation::ReadConversationTool,
 };
 
-use super::{mcp_server_name, server_info, tool_catalog::tool_definitions_for_agent, AgentType};
+use super::server_info;
+
+const FEATURE_ID_DESCRIPTION: &str =
+    "The feature this call operates on. Required on every Cadencr MCP tool call — agents must pass the feature_id from their system prompt.";
 
 pub struct SessionServer {
     ctx: Arc<McpContext>,
-    read_plan: ReadPlanTool,
-    list_phases: ListPhasesTool,
-    read_phase: ReadPhaseTool,
-    read_prd: ReadPrdTool,
-    create_phase: CreatePhaseTool,
-    update_phase: UpdatePhaseTool,
-    remove_phase: RemovePhaseTool,
-    update_plan: UpdatePlanTool,
-    show_plan: ShowPlanTool,
-    finalize_plan: FinalizePlanTool,
     mark_agent_done: MarkAgentDoneTool,
-    mark_phase_done: MarkPhaseDoneTool,
+    list_conversations: ListConversationsTool,
+    read_conversation: ReadConversationTool,
 }
 
 impl SessionServer {
     pub fn new(ctx: Arc<McpContext>) -> Self {
         Self {
-            read_plan: ReadPlanTool::new(ctx.clone()),
-            list_phases: ListPhasesTool::new(ctx.clone()),
-            read_phase: ReadPhaseTool::new(ctx.clone()),
-            read_prd: ReadPrdTool::new(ctx.clone()),
-            create_phase: CreatePhaseTool::new(ctx.clone()),
-            update_phase: UpdatePhaseTool::new(ctx.clone()),
-            remove_phase: RemovePhaseTool::new(ctx.clone()),
-            update_plan: UpdatePlanTool::new(ctx.clone()),
-            show_plan: ShowPlanTool::new(ctx.clone()),
-            finalize_plan: FinalizePlanTool::new(ctx.clone()),
             mark_agent_done: MarkAgentDoneTool::new(ctx.clone()),
-            mark_phase_done: MarkPhaseDoneTool::new(ctx.clone()),
+            list_conversations: ListConversationsTool::new(ctx.clone()),
+            read_conversation: ReadConversationTool::new(ctx.clone()),
             ctx,
         }
     }
+}
+
+fn inject_feature_id(mut schema: serde_json::Value) -> serde_json::Value {
+    let obj = schema.as_object_mut().expect("schema must be an object");
+    obj.entry("properties")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("properties must be an object")
+        .insert(
+            "feature_id".to_string(),
+            json!({ "type": "integer", "description": FEATURE_ID_DESCRIPTION }),
+        );
+    let required = obj
+        .entry("required")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+        .expect("required must be an array");
+    if !required.iter().any(|v| v.as_str() == Some("feature_id")) {
+        required.push(json!("feature_id"));
+    }
+    schema
+}
+
+fn make_tool(name: &'static str, description: &'static str, schema: serde_json::Value) -> Tool {
+    let obj: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_value(inject_feature_id(schema)).expect("schema must be an object");
+    Tool::new(name, description, obj)
+}
+
+fn tools() -> Vec<Tool> {
+    vec![
+        make_tool(
+            "mark_agent_done",
+            "Signal that the agent has completed its work",
+            json!({
+                "type": "object",
+                "properties": {
+                    "summary": { "type": "string", "description": "Optional summary of work done" }
+                }
+            }),
+        ),
+        make_tool(
+            "list_conversations",
+            "List all agent sessions/conversations for the feature",
+            json!({ "type": "object", "properties": {} }),
+        ),
+        make_tool(
+            "read_conversation",
+            "Read messages from an agent session",
+            json!({
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "integer", "description": "The session ID" },
+                    "offset": { "type": "integer", "description": "Offset for pagination" },
+                    "limit": { "type": "integer", "description": "Max messages to return" }
+                },
+                "required": ["session_id"]
+            }),
+        ),
+    ]
 }
 
 impl ServerHandler for SessionServer {
@@ -80,7 +114,7 @@ impl ServerHandler for SessionServer {
     ) -> impl Future<Output = Result<ListToolsResult, ErrorData>> + Send + '_ {
         std::future::ready(Ok(ListToolsResult {
             meta: None,
-            tools: tool_definitions_for_agent(AgentType::Session),
+            tools: tools(),
             next_cursor: None,
         }))
     }
@@ -88,7 +122,7 @@ impl ServerHandler for SessionServer {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<CallToolResult, ErrorData>> + Send + '_ {
         async move {
             let args = request
@@ -96,115 +130,22 @@ impl ServerHandler for SessionServer {
                 .as_ref()
                 .map(|m| serde_json::Value::Object(m.clone()))
                 .unwrap_or(serde_json::Value::Null);
-            let feature_id = match pinned_feature_id(&args, self.ctx.feature_id) {
-                Ok(id) => id,
-                Err(e) => return Ok(error_result(&e)),
-            };
-            let pool = &self.ctx.write_pool;
+            if let Err(e) = pinned_feature_id(&args, self.ctx.feature_id) {
+                return Ok(error_result(&e));
+            }
 
             Ok(dispatch_tool(async move {
                 match request.name.as_ref() {
-                    "read_plan" => {
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        self.read_plan.call(plan_id).await
-                    }
-                    "list_phases" => {
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        self.list_phases.call(plan_id).await
-                    }
-                    "read_phase" => {
-                        let phase_id = require_i64(&args, "phase_id")?;
-                        self.read_phase.call(phase_id).await
-                    }
-                    "read_prd" => self.read_prd.call().await,
-                    "create_phase" => {
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        let step_number = require_i64(&args, "step_number")?;
-                        let title = require_str(&args, "title")?.to_string();
-                        let prompt = require_str(&args, "prompt")?.to_string();
-                        self.create_phase
-                            .call(
-                                plan_id,
-                                step_number,
-                                title,
-                                prompt,
-                                args["complexity"].as_i64().map(|v| v as i8),
-                                args["commit_message"].as_str().map(|s| s.to_string()),
-                                args["phase_type"].as_str().map(|s| s.to_string()),
-                                args["depends_on"].as_array().map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                        .collect()
-                                }),
-                            )
-                            .await
-                    }
-                    "update_phase" => {
-                        let phase_id = require_i64(&args, "phase_id")?;
-                        self.update_phase
-                            .call(
-                                phase_id,
-                                args["title"].as_str().map(|s| s.to_string()),
-                                args["step_number"].as_i64(),
-                                args["complexity"].as_i64().map(|v| v as i8),
-                                args["commit_message"].as_str().map(|s| s.to_string()),
-                                args["prompt"].as_str().map(|s| s.to_string()),
-                                args["phase_type"].as_str().map(|s| s.to_string()),
-                                args["depends_on"].as_array().map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                        .collect()
-                                }),
-                            )
-                            .await
-                    }
-                    "remove_phase" => {
-                        let phase_id = require_i64(&args, "phase_id")?;
-                        self.remove_phase.call(phase_id).await
-                    }
-                    "update_plan" => {
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        self.update_plan
-                            .call(
-                                plan_id,
-                                args["title"].as_str().map(|s| s.to_string()),
-                                args["summary"].as_str().map(|s| s.to_string()),
-                                args["context"].as_str().map(|s| s.to_string()),
-                                args["clarifications"].as_str().map(|s| s.to_string()),
-                                args["completion_conditions"]
-                                    .as_str()
-                                    .map(|s| s.to_string()),
-                            )
-                            .await
-                    }
-                    "show_plan" => {
-                        super::approval_elicitation::maybe_elicit_tool_approval(
-                            &context,
-                            &mcp_server_name(AgentType::Session),
-                            "show_plan",
-                            &args,
-                        )
-                        .await?;
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        self.show_plan.call(plan_id).await
-                    }
-                    "finalize_plan" => {
-                        let plan_id = get_or_resolve_plan_id(&args, pool, feature_id).await?;
-                        self.finalize_plan.call(plan_id).await
-                    }
                     "mark_agent_done" => {
                         self.mark_agent_done
                             .call(args["summary"].as_str().map(|s| s.to_string()))
                             .await
                     }
-                    "mark_phase_done" => {
-                        let phase_id = require_i64(&args, "phase_id")?;
-                        self.mark_phase_done
-                            .call(
-                                phase_id,
-                                args["implementation_notes"].as_str().map(|s| s.to_string()),
-                                args["deviations"].as_str().map(|s| s.to_string()),
-                            )
+                    "list_conversations" => self.list_conversations.call().await,
+                    "read_conversation" => {
+                        let session_id = require_i64(&args, "session_id")?;
+                        self.read_conversation
+                            .call(session_id, args["offset"].as_i64(), args["limit"].as_i64())
                             .await
                     }
                     other => Err(format!("Unknown tool: {other}")),

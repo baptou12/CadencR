@@ -14,12 +14,7 @@ import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import type { SessionStatusEntry } from "@/stores/session-status-store";
 
 const STATUS_VALUES: LiveAgentStatus[] = ["idle", "agent", "question"];
-const PENDING_KIND_VALUES: PendingKind[] = [
-  "permission",
-  "question",
-  "plan-approval",
-  "prd-approval",
-];
+const PENDING_KIND_VALUES: PendingKind[] = ["permission", "question"];
 
 export function isStatus(val: unknown): val is LiveAgentStatus {
   return typeof val === "string" && (STATUS_VALUES as string[]).includes(val);
@@ -46,12 +41,11 @@ export function notifyTransition(
 ): void {
   const feature = lookupFeature(featureId);
   if (!feature) return;
-  const routeType = feature.type === "ws-session" ? ("session" as const) : ("workflow" as const);
   const opts = {
     featureTitle: feature.title,
     featureId,
     projectId: feature.project_id,
-    routeType,
+    routeType: "session" as const,
   };
   if (nextStatus === "question" && prevStatus !== "question") {
     notifyAgentNeedsInput(opts);

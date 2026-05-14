@@ -20,7 +20,6 @@ struct UnifiedAgentCandidate {
     feature_id: i64,
     feature_title: String,
     feature_type: String,
-    feature_status: String,
     feature_label: Option<String>,
     feature_created_at: String,
     session_id: i64,
@@ -34,7 +33,6 @@ pub struct UnifiedAgentsQuery {
     pub mode: UnifiedAgentsMode,
     pub fresh_minutes: i64,
     pub project_id: Option<i64>,
-    pub include_archived: bool,
     pub message_limit: i64,
 }
 
@@ -77,7 +75,6 @@ pub async fn list_unified_agents(
                 id: candidate.feature_id,
                 title: candidate.feature_title,
                 type_: candidate.feature_type,
-                status: candidate.feature_status,
                 label: candidate.feature_label,
                 created_at: candidate.feature_created_at,
             },
@@ -103,7 +100,6 @@ async fn load_candidates(
                f.id AS feature_id,
                f.title AS feature_title,
                f.type AS feature_type,
-               f.status AS feature_status,
                f.label AS feature_label,
                f.created_at AS feature_created_at,
                s.id AS session_id,
@@ -117,12 +113,9 @@ async fn load_candidates(
            INNER JOIN features f ON f.id = s.feature_id
            INNER JOIN projects p ON p.id = f.project_id
            LEFT JOIN agent_messages am ON am.session_id = s.id
-           WHERE 1 = 1"#,
+           WHERE f.status = 'active'"#,
     );
 
-    if !query.include_archived {
-        sql.push_str(" AND f.status != 'archived'");
-    }
     sql.push_str(" AND (s.is_pinned != 0 OR (1 = 1");
     if query.project_id.is_some() {
         sql.push_str(" AND p.id = ?");
@@ -135,8 +128,6 @@ async fn load_candidates(
                 OR s.status = 'running'
                 OR s.pending_questions IS NOT NULL
                 OR s.pending_permission IS NOT NULL
-                OR s.pending_plan_approval IS NOT NULL
-                OR s.pending_prd_approval IS NOT NULL
                 OR datetime(COALESCE(MAX(am.created_at), s.started_at, f.created_at)) >= datetime('now', ?)"#,
         );
     }
@@ -197,7 +188,7 @@ mod tests {
                 id INTEGER PRIMARY KEY,
                 project_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
-                status TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
                 label TEXT,
                 created_at TEXT NOT NULL,
                 type TEXT NOT NULL
@@ -216,15 +207,11 @@ mod tests {
                 status TEXT NOT NULL,
                 started_at TEXT,
                 ended_at TEXT,
-                run_id INTEGER,
-                phase_id INTEGER,
                 subprocess_id TEXT,
                 model TEXT,
                 pending_questions TEXT,
                 has_file_changes INTEGER DEFAULT 0,
                 permission_mode TEXT,
-                pending_plan_approval TEXT,
-                pending_prd_approval TEXT,
                 pending_permission TEXT,
                 input_tokens INTEGER,
                 output_tokens INTEGER,
@@ -264,11 +251,11 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'old', 'draft', datetime('now', '-1 day'), 'ws-feature'), (2, 1, 'new', 'draft', datetime('now', '-12 hours'), 'ws-feature')")
+        sqlx::query("INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'old', 'active', datetime('now', '-1 day'), 'ws-session'), (2, 1, 'new', 'active', datetime('now', '-12 hours'), 'ws-session')")
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (10, 1, 'plan', 'running', datetime('now', '-1 day')), (20, 2, 'plan', 'running', datetime('now', '-12 hours'))")
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (10, 1, 'session', 'running', datetime('now', '-1 day')), (20, 2, 'session', 'running', datetime('now', '-12 hours'))")
             .execute(&pool)
             .await
             .unwrap();
@@ -285,7 +272,6 @@ mod tests {
                 mode: UnifiedAgentsMode::Recent,
                 fresh_minutes: 5,
                 project_id: None,
-                include_archived: false,
                 message_limit: 10,
             },
         )
@@ -303,20 +289,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn all_mode_excludes_archived_by_default() {
+    async fn all_mode_excludes_archived_features() {
         let pool = setup_pool().await;
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/p')")
             .execute(&pool)
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'a', 'archived', datetime('now'), 'ws-session'), (2, 1, 'b', 'draft', datetime('now'), 'ws-session')",
+            "INSERT INTO features (id, project_id, title, status, created_at, type) VALUES \
+             (1, 1, 'visible', 'active', datetime('now'), 'ws-session'), \
+             (2, 1, 'hidden', 'archived', datetime('now'), 'ws-session')",
         )
         .execute(&pool)
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, is_pinned) VALUES (1, 1, 'session', 'completed', 1), (2, 2, 'session', 'completed', 0)",
+            "INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES \
+             (1, 1, 'session', 'completed', datetime('now')), \
+             (2, 2, 'session', 'completed', datetime('now'))",
         )
         .execute(&pool)
         .await
@@ -328,7 +318,6 @@ mod tests {
                 mode: UnifiedAgentsMode::All,
                 fresh_minutes: 5,
                 project_id: None,
-                include_archived: false,
                 message_limit: 10,
             },
         )
@@ -336,7 +325,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.agents.len(), 1);
-        assert_eq!(result.agents[0].feature.id, 2);
+        assert_eq!(result.agents[0].feature.id, 1);
     }
 
     #[tokio::test]
@@ -356,7 +345,7 @@ mod tests {
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'a', 'draft', datetime('now', '-1 day'), 'ws-session'), (2, 2, 'b', 'draft', datetime('now', '-1 day'), 'ws-session')",
+            "INSERT INTO features (id, project_id, title, status, created_at, type) VALUES (1, 1, 'a', 'active', datetime('now', '-1 day'), 'ws-session'), (2, 2, 'b', 'active', datetime('now', '-1 day'), 'ws-session')",
         )
         .execute(&pool)
         .await
@@ -374,7 +363,6 @@ mod tests {
                 mode: UnifiedAgentsMode::Recent,
                 fresh_minutes: 5,
                 project_id: Some(1),
-                include_archived: false,
                 message_limit: 10,
             },
         )

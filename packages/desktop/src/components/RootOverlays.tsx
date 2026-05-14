@@ -55,10 +55,10 @@ export function RootOverlays({
         onOpenChange={(open) => {
           if (!open) setConfirmAction(null);
         }}
-        title={confirmAction === "delete" ? "Delete feature?" : "Archive feature?"}
+        title={confirmAction === "archive" ? "Archive session?" : "Delete archived session?"}
         description={confirmAction === "delete" ? "This cannot be undone." : undefined}
-        confirmText={confirmAction === "delete" ? "Delete" : "Archive"}
-        variant={confirmAction === "delete" ? "destructive" : "default"}
+        confirmText={confirmAction === "archive" ? "Archive" : "Delete"}
+        variant={confirmAction === "archive" ? "default" : "destructive"}
         onConfirm={onConfirmFeatureAction}
       />
       <ConfirmDialog

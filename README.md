@@ -2,7 +2,7 @@
 
 **A desktop IDE for AI coding agents — a unified workspace for Claude Code, OpenCode, and more.**
 
-Cadencr replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, planned phases, visual diffs, and orchestration across multiple agents running in parallel.
+Cadencr replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, visual diffs, and parallel agent sessions in their own worktrees.
 
 - **Website:** [rle-mino.github.io/cadencr](https://rle-mino.github.io/cadencr/)
 - **License:** Apache-2.0
@@ -13,7 +13,7 @@ Cadencr replaces the terminal-based workflow of local coding agents with a struc
 
 - **Readable diffs** — Visual diff viewer with inline commenting, not raw terminal output.
 - **Parallel agents** — Run multiple Claude Code or OpenCode sessions on the same project without stepping on each other.
-- **Structured features** — Plan → Execute → Review lifecycle for every task, backed by dedicated sub-agents.
+- **Structured features** — Each feature gets its own worktree and dedicated agent session.
 - **Local-first** — Everything runs on your machine. No account, no hosted state.
 
 ---

@@ -18,11 +18,13 @@ pub struct AppState {
     pub read_pool: SqlitePool,
     /// Read-write pool (max 1 connection, serializes writes)
     pub write_pool: SqlitePool,
-    /// Maximum number of parallel workflow agents. Defaults to 3.
+    /// Maximum number of parallel agents. Defaults to 3.
     /// Overridden by CADENCR_MAX_PARALLEL env var.
+    #[allow(dead_code)]
     pub max_parallel_agents: usize,
     /// Agent timeout in minutes. Defaults to 30.
     /// Overridden by CADENCR_AGENT_TIMEOUT_MINUTES env var.
+    #[allow(dead_code)]
     pub agent_timeout_minutes: u64,
     /// Single source of truth for live agent status changes (per-session,
     /// 3-value enum). Every status mutation goes through this broadcaster;

@@ -22,8 +22,7 @@ import { usePushOutputStore } from "@/stores/usePushOutputStore";
  *  `useGitStatusStore` (the source of truth for live status), and re-fetching
  *  the HTTP one-shot would race the WS push and cause the branch chip to
  *  flicker — the HTTP response computed at T can land after a WS push
- *  computed at T+Δ. The HTTP query is only used for first-paint hydration
- *  in `FeatureWorkflowView`. */
+ *  computed at T+Δ. The HTTP query is only used for first-paint hydration. */
 const GIT_INVALIDATION_PREFIXES = [
   "/api/git/changed-files",
   "/api/git/commit-log",

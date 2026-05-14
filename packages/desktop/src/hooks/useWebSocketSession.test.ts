@@ -5,9 +5,6 @@ import { FALLBACK_MODEL_ID } from "../shared/models";
 vi.mock("@/api/generated", () => ({
   useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
-  getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],
-  getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],
-  getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
 }));
 

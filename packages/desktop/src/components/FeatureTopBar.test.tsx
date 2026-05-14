@@ -35,8 +35,7 @@ const mockAutoName = vi.fn();
 let mockFeatureData: Record<string, unknown> = {
   id: 1,
   title: "My Test Feature",
-  status: "in-progress",
-  type: "ws-feature",
+  type: "ws-session",
   project_id: 1,
   created_at: "2024-01-01",
 };
@@ -76,11 +75,6 @@ vi.mock("@/hooks/useFeatureTitle", () => ({
   useFeatureTitle: vi.fn(() => ({ title: null, isAutoNaming: false })),
 }));
 
-const mockSetAutonomyLevel = vi.fn();
-vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn(() => mockSetAutonomyLevel),
-}));
-
 vi.mock("@/hooks/useProjectColor", () => ({
   ProjectColorDot: ({ projectId }: { projectId: number }) => {
     const React = require("react");
@@ -114,15 +108,13 @@ vi.mock("@/components/SidebarContext", () => ({
 describe("FeatureTopBar", () => {
   beforeEach(() => {
     mockSetFeatureSetting.mockClear();
-    mockSetAutonomyLevel.mockClear();
     mockSetCollapsed.mockClear();
     mockAutoName.mockClear();
     mockSidebarCollapsed = false;
     mockFeatureData = {
       id: 1,
       title: "My Test Feature",
-      status: "in-progress",
-      type: "ws-feature",
+      type: "ws-session",
       project_id: 1,
       created_at: "2024-01-01",
     };
@@ -161,13 +153,10 @@ describe("FeatureTopBar", () => {
     expect(await screen.findByText("Auto-rename")).toBeInTheDocument();
   });
 
-  it("renders feature status badge", () => {
+  it("never renders a feature status badge", () => {
+    // ws-feature is gone, so the legacy status badge should never appear,
+    // even in the non-session "feature" mode.
     render(<FeatureTopBar featureId={1} projectId={1} />);
-    expect(screen.getByText("in-progress")).toBeInTheDocument();
-  });
-
-  it("renders in session mode without status badge", () => {
-    render(<FeatureTopBar featureId={1} projectId={1} mode="session" />);
     expect(screen.queryByText("in-progress")).not.toBeInTheDocument();
   });
 
@@ -206,7 +195,7 @@ describe("FeatureTopBar", () => {
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
 
-  it("renders ModelSelector for ws-feature", async () => {
+  it("renders ModelSelector for feature settings", async () => {
     const { default: userEvent } = await import("@testing-library/user-event");
     const user = userEvent.setup();
     render(<FeatureTopBar featureId={1} projectId={1} />);

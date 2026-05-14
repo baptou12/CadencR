@@ -22,30 +22,31 @@ Default to the **dev** path unless the user is clearly debugging the packaged ap
 The dev DB currently contains these tables (run `.tables` to confirm — schema drifts as migrations land):
 
 ```
-agent_messages              feature_layouts
-agent_sessions              feature_settings
-claude_code_custom_models   features
-claude_code_profiles        phases
-custom_action_runs          plans
-custom_action_schedules     project_settings
-custom_action_variables     projects
-custom_actions              prompt_history
-diff_comments               session_runtime_ids
-diff_viewed_files           settings
-                            workflow_dependencies
-                            workflow_queue
+agent_messages              feature_settings
+agent_sessions              features
+claude_code_custom_models   project_settings
+claude_code_profiles        projects
+custom_action_runs          prompt_history
+custom_action_schedules     session_runtime_ids
+custom_action_variables     settings
+custom_actions
+diff_comments
+diff_viewed_files
+feature_layouts
 ```
 
 (`_sqlx_migrations` and `migrations` are migration bookkeeping — leave them alone.)
 
 For exact column lists, run `.schema <table>` instead of trusting documentation — the column set evolves. Common entry points:
 
-- `projects` → `features` → `plans` → `phases`
-- `features` → `agent_sessions` → `agent_messages`
+- `projects` → `features` → `agent_sessions` → `agent_messages`
 - `features` → `feature_layouts`, `feature_settings`
 - `custom_actions` → `custom_action_runs`, `custom_action_schedules`, `custom_action_variables`
 - `claude_code_profiles` → `claude_code_custom_models`
-- `workflow_queue`, `workflow_dependencies` (orchestration state)
+
+`features.status` is the remaining archive marker. Valid persisted values are
+`active` and `archived`; archived features are hidden from the normal feature
+lists but may still exist for migration/back-compat inspection.
 
 ## Usage
 
@@ -54,8 +55,7 @@ If `$ARGUMENTS` is a raw SQL query, run it directly. Otherwise interpret the use
 When mutating, honor foreign-key relations:
 
 - Deleting an `agent_sessions` row → also delete its `agent_messages` (and `session_runtime_ids` referencing it, if any).
-- Resetting a `features` row → clean related `agent_sessions` (+ their messages), `plans` (+ `phases`), `feature_layouts`, `workflow_queue` entries as appropriate.
-- Deleting a `plan` → delete its `phases` first.
+- Resetting a `features` row → clean related `agent_sessions` (+ their messages), `feature_settings`, `diff_comments`, `diff_viewed_files`, `custom_action_*` entries as appropriate.
 
 If you're not sure what depends on a row, inspect schemas with `.schema <table>` and search for `REFERENCES <target>` before deleting.
 

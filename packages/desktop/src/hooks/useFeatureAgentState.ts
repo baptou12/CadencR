@@ -26,7 +26,6 @@ import { normalizeContextWindow, type AgentStatus, type TodoItem } from "@/types
 import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
-import { injectPlanIntoBlocks } from "@/stores/ws-message-processing";
 import { parsePermissionMode, type PermissionMode } from "@/types/permission-mode";
 
 /** Number of messages to fetch per session on initial load */
@@ -55,15 +54,8 @@ export interface FeatureSession {
   resumable: boolean;
   runtimeProvider?: string | null;
   runtimeSessionId: string | null;
-  runId: number | null;
-  phaseId: number | null;
-  phaseTitle: string | null;
   todos: TodoItem[] | null;
   permissionMode: PermissionMode;
-  pendingPlanApproval: {
-    allowedPrompts?: Array<{ tool: string; prompt: string }>;
-    plan?: string;
-  } | null;
   pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
@@ -219,22 +211,14 @@ export function useFeatureAgentState(featureId: number) {
         status,
         subprocessId: s.subprocessId ?? null,
         model: s.model ?? null,
-        blocks: injectPlanIntoBlocks(
-          acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
-          (s.pendingPlanApproval ?? null) as { plan?: string } | null,
-        ),
+        blocks: acc?.blocks ?? serverBlocksToAgentBlocks(s.blocks),
         pendingQuestions: parseQuestions(s.pendingQuestions),
         hasFileChanges: s.hasFileChanges,
         resumable: s.resumable,
         runtimeProvider: getOptionalSessionString(s, "runtimeProvider"),
         runtimeSessionId: s.runtimeSessionId ?? null,
-        runId: s.runId ?? null,
-        phaseId: s.phaseId ?? null,
-        phaseTitle: s.phaseTitle ?? null,
         todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
         permissionMode: parsePermissionMode(s.permissionMode) ?? "acceptEdits",
-        pendingPlanApproval: (s.pendingPlanApproval ??
-          null) as FeatureSession["pendingPlanApproval"],
         pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
         inputTokens: s.inputTokens ?? 0,
         outputTokens: s.outputTokens ?? 0,

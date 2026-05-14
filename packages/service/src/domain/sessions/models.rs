@@ -12,15 +12,11 @@ pub struct AgentSessionRow {
     pub status: String,
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
-    pub run_id: Option<i64>,
-    pub phase_id: Option<i64>,
     pub subprocess_id: Option<String>,
     pub model: Option<String>,
     pub pending_questions: Option<String>,
     pub has_file_changes: i64,
     pub permission_mode: Option<String>,
-    pub pending_plan_approval: Option<String>,
-    pub pending_prd_approval: Option<String>,
     pub pending_permission: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
@@ -102,19 +98,9 @@ pub struct SessionState {
     pub runtime_provider: Option<String>,
     #[serde(rename = "runtimeSessionId")]
     pub runtime_session_id: Option<String>,
-    #[serde(rename = "runId")]
-    pub run_id: Option<i64>,
-    #[serde(rename = "phaseId")]
-    pub phase_id: Option<i64>,
-    #[serde(rename = "phaseTitle")]
-    pub phase_title: Option<String>,
     pub todos: Option<Vec<serde_json::Value>>,
     #[serde(rename = "permissionMode")]
     pub permission_mode: String,
-    #[serde(rename = "pendingPlanApproval")]
-    pub pending_plan_approval: Option<serde_json::Value>,
-    #[serde(rename = "pendingPrdApproval")]
-    pub pending_prd_approval: Option<serde_json::Value>,
     #[serde(rename = "pendingPermission")]
     pub pending_permission: Option<serde_json::Value>,
     #[serde(rename = "inputTokens")]
@@ -164,7 +150,6 @@ pub struct UnifiedAgentFeature {
     pub title: String,
     #[serde(rename = "type")]
     pub type_: String,
-    pub status: String,
     pub label: Option<String>,
     pub created_at: String,
 }
@@ -211,14 +196,8 @@ pub struct MessageFullContentResponse {
     pub content: String,
 }
 
-#[derive(Debug, sqlx::FromRow)]
-pub struct PhaseTitle {
-    pub id: i64,
-    pub title: String,
-}
-
 /// Raw row used by `get_session_status_snapshot`. Boolean projections of
-/// the four `pending_*` columns keep the SQL → derive pipeline trivial.
+/// the active `pending_*` columns keep the SQL → derive pipeline trivial.
 #[derive(Debug, sqlx::FromRow)]
 pub struct SessionStatusSnapshotRow {
     pub session_id: i64,
@@ -226,8 +205,6 @@ pub struct SessionStatusSnapshotRow {
     pub status: String,
     pub pending_permission: bool,
     pub pending_question: bool,
-    pub pending_plan_approval: bool,
-    pub pending_prd_approval: bool,
 }
 
 /// Public-facing per-session status entry serialized in

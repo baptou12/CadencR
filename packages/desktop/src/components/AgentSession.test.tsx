@@ -165,7 +165,13 @@ describe("AgentSession", () => {
 
   it("renders full-screen mode (collapsible=false)", () => {
     render(
-      <AgentSession agentType="plan" blocks={[]} status="idle" onSend={onSend} onStop={onStop} />,
+      <AgentSession
+        agentType="session"
+        blocks={[]}
+        status="idle"
+        onSend={onSend}
+        onStop={onStop}
+      />,
     );
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
@@ -310,7 +316,7 @@ describe("AgentSession", () => {
   it("renders blocks content", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[makeBlock("1", "Agent output text")]}
         status="idle"
         onSend={onSend}
@@ -323,7 +329,7 @@ describe("AgentSession", () => {
   it("renders collapsible mode with header", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[]}
         status="idle"
         onSend={onSend}
@@ -331,13 +337,13 @@ describe("AgentSession", () => {
         collapsible
       />,
     );
-    expect(screen.getByText("Plan")).toBeInTheDocument();
+    expect(screen.getByText("Session")).toBeInTheDocument();
   });
 
   it("shows status badge - working", () => {
     render(
       <AgentSession
-        agentType="execute"
+        agentType="session"
         blocks={[]}
         status="agent"
         onSend={onSend}
@@ -354,7 +360,7 @@ describe("AgentSession", () => {
     // out-of-band via session.error envelopes / toasts.
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[makeBlock("1", "done")]}
         status="idle"
         onSend={onSend}
@@ -368,7 +374,7 @@ describe("AgentSession", () => {
   it("shows awaiting input badge when status is question", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[]}
         status="question"
         onSend={onSend}
@@ -382,23 +388,23 @@ describe("AgentSession", () => {
   it("uses custom label when provided", () => {
     render(
       <AgentSession
-        agentType="execute"
+        agentType="session"
         blocks={[]}
         status="idle"
         onSend={onSend}
         onStop={onStop}
         collapsible
-        label="Execute 2"
+        label="Session 2"
       />,
     );
-    expect(screen.getByText("Execute 2")).toBeInTheDocument();
+    expect(screen.getByText("Session 2")).toBeInTheDocument();
   });
 
   it("shows Resume button when resumable", () => {
     const onResume = vi.fn();
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[]}
         status="idle"
         onSend={onSend}
@@ -416,7 +422,7 @@ describe("AgentSession", () => {
     const onResume = vi.fn();
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[]}
         status="idle"
         onSend={onSend}
@@ -433,7 +439,7 @@ describe("AgentSession", () => {
   it("shows diff bar when hasFileChanges and onViewDiff provided", () => {
     render(
       <AgentSession
-        agentType="execute"
+        agentType="session"
         blocks={[]}
         status="idle"
         onSend={onSend}
@@ -448,7 +454,7 @@ describe("AgentSession", () => {
   it("shows todo list when todos provided", () => {
     render(
       <AgentSession
-        agentType="execute"
+        agentType="session"
         blocks={[]}
         status="agent"
         onSend={onSend}
@@ -529,10 +535,10 @@ describe("AgentSession", () => {
     expect(modelIcon).toHaveAttribute("src", expect.stringContaining("opencode"));
   });
 
-  it("shows prompt bar for completed plan agent when pendingPlanApproval is set", () => {
+  it("shows prompt bar for completed session agent when pendingPlanApproval is set", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[makeBlock("1", "Plan output")]}
         status="idle"
         onSend={onSend}
@@ -546,10 +552,10 @@ describe("AgentSession", () => {
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
   });
 
-  it("shows prompt bar for completed prd agent when pendingPlanApproval is set", () => {
+  it("shows prompt bar for completed session agent when pendingPlanApproval is set", () => {
     render(
       <AgentSession
-        agentType="prd"
+        agentType="session"
         blocks={[makeBlock("1", "PRD output")]}
         status="idle"
         onSend={onSend}
@@ -563,10 +569,10 @@ describe("AgentSession", () => {
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
   });
 
-  it("hides prompt bar for completed plan agent when NO pendingPlanApproval", () => {
+  it("hides prompt bar for completed session agent when NO pendingPlanApproval", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[makeBlock("1", "Plan output")]}
         status="idle"
         onSend={onSend}
@@ -580,7 +586,7 @@ describe("AgentSession", () => {
   it("shows prompt bar when agent is paused with pendingPlanApproval", () => {
     render(
       <AgentSession
-        agentType="plan"
+        agentType="session"
         blocks={[makeBlock("1", "Plan output")]}
         status="question"
         onSend={onSend}
@@ -597,7 +603,7 @@ describe("AgentSession", () => {
 
 describe("shallowEqualSkipFunctions", () => {
   const base: Partial<AgentSessionProps> = {
-    agentType: "execute",
+    agentType: "session",
     status: "agent",
     blocks: [],
     collapsible: true,

@@ -77,7 +77,7 @@ const baseOpts = {
   body: "Agent finished",
   featureId: 1,
   projectId: 2,
-  routeType: "workflow" as const,
+  routeType: "session" as const,
   mode: "native" as const,
 };
 
@@ -111,7 +111,7 @@ describe("sendNotification — mode: native, packaged", () => {
     expect(win.webContents.send).toHaveBeenCalledWith("notification-clicked", {
       feature_id: 1,
       project_id: 2,
-      route_type: "workflow",
+      route_type: "session",
     });
   });
 
@@ -172,7 +172,7 @@ describe("sendNotification — mode: in_app, packaged", () => {
     expect(win.webContents.send).toHaveBeenCalledWith("notification-fallback", {
       title: "Done",
       body: "Agent finished",
-      click: { feature_id: 1, project_id: 2, route_type: "workflow" },
+      click: { feature_id: 1, project_id: 2, route_type: "session" },
     });
   });
 });
@@ -188,7 +188,7 @@ describe("sendNotification — dev override", () => {
     expect(win.webContents.send).toHaveBeenCalledWith("notification-fallback", {
       title: "Done",
       body: "Agent finished",
-      click: { feature_id: 1, project_id: 2, route_type: "workflow" },
+      click: { feature_id: 1, project_id: 2, route_type: "session" },
     });
   });
 });

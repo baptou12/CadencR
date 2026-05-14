@@ -62,7 +62,7 @@ describe("SettingsPage route", () => {
     // sidebar nav buttons (the visible ones, not the section headings)
     expect(screen.getAllByRole("button", { name: /Appearance/ }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /CLI Providers/ }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole("button", { name: /Feature Workflow/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Session Defaults/ })).not.toBeInTheDocument();
   });
 
   it("renders runtime & models section with the model selector", () => {
@@ -71,9 +71,10 @@ describe("SettingsPage route", () => {
     expect(screen.getByTestId("model-selector")).toBeInTheDocument();
   });
 
-  it("renders the autonomy radio group inside Feature Workflow", () => {
+  it("does not render removed session autonomy or parallel defaults", () => {
     render(<SettingsPage />);
-    expect(screen.getByRole("radiogroup", { name: /agent autonomy/i })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /agent autonomy/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Parallel agent execution/i)).not.toBeInTheDocument();
   });
 
   it("renders git merge-strategy radio group", () => {

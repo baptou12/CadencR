@@ -5,8 +5,8 @@ import { IconTile, type IconTileTint } from "./IconTile";
 
 /**
  * Convenience wrapper around `SettingsRow` for the very common
- * "icon-tile + label + description + switch" pattern. Used by the Editor
- * card, Feature Workflow's Parallel Execution row, etc.
+ * "icon-tile + label + description + switch" pattern. Used by settings cards
+ * such as editor preferences.
  */
 export function SettingsSwitchRow({
   id,

@@ -9,18 +9,10 @@ export const DEFAULT_PROVIDER = DEFAULT_PROVIDER_ID;
  * available models comes from `useAgentCatalog()` → `/api/agent-catalog`.
  */
 export const FALLBACK_MODEL_ID = "opus";
-export const AGENT_TYPES = [
-  "plan",
-  "prd",
-  "execute",
-  "risk",
-  "review",
-  "review-fixer",
-  "session",
-  "qa",
-  "retro",
-  "auto_name",
-] as const;
+// `session` drives the ws-session agent. Legacy ws-feature agent settings were
+// removed with the workflow stack. `auto_name` is workspace-only and powers the
+// auto-rename feature.
+export const AGENT_TYPES = ["session", "auto_name"] as const;
 export type AgentTypeSetting = (typeof AGENT_TYPES)[number];
 
 export interface CatalogProviderLike {

@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { GitBranch, GitFork, TerminalSquare } from "lucide-react";
 import {
   useGetProjectSettings,
   useSetProjectSetting,
   getGetProjectSettingsQueryKey,
 } from "../api/generated";
+import { GitBranch, TerminalSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -16,10 +16,7 @@ import { ShellTerminalFrame } from "./ShellTerminalFrame";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSection } from "@/components/settings/SettingsSection";
-import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
 import { IconTile } from "@/components/settings/IconTile";
-import { AutonomyRadio } from "@/components/settings/AutonomyRadio";
-import { parseAgentAutonomy } from "@/lib/agent-autonomy";
 import { DEFAULT_PROJECT_COLOR } from "@/lib/project-colors";
 
 export function ProjectSettingsDialog({
@@ -51,17 +48,11 @@ export function ProjectSettingsDialog({
   });
 
   const branchPrefix = settings?.branch_prefix ?? "";
-  const agentAutonomy = parseAgentAutonomy(settings?.agent_autonomy);
-  const parallelExecution = (settings?.parallel_execution ?? "true") === "true";
   const [colorInput, setColorInput] = useState(settings?.color ?? "");
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
-  const [qaPrompt, setQaPrompt] = useState(settings?.qa_prompt ?? "");
   useEffect(() => {
     if (settings?.color != null) setColorInput(settings.color);
   }, [settings?.color]);
-  useEffect(() => {
-    if (settings?.qa_prompt != null) setQaPrompt(settings.qa_prompt);
-  }, [settings?.qa_prompt]);
   useEffect(() => {
     if (settings?.setup_worktree != null) setSetupWorktree(settings.setup_worktree);
   }, [settings?.setup_worktree]);
@@ -183,75 +174,6 @@ export function ProjectSettingsDialog({
                     className="min-h-24 resize-y rounded-none border-0 bg-[var(--block-bash-body-bg)] font-mono text-xs leading-relaxed text-[var(--block-bash-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                 </ShellTerminalFrame>
-              </div>
-
-              <div className="border-t border-border" />
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Agent autonomy</div>
-                <p className="text-xs text-muted-foreground">
-                  How much automation the execute agent uses while building features in this
-                  project.
-                </p>
-                <AutonomyRadio
-                  value={agentAutonomy}
-                  onChange={(value) =>
-                    setSettingMutation.mutate({
-                      id: projectId,
-                      data: { key: "agent_autonomy", value },
-                    })
-                  }
-                />
-              </div>
-
-              <div className="border-t border-border" />
-
-              <SettingsSwitchRow
-                icon={<GitFork className="size-4" />}
-                iconTint="purple"
-                label="Parallel agent execution"
-                description="Run multiple agents in parallel within each execution step."
-                checked={parallelExecution}
-                onCheckedChange={(checked) =>
-                  setSettingMutation.mutate({
-                    id: projectId,
-                    data: {
-                      key: "parallel_execution",
-                      value: checked ? "true" : "false",
-                    },
-                  })
-                }
-              />
-            </SettingsCard>
-          </SettingsSection>
-
-          <SettingsSection
-            size="sm"
-            title="QA & Testing"
-            subtitle="Verification commands"
-            description="Commands and steps the QA agent will follow to verify implementations."
-          >
-            <SettingsCard padded>
-              <div className="space-y-2">
-                <label htmlFor="qa-prompt" className="text-sm font-medium">
-                  QA testing procedure
-                </label>
-                <Textarea
-                  id="qa-prompt"
-                  placeholder={
-                    "e.g. pnpm test\npnpm run lint\nVerify the app starts with pnpm start"
-                  }
-                  rows={4}
-                  value={qaPrompt}
-                  onChange={(e) => setQaPrompt(e.target.value)}
-                  onBlur={() =>
-                    setSettingMutation.mutate({
-                      id: projectId,
-                      data: { key: "qa_prompt", value: qaPrompt },
-                    })
-                  }
-                  className="text-sm"
-                />
               </div>
             </SettingsCard>
           </SettingsSection>

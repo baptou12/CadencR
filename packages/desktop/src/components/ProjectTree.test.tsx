@@ -36,7 +36,16 @@ vi.mock("../api/generated", () => ({
   })),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: vi.fn(() => ({
-    data: [{ id: 10, title: "Feature One", type: "ws-feature", status: "draft", project_id: 1 }],
+    data: [
+      {
+        id: 10,
+        title: "Feature One",
+        status: "active",
+        type: "ws-session",
+        project_id: 1,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ],
   })),
   useCreateFeature: vi.fn((opts?: { onSuccess?: (r: unknown) => void }) => ({
     mutate: (data: unknown) => {
@@ -44,16 +53,12 @@ vi.mock("../api/generated", () => ({
       opts?.onSuccess?.({ id: 99 });
     },
   })),
-  useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
+  useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureLabel: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
-  getGetFeaturePrdQueryKey: (id: number) => ["features", "prd", id],
-  getGetFeaturePlanQueryKey: (id: number) => ["features", "plan", id],
-  getGetFeaturePlanProgressQueryKey: (id: number) => ["features", "planProgress", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
-  useIsFeatureEmpty: vi.fn(() => ({ data: { empty: false } })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
@@ -63,13 +68,6 @@ vi.mock("../api/generated", () => ({
 vi.mock("@/stores/ws-session-store", () => ({
   useWsSessionStore: vi.fn((selector: (s: { sessions: Record<string, unknown> }) => unknown) =>
     selector({ sessions: {} }),
-  ),
-}));
-
-vi.mock("@/hooks/useWorkflowWebSocket", () => ({
-  useWorkflowStore: vi.fn(
-    (selector: (s: { featureId: null; featureTitle: null; isAutoNaming: false }) => unknown) =>
-      selector({ featureId: null, featureTitle: null, isAutoNaming: false }),
   ),
 }));
 
@@ -157,8 +155,8 @@ describe("ProjectTree", () => {
     expect(onSelectFeature).toHaveBeenCalledWith(10);
     expect(mockNavigate).toHaveBeenCalledWith(
       expect.objectContaining({
-        to: "/projects/$projectId/features/$featureId",
-        params: { projectId: "1", featureId: "10" },
+        to: "/ws-session/$sessionId",
+        params: { sessionId: "ws-feature-10" },
       }),
     );
   });

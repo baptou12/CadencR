@@ -25,9 +25,8 @@ interface AgentStreamProps {
   /**
    * Pre-filtered subset of `blocks` excluding subagent children. When
    * provided, AgentStream uses it directly instead of recomputing the filter
-   * on every render — the WS store maintains it incrementally. When omitted
-   * (e.g. workflow agents that don't go through ws-session-store yet), the
-   * stream falls back to filtering `blocks` itself.
+   * on every render — the WS store maintains it incrementally. When omitted,
+   * the stream falls back to filtering `blocks` itself.
    */
   rootBlocks?: AgentBlockData[];
   /**

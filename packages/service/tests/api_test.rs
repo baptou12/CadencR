@@ -1,7 +1,5 @@
 mod common;
 
-use sqlx::sqlite::SqlitePoolOptions;
-
 use common::start_test_server;
 
 #[tokio::test]
@@ -236,90 +234,6 @@ async fn test_file_blob_shas() {
         assert!(item["sha"].is_string());
         assert!(item["file_path"].is_string());
     }
-}
-
-#[tokio::test]
-async fn test_snapshot_includes_completed_plan_agent() {
-    let server = start_test_server().await;
-
-    server
-        .client
-        .post(format!("{}/api/features/1/snapshot", server.base_url))
-        .send()
-        .await
-        .ok();
-
-    let tmp_dir_path = format!("{}", server.tmp_dir.path().display());
-    let db_path = format!("{}/test.db", tmp_dir_path);
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(&format!("sqlite:{db_path}"))
-        .await
-        .unwrap();
-
-    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (1, 1, 'plan', 'completed', '2024-01-01')")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (2, 1, 'plan', 'running', '2024-01-02')")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (3, 1, 'execute', 'completed', '2024-01-03')")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO workflow_queue (id, feature_id, item_type, status, order_index, agent_session_id) VALUES (1, 1, 'execute', 'completed', 0, 3)")
-        .execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO agent_sessions (id, feature_id, agent_type, status, started_at) VALUES (4, 1, 'unknown_type', 'completed', '2024-01-04')")
-        .execute(&pool).await.unwrap();
-
-    pool.close().await;
-
-    let resp = server
-        .client
-        .get(format!("{}/api/features/1/snapshot", server.base_url))
-        .send()
-        .await
-        .unwrap();
-    let status = resp.status();
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(status, 200, "snapshot failed: {:?}", body);
-
-    let sessions = body["agent_sessions"].as_array().unwrap();
-    assert_eq!(
-        sessions.len(),
-        3,
-        "expected 3 agent sessions, got: {:?}",
-        sessions
-    );
-
-    let agent_types: Vec<&str> = sessions
-        .iter()
-        .map(|s| s["agent_type"].as_str().unwrap())
-        .collect();
-    assert!(agent_types.contains(&"plan"));
-
-    let statuses: Vec<&str> = sessions
-        .iter()
-        .filter(|s| s["agent_type"].as_str().unwrap() == "plan")
-        .map(|s| s["status"].as_str().unwrap())
-        .collect();
-    assert!(statuses.contains(&"completed"));
-    assert!(statuses.contains(&"running"));
-}
-
-#[tokio::test]
-async fn test_snapshot_does_not_include_phase_states() {
-    let server = start_test_server().await;
-
-    let resp = server
-        .client
-        .get(format!("{}/api/features/1/snapshot", server.base_url))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 200);
-    let body: serde_json::Value = resp.json().await.unwrap();
-
-    assert!(
-        body.get("phase_states").is_none(),
-        "phase_states field should not be present"
-    );
 }
 
 #[tokio::test]

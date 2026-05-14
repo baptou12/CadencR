@@ -9,15 +9,7 @@ export const INHERIT_VALUE = "__inherit__";
 export const WORKSPACE_ONLY_AGENT_TYPES: readonly AgentTypeSetting[] = ["auto_name"] as const;
 
 export const MODEL_SELECTOR_AGENT_LABELS: Record<AgentTypeSetting, string> = {
-  plan: "Plan",
-  prd: "PRD",
-  execute: "Execute",
-  risk: "Risk",
-  review: "Review",
-  "review-fixer": "Review Fixer",
   session: "Session",
-  qa: "QA",
-  retro: "Retro",
   auto_name: "Auto-naming",
 };
 

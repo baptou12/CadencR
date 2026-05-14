@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
-import { useWorkflowStore } from "@/hooks/useWorkflowWebSocket";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
@@ -27,34 +26,20 @@ function lookupFeatureTitle(featureId: number | null, queryClient: QueryClient):
 
 function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
   const agents: RunningAgentInfo[] = [];
-
-  // Check ws-session / ws-feature agents
   const sessions = useWsSessionStore.getState().sessions;
   for (const [sessionId, session] of Object.entries(sessions)) {
     if (!isTurnActive(session.lifecycle)) continue;
     const title =
       session.featureTitle ?? lookupFeatureTitle(session.featureId, queryClient) ?? "Untitled";
-    const isFeature = sessionId.startsWith("ws-feature-");
+    // `ws-feature-` is a legacy WS session ID prefix (the ws-feature feature
+    // type itself was removed). Treat any session with that prefix as a
+    // pre-rename ws-session entry for label purposes.
+    const isLegacyPrefixed = sessionId.startsWith("ws-feature-");
     agents.push({
       sessionId,
-      label: isFeature ? `${title} - agent` : title,
+      label: isLegacyPrefixed ? `${title} - agent` : title,
     });
   }
-
-  // Check workflow agents
-  const wfState = useWorkflowStore.getState();
-  if (wfState.featureId) {
-    for (const [slotKey, agent] of wfState.agents) {
-      if (agent.status !== "running") continue;
-      const title =
-        wfState.featureTitle ?? lookupFeatureTitle(wfState.featureId, queryClient) ?? "Workflow";
-      agents.push({
-        sessionId: `wf:${wfState.featureId}:${slotKey}`,
-        label: `${title} - ${agent.agentType}`,
-      });
-    }
-  }
-
   return agents;
 }
 
@@ -74,16 +59,8 @@ export function useAppClose(queryClient: QueryClient) {
 
   const confirmAndClose = useCallback(() => {
     const wsStore = useWsSessionStore.getState();
-    const wfStore = useWorkflowStore.getState();
     for (const { sessionId } of runningAgents) {
-      if (sessionId.startsWith("wf:")) {
-        // Workflow agent — extract slotKey and interrupt via workflow store
-        const slotKey = sessionId.split(":").slice(2).join(":");
-        wfStore.interruptItem(slotKey);
-      } else if (
-        wsStore.sessions[sessionId] &&
-        isTurnActive(wsStore.sessions[sessionId].lifecycle)
-      ) {
+      if (wsStore.sessions[sessionId] && isTurnActive(wsStore.sessions[sessionId].lifecycle)) {
         wsStore.interrupt(sessionId);
       }
     }

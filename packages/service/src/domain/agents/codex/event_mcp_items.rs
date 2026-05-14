@@ -123,9 +123,9 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-plan",
-                    "tool": "read_plan",
-                    "result": { "title": "One Dark" },
+                    "server": "cadencr-session",
+                    "tool": "read_conversation",
+                    "result": { "session_id": 42 },
                     "error": null
                 }
             }),
@@ -140,7 +140,7 @@ mod tests {
             panic!("expected tool result");
         };
         assert!(!is_error);
-        assert_eq!(content, &json!({ "title": "One Dark" }));
+        assert_eq!(content, &json!({ "session_id": 42 }));
     }
 
     #[test]
@@ -152,8 +152,8 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-plan",
-                    "tool": "read_plan",
+                    "server": "cadencr-session",
+                    "tool": "read_conversation",
                     "error": "no such table: features"
                 }
             }),

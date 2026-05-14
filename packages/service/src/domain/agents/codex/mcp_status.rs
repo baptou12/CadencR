@@ -211,13 +211,13 @@ mod tests {
 
     #[test]
     fn mcp_statuses_do_not_assume_missing_servers_are_connected() {
-        let expected = vec!["cadencr-plan".to_string(), "cadencr-prd".to_string()];
+        let expected = vec!["cadencr-session".to_string(), "cadencr-extra".to_string()];
         let statuses = parse_mcp_server_statuses(
             &json!({
                 "data": [{
-                    "name": "cadencr-plan",
+                    "name": "cadencr-session",
                     "authStatus": "unsupported",
-                    "tools": { "show_plan": {}, "mark_agent_done": {} }
+                    "tools": { "mark_agent_done": {} }
                 }]
             }),
             &expected,
@@ -232,9 +232,9 @@ mod tests {
             &json!({
                 "data": [
                     {
-                        "name": "cadencr-plan",
+                        "name": "cadencr-session",
                         "authStatus": "unsupported",
-                        "tools": { "show_plan": {}, "mark_agent_done": {} }
+                        "tools": { "mark_agent_done": {} }
                     },
                     { "name": "custom" }
                 ]
@@ -243,7 +243,7 @@ mod tests {
         );
 
         assert_eq!(statuses.len(), 2);
-        assert_eq!(statuses[0].name, "cadencr-plan");
+        assert_eq!(statuses[0].name, "cadencr-session");
         assert_eq!(statuses[0].status, "connected");
         assert_eq!(statuses[1].name, "custom");
         assert_eq!(statuses[1].status, "connected");
@@ -251,11 +251,11 @@ mod tests {
 
     #[test]
     fn mcp_statuses_mark_expected_servers_unavailable_for_malformed_response() {
-        let expected = vec!["cadencr-plan".to_string()];
+        let expected = vec!["cadencr-session".to_string()];
         let statuses = parse_mcp_server_statuses(&json!({ "oops": true }), &expected);
 
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].name, "cadencr-plan");
+        assert_eq!(statuses[0].name, "cadencr-session");
         assert_eq!(statuses[0].status, "unavailable");
     }
 
@@ -275,26 +275,12 @@ mod tests {
 
     #[test]
     fn mcp_statuses_require_expected_tools_and_auth() {
-        let expected = vec![
-            "cadencr-plan".to_string(),
-            "cadencr-prd".to_string(),
-            "cadencr-execute".to_string(),
-        ];
+        let expected = vec!["cadencr-session".to_string()];
         let statuses = parse_mcp_server_statuses(
             &json!({
                 "data": [
                     {
-                        "name": "cadencr-plan",
-                        "authStatus": "unsupported",
-                        "tools": { "show_plan": {} }
-                    },
-                    {
-                        "name": "cadencr-prd",
-                        "authStatus": "notLoggedIn",
-                        "tools": { "show_prd": {}, "mark_agent_done": {} }
-                    },
-                    {
-                        "name": "cadencr-execute",
+                        "name": "cadencr-session",
                         "authStatus": "unsupported",
                         "tools": { "mark_agent_done": {} }
                     }
@@ -303,8 +289,6 @@ mod tests {
             &expected,
         );
 
-        assert_eq!(statuses[0].status, "unavailable");
-        assert_eq!(statuses[1].status, "unavailable");
-        assert_eq!(statuses[2].status, "connected");
+        assert_eq!(statuses[0].status, "connected");
     }
 }

@@ -24,22 +24,6 @@ impl WsSessionPersistence {
             .await
             .map_err(|error| format!("failed to begin delete transaction: {error}"))?;
 
-        detach_optional_session_refs(
-            &mut tx,
-            "UPDATE workflow_queue SET agent_session_id = NULL WHERE agent_session_id = ?",
-            session_id,
-            "workflow_queue",
-        )
-        .await?;
-
-        detach_optional_session_refs(
-            &mut tx,
-            "UPDATE workflow_artifacts SET agent_session_id = NULL WHERE agent_session_id = ?",
-            session_id,
-            "workflow_artifacts",
-        )
-        .await?;
-
         sqlx::query("DELETE FROM session_runtime_ids WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
@@ -79,26 +63,6 @@ impl WsSessionPersistence {
     }
 }
 
-async fn detach_optional_session_refs(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    query: &str,
-    session_id: i64,
-    table_name: &str,
-) -> Result<(), String> {
-    match sqlx::query(query).bind(session_id).execute(&mut **tx).await {
-        Ok(_) => Ok(()),
-        Err(error) if is_missing_table_error(&error) => {
-            debug!(%table_name, %error, "optional workflow table missing during session delete");
-            Ok(())
-        }
-        Err(error) => Err(format!("failed to detach {table_name} rows: {error}")),
-    }
-}
-
-fn is_missing_table_error(error: &sqlx::Error) -> bool {
-    error.to_string().contains("no such table")
-}
-
 #[cfg(test)]
 mod session_cleanup_tests {
     use super::*;
@@ -126,9 +90,7 @@ mod session_cleanup_tests {
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,
                 started_at TEXT,
-                ended_at TEXT,
-                pending_plan_approval TEXT,
-                plan_approval_result TEXT
+                ended_at TEXT
             )"#,
         )
         .execute(&pool)
@@ -158,30 +120,6 @@ mod session_cleanup_tests {
                 session_id INTEGER NOT NULL,
                 runtime_session_id TEXT NOT NULL,
                 created_at TEXT
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"CREATE TABLE workflow_queue (
-                id INTEGER PRIMARY KEY,
-                feature_id INTEGER NOT NULL,
-                agent_session_id INTEGER
-            )"#,
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        sqlx::query(
-            r#"CREATE TABLE workflow_artifacts (
-                id INTEGER PRIMARY KEY,
-                feature_id INTEGER NOT NULL,
-                phase_slug TEXT NOT NULL,
-                content TEXT NOT NULL DEFAULT '',
-                agent_session_id INTEGER
             )"#,
         )
         .execute(&pool)
@@ -225,19 +163,6 @@ mod session_cleanup_tests {
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO workflow_queue (id, feature_id, agent_session_id) VALUES (1, 1, ?)")
-            .bind(id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        sqlx::query(
-            "INSERT INTO workflow_artifacts (id, feature_id, phase_slug, content, agent_session_id) VALUES (1, 1, 'plan', '', ?)",
-        )
-        .bind(id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
         let result = WsSessionPersistence::delete_session_static(&pool, id).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().0, 1);
@@ -265,19 +190,6 @@ mod session_cleanup_tests {
                 .unwrap();
         assert!(archived_ids.is_empty());
 
-        let workflow_row: (Option<i64>,) =
-            sqlx::query_as("SELECT agent_session_id FROM workflow_queue WHERE id = 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(workflow_row.0.is_none());
-
-        let artifact_row: (Option<i64>,) =
-            sqlx::query_as("SELECT agent_session_id FROM workflow_artifacts WHERE id = 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        assert!(artifact_row.0.is_none());
     }
 
     #[tokio::test]
@@ -304,13 +216,13 @@ mod session_cleanup_tests {
     async fn test_delete_session_returns_agent_type() {
         let pool = setup_test_db().await;
         sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'plan', 'paused')",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status) VALUES (1, 'session', 'paused')",
         )
         .execute(&pool)
         .await
         .unwrap();
         let id: (i64,) = sqlx::query_as(
-            "SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'plan'",
+            "SELECT id FROM agent_sessions WHERE feature_id = 1 AND agent_type = 'session'",
         )
         .fetch_one(&pool)
         .await
@@ -320,6 +232,6 @@ mod session_cleanup_tests {
         assert!(result.is_ok());
         let (feature_id, agent_type) = result.unwrap();
         assert_eq!(feature_id, 1);
-        assert_eq!(agent_type.as_deref(), Some("plan"));
+        assert_eq!(agent_type.as_deref(), Some("session"));
     }
 }

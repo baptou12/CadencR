@@ -11,7 +11,6 @@ const worktreeData = [
     head: "abc123",
     feature_id: 1,
     feature_title: "Feature A",
-    feature_status: "in-progress",
   },
   {
     path: "/wt/feature-b",
@@ -19,7 +18,6 @@ const worktreeData = [
     head: "def456",
     feature_id: 2,
     feature_title: "Feature B",
-    feature_status: "done",
   },
   {
     path: "/wt/orphan",
@@ -27,7 +25,6 @@ const worktreeData = [
     head: "ghi789",
     feature_id: null,
     feature_title: null,
-    feature_status: null,
   },
 ];
 

@@ -155,6 +155,7 @@ async fn backup_database(
 mod tests {
     use super::*;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use sqlx::Row;
     use std::str::FromStr;
 
     async fn test_pool(path: &str) -> SqlitePool {
@@ -188,12 +189,8 @@ mod tests {
         for required in [
             "projects",
             "features",
-            "plans",
-            "phases",
             "agent_sessions",
             "agent_messages",
-            "workflow_queue",
-            "workflow_dependencies",
             "settings",
         ] {
             assert!(tables.contains(&required.to_string()), "missing {required}");
@@ -243,5 +240,200 @@ mod tests {
             backups_again, 1,
             "no pending migrations means no second backup"
         );
+    }
+
+    #[tokio::test]
+    async fn remove_ws_feature_migration_preserves_live_session_children() {
+        const REMOVE_WS_FEATURE_VERSION: i64 = 20260514123657;
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        let pool = test_pool(path).await;
+        create_pre_ws_feature_removal_schema(&pool).await;
+        seed_applied_migrations_before(&pool, REMOVE_WS_FEATURE_VERSION).await;
+
+        sqlx::raw_sql(
+            r#"INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp/p');
+            INSERT INTO features (id, project_id, title, status, type, agent_runtime_session) VALUES
+                (1, 1, 'Session 1', 'active', 'ws-session', 'opencode'),
+                (2, 1, 'Hidden', 'archived', 'ws-session', NULL),
+                (3, 1, 'Draft Legacy Session', 'draft', 'ws-session', NULL);
+            INSERT INTO settings (key, value) VALUES
+                ('model_qa', 'default'),
+                ('agent_autonomy', '1');
+            INSERT INTO project_settings (project_id, key, value) VALUES
+                (1, 'parallel_execution', 'true');
+            INSERT INTO feature_settings (feature_id, key, value) VALUES
+                (1, 'worktree_path', '/tmp/p'),
+                (1, 'model_qa', 'default');"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+
+        let runtime: String =
+            sqlx::query_scalar("SELECT agent_runtime_session FROM features WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(runtime, "opencode");
+
+        let setting_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM feature_settings WHERE feature_id = 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(setting_count, 1);
+
+        assert!(table_has_column(&pool, "features", "status").await);
+        let statuses: String = sqlx::query_scalar(
+            "SELECT group_concat(id || ':' || status, ',') FROM features ORDER BY id",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(statuses, "1:active,2:archived,3:active");
+        assert!(!table_has_column(&pool, "agent_sessions", "pending_plan_approval").await);
+        for removed_feature_column in [
+            "model_qa",
+            "agent_runtime_qa",
+            "agent_autonomy",
+            "parallel_execution",
+        ] {
+            assert!(
+                !table_has_column(&pool, "features", removed_feature_column).await,
+                "{removed_feature_column} should be removed from features"
+            );
+        }
+        for removed_project_column in [
+            "model_qa",
+            "agent_runtime_qa",
+            "agent_autonomy",
+            "parallel_execution",
+            "qa_prompt",
+        ] {
+            assert!(
+                !table_has_column(&pool, "projects", removed_project_column).await,
+                "{removed_project_column} should be removed from projects"
+            );
+        }
+        for table in ["settings", "project_settings", "feature_settings"] {
+            let count: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE key IN ('model_qa', 'agent_autonomy', 'parallel_execution')"
+            ))
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(count, 0, "{table} should not retain legacy EAV keys");
+        }
+        assert!(!table_exists(&pool, "workflow_queue").await);
+    }
+
+    async fn seed_applied_migrations_before(pool: &SqlitePool, version: i64) {
+        sqlx::query(
+            "CREATE TABLE _sqlx_migrations (
+                version BIGINT PRIMARY KEY,
+                description TEXT NOT NULL,
+                installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                success BOOLEAN NOT NULL,
+                checksum BLOB NOT NULL,
+                execution_time BIGINT NOT NULL
+            )",
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+
+        let migrator = sqlx::migrate!("./migrations");
+        for migration in migrator
+            .iter()
+            .filter(|migration| migration.version < version)
+        {
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations
+                 (version, description, installed_on, success, checksum, execution_time)
+                 VALUES (?, ?, CURRENT_TIMESTAMP, TRUE, ?, 0)",
+            )
+            .bind(migration.version)
+            .bind(&*migration.description)
+            .bind(&*migration.checksum)
+            .execute(pool)
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn table_exists(pool: &SqlitePool, table_name: &str) -> bool {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
+        )
+        .bind(table_name)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        count > 0
+    }
+
+    async fn table_has_column(pool: &SqlitePool, table_name: &str, column_name: &str) -> bool {
+        let escaped_table = table_name.replace('"', "\"\"");
+        let rows = sqlx::query(&format!(r#"PRAGMA table_info("{escaped_table}")"#))
+            .fetch_all(pool)
+            .await
+            .unwrap();
+        rows.iter().any(|row| {
+            let name: String = row.try_get("name").unwrap();
+            name == column_name
+        })
+    }
+
+    async fn create_pre_ws_feature_removal_schema(pool: &SqlitePool) {
+        sqlx::raw_sql(
+            r#"CREATE TABLE projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, path TEXT NOT NULL,
+                model_plan TEXT, model_brainstorm TEXT, model_execute TEXT, model_risk TEXT,
+                model_review TEXT, model_session TEXT, model_qa TEXT, model_prd TEXT,
+                "model_review-fixer" TEXT, model_retro TEXT, model_workflow TEXT,
+                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT,
+                agent_autonomy TEXT, parallel_execution TEXT DEFAULT NULL, qa_prompt TEXT
+            );
+            CREATE TABLE features (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id),
+                title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', type TEXT NOT NULL DEFAULT 'feature',
+                label TEXT, model_plan TEXT, model_brainstorm TEXT, model_execute TEXT, model_risk TEXT,
+                model_review TEXT, model_session TEXT, model_qa TEXT, model_prd TEXT,
+                "model_review-fixer" TEXT, model_retro TEXT, model_workflow TEXT, prd TEXT,
+                workflow_step TEXT, workflow_config TEXT, workflow_status TEXT NOT NULL DEFAULT 'idle',
+                agent_runtime_plan TEXT, agent_runtime_prd TEXT, agent_runtime_execute TEXT,
+                agent_runtime_risk TEXT, agent_runtime_review TEXT, "agent_runtime_review-fixer" TEXT,
+                agent_runtime_session TEXT, agent_runtime_qa TEXT, agent_runtime_retro TEXT,
+                agent_autonomy TEXT, parallel_execution TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE workflow_queue (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), agent_session_id INTEGER);
+            CREATE TABLE workflow_dependencies (id INTEGER PRIMARY KEY, queue_item_id INTEGER NOT NULL REFERENCES workflow_queue(id), depends_on_item_id INTEGER NOT NULL REFERENCES workflow_queue(id));
+            CREATE TABLE phases (id INTEGER PRIMARY KEY, plan_id INTEGER NOT NULL);
+            CREATE TABLE plans (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), pending_plan_approval TEXT, pending_prd_approval TEXT, plan_approval_result TEXT, prd_approval_result TEXT, run_id INTEGER, phase_id INTEGER, question_answer_result TEXT);
+            CREATE TABLE session_runtime_ids (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES agent_sessions(id));
+            CREATE TABLE agent_messages (id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL REFERENCES agent_sessions(id));
+            CREATE TABLE feature_settings (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id), key TEXT NOT NULL, value TEXT NOT NULL);
+            CREATE TABLE project_settings (project_id INTEGER NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL);
+            CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE diff_comments (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE diff_viewed_files (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE custom_action_runs (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE custom_action_variables (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE custom_action_schedules (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE INDEX idx_agent_sessions_feature_status ON agent_sessions(feature_id);"#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
     }
 }
