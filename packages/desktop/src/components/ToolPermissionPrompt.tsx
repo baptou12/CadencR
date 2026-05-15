@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
-import { ShieldAlertIcon, SendIcon } from "lucide-react";
+import { ShieldAlertIcon, SendIcon, Loader2 } from "lucide-react";
 import { getPermissionPreview } from "./permission-preview";
 
 export type PermissionDecisionValue = "allow_once" | "allow_future" | "deny";
@@ -34,6 +34,13 @@ interface ToolPermissionPromptProps {
   onDecision: (decision: PermissionDecisionValue, feedback?: string, optionId?: string) => void;
   /** When true, disables keyboard shortcuts */
   disableShortcuts?: boolean;
+  /**
+   * True while a decision for this request is in flight to the backend.
+   * Disables the option buttons / shortcuts and shows a spinner on the
+   * clicked option so the user does not double-submit while waiting for
+   * the ack. Cleared by the store on success or error.
+   */
+  isSubmitting?: boolean;
 }
 
 const FALLBACK_OPTIONS: PermissionOption[] = [
@@ -57,6 +64,8 @@ interface PermissionOptionButtonProps {
   highlighted: boolean;
   onClick: (index: number) => void;
   options: PermissionOption[];
+  disabled: boolean;
+  showSpinner: boolean;
 }
 
 const ALLOW_ONCE_SHORTCUT = ["cmd", "Y"];
@@ -101,21 +110,27 @@ function PermissionOptionButton({
   highlighted,
   onClick,
   options,
+  disabled,
+  showSpinner,
 }: PermissionOptionButtonProps) {
   const shortcutKeys = shortcutKeysForOption(option, options);
   return (
     <button
       type="button"
+      disabled={disabled}
+      aria-busy={showSpinner}
       className={cn(
         "w-full rounded-md border px-3 py-2 text-left transition-colors",
         "border-border bg-muted/40 hover:bg-muted/50",
         highlighted && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
+        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-muted/40",
       )}
       onClick={() => onClick(index)}
     >
-      <span className="text-sm font-medium text-foreground">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
         {shortcutKeys && <KbdShortcut keys={shortcutKeys} variant="square" />}
         {option.label}
+        {showSpinner && <Loader2 className="ml-1 size-3.5 animate-spin text-muted-foreground" />}
       </span>
       <span className="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>
     </button>
@@ -126,9 +141,17 @@ interface DenyFeedbackInputProps {
   feedback: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
+  disabled: boolean;
+  showSpinner: boolean;
 }
 
-function DenyFeedbackInput({ feedback, onChange, onSubmit }: DenyFeedbackInputProps) {
+function DenyFeedbackInput({
+  feedback,
+  onChange,
+  onSubmit,
+  disabled,
+  showSpinner,
+}: DenyFeedbackInputProps) {
   return (
     <div className="mt-2 flex items-center gap-2">
       <Input
@@ -140,9 +163,14 @@ function DenyFeedbackInput({ feedback, onChange, onSubmit }: DenyFeedbackInputPr
         placeholder="Reason for denying (optional)..."
         className="h-8 border-border/50 bg-muted/40 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
         autoFocus
+        disabled={disabled}
       />
-      <Button size="sm" onClick={onSubmit} className="h-8">
-        <SendIcon className="mr-1.5 size-3" />
+      <Button size="sm" onClick={onSubmit} className="h-8" disabled={disabled}>
+        {showSpinner ? (
+          <Loader2 className="mr-1.5 size-3 animate-spin" />
+        ) : (
+          <SendIcon className="mr-1.5 size-3" />
+        )}
         Deny
       </Button>
     </div>
@@ -151,18 +179,21 @@ function DenyFeedbackInput({ feedback, onChange, onSubmit }: DenyFeedbackInputPr
 
 interface PermissionHotkeysArgs {
   disableShortcuts: boolean | undefined;
+  isSubmitting: boolean;
   options: PermissionOption[];
   onTrigger: (index: number) => void;
 }
 
 function usePermissionHotkeys({
   disableShortcuts,
+  isSubmitting,
   options,
   onTrigger,
 }: PermissionHotkeysArgs): void {
   const allowOnceIndex = options.findIndex((o) => o.decision === "allow_once");
   const allowFutureIndex = options.findIndex((o) => shouldShortcutAllowFuture(o, options));
   const denyIndex = options.findIndex(shouldShortcutDeny);
+  const enabled = !disableShortcuts && !isSubmitting;
 
   // cmd+Y → approve (allow_once)
   useScopedShortcut(
@@ -173,7 +204,7 @@ function usePermissionHotkeys({
       onTrigger(allowOnceIndex);
     },
     "agent",
-    { enabled: !disableShortcuts },
+    { enabled },
     [onTrigger, allowOnceIndex],
   );
 
@@ -186,7 +217,7 @@ function usePermissionHotkeys({
       onTrigger(allowFutureIndex);
     },
     "agent",
-    { enabled: !disableShortcuts },
+    { enabled },
     [onTrigger, allowFutureIndex],
   );
 
@@ -199,7 +230,7 @@ function usePermissionHotkeys({
       onTrigger(denyIndex);
     },
     "agent",
-    { enabled: !disableShortcuts },
+    { enabled },
     [onTrigger, denyIndex],
   );
 }
@@ -212,10 +243,12 @@ export function ToolPermissionPrompt({
   permission,
   onDecision,
   disableShortcuts,
+  isSubmitting = false,
 }: ToolPermissionPromptProps) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  const [submittedIndex, setSubmittedIndex] = useState<number | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -230,6 +263,14 @@ export function ToolPermissionPrompt({
     };
   }, []);
 
+  // Clear the local "which option was clicked" tracker once the store reports
+  // the submission is no longer in flight (e.g. backend returned an error and
+  // re-enabled the buttons so the user can retry). On a new request id the
+  // parent re-keys this component, so a remount handles that case for free.
+  useEffect(() => {
+    if (!isSubmitting) setSubmittedIndex(null);
+  }, [isSubmitting]);
+
   const flashHighlight = useCallback((index: number) => {
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     setHighlightedIndex(index);
@@ -237,7 +278,8 @@ export function ToolPermissionPrompt({
   }, []);
 
   const submitOption = useCallback(
-    (option: PermissionOption) => {
+    (option: PermissionOption, index: number) => {
+      setSubmittedIndex(index);
       const trimmedFeedback = feedback.trim() || undefined;
       if (option.decision === "deny") {
         if (option.optionId) onDecision("deny", trimmedFeedback, option.optionId);
@@ -252,21 +294,24 @@ export function ToolPermissionPrompt({
 
   const handleOption = useCallback(
     (index: number) => {
+      if (isSubmitting) return;
       const option = options[index];
       if (!option) return;
       if (option.decision === "deny" && option.collectFeedback && !showFeedback) {
         setShowFeedback(true);
         return;
       }
-      submitOption(option);
+      submitOption(option, index);
     },
-    [options, showFeedback, submitOption],
+    [isSubmitting, options, showFeedback, submitOption],
   );
 
   const handleDenyWithEnter = useCallback(() => {
-    const denyOption = options.find((option) => option.decision === "deny");
-    if (denyOption) submitOption(denyOption);
-  }, [options, submitOption]);
+    if (isSubmitting) return;
+    const denyIndex = options.findIndex((option) => option.decision === "deny");
+    if (denyIndex < 0) return;
+    submitOption(options[denyIndex], denyIndex);
+  }, [isSubmitting, options, submitOption]);
 
   const handleHotkey = useCallback(
     (index: number) => {
@@ -277,7 +322,7 @@ export function ToolPermissionPrompt({
     [flashHighlight, handleOption],
   );
 
-  usePermissionHotkeys({ disableShortcuts, options, onTrigger: handleHotkey });
+  usePermissionHotkeys({ disableShortcuts, isSubmitting, options, onTrigger: handleHotkey });
 
   return (
     <div className="border-t border-amber-500/30 bg-card px-3 py-2">
@@ -311,6 +356,8 @@ export function ToolPermissionPrompt({
             highlighted={highlightedIndex === index}
             onClick={handleOption}
             options={options}
+            disabled={isSubmitting}
+            showSpinner={isSubmitting && submittedIndex === index}
           />
         ))}
       </div>
@@ -321,6 +368,10 @@ export function ToolPermissionPrompt({
           feedback={feedback}
           onChange={setFeedback}
           onSubmit={handleDenyWithEnter}
+          disabled={isSubmitting}
+          showSpinner={
+            isSubmitting && submittedIndex !== null && options[submittedIndex]?.decision === "deny"
+          }
         />
       )}
     </div>

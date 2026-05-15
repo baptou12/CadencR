@@ -388,6 +388,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     ) {
       const session = getSession(sessionId);
       const currentRequestId = session.pendingPermission?.requestId ?? requestId;
+      // Belt-and-braces: the UI also disables buttons while a submission is
+      // in flight, but if anything slips through (keyboard shortcut race,
+      // remount, etc.) we still want to drop the duplicate request.
+      if (session.submittingPermissionRequestId === currentRequestId) {
+        return;
+      }
       const envelope = createPermissionRespond(
         session.serverSessionId,
         currentRequestId,
@@ -396,6 +402,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           feedback,
           optionId,
         },
+      );
+      set(
+        updateSession(get(), sessionId, {
+          submittingPermissionRequestId: currentRequestId,
+        }),
       );
       void get()
         .sendRequest(sessionId, envelope)
@@ -415,11 +426,10 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
               },
             ];
             set(
-              updateSession(
-                get(),
-                sessionId,
-                blocksPatchWithDerived(session.streamingState, blocks),
-              ),
+              updateSession(get(), sessionId, {
+                ...blocksPatchWithDerived(session.streamingState, blocks),
+                submittingPermissionRequestId: null,
+              }),
             );
             return;
           }
@@ -429,6 +439,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             updateSession(get(), sessionId, {
               ...permissionPatch,
               pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
+              submittingPermissionRequestId: null,
             }),
           );
         });

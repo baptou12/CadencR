@@ -140,6 +140,12 @@ export interface AgentSessionProps {
     feedback?: string,
     optionId?: string,
   ) => void;
+  /**
+   * True while a permission decision is in flight to the backend (between
+   * click and ack). Disables option buttons and shows a loader so the user
+   * does not double-submit.
+   */
+  isSubmittingPermission?: boolean;
   /** Called when user clicks "Mark Done" */
   onMarkDone?: () => void;
   /** Whether this agent is maximized (takes full height, hides others) */

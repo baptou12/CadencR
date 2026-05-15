@@ -113,6 +113,13 @@ export interface SessionEntry {
   pendingPermission: PendingPermission | null;
   pendingPermissionQueue: PendingPermission[];
   pendingRequestId: string;
+  /**
+   * `request_id` of a permission decision that has been clicked locally and is
+   * currently in flight to the backend. Null when no submission is pending.
+   * Used to disable buttons and show a spinner in `ToolPermissionPrompt` so
+   * the user doesn't double-submit while waiting for the ack.
+   */
+  submittingPermissionRequestId: string | null;
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
@@ -167,6 +174,7 @@ export function createSessionEntry(): SessionEntry {
     pendingPermission: null,
     pendingPermissionQueue: [],
     pendingRequestId: "",
+    submittingPermissionRequestId: null,
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),

@@ -62,6 +62,12 @@ export interface AgentPromptBarProps {
     feedback?: string,
     optionId?: string,
   ) => void;
+  /**
+   * True while a permission decision is in flight to the backend. Disables
+   * the option buttons / shortcuts and shows a spinner so the user does not
+   * double-submit.
+   */
+  isSubmittingPermission?: boolean;
 }
 
 export interface AgentPromptBarHandle {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { useHotkeys } from "react-hotkeys-hook";
+import React, { useState } from "react";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 
@@ -366,5 +367,48 @@ describe("ToolPermissionPrompt", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("disables every option button while isSubmitting is true", () => {
+    render(
+      <ToolPermissionPrompt permission={permission} onDecision={vi.fn()} isSubmitting={true} />,
+    );
+    for (const label of ["Allow once", "Always allow", "Deny"]) {
+      const btn = screen.getByText(label).closest("button") as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+    }
+  });
+
+  it("ignores option clicks while isSubmitting is true", async () => {
+    const onDecision = vi.fn();
+    const { user } = render(
+      <ToolPermissionPrompt permission={permission} onDecision={onDecision} isSubmitting={true} />,
+    );
+    await user.click(screen.getByText("Allow once").closest("button")!);
+    expect(onDecision).not.toHaveBeenCalled();
+  });
+
+  it("shows a spinner on the clicked option while submission is in flight", async () => {
+    function Harness(): React.ReactElement {
+      const [submitting, setSubmitting] = useState(false);
+      return (
+        <ToolPermissionPrompt
+          permission={permission}
+          onDecision={() => setSubmitting(true)}
+          isSubmitting={submitting}
+        />
+      );
+    }
+    const { user } = render(<Harness />);
+    const allowOnceBtn = screen.getByText("Allow once").closest("button") as HTMLButtonElement;
+    await user.click(allowOnceBtn);
+    // After the click, the parent flips isSubmitting; the clicked button now
+    // shows aria-busy and is disabled.
+    expect(allowOnceBtn.disabled).toBe(true);
+    expect(allowOnceBtn.getAttribute("aria-busy")).toBe("true");
+    // The other buttons are disabled but not busy.
+    const denyBtn = screen.getByText("Deny").closest("button") as HTMLButtonElement;
+    expect(denyBtn.disabled).toBe(true);
+    expect(denyBtn.getAttribute("aria-busy")).toBe("false");
   });
 });

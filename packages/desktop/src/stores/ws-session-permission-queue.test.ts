@@ -139,4 +139,63 @@ describe("ws-session-store permission queue", () => {
     expect(session.pendingPermission).toBeNull();
     expect(session.pendingRequestId).toBe("");
   });
+
+  it("tracks submittingPermissionRequestId between send and ack", async () => {
+    const ws = await connectSession();
+    sendPermission(ws, "req-1", "ls");
+
+    let session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.submittingPermissionRequestId).toBeNull();
+
+    useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+
+    session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.submittingPermissionRequestId).toBe("req-1");
+
+    const response = JSON.parse(ws.sent.at(-1)!);
+    ws.simulateMessage({
+      domain: "session",
+      action: "acknowledged",
+      ref: response.id,
+      payload: { action: "permission.respond" },
+    });
+    await Promise.resolve();
+
+    session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.submittingPermissionRequestId).toBeNull();
+  });
+
+  it("clears submittingPermissionRequestId on error so the user can retry", async () => {
+    const ws = await connectSession();
+    sendPermission(ws, "req-1", "ls");
+    useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+
+    let session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.submittingPermissionRequestId).toBe("req-1");
+
+    const response = JSON.parse(ws.sent.at(-1)!);
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      ref: response.id,
+      payload: { message: "backend exploded" },
+    });
+    await Promise.resolve();
+
+    session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.submittingPermissionRequestId).toBeNull();
+    // Permission stays so the user can retry once the backend recovers.
+    expect(session.pendingPermission?.requestId).toBe("req-1");
+  });
+
+  it("drops a duplicate respondToPermission call while one is already in flight", async () => {
+    const ws = await connectSession();
+    sendPermission(ws, "req-1", "ls");
+    useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+    const sentAfterFirst = ws.sent.length;
+
+    // Second click before the ack — should be a no-op.
+    useWsSessionStore.getState().respondToPermission("s1", "req-1", "deny");
+    expect(ws.sent.length).toBe(sentAfterFirst);
+  });
 });

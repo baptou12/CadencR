@@ -58,6 +58,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       slashCommandsLoading,
       pendingPermission,
       onPermissionDecision,
+      isSubmittingPermission,
     },
     ref,
   ) {
@@ -273,6 +274,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           permission={visiblePermission}
           onDecision={onPermissionDecision}
           disableShortcuts={disableShortcuts}
+          isSubmitting={!!isSubmittingPermission}
         />
       ) : pendingPlanApproval && onPlanApprove && onPlanRequestChanges ? (
         <PlanApprovalBar

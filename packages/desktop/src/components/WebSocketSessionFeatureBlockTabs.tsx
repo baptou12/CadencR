@@ -84,6 +84,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
               optionId,
             );
           }}
+          isSubmittingPermission={controls.ws.isSubmittingPermission}
           pendingQuestions={
             controls.ws.pendingQuestions.length > 0 ? controls.ws.pendingQuestions : undefined
           }
