@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 /// Marker line consumed by the Electron sidecar to drive the splash status.
 /// One line, fixed prefix; keep the format stable - the parser in
@@ -41,6 +41,30 @@ pub(super) async fn table_exists(pool: &SqlitePool, table_name: &str) -> anyhow:
             .fetch_one(pool)
             .await?;
     Ok(count > 0)
+}
+
+pub(super) async fn table_columns(
+    pool: &SqlitePool,
+    table_name: &str,
+) -> anyhow::Result<HashSet<String>> {
+    let escaped_table = table_name.replace('"', "\"\"");
+    let rows = sqlx::query(&format!(r#"PRAGMA table_info("{escaped_table}")"#))
+        .fetch_all(pool)
+        .await?;
+    let mut columns = HashSet::new();
+    for row in rows {
+        let name: String = row.try_get("name")?;
+        columns.insert(name);
+    }
+    Ok(columns)
+}
+
+pub(super) async fn table_has_column(
+    pool: &SqlitePool,
+    table_name: &str,
+    column_name: &str,
+) -> anyhow::Result<bool> {
+    Ok(table_columns(pool, table_name).await?.contains(column_name))
 }
 
 pub(super) async fn backup_database(

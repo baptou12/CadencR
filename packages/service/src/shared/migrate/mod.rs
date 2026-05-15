@@ -3,6 +3,8 @@ use std::path::Path;
 use sqlx::SqlitePool;
 use tracing::{info, warn};
 
+mod checksum_repair;
+mod checksum_repair_data;
 mod seed;
 mod support;
 
@@ -61,6 +63,7 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
         emit_phase("migrating", "");
     }
 
+    checksum_repair::repair_known_sqlx_checksum_mismatches(ctx.pool, &migrator).await?;
     migrator.run(ctx.pool).await?;
     seed::repair_agent_sessions_pin_column(ctx.pool).await?;
 
@@ -72,7 +75,6 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-    use sqlx::Row;
     use std::str::FromStr;
 
     async fn test_pool(path: &str) -> SqlitePool {
@@ -260,7 +262,9 @@ mod tests {
             .unwrap();
             assert_eq!(count, 0, "{table} should not retain legacy EAV keys");
         }
-        assert!(!table_exists(&pool, "workflow_queue").await);
+        assert!(!super::support::table_exists(&pool, "workflow_queue")
+            .await
+            .unwrap());
     }
 
     async fn seed_applied_migrations_before(pool: &SqlitePool, version: i64) {
@@ -297,27 +301,10 @@ mod tests {
         }
     }
 
-    async fn table_exists(pool: &SqlitePool, table_name: &str) -> bool {
-        let count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name = ?",
-        )
-        .bind(table_name)
-        .fetch_one(pool)
-        .await
-        .unwrap();
-        count > 0
-    }
-
     async fn table_has_column(pool: &SqlitePool, table_name: &str, column_name: &str) -> bool {
-        let escaped_table = table_name.replace('"', "\"\"");
-        let rows = sqlx::query(&format!(r#"PRAGMA table_info("{escaped_table}")"#))
-            .fetch_all(pool)
+        super::support::table_has_column(pool, table_name, column_name)
             .await
-            .unwrap();
-        rows.iter().any(|row| {
-            let name: String = row.try_get("name").unwrap();
-            name == column_name
-        })
+            .unwrap()
     }
 
     async fn create_pre_ws_feature_removal_schema(pool: &SqlitePool) {

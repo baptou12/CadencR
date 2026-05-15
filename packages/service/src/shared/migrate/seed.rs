@@ -3,10 +3,10 @@
 //! Split from `mod.rs` to keep that file focused on the run-once orchestration
 //! and to honor the project's 400-line file cap.
 
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
 use tracing::info;
 
-use super::support::table_exists;
+use super::support::{table_exists, table_has_column};
 
 /// Seed the `_sqlx_migrations` table so sqlx considers existing migrations already applied.
 /// One-time operation for databases originally created by the Electron migration runner.
@@ -72,24 +72,6 @@ pub(super) async fn repair_agent_sessions_pin_column(pool: &SqlitePool) -> anyho
     .execute(pool)
     .await?;
     Ok(())
-}
-
-async fn table_has_column(
-    pool: &SqlitePool,
-    table_name: &str,
-    column_name: &str,
-) -> anyhow::Result<bool> {
-    let escaped_table = table_name.replace('"', "\"\"");
-    let rows = sqlx::query(&format!(r#"PRAGMA table_info("{escaped_table}")"#))
-        .fetch_all(pool)
-        .await?;
-    for row in rows {
-        let name: String = row.try_get("name")?;
-        if name == column_name {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 #[cfg(test)]
@@ -194,7 +176,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            super::table_has_column(&pool, "agent_sessions", "is_pinned")
+            super::super::support::table_has_column(&pool, "agent_sessions", "is_pinned")
                 .await
                 .unwrap()
         );
