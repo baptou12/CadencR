@@ -192,6 +192,17 @@ impl TerminalRegistry {
             .wait()
             .await
             .map_err(|e| (-32000, format!("terminal/wait_for_exit: {e}")))?;
+        let pumps = {
+            let mut inner = self.inner.lock().await;
+            inner
+                .terminals
+                .get_mut(terminal_id)
+                .map(|entry| std::mem::take(&mut entry.pumps))
+                .unwrap_or_default()
+        };
+        for handle in pumps {
+            let _ = handle.await;
+        }
         let exit = ExitInfo {
             exit_code: status.code(),
             signal: exit_signal(&status),
