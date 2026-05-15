@@ -72,10 +72,6 @@ export interface AgentSessionProps {
   onToggle?: () => void;
   /** Index for DOM-based keyboard navigation (sets data-nav-agent-index) */
   navAgentIndex?: number;
-  /** Whether the agent made file changes during its session */
-  hasFileChanges?: boolean;
-  /** Called when user clicks "Review Changes" to open the diff viewer */
-  onViewDiff?: () => void;
   /** Whether this agent can be deleted */
   canDelete?: boolean;
   /** Called when user clicks delete */

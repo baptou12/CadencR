@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
-import { DiffViewerModal } from "@/components/diff/DiffViewerModal";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
@@ -85,16 +84,10 @@ function WebSocketSessionFeatureBody(
     loadPersistedState: !embedded,
   });
   const refs = useSessionRefs();
-  const [inlineDiffOpen, setInlineDiffOpen] = useState(false);
   const requestedFocusKeyRef = useRef<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
 
-  const { handleViewDiff, sendPromptAndFocus, sendFromGitTab } = useSessionFeatureActions({
-    layoutFeatureId,
-    controls,
-    refs,
-    setInlineDiffOpen,
-  });
+  const { sendFromGitTab } = useSessionFeatureActions({ layoutFeatureId, controls, refs });
 
   useWsSessionEffects({
     sessionId,
@@ -134,7 +127,7 @@ function WebSocketSessionFeatureBody(
     requestedFocusTab,
     requestedFocusPending,
   ]);
-  useWsSessionShortcuts({ controls, setInlineDiffOpen, hotkeysEnabled });
+  useWsSessionShortcuts({ controls, hotkeysEnabled });
 
   const tabs = useFeatureBlockTabs({
     sessionId,
@@ -145,7 +138,6 @@ function WebSocketSessionFeatureBody(
     refs,
     layoutState,
     hotkeysEnabled,
-    handleViewDiff,
     sendFromGitTab,
   });
 
@@ -189,12 +181,6 @@ function WebSocketSessionFeatureBody(
           requestAnimationFrame(() => refs.editor.current?.focusActiveEditor())
         }
       />
-      <DiffViewerModal
-        featureId={featureId}
-        open={inlineDiffOpen}
-        onOpenChange={setInlineDiffOpen}
-        onSendComments={sendPromptAndFocus}
-      />
     </section>
   );
 }
@@ -223,7 +209,6 @@ function useFeatureBlockTabs(args: {
   refs: ReturnType<typeof useSessionRefs>;
   layoutState: Parameters<typeof isTabVisible>[0];
   hotkeysEnabled: boolean;
-  handleViewDiff: () => void;
   sendFromGitTab: (message: string) => void;
 }): ReturnType<typeof useSessionTabs> {
   return useSessionTabs({
@@ -235,7 +220,6 @@ function useFeatureBlockTabs(args: {
     refs: args.refs,
     agentVisible: isTabVisible(args.layoutState, "agent"),
     hotkeysEnabled: args.hotkeysEnabled,
-    handleViewDiff: args.handleViewDiff,
     sendFromGitTab: args.sendFromGitTab,
   });
 }
@@ -244,14 +228,11 @@ function useSessionFeatureActions({
   layoutFeatureId,
   controls,
   refs,
-  setInlineDiffOpen,
 }: {
   layoutFeatureId: number;
   controls: ReturnType<typeof useSessionControls>;
   refs: ReturnType<typeof useSessionRefs>;
-  setInlineDiffOpen: (open: boolean) => void;
 }): {
-  handleViewDiff: () => void;
   sendPromptAndFocus: (message: string) => void;
   sendFromGitTab: (message: string) => void;
 } {
@@ -260,7 +241,6 @@ function useSessionFeatureActions({
     (tab: TabKind): void => setPaneActiveTab(layoutFeatureId, ROOT_LEAF_ID, tab),
     [layoutFeatureId, setPaneActiveTab],
   );
-  const handleViewDiff = useCallback((): void => setInlineDiffOpen(true), [setInlineDiffOpen]);
   const sendPromptAndFocus = useCallback(
     (message: string): void => {
       controls.ws.sendPrompt(message);
@@ -275,7 +255,7 @@ function useSessionFeatureActions({
     },
     [sendPromptAndFocus, setRootActive],
   );
-  return { handleViewDiff, sendPromptAndFocus, sendFromGitTab };
+  return { sendPromptAndFocus, sendFromGitTab };
 }
 
 interface SessionFeatureTopBarProps {

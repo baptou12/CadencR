@@ -17,7 +17,6 @@ function renderChip(overrides: Partial<MetaBarProps> = {}) {
     autoScrollEnabled: false,
     onToggleAutoScroll: vi.fn(),
     showWorktreeChip: false,
-    showDiffBar: false,
     currentModelLabel: "claude-sonnet",
     models: [],
     onPermissionModeToggle: vi.fn(),

@@ -36,7 +36,6 @@ interface UseSessionTabsArgs {
   refs: ReturnType<typeof useSessionRefs>;
   agentVisible: boolean;
   hotkeysEnabled: boolean;
-  handleViewDiff: () => void;
   sendFromGitTab: (message: string) => void;
 }
 
@@ -108,8 +107,6 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           }
           currentThinkingEffort={controls.ws.currentThinkingEffort}
           onThinkingEffortChange={controls.ws.setThinkingEffort}
-          hasFileChanges={controls.ws.hasFileChanges}
-          onViewDiff={args.handleViewDiff}
           runtimeProvider={controls.ws.runtimeProvider}
           runtimeSessionId={controls.ws.runtimeSessionId || undefined}
           slashCommandsOverride={data.session?.slashCommands ?? []}
@@ -133,7 +130,6 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       activeFeatureId,
       activeProjectId,
       agentVisible,
-      args.handleViewDiff,
       controls,
       data,
       hotkeysEnabled,

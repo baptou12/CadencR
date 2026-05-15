@@ -436,7 +436,7 @@ describe("AgentSession", () => {
     expect(onResume).toHaveBeenCalled();
   });
 
-  it("shows diff bar when hasFileChanges and onViewDiff provided", () => {
+  it("does not show a review changes button when the agent has file changes", () => {
     render(
       <AgentSession
         agentType="session"
@@ -444,11 +444,9 @@ describe("AgentSession", () => {
         status="idle"
         onSend={onSend}
         onStop={onStop}
-        hasFileChanges
-        onViewDiff={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Review Changes/)).toBeInTheDocument();
+    expect(screen.queryByText(/Review Changes/)).not.toBeInTheDocument();
   });
 
   it("shows todo list when todos provided", () => {

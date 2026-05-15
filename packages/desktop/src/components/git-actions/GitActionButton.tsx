@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useGitAction, type GitAction } from "./useGitAction";
@@ -112,7 +113,7 @@ export const GitActionButton = memo(function GitActionButton({
     e.preventDefault();
     void runOpenCompare();
   });
-  useGlobalShortcut("meta+shift+m", (e) => {
+  useGlobalShortcut("meta+g", (e) => {
     e.preventDefault();
     setPopoverOpen(true);
   });
@@ -135,16 +136,18 @@ export const GitActionButton = memo(function GitActionButton({
           <span>{state.label}</span>
         </Button>
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="xs"
-              className={`${GIT_ACTION_BUTTON_CLASS} rounded-l-none px-1.5`}
-              aria-label="More git actions"
-            >
-              <ChevronDown className="size-3.5" />
-            </Button>
-          </PopoverTrigger>
+          <ShortcutTooltip label="Git actions" keys={["cmd", "G"]}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="xs"
+                className={`${GIT_ACTION_BUTTON_CLASS} rounded-l-none px-1.5`}
+                aria-label="More git actions"
+              >
+                <ChevronDown className="size-3.5" />
+              </Button>
+            </PopoverTrigger>
+          </ShortcutTooltip>
           <PopoverContent align="end" className="w-80 p-0">
             <GitActionPopover state={state} onPick={runAction} />
           </PopoverContent>

@@ -332,19 +332,9 @@ export function useWsSessionEffects(args: {
 
 export function useWsSessionShortcuts(args: {
   controls: ReturnType<typeof useSessionControls>;
-  setInlineDiffOpen: (open: boolean) => void;
   hotkeysEnabled: boolean;
 }): void {
-  const { controls, setInlineDiffOpen, hotkeysEnabled } = args;
-  useScopedHotkeys(
-    "meta+g",
-    (e) => {
-      e.preventDefault();
-      setInlineDiffOpen(true);
-    },
-    "agent",
-    { enabled: hotkeysEnabled, enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  const { controls, hotkeysEnabled } = args;
   useScopedHotkeys(
     "meta+t",
     (e) => {

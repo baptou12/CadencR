@@ -91,11 +91,6 @@ vi.mock("@/components/editor/FeatureEditorTab", () => ({
   default: vi.fn(() => <div data-testid="editor-tab" />),
 }));
 
-vi.mock("@/components/diff/DiffViewerModal", () => ({
-  DiffViewerModal: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="diff-modal" /> : null,
-}));
-
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),

@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { ArrowDownIcon, CheckIcon, FileEditIcon, GitBranchIcon } from "lucide-react";
+import { ArrowDownIcon, CheckIcon, GitBranchIcon } from "lucide-react";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
 import { SessionInfoChip } from "./SessionInfoChip";
@@ -13,7 +13,6 @@ import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
 import {
   AUTO_SCROLL_ACTIVE_CHIP,
   META_BAR_CHIP,
-  REVIEW_CHANGES_CHIP,
   WORKTREE_ACTIVE_CHIP,
 } from "./meta-bar-chip-styles";
 
@@ -64,8 +63,6 @@ export interface MetaBarProps {
   models: Model[];
   providers?: Provider[];
   canChangeProvider?: boolean;
-  showDiffBar: boolean;
-  onViewDiff?: () => void;
   todos?: TodoItem[] | null;
   runtimeProvider?: string;
   runtimeSessionId?: string;
@@ -120,8 +117,6 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     models,
     providers = [],
     canChangeProvider = false,
-    showDiffBar,
-    onViewDiff,
     todos,
     runtimeProvider,
     runtimeSessionId,
@@ -276,20 +271,6 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
           onThinkingEffortChange={onThinkingEffortChange}
           onModelSelected={onModelSelected}
         />
-      )}
-
-      {/* Review Changes chip */}
-      {showDiffBar && (
-        <ShortcutTooltip label="Review Changes" keys={["cmd", "D"]}>
-          <button
-            type="button"
-            onClick={onViewDiff}
-            className={cn(META_BAR_CHIP, REVIEW_CHANGES_CHIP)}
-          >
-            <FileEditIcon className="size-3" />
-            Review Changes
-          </button>
-        </ShortcutTooltip>
       )}
 
       {/* Tasks chip */}

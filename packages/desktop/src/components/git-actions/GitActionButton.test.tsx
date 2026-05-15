@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("GitActionButton shortcuts", () => {
-  it("opens git actions with Cmd+Shift+M while an input is focused", async () => {
+  it("opens git actions with Cmd+G while an input is focused", async () => {
     useGitStatusStore.getState().setStatus(makeMergeableSnapshot(42));
 
     const { user } = render(
@@ -39,8 +39,18 @@ describe("GitActionButton shortcuts", () => {
     );
 
     screen.getByLabelText("Focused input").focus();
-    await user.keyboard("{Meta>}{Shift>}M{/Shift}{/Meta}");
+    await user.keyboard("{Meta>}G{/Meta}");
 
     expect(await screen.findByPlaceholderText("Search git actions…")).toBeInTheDocument();
+  });
+
+  it("shows a Git actions shortcut tooltip on hover", async () => {
+    useGitStatusStore.getState().setStatus(makeMergeableSnapshot(42));
+
+    const { user } = render(<GitActionButton featureId={42} />);
+
+    await user.hover(screen.getByRole("button", { name: /more git actions/i }));
+
+    expect(await screen.findByText("Git actions")).toBeInTheDocument();
   });
 });
