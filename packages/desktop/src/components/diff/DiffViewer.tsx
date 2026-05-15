@@ -18,7 +18,8 @@ interface DiffViewerProps {
    * Optional controlled file-list collapsed state. When provided, the parent
    * (e.g. `FeatureGitTab`) owns the toggle and renders its own button above
    * the viewer; we suppress our internal rail button and tree collapse button
-   * so there's a single source of truth. When omitted (e.g. `DiffViewerModal`),
+   * so there's a single source of truth. When omitted (e.g. standalone
+   * embeddings that don't expose a parent toggle),
    * the viewer falls back to self-managing the persisted setting.
    */
   fileListCollapsed?: boolean;

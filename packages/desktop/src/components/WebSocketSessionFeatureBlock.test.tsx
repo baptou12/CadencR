@@ -16,10 +16,6 @@ vi.mock("@/components/FeatureTopBar", () => ({
   FeatureTopBar: () => null,
 }));
 
-vi.mock("@/components/diff/DiffViewerModal", () => ({
-  DiffViewerModal: () => null,
-}));
-
 vi.mock("@/components/feature-layout/FeatureLayoutContext", () => ({
   FeatureLayoutProvider: ({ children }: { children: ReactNode }) => children,
 }));

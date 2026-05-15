@@ -44,7 +44,7 @@ import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
  * Container width below which the auto-scroll, todos, and info chips slide
  * out of the inline `MetaBar` and into a `MetaBarSecondary` strip rendered
  * below the prompt. Picked to match the point at which the inline bar starts
- * clipping when the model picker + mode + worktree + review chips are all
+ * clipping when the model picker + mode + worktree chips are all
  * visible.
  */
 const META_BAR_COMPACT_THRESHOLD_PX = 640;
@@ -77,8 +77,6 @@ export const AgentSession = memo(
       open: controlledOpen,
       onToggle,
       navAgentIndex,
-      hasFileChanges,
-      onViewDiff,
       canDelete,
       onDelete,
       todos,
@@ -253,7 +251,6 @@ export const AgentSession = memo(
       );
     })();
 
-    const showDiffBar = !!(hasFileChanges && onViewDiff);
     const {
       providerOptions,
       activeProviderId,
@@ -294,11 +291,7 @@ export const AgentSession = memo(
     // When narrow, secondary chips render below the prompt — so they don't
     // count toward whether the inline `MetaBar` should appear above it.
     const hasInlineMeta =
-      !!onPermissionModeToggle ||
-      !!onModelChange ||
-      !!showReadOnlyModel ||
-      showDiffBar ||
-      showWorktreeChip;
+      !!onPermissionModeToggle || !!onModelChange || !!showReadOnlyModel || showWorktreeChip;
     const hasSecondaryMeta =
       showAutoScrollChip || (todos && todos.length > 0) || !!(runtimeSessionId && onStop);
     const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
@@ -338,8 +331,6 @@ export const AgentSession = memo(
             : providerOptions.filter((provider) => provider.id === activeProviderId)
         }
         canChangeProvider={canChangeProvider}
-        showDiffBar={showDiffBar}
-        onViewDiff={onViewDiff}
         todos={todos}
         runtimeProvider={runtimeProvider}
         runtimeSessionId={runtimeSessionId}

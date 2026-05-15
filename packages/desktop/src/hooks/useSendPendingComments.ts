@@ -38,9 +38,9 @@ export interface UseSendPendingCommentsResult {
 }
 
 /**
- * Shared logic for the "send comments" button used by both `FeatureGitTab`
- * and `DiffViewerModal`. Formats pending comments, waits for the backend
- * to confirm deletion, then dispatches the caller-supplied callback.
+ * Shared logic for the "send comments" button used by diff-review surfaces.
+ * Formats pending comments, waits for the backend to confirm deletion, then
+ * dispatches the caller-supplied callback.
  */
 export function useSendPendingComments(
   params: UseSendPendingCommentsParams,

@@ -15,4 +15,11 @@ describe("KeyboardShortcutsModal", () => {
     expect(globalGroup).not.toBeNull();
     expect(within(globalGroup as HTMLElement).queryByText("New feature")).not.toBeInTheDocument();
   });
+
+  it("documents Git actions on Cmd+G and removes the agent diff shortcut", () => {
+    render(<KeyboardShortcutsModal open onOpenChange={() => {}} />);
+
+    expect(screen.getByText("Git actions")).toBeInTheDocument();
+    expect(screen.queryByText("Agent diff (current agent)")).not.toBeInTheDocument();
+  });
 });

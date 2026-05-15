@@ -59,7 +59,7 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["⌥", "P"], description: "Feature settings (alt)" },
       { keys: ["⌘", "⇧", "B"], description: "Start / continue build" },
       { keys: ["⌘", "⇧", "S"], description: "Start session" },
-      { keys: ["⌘", "⇧", "M"], description: "Git actions" },
+      { keys: ["⌘", "G"], description: "Git actions" },
       { keys: ["⌘", "⇧", "L"], description: "Edit feature label" },
       { keys: ["⌘", "M"], description: "Mark session agent done" },
       { keys: ["⌘", "Y"], description: "Approve plan" },
@@ -70,7 +70,6 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Agent / Prompt",
     shortcuts: [
-      { keys: ["⌘", "G"], description: "Agent diff (current agent)" },
       { keys: ["⌘", "P"], description: "Open model picker" },
       { keys: ["⌘", "T"], description: "Cycle thinking effort" },
       { keys: ["⌘", "Enter"], description: "Maximize agent" },

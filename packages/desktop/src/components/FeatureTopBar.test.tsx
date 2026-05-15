@@ -82,14 +82,6 @@ vi.mock("@/hooks/useProjectColor", () => ({
   },
 }));
 
-// Mock DiffViewerModal
-vi.mock("./diff/DiffViewerModal", () => ({
-  DiffViewerModal: ({ open }: { open: boolean }) => {
-    const React = require("react");
-    return open ? React.createElement("div", { "data-testid": "diff-modal" }, "Diff Modal") : null;
-  },
-}));
-
 // Mock ModelSelector
 vi.mock("./ModelSelector", () => ({
   ModelSelector: () => {
