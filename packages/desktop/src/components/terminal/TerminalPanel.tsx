@@ -10,7 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
-import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
 import {
@@ -38,8 +38,6 @@ interface TerminalPanelProps {
 
 const ICON_BTN =
   "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
-
-const NAV_DIRECTIONS = ["left", "right", "up", "down"] as const;
 
 export interface TerminalPanelHandle {
   focusActivePane: () => void;
@@ -172,8 +170,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [splitPane, resolvedActivePaneId, focusPane],
     );
 
-    useScopedGlobalShortcut(
-      "meta+d",
+    useScopedGlobalShortcutById(
+      "terminal-split-h",
       (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -183,8 +181,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       { enabled: hotkeysEnabled },
     );
 
-    useScopedGlobalShortcut(
-      "meta+shift+d",
+    useScopedGlobalShortcutById(
+      "terminal-split-v",
       (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -204,19 +202,43 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     );
 
     // One capture-phase listener per arrow direction so xterm doesn't swallow
-    // the keys while its textarea is focused. Iterating a static array keeps
-    // hook order stable across renders (rules-of-hooks-safe).
-    for (const direction of NAV_DIRECTIONS) {
-      useScopedGlobalShortcut(
-        `meta+alt+${direction}`,
-        (e) => {
-          e.preventDefault();
-          navigatePane(direction);
-        },
-        "terminal",
-        { enabled: hotkeysEnabled },
-      );
-    }
+    // the keys while its textarea is focused.
+    useScopedGlobalShortcutById(
+      "terminal-nav-pane-left",
+      (e) => {
+        e.preventDefault();
+        navigatePane("left");
+      },
+      "terminal",
+      { enabled: hotkeysEnabled },
+    );
+    useScopedGlobalShortcutById(
+      "terminal-nav-pane-right",
+      (e) => {
+        e.preventDefault();
+        navigatePane("right");
+      },
+      "terminal",
+      { enabled: hotkeysEnabled },
+    );
+    useScopedGlobalShortcutById(
+      "terminal-nav-pane-up",
+      (e) => {
+        e.preventDefault();
+        navigatePane("up");
+      },
+      "terminal",
+      { enabled: hotkeysEnabled },
+    );
+    useScopedGlobalShortcutById(
+      "terminal-nav-pane-down",
+      (e) => {
+        e.preventDefault();
+        navigatePane("down");
+      },
+      "terminal",
+      { enabled: hotkeysEnabled },
+    );
 
     // Use ref for leaves so closePane stays stable
     const leavesRef = useRef(leaves);
@@ -248,8 +270,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     // Stopping propagation matters: without it, `useAppClose` would *also*
     // run after us and request a window close while the user only intended
     // to kill one split.
-    useScopedGlobalShortcut(
-      "meta+w",
+    useScopedGlobalShortcutById(
+      "terminal-close",
       (e) => {
         if (!resolvedActivePaneId) return;
         e.preventDefault();

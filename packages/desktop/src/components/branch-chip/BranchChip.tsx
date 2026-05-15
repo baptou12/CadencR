@@ -12,7 +12,7 @@
 import { memo, useCallback, useState, type ReactElement } from "react";
 import { ArrowRight, GitBranch, Users } from "lucide-react";
 import { HoverCard } from "radix-ui";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcut } from "@/hooks/useShortcut";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
@@ -33,15 +33,16 @@ export const BranchChip = memo(function BranchChip({
   const handleOpen = useCallback(() => setOpen(true), []);
   const handleClose = useCallback(() => setOpen(false), []);
 
-  useHotkeys(
-    "meta+b",
+  useShortcut(
+    "branch-picker",
     (e) => {
       // Only steal ⌘B when the chip is mounted *and* the focus isn't on a
-      // text editor (react-hotkeys-hook handles that via enableOnFormTags).
+      // text editor — `enableOnFormTags: false` lets the global sidebar
+      // toggle win while typing.
       e.preventDefault();
       setOpen((prev) => !prev);
     },
-    { enableOnFormTags: false },
+    { enableOnFormTags: false, enableOnContentEditable: false },
   );
 
   if (!snapshot || !snapshot.current_branch) {

@@ -5,6 +5,7 @@ import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { getListFeaturesQueryKey } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
 
@@ -77,11 +78,14 @@ export function useAppClose(queryClient: QueryClient) {
 
   // CMD+Q → quit the app. This must go through Electron's quit path so
   // `before-quit` runs and the production sidecar is stopped.
-  useGlobalShortcut("meta+q", (e) => {
+  useGlobalShortcutById("quit", (e) => {
     e.preventDefault();
     void desktopBridge.requestQuit();
   });
 
+  // CMD+W stays as a raw capture-phase listener: it's a fallback "close
+  // window when nothing else owns CMD+W" — not a customizable binding.
+  // EditorSubTabs / TerminalPanel still own ⌘W on their respective tabs.
   // CMD+W → close app, but only when nothing else owns CMD+W:
   //   - EditorSubTabs owns CMD+W while editor buffers exist (closes the buffer)
   //   - TerminalPanel owns CMD+W while terminal panes exist (kills the split)

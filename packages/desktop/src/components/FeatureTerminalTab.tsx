@@ -9,7 +9,7 @@ import {
 } from "react";
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
-import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { useGetFeatureSettings, useListProjects } from "@/api/generated";
 import {
   getFocusedTab,
@@ -94,8 +94,8 @@ export const FeatureTerminalTab = memo(
     // otherwise open a fresh terminal. Read fresh state via `getState()` so
     // the callback doesn't go stale when panes are added/removed without a
     // re-render of this component.
-    useScopedGlobalShortcut(
-      "meta+t",
+    useScopedGlobalShortcutById(
+      "terminal-focus",
       (e) => {
         if (hidden) return;
         e.preventDefault();

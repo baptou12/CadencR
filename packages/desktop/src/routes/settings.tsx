@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcut } from "@/hooks/useShortcut";
 import {
   ArrowLeft,
   Bell,
@@ -104,16 +104,12 @@ function SettingsPage() {
     void navigate({ to: "/" });
   };
 
-  // Escape leaves the settings page. Allow it to fire from inside form
-  // controls so users don't have to defocus first.
-  useHotkeys(
-    "escape",
-    (e) => {
-      e.preventDefault();
-      goBack();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  // Escape leaves the settings page. `useShortcut` defaults to firing from
+  // inside form controls so users don't have to defocus first.
+  useShortcut("settings-back", (e) => {
+    e.preventDefault();
+    goBack();
+  });
 
   // Honor `?section=...` deep links — scroll once the layout has painted.
   useEffect(() => {

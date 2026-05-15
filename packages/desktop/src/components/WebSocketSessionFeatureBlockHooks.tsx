@@ -21,7 +21,7 @@ import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { useResolvedModelContext } from "@/contexts/ResolvedModelContext";
 import type { useResolvedModel } from "@/hooks/useResolvedModel";
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
 import { nextProviderMode } from "@/lib/provider-modes";
@@ -335,8 +335,8 @@ export function useWsSessionShortcuts(args: {
   hotkeysEnabled: boolean;
 }): void {
   const { controls, hotkeysEnabled } = args;
-  useScopedHotkeys(
-    "meta+t",
+  useScopedShortcut(
+    "agent-thinking",
     (e) => {
       const active = document.activeElement;
       if (!(active instanceof HTMLElement) || !active.closest("[data-agent-prompt-bar='true']")) {
@@ -351,6 +351,6 @@ export function useWsSessionShortcuts(args: {
       if (next) controls.ws.setThinkingEffort(next);
     },
     "agent",
-    { enabled: hotkeysEnabled, enableOnFormTags: true, enableOnContentEditable: true },
+    { enabled: hotkeysEnabled },
   );
 }

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -165,41 +165,41 @@ function usePermissionHotkeys({
   const denyIndex = options.findIndex(shouldShortcutDeny);
 
   // cmd+Y → approve (allow_once)
-  useScopedHotkeys(
-    "meta+y",
+  useScopedShortcut(
+    "perm-allow-once",
     (e) => {
       if (allowOnceIndex < 0 || e.shiftKey) return;
       e.preventDefault();
       onTrigger(allowOnceIndex);
     },
     "agent",
-    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
+    { enabled: !disableShortcuts },
     [onTrigger, allowOnceIndex],
   );
 
   // cmd+L → approve future requests when the provider exposes that option
-  useScopedHotkeys(
-    "meta+l",
+  useScopedShortcut(
+    "perm-allow-future",
     (e) => {
       if (allowFutureIndex < 0) return;
       e.preventDefault();
       onTrigger(allowFutureIndex);
     },
     "agent",
-    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
+    { enabled: !disableShortcuts },
     [onTrigger, allowFutureIndex],
   );
 
   // cmd+N → reject (deny)
-  useScopedHotkeys(
-    "meta+n",
+  useScopedShortcut(
+    "perm-deny",
     (e) => {
       if (denyIndex < 0) return;
       e.preventDefault();
       onTrigger(denyIndex);
     },
     "agent",
-    { enabled: !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
+    { enabled: !disableShortcuts },
     [onTrigger, denyIndex],
   );
 }

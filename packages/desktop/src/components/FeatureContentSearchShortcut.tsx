@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactElement } from "react";
 import ContentSearchDialog from "@/components/editor/ContentSearchDialog";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { activateFeatureTab } from "@/stores/feature-layout-store";
 
 interface FeatureContentSearchShortcutProps {
@@ -22,8 +22,8 @@ export function FeatureContentSearchShortcut({
     activateFeatureTab(layoutFeatureId, "editor");
   }, [layoutFeatureId]);
 
-  useGlobalShortcut(
-    "meta+shift+f",
+  useGlobalShortcutById(
+    "content-search",
     (event: KeyboardEvent): void => {
       event.preventDefault();
       event.stopPropagation();

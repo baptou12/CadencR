@@ -85,8 +85,14 @@ export interface Shortcut {
   aliases?: string[];
 }
 
-/** Canonical list. Order within a scope is the order rendered. */
-export const SHORTCUTS: Shortcut[] = [
+/**
+ * Canonical list. Order within a scope is the order rendered.
+ *
+ * `as const satisfies` keeps the literal `id` of every entry so the
+ * `ShortcutId` union below is derived from this single source — typos in
+ * `useShortcut("comand-palette", …)` become compile errors.
+ */
+export const SHORTCUTS = [
   // ─── Global ──────────────────────────────────────────────────────────
   {
     id: "command-palette",
@@ -161,12 +167,6 @@ export const SHORTCUTS: Shortcut[] = [
     description: "Open focused item",
     scope: "sidebar",
   },
-  {
-    id: "sidebar-quick-jump",
-    keys: ["mod", "1-9"],
-    description: "Jump to numbered project / feature",
-    scope: "sidebar",
-  },
 
   // ─── Unified Agents ──────────────────────────────────────────────────
   {
@@ -182,9 +182,27 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "unified-agents",
   },
   {
-    id: "agents-navigate",
-    keys: ["mod", "alt", "↑↓←→"],
-    description: "Navigate agents grid",
+    id: "agents-navigate-left",
+    keys: ["mod", "alt", "left"],
+    description: "Move selection left",
+    scope: "unified-agents",
+  },
+  {
+    id: "agents-navigate-right",
+    keys: ["mod", "alt", "right"],
+    description: "Move selection right",
+    scope: "unified-agents",
+  },
+  {
+    id: "agents-navigate-up",
+    keys: ["mod", "alt", "up"],
+    description: "Move selection up",
+    scope: "unified-agents",
+  },
+  {
+    id: "agents-navigate-down",
+    keys: ["mod", "alt", "down"],
+    description: "Move selection down",
     scope: "unified-agents",
   },
 
@@ -384,9 +402,27 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "editor",
   },
   {
-    id: "editor-nav-pane",
-    keys: ["mod", "alt", "↑↓←→"],
-    description: "Navigate panes",
+    id: "editor-nav-pane-left",
+    keys: ["mod", "alt", "left"],
+    description: "Focus pane left",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-right",
+    keys: ["mod", "alt", "right"],
+    description: "Focus pane right",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-up",
+    keys: ["mod", "alt", "up"],
+    description: "Focus pane up",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-down",
+    keys: ["mod", "alt", "down"],
+    description: "Focus pane down",
     scope: "editor",
   },
 
@@ -410,13 +446,50 @@ export const SHORTCUTS: Shortcut[] = [
     scope: "terminal",
   },
   {
-    id: "terminal-nav-pane",
-    keys: ["mod", "alt", "↑↓←→"],
-    description: "Switch panes",
+    id: "terminal-nav-pane-left",
+    keys: ["mod", "alt", "left"],
+    description: "Focus pane left",
+    scope: "terminal",
+  },
+  {
+    id: "terminal-nav-pane-right",
+    keys: ["mod", "alt", "right"],
+    description: "Focus pane right",
+    scope: "terminal",
+  },
+  {
+    id: "terminal-nav-pane-up",
+    keys: ["mod", "alt", "up"],
+    description: "Focus pane up",
+    scope: "terminal",
+  },
+  {
+    id: "terminal-nav-pane-down",
+    keys: ["mod", "alt", "down"],
+    description: "Focus pane down",
     scope: "terminal",
   },
   { id: "terminal-close", keys: ["mod", "w"], description: "Close pane", scope: "terminal" },
-];
+] as const satisfies readonly Shortcut[];
+
+export type ShortcutId = (typeof SHORTCUTS)[number]["id"];
+
+/**
+ * Duplicate-id check. Combo collisions within a scope (e.g. ⌘⏎ for both
+ * `agent-send` and `agent-maximize`) are tolerated — they're deliberate
+ * focus-dependent dual purposes — but two entries sharing an `id` would
+ * make the resolver pick whichever appears first. Dev-only so a bad PR
+ * fails CI rather than shipping silent ambiguity; tree-shaken in prod.
+ */
+if (import.meta.env.DEV) {
+  const seen = new Set<string>();
+  for (const s of SHORTCUTS) {
+    if (seen.has(s.id)) {
+      throw new Error(`Duplicate shortcut id "${s.id}" in lib/shortcuts/registry.ts`);
+    }
+    seen.add(s.id);
+  }
+}
 
 /** Indexed view used by the modal — computed once at module load since the
  *  underlying registry is static. */

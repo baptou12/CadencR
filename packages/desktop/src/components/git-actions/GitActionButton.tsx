@@ -14,7 +14,6 @@
  */
 import { lazy, memo, Suspense, useCallback, useState, type ReactElement } from "react";
 import { ChevronDown, GitCommit } from "lucide-react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,7 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useGitAction, type GitAction } from "./useGitAction";
 import { GitActionPopover, ICONS } from "./GitActionPopover";
@@ -96,24 +95,23 @@ export const GitActionButton = memo(function GitActionButton({
     [state.disabled, openPush, runOpenCompare],
   );
 
-  // Keyboard shortcuts for header actions. Mirror the existing OPT+P / CMD+SHIFT+P
-  // convention for the settings popover (see FeatureTopBar.tsx).
-  useHotkeys("meta+shift+k", (e) => {
+  // Keyboard shortcuts for header actions.
+  useShortcut("git-commit", (e) => {
     if (state.disabled.commit !== null) return;
     e.preventDefault();
     setCommitOpen(true);
   });
-  useHotkeys("meta+shift+u", (e) => {
+  useShortcut("git-push", (e) => {
     if (state.disabled.push !== null) return;
     e.preventDefault();
     openPush();
   });
-  useHotkeys("meta+shift+o", (e) => {
+  useShortcut("git-pr", (e) => {
     if (state.disabled.pr !== null) return;
     e.preventDefault();
     void runOpenCompare();
   });
-  useGlobalShortcut("meta+g", (e) => {
+  useGlobalShortcutById("git-actions", (e) => {
     e.preventDefault();
     setPopoverOpen(true);
   });

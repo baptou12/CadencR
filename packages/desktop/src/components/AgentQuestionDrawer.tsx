@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -287,8 +288,8 @@ export function AgentQuestionDrawer({
     [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
   );
 
-  useScopedHotkeys(
-    "meta+o",
+  useScopedShortcut(
+    "q-other",
     (e) => {
       if (!open || !currentQuestion?.options) return;
       e.preventDefault();
@@ -296,7 +297,7 @@ export function AgentQuestionDrawer({
       flashHighlight(otherShortcutIndex);
     },
     "agent",
-    { enabled: open && !disableShortcuts, enableOnFormTags: true, enableOnContentEditable: true },
+    { enabled: open && !disableShortcuts },
     [
       open,
       disableShortcuts,
@@ -307,43 +308,55 @@ export function AgentQuestionDrawer({
     ],
   );
 
-  // Enter to validate/submit current question
-  useScopedHotkeys(
-    "enter",
+  // Enter to validate/submit current question. Default enableOnFormTags=true
+  // would steal Enter inside the free-text input; opt out explicitly.
+  useScopedShortcut(
+    "q-submit",
     (e) => {
       if (!open || !currentQuestion) return;
-      // Don't intercept Enter when typing in the free text input (handled by onKeyDown there)
       if (showOther || !currentQuestion.options?.length) return;
       e.preventDefault();
       handleNext();
     },
     "agent",
-    { enabled: open && !disableShortcuts },
+    {
+      enabled: open && !disableShortcuts,
+      enableOnFormTags: false,
+      enableOnContentEditable: false,
+    },
     [open, disableShortcuts, currentQuestion, showOther, handleNext],
   );
 
   // Left/Right arrow keys to navigate between questions
-  useScopedHotkeys(
-    "left",
+  useScopedShortcut(
+    "q-prev",
     (e) => {
       if (!open || freeTextFocusedRef.current) return;
       e.preventDefault();
       handleBack();
     },
     "agent",
-    { enabled: open && !disableShortcuts && canGoBack },
+    {
+      enabled: open && !disableShortcuts && canGoBack,
+      enableOnFormTags: false,
+      enableOnContentEditable: false,
+    },
     [open, disableShortcuts, canGoBack, handleBack],
   );
 
-  useScopedHotkeys(
-    "right",
+  useScopedShortcut(
+    "q-next",
     (e) => {
       if (!open || freeTextFocusedRef.current) return;
       e.preventDefault();
       handleForward();
     },
     "agent",
-    { enabled: open && !disableShortcuts && canGoForward },
+    {
+      enabled: open && !disableShortcuts && canGoForward,
+      enableOnFormTags: false,
+      enableOnContentEditable: false,
+    },
     [open, disableShortcuts, canGoForward, handleForward],
   );
 

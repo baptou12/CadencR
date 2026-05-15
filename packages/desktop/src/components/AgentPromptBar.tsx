@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Loader2, Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
@@ -203,13 +203,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       [],
     );
 
-    const hotkeyOpts = {
-      enabled: agentTabActive,
-      enableOnFormTags: true as const,
-      enableOnContentEditable: true,
-    };
-    useScopedHotkeys(
-      "meta+p",
+    const hotkeyOpts = { enabled: agentTabActive };
+    useScopedShortcut(
+      "agent-model-picker",
       (e) => {
         if (!onOpenModelPicker) return;
         e.preventDefault();
@@ -219,8 +215,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       hotkeyOpts,
     );
 
-    useScopedHotkeys(
-      "meta+enter",
+    useScopedShortcut(
+      "agent-maximize",
       (e) => {
         if (!onToggleMaximize) return;
         e.preventDefault();
@@ -230,8 +226,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       hotkeyOpts,
     );
 
-    useScopedHotkeys(
-      "shift+tab",
+    useScopedShortcut(
+      "agent-permission-mode",
       (e) => {
         if (!onPermissionModeToggle) return;
         e.preventDefault();
@@ -241,8 +237,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       hotkeyOpts,
     );
 
-    useScopedHotkeys(
-      "meta+shift+z",
+    useScopedShortcut(
+      "agent-collapse",
       (e) => {
         if (isRunning || !onCollapse) return;
         e.preventDefault();
@@ -252,6 +248,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       hotkeyOpts,
     );
 
+    // `agent-stop` (Esc) is bound globally and gated in-callback so it fires
+    // even while focus is inside another tab — we only swallow it when the
+    // user is actually pointed at this prompt bar with a turn in flight.
     useHotkeys(
       "escape",
       (e) => {

@@ -1,4 +1,4 @@
-import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 
 interface UseAutoScrollShortcutOptions {
   enabled: boolean;
@@ -10,18 +10,14 @@ export function useAutoScrollShortcut({
   enabled,
   onEnableAutoScroll,
 }: UseAutoScrollShortcutOptions): void {
-  useScopedHotkeys(
-    "meta+shift+s",
+  useScopedShortcut(
+    "agent-autoscroll",
     (event: KeyboardEvent): void => {
       event.preventDefault();
       onEnableAutoScroll();
     },
     "agent",
-    {
-      enabled,
-      enableOnFormTags: true,
-      enableOnContentEditable: true,
-    },
+    { enabled },
     [onEnableAutoScroll],
   );
 }
