@@ -173,6 +173,68 @@ describe("ws-session-store", () => {
     expect(session.blocks[0].content).toBe("hello");
   });
 
+  it("sendPrompt marks mid-turn messages as pending when prompt receipts are supported", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "opencode", supports_prompt_receipts: true },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "working" }] } }],
+      },
+    });
+
+    store.sendPrompt("s1", "steer now");
+
+    const sent = JSON.parse(ws.sent[ws.sent.length - 1]);
+    const session = useWsSessionStore.getState().sessions["s1"];
+    const pending = session.blocks.find((block) => block.type === "user_message");
+    expect(sent.payload.client_message_id).toEqual(expect.any(String));
+    expect(pending?.clientMessageId).toBe(sent.payload.client_message_id);
+    expect(pending?.promptDeliveryState).toBe("pending_agent");
+    expect(session.rootBlocks.at(-1)?.id).toBe(pending?.id);
+  });
+
+  it("prompt_received clears the pending receipt indicator", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "opencode", supports_prompt_receipts: true },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "message",
+      payload: {
+        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "working" }] } }],
+      },
+    });
+    store.sendPrompt("s1", "steer now");
+    const sent = JSON.parse(ws.sent[ws.sent.length - 1]);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "prompt_received",
+      payload: { client_message_id: sent.payload.client_message_id },
+    });
+
+    const userBlock = useWsSessionStore
+      .getState()
+      .sessions["s1"].blocks.find((block) => block.type === "user_message");
+    expect(userBlock?.promptDeliveryState).toBeUndefined();
+    expect(userBlock?.clientMessageId).toBeUndefined();
+  });
+
   it("sendPrompt before initialized queues prompt and flushes after initialized", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");

@@ -14,6 +14,11 @@ function optionalNumber(record: Record<string, unknown>, key: string): number | 
   return typeof value === "number" ? value : undefined;
 }
 
+function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function optionalArray(record: Record<string, unknown>, key: string): unknown[] | undefined {
   const value = record[key];
   return Array.isArray(value) ? value : undefined;
@@ -79,6 +84,7 @@ export function parseInitializedPayload(payload: unknown): {
   input_tokens?: number;
   output_tokens?: number;
   context_window?: number;
+  supports_prompt_receipts?: boolean;
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
@@ -90,6 +96,7 @@ export function parseInitializedPayload(payload: unknown): {
     input_tokens: optionalNumber(record, "input_tokens"),
     output_tokens: optionalNumber(record, "output_tokens"),
     context_window: optionalNumber(record, "context_window"),
+    supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
   };
 }
 
@@ -106,10 +113,16 @@ export function parseModelPayload(payload: unknown): {
   };
 }
 
-export function parseProviderPayload(payload: unknown): { provider?: string } | null {
+export function parseProviderPayload(payload: unknown): {
+  provider?: string;
+  supports_prompt_receipts?: boolean;
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
-  return { provider: optionalString(record, "provider") };
+  return {
+    provider: optionalString(record, "provider"),
+    supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
+  };
 }
 
 export function parseModePayload(payload: unknown): { mode?: string } | null {
@@ -217,6 +230,14 @@ export function parseStreamStatusPayload(
   const state = optionalString(record, "state");
   if (state !== "degraded" && state !== "recovered") return null;
   return { state, reason: optionalString(record, "reason") };
+}
+
+export function parsePromptReceivedPayload(
+  payload: unknown,
+): { client_message_id?: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return { client_message_id: optionalString(record, "client_message_id") };
 }
 
 /**

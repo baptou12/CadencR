@@ -60,10 +60,10 @@ export interface QueuedPrompt {
  * Provider-neutral transport health for the agent stream.
  *
  * Set from the `session.stream_status` WebSocket envelope (see
- * `ws-envelope-handler.ts::handleStreamStatus`). The backend emits this
- * for OpenCode today (other providers fall back to `"ok"`); the field is
- * intentionally provider-neutral so future providers can opt in without
- * touching shared frontend code.
+ * `ws-envelope-handler.ts::handleStreamStatus`). Providers that do not emit
+ * stream-health transitions remain at `"ok"`; the field is intentionally
+ * provider-neutral so future providers can opt in without touching shared
+ * frontend code.
  *
  * UI semantics (PR-A wires the state; PR-C will render the banner):
  * - `"ok"`: stream is healthy. No banner.
@@ -123,6 +123,7 @@ export interface SessionEntry {
   currentModelId: string;
   runtimeProvider: string;
   runtimeSessionId: string;
+  supportsPromptReceipts: boolean;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
   hasFileChanges: boolean;
@@ -146,8 +147,8 @@ export interface SessionEntry {
   queuedPrompts: QueuedPrompt[];
   /**
    * Transport health for the agent stream (driven by
-   * `session.stream_status`). Provider-neutral; today only OpenCode
-   * emits transitions away from `"ok"`. See `StreamHealth`.
+   * `session.stream_status`). Providers that do not support this stay at
+   * `"ok"`. See `StreamHealth`.
    */
   streamHealth: StreamHealth;
 }
@@ -176,6 +177,7 @@ export function createSessionEntry(): SessionEntry {
     currentModelId: FALLBACK_MODEL_ID,
     runtimeProvider: DEFAULT_PROVIDER,
     runtimeSessionId: "",
+    supportsPromptReceipts: false,
     persistedLoaded: false,
     contextUsage: null,
     hasFileChanges: false,

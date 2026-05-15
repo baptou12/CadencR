@@ -56,12 +56,14 @@ export function createPromptSend(
   text: string,
   images?: Array<{ base64: string; mimeType: string }>,
   useWorktree?: boolean,
+  clientMessageId?: string,
 ): WsEnvelope {
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
     ...(images && images.length > 0 ? { images } : {}),
     ...(useWorktree ? { use_worktree: true } : {}),
+    ...(clientMessageId ? { client_message_id: clientMessageId } : {}),
   });
 }
 
