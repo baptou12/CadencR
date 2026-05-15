@@ -41,7 +41,8 @@ import { normalizeContextWindow } from "@/types/agent";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
-import { findProviderMode } from "@/lib/provider-modes";
+import { findProviderMode, nextProviderMode } from "@/lib/provider-modes";
+import { getEnabledOptInModesFromCache } from "@/hooks/useEnabledOptInModes";
 import type { PermissionMode } from "@/types/permission-mode";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import {
@@ -479,6 +480,14 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
     return;
   }
 
+  // CLI refused a specific permission mode (e.g. Claude Code `auto` on a
+  // non-auto-capable model). The payload carries the rejected wire mode;
+  // skip past it in the Shift+Tab cycle so the chip isn't stuck.
+  if (p?.code === "MODE_REJECTED_BY_CLI" && p.mode) {
+    handleModeRejectedByCli(ctx, sessionId, p.mode as PermissionMode);
+    return;
+  }
+
   const session = ctx.getSession(sessionId);
   const state = session.streamingState;
   if (p?.message) {
@@ -507,6 +516,31 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
       }),
     );
   }
+}
+
+function handleModeRejectedByCli(
+  ctx: StoreAccessors,
+  sessionId: string,
+  rejectedMode: PermissionMode,
+): void {
+  const session = ctx.get().sessions[sessionId];
+  if (!session) return;
+  const providerId = session.currentProviderId || session.runtimeProvider;
+  const optInModes = getEnabledOptInModesFromCache(providerId ?? "");
+  const next = nextProviderMode(providerId, rejectedMode, optInModes);
+
+  const rejectedLabel = findProviderMode(providerId, rejectedMode)?.label ?? rejectedMode;
+  // No recoverable next (only one visible mode, or wrap-around lands on
+  // the rejected mode itself). Toast and stop — re-issuing the same mode
+  // would just loop.
+  if (next === rejectedMode) {
+    toast.error(`${rejectedLabel} mode is unavailable for this model.`);
+    return;
+  }
+
+  const nextLabel = findProviderMode(providerId, next)?.label ?? next;
+  toast.error(`${rejectedLabel} unavailable for this model — switched to ${nextLabel}.`);
+  ctx.get().setPermissionMode(sessionId, next);
 }
 
 function handlePromptReceived(ctx: StoreAccessors, sessionId: string, payload: unknown): void {

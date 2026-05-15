@@ -264,6 +264,7 @@ impl WsBridgeCanUseTool {
                 serde_json::to_value(SessionErrorPayload {
                     code: "SDK_ERROR".into(),
                     message: format!("Failed to apply post-plan permission mode: {e}"),
+                    ..Default::default()
                 })
                 .unwrap(),
             );

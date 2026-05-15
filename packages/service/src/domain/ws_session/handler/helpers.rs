@@ -56,6 +56,7 @@ pub(super) fn send_error(sender: &WsSender, ref_id: &str, code: &str, message: &
         serde_json::to_value(SessionErrorPayload {
             code: code.into(),
             message: message.into(),
+            ..Default::default()
         })
         .unwrap(),
     );

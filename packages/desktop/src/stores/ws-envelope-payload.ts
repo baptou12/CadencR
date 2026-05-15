@@ -201,12 +201,17 @@ export function parsePermissionPayload(payload: unknown): {
   };
 }
 
-export function parseErrorPayload(payload: unknown): { code?: string; message?: string } | null {
+export function parseErrorPayload(
+  payload: unknown,
+): { code?: string; message?: string; mode?: string } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return {
     code: optionalString(record, "code"),
     message: optionalString(record, "message") ?? optionalString(record, "error"),
+    // Optional context attached to permission-mode rejections so the FE
+    // can skip the rejected mode in the Shift+Tab cycle.
+    mode: optionalString(record, "mode"),
   };
 }
 

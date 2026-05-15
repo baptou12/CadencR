@@ -16,9 +16,10 @@ use super::{
 };
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{
-    RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
+    RuntimeError, RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
     RuntimeSpawnConfig,
 };
+use crate::domain::agents::permission_modes::permission_mode_wire;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
 use crate::domain::workflow::worktree;
@@ -685,7 +686,35 @@ pub(super) async fn handle_mode_set(
                 // the user's intent stays recorded so a subsequent
                 // success starts from there rather than CLI state.
                 error!(db_session_id, error = %e, "failed to set permission mode on active query");
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
+                // `ControlRequestRejected` for `set_permission_mode` is
+                // the recoverable case (CLI alive, refused this mode for
+                // this model — e.g. Claude Code `auto` on a non-auto
+                // model). Tag it with the rejected wire mode so the FE
+                // can skip past it in the Shift+Tab cycle rather than
+                // locking the chip.
+                let payload = match &e {
+                    RuntimeError::ControlRequestRejected { subtype, .. }
+                        if subtype == "set_permission_mode" =>
+                    {
+                        SessionErrorPayload {
+                            code: "MODE_REJECTED_BY_CLI".into(),
+                            message: e.to_string(),
+                            mode: Some(permission_mode_wire(&new_mode).into()),
+                        }
+                    }
+                    _ => SessionErrorPayload {
+                        code: "SDK_ERROR".into(),
+                        message: e.to_string(),
+                        ..Default::default()
+                    },
+                };
+                let err = WsEnvelope::reply(
+                    &envelope.id,
+                    "session",
+                    "error",
+                    serde_json::to_value(payload).unwrap(),
+                );
+                let _ = sender.send(Message::Text(String::from(err).into()));
                 return;
             }
             // Track what the CLI actually accepted. Without this,

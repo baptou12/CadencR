@@ -254,10 +254,16 @@ impl From<RuntimePermissionOption> for PermissionOptionPayload {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionErrorPayload {
     pub code: String,
     pub message: String,
+    /// Optional context carrying the permission-mode wire id involved in
+    /// the failure. Set only for mode-related rejections (e.g.
+    /// `MODE_REJECTED_BY_CLI`) so the FE can advance past the rejected
+    /// mode in the cycle without re-querying state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -591,6 +597,7 @@ mod tests {
         let p = SessionErrorPayload {
             code: "ERR".into(),
             message: "bad".into(),
+            mode: None,
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionErrorPayload = serde_json::from_value(v).unwrap();

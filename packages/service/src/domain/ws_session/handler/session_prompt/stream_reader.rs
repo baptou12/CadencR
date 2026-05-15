@@ -410,6 +410,7 @@ pub(crate) fn spawn_stream_reader(
                         serde_json::to_value(SessionErrorPayload {
                             code: "SDK_ERROR".into(),
                             message,
+                            ..Default::default()
                         })
                         .unwrap(),
                     );

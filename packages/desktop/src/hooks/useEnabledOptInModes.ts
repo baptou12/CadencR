@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { useGetWorkspaceSetting } from "@/api/generated";
+import { getGetWorkspaceSettingQueryKey, useGetWorkspaceSetting } from "@/api/generated";
+import { queryClient } from "@/lib/queryClient";
 import { PROVIDER_IDS } from "@/lib/providers";
 import {
   CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
@@ -34,6 +35,24 @@ export function useEnabledOptInModes(activeProviderId: string): PermissionMode[]
     () => modesForProvider(activeProviderId, claudeBypassEnabled, codexFullAccessEnabled),
     [activeProviderId, claudeBypassEnabled, codexFullAccessEnabled],
   );
+}
+
+/**
+ * Non-React reader: pull the latest opt-in modes for a provider from the
+ * React Query cache. Used by code paths (e.g. WebSocket envelope handler)
+ * that need the value outside the render flow. Returns `[]` when the
+ * cache hasn't seeded yet — same default behaviour as the hooks above.
+ */
+export function getEnabledOptInModesFromCache(providerId: string): PermissionMode[] {
+  const claudeBypassEnabled =
+    queryClient.getQueryData<{ value?: string }>(
+      getGetWorkspaceSettingQueryKey(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY),
+    )?.value === "true";
+  const codexFullAccessEnabled =
+    queryClient.getQueryData<{ value?: string }>(
+      getGetWorkspaceSettingQueryKey(CODEX_FULL_ACCESS_SETTING_KEY),
+    )?.value === "true";
+  return modesForProvider(providerId, claudeBypassEnabled, codexFullAccessEnabled);
 }
 
 export function useEnabledOptInModesByProvider(): (providerId: string) => PermissionMode[] {

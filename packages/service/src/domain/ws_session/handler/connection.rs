@@ -90,6 +90,7 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
                                     serde_json::to_value(SessionErrorPayload {
                                         code: "PARSE_ERROR".into(),
                                         message: format!("Invalid envelope: {e}"),
+                                        ..Default::default()
                                     })
                                     .unwrap(),
                                 );
