@@ -33,7 +33,7 @@ describe("tokensToHotkeyString (mac)", () => {
     const { tokensToHotkeyString } = await importResolve();
     expect(tokensToHotkeyString(["mod", "shift", "rbracket"])).toBe("meta+shift+]");
     expect(tokensToHotkeyString(["mod", "slash"])).toBe("meta+/");
-    expect(tokensToHotkeyString(["mod", "comma"])).toBe("meta+,");
+    expect(tokensToHotkeyString(["mod", "comma"])).toBe("meta+comma");
     expect(tokensToHotkeyString(["mod", "alt", "left"])).toBe("meta+alt+left");
     expect(tokensToHotkeyString(["shift", "tab"])).toBe("shift+tab");
   });
