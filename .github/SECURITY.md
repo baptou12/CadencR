@@ -6,7 +6,7 @@
 
 The preferred channel is **GitHub's private vulnerability reporting**:
 
-→ **[Report a vulnerability](https://github.com/rle-mino/cadencr/security/advisories/new)**
+→ **[Report a vulnerability](https://github.com/merkr-software/cadencr/security/advisories/new)**
 
 That flow creates a private draft advisory where the maintainer and the reporter can work on the fix together, assign a CVE, and publish coordinated disclosure when a patched release is out.
 

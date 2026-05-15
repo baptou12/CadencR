@@ -22,7 +22,7 @@ Cadencr replaces the terminal-based workflow of local coding agents with a struc
 
 **Binaries are not yet published.** Until the first release, build from source — see [Build from source](#build-from-source) below.
 
-When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/rle-mino/cadencr/releases).
+When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/merkr-software/cadencr/releases).
 
 ---
 
@@ -38,7 +38,7 @@ When releases land, installers for macOS, Linux, and Windows will be available u
 
 ```bash
 # 1. Clone
-git clone https://github.com/rle-mino/cadencr.git
+git clone https://github.com/merkr-software/cadencr.git
 cd cadencr
 
 # 2. Install
@@ -84,7 +84,7 @@ packages/
 
 Contributions welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development setup, commit convention, and pull request process. Please also read the [Code of Conduct](./.github/CODE_OF_CONDUCT.md).
 
-To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/rle-mino/cadencr/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
+To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/merkr-software/cadencr/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
 
 ---
 

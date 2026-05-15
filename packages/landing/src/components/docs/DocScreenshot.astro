@@ -14,9 +14,10 @@ const { src, alt, caption } = Astro.props;
   <Image
     src={src}
     alt={alt}
-    widths={[600, 900, 1200]}
-    sizes="(min-width: 768px) 700px, 100vw"
+    widths={[720, 1200, 1600]}
+    sizes="(min-width: 768px) 720px, 100vw"
     format="webp"
+    quality={95}
     loading="lazy"
     decoding="async"
     class="block h-auto w-full rounded-xl border border-border shadow-md"

@@ -9,22 +9,26 @@ interface Props {
   reverse?: boolean;
   /** Shows a 1px border around the image — useful when the screenshot has no chrome. */
   bordered?: boolean;
+  /** Adds depth behind a screenshot when it needs separation from the page background. */
+  shadow?: boolean;
 }
 
-const { src, alt, reverse = false, bordered = false } = Astro.props;
+const { src, alt, reverse = false, bordered = false, shadow = false } = Astro.props;
 
 const bleed = reverse
   ? "md:w-[calc(100%+4rem)] md:-ml-16 xl:w-[calc(100%+7rem)] xl:-ml-28"
   : "md:w-[calc(100%+8rem)] xl:w-[calc(100%+14rem)]";
 const border = bordered ? "border border-border" : "";
+const depth = shadow ? "shadow-md" : "";
 ---
 <Image
   src={src}
   alt={alt}
-  widths={[900, 1200, 1800]}
-  sizes="(min-width: 1024px) 560px, 100vw"
+  widths={[900, 1200, 1800, 2400]}
+  sizes="(min-width: 768px) 850px, 100vw"
   format="webp"
+  quality={95}
   loading="lazy"
   decoding="async"
-  class:list={["block h-auto w-full max-w-none rounded-xl", bleed, border]}
+  class:list={["block h-auto w-full max-w-none rounded-xl", bleed, border, depth]}
 />
