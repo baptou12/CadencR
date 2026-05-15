@@ -17,16 +17,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioCardGroup } from "@/components/settings/RadioCardGroup";
+import { GIT_MERGE_RADIO_OPTIONS } from "@/components/settings/gitMergeRadioOptions";
 import {
   GIT_MERGE_MODE_KEY,
-  GIT_MERGE_MODE_OPTIONS,
   gitMergeModeFlag,
   parseGitMergeMode,
   type GitMergeMode,
@@ -97,7 +91,7 @@ export default function MergeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onKeyDownCapture={handleKeyDown} className="sm:max-w-lg">
+      <DialogContent onKeyDownCapture={handleKeyDown} className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="size-5" />
@@ -116,24 +110,15 @@ export default function MergeDialog({
           </div>
 
           <div className="space-y-2">
-            <label htmlFor="merge-mode" className="text-sm font-medium">
-              Merge option
-            </label>
-            <Select value={effectiveMode} onValueChange={(value) => setMode(value as GitMergeMode)}>
-              <SelectTrigger id="merge-mode" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {GIT_MERGE_MODE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {GIT_MERGE_MODE_OPTIONS.find((option) => option.value === effectiveMode)?.description}
-            </p>
+            <div className="text-sm font-medium">Merge option</div>
+            <RadioCardGroup<GitMergeMode>
+              ariaLabel="Merge option"
+              value={effectiveMode}
+              onChange={(next) => setMode(next)}
+              options={GIT_MERGE_RADIO_OPTIONS}
+              layout="grid"
+              disabled={submitting}
+            />
           </div>
 
           <label className="flex items-center gap-2 text-sm">

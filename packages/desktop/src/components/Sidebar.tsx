@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcut } from "@/hooks/useShortcut";
 import { Settings, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProjectTree } from "@/components/ProjectTree";
@@ -88,30 +88,24 @@ function useSidebarKeyboardNavigation(
   };
 
   // CMD+OPT+DOWN: move focus down in the sidebar
-  useHotkeys(
-    "meta+alt+down",
-    (e) => {
-      if (getActiveFocusZone() !== "left-sidebar") return;
-      e.preventDefault();
-      moveFocus("down");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("sidebar-focus-down", (e) => {
+    if (getActiveFocusZone() !== "left-sidebar") return;
+    e.preventDefault();
+    moveFocus("down");
+  });
 
   // CMD+OPT+UP: move focus up in the sidebar
-  useHotkeys(
-    "meta+alt+up",
-    (e) => {
-      if (getActiveFocusZone() !== "left-sidebar") return;
-      e.preventDefault();
-      moveFocus("up");
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("sidebar-focus-up", (e) => {
+    if (getActiveFocusZone() !== "left-sidebar") return;
+    e.preventDefault();
+    moveFocus("up");
+  });
 
-  // Enter: navigate to the focused item
-  useHotkeys(
-    "enter",
+  // Enter: navigate to the focused item. `enableOnFormTags: false` so
+  // hitting Enter inside the project rename input commits the rename
+  // instead of stealing the keystroke for navigation.
+  useShortcut(
+    "sidebar-activate",
     (e) => {
       if (getActiveFocusZone() !== "left-sidebar") return;
       const focused = document.activeElement as HTMLElement | null;
@@ -136,7 +130,7 @@ function useSidebarKeyboardNavigation(
         void navigate({ to: "/agents" });
       }
     },
-    { enableOnFormTags: false },
+    { enableOnFormTags: false, enableOnContentEditable: false },
   );
 }
 

@@ -52,9 +52,9 @@ describe("SettingsPage route", () => {
     mocks.mockGetWorkspaceSetting.mockReturnValue({ data: { value: "1" }, isSuccess: true });
   });
 
-  it("renders the workspace settings heading", () => {
+  it("renders the settings heading", () => {
     render(<SettingsPage />);
-    expect(screen.getByRole("heading", { name: "Workspace settings" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
   });
 
   it("renders the sidebar nav with grouped sections", () => {

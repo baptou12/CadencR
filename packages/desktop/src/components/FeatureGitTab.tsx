@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { SendIcon, Loader2Icon, PanelLeft, PanelLeftClose } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
@@ -129,8 +129,8 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     verb: "Send",
   });
 
-  useScopedGlobalShortcut(
-    "meta+enter",
+  useScopedGlobalShortcutById(
+    "diff-send-comments",
     (e) => {
       e.preventDefault();
       void send();

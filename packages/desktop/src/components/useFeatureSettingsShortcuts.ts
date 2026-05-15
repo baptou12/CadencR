@@ -1,21 +1,16 @@
 import type { Dispatch, SetStateAction } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
+
+import { useShortcut } from "@/hooks/useShortcut";
 
 export function useFeatureSettingsShortcuts(
   isSession: boolean,
   setSettingsOpen: Dispatch<SetStateAction<boolean>>,
 ): void {
-  const toggleSettings = (event: KeyboardEvent): void => {
+  // The registry entry `feature-settings` has both a primary (⌘⇧P) and an
+  // `altKeys` alternate (⌥P); `useShortcut` binds both via the resolver.
+  useShortcut("feature-settings", (event: KeyboardEvent): void => {
     if (isSession) return;
     event.preventDefault();
     setSettingsOpen((prev) => !prev);
-  };
-  useHotkeys("alt+p", toggleSettings, {
-    enableOnFormTags: true,
-    enableOnContentEditable: true,
-  });
-  useHotkeys("meta+shift+p", toggleSettings, {
-    enableOnFormTags: true,
-    enableOnContentEditable: true,
   });
 }

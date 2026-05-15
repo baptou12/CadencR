@@ -39,7 +39,8 @@ describe("ProjectSettingsDialog", () => {
         onOpenChange={vi.fn()}
       />,
     );
-    expect(screen.getByText("Project Settings: My Project")).toBeInTheDocument();
+    expect(screen.getByText("My Project")).toBeInTheDocument();
+    expect(screen.getByText(/Project settings/i)).toBeInTheDocument();
   });
 
   it("renders branch prefix input", () => {

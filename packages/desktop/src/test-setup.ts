@@ -6,6 +6,22 @@ import { cleanup } from "@testing-library/react";
 afterEach(cleanup);
 
 // ---------------------------------------------------------------------------
+// navigator.platform — pretend tests run on macOS
+// ---------------------------------------------------------------------------
+//
+// jsdom reports an empty `navigator.platform`, which the keyboard-shortcut
+// formatter (`lib/shortcuts/format.ts`) reads to decide whether the registry
+// `mod` token resolves to `meta` (mac) or `ctrl` (non-mac). The historical
+// hand-written bindings used literal `meta+…` strings, so all existing tests
+// fire `metaKey: true`. Forcing the platform to mac here keeps those tests
+// authoritative; cross-platform coverage lives in `resolve.test.ts`, which
+// stubs the module-level platform flag directly.
+Object.defineProperty(navigator, "platform", {
+  configurable: true,
+  value: "MacIntel",
+});
+
+// ---------------------------------------------------------------------------
 // window.matchMedia
 // ---------------------------------------------------------------------------
 

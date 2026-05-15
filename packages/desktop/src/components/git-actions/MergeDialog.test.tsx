@@ -77,15 +77,29 @@ describe("MergeDialog errors", () => {
     expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
-  it("merges on Cmd+Enter from the merge option select without opening the select", async () => {
+  it("merges on Cmd+Enter while focus is on a merge-option radio card", async () => {
     mocks.mergeMutateAsync.mockImplementationOnce(() => new Promise(() => {}));
 
     const { user } = render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
-    screen.getByRole("combobox", { name: /merge option/i }).focus();
+    // The new layout exposes merge options as radio cards inside the
+    // "Merge option" radiogroup — focus one of them and confirm Cmd+Enter
+    // still routes through the dialog's keydown handler.
+    const group = screen.getByRole("radiogroup", { name: /merge option/i });
+    const firstRadio = group.querySelector('[role="radio"]') as HTMLElement;
+    firstRadio.focus();
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
 
     expect(mocks.mergeMutateAsync).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("option", { name: "Default" })).not.toBeInTheDocument();
+  });
+
+  it("renders the colored flag chips alongside each merge-option label", () => {
+    render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+
+    // Same set of chips the settings page exposes.
+    expect(screen.getByText("--no-ff")).toBeInTheDocument();
+    expect(screen.getByText("--ff-only")).toBeInTheDocument();
+    expect(screen.getByText("--squash")).toBeInTheDocument();
+    expect(screen.getByText("Git default")).toBeInTheDocument();
   });
 });

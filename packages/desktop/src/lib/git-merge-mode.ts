@@ -52,3 +52,18 @@ export function parseGitMergeMode(value: string | null | undefined): GitMergeMod
 export function gitMergeModeFlag(value: GitMergeMode): string {
   return GIT_MERGE_MODE_OPTIONS.find((option) => option.value === value)?.flag ?? "--no-ff";
 }
+
+/**
+ * Token-driven color for each merge mode's CLI-flag chip. Shared by the
+ * settings page and the in-feature Merge dialog so the two views stay
+ * visually in lockstep — same hue, same label.
+ *
+ * `default` uses `--foreground` (not `--muted-foreground`) so the flag stays
+ * readable against the chip's `bg-muted` surface across both themes.
+ */
+export const GIT_MERGE_FLAG_COLOR_VAR: Record<GitMergeMode, string> = {
+  default: "var(--foreground)",
+  no_ff: "var(--acc-purple)",
+  ff_only: "var(--acc-cyan)",
+  squash: "var(--acc-orange)",
+};

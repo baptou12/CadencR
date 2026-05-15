@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { useShortcut } from "./useShortcut";
 import { useDebouncedSetting } from "./useDebouncedSetting";
 
 const ZOOM_KEY = "zoom_global";
@@ -61,29 +61,16 @@ export function useZoom() {
 export function useZoomHotkeys() {
   const { zoomIn, zoomOut, resetZoom } = useZoom();
 
-  const hotkeyOpts = { enableOnFormTags: true, enableOnContentEditable: true } as const;
-  useHotkeys(
-    "meta+equal",
-    (e) => {
-      e.preventDefault();
-      zoomIn();
-    },
-    hotkeyOpts,
-  );
-  useHotkeys(
-    "meta+minus",
-    (e) => {
-      e.preventDefault();
-      zoomOut();
-    },
-    hotkeyOpts,
-  );
-  useHotkeys(
-    "meta+0",
-    (e) => {
-      e.preventDefault();
-      resetZoom();
-    },
-    hotkeyOpts,
-  );
+  useShortcut("zoom-in", (e) => {
+    e.preventDefault();
+    zoomIn();
+  });
+  useShortcut("zoom-out", (e) => {
+    e.preventDefault();
+    zoomOut();
+  });
+  useShortcut("zoom-reset", (e) => {
+    e.preventDefault();
+    resetZoom();
+  });
 }

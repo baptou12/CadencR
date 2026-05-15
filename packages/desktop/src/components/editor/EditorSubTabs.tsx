@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { useScopedGlobalShortcut, useScopedHotkeys } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcutById, useScopedShortcut } from "@/hooks/useShortcut";
 import { cn } from "@/lib/utils";
 import { copyToClipboard } from "@/lib/clipboard";
 import { FileSymbolIcon } from "./file-icons";
@@ -90,8 +90,8 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
   // not cycle file tabs while focused on terminal/git/agent, and Cmd+W must
   // not close a buffer while another tab is in front (it would conflict with
   // the global Cmd+W close-window shortcut otherwise).
-  useScopedGlobalShortcut(
-    "meta+shift+]",
+  useScopedGlobalShortcutById(
+    "editor-next-tab",
     (e) => {
       if (!tabs.length) return;
       e.preventDefault();
@@ -102,8 +102,8 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
     "editor",
   );
 
-  useScopedGlobalShortcut(
-    "meta+shift+[",
+  useScopedGlobalShortcutById(
+    "editor-prev-tab",
     (e) => {
       if (!tabs.length) return;
       e.preventDefault();
@@ -115,15 +115,15 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
   );
 
   // CMD+W: close active buffer (works even when CodeMirror has focus).
-  useScopedHotkeys(
-    "meta+w",
+  useScopedShortcut(
+    "editor-close",
     () => {
       if (!activeFilePath) return;
       const tab = tabs.find((t) => t.filePath === activeFilePath);
       if (tab) requestClose(tab.filePath, tab.fileName, tab.isDirty);
     },
     "editor",
-    { preventDefault: true, enableOnContentEditable: true, enableOnFormTags: true },
+    { preventDefault: true },
     [tabs, activeFilePath, featureId, paneId],
   );
 

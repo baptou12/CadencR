@@ -18,7 +18,7 @@ import {
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
@@ -173,7 +173,7 @@ export function ProjectFeatures({
     [activeFeature],
   );
 
-  useGlobalShortcut("meta+shift+l", handleActiveFeatureLabelShortcut, {
+  useGlobalShortcutById("edit-label", handleActiveFeatureLabelShortcut, {
     enabled: activeFeature != null,
   });
 

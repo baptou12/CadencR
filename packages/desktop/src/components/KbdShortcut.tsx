@@ -29,9 +29,9 @@ const VARIANT_CLASSES = {
   "inline-sm":
     "ml-1 inline-flex items-center gap-px rounded border border-current/20 bg-current/10 px-1.5 py-0.5 text-[8px] font-medium leading-none text-current [&_svg]:!size-2",
   square:
-    "mr-1.5 inline-flex size-6 items-center justify-center rounded border border-border bg-muted text-[10px] text-foreground",
+    "mr-1.5 inline-flex size-6 items-center justify-center rounded border border-border bg-card text-[10px] text-foreground",
   modal:
-    "inline-flex items-center justify-center rounded border border-border bg-muted px-2 py-1 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[24px]",
+    "inline-flex items-center justify-center rounded border border-border bg-card px-2 py-1 text-[11px] font-mono font-medium text-foreground shadow-sm min-w-[24px]",
   hint: "inline-flex items-center justify-center gap-px rounded border border-current/25 bg-transparent px-1 py-0.5 text-[10px] font-mono font-medium leading-none text-current [&_svg]:!size-2.5",
 } as const;
 

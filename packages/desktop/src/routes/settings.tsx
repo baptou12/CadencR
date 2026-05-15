@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useShortcut } from "@/hooks/useShortcut";
 import {
   ArrowLeft,
   Bell,
@@ -104,16 +104,12 @@ function SettingsPage() {
     void navigate({ to: "/" });
   };
 
-  // Escape leaves the settings page. Allow it to fire from inside form
-  // controls so users don't have to defocus first.
-  useHotkeys(
-    "escape",
-    (e) => {
-      e.preventDefault();
-      goBack();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  // Escape leaves the settings page. `useShortcut` defaults to firing from
+  // inside form controls so users don't have to defocus first.
+  useShortcut("settings-back", (e) => {
+    e.preventDefault();
+    goBack();
+  });
 
   // Honor `?section=...` deep links — scroll once the layout has painted.
   useEffect(() => {
@@ -137,7 +133,7 @@ function SettingsPage() {
             <div className="min-w-0">
               <div className="text-sm font-semibold">Settings</div>
               <div className="truncate text-[11px] text-muted-foreground">
-                Workspace · Cadencr v{APP_VERSION}
+                Cadencr v{APP_VERSION}
               </div>
             </div>
           </div>
@@ -160,12 +156,24 @@ function SettingsPage() {
 
       <main ref={mainRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[820px] space-y-6 px-10 py-8">
-          <header className="space-y-1">
-            <Breadcrumbs />
-            <h1 className="text-2xl font-semibold tracking-tight">Workspace settings</h1>
-            <p className="text-sm text-muted-foreground">
-              Configure how Cadencr looks, runs, and orchestrates agents across your workspace.
-            </p>
+          <header className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Breadcrumbs />
+              <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+              <p className="text-sm text-muted-foreground">
+                Configure how Cadencr looks, runs, and orchestrates agents.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={goBack}
+              className="shrink-0 gap-1.5"
+              title="Back to workspace (Esc)"
+            >
+              <ArrowLeft className="size-3.5" />
+              Back
+            </Button>
           </header>
 
           <AppearanceSection />
@@ -261,7 +269,7 @@ function EditorSection(): React.JSX.Element {
         <SettingsSwitchRow
           icon={<Keyboard className="size-4" />}
           iconTint="cyan"
-          label="Vim mode"
+          label="Vim motions"
           description="Modal editing in the built-in code editor."
           checked={isVimEnabled}
           onCheckedChange={(checked) => vimMode.setValue(checked ? "true" : "false")}
@@ -385,7 +393,7 @@ function InterfaceSection(): React.JSX.Element {
 
 function Kbd({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded border border-b-2 border-border bg-[var(--input)] px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+    <kbd className="inline-flex h-[20px] min-w-[20px] items-center justify-center rounded border border-b-2 border-border bg-card px-1.5 font-mono text-[10px] font-medium text-foreground">
       {children}
     </kbd>
   );

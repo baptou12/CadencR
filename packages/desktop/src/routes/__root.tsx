@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useHotkeys } from "react-hotkeys-hook";
 import { Sidebar } from "@/components/Sidebar";
 import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
@@ -191,94 +190,67 @@ function RootLayout() {
 
   const appClose = useAppClose(queryClient);
 
-  useHotkeys(
-    "meta+b",
-    (e) => {
-      e.preventDefault();
-      setSidebarCollapsed(!isSidebarCollapsed);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("toggle-sidebar", (e) => {
+    e.preventDefault();
+    setSidebarCollapsed(!isSidebarCollapsed);
+  });
 
-  // CMD+, -> navigate to settings
-  useHotkeys(
-    "meta+comma",
-    (e) => {
-      e.preventDefault();
-      void navigate({ to: "/settings" });
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("open-settings", (e) => {
+    e.preventDefault();
+    void navigate({ to: "/settings" });
+  });
 
-  useGlobalShortcut("meta+/", (e) => {
+  useGlobalShortcutById("shortcuts-help", (e) => {
     e.preventDefault();
     setShortcutsHelpOpen((prev) => !prev);
   });
 
-  // CMD+Escape -> stop all running agents across the app
-  useHotkeys(
-    "meta+escape",
-    (e) => {
-      const store = useWsSessionStore.getState();
-      const sessions = store.sessions;
-      let stopped = false;
-      for (const sessionId of Object.keys(sessions)) {
-        if (isTurnActive(sessions[sessionId].lifecycle)) {
-          store.interrupt(sessionId);
-          stopped = true;
-        }
+  // Stop all running agents across the app.
+  useShortcut("stop-all-agents", (e) => {
+    const store = useWsSessionStore.getState();
+    const sessions = store.sessions;
+    let stopped = false;
+    for (const sessionId of Object.keys(sessions)) {
+      if (isTurnActive(sessions[sessionId].lifecycle)) {
+        store.interrupt(sessionId);
+        stopped = true;
       }
-      if (stopped) e.preventDefault();
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+    }
+    if (stopped) e.preventDefault();
+  });
 
-  // CMD+K -> open command palette
-  useHotkeys(
-    "meta+k",
-    (e) => {
-      e.preventDefault();
-      setCommandPaletteOpen((prev) => !prev);
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("command-palette", (e) => {
+    e.preventDefault();
+    setCommandPaletteOpen((prev) => !prev);
+  });
 
-  // CMD+SHIFT+N -> create new session
-  useHotkeys(
-    "meta+shift+n",
-    (e) => {
-      e.preventDefault();
-      if (activeProjectId == null) return;
-      createSessionMutation.mutate({ data: { project_id: activeProjectId, type: "ws-session" } });
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  useShortcut("new-session", (e) => {
+    e.preventDefault();
+    if (activeProjectId == null) return;
+    createSessionMutation.mutate({ data: { project_id: activeProjectId, type: "ws-session" } });
+  });
 
-  // CMD+SHIFT+X -> archive active sessions, delete archived sessions.
-  useHotkeys(
-    "meta+shift+x",
-    async (e) => {
-      e.preventDefault();
-      if (activeProjectId == null || activeFeatureId == null) return;
-      try {
-        const features = await customInstance<Feature[]>({
-          method: "GET",
-          url: `/api/features?project_id=${activeProjectId}&include_archived=true`,
-        });
-        const feature = features.find((f) => f.id === activeFeatureId);
-        if (!feature) return;
-        const activeFeatures = features.filter((f) => f.status === "active");
-        const idx = activeFeatures.findIndex((f) => f.id === activeFeatureId);
-        const remaining = activeFeatures.filter((f) => f.id !== activeFeatureId);
-        const target = idx > 0 ? activeFeatures[idx - 1] : (remaining[0] ?? null);
-        deleteNavTargetRef.current = target?.id ?? null;
-        setConfirmAction(feature.status === "archived" ? "delete" : "archive");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to load features");
-      }
-    },
-    { enableOnFormTags: true, enableOnContentEditable: true },
-  );
+  // Archive active features, delete archived features.
+  useShortcut("delete-feature", async (e) => {
+    e.preventDefault();
+    if (activeProjectId == null || activeFeatureId == null) return;
+    try {
+      const features = await customInstance<Feature[]>({
+        method: "GET",
+        url: `/api/features?project_id=${activeProjectId}&include_archived=true`,
+      });
+      const feature = features.find((f) => f.id === activeFeatureId);
+      if (!feature) return;
+      const activeFeatures = features.filter((f) => f.status === "active");
+      const idx = activeFeatures.findIndex((f) => f.id === activeFeatureId);
+      const remaining = activeFeatures.filter((f) => f.id !== activeFeatureId);
+      const target = idx > 0 ? activeFeatures[idx - 1] : (remaining[0] ?? null);
+      deleteNavTargetRef.current = target?.id ?? null;
+      setConfirmAction(feature.status === "archived" ? "delete" : "archive");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load features");
+    }
+  });
 
   const handleLayoutChanged = useCallback(() => {
     const size = sidebarPanelRef.current?.getSize();

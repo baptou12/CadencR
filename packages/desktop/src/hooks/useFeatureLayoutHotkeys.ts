@@ -1,13 +1,11 @@
 import { useCallback } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 
+import { useShortcut } from "@/hooks/useShortcut";
 import { activateFeatureTab } from "@/stores/feature-layout-store";
 import type { TabKind } from "@/stores/feature-layout-schema";
 import type { FeatureTabActivationHandlers } from "@/components/feature-layout/types";
 
 type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers & { enabled?: boolean };
-
-const HOTKEY_OPTIONS = { enableOnFormTags: true, enableOnContentEditable: true } as const;
 
 /**
  * Preserves the existing meta+shift+A/T/G/E shortcuts. Each hotkey:
@@ -33,36 +31,36 @@ export function useFeatureLayoutHotkeys(
     [featureId, onTerminalActivate, onEditorActivate],
   );
 
-  useHotkeys(
-    "meta+shift+a",
+  useShortcut(
+    "pane-agent",
     (e) => {
       e.preventDefault();
       activate("agent");
     },
-    { ...HOTKEY_OPTIONS, enabled },
+    { enabled },
   );
-  useHotkeys(
-    "meta+shift+t",
+  useShortcut(
+    "pane-terminal",
     (e) => {
       e.preventDefault();
       activate("terminal");
     },
-    { ...HOTKEY_OPTIONS, enabled },
+    { enabled },
   );
-  useHotkeys(
-    "meta+shift+g",
+  useShortcut(
+    "pane-git",
     (e) => {
       e.preventDefault();
       activate("git");
     },
-    { ...HOTKEY_OPTIONS, enabled },
+    { enabled },
   );
-  useHotkeys(
-    "meta+shift+e",
+  useShortcut(
+    "pane-editor",
     (e) => {
       e.preventDefault();
       activate("editor");
     },
-    { ...HOTKEY_OPTIONS, enabled },
+    { enabled },
   );
 }

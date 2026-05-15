@@ -14,10 +14,10 @@ import { ModelSelector } from "./ModelSelector";
 import { WorktreeList } from "./WorktreeList";
 import { ShellTerminalFrame } from "./ShellTerminalFrame";
 import { SettingsCard } from "@/components/settings/SettingsCard";
-import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { IconTile } from "@/components/settings/IconTile";
-import { DEFAULT_PROJECT_COLOR } from "@/lib/project-colors";
+import { ProjectColorPicker } from "@/components/settings/ProjectColorPicker";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 
 export function ProjectSettingsDialog({
   projectId,
@@ -38,16 +38,21 @@ export function ProjectSettingsDialog({
       if (s.value != null) settings[s.key] = s.value;
     }
   }
+  // Toast only the user-driven saves — the field-level autosave fires often
+  // enough that a per-keystroke toast would be noise. We surface "Saved" on
+  // explicit color picker clicks via the swatch's onChange.
   const setSettingMutation = useSetProjectSetting({
     mutation: {
       onSuccess: () => {
         void queryClient.invalidateQueries({ queryKey: getGetProjectSettingsQueryKey(projectId) });
-        toast.success("Settings saved");
+      },
+      onError: (err: Error) => {
+        toast.error(err.message);
       },
     },
   });
 
-  const branchPrefix = settings?.branch_prefix ?? "";
+  const [branchPrefix, setBranchPrefix] = useState(settings?.branch_prefix ?? "");
   const [colorInput, setColorInput] = useState(settings?.color ?? "");
   const [setupWorktree, setSetupWorktree] = useState(settings?.setup_worktree ?? "");
   useEffect(() => {
@@ -56,46 +61,56 @@ export function ProjectSettingsDialog({
   useEffect(() => {
     if (settings?.setup_worktree != null) setSetupWorktree(settings.setup_worktree);
   }, [settings?.setup_worktree]);
+  useEffect(() => {
+    if (settings?.branch_prefix != null) setBranchPrefix(settings.branch_prefix);
+  }, [settings?.branch_prefix]);
+
+  // Debounced text-field saves. `useDebouncedCallback` handles timer cleanup
+  // on unmount so a fast typist closing the dialog won't fire a mutation on
+  // an unmounted component. Color is committed immediately because swatch
+  // clicks aren't continuous.
+  const commitBranchPrefix = useDebouncedCallback((next: string) => {
+    setSettingMutation.mutate({
+      id: projectId,
+      data: { key: "branch_prefix", value: next },
+    });
+  }, 400);
+
+  const commitSetupWorktree = useDebouncedCallback((next: string) => {
+    setSettingMutation.mutate({
+      id: projectId,
+      data: { key: "setup_worktree", value: next },
+    });
+  }, 600);
+
+  function commitColor(next: string): void {
+    setColorInput(next);
+    setSettingMutation.mutate({
+      id: projectId,
+      data: { key: "color", value: next },
+    });
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[85vh] w-[90vw] flex-col gap-0 p-0 sm:max-w-[860px]">
         <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle className="text-base font-semibold">
-            Project Settings: {projectName}
+            Project settings — <span className="text-muted-foreground">{projectName}</span>
           </DialogTitle>
+          <p className="text-[11px] text-muted-foreground">Changes save automatically.</p>
         </DialogHeader>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-6 py-6">
           <SettingsSection size="sm" title="Identity" subtitle="Color · Display">
             <SettingsCard padded>
-              <SettingsRow
-                icon={
-                  <span
-                    className="size-8 shrink-0 rounded-full border border-border"
-                    style={{ backgroundColor: `#${colorInput || DEFAULT_PROJECT_COLOR}` }}
-                  />
-                }
-                label="Project color"
-                description="Hex color used for this project's accent dot in the sidebar."
-                control={
-                  <Input
-                    placeholder="3b82f6"
-                    value={colorInput}
-                    onChange={(e) =>
-                      setColorInput(e.target.value.replace(/[^0-9a-fA-F]/g, "").slice(0, 6))
-                    }
-                    onBlur={() =>
-                      setSettingMutation.mutate({
-                        id: projectId,
-                        data: { key: "color", value: colorInput },
-                      })
-                    }
-                    className="h-8 w-28 font-mono text-sm"
-                  />
-                }
-                className="!px-0 !py-0"
-              />
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Project color</div>
+                <p className="text-xs text-muted-foreground">
+                  Accent dot used for this project in the sidebar.
+                </p>
+                <ProjectColorPicker value={colorInput} onChange={commitColor} />
+              </div>
             </SettingsCard>
           </SettingsSection>
 
@@ -132,12 +147,10 @@ export function ProjectSettingsDialog({
                     id="branch-prefix"
                     placeholder="e.g. feature/"
                     value={branchPrefix}
-                    onChange={(e) =>
-                      setSettingMutation.mutate({
-                        id: projectId,
-                        data: { key: "branch_prefix", value: e.target.value },
-                      })
-                    }
+                    onChange={(e) => {
+                      setBranchPrefix(e.target.value);
+                      commitBranchPrefix(e.target.value);
+                    }}
                     className="h-8 text-sm"
                   />
                 </div>
@@ -164,13 +177,10 @@ export function ProjectSettingsDialog({
                     }
                     rows={4}
                     value={setupWorktree}
-                    onChange={(e) => setSetupWorktree(e.target.value)}
-                    onBlur={() =>
-                      setSettingMutation.mutate({
-                        id: projectId,
-                        data: { key: "setup_worktree", value: setupWorktree },
-                      })
-                    }
+                    onChange={(e) => {
+                      setSetupWorktree(e.target.value);
+                      commitSetupWorktree(e.target.value);
+                    }}
                     className="min-h-24 resize-y rounded-none border-0 bg-[var(--block-bash-body-bg)] font-mono text-xs leading-relaxed text-[var(--block-bash-fg)] placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0"
                   />
                 </ShellTerminalFrame>

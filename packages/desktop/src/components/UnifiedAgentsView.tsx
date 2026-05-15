@@ -19,7 +19,7 @@ import {
   useUnifiedAgentsPerRowSetting,
   type UnifiedAgentsPerRowSetting,
 } from "@/components/UnifiedAgentsPerRowSetting";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import {
   parseUnifiedAgentsFilterText,
   serializeUnifiedAgentsFilterText,
@@ -35,7 +35,7 @@ import {
 export function UnifiedAgentsView(): ReactElement {
   const [filters, setFilters] = useUnifiedAgentsFilters();
   const searchInputRef = useRef<UnifiedAgentsFilterInputHandle>(null);
-  useGlobalShortcut("meta+shift+f", (event: KeyboardEvent): void => {
+  useGlobalShortcutById("agents-search", (event: KeyboardEvent): void => {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -191,23 +191,23 @@ function useUnifiedAgentsKeyboard({
   // Window-level capture-phase listeners so navigation/pin work even when
   // focus is inside an xterm or CodeMirror (which stopPropagation native
   // keydown before React's delegated listeners see it).
-  useGlobalShortcut("meta+alt+left", (e) => {
+  useGlobalShortcutById("agents-navigate-left", (e) => {
     consumeKeyEvent(e);
     moveFocus("left");
   });
-  useGlobalShortcut("meta+alt+right", (e) => {
+  useGlobalShortcutById("agents-navigate-right", (e) => {
     consumeKeyEvent(e);
     moveFocus("right");
   });
-  useGlobalShortcut("meta+alt+up", (e) => {
+  useGlobalShortcutById("agents-navigate-up", (e) => {
     consumeKeyEvent(e);
     moveFocus("up");
   });
-  useGlobalShortcut("meta+alt+down", (e) => {
+  useGlobalShortcutById("agents-navigate-down", (e) => {
     consumeKeyEvent(e);
     moveFocus("down");
   });
-  useGlobalShortcut("meta+shift+p", (e) => {
+  useGlobalShortcutById("agents-pin", (e) => {
     consumeKeyEvent(e);
     activePinControls.toggle();
   });
