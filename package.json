@@ -4,7 +4,7 @@
   "description": "A desktop IDE for AI coding agents — unified workspace for Claude Code, OpenCode, and more.",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22.0.0 <23.0.0"
+    "node": ">=22.18.0 <23.0.0"
   },
   "scripts": {
     "dev": "turbo run dev",
@@ -21,6 +21,13 @@
     "husky": "^9.1.7",
     "oxfmt": "^0.46.0",
     "turbo": "^2.9.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "@stoplight/spectral-functions": "1.10.2",
+      "@stoplight/spectral-rulesets": "1.22.2",
+      "volar-service-yaml": "0.0.71"
+    }
   },
   "packageManager": "pnpm@9.15.4+sha512.b2dc20e2fc72b3e18848459b37359a32064663e5627a51e4c74b2c29dd8e8e0491483c3abb40789cfd578bf362fb6ba8261b05f0387d76792ed6e23ea3b1b6a0"
 }
