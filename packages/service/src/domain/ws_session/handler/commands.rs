@@ -28,6 +28,7 @@ pub(super) async fn handle_commands_action(envelope: WsEnvelope, sender: &WsSend
                 serde_json::to_value(SessionErrorPayload {
                     code: "UNKNOWN_ACTION".into(),
                     message: format!("Unknown commands action: {unknown}"),
+                    ..Default::default()
                 })
                 .unwrap(),
             );

@@ -284,6 +284,44 @@ describe("handleEnvelope error handling", () => {
     expect(updated.blocks).toHaveLength(0);
   });
 
+  it("MODE_REJECTED_BY_CLI auto-advances past the rejected mode and toasts", () => {
+    vi.mocked(toast.error).mockClear();
+    const session = createSessionEntry();
+    session.lifecycle = { phase: "idle" } as SessionEntry["lifecycle"];
+    session.currentProviderId = "claude_code";
+    session.runtimeProvider = "claude_code";
+    session.permissionMode = "auto";
+    const setPermissionMode = vi.fn();
+    let state = {
+      sessions: { s1: session },
+      setPermissionMode,
+    } as unknown as WsSessionStore;
+    const ctx: StoreAccessors = {
+      get: (): WsSessionStore => state,
+      set: (partial: Partial<WsSessionStore>): void => {
+        state = { ...state, ...partial };
+      },
+      getSession: (id: string): SessionEntry => state.sessions[id],
+    };
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: {
+        code: "MODE_REJECTED_BY_CLI",
+        message: "auto mode unavailable for this model",
+        mode: "auto",
+      },
+    });
+
+    // Claude Code cycle (no opt-ins) is acceptEdits → plan → auto → wrap to
+    // acceptEdits. Skipping `auto` lands on acceptEdits.
+    expect(setPermissionMode).toHaveBeenCalledWith("s1", "acceptEdits");
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    // No inline error block injected (meta-bar action, toast only).
+    expect(ctx.getSession("s1").blocks).toHaveLength(0);
+  });
+
   it("falls back to the inline error block for ordinary errors", () => {
     vi.mocked(toast.error).mockClear();
     const session = createSessionEntry();

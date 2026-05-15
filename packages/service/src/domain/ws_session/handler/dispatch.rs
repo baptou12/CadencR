@@ -39,6 +39,7 @@ pub(super) async fn dispatch_envelope(
                 serde_json::to_value(SessionErrorPayload {
                     code: "UNKNOWN_DOMAIN".into(),
                     message: format!("Unknown domain: {unknown}"),
+                    ..Default::default()
                 })
                 .unwrap(),
             );
@@ -103,6 +104,7 @@ async fn handle_session_action(
                 serde_json::to_value(SessionErrorPayload {
                     code: "UNKNOWN_ACTION".into(),
                     message: format!("Unknown session action: {unknown}"),
+                    ..Default::default()
                 })
                 .unwrap(),
             );
