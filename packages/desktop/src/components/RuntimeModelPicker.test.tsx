@@ -7,8 +7,13 @@ import { RuntimeModelPicker } from "./RuntimeModelPicker";
 function Harness(props: {
   onSelect?: (providerId: string, modelId: string) => void;
   onAfterSelectClose?: () => void;
+  models?: Array<{ id: string; label: string }>;
 }) {
-  const { onSelect = vi.fn(), onAfterSelectClose = vi.fn() } = props;
+  const {
+    models = [{ id: "opus", label: "Opus" }],
+    onSelect = vi.fn(),
+    onAfterSelectClose = vi.fn(),
+  } = props;
   const [open, setOpen] = useState(false);
 
   return (
@@ -20,7 +25,7 @@ function Harness(props: {
           id: "claude_code",
           label: "Claude",
           disabled: false,
-          models: [{ id: "opus", label: "Opus" }],
+          models,
         },
       ]}
       selectedProviderId="claude_code"
@@ -45,5 +50,26 @@ describe("RuntimeModelPicker", () => {
 
     expect(onSelect).toHaveBeenCalledWith("claude_code", "opus");
     await waitFor(() => expect(onAfterSelectClose).toHaveBeenCalled());
+  });
+
+  it("resets the results scroll position when the filter changes", async () => {
+    const user = userEvent.setup();
+    const models = Array.from({ length: 30 }, (_, index) => ({
+      id: `model-${index}`,
+      label: index === 29 ? "Opus Max" : `Model ${index}`,
+    }));
+
+    render(<Harness models={models} />);
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+
+    const list = document.querySelector('[data-slot="command-list"]');
+    expect(list).toBeInstanceOf(HTMLElement);
+    const commandList = list as HTMLElement;
+    commandList.scrollTop = 240;
+
+    await user.type(screen.getByPlaceholderText("Search providers or models..."), "Op");
+
+    await waitFor(() => expect(commandList.scrollTop).toBe(0));
   });
 });

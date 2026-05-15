@@ -82,6 +82,7 @@ export function RuntimeModelPicker({
   onAfterSelectClose,
 }: RuntimeModelPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const restoreFocusAfterCloseRef = useRef(false);
   const [internalOpen, setInternalOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -90,6 +91,16 @@ export function RuntimeModelPicker({
   useEffect(() => {
     if (!resolvedOpen) setSearch("");
   }, [resolvedOpen]);
+
+  useEffect(() => {
+    if (!resolvedOpen || !listRef.current) return undefined;
+
+    const frameId = requestAnimationFrame(() => {
+      if (listRef.current) listRef.current.scrollTop = 0;
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [resolvedOpen, search]);
 
   const modelEntries = useMemo<ModelEntry[]>(
     () =>
@@ -159,7 +170,7 @@ export function RuntimeModelPicker({
             onValueChange={setSearch}
             className="h-9 text-xs"
           />
-          <CommandList className="max-h-[320px]">
+          <CommandList ref={listRef} className="max-h-[320px]">
             <CommandEmpty className="py-3 text-center text-xs">{emptyText}</CommandEmpty>
             {action ? (
               <CommandGroup heading="Selection">
