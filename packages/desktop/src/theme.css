@@ -31,7 +31,11 @@
   --secondary: oklch(0.403 0.032 277.821);
   --secondary-foreground: oklch(0.977 0.008 106.793);
   --muted: oklch(0.403 0.032 277.821);
-  --muted-foreground: #6271a4;
+  /* UI muted text. Must read on both `--background` (L≈0.22) and `--muted`/
+   * `--input` (L≈0.40), so we can't reuse the Dracula "comment" hue
+   * (`#6271a4`, L≈0.50) — that one stays on `--acc-comment` for editor
+   * syntax. This lighter blue-gray clears WCAG 4.5:1 on both surfaces. */
+  --muted-foreground: oklch(0.78 0.04 280);
   --accent: oklch(0.34 0.032 277.821);
   --accent-foreground: oklch(0.977 0.008 106.793);
   --destructive: oklch(0.682 0.206 24.421);
@@ -192,7 +196,10 @@
   --secondary: oklch(0.945 0.012 290);
   --secondary-foreground: oklch(0.205 0.04 285);
   --muted: oklch(0.945 0.012 290);
-  --muted-foreground: oklch(0.46 0.04 285);
+  /* UI muted text on Aurora — slightly darker than the original 0.46 so the
+   * `bg-muted` + `text-muted-foreground` combo (used by mono chips,
+   * keyboard hints, etc.) clears WCAG 4.5:1. */
+  --muted-foreground: oklch(0.42 0.04 285);
   --accent: oklch(0.93 0.02 290);
   --accent-foreground: oklch(0.205 0.04 285);
   --destructive: oklch(0.58 0.22 25);
