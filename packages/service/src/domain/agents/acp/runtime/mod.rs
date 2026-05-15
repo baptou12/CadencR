@@ -44,6 +44,8 @@ mod terminal_enrich;
 mod terminal_io;
 pub mod terminal_registry;
 mod terminal_sandbox;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod turn_lifecycle;
 pub mod turn_result;
 

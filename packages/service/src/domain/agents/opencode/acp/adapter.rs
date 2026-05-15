@@ -69,6 +69,9 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     fn prompt_response_usage(&self, response: &Value) -> Option<RuntimeUsage> {
         prompt_response_usage(response)
     }
+    fn supports_durable_resume(&self) -> bool {
+        true
+    }
     fn tool_call_start_override(
         &self,
         tool_call_id: &str,
@@ -256,6 +259,7 @@ mod tests {
     #[test]
     fn adapter_normalizes_lowercase_acp_tool_names() {
         let adapter = adapter();
+        assert!(adapter.supports_durable_resume());
         assert_eq!(adapter.normalize_tool_name("write"), "Write");
         assert_eq!(adapter.normalize_tool_name("question"), "AskUserQuestion");
         assert_eq!(

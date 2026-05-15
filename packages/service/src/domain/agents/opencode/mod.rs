@@ -21,16 +21,19 @@ pub struct OpenCodeAdapter;
 pub static OPENCODE_ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
 pub const PROVIDER_ID: &str = "opencode";
 
+fn normalize_resume_session_id(session_id: &str) -> Option<String> {
+    let trimmed = session_id.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
 #[async_trait]
 impl AgentRuntimeAdapter for OpenCodeAdapter {
-    fn is_valid_resume_session_id(&self, _session_id: &str) -> bool {
-        // ACP sessions are subprocess-scoped; resume ids are never valid
-        // across spawns.
-        false
+    fn is_valid_resume_session_id(&self, session_id: &str) -> bool {
+        normalize_resume_session_id(session_id).is_some()
     }
 
-    fn resolve_resume_session_id(&self, _runtime_session_id: Option<&str>) -> Option<String> {
-        None
+    fn resolve_resume_session_id(&self, runtime_session_id: Option<&str>) -> Option<String> {
+        runtime_session_id.and_then(normalize_resume_session_id)
     }
 
     fn parse_permission_request(&self, raw: &Value) -> Option<RuntimePermissionRequest> {
@@ -162,11 +165,14 @@ mod tests {
     use crate::domain::agents::adapter::AgentRuntimeAdapter;
 
     #[test]
-    fn acp_rejects_resume_session_ids() {
-        // ACP sessions are subprocess-scoped; resume ids never round-trip.
+    fn acp_reuses_non_empty_resume_session_ids() {
         let adapter = OpenCodeAdapter;
-        assert!(!adapter.is_valid_resume_session_id("ses_stale"));
-        assert_eq!(adapter.resolve_resume_session_id(Some("ses_stale")), None);
+        assert!(adapter.is_valid_resume_session_id("ses_stale"));
+        assert_eq!(
+            adapter.resolve_resume_session_id(Some("  ses_stale  ")),
+            Some("ses_stale".to_string())
+        );
+        assert_eq!(adapter.resolve_resume_session_id(Some("   ")), None);
     }
 
     #[test]
