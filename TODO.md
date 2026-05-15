@@ -1,7 +1,4 @@
 ## FIX
-- [~] [opencode] Not sync on command updates
-- [~] [opencode] inline diff broken sometimes
-- [x] [feature] remove feature workflow
 
 
 ## FEAT
