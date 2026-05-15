@@ -51,7 +51,9 @@ const TOKEN_TO_ENGINE: Record<string, string> = {
   // same trick the inline `useZoomHotkeys` registration used today.
   plus: "=",
   minus: "-",
-  comma: ",",
+  // Word form — react-hotkeys-hook v5 uses "," as its multi-shortcut
+  // delimiter, so the literal "," breaks parsing.
+  comma: "comma",
   slash: "/",
   backtick: "`",
   lbracket: "[",
