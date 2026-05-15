@@ -71,6 +71,24 @@ fn acknowledge_permission_response(sender: &WsSender, envelope_id: &str) {
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
+fn send_provider_set_ok(
+    sender: &WsSender,
+    envelope_id: &str,
+    provider: &str,
+    supports_prompt_receipts: bool,
+) {
+    let reply = WsEnvelope::reply(
+        envelope_id,
+        "session",
+        "provider.set.ok",
+        serde_json::json!({
+            "provider": provider,
+            "supports_prompt_receipts": supports_prompt_receipts,
+        }),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
 /// Handle session.permission.respond
 pub(super) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -333,7 +351,7 @@ pub(super) async fn handle_provider_set(
         }
     };
 
-    if runtime_adapter(&payload.provider).is_none() {
+    let Some(adapter) = runtime_adapter(&payload.provider) else {
         send_error(
             sender,
             &envelope.id,
@@ -344,7 +362,8 @@ pub(super) async fn handle_provider_set(
             ),
         );
         return;
-    }
+    };
+    let supports_prompt_receipts = adapter.supports_prompt_receipts();
 
     let has_messages = match session_has_messages(&app_state.read_pool, db_session_id).await {
         Ok(value) => value,
@@ -416,13 +435,12 @@ pub(super) async fn handle_provider_set(
                 )
                 .await;
 
-                let reply = WsEnvelope::reply(
+                send_provider_set_ok(
+                    sender,
                     &envelope.id,
-                    "session",
-                    "provider.set.ok",
-                    serde_json::json!({ "provider": payload.provider }),
+                    &payload.provider,
+                    supports_prompt_receipts,
                 );
-                let _ = sender.send(Message::Text(String::from(reply).into()));
 
                 // Broadcast the new chip state via the standard `mode.changed`
                 // envelope so the FE updates through the same path as a
@@ -436,13 +454,12 @@ pub(super) async fn handle_provider_set(
                 let _ = sender.send(Message::Text(String::from(mode_changed).into()));
             } else {
                 // Same-provider re-set: idempotent ack, no DB writes / mode reset.
-                let reply = WsEnvelope::reply(
+                send_provider_set_ok(
+                    sender,
                     &envelope.id,
-                    "session",
-                    "provider.set.ok",
-                    serde_json::json!({ "provider": payload.provider }),
+                    &payload.provider,
+                    supports_prompt_receipts,
                 );
-                let _ = sender.send(Message::Text(String::from(reply).into()));
             }
         }
         QueryState::Active { .. } => {
@@ -856,32 +873,38 @@ pub(super) async fn handle_interrupt(
         }
     };
 
-    let sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get(&db_session_id) {
-        Some(h) => h,
-        None => {
-            send_error(
-                sender,
-                &envelope.id,
-                "SESSION_NOT_FOUND",
-                "Session not found",
-            );
-            return;
+    let active_query = {
+        let sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
+                );
+                return;
+            }
+        };
+
+        match &handle.state {
+            QueryState::Active { query, .. } => Some(std::sync::Arc::clone(query)),
+            QueryState::Pending(_) => {
+                handle.manual_compact_cancel.store(true, Ordering::SeqCst);
+                None
+            }
         }
     };
 
-    match &handle.state {
-        QueryState::Active { query, .. } => {
-            let q = query.read().await;
-            if let Err(e) = q.interrupt().await {
-                error!(db_session_id, error = %e, "interrupt failed");
-                send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
-            }
+    if let Some(query) = active_query {
+        let q = query.read().await;
+        if let Err(e) = q.interrupt().await {
+            error!(db_session_id, error = %e, "interrupt failed");
+            send_error(sender, &envelope.id, "SDK_ERROR", &e.to_string());
         }
-        QueryState::Pending(_) => {
-            handle.manual_compact_cancel.store(true, Ordering::SeqCst);
-            send_error(sender, &envelope.id, "INVALID_STATE", "Session not active");
-        }
+    } else {
+        send_error(sender, &envelope.id, "INVALID_STATE", "Session not active");
     }
 }
 

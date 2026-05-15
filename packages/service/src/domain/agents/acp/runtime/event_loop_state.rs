@@ -62,6 +62,7 @@ mod tests {
     use super::sync_session_state_from_update;
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::permissions::PendingPermissions;
+    use crate::domain::agents::acp::runtime::prompt_receipts::PendingPromptReceipts;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::EventLoopConfig;
     use crate::domain::agents::acp::runtime::session_permissions::SessionPermissions;
@@ -131,6 +132,8 @@ mod tests {
             session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: Arc::new(PlainHooks),
+            replay_suppression: Arc::new(AtomicBool::new(false)),
+            pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::new(Mutex::new(EventIndexer::default())),
         }
     }

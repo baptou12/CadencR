@@ -7,9 +7,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex};
 
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex as AsyncMutex, RwLock};
+use tokio::sync::{broadcast, mpsc, Mutex as AsyncMutex, RwLock};
 
-use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpSpawnOptions};
+use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent, AcpSpawnOptions};
 use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
     RuntimeInitEvent, RuntimeSpawnConfig,
@@ -18,6 +18,7 @@ use crate::domain::agents::adapter::{
 use super::events_stream_blocks::EventIndexer;
 use super::lifecycle::{negotiate_session, NegotiatedSession};
 use super::permissions::PendingPermissions;
+use super::prompt_receipts::PendingPromptReceipts;
 use super::provider_hooks::AcpProviderHooks;
 use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use super::session::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};
@@ -63,7 +64,7 @@ pub async fn spawn_acp_runtime_session(
     .await
     .map_err(|e| RuntimeError::new(format!("failed to spawn ACP subprocess: {e}")))?;
     let pid = client.pid();
-    let event_rx = client.subscribe();
+    let mut event_rx = client.subscribe();
     let negotiated = negotiate_session(&client, &config, context_window, hooks.as_ref()).await?;
 
     let (tx, rx) = mpsc::channel(MESSAGE_CHANNEL_CAPACITY);
@@ -77,6 +78,11 @@ pub async fn spawn_acp_runtime_session(
         hooks.clone(),
         Arc::clone(&indexer),
     );
+    if config.resume_session_id.is_some() {
+        session
+            .replay_suppression
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
 
     apply_initial_permission_mode(&session, &negotiated, &config).await?;
     // Push the user-selected model and thinking effort to the agent before
@@ -90,6 +96,12 @@ pub async fn spawn_acp_runtime_session(
     )?;
 
     emit_init_event(&tx, &negotiated).await;
+    if config.resume_session_id.is_some() {
+        let drained = drain_resume_backlog(&mut event_rx);
+        if drained > 0 {
+            tracing::debug!(drained, "drained ACP resume replay backlog");
+        }
+    }
     let loop_task = spawn_event_loop(
         client.clone(),
         event_rx,
@@ -106,6 +118,8 @@ pub async fn spawn_acp_runtime_session(
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: hooks.clone(),
             indexer: Arc::clone(&session.indexer),
+            replay_suppression: Arc::clone(&session.replay_suppression),
+            pending_prompt_receipts: Arc::clone(&session.pending_prompt_receipts),
         },
     );
     session.loop_task = Some(loop_task);
@@ -129,10 +143,26 @@ pub async fn spawn_acp_runtime_session(
     Ok(Box::new(session))
 }
 
+fn drain_resume_backlog(event_rx: &mut broadcast::Receiver<AcpEvent>) -> usize {
+    let mut drained = 0usize;
+    loop {
+        match event_rx.try_recv() {
+            Ok(_) => drained += 1,
+            Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+                drained = drained.saturating_add(usize::try_from(skipped).unwrap_or(usize::MAX));
+            }
+            Err(broadcast::error::TryRecvError::Empty | broadcast::error::TryRecvError::Closed) => {
+                break;
+            }
+        }
+    }
+    drained
+}
+
 /// Detach: awaiting `session/prompt` here would deadlock the spawn when the
 /// agent's first tool blocks on user input. The initial prompt routes
-/// through the same `prompt_turn_lock` as `stream_input` so a follow-up FE
-/// prompt arriving before the initial turn resolves queues behind it (W4).
+/// through the full-turn prompt path; follow-up FE prompts can steer through
+/// `AcpRuntimeSession::stream_input` while this initial turn is still active.
 fn spawn_initial_prompt(
     session: &AcpRuntimeSession,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
@@ -148,7 +178,9 @@ fn spawn_initial_prompt(
     let hooks = Arc::clone(&session.hooks);
     let prompt_turn_lock = Arc::clone(&session.prompt_turn_lock);
     let prompt_cancel = session.prompt_cancel.clone();
+    let replay_suppression = Arc::clone(&session.replay_suppression);
     tokio::spawn(async move {
+        replay_suppression.store(false, std::sync::atomic::Ordering::SeqCst);
         if let Err(error) = drive_initial_prompt(
             &session_for_prompt,
             &session_id_arc,
@@ -213,6 +245,8 @@ impl AcpRuntimeSession {
             local_tx,
             hooks,
             indexer,
+            replay_suppression: Arc::new(AtomicBool::new(false)),
+            pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             prompt_turn_lock: Arc::new(AsyncMutex::new(())),
             prompt_cancel: PromptCancel::new(),
         }

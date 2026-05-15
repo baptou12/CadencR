@@ -1,5 +1,6 @@
 use super::server_requests::{spawn_event_loop, EventLoopConfig};
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
+use crate::domain::agents::acp::runtime::prompt_receipts::PendingPromptReceipts;
 use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
 use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
 use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
@@ -7,7 +8,7 @@ use crate::domain::agents::adapter::RuntimePermissionMode;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
 use tokio::sync::{mpsc, RwLock};
@@ -56,6 +57,8 @@ fn event_loop_config(cwd: PathBuf) -> EventLoopConfig {
         session_permissions: Default::default(),
         terminals: Arc::new(TerminalRegistry::default()),
         hooks: Arc::new(PlainHooks),
+        replay_suppression: Arc::new(AtomicBool::new(false)),
+        pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
         indexer: Arc::new(StdMutex::new(EventIndexer::default())),
     }
 }
@@ -96,6 +99,59 @@ async fn event_loop_rejects_unknown_server_request_method() {
     let response = read_agent_response(&mut stdin).await;
     assert_eq!(response["id"], "u-1");
     assert_eq!(response["error"]["code"], -32601);
+}
+
+#[tokio::test]
+async fn event_loop_suppresses_resume_replay_until_prompt_dispatch() {
+    let (client, mut stdout, _stdin) = client_with_agent_io().await;
+    let (tx, mut rx) = mpsc::channel(8);
+    let config = event_loop_config(PathBuf::from("/tmp"));
+    let replay_suppression = Arc::clone(&config.replay_suppression);
+    replay_suppression.store(true, Ordering::SeqCst);
+    let _loop = spawn_event_loop(client.clone(), client.subscribe(), tx, config);
+
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": "replayed" }
+                }
+            }
+        }),
+    )
+    .await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
+            .await
+            .is_err(),
+        "resume replay transcript should not be forwarded"
+    );
+
+    replay_suppression.store(false, Ordering::SeqCst);
+    write_agent_request(
+        &mut stdout,
+        json!({
+            "jsonrpc": "2.0",
+            "method": "session/update",
+            "params": {
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": "live" }
+                }
+            }
+        }),
+    )
+    .await;
+    let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .expect("live transcript should be forwarded")
+        .expect("runtime channel open")
+        .expect("runtime event ok");
+    assert!(!event.is_result());
 }
 
 #[tokio::test]

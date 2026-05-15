@@ -335,6 +335,11 @@ pub enum RuntimeEventKind {
     /// `Arc` so the WS bridge can fan out without cloning the vec
     /// per subscriber.
     SlashCommandsUpdated(Arc<Vec<RuntimeSlashCommand>>),
+    /// Runtime accepted a user prompt for delivery to the provider. The
+    /// frontend uses this to clear "not received yet" UI.
+    PromptReceived {
+        client_message_id: String,
+    },
     Other,
 }
 
@@ -567,6 +572,26 @@ impl RuntimeEvent {
         }
     }
 
+    pub fn prompt_received_client_message_id(&self) -> Option<&str> {
+        match &self.kind {
+            RuntimeEventKind::PromptReceived { client_message_id } => Some(client_message_id),
+            _ => None,
+        }
+    }
+
+    pub fn prompt_received_event(client_message_id: String) -> Self {
+        Self::new(
+            RuntimeEventMetadata {
+                raw: serde_json::json!({
+                    "type": "prompt_received",
+                    "client_message_id": client_message_id,
+                }),
+                ..RuntimeEventMetadata::default()
+            },
+            RuntimeEventKind::PromptReceived { client_message_id },
+        )
+    }
+
     /// Convenience constructor for stream-status events. Emitters don't
     /// have meaningful session_id / usage / context_window metadata for
     /// these — the WS bridge ignores those fields for status envelopes.
@@ -600,6 +625,14 @@ pub trait AgentRuntimeSession: Send + Sync {
     }
     async fn session_id(&self) -> Option<String>;
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
+    async fn stream_input_with_client_message_id(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        let _ = client_message_id;
+        self.stream_input(content).await
+    }
     async fn interrupt(&self) -> Result<(), RuntimeError>;
     async fn compact(&self) -> Result<(), RuntimeError> {
         Err(RuntimeError::new(
@@ -685,6 +718,11 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// (usually history persisted from prior `result` events).
     async fn context_window_for_model(&self, _model_id: &str) -> Option<u64> {
         None
+    }
+
+    /// Whether prompts can be acknowledged when delivered to a live runtime.
+    fn supports_prompt_receipts(&self) -> bool {
+        false
     }
 
     /// Extract an authoritative context window for the current event.
@@ -1024,6 +1062,7 @@ mod tests {
         assert!(adapter
             .parse_permission_request(&json!({"type": "none"}))
             .is_none());
+        assert!(!adapter.supports_prompt_receipts());
 
         let spawned = adapter
             .spawn(serde_json::Value::Null, RuntimeSpawnConfig::default())

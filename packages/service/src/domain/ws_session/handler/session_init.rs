@@ -212,7 +212,7 @@ pub(super) async fn handle_init(
     let init_output_tokens = row.as_ref().and_then(|r| r.output_tokens);
     let init_context_window = row.as_ref().and_then(|r| r.context_window);
 
-    if runtime_adapter(&effective_provider).is_none() {
+    let Some(adapter) = runtime_adapter(&effective_provider) else {
         send_error(
             sender,
             &envelope.id,
@@ -222,7 +222,7 @@ pub(super) async fn handle_init(
             ),
         );
         return;
-    }
+    };
 
     if let Err(error) = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
         .bind(&effective_provider)
@@ -346,6 +346,7 @@ pub(super) async fn handle_init(
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
             context_window: init_context_window.map(|v| v as u64),
+            supports_prompt_receipts: adapter.supports_prompt_receipts(),
         })
         .unwrap(),
     );

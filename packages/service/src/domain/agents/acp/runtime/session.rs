@@ -8,6 +8,7 @@ mod tests {
     //! End-to-end harness for [`super::session`].
     use super::super::events_stream_blocks::EventIndexer;
     use super::super::permissions::PendingPermissions;
+    use super::super::prompt_receipts::PendingPromptReceipts;
     use super::super::provider_hooks::AcpProviderHooks;
     use super::super::server_requests::{spawn_event_loop, EventLoopConfig};
     use super::super::session_permissions::SessionPermissions;
@@ -242,6 +243,8 @@ mod tests {
             session_permissions: SessionPermissions::new(),
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: Arc::new(PlainHooks),
+            replay_suppression: Arc::new(AtomicBool::new(false)),
+            pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::clone(&indexer),
         };
         let _loop_task = spawn_event_loop(client.clone(), event_rx, tx.clone(), cfg);

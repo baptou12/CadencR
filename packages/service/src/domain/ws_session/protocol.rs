@@ -129,6 +129,8 @@ pub struct PromptSendPayload {
     #[serde(default)]
     pub images: Vec<ImagePayload>,
     pub use_worktree: Option<bool>,
+    #[serde(default)]
+    pub client_message_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,6 +199,8 @@ pub struct SessionInitializedPayload {
     pub output_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_window: Option<u64>,
+    #[serde(default)]
+    pub supports_prompt_receipts: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,6 +318,11 @@ pub struct SessionStreamStatusPayload {
     pub state: StreamStatusState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptReceivedPayload {
+    pub client_message_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -505,6 +514,7 @@ mod tests {
             text: "hello".into(),
             images: vec![],
             use_worktree: None,
+            client_message_id: None,
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();
@@ -538,6 +548,7 @@ mod tests {
             input_tokens: None,
             output_tokens: None,
             context_window: None,
+            supports_prompt_receipts: false,
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: SessionInitializedPayload = serde_json::from_value(v).unwrap();
