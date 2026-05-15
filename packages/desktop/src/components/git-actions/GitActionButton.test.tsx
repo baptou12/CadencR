@@ -1,8 +1,13 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import type { GitStatusSnapshot } from "@/api/generated";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
 import { GitActionButton } from "./GitActionButton";
+
+vi.mock("./MergeDialog", () => ({
+  default: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog" aria-label="Merge branch" /> : null,
+}));
 
 function makeMergeableSnapshot(featureId: number): GitStatusSnapshot {
   return {
@@ -20,6 +25,13 @@ function makeMergeableSnapshot(featureId: number): GitStatusSnapshot {
     compare_url: null,
     action_label: "Open PR",
     computed_at: 1,
+  };
+}
+
+function makeDirtyMergeableSnapshot(featureId: number): GitStatusSnapshot {
+  return {
+    ...makeMergeableSnapshot(featureId),
+    uncommitted_count: 2,
   };
 }
 
@@ -52,5 +64,16 @@ describe("GitActionButton shortcuts", () => {
     await user.hover(screen.getByRole("button", { name: /more git actions/i }));
 
     expect(await screen.findByText("Git actions")).toBeInTheDocument();
+  });
+
+  it("allows merge from the menu when the source worktree has uncommitted changes", async () => {
+    useGitStatusStore.getState().setStatus(makeDirtyMergeableSnapshot(42));
+
+    const { user } = render(<GitActionButton featureId={42} />);
+
+    await user.click(screen.getByRole("button", { name: /more git actions/i }));
+    await user.click(await screen.findByText("Merge"));
+
+    expect(await screen.findByRole("dialog", { name: "Merge branch" })).toBeInTheDocument();
   });
 });

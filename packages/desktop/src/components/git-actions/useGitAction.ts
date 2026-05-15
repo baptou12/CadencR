@@ -58,7 +58,6 @@ function derivePrDisabled(snapshot: GitStatusSnapshot): string | null {
 }
 
 function deriveMergeDisabled(snapshot: GitStatusSnapshot): string | null {
-  if (snapshot.uncommitted_count > 0) return "Commit your changes first";
   if (isSameLocalBranch(snapshot.current_branch, snapshot.target_branch)) {
     return "Cannot merge a branch into itself";
   }

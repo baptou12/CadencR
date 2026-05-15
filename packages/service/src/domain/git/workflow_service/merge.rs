@@ -71,8 +71,9 @@ pub async fn merge_feature_branch(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("feature {feature_id} has no git path")))?;
     let source_repo = Path::new(&source_path);
-    ensure_clean(source_repo, "source feature worktree").await?;
 
+    // Merging consumes the committed branch ref only. Uncommitted files in the
+    // source worktree are intentionally allowed and remain unmerged there.
     let source_branch = commands::get_current_branch(source_repo)
         .await?
         .ok_or_else(|| AppError::BadRequest("source worktree is in detached HEAD".into()))?;
@@ -202,6 +203,36 @@ async fn ensure_clean(repo: &Path, label: &str) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_merge_state(project: &Path, source: &Path) -> AppState {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        crate::shared::migrate::run_migrations(
+            &crate::shared::migrate::MigrationContext::pool_only(&pool),
+        )
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'repo', ?)")
+            .bind(project.to_string_lossy().as_ref())
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO features (id, project_id, title) VALUES (1, 1, 'feat')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, "worktree_path", &source.to_string_lossy())
+            .await
+            .unwrap();
+        repository::set_feature_setting(&pool, 1, "target_branch", "main")
+            .await
+            .unwrap();
+        AppState::with_pool(pool)
+    }
 
     async fn init_repo() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
@@ -253,6 +284,89 @@ mod tests {
         let local = ensure_local_target(repo, "release").await.unwrap();
 
         assert_eq!(local, "release");
+    }
+
+    #[tokio::test]
+    async fn merge_allows_dirty_source_worktree_and_merges_committed_changes() {
+        let dir = init_repo().await;
+        let repo = dir.path();
+        run_git(&["branch", "-M", "main"], repo).await.unwrap();
+        let worktree_parent = tempfile::tempdir().unwrap();
+        let source = worktree_parent.path().join("feature-x");
+        let source_arg = source.to_string_lossy().to_string();
+        let args = [
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feature/x",
+            &source_arg,
+            "main",
+        ];
+        run_git(&args, repo).await.unwrap();
+
+        tokio::fs::write(source.join("committed.txt"), "committed\n")
+            .await
+            .unwrap();
+        run_git(&["add", "committed.txt"], &source).await.unwrap();
+        run_git(&["commit", "-q", "-m", "feature commit"], &source)
+            .await
+            .unwrap();
+        tokio::fs::write(source.join("dirty.txt"), "dirty\n")
+            .await
+            .unwrap();
+        let state = setup_merge_state(repo, &source).await;
+
+        let result = merge_feature_branch(
+            &state,
+            MergeFeatureBranchBody {
+                feature_id: 1,
+                project_id: Some(1),
+                mode: Some(MergeMode::NoFf),
+                save_as_default: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(result.success, "{:?}", result.error);
+        assert_eq!(
+            tokio::fs::read_to_string(repo.join("committed.txt"))
+                .await
+                .unwrap(),
+            "committed\n"
+        );
+        assert!(!repo.join("dirty.txt").exists());
+        assert!(source.join("dirty.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn merge_still_rejects_dirty_target_worktree() {
+        let dir = init_repo().await;
+        let repo = dir.path();
+        run_git(&["branch", "-M", "main"], repo).await.unwrap();
+        run_git(&["checkout", "-q", "-b", "feature/x"], repo)
+            .await
+            .unwrap();
+        tokio::fs::write(repo.join("committed.txt"), "committed\n")
+            .await
+            .unwrap();
+        run_git(&["add", "committed.txt"], repo).await.unwrap();
+        run_git(&["commit", "-q", "-m", "feature commit"], repo)
+            .await
+            .unwrap();
+        run_git(&["checkout", "-q", "main"], repo).await.unwrap();
+        tokio::fs::write(repo.join("dirty-target.txt"), "dirty\n")
+            .await
+            .unwrap();
+
+        let err = run_merge(repo, "feature/x", "main", MergeMode::NoFf)
+            .await
+            .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("target branch worktree has uncommitted changes"));
     }
 
     #[test]

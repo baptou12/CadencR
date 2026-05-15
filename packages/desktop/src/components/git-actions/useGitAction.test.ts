@@ -45,7 +45,16 @@ describe("deriveGitAction", () => {
     expect(state.disabled.commit).toBeNull();
     expect(state.disabled.push).toBe("Commit your changes first");
     expect(state.disabled.pr).toBe("Commit your changes first");
-    expect(state.disabled.merge).toBe("Commit your changes first");
+    expect(state.disabled.merge).toBe("Nothing to merge");
+  });
+
+  it("keeps merge enabled when committed branch changes exist with uncommitted source changes", () => {
+    const state = deriveGitAction(
+      snapshot({ uncommitted_count: 3, untracked_count: 1, ahead_of_target: 2 }),
+    );
+    expect(state.primary).toBe("commit");
+    expect(state.disabled.commit).toBeNull();
+    expect(state.disabled.merge).toBeNull();
   });
 
   it("primary=push when clean but ahead of remote", () => {
