@@ -16,7 +16,6 @@ pnpm workspaces + Turborepo. TypeScript frontend, Rust backend, and several Rust
 | `packages/codex-app-server-sdk-rs/` | Rust | SDK for Codex agents |
 | `packages/opencode-sdk-rs/` | Rust | SDK for OpenCode agents |
 | `packages/cli-discovery/` | Rust | Detects locally installed agent CLIs |
-| `packages/loc/` | Rust | Internal LOC counter tool (`pnpm loc`) |
 | `packages/landing/` | Next.js | Marketing site, docs, roadmap |
 
 ## Agent Providers

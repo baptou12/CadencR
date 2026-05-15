@@ -71,8 +71,7 @@ packages/
 ├── service/                 # Rust HTTP/WebSocket backend (Axum)
 ├── claude-agent-sdk-rs/     # Rust SDK wrapping the Claude Code CLI
 ├── opencode-sdk-rs/         # Rust SDK wrapping the OpenCode CLI
-├── landing/                 # Astro marketing site
-└── loc/                     # Lines-of-code counter CLI
+└── landing/                 # Astro marketing site
 ```
 
 - **Frontend ↔ Backend** — HTTP (Axios) for requests, WebSocket (Zustand store) for live agent streams.
