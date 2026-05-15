@@ -104,6 +104,7 @@ export const AgentSession = memo(
       initialDraft,
       pendingPermission,
       onPermissionDecision,
+      isSubmittingPermission,
       onMarkDone,
       maximized,
       onToggleMaximize,
@@ -394,6 +395,7 @@ export const AgentSession = memo(
         slashCommandsLoading={slashCommandsLoading}
         pendingPermission={pendingPermission}
         onPermissionDecision={onPermissionDecision}
+        isSubmittingPermission={isSubmittingPermission}
       />
     ) : null;
 

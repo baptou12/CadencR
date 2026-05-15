@@ -45,6 +45,12 @@ export interface UseWebSocketSessionReturn {
   sessionId: string;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
+  /**
+   * True while a decision for the currently visible permission request is in
+   * flight to the backend (between click and ack). Used to show a loader and
+   * disable buttons in `ToolPermissionPrompt`.
+   */
+  isSubmittingPermission: boolean;
   pendingQuestions: AgentQuestion[];
   respondToQuestion: (response: AgentQuestionAnswers) => void;
   hasMore: boolean;
@@ -227,6 +233,12 @@ export function useWebSocketSession(
       hasMore: session?.hasMore ?? false,
       pendingPermission: session?.pendingPermission ?? null,
       pendingRequestId: session?.pendingRequestId ?? "",
+      // Scope the boolean to the currently visible request so a stale clear
+      // never lights up the spinner on the next queued permission.
+      isSubmittingPermission:
+        session?.submittingPermissionRequestId != null &&
+        session.submittingPermissionRequestId ===
+          (session.pendingPermission?.requestId ?? session.pendingRequestId),
       pendingQuestions: session?.pendingQuestions ?? [],
       permissionMode: session?.permissionMode ?? "acceptEdits",
       pendingPlanApproval: session?.pendingPlanApproval ?? null,
