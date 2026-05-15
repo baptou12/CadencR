@@ -384,11 +384,11 @@ mod tests {
     }
 
     #[test]
-    fn resume_session_for_opencode_acp_is_disabled_even_when_provider_matches() {
+    fn resume_session_for_opencode_acp_accepts_matching_runtime_id() {
         let opencode_sid = "ses_27f586910ffeUNaKL2l5UARerl";
         let matching =
             resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid));
-        assert_eq!(matching, None);
+        assert_eq!(matching, Some(opencode_sid.to_string()));
 
         let mismatched =
             resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
