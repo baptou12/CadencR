@@ -82,27 +82,6 @@ export function ProjectTree({
   // Track which project the create mutation was triggered for
   const pendingProjectIdRef = useRef(0);
 
-  const createFeatureMutation = useCreateFeature({
-    mutation: {
-      onSuccess: (feature) => {
-        void invalidateByUrlPrefix(queryClient, "/api/features");
-        // Every feature is ws-session now, so jump straight to the session
-        // route instead of taking the legacy redirect hop.
-        const projectId = pendingProjectIdRef.current;
-        const project = projects.find((p) => p.id === projectId);
-        void navigate({
-          to: "/ws-session/$sessionId",
-          params: { sessionId: wsSessionIdFromFeature(feature.id) },
-          search: {
-            cwd: project?.path ?? "",
-            featureId: feature.id,
-            projectId,
-          },
-        });
-      },
-    },
-  });
-
   const createWsSessionMutation = useCreateFeature({
     mutation: {
       onSuccess: (wsSession) => {
@@ -201,51 +180,22 @@ export function ProjectTree({
                       <span className="min-w-0 truncate">{project.name}</span>
 
                       <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
-                        {/* Add feature/session */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <PlusIcon className="h-3.5 w-3.5" />
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpanded((prev) => ({
-                                  ...prev,
-                                  [project.id]: true,
-                                }));
-                                pendingProjectIdRef.current = project.id;
-                                createFeatureMutation.mutate({
-                                  data: { project_id: project.id, type: "ws-session" },
-                                });
-                              }}
-                            >
-                              New Feature
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpanded((prev) => ({
-                                  ...prev,
-                                  [project.id]: true,
-                                }));
-                                pendingProjectIdRef.current = project.id;
-                                createWsSessionMutation.mutate({
-                                  data: { project_id: project.id, type: "ws-session" },
-                                });
-                              }}
-                            >
-                              New Session
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {/* New session */}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                            pendingProjectIdRef.current = project.id;
+                            createWsSessionMutation.mutate({
+                              data: { project_id: project.id, type: "ws-session" },
+                            });
+                          }}
+                        >
+                          <PlusIcon className="h-3.5 w-3.5" />
+                        </span>
 
                         {/* Project menu */}
                         <DropdownMenu>
@@ -289,17 +239,6 @@ export function ProjectTree({
                     </button>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
-                    <ContextMenuItem
-                      onSelect={() => {
-                        setExpanded((prev) => ({ ...prev, [project.id]: true }));
-                        pendingProjectIdRef.current = project.id;
-                        createFeatureMutation.mutate({
-                          data: { project_id: project.id, type: "ws-session" },
-                        });
-                      }}
-                    >
-                      New Feature
-                    </ContextMenuItem>
                     <ContextMenuItem
                       onSelect={() => {
                         setExpanded((prev) => ({ ...prev, [project.id]: true }));
