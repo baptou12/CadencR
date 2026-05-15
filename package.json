@@ -15,7 +15,10 @@
     "start": "turbo run dev --filter=@cadencr/desktop",
     "build:local": "turbo run build:local --filter=@cadencr/desktop",
     "build": "turbo run build --filter=@cadencr/desktop",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build:mac:signed": "pnpm --filter @cadencr/desktop build:mac:signed",
+    "notarize:mac:status": "pnpm --filter @cadencr/desktop notarize:mac:status",
+    "notarize:mac:staple": "pnpm --filter @cadencr/desktop notarize:mac:staple"
   },
   "devDependencies": {
     "husky": "^9.1.7",

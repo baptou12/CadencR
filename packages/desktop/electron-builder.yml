@@ -4,6 +4,7 @@ icon: icons/icon
 directories:
   output: dist-electron
 afterPack: build/after-pack.cjs
+afterSign: build/notarize-app.cjs
 files:
   - out/**/*
   - package.json

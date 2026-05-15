@@ -12,7 +12,7 @@ exports.default = async function afterPack(context) {
   const sidecar = join(appPath, "Contents", "Resources", "cadencr-service");
   if (!existsSync(sidecar)) throw new Error(`Missing sidecar at ${sidecar}`);
 
-  const identity = process.env.CSC_NAME || "-";
+  const identity = process.env.CADENCR_MAC_CODESIGN_IDENTITY || process.env.CSC_NAME || "-";
   const projectDir = context.packager.projectDir;
   sign(sidecar, identity, join(projectDir, "build", "entitlements.sidecar.mac.plist"));
 };

@@ -26,7 +26,10 @@
     "predev:electron": "pnpm ensure:electron",
     "prebuild:local": "pnpm ensure:electron",
     "prebuild": "pnpm ensure:electron",
-    "prebuild:electron": "pnpm ensure:electron"
+    "prebuild:electron": "pnpm ensure:electron",
+    "build:mac:signed": "node scripts/build-mac-signed.mjs",
+    "notarize:mac:status": "node scripts/notarize-status.mjs",
+    "notarize:mac:staple": "node scripts/notarize-staple.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
