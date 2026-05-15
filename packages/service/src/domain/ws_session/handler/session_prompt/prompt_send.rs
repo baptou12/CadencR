@@ -458,6 +458,7 @@ pub(crate) async fn handle_prompt_send(
 
             info!(db_session_id, "follow-up prompt");
             let content = build_content_value(&payload.text, &payload.images);
+            let client_message_id = payload.client_message_id.clone();
             // Follow-up turns can request permissions. Do not await the
             // provider turn on the websocket dispatch task: if dispatch is
             // blocked inside `stream_input()`, the user's subsequent
@@ -467,7 +468,9 @@ pub(crate) async fn handle_prompt_send(
             // the websocket command loop responsive.
             tokio::spawn(async move {
                 let q = query.read().await;
-                let stream_result = q.stream_input(content).await;
+                let stream_result = q
+                    .stream_input_with_client_message_id(content, client_message_id)
+                    .await;
                 drop(q);
                 if let Err(e) = stream_result {
                     let message = e.to_string();

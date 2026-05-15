@@ -65,6 +65,10 @@ impl AgentRuntimeAdapter for OpenCodeAdapter {
         super::providers::opencode::context_window_for_model(model_id).await
     }
 
+    fn supports_prompt_receipts(&self) -> bool {
+        true
+    }
+
     async fn default_model_id(&self) -> Option<String> {
         super::providers::opencode::default_model_id().await
     }
@@ -168,6 +172,7 @@ mod tests {
     fn acp_reuses_non_empty_resume_session_ids() {
         let adapter = OpenCodeAdapter;
         assert!(adapter.is_valid_resume_session_id("ses_stale"));
+        assert!(adapter.supports_prompt_receipts());
         assert_eq!(
             adapter.resolve_resume_session_id(Some("  ses_stale  ")),
             Some("ses_stale".to_string())

@@ -21,6 +21,7 @@ import {
   parseModePayload,
   parseModelPayload,
   parsePermissionPayload,
+  parsePromptReceivedPayload,
   parseProviderPayload,
   parseStreamStatusPayload,
   parseUsagePayload,
@@ -43,6 +44,11 @@ import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
 import { findProviderMode } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
+import {
+  markPromptReceived,
+  movePendingPromptBlocksToTail,
+  removePendingPromptBlocks,
+} from "./ws-pending-prompts";
 
 // Types for the store accessors we need
 
@@ -191,6 +197,7 @@ function handleSessionAction(
           updateSession(ctx.get(), sessionId, {
             currentProviderId: p.provider,
             runtimeProvider: p.provider,
+            supportsPromptReceipts: p.supports_prompt_receipts ?? false,
           }),
         );
       }
@@ -265,6 +272,9 @@ function handleSessionAction(
     case "stream_status":
       handleStreamStatus(ctx, sessionId, envelope.payload);
       break;
+    case "prompt_received":
+      handlePromptReceived(ctx, sessionId, envelope.payload);
+      break;
     case "lifecycle": {
       // OS suspend / resume — backend-confirmed transitions. Per
       // `no-optimistic-updates.md`, the FE flips lifecycle only here,
@@ -304,6 +314,7 @@ function handleInitialized(ctx: StoreAccessors, sessionId: string, payload: unkn
   const updates: Partial<SessionEntry> = {
     serverSessionId: p.session_id ?? "",
     lifecycle: transitionTurn(session.lifecycle, { type: "initialized" }),
+    supportsPromptReceipts: p.supports_prompt_receipts ?? false,
   };
   if (p.provider) {
     updates.currentProviderId = p.provider;
@@ -352,12 +363,17 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
   const currentSession = ctx.getSession(sessionId);
   const patch: Partial<SessionEntry> = {};
   if (allMutations.length > 0) {
-    const newBlocks = applyMutations(currentSession.blocks, allMutations, state);
+    const appliedBlocks = applyMutations(currentSession.blocks, allMutations, state);
+    const newBlocks = movePendingPromptBlocksToTail(appliedBlocks);
     Object.assign(patch, buildMessagePatch(newBlocks, allMutations, { enterPlanModeRequested }));
     // applyMutations maintains the derived state on `streamState` in O(1) per
     // mutation; snapshot fresh refs so React detects the change.
-    patch.rootBlocks = state.rootBlocks.slice();
-    patch.toolResultMap = new Map(state.toolResultMap);
+    if (newBlocks === appliedBlocks) {
+      patch.rootBlocks = state.rootBlocks.slice();
+      patch.toolResultMap = new Map(state.toolResultMap);
+    } else {
+      Object.assign(patch, blocksPatchWithDerived(state, newBlocks));
+    }
   }
 
   if (compactBoundaryObserved) {
@@ -467,7 +483,7 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
   const state = session.streamingState;
   if (p?.message) {
     state.counter += 1;
-    const blocks = [
+    const blocks = removePendingPromptBlocks([
       ...session.blocks,
       {
         id: `ws-err-${state.counter}`,
@@ -475,7 +491,7 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
         content: `Error: ${p.message}`,
         isError: true,
       },
-    ];
+    ]);
     ctx.set(
       updateSession(ctx.get(), sessionId, {
         lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
@@ -491,6 +507,17 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
       }),
     );
   }
+}
+
+function handlePromptReceived(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parsePromptReceivedPayload(payload);
+  if (!p?.client_message_id) return;
+  const session = ctx.getSession(sessionId);
+  const blocks = markPromptReceived(session.blocks, p.client_message_id);
+  if (blocks === session.blocks) return;
+  ctx.set(
+    updateSession(ctx.get(), sessionId, blocksPatchWithDerived(session.streamingState, blocks)),
+  );
 }
 
 function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
@@ -580,8 +607,10 @@ function handleTurnComplete(ctx: StoreAccessors, sessionId: string, payload: unk
     if (parent?.childBlocks) parent.taskComplete = true;
     stream.parentToolUseId = null;
   }
+  const blocks = removePendingPromptBlocks(session.blocks);
   ctx.set(
     updateSession(ctx.get(), sessionId, {
+      ...(blocks === session.blocks ? {} : blocksPatchWithDerived(state, blocks)),
       lifecycle: transitionTurn(session.lifecycle, {
         type: "turn_ended",
         reason: mapTerminalReason(parseEndedPayload(payload)?.reason),

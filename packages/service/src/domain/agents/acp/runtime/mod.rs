@@ -25,6 +25,7 @@ pub mod permissions;
 mod permissions_dispatch;
 mod permissions_refresh;
 pub mod permissions_typed;
+pub mod prompt_receipts;
 pub mod prompt_turn;
 pub mod provider_hooks;
 pub mod schema_bridge;

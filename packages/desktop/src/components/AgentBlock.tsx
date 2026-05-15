@@ -80,6 +80,10 @@ export interface AgentBlockData {
   planApprovalStatus?: "approved" | "rejected";
   /** Whether `content` was server-side truncated and needs full-content fetch on expand. */
   truncatedContent?: boolean;
+  /** Client-generated id for local prompt delivery tracking. */
+  clientMessageId?: string;
+  /** Receipt state for local user prompt blocks when a runtime supports it. */
+  promptDeliveryState?: "pending_agent";
 }
 
 interface AgentBlockProps {
@@ -172,7 +176,7 @@ export const AgentBlock = memo(function AgentBlock({
     case "thinking":
       return <ThinkingBlock content={block.content} cacheKey={markdownCacheKey} />;
     case "user_message":
-      return <UserMessageBlock content={block.content} />;
+      return <UserMessageBlock content={block.content} deliveryState={block.promptDeliveryState} />;
     case "compact_divider":
       return <CompactDivider metadata={block.content} />;
     case "clear_divider":

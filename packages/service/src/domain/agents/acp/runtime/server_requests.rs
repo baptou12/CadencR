@@ -32,6 +32,7 @@ use super::permissions::{
     permission_request_from_server_request, refreshed_permission_event_for_tool_input,
     PendingPermissions,
 };
+use super::prompt_receipts::PendingPromptReceipts;
 use super::provider_hooks::AcpProviderHooks;
 use super::server_request_response::{
     describe_exit, fs_outcome_from, respond_or_reject, terminal_id_param,
@@ -56,6 +57,11 @@ pub struct EventLoopConfig {
     /// mutates it on every `session/update`) and the prompt-turn path (which
     /// drains open blocks at `stop_reason` time — see W4).
     pub indexer: Arc<Mutex<EventIndexer>>,
+    /// Suppresses durable transcript replay from `session/load` until the
+    /// first new prompt is dispatched.
+    pub replay_suppression: Arc<AtomicBool>,
+    /// Prompt client ids waiting for provider-side receipt confirmation.
+    pub pending_prompt_receipts: Arc<PendingPromptReceipts>,
 }
 
 /// Spawn the loop. Returns a handle the session can `abort()` on close.
@@ -131,6 +137,20 @@ async fn handle_notification(
         AcpNotification::SessionUpdate { .. } => {
             let params = notification.params();
             sync_session_state_from_update(params, config).await;
+            if config.replay_suppression.load(Ordering::SeqCst)
+                && is_transcript_session_update(params)
+            {
+                tracing::debug!("suppressing ACP resume replay transcript update");
+                return;
+            }
+            if let Some(event) = config
+                .pending_prompt_receipts
+                .acknowledge_from_session_update(params)
+            {
+                if tx.send(Ok(event)).await.is_err() {
+                    return;
+                }
+            }
             let session_id = config.session_id.read().await.clone();
             let model = config.current_model.read().await.clone();
             // Resolve any `terminalId` references so Bash tool blocks reach
@@ -163,6 +183,21 @@ async fn handle_notification(
             tracing::debug!(method, "unhandled ACP notification");
         }
     }
+}
+
+fn is_transcript_session_update(params: &Value) -> bool {
+    let body = params.get("update").unwrap_or(params);
+    matches!(
+        body.get("sessionUpdate").and_then(Value::as_str),
+        Some(
+            "agent_message_chunk"
+                | "agent_thought_chunk"
+                | "tool_call"
+                | "tool_call_update"
+                | "plan"
+                | "user_message_chunk"
+        )
+    )
 }
 
 async fn refreshed_pending_permission_event(

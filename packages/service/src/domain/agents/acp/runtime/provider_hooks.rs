@@ -1,8 +1,8 @@
 //! Provider-specific extension points for the ACP runtime.
 //!
-//! Concrete adapters (OpenCode today, future ACP providers tomorrow) implement
-//! this trait to plug provider-specific normalization and policy decisions
-//! into the otherwise provider-neutral runtime.
+//! Concrete adapters implement this trait to plug provider-specific
+//! normalization and policy decisions into the otherwise provider-neutral
+//! runtime.
 
 use std::path::Path;
 

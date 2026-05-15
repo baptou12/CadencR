@@ -192,6 +192,7 @@ mod tests {
 
     use super::*;
     use crate::domain::agents::acp::runtime::lifecycle::NegotiatedSession;
+    use crate::domain::agents::acp::runtime::prompt_receipts::PendingPromptReceipts;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::{spawn_event_loop, EventLoopConfig};
     use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
@@ -338,6 +339,8 @@ mod tests {
             session_permissions: Default::default(),
             terminals: Arc::new(TerminalRegistry::default()),
             hooks: Arc::new(PlainHooks),
+            replay_suppression: Arc::new(AtomicBool::new(false)),
+            pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             indexer: Arc::clone(&indexer),
         };
         let _loop_task = spawn_event_loop(client.clone(), event_rx, tx.clone(), cfg);

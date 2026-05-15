@@ -27,11 +27,18 @@ pub(crate) async fn read_request(reader: &mut BufReader<DuplexStream>) -> Value 
 }
 
 pub(crate) async fn send_response(stdout: &mut DuplexStream, id: Value, result: Value) {
-    let mut frame = serde_json::to_vec(&json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-        .expect("ACP response should serialize");
+    write_json_frame(
+        stdout,
+        json!({ "jsonrpc": "2.0", "id": id, "result": result }),
+    )
+    .await;
+}
+
+pub(crate) async fn write_json_frame(stdout: &mut DuplexStream, value: Value) {
+    let mut frame = serde_json::to_vec(&value).expect("ACP frame should serialize");
     frame.push(b'\n');
     stdout
         .write_all(&frame)
         .await
-        .expect("ACP response frame should write");
+        .expect("ACP frame should write");
 }

@@ -146,9 +146,23 @@ describe("handleEnvelope provider.set.ok", () => {
     const updated = ctx.getSession("s1");
     expect(updated.currentProviderId).toBe("codex_cli");
     expect(updated.runtimeProvider).toBe("codex_cli");
+    expect(updated.supportsPromptReceipts).toBe(false);
     // No optimistic update — the chip stays on the old mode until the backend
     // emits a `mode.changed` envelope as the second half of the provider switch.
     expect(updated.permissionMode).toBe("plan");
+  });
+
+  it("updates prompt receipt support from provider capabilities", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "provider.set.ok",
+      payload: { provider: "opencode", supports_prompt_receipts: true },
+    });
+
+    expect(ctx.getSession("s1").supportsPromptReceipts).toBe(true);
   });
 
   it("subsequent mode.changed from the backend lands the chip on the new provider's default", () => {

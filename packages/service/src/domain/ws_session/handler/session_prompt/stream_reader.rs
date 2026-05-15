@@ -12,9 +12,10 @@ use crate::domain::ws_session::persistence::{
     raw_event_with_agent_message_id, PendingUserInput, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
-    CommandsUpdatedPayload, PermissionRequestPayload, SessionEndedPayload, SessionErrorPayload,
-    SessionMessagePayload, SessionStreamStatusPayload, SessionUsageUpdatePayload,
-    SlashCommandKindPayload, SlashCommandPayload, StreamStatusState, WsEnvelope,
+    CommandsUpdatedPayload, PermissionRequestPayload, PromptReceivedPayload, SessionEndedPayload,
+    SessionErrorPayload, SessionMessagePayload, SessionStreamStatusPayload,
+    SessionUsageUpdatePayload, SlashCommandKindPayload, SlashCommandPayload, StreamStatusState,
+    WsEnvelope,
 };
 
 use super::super::{send_runtime_session_id, QueryState, SdkSessions, WsSender};
@@ -119,6 +120,30 @@ pub(crate) fn spawn_stream_reader(
             match msg {
                 Some(Ok(runtime_event)) => {
                     last_runtime_activity = Instant::now();
+
+                    if let Some(client_message_id) =
+                        runtime_event.prompt_received_client_message_id()
+                    {
+                        let env = WsEnvelope::new(
+                            "session",
+                            "prompt_received",
+                            serde_json::to_value(PromptReceivedPayload {
+                                client_message_id: client_message_id.to_string(),
+                            })
+                            .unwrap(),
+                        );
+                        if sender
+                            .send(Message::Text(String::from(env).into()))
+                            .is_err()
+                        {
+                            debug!(
+                                db_session_id,
+                                "WebSocket sender closed during prompt_received forward"
+                            );
+                            break;
+                        }
+                        continue;
+                    }
 
                     if let Some(commands) = runtime_event.slash_commands_updated() {
                         let payload = CommandsUpdatedPayload {

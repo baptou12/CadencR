@@ -4,23 +4,26 @@ import { createModeSet, createPromptSend } from "@/lib/ws-envelope";
 import type { QueuedPrompt } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
+import type { LocalUserMessageOptions } from "./ws-pending-prompts";
+import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 export function appendLocalUserMessage(
   session: SessionEntry,
   content: string,
+  options: LocalUserMessageOptions = {},
 ): Pick<SessionEntry, "blocks" | "rootBlocks" | "toolResultMap" | "lifecycle"> {
   session.streamingState.counter += 1;
-  const blocks = [
-    ...session.blocks,
-    {
-      id: `ws-user-${session.streamingState.counter}`,
-      type: "user_message" as const,
-      content,
-      isError: false,
-      createdAt: new Date().toISOString(),
-    },
-  ];
+  const block = {
+    id: `ws-user-${session.streamingState.counter}`,
+    type: "user_message" as const,
+    content,
+    isError: false,
+    createdAt: new Date().toISOString(),
+    ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+    ...(options.promptDeliveryState ? { promptDeliveryState: options.promptDeliveryState } : {}),
+  };
+  const blocks = movePendingPromptBlocksToTail([...session.blocks, block]);
   return {
     ...blocksPatchWithDerived(session.streamingState, blocks),
     lifecycle: transitionTurn(session.lifecycle, { type: "prompt_sent" }),

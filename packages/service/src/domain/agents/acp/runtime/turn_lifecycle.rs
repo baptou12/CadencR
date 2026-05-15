@@ -109,13 +109,10 @@ pub async fn request_prompt_with_cancel(
         result = &mut prompt => prompt_result(result),
         _ = prompt_cancel.wait_for_cancel_after(start_epoch) => {
             match tokio::time::timeout(CANCEL_GRACE, &mut prompt).await {
-                Ok(result) => prompt_result(result),
+                Ok(result) => prompt_result_after_cancel(result),
                 Err(_) => {
                     client.shutdown().await;
-                    Ok(json!({
-                        "stopReason": "cancelled",
-                        "cadencrSynthetic": true,
-                    }))
+                    Ok(cancelled_prompt_response())
                 }
             }
         }
@@ -128,17 +125,17 @@ fn prompt_result(
     result.map_err(|e| RuntimeError::new(format!("session/prompt failed: {e}")))
 }
 
-/// Single funnel for everything that must happen at turn end:
-/// 1. Drain any open streaming text/thinking blocks → emit
-///    `ContentBlockStop` events so the FE doesn't render a blinking cursor
-///    on a still-open block past the agent's `stopReason`.
-/// 2. Emit the per-turn `Result` envelope with usage + stop reason.
-///
-/// Runs for every terminal stop reason (end_turn / max_tokens / cancelled /
-/// refusal / error). Cancellation is handled by the same path because the
-/// agent's response to `session/cancel` always resolves the in-flight
-/// `session/prompt` request with `stopReason: "cancelled"` — there is no
-/// separate cancel-handling code.
+fn prompt_result_after_cancel(
+    result: Result<Value, crate::domain::agents::acp::error::AcpError>,
+) -> Result<Value, RuntimeError> {
+    Ok(result.unwrap_or_else(|_| cancelled_prompt_response()))
+}
+
+fn cancelled_prompt_response() -> Value {
+    json!({ "stopReason": "cancelled", "cadencrSynthetic": true })
+}
+
+/// Drain open streaming blocks, then emit the per-turn `Result` envelope.
 pub async fn finalize_turn(
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     indexer: &Arc<StdMutex<EventIndexer>>,

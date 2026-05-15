@@ -10,8 +10,6 @@ import {
   unregisterReconnector,
 } from "@/lib/ws-reconnect";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
-
-const wsSessionSourceKey = (sessionId: string): string => `ws-session:${sessionId}`;
 import {
   type SessionConfig,
   type WsEnvelope,
@@ -74,6 +72,13 @@ export {
 
 /** Prefix for synthetic request IDs created during plan-restore flows. */
 const PLAN_RESTORE_PREFIX = "plan_restore_";
+const wsSessionSourceKey = (sessionId: string): string => `ws-session:${sessionId}`;
+
+function shouldTrackPromptReceipt(session: SessionEntry): boolean {
+  return (
+    session.supportsPromptReceipts && !!session.serverSessionId && isTurnActive(session.lifecycle)
+  );
+}
 
 export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function getSession(sessionId: string): SessionEntry {
@@ -350,14 +355,28 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       useWorktree?: boolean,
     ) {
       const session = getSession(sessionId);
+      const trackProviderReceipt = shouldTrackPromptReceipt(session);
+      const clientMessageId = trackProviderReceipt ? crypto.randomUUID() : undefined;
       if (session.serverSessionId) {
-        sendRaw(sessionId, createPromptSend(session.serverSessionId, text, images, useWorktree));
+        sendRaw(
+          sessionId,
+          createPromptSend(session.serverSessionId, text, images, useWorktree, clientMessageId),
+        );
       } else {
         queuePrompt(sessionId, text, images, useWorktree);
       }
 
       const content = buildUserMessageContent(text, images);
-      set(updateSession(get(), sessionId, appendLocalUserMessage(session, content)));
+      set(
+        updateSession(
+          get(),
+          sessionId,
+          appendLocalUserMessage(session, content, {
+            clientMessageId,
+            promptDeliveryState: trackProviderReceipt ? "pending_agent" : undefined,
+          }),
+        ),
+      );
     },
 
     respondToPermission(

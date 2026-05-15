@@ -25,6 +25,7 @@ use super::super::mode_switch::set_session_mode;
 use super::super::permissions::{
     acp_permission_response_payload, reject_all_pending, take_pending, PendingPermissions,
 };
+use super::super::prompt_receipts::PendingPromptReceipts;
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
 use super::super::provider_hooks::AcpProviderHooks;
 use super::super::session_permissions::{PermissionKey, SessionPermissions};
@@ -72,6 +73,12 @@ pub struct AcpRuntimeSession {
     /// Shared streaming-block indexer (also held by the event loop) used to
     /// drain still-open text/thinking blocks at turn end (W4).
     pub(in crate::domain::agents::acp::runtime) indexer: Arc<StdMutex<EventIndexer>>,
+    /// True while a resumed ACP session may still be replaying durable
+    /// transcript updates from `session/load`. Cleared by the first new
+    /// prompt dispatch so only pre-prompt replay is suppressed.
+    pub(in crate::domain::agents::acp::runtime) replay_suppression: Arc<AtomicBool>,
+    /// Client prompt ids waiting for provider-side receipt confirmation.
+    pub(in crate::domain::agents::acp::runtime) pending_prompt_receipts: Arc<PendingPromptReceipts>,
     /// Serialises prompt turns so a second `stream_input` waits for the
     /// in-flight turn (request + post-response drain) to finish before
     /// sending its own `session/prompt` (W4).
@@ -88,6 +95,73 @@ impl AcpRuntimeSession {
         self.current_session_id()
             .await
             .ok_or_else(|| RuntimeError::new("ACP session id not yet known"))
+    }
+
+    async fn prompt_input(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+        finalize_response: bool,
+    ) -> Result<(), RuntimeError> {
+        let session_id = self.require_session_id().await?;
+        let prompt = acp_prompt_blocks_from_content(content);
+        let supports = self.supports_set_config_option.load(Ordering::SeqCst);
+        let model = self.current_model.read().await.clone();
+        let effort = self.current_effort.read().await.clone();
+        let receipt_client_message_id = client_message_id.clone();
+        if let Some(client_message_id) = client_message_id {
+            self.pending_prompt_receipts
+                .enqueue(client_message_id, &prompt);
+        }
+        let mut params = build_prompt_params(
+            &session_id,
+            prompt,
+            model.as_deref(),
+            effort.as_deref(),
+            supports,
+        );
+        if let Some(client_message_id) = receipt_client_message_id.as_deref() {
+            params["messageId"] = Value::String(client_message_id.to_string());
+        }
+        self.replay_suppression.store(false, Ordering::SeqCst);
+
+        // `session/prompt` represents a whole agent turn — sit-idle ceilings
+        // need to be huge (minutes of permission drawers + long tools).
+        let response =
+            match request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await {
+                Ok(response) => response,
+                Err(error) => {
+                    if let Some(client_message_id) = receipt_client_message_id.as_deref() {
+                        self.pending_prompt_receipts
+                            .discard_client_message_id(client_message_id);
+                    }
+                    return Err(error);
+                }
+            };
+        if let Some(client_message_id) = receipt_client_message_id.as_deref() {
+            if let Some(event) = self
+                .pending_prompt_receipts
+                .acknowledge_client_message_id(client_message_id)
+            {
+                let _ = self.local_tx.send(Ok(event)).await;
+            }
+        }
+        if finalize_response {
+            if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
+                tracing::debug!(stop_reason = reason, "session/prompt completed");
+                finalize_turn(
+                    &self.local_tx,
+                    &self.indexer,
+                    self.current_session_id().await,
+                    self.context_window,
+                    self.hooks.prompt_response_usage(&response),
+                    reason,
+                    &response,
+                )
+                .await;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -108,42 +182,21 @@ impl AgentRuntimeSession for AcpRuntimeSession {
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
-        // Hold the per-session prompt-turn lock for the entire request +
-        // post-response drain so a second `stream_input` queues behind the
-        // in-flight turn. `interrupt()` does NOT take this lock; it
-        // pre-empts via `session/cancel` and the cancelled response then
-        // releases the lock through the same drain path below.
-        let _guard = self.prompt_turn_lock.lock().await;
-        let session_id = self.require_session_id().await?;
-        let prompt = acp_prompt_blocks_from_content(content);
-        let supports = self.supports_set_config_option.load(Ordering::SeqCst);
-        let model = self.current_model.read().await.clone();
-        let effort = self.current_effort.read().await.clone();
-        let params = build_prompt_params(
-            &session_id,
-            prompt,
-            model.as_deref(),
-            effort.as_deref(),
-            supports,
-        );
-        // `session/prompt` represents a whole agent turn — sit-idle ceilings
-        // need to be huge (minutes of permission drawers + long tools).
-        let response =
-            request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await?;
-        if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
-            tracing::debug!(stop_reason = reason, "session/prompt completed");
-            finalize_turn(
-                &self.local_tx,
-                &self.indexer,
-                self.current_session_id().await,
-                self.context_window,
-                self.hooks.prompt_response_usage(&response),
-                reason,
-                &response,
-            )
-            .await;
+        self.stream_input_with_client_message_id(content, None)
+            .await
+    }
+
+    async fn stream_input_with_client_message_id(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        if let Ok(_guard) = self.prompt_turn_lock.try_lock() {
+            return self.prompt_input(content, client_message_id, true).await;
         }
-        Ok(())
+
+        tracing::debug!("ACP prompt turn already active; sending follow-up as steering prompt");
+        self.prompt_input(content, client_message_id, false).await
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
