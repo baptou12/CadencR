@@ -410,7 +410,7 @@ pub(crate) fn spawn_stream_reader(
         let mut sessions = sdk_sessions.lock().await;
         if let Some(handle) = sessions.get_mut(&db_session_id) {
             if let QueryState::Active { ref query, .. } = handle.state {
-                let q = query.lock().await;
+                let q = query.read().await;
                 let runtime_session_id = q.session_id().await;
                 handle.runtime_control_endpoint = q.runtime_control_endpoint();
                 drop(q);

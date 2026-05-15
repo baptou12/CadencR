@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct RuntimeUsage {
@@ -579,7 +579,7 @@ impl RuntimeEvent {
 }
 
 pub type RuntimeMessageRx = mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>;
-pub type RuntimeSessionHandle = Arc<Mutex<Box<dyn AgentRuntimeSession>>>;
+pub type RuntimeSessionHandle = Arc<RwLock<Box<dyn AgentRuntimeSession>>>;
 
 #[async_trait]
 pub trait RuntimeToolPermissionHandler: Send + Sync {
@@ -849,9 +849,12 @@ pub trait AgentRuntimeAdapter: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
     use async_trait::async_trait;
     use serde_json::json;
-    use tokio::sync::{mpsc, Mutex};
+    use tokio::sync::{mpsc, Barrier, Notify, RwLock};
 
     use super::{
         AgentRuntimeAdapter, AgentRuntimeSession, RuntimeAssistantMessage, RuntimeContentBlock,
@@ -1026,9 +1029,9 @@ mod tests {
             .spawn(serde_json::Value::Null, RuntimeSpawnConfig::default())
             .await
             .expect("spawn should succeed");
-        let query = Mutex::new(spawned);
+        let query = RwLock::new(spawned);
         assert_eq!(
-            query.lock().await.session_id().await.as_deref(),
+            query.read().await.session_id().await.as_deref(),
             Some("dummy")
         );
     }
@@ -1082,5 +1085,96 @@ mod tests {
         assert!(error
             .to_string()
             .contains("permission responses are not supported"));
+    }
+
+    struct PermissionWhileStreamingSession {
+        stream_entered: Arc<Barrier>,
+        release_stream: Arc<Notify>,
+        permission_seen: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl AgentRuntimeSession for PermissionWhileStreamingSession {
+        fn take_message_rx(&mut self) -> RuntimeMessageRx {
+            let (_tx, rx) = mpsc::channel(1);
+            rx
+        }
+
+        async fn session_id(&self) -> Option<String> {
+            Some("concurrent".to_string())
+        }
+
+        async fn stream_input(&self, _content: serde_json::Value) -> Result<(), RuntimeError> {
+            self.stream_entered.wait().await;
+            self.release_stream.notified().await;
+            Ok(())
+        }
+
+        async fn interrupt(&self) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) {}
+
+        async fn set_model(&self, _model: &str) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn set_permission_mode(
+            &self,
+            _mode: super::RuntimePermissionMode,
+        ) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn respond_permission(
+            &self,
+            _response: RuntimePermissionResponse,
+        ) -> Result<(), RuntimeError> {
+            self.permission_seen.store(true, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[tokio::test]
+    async fn permission_response_can_run_while_prompt_stream_is_in_flight() {
+        let stream_entered = Arc::new(Barrier::new(2));
+        let release_stream = Arc::new(Notify::new());
+        let permission_seen = Arc::new(AtomicBool::new(false));
+        let query = Arc::new(RwLock::new(Box::new(PermissionWhileStreamingSession {
+            stream_entered: Arc::clone(&stream_entered),
+            release_stream: Arc::clone(&release_stream),
+            permission_seen: Arc::clone(&permission_seen),
+        }) as Box<dyn AgentRuntimeSession>));
+
+        let stream_query = Arc::clone(&query);
+        let stream_task = tokio::spawn(async move {
+            let q = stream_query.read().await;
+            q.stream_input(json!("prompt")).await
+        });
+        stream_entered.wait().await;
+
+        let response = RuntimePermissionResponse {
+            request_id: "req-second".to_string(),
+            decision: RuntimePermissionDecision::AllowOnce,
+            option_id: None,
+            feedback: None,
+            updated_input: None,
+        };
+        tokio::time::timeout(std::time::Duration::from_millis(100), async {
+            let q = query.read().await;
+            q.respond_permission(response).await
+        })
+        .await
+        .expect("permission response should not wait for the prompt turn")
+        .unwrap();
+        assert!(permission_seen.load(Ordering::SeqCst));
+
+        release_stream.notify_waiters();
+        stream_task.await.unwrap().unwrap();
     }
 }

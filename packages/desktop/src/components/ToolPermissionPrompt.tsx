@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ShieldAlertIcon, SendIcon } from "lucide-react";
+import { getPermissionPreview } from "./permission-preview";
 
 export type PermissionDecisionValue = "allow_once" | "allow_future" | "deny";
 
@@ -49,12 +50,6 @@ const FALLBACK_OPTIONS: PermissionOption[] = [
     collectFeedback: true,
   },
 ];
-
-function getPermissionPreview(permission: PendingPermission): string | null {
-  return typeof permission.preview === "string" && permission.preview.trim().length > 0
-    ? permission.preview
-    : null;
-}
 
 interface PermissionOptionButtonProps {
   option: PermissionOption;

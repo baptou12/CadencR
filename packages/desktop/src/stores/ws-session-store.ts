@@ -307,16 +307,18 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendRequest(sessionId: string, envelope: WsEnvelope): Promise<unknown> {
       return new Promise((resolve) => {
         const session = get().sessions[sessionId];
-        if (session) {
-          const timer = setTimeout(() => {
-            session.pendingWsRequests.delete(envelope.id);
-            resolve(null);
-          }, 10_000);
-          session.pendingWsRequests.set(envelope.id, (payload) => {
-            clearTimeout(timer);
-            resolve(payload);
-          });
+        if (!session?.conn?.isOpen()) {
+          resolve(null);
+          return;
         }
+        const timer = setTimeout(() => {
+          session.pendingWsRequests.delete(envelope.id);
+          resolve(null);
+        }, 10_000);
+        session.pendingWsRequests.set(envelope.id, (payload) => {
+          clearTimeout(timer);
+          resolve(payload);
+        });
         sendRaw(sessionId, envelope);
       });
     },
@@ -366,20 +368,51 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       optionId?: string,
     ) {
       const session = getSession(sessionId);
-      sendRaw(
-        sessionId,
-        createPermissionRespond(session.serverSessionId, requestId, decision, {
+      const currentRequestId = session.pendingPermission?.requestId ?? requestId;
+      const envelope = createPermissionRespond(
+        session.serverSessionId,
+        currentRequestId,
+        decision,
+        {
           feedback,
           optionId,
-        }),
+        },
       );
-      const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
-      set(
-        updateSession(get(), sessionId, {
-          ...permissionPatch,
-          pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
-        }),
-      );
+      void get()
+        .sendRequest(sessionId, envelope)
+        .then((payload) => {
+          const error = parseErrorPayload(payload);
+          if (error?.message || payload === null) {
+            const session = getSession(sessionId);
+            session.streamingState.counter += 1;
+            const message = error?.message ?? "Permission response timed out.";
+            const blocks = [
+              ...session.blocks,
+              {
+                id: `ws-permission-error-${session.streamingState.counter}`,
+                type: "text" as const,
+                content: message,
+                isError: true,
+              },
+            ];
+            set(
+              updateSession(
+                get(),
+                sessionId,
+                blocksPatchWithDerived(session.streamingState, blocks),
+              ),
+            );
+            return;
+          }
+          const session = getSession(sessionId);
+          const permissionPatch = advancePendingPermissionQueue(session.pendingPermissionQueue);
+          set(
+            updateSession(get(), sessionId, {
+              ...permissionPatch,
+              pendingRequestId: permissionPatch.pendingPermission?.requestId ?? "",
+            }),
+          );
+        });
     },
 
     respondToQuestion(sessionId: string, response: AgentQuestionAnswers) {

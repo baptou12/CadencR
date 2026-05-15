@@ -56,7 +56,7 @@ pub(super) async fn transition_session_to_post_plan_mode(
     // propagates and lights up an `error` envelope.
     let applied_mode = match &transition.query {
         Some(query) => {
-            let q = query.lock().await;
+            let q = query.read().await;
             match q.set_permission_mode(transition.target_mode.clone()).await {
                 Ok(()) => transition.target_mode,
                 Err(err) => {
@@ -181,7 +181,7 @@ mod tests {
     use axum::extract::ws::Message;
     use serde_json::Value;
     use sqlx::SqlitePool;
-    use tokio::sync::{mpsc, Mutex};
+    use tokio::sync::{mpsc, Mutex, RwLock};
 
     use super::transition_session_to_post_plan_mode;
     use crate::domain::agents::adapter::{
@@ -265,7 +265,7 @@ mod tests {
         let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResponse>(1);
         SdkHandle {
             state: QueryState::Active {
-                query: Arc::new(Mutex::new(Box::new(RecordingSession::new(modes)))),
+                query: Arc::new(RwLock::new(Box::new(RecordingSession::new(modes)))),
                 permission_tx,
             },
             feature_id: 1,
@@ -371,7 +371,7 @@ mod tests {
         let (permission_tx, _permission_rx) = mpsc::channel::<PermissionResponse>(1);
         SdkHandle {
             state: QueryState::Active {
-                query: Arc::new(Mutex::new(Box::new(AutoRejectingSession::new(modes)))),
+                query: Arc::new(RwLock::new(Box::new(AutoRejectingSession::new(modes)))),
                 permission_tx,
             },
             feature_id: 1,

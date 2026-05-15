@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use crate::domain::agents::adapter::{RuntimePermissionDecision, RuntimePermissionOption};
+use crate::domain::permission_bridge::extract_permission_preview;
 
 use super::super::schema_bridge::default_option_id;
 
@@ -62,23 +63,22 @@ fn default_description(decision: RuntimePermissionDecision) -> &'static str {
 pub(in crate::domain::agents::acp::runtime) fn derive_preview(
     tool_input: &Value,
 ) -> Option<String> {
-    let common_keys = ["command", "cmd", "path", "filePath", "file_path", "url"];
-    for key in common_keys {
-        if let Some(value) = tool_input.get(key) {
-            if let Some(s) = value.as_str() {
-                return Some(s.to_string());
-            }
-            if let Some(arr) = value.as_array() {
-                let joined = arr
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                if !joined.is_empty() {
-                    return Some(joined);
-                }
-            }
-        }
+    extract_permission_preview(tool_input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_preview;
+    use serde_json::json;
+
+    #[test]
+    fn derive_preview_extracts_nested_opencode_command_array() {
+        let input = json!({
+            "metadata": { "args": { "command": ["git", "status", "--short"] } }
+        });
+        assert_eq!(
+            derive_preview(&input).as_deref(),
+            Some("git status --short")
+        );
     }
-    None
 }

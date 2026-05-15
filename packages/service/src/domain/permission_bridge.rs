@@ -63,8 +63,43 @@ pub fn persistent_permission_updates(
 }
 
 pub fn extract_permission_preview(input: &Value) -> Option<String> {
+    preview_from_object(input)
+        .or_else(|| {
+            input
+                .get("always")
+                .and_then(Value::as_array)
+                .and_then(|items| items.iter().find_map(Value::as_str))
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            input
+                .get("patterns")
+                .and_then(Value::as_array)
+                .and_then(|patterns| patterns.iter().find_map(Value::as_str))
+                .map(ToOwned::to_owned)
+        })
+}
+
+fn preview_from_object(input: &Value) -> Option<String> {
+    preview_direct_value(input).or_else(|| {
+        [
+            "args",
+            "arguments",
+            "params",
+            "metadata",
+            "toolInput",
+            "rawInput",
+        ]
+        .iter()
+        .find_map(|key| input.get(*key).and_then(preview_from_object))
+    })
+}
+
+fn preview_direct_value(input: &Value) -> Option<String> {
     [
         "command",
+        "cmd",
+        "script",
         "file_path",
         "filepath",
         "path",
@@ -75,46 +110,10 @@ pub fn extract_permission_preview(input: &Value) -> Option<String> {
         "target",
         "destination",
         "source",
+        "url",
     ]
     .iter()
-    .find_map(|key| input.get(*key).and_then(Value::as_str))
-    .map(ToOwned::to_owned)
-    .or_else(|| extract_preview_from_nested_object(input.get("args")))
-    .or_else(|| {
-        input.get("metadata").and_then(|metadata| {
-            [
-                "command",
-                "path",
-                "file_path",
-                "filepath",
-                "filePath",
-                "directory",
-                "dir",
-                "cwd",
-                "target",
-                "destination",
-                "source",
-            ]
-            .iter()
-            .find_map(|key| metadata.get(*key).and_then(Value::as_str))
-            .map(ToOwned::to_owned)
-            .or_else(|| extract_preview_from_nested_object(metadata.get("args")))
-        })
-    })
-    .or_else(|| {
-        input
-            .get("always")
-            .and_then(Value::as_array)
-            .and_then(|items| items.iter().find_map(Value::as_str))
-            .map(ToOwned::to_owned)
-    })
-    .or_else(|| {
-        input
-            .get("patterns")
-            .and_then(Value::as_array)
-            .and_then(|patterns| patterns.iter().find_map(Value::as_str))
-            .map(ToOwned::to_owned)
-    })
+    .find_map(|key| preview_value(input.get(*key)))
 }
 
 pub fn provider_permission_description(request: &RuntimeToolPermissionRequest) -> String {
@@ -135,25 +134,19 @@ pub fn provider_permission_description(request: &RuntimeToolPermissionRequest) -
         })
 }
 
-fn extract_preview_from_nested_object(value: Option<&Value>) -> Option<String> {
-    value.and_then(|object| {
-        [
-            "command",
-            "path",
-            "file_path",
-            "filepath",
-            "filePath",
-            "directory",
-            "dir",
-            "cwd",
-            "target",
-            "destination",
-            "source",
-        ]
-        .iter()
-        .find_map(|key| object.get(*key).and_then(Value::as_str))
-        .map(ToOwned::to_owned)
-    })
+fn preview_value(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(text) if !text.is_empty() => Some(text.clone()),
+        Value::Array(parts) => {
+            let joined = parts
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(" ");
+            (!joined.is_empty()).then_some(joined)
+        }
+        _ => None,
+    }
 }
 
 /// Wait for a user response on the permission channel, clear the DB gate +

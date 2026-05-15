@@ -1637,8 +1637,8 @@ describe("ws-session-store", () => {
       return ws;
     }
 
-    it("respondToPermission deny clears pending fields without touching lifecycle", async () => {
-      await setupPermissionPending();
+    it("respondToPermission deny clears pending fields after backend ack", async () => {
+      const ws = await setupPermissionPending();
       expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
         phase: "paused",
         reason: "permission",
@@ -1646,21 +1646,75 @@ describe("ws-session-store", () => {
 
       useWsSessionStore.getState().respondToPermission("s1", "req-1", "deny");
 
-      const session = useWsSessionStore.getState().sessions["s1"];
+      let session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission?.requestId).toBe("req-1");
+      const sent = JSON.parse(ws.sent.at(-1)!);
+      ws.simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: sent.id,
+        payload: { action: "permission.respond" },
+      });
+      await Promise.resolve();
+
+      session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPermission).toBeNull();
       expect(session.pendingRequestId).toBe("");
       expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
     });
 
-    it("respondToPermission allow clears pending fields without touching lifecycle", async () => {
-      await setupPermissionPending();
+    it("respondToPermission allow clears pending fields after backend ack", async () => {
+      const ws = await setupPermissionPending();
 
       useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
 
-      const session = useWsSessionStore.getState().sessions["s1"];
+      let session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.pendingPermission?.requestId).toBe("req-1");
+      const sent = JSON.parse(ws.sent.at(-1)!);
+      ws.simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: sent.id,
+        payload: { action: "permission.respond" },
+      });
+      await Promise.resolve();
+
+      session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPermission).toBeNull();
       expect(session.pendingRequestId).toBe("");
       expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+    });
+
+    it("respondToPermission uses the current pending request id after the queue advances", async () => {
+      const ws = await setupPermissionPending();
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: {
+          request_id: "req-2",
+          tool_name: "Bash",
+          tool_input: { command: "pwd" },
+          description: "run pwd",
+        },
+      });
+
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+      let sent = JSON.parse(ws.sent.at(-1)!);
+      ws.simulateMessage({
+        domain: "session",
+        action: "acknowledged",
+        ref: sent.id,
+        payload: { action: "permission.respond" },
+      });
+      await Promise.resolve();
+      expect(useWsSessionStore.getState().sessions["s1"].pendingPermission?.requestId).toBe(
+        "req-2",
+      );
+
+      useWsSessionStore.getState().respondToPermission("s1", "req-1", "allow_once");
+
+      sent = JSON.parse(ws.sent.at(-1)!);
+      expect(sent.payload.request_id).toBe("req-2");
     });
 
     it("paused lifecycle returns to active when the agent keeps streaming after a deny", async () => {

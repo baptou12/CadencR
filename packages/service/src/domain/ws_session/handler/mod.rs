@@ -68,7 +68,7 @@ use std::sync::atomic::AtomicBool;
 #[allow(unused_imports)]
 use std::sync::Arc;
 #[allow(unused_imports)]
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 
 #[cfg(test)]
 mod tests {
@@ -85,11 +85,26 @@ mod tests {
         message_rx: Option<RuntimeMessageRx>,
     }
 
+    struct BlockingFollowUpSession {
+        message_rx: Option<RuntimeMessageRx>,
+        release: Arc<tokio::sync::Notify>,
+    }
+
     impl InPlaceEffortSession {
         fn new() -> Self {
             let (_tx, rx) = mpsc::channel(1);
             Self {
                 message_rx: Some(rx),
+            }
+        }
+    }
+
+    impl BlockingFollowUpSession {
+        fn new(release: Arc<tokio::sync::Notify>) -> Self {
+            let (_tx, rx) = mpsc::channel(1);
+            Self {
+                message_rx: Some(rx),
+                release,
             }
         }
     }
@@ -130,6 +145,43 @@ mod tests {
         }
 
         async fn set_thinking_effort(&self, _effort: Option<String>) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        fn pid(&self) -> Option<u32> {
+            None
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AgentRuntimeSession for BlockingFollowUpSession {
+        fn take_message_rx(&mut self) -> RuntimeMessageRx {
+            self.message_rx.take().unwrap()
+        }
+
+        async fn session_id(&self) -> Option<String> {
+            Some("runtime-session".to_string())
+        }
+
+        async fn stream_input(&self, _content: Value) -> Result<(), RuntimeError> {
+            self.release.notified().await;
+            Ok(())
+        }
+
+        async fn interrupt(&self) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn close(&mut self) {}
+
+        async fn set_model(&self, _model: &str) -> Result<(), RuntimeError> {
+            Ok(())
+        }
+
+        async fn set_permission_mode(
+            &self,
+            _mode: RuntimePermissionMode,
+        ) -> Result<(), RuntimeError> {
             Ok(())
         }
 
@@ -959,7 +1011,7 @@ mod tests {
             let (permission_tx, _permission_rx) =
                 mpsc::channel::<session_prompt::PermissionResponse>(1);
             handle.state = QueryState::Active {
-                query: Arc::new(Mutex::new(Box::new(ClaudeCodeSession::from_query(
+                query: Arc::new(RwLock::new(Box::new(ClaudeCodeSession::from_query(
                     Query::new_test_stub(Some("active-runtime-session".to_string())),
                 )))),
                 permission_tx,
@@ -1175,7 +1227,7 @@ mod tests {
             mpsc::channel::<session_prompt::PermissionResponse>(1);
         SdkHandle {
             state: QueryState::Active {
-                query: Arc::new(Mutex::new(Box::new(ClaudeCodeSession::from_query(query)))),
+                query: Arc::new(RwLock::new(Box::new(ClaudeCodeSession::from_query(query)))),
                 permission_tx,
             },
             feature_id,
@@ -1205,7 +1257,7 @@ mod tests {
             mpsc::channel::<session_prompt::PermissionResponse>(1);
         SdkHandle {
             state: QueryState::Active {
-                query: Arc::new(Mutex::new(Box::new(InPlaceEffortSession::new()))),
+                query: Arc::new(RwLock::new(Box::new(InPlaceEffortSession::new()))),
                 permission_tx,
             },
             feature_id,
@@ -1228,6 +1280,49 @@ mod tests {
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    #[tokio::test]
+    async fn test_follow_up_prompt_does_not_block_ws_dispatch() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+        let app_state = make_test_app_state().await;
+        let session_id = init_session(&tx, &mut rx, &sdk_sessions, &app_state, 1).await;
+        let db_id: i64 = session_id.parse().unwrap();
+        let release = Arc::new(tokio::sync::Notify::new());
+
+        {
+            let mut sessions = sdk_sessions.lock().await;
+            let handle = sessions.get_mut(&db_id).unwrap();
+            let (permission_tx, _permission_rx) =
+                mpsc::channel::<session_prompt::PermissionResponse>(1);
+            handle.state = QueryState::Active {
+                query: Arc::new(RwLock::new(Box::new(BlockingFollowUpSession::new(
+                    release.clone(),
+                )))),
+                permission_tx,
+            };
+        }
+
+        let envelope = make_envelope(
+            "session",
+            "prompt.send",
+            serde_json::json!({
+                "session_id": session_id,
+                "text": "please run another command",
+            }),
+        );
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state),
+        )
+        .await;
+
+        release.notify_waiters();
+        assert!(
+            result.is_ok(),
+            "follow-up prompt handling must return without waiting for the provider turn"
+        );
     }
 
     #[tokio::test]

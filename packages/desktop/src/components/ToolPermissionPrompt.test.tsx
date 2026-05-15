@@ -94,6 +94,37 @@ describe("ToolPermissionPrompt", () => {
     expect(screen.getByText("Run a shell command in your project")).toBeInTheDocument();
   });
 
+  it("renders command preview from input when preview is missing", () => {
+    render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
+    expect(screen.getByText("ls -la")).toBeInTheDocument();
+  });
+
+  it("renders command preview from nested OpenCode metadata args", () => {
+    render(
+      <ToolPermissionPrompt
+        permission={{
+          ...permission,
+          input: { metadata: { args: { command: ["git", "status", "--short"] } } },
+        }}
+        onDecision={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("git status --short")).toBeInTheDocument();
+  });
+
+  it("falls back to raw input JSON when no known preview key is present", () => {
+    render(
+      <ToolPermissionPrompt
+        permission={{
+          ...permission,
+          input: { invocation: { executable: "unknown-shape", argv: ["run"] } },
+        }}
+        onDecision={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/unknown-shape/)).toBeInTheDocument();
+  });
+
   it("renders three permission options", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
     expect(screen.getByText("Allow once")).toBeInTheDocument();

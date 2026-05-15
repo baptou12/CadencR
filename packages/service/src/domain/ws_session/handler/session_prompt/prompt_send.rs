@@ -81,7 +81,7 @@ pub(crate) async fn handle_prompt_send(
 
         // Get runtime session ID, persist it, and close the old query.
         let runtime_session_id = if let QueryState::Active { query, .. } = &handle.state {
-            let sid = query.lock().await.session_id().await;
+            let sid = query.read().await.session_id().await;
             if let Some(ref cli_sid) = sid {
                 WsSessionPersistence::persist_runtime_session_id_static(
                     &app_state.write_pool,
@@ -91,7 +91,7 @@ pub(crate) async fn handle_prompt_send(
                 )
                 .await;
             }
-            query.lock().await.close().await;
+            query.write().await.close().await;
             sid
         } else {
             None
@@ -118,9 +118,6 @@ pub(crate) async fn handle_prompt_send(
         handle.state = QueryState::Pending(options);
     }
 
-    // TEMP-ACP-WIRE-LOG: dispatch decision before every prompt. Pair with
-    // ACP wire frames to detect spurious respawns between turns. Remove
-    // alongside the other TEMP-ACP-WIRE-LOG calls when debugging is done.
     info!(
         db_session_id,
         desired_model = ?handle.desired_model,
@@ -332,7 +329,7 @@ pub(crate) async fn handle_prompt_send(
                         None,
                     );
                     let message_rx = runtime_session.take_message_rx();
-                    let query_arc = Arc::new(Mutex::new(runtime_session));
+                    let query_arc = Arc::new(tokio::sync::RwLock::new(runtime_session));
 
                     spawn_stream_reader(
                         db_session_id,
@@ -424,11 +421,19 @@ pub(crate) async fn handle_prompt_send(
             }
         }
         QueryState::Active { query, .. } => {
+            let query = query.clone();
+            let feature_id = handle.feature_id;
+            let write_pool = app_state.write_pool.clone();
+            let session_status_tx = app_state.session_status_tx.clone();
+            let sender = sender.clone();
+            let envelope_id = envelope.id.clone();
+            drop(sessions);
+
             // Persist follow-up user message.
             let persist_content = build_persist_content(&payload.text, &payload.images);
             let p = WsSessionPersistence::with_session_id(
-                app_state.write_pool.clone(),
-                handle.feature_id,
+                write_pool.clone(),
+                feature_id,
                 Some(db_session_id),
             );
             p.persist_user_message(&persist_content).await;
@@ -442,35 +447,44 @@ pub(crate) async fn handle_prompt_send(
             // writes, turn 1's `mark_completed_static` + `"none"` tombstone
             // from `stream_reader.rs:191-197` stay sticky across the second
             // prompt and the UI never shows the agent is alive again.
-            WsSessionPersistence::mark_running_static(&app_state.write_pool, db_session_id).await;
+            WsSessionPersistence::mark_running_static(&write_pool, db_session_id).await;
             WsSessionPersistence::broadcast_session_status(
-                &app_state.session_status_tx,
+                &session_status_tx,
                 db_session_id,
-                handle.feature_id,
+                feature_id,
                 crate::domain::session_status::AgentStatus::Agent,
                 None,
             );
 
-            let q = query.lock().await;
             info!(db_session_id, "follow-up prompt");
             let content = build_content_value(&payload.text, &payload.images);
-            let stream_result = q.stream_input(content).await;
-            drop(q);
-            if let Err(e) = stream_result {
-                let message = e.to_string();
-                error!(db_session_id, error = %message, "stream_input failed");
-                persist_pause_and_send_session_error(
-                    &app_state.write_pool,
-                    &app_state.session_status_tx,
-                    sender,
-                    &envelope.id,
-                    handle.feature_id,
-                    db_session_id,
-                    "SDK_ERROR",
-                    &message,
-                )
-                .await;
-            }
+            // Follow-up turns can request permissions. Do not await the
+            // provider turn on the websocket dispatch task: if dispatch is
+            // blocked inside `stream_input()`, the user's subsequent
+            // `session.permission.respond` envelope cannot be processed and
+            // the permission card times out. The runtime serializes prompt
+            // turns internally, so spawning here preserves order while keeping
+            // the websocket command loop responsive.
+            tokio::spawn(async move {
+                let q = query.read().await;
+                let stream_result = q.stream_input(content).await;
+                drop(q);
+                if let Err(e) = stream_result {
+                    let message = e.to_string();
+                    error!(db_session_id, error = %message, "stream_input failed");
+                    persist_pause_and_send_session_error(
+                        &write_pool,
+                        &session_status_tx,
+                        &sender,
+                        &envelope_id,
+                        feature_id,
+                        db_session_id,
+                        "SDK_ERROR",
+                        &message,
+                    )
+                    .await;
+                }
+            });
         }
     }
 }

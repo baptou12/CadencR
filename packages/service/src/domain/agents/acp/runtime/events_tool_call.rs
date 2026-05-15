@@ -45,6 +45,9 @@ pub fn map_tool_call_start(
     indexer.record_tool_name(tool_call_id, &tool_name);
     hooks.record_tool_call_start(tool_call_id, &tool_name);
     let input = hooks.normalize_tool_input(&tool_name, raw);
+    if !is_empty_value(&input) {
+        indexer.record_tool_input(tool_call_id, input.clone());
+    }
     let parent = parent_tool_use_id(body);
     if let Some(event) = hooks.tool_call_start_override(
         tool_call_id,

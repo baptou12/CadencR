@@ -10,6 +10,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde_json::Value;
+
 use super::stream_events;
 use super::stream_events::message_start_event;
 use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeContentDelta, RuntimeEvent};
@@ -41,6 +43,7 @@ pub struct EventIndexer {
     /// chat bubble.
     pub message_started: bool,
     question_prompt_ids: HashSet<String>,
+    tool_inputs: HashMap<String, Value>,
 }
 
 impl EventIndexer {
@@ -72,6 +75,14 @@ impl EventIndexer {
 
     pub fn tool_name_for(&self, tool_call_id: &str) -> Option<&str> {
         self.tool_names.get(tool_call_id).map(String::as_str)
+    }
+
+    pub fn record_tool_input(&mut self, tool_call_id: &str, input: Value) {
+        self.tool_inputs.insert(tool_call_id.to_string(), input);
+    }
+
+    pub fn tool_input_for(&self, tool_call_id: &str) -> Option<&Value> {
+        self.tool_inputs.get(tool_call_id)
     }
 
     pub fn mark_plan_todowrite_emitted(&mut self) {

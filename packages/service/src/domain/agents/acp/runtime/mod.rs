@@ -23,6 +23,7 @@ pub mod mcp;
 pub mod mode_switch;
 pub mod permissions;
 mod permissions_dispatch;
+mod permissions_refresh;
 pub mod permissions_typed;
 pub mod prompt_turn;
 pub mod provider_hooks;

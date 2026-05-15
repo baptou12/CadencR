@@ -89,7 +89,7 @@ async fn handle_active_runtime_compact(
         query.clone()
     };
 
-    if let Err(error) = query.lock().await.compact().await {
+    if let Err(error) = query.read().await.compact().await {
         send_error(sender, envelope_id, "SDK_ERROR", &error.to_string());
         return;
     }
@@ -228,7 +228,7 @@ mod tests {
             handle_for_provider(
                 crate::domain::agents::opencode::PROVIDER_ID,
                 QueryState::Active {
-                    query: Arc::new(Mutex::new(runtime)),
+                    query: Arc::new(tokio::sync::RwLock::new(runtime)),
                     permission_tx,
                 },
             ),
