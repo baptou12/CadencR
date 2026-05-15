@@ -110,4 +110,4 @@ For a bugfix, include a test that fails without the fix. For a feature, include 
 ## Notes
 
 - `.env` files under `packages/*/` are local-only and must never be committed. They are covered by `.gitignore`.
-- Questions? Open a [discussion](https://github.com/rle-mino/cadencr/discussions) or a draft issue.
+- Questions? Open a [discussion](https://github.com/merkr-software/cadencr/discussions) or a draft issue.

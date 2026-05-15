@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Question or discussion
-    url: https://github.com/rle-mino/cadencr/discussions
+    url: https://github.com/merkr-software/cadencr/discussions
     about: Open a discussion for usage questions, ideas, or general feedback.
   - name: Report a security vulnerability
-    url: https://github.com/rle-mino/cadencr/security/advisories/new
+    url: https://github.com/merkr-software/cadencr/security/advisories/new
     about: Use GitHub's private vulnerability reporting. Do not open a public issue.
