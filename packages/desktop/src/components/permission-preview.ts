@@ -1,6 +1,6 @@
 interface PermissionPreviewSource {
   preview?: unknown;
-  input: Record<string, unknown>;
+  input?: Record<string, unknown> | null;
 }
 
 const DIRECT_PREVIEW_KEYS = [
@@ -24,7 +24,9 @@ const PREFERRED_NESTED_KEYS = ["args", "arguments", "params", "metadata", "toolI
 export function getPermissionPreview(permission: PermissionPreviewSource): string | null {
   const explicit = previewString(permission.preview);
   if (explicit) return explicit;
-  return previewFromInput(permission.input) ?? compactJsonPreview(permission.input);
+  const input = objectValue(permission.input);
+  if (!input) return null;
+  return previewFromInput(input) ?? compactJsonPreview(input);
 }
 
 function previewString(value: unknown): string | null {
