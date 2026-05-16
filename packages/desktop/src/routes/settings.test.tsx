@@ -3,8 +3,14 @@ import { render, screen } from "@/test-utils";
 import React from "react";
 
 const mocks = vi.hoisted(() => {
-  const mockGetWorkspaceSetting = vi.fn(() => ({ data: { value: "1" }, isSuccess: true }));
-  const mockSetWorkspaceSetting = vi.fn(() => ({ mutate: vi.fn(), isLoading: false }));
+  const mockGetWorkspaceSetting = vi.fn(() => ({
+    data: { value: "1" },
+    isSuccess: true,
+  }));
+  const mockSetWorkspaceSetting = vi.fn(() => ({
+    mutate: vi.fn(),
+    isLoading: false,
+  }));
   return { mockGetWorkspaceSetting, mockSetWorkspaceSetting };
 });
 
@@ -49,7 +55,10 @@ function SettingsPage() {
 
 describe("SettingsPage route", () => {
   beforeEach(() => {
-    mocks.mockGetWorkspaceSetting.mockReturnValue({ data: { value: "1" }, isSuccess: true });
+    mocks.mockGetWorkspaceSetting.mockReturnValue({
+      data: { value: "1" },
+      isSuccess: true,
+    });
   });
 
   it("renders the settings heading", () => {
@@ -84,15 +93,9 @@ describe("SettingsPage route", () => {
     expect(screen.getByText("--no-ff")).toBeInTheDocument();
   });
 
-  it("renders loader-style options inside Appearance", () => {
+  it("does not render the removed loader-style option", () => {
     render(<SettingsPage />);
-    expect(screen.getByText("Loader style")).toBeInTheDocument();
-    expect(screen.getByText("Normal")).toBeInTheDocument();
-    expect(screen.getByText("Usage Glow")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Keep the current square streaming indicator and standard context usage bar.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Loader style")).not.toBeInTheDocument();
+    expect(screen.queryByText("Usage Glow")).not.toBeInTheDocument();
   });
 });
