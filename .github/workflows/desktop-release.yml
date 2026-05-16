@@ -1,0 +1,61 @@
+name: Release desktop app
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      # afterSign hook gates on this; opt in for tagged releases only.
+      CADENCR_NOTARIZE_APP: "true"
+      # Apple ID credentials consumed by build/notarize-app.cjs and
+      # scripts/notarize-artifacts.mjs.
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # electron-builder reads CSC_LINK + CSC_KEY_PASSWORD to import the
+      # Developer ID Application certificate from a base64-encoded .p12.
+      CSC_LINK: ${{ secrets.MAC_CERTIFICATE_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      # GitHub publish provider — needs write access to releases.
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Rust service sidecar
+        run: pnpm --filter @cadencr/service build
+
+      - name: Build renderer + main bundles
+        run: pnpm --filter @cadencr/desktop exec electron-vite build
+
+      - name: Build, sign, notarize, and publish desktop app
+        # `--publish always` uploads DMG, ZIP, blockmaps and latest-mac.yml to
+        # the GitHub Release matching the pushed tag.
+        run: |
+          pnpm --filter @cadencr/desktop exec electron-builder \
+            --config electron-builder.yml \
+            --mac \
+            --arm64 --x64 \
+            --publish always

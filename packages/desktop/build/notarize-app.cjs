@@ -11,9 +11,15 @@ exports.default = async function notarizeApp(context) {
   }
 
   const keychainProfile = process.env.APPLE_NOTARIZE_PROFILE ?? process.env.CADENCR_NOTARY_PROFILE;
-  if (!keychainProfile) {
+  const appleId = process.env.APPLE_ID;
+  const appleIdPassword = process.env.APPLE_APP_SPECIFIC_PASSWORD ?? process.env.APPLE_ID_PASSWORD;
+  const teamId = process.env.APPLE_TEAM_ID;
+  const hasAppleIdCreds = appleId && appleIdPassword && teamId;
+  if (!keychainProfile && !hasAppleIdCreds) {
     throw new Error(
-      "Missing notarization profile. Set APPLE_NOTARIZE_PROFILE or CADENCR_NOTARY_PROFILE.",
+      "Missing notarization credentials. Set either a keychain profile " +
+        "(APPLE_NOTARIZE_PROFILE / CADENCR_NOTARY_PROFILE) or the Apple ID trio " +
+        "(APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID).",
     );
   }
 
@@ -24,7 +30,11 @@ exports.default = async function notarizeApp(context) {
   if (!existsSync(appPath)) throw new Error(`Missing app bundle at ${appPath}`);
 
   console.log(`Notarizing app bundle: ${appPath}`);
-  await notarize({ appPath, keychainProfile });
+  if (keychainProfile) {
+    await notarize({ appPath, keychainProfile });
+  } else {
+    await notarize({ appPath, appleId, appleIdPassword, teamId });
+  }
 
   console.log(`Validating stapled app bundle: ${appPath}`);
   run("xcrun", ["stapler", "validate", appPath]);
