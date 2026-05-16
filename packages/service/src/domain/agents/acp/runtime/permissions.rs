@@ -23,7 +23,8 @@ use crate::domain::agents::adapter::{
 #[cfg(test)]
 pub use super::permissions_dispatch::dispatch_permission_request;
 pub use super::permissions_dispatch::{
-    dispatch_permission_request_with_cache, reject_all_pending, take_pending, PendingPermissions,
+    dispatch_permission_request_with_cache, permission_raw_event, reject_all_pending, take_pending,
+    PendingPermissions,
 };
 pub use super::permissions_refresh::{
     has_pending_permission_for_tool_call, refreshed_permission_event_for_tool_input,

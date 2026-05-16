@@ -18,6 +18,24 @@ use crate::domain::agents::adapter::{
 
 use super::events_stream_blocks::EventIndexer;
 
+/// Outcome of a provider-side fallback permission response. See the doc on
+/// `AcpProviderHooks::respond_permission_fallback`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PermissionFallbackOutcome {
+    /// Provider does not recognise this request id; runtime should error.
+    NotHandled,
+    /// Provider handled the response. No session-scope caching needed
+    /// (one-shot tools like AskUserQuestion).
+    Handled,
+    /// Provider handled the response. Runtime should record the decision
+    /// in the session-scope permission cache under `(tool_name, tool_input)`
+    /// so identical follow-up calls don't re-prompt.
+    HandledWithCacheKey {
+        tool_name: String,
+        tool_input: Value,
+    },
+}
+
 #[cfg(test)]
 struct DefaultFlattenHooks;
 
@@ -121,14 +139,20 @@ pub trait AcpProviderHooks: Send + Sync {
 
     /// Last-resort hook for permission responses that don't match a pending
     /// ACP server request. OpenCode uses this to forward question-tool
-    /// answers to its sidecar HTTP endpoint. Returning `Ok(true)` means
-    /// "I handled this"; `Ok(false)` means "let the runtime surface a
-    /// no-such-pending error".
+    /// answers to its sidecar HTTP endpoint *and* to answer permission
+    /// requests sourced from its `/event` SSE bus (which never reach the
+    /// ACP wire). The variant returned drives the runtime's session-scope
+    /// cache:
+    /// - `NotHandled`: not ours; runtime surfaces a no-pending error.
+    /// - `Handled`: handled, no caching needed (one-shot, e.g. question tool).
+    /// - `HandledWithCacheKey`: handled and the runtime should record the
+    ///   decision under `(tool_name, tool_input)` so a follow-up call
+    ///   with the same shape can skip the prompt.
     async fn respond_permission_fallback(
         &self,
         _response: RuntimePermissionResponse,
-    ) -> Result<bool, RuntimeError> {
-        Ok(false)
+    ) -> Result<PermissionFallbackOutcome, RuntimeError> {
+        Ok(PermissionFallbackOutcome::NotHandled)
     }
 
     /// Provider opt-in: suppress the default `rawOutput` tool_result emission

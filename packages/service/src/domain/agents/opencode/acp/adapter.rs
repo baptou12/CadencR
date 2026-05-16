@@ -1,12 +1,15 @@
 use super::adapter_normalize::normalize_edit_input;
 use super::events_subagent_synthesis::{extract_subagent_body, synthesize_subagent_text_event};
 use super::events_tool_call_question::{question_start_event, question_update_event};
+use super::permission_reply::route_subagent_permission_reply;
 use super::prompt_usage::prompt_response_usage;
 use super::question_sidecar::QuestionSidecar;
-use super::upstream_workaround::{spawn_side_channel_listeners, PendingSubagentTasks};
+use super::upstream_workaround::{
+    spawn_side_channel_listeners, PendingSubagentTasks, PermissionRegistry,
+};
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
 use crate::domain::agents::acp::runtime::provider_hooks::{
-    flatten_tool_result_content_with, AcpProviderHooks,
+    flatten_tool_result_content_with, AcpProviderHooks, PermissionFallbackOutcome,
 };
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
@@ -17,23 +20,31 @@ use crate::domain::agents::opencode::tool_names::{
     canonical_acp_tool_name, canonical_cadencr_tool_name,
 };
 use async_trait::async_trait;
+use opencode_sdk_rs::OpenCodeClient;
 use serde_json::Value;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::sync::{Arc, Mutex as StdMutex};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 pub struct OpenCodeAcpAdapter {
     question_sidecar: QuestionSidecar,
-    opencode_http_port: u16,
+    /// Shared HTTP client (pooled) reused by sidecar + permission reply.
+    http: OpenCodeClient,
+    /// `directory` scope for workspace-routed calls; upstream's
+    /// `WorkspaceRoutingMiddleware` uses it to keep list/reply on the same map.
+    cwd: String,
     pending_subagent_calls: PendingSubagentTasks,
+    permissions: PermissionRegistry,
 }
 impl OpenCodeAcpAdapter {
-    pub fn new(question_sidecar: QuestionSidecar, opencode_http_port: u16) -> Self {
+    pub fn new(question_sidecar: QuestionSidecar, opencode_http_port: u16, cwd: &Path) -> Self {
         Self {
             question_sidecar,
-            opencode_http_port,
+            http: OpenCodeClient::new(opencode_http_port),
+            cwd: cwd.to_string_lossy().into_owned(),
             pending_subagent_calls: Arc::new(StdMutex::new(VecDeque::new())),
+            permissions: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -149,11 +160,12 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     ) -> Option<JoinHandle<()>> {
         Some(spawn_side_channel_listeners(
-            self.opencode_http_port,
+            self.http.clone(),
             cwd.to_path_buf(),
             session_id.to_string(),
             context_window,
             Arc::clone(&self.pending_subagent_calls),
+            Arc::clone(&self.permissions),
             tx,
         ))
     }
@@ -164,27 +176,38 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     async fn respond_permission_fallback(
         &self,
         response: RuntimePermissionResponse,
-    ) -> Result<bool, RuntimeError> {
+    ) -> Result<PermissionFallbackOutcome, RuntimeError> {
+        // 1. Polled sub-agent permission? POSTs to OpenCode REST and
+        //    returns a cache key so the runtime records the decision.
+        if let Some(outcome) =
+            route_subagent_permission_reply(&self.http, &self.cwd, &self.permissions, &response)
+                .await?
+        {
+            return Ok(outcome);
+        }
+
+        // 2. AskUserQuestion (denial path).
         if matches!(response.decision, RuntimePermissionDecision::Deny) {
             self.question_sidecar
                 .reject_tool_call(&response.request_id)
                 .await?;
-            return Ok(true);
+            return Ok(PermissionFallbackOutcome::Handled);
         }
+        // 3. AskUserQuestion (answer path).
         if response.updated_input.is_none() && response.feedback.is_none() {
-            return Ok(false);
+            return Ok(PermissionFallbackOutcome::NotHandled);
         }
         let answers = extract_question_answers(
             response.updated_input.as_ref(),
             response.feedback.as_deref(),
         );
         if answers.iter().all(Vec::is_empty) {
-            return Ok(false);
+            return Ok(PermissionFallbackOutcome::NotHandled);
         }
         self.question_sidecar
             .reply_tool_call(&response.request_id, answers)
             .await?;
-        Ok(true)
+        Ok(PermissionFallbackOutcome::Handled)
     }
 }
 pub fn flatten_tool_result_content(content: &[Value]) -> Value {
@@ -217,6 +240,7 @@ mod tests {
         OpenCodeAcpAdapter::new(
             super::QuestionSidecar::new(0, std::path::Path::new("/tmp")),
             0,
+            std::path::Path::new("/tmp"),
         )
     }
     #[test]
@@ -228,17 +252,14 @@ mod tests {
         assert_eq!(payload, json!("line one\nline two"));
     }
     #[test]
-    fn flatten_passes_structured_blocks_through() {
+    fn flatten_passes_structured_blocks_through_and_handles_empty_input() {
         let blocks = vec![json!({ "type": "diff", "path": "/x", "newText": "x" })];
         let payload = flatten_tool_result_content(&blocks);
         assert!(payload.is_array());
         assert_eq!(payload[0]["type"], "diff");
-    }
-    #[test]
-    fn flatten_returns_empty_array_for_empty_input() {
-        let payload = flatten_tool_result_content(&[]);
-        assert!(payload.is_array());
-        assert_eq!(payload.as_array().unwrap().len(), 0);
+        let empty = flatten_tool_result_content(&[]);
+        assert!(empty.is_array());
+        assert!(empty.as_array().unwrap().is_empty());
     }
     #[test]
     fn flatten_unwraps_opencode_content_envelope() {
@@ -324,76 +345,56 @@ mod tests {
     }
     #[test]
     fn synthesize_tool_call_completion_emits_text_under_parent_for_task() {
-        let adapter = adapter();
-        let mut idx = EventIndexer::default();
         let body = json!({
             "toolCallId": "call_TASK_PARENT",
             "status": "completed",
-            "content": [{
-                "type": "content",
-                "content": {
-                    "type": "text",
-                    "text": "task_id: ses_child\n\n<task_result>\nfindings line 1\nfindings line 2\n</task_result>"
-                }
-            }],
             "rawOutput": {
                 "output": "task_id: ses_child\n\n<task_result>\nfindings line 1\nfindings line 2\n</task_result>",
-                "metadata": { "sessionId": "ses_child", "model": { "modelID": "gpt-5.4" } }
+                "metadata": { "sessionId": "ses_child" }
             }
         });
-        let events = adapter.synthesize_tool_call_completion(
+        let events = adapter().synthesize_tool_call_completion(
             "call_TASK_PARENT",
             "Task",
             &body,
             "completed",
             &metadata(),
-            &mut idx,
+            &mut EventIndexer::default(),
         );
         assert_eq!(events.len(), 1);
-        let event = &events[0];
-        assert_eq!(event.parent_tool_use_id(), Some("call_TASK_PARENT"));
-        let assistant = event.assistant_message().expect("assistant message");
-        let RuntimeContentBlock::Text { text } = &assistant.content[0] else {
+        assert_eq!(events[0].parent_tool_use_id(), Some("call_TASK_PARENT"));
+        let RuntimeContentBlock::Text { text } =
+            &events[0].assistant_message().expect("assistant").content[0]
+        else {
             panic!("expected text block");
         };
         assert_eq!(text, "findings line 1\nfindings line 2");
     }
     #[test]
-    fn synthesize_tool_call_completion_returns_empty_for_non_subagent_tools() {
+    fn synthesize_tool_call_completion_returns_empty_for_non_subagent_or_blank_body() {
         let adapter = adapter();
         let mut idx = EventIndexer::default();
-        let body = json!({
-            "toolCallId": "call_BASH",
-            "status": "completed",
-            "rawOutput": { "output": "ls -la output" }
-        });
-        let events = adapter.synthesize_tool_call_completion(
-            "call_BASH",
-            "Bash",
-            &body,
-            "completed",
-            &metadata(),
-            &mut idx,
-        );
-        assert!(events.is_empty());
-    }
-    #[test]
-    fn synthesize_tool_call_completion_returns_empty_when_body_is_blank() {
-        let adapter = adapter();
-        let mut idx = EventIndexer::default();
-        let body = json!({
-            "toolCallId": "call_TASK",
-            "status": "completed",
-            "rawOutput": { "output": "" }
-        });
-        let events = adapter.synthesize_tool_call_completion(
-            "call_TASK",
-            "Task",
-            &body,
-            "completed",
-            &metadata(),
-            &mut idx,
-        );
-        assert!(events.is_empty());
+        // Non-subagent tool: ignored regardless of body shape.
+        assert!(adapter
+            .synthesize_tool_call_completion(
+                "call_BASH",
+                "Bash",
+                &json!({ "rawOutput": { "output": "ls -la output" } }),
+                "completed",
+                &metadata(),
+                &mut idx,
+            )
+            .is_empty());
+        // Subagent tool but no extractable body: also ignored.
+        assert!(adapter
+            .synthesize_tool_call_completion(
+                "call_TASK",
+                "Task",
+                &json!({ "rawOutput": { "output": "" } }),
+                "completed",
+                &metadata(),
+                &mut idx,
+            )
+            .is_empty());
     }
 }
