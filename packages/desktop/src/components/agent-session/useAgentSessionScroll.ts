@@ -125,9 +125,24 @@ export function useAgentSessionScroll({
   // `scroll` events.
   const onAtBottomStateChange = useCallback(
     (atBottom: boolean): void => {
-      if (atBottom) setAutoScrollEnabled(true);
+      if (!atBottom) return;
+      // Capture stick state *before* re-enabling so we can tell whether the
+      // user is returning from a scrolled-up position. Only in that case do
+      // we need to clamp the scroller — while stick is already engaged,
+      // `followOutput` and `onTotalListHeightChanged` already keep the view
+      // pinned through measurement settles, and re-pinning here would just
+      // thrash on every transient atBottom flicker.
+      const wasDisengaged = !stickRef.current;
+      setAutoScrollEnabled(true);
+      if (!wasDisengaged) return;
+      // Returning to bottom: snap to the true last item. Virtuoso's
+      // "atBottom" is measured against scrollHeight, which can overshoot
+      // when unmeasured items below were estimated taller than reality.
+      // `scrollToIndex(LAST, end)` is measurement-aware and removes any
+      // phantom tail space the user might have scrolled into.
+      pinToEnd();
     },
-    [setAutoScrollEnabled],
+    [setAutoScrollEnabled, pinToEnd],
   );
 
   // The "opens almost at the bottom" gap on cold-open comes from Virtuoso
