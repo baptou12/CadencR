@@ -45,7 +45,12 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
   const gitTab = useGitTab(args);
   const editorTab = useEditorTab(args);
   return useMemo(
-    () => ({ agent: agentTab, terminal: terminalTab, git: gitTab, editor: editorTab }),
+    () => ({
+      agent: agentTab,
+      terminal: terminalTab,
+      git: gitTab,
+      editor: editorTab,
+    }),
     [agentTab, editorTab, gitTab, terminalTab],
   );
 }
@@ -73,6 +78,8 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           toolResultMap={controls.ws.toolResultMap}
           historyPrependDisplayOffset={controls.ws.historyPrependDisplayOffset}
           status={controls.ws.status}
+          lifecycle={controls.ws.lifecycle}
+          turnTiming={controls.ws.turnTiming}
           onSend={onSend}
           onStop={controls.ws.interrupt}
           pendingPermission={controls.ws.pendingPermission}

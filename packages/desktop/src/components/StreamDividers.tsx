@@ -68,3 +68,12 @@ export function CompactDivider({ metadata }: { metadata?: string }) {
 export function ClearDivider({ previousSessionId }: { previousSessionId?: string }) {
   return <StreamDivider label="Cleared" tone="cyan" detail={previousSessionId || undefined} />;
 }
+
+export function TurnSummaryDivider({ content }: { content: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+      <span className="h-0.5 w-5 shrink-0 rounded-full bg-muted-foreground/65" />
+      <span className="font-medium tabular-nums">{content}</span>
+    </div>
+  );
+}

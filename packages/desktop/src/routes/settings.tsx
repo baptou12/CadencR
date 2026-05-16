@@ -40,7 +40,6 @@ import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
-import { RadioCardGroup } from "@/components/settings/RadioCardGroup";
 import {
   SettingsNavSidebar,
   type SettingsNavGroup,
@@ -50,13 +49,6 @@ import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { APP_VERSION } from "@/lib/app-version";
-import {
-  DEFAULT_LOADER_STYLE,
-  LOADER_STYLE_DETAILS,
-  LOADER_STYLE_KEY,
-  parseLoaderStyle,
-  type LoaderStyle,
-} from "@/lib/loader-style";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -70,16 +62,32 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   {
     label: "General",
     items: [
-      { id: "appearance", label: "Appearance", icon: <Palette className="size-4" /> },
+      {
+        id: "appearance",
+        label: "Appearance",
+        icon: <Palette className="size-4" />,
+      },
       { id: "editor", label: "Editor", icon: <Code2 className="size-4" /> },
-      { id: "interface", label: "Interface & Zoom", icon: <MonitorCog className="size-4" /> },
-      { id: "notifications", label: "Notifications", icon: <Bell className="size-4" /> },
+      {
+        id: "interface",
+        label: "Interface & Zoom",
+        icon: <MonitorCog className="size-4" />,
+      },
+      {
+        id: "notifications",
+        label: "Notifications",
+        icon: <Bell className="size-4" />,
+      },
     ],
   },
   {
     label: "Agents",
     items: [
-      { id: "runtime", label: "Runtime & Models", icon: <BrainCircuit className="size-4" /> },
+      {
+        id: "runtime",
+        label: "Runtime & Models",
+        icon: <BrainCircuit className="size-4" />,
+      },
     ],
   },
   {
@@ -88,11 +96,23 @@ const NAV_GROUPS: SettingsNavGroup[] = [
   },
   {
     label: "Providers",
-    items: [{ id: "providers", label: "CLI Providers", icon: <Plug className="size-4" /> }],
+    items: [
+      {
+        id: "providers",
+        label: "CLI Providers",
+        icon: <Plug className="size-4" />,
+      },
+    ],
   },
   {
     label: "About",
-    items: [{ id: "about", label: "About Cadencr", icon: <Info className="size-4" /> }],
+    items: [
+      {
+        id: "about",
+        label: "About Cadencr",
+        icon: <Info className="size-4" />,
+      },
+    ],
   },
 ];
 
@@ -207,46 +227,12 @@ function Breadcrumbs(): React.JSX.Element {
 
 function AppearanceSection(): React.JSX.Element {
   return (
-    <SettingsSection
-      id="appearance"
-      title="Appearance"
-      subtitle="Theme · Loader style · Animations"
-    >
+    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations">
       <SettingsCard padded className="space-y-5">
         <ThemeSelector />
-        <div className="border-t border-border" />
-        <LoaderStyleControl />
-        <div className="border-t border-border" />
         <AnimationsToggle />
       </SettingsCard>
     </SettingsSection>
-  );
-}
-
-function LoaderStyleControl(): React.JSX.Element {
-  const loaderStyle = useDebouncedSetting(LOADER_STYLE_KEY);
-  const value = parseLoaderStyle(loaderStyle.value ?? DEFAULT_LOADER_STYLE);
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <div className="text-sm font-medium">Loader style</div>
-        <p className="text-xs text-muted-foreground">
-          How Cadencr signals an agent is running while you wait.
-        </p>
-      </div>
-      <RadioCardGroup<LoaderStyle>
-        ariaLabel="Loader style"
-        value={value}
-        onChange={(next) => loaderStyle.setValue(next)}
-        layout="grid"
-        options={LOADER_STYLE_DETAILS.map((option) => ({
-          value: option.value,
-          label: option.label,
-          description: option.description,
-        }))}
-      />
-    </div>
   );
 }
 

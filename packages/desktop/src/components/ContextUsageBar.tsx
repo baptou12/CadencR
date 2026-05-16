@@ -5,18 +5,16 @@ import {
   usageRatio as computeUsageRatio,
 } from "@/types/agent";
 import { cn } from "@/lib/utils";
-import { getContextUsageAppearance, type LoaderStyle } from "@/lib/loader-style";
+import { getContextUsageAppearance } from "@/lib/context-usage-appearance";
 import { KbdShortcut } from "@/components/KbdShortcut";
 
 export function ContextUsageBar({
   usage,
   className,
-  loaderStyle,
   isStreaming,
 }: {
   usage: ContextUsageState | null | undefined;
   className?: string;
-  loaderStyle: LoaderStyle;
   isStreaming: boolean;
 }): ReactElement | null {
   if (!usage) return null;
@@ -31,21 +29,15 @@ export function ContextUsageBar({
         <div
           className={cn(
             "h-full rounded-full transition-all duration-300",
-            loaderStyle === "usage-glow" && isStreaming
-              ? "context-usage-glow"
-              : appearance.barClassName,
+            isStreaming ? "context-usage-glow" : appearance.barClassName,
           )}
-          data-loader-style={loaderStyle}
+          data-context-usage-style="glow"
           style={{
             width: `${ratio * 100}%`,
-            ...(loaderStyle === "usage-glow"
-              ? {
-                  backgroundColor: appearance.glowColor,
-                  boxShadow: isStreaming
-                    ? `0 0 4px ${appearance.glowColor}, 0 0 10px color-mix(in srgb, ${appearance.glowColor} 75%, transparent), 0 0 16px color-mix(in srgb, ${appearance.glowColor} 45%, transparent)`
-                    : "none",
-                }
-              : undefined),
+            backgroundColor: appearance.glowColor,
+            boxShadow: isStreaming
+              ? `0 0 4px ${appearance.glowColor}, 0 0 10px color-mix(in srgb, ${appearance.glowColor} 75%, transparent), 0 0 16px color-mix(in srgb, ${appearance.glowColor} 45%, transparent)`
+              : "none",
           }}
         />
       </div>

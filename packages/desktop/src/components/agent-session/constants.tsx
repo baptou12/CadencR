@@ -18,7 +18,7 @@ export const STATUS_BADGE: Record<
   idle: { label: "Idle", className: "bg-gray-500/15 text-gray-400" },
   agent: {
     label: "Working",
-    className: "bg-yellow-500/15 text-yellow-300",
+    className: "bg-primary/15 text-primary",
     icon: <Loader2Icon className="size-3 animate-spin" />,
   },
   question: {

@@ -15,9 +15,7 @@ import {
   forwardRef,
   memo,
 } from "react";
-import { useGetWorkspaceSetting } from "@/api/generated";
 import { parseThinkingEffort } from "@/shared/thinking-effort";
-import { LOADER_STYLE_KEY, parseLoaderStyle } from "@/lib/loader-style";
 import { cn, capitalize } from "@/lib/utils";
 import { Loader2Icon } from "lucide-react";
 import { AgentStream } from "../AgentStream";
@@ -37,6 +35,10 @@ import { MetaBarSecondary } from "./MetaBarSecondary";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
+import {
+  isTurnInProgress as isLifecycleInProgress,
+  useTurnWorkingLabel,
+} from "@/components/TurnWorkingLabel";
 
 /**
  * Container width below which the auto-scroll, todos, and info chips slide
@@ -60,6 +62,8 @@ export const AgentSession = memo(
       toolResultMap,
       historyPrependDisplayOffset,
       status,
+      lifecycle,
+      turnTiming,
       onSend,
       onStop,
       pendingQuestions,
@@ -126,7 +130,6 @@ export const AgentSession = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
 
-    const loaderStyleSetting = useGetWorkspaceSetting(LOADER_STYLE_KEY);
     const agentCatalog = useAgentCatalog();
     const cwdQuery = useGetFeatureWorkingDir(
       featureId ?? 0,
@@ -134,13 +137,14 @@ export const AgentSession = memo(
       { query: { enabled: featureId != null && projectId != null } },
     );
     const projectPath = cwdQuery.data?.path ?? undefined;
-    const loaderStyle = parseLoaderStyle(loaderStyleSetting.data?.value);
     // Per-agent components read per-agent state. The global `featureTurnStates`
     // summary is a sidebar-level question ("any agent busy in this feature?");
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
     const isStreaming = status === "agent";
-    const shouldShowStreamingIndicator = loaderStyle !== "usage-glow";
+    const isTurnInProgress = lifecycle?.phase === "active" || lifecycle?.phase === "paused";
+    const shouldShowStreamingIndicator = true;
+    const workingLabel = useTurnWorkingLabel(lifecycle, turnTiming);
 
     // ---- Collapsible state ----
     const [internalOpen, setInternalOpen] = useState(true);
@@ -238,7 +242,10 @@ export const AgentSession = memo(
     };
 
     const isIdle = status === "idle" && blocks.length === 0;
-    const badge = STATUS_BADGE[status];
+    const badge =
+      status === "agent" || isTurnInProgress
+        ? { ...STATUS_BADGE.agent, label: workingLabel }
+        : STATUS_BADGE[status];
     const IconComponent = icon ?? AGENT_ICONS[agentType] ?? Loader2Icon;
     const displayLabel = label ?? AGENT_LABELS[agentType] ?? capitalize(agentType);
 
@@ -330,13 +337,14 @@ export const AgentSession = memo(
     ) : null;
 
     const streamContent =
-      blocks.length > 0 ? (
+      blocks.length > 0 || isTurnInProgress ? (
         <AgentStream
           blocks={blocks}
           rootBlocks={rootBlocks}
           toolResultMap={toolResultMap}
           isStreaming={isStreaming}
-          showStreamingIndicator={shouldShowStreamingIndicator}
+          lifecycle={lifecycle}
+          workingLabel={workingLabel}
           basePath={projectPath}
           scrollContainerRef={scrollContainerRef}
           virtuosoRef={virtuosoRef}
@@ -410,8 +418,7 @@ export const AgentSession = memo(
             <ContextUsageBar
               usage={contextUsage}
               className="flex-1 px-0 py-0"
-              loaderStyle={loaderStyle}
-              isStreaming={isStreaming}
+              isStreaming={isTurnInProgress}
             />
           </div>
         )}
@@ -498,8 +505,7 @@ export const AgentSession = memo(
                   <ContextUsageBar
                     usage={contextUsage}
                     className="flex-1 px-0 py-0"
-                    loaderStyle={loaderStyle}
-                    isStreaming={isStreaming}
+                    isStreaming={isTurnInProgress}
                   />
                 </div>
               )}

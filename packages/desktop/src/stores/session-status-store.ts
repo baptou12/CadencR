@@ -44,6 +44,9 @@ import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import { registerReconnector, unregisterReconnector } from "@/lib/ws-reconnect";
+import { useWsSessionStore } from "@/stores/ws-session-store";
+import { updateSession } from "@/stores/ws-session-types";
+import { transitionTurn, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import {
   applySnapshot,
   applyUpdate,
@@ -76,7 +79,9 @@ interface SessionStatusState {
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 
-type IntentionalCloseWebSocket = WebSocket & { __intentionalClose?: () => void };
+type IntentionalCloseWebSocket = WebSocket & {
+  __intentionalClose?: () => void;
+};
 
 export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -99,12 +104,25 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
     if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
     if (action === "session_status.snapshot") {
-      set({ bySession: applySnapshot(get().bySession, payload) });
+      const bySession = applySnapshot(get().bySession, payload);
+      set({ bySession });
+      syncWsLifecycles(
+        Object.entries(bySession).map(([id, entry]) => ({
+          id: Number(id),
+          entry,
+        })),
+      );
       return;
     }
     if (action === "session_status.update") {
       const result = applyUpdate(get().bySession, payload);
       if (result.next) set({ bySession: result.next });
+      if (result.nextStatus && typeof payload.session_id === "number") {
+        syncWsLifecycle(payload.session_id, {
+          status: result.nextStatus,
+          kind: isPendingKindPayload(payload.kind) ? payload.kind : null,
+        });
+      }
       if (result.featureId != null && result.nextStatus) {
         notifyTransition(result.featureId, result.prevStatus, result.nextStatus);
       }
@@ -228,6 +246,54 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
   };
 });
 
+function syncWsLifecycles(
+  entries: Array<{
+    id: number;
+    entry: Pick<SessionStatusEntry, "status" | "kind">;
+  }>,
+): void {
+  for (const { id, entry } of entries) syncWsLifecycle(id, entry);
+}
+
+function syncWsLifecycle(
+  sessionDbId: number,
+  entry: Pick<SessionStatusEntry, "status" | "kind">,
+): void {
+  const store = useWsSessionStore.getState();
+  const match = Object.entries(store.sessions).find(
+    ([, session]) => session.sessionDbId === sessionDbId,
+  );
+  if (!match) return;
+  const [sessionId, session] = match;
+  const lifecycle = lifecycleFromStatus(session.lifecycle, entry.status, entry.kind);
+  if (lifecycle === session.lifecycle) return;
+  useWsSessionStore.setState(updateSession(store, sessionId, { lifecycle }));
+}
+
+function lifecycleFromStatus(
+  lifecycle: TurnLifecycle,
+  status: LiveAgentStatus,
+  kind: PendingKind | null,
+): TurnLifecycle {
+  if (status === "agent") return transitionTurn(lifecycle, { type: "stream_activity" });
+  if (status === "question") {
+    return transitionTurn(lifecycle, {
+      type: kind === "question" ? "question_requested" : "permission_requested",
+    });
+  }
+  if (status === "idle" && (lifecycle.phase === "active" || lifecycle.phase === "paused")) {
+    return transitionTurn(lifecycle, {
+      type: "turn_ended",
+      reason: "completed",
+    });
+  }
+  return lifecycle;
+}
+
+function isPendingKindPayload(value: unknown): value is PendingKind {
+  return value === "permission" || value === "question";
+}
+
 /**
  * Reduce per-session entries down to a single feature-level
  * `(status, kind)`. Mirrors the Rust `aggregate_feature` used in tests.
@@ -255,7 +321,10 @@ export function aggregateFeatureStatus(entries: readonly SessionStatusEntry[]): 
   return best;
 }
 
-const EMPTY_FEATURE_STATUS: { status: LiveAgentStatus; kind: PendingKind | null } = {
+const EMPTY_FEATURE_STATUS: {
+  status: LiveAgentStatus;
+  kind: PendingKind | null;
+} = {
   status: "idle",
   kind: null,
 };

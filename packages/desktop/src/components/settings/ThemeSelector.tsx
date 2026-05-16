@@ -4,9 +4,7 @@ import { THEME_LIST, type ThemeDefinition, type ThemeId } from "@/lib/themes";
 import { Switch } from "@/components/ui/switch";
 
 /**
- * Theme picker rendered as a radio-group of cards. Visually mirrors the
- * `LoaderStyleControl` pattern in `routes/settings.tsx` so the General tab
- * stays consistent.
+ * Theme picker rendered as a radio-group of cards for the General tab.
  *
  * Each card shows a small swatch built from the theme's exported colors;
  * switching themes only flips `<html data-theme="…">` so no remount of

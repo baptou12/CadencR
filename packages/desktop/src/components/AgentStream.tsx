@@ -10,13 +10,14 @@ import {
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { buildDisplayBlockKeys, filterRenderableBlocks } from "./agentStreamDisplay";
+import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
+import { isTurnInProgress } from "@/components/TurnWorkingLabel";
 
 type ScrollRef = (el: HTMLElement | null) => void;
 const FIRST_ITEM_INDEX_BASE = 1_000_000;
 const HISTORY_PREFETCH_ROWS = 12;
 
 interface AgentStreamVirtuosoContext {
-  isStreaming: boolean;
   showStreamingIndicator: boolean;
   /**
    * Block id of the *currently* streaming item, or null when the session is
@@ -26,6 +27,8 @@ interface AgentStreamVirtuosoContext {
    * instead of re-rendering the entire list every time the cursor advances.
    */
   streamingBlockId: string | null;
+  lifecycle?: TurnLifecycle;
+  workingLabel: string;
 }
 
 interface AgentStreamProps {
@@ -46,6 +49,8 @@ interface AgentStreamProps {
   /** Whether the agent is currently streaming */
   isStreaming?: boolean;
   showStreamingIndicator?: boolean;
+  lifecycle?: TurnLifecycle;
+  workingLabel?: string;
   /** Base path to strip from file paths in diffs */
   basePath?: string;
   /** Callback ref for the scrollable container (auto-scroll listeners attach here). */
@@ -74,10 +79,11 @@ interface AgentStreamProps {
   historyPrependDisplayOffset?: number;
 }
 
-const StreamingCursor = memo(function StreamingCursor() {
+const StreamingCursor = memo(function StreamingCursor({ label }: { label: string }) {
   return (
-    <div className="flex items-center px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex items-center gap-2 px-3 py-2 text-xs text-primary">
       <span className="animate-pulse">█</span>
+      <span className="font-medium tabular-nums">{label}</span>
     </div>
   );
 });
@@ -87,8 +93,8 @@ const StreamFooter = memo(function StreamFooter({
 }: {
   context?: AgentStreamVirtuosoContext;
 }) {
-  if (!context?.isStreaming || !context.showStreamingIndicator) return null;
-  return <StreamingCursor />;
+  if (!context?.showStreamingIndicator) return null;
+  return <TurnProgressCursor lifecycle={context.lifecycle} label={context.workingLabel} />;
 });
 
 const VIRTUOSO_COMPONENTS = {
@@ -138,6 +144,8 @@ export const AgentStream = memo(function AgentStream({
   toolResultMap: toolResultMapProp,
   isStreaming,
   showStreamingIndicator = true,
+  lifecycle,
+  workingLabel = "Working",
   basePath,
   scrollContainerRef,
   virtuosoRef,
@@ -162,11 +170,12 @@ export const AgentStream = memo(function AgentStream({
   const lastBlockId = displayBlocks.at(-1)?.id;
   const virtuosoContext = useMemo(
     (): AgentStreamVirtuosoContext => ({
-      isStreaming: Boolean(isStreaming),
       showStreamingIndicator,
       streamingBlockId: isStreaming && lastBlockId ? lastBlockId : null,
+      lifecycle,
+      workingLabel,
     }),
-    [isStreaming, showStreamingIndicator, lastBlockId],
+    [isStreaming, lastBlockId, lifecycle, showStreamingIndicator, workingLabel],
   );
   const onScroller = useCallback(
     (el: HTMLElement | Window | null): void => {
@@ -205,7 +214,11 @@ export const AgentStream = memo(function AgentStream({
 
   if (displayBlocks.length === 0) {
     return (
-      <div className="p-3">{isStreaming && showStreamingIndicator && <StreamingCursor />}</div>
+      <div className="p-3">
+        {showStreamingIndicator && (
+          <TurnProgressCursor lifecycle={lifecycle} label={workingLabel} />
+        )}
+      </div>
     );
   }
 
@@ -238,4 +251,15 @@ export const AgentStream = memo(function AgentStream({
       />
     </div>
   );
+});
+
+const TurnProgressCursor = memo(function TurnProgressCursor({
+  lifecycle,
+  label,
+}: {
+  lifecycle?: TurnLifecycle;
+  label: string;
+}) {
+  if (!isTurnInProgress(lifecycle)) return null;
+  return <StreamingCursor label={label} />;
 });
