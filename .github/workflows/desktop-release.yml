@@ -25,8 +25,6 @@ jobs:
       # Developer ID Application certificate from a base64-encoded .p12.
       CSC_LINK: ${{ secrets.MAC_CERTIFICATE_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-      # afterPack signs the Rust sidecar before electron-builder signs the app.
-      CADENCR_MAC_CODESIGN_IDENTITY: ${{ secrets.MAC_CODESIGN_IDENTITY }}
       # GitHub publish provider — needs write access to releases.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -58,6 +56,28 @@ jobs:
 
       - name: Build renderer + main bundles
         run: pnpm --filter @cadencr/desktop exec electron-vite build
+
+      - name: Import Developer ID certificate
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/cadencr-build-signing.keychain-db"
+
+          echo "$CSC_LINK" | base64 -D > "$certificate_path"
+          security create-keychain -p "$CSC_KEY_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$CSC_KEY_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$CSC_KEY_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" $(security list-keychains -d user | tr -d '"')
+
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | awk -F '"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$identity" ]; then
+            echo "No Developer ID Application identity found in signing keychain" >&2
+            exit 1
+          fi
+
+          echo "CSC_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
+          echo "CADENCR_MAC_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
 
       - name: Build, sign, notarize, and publish desktop app
         # `--publish always` uploads DMG, ZIP, blockmaps and latest-mac.yml to
