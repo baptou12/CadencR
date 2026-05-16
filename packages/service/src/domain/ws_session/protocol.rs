@@ -143,6 +143,20 @@ pub struct PermissionRespondPayload {
     pub updated_input: Option<serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GateCloseReason {
+    Sleep,
+    Escape,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateClosePayload {
+    pub session_id: String,
+    pub request_id: Option<String>,
+    pub reason: GateCloseReason,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionActionPayload {
     pub session_id: String,

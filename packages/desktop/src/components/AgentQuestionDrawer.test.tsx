@@ -136,6 +136,26 @@ describe("AgentQuestionDrawer", () => {
     expect(hotkeyStrings.some((s) => /meta\+\d/.test(String(s)))).toBe(false);
   });
 
+  it("invoking Escape closes the question gate", () => {
+    const onCancel = vi.fn();
+    render(
+      <AgentQuestionDrawer
+        questions={[questionWithOptions]}
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+        open
+      />,
+    );
+    const escapeCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "escape")!;
+    const handler = escapeCall[1] as (e: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    }) => void;
+    handler({ preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("blurs the option button after click so Enter can validate", async () => {
     const user = userEvent.setup();
     render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);

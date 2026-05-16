@@ -12,6 +12,7 @@ import {
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import {
   type SessionConfig,
+  type GateCloseReason,
   type WsEnvelope,
   parseEnvelope,
   createEnvelope,
@@ -28,6 +29,7 @@ import {
   createSessionCompact,
   createSessionDelete,
   createCommandsGet,
+  createGateClose,
 } from "@/lib/ws-envelope";
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
@@ -89,6 +91,19 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     getSession(sessionId).conn?.sendJson(data);
   }
 
+  function forceReconnectSession(sessionId: string): void {
+    const session = get().sessions[sessionId];
+    if (session?.conn) {
+      if (session.pendingWsRequests.size) {
+        for (const cb of session.pendingWsRequests.values()) cb(null);
+        session.pendingWsRequests.clear();
+      }
+      session.conn.close(1000, "force-reconnect");
+      set(updateSession(get(), sessionId, { conn: null, isConnected: false }));
+    }
+    get().connect(sessionId);
+  }
+
   function queuePrompt(
     sessionId: string,
     text: string,
@@ -128,10 +143,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function reinitOnReconnect(sessionId: string): void {
     const session = get().sessions[sessionId];
     if (!session) return;
-    if (!session.featureId || !session.serverSessionId) return;
+    if (!session.featureId || !session.serverSessionId || !session.cwd) return;
     sendRaw(
       sessionId,
       createSessionInit({
+        cwd: session.cwd,
         featureId: session.featureId,
         provider: session.currentProviderId || undefined,
         model: session.currentModelId || undefined,
@@ -152,16 +168,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       }
 
       const entry = existing ?? createSessionEntry();
-      registerReconnector(wsSessionSourceKey(sessionId), () => get().connect(sessionId));
+      const reconnectKey = wsSessionSourceKey(sessionId);
+      registerReconnector(reconnectKey, () => forceReconnectSession(sessionId));
       const conn = createWsConnection({
         url: getWsUrl(),
         protocols: getWsProtocols(),
         onOpen: () => {
-          resetReconnectDelay(sessionId);
+          resetReconnectDelay(reconnectKey);
           set(updateSession(get(), sessionId, { isConnected: true }));
-          useConnectionStatusStore
-            .getState()
-            .reportSource(wsSessionSourceKey(sessionId), "connected");
+          useConnectionStatusStore.getState().reportSource(reconnectKey, "connected");
           // If we already have a `serverSessionId`, this is a *reconnect*
           // (e.g. after OS sleep), not a fresh init. The backend's
           // `sdk_sessions` map is per-connection, so the new socket has
@@ -173,7 +188,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           // Provider-neutral: applies to Claude Code, OpenCode, Codex.
           reinitOnReconnect(sessionId);
         },
-        onClose: () => {
+        onClose: (intentional) => {
+          if (intentional) return;
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -217,10 +233,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           );
           useConnectionStatusStore
             .getState()
-            .reportSource(wsSessionSourceKey(sessionId), "reconnecting", "Session WebSocket lost");
-          scheduleReconnect(sessionId, () => get().connect(sessionId));
+            .reportSource(reconnectKey, "reconnecting", "Session WebSocket lost");
+          if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
-        onError: () => {
+        onError: (intentional) => {
+          if (intentional) return;
           const session = get().sessions[sessionId];
           if (session?.pendingWsRequests.size) {
             for (const cb of session.pendingWsRequests.values()) cb(null);
@@ -240,8 +257,8 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           );
           useConnectionStatusStore
             .getState()
-            .reportSource(wsSessionSourceKey(sessionId), "reconnecting", "Session WebSocket error");
-          scheduleReconnect(sessionId, () => get().connect(sessionId));
+            .reportSource(reconnectKey, "reconnecting", "Session WebSocket error");
+          if (!intentional) scheduleReconnect(reconnectKey, () => get().connect(sessionId));
         },
         onMessage: (data) => {
           let envelope: WsEnvelope;
@@ -292,7 +309,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     disconnect(sessionId: string) {
-      clearReconnect(sessionId);
+      clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       const session = get().sessions[sessionId];
@@ -330,6 +347,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     initSession(sessionId: string, config: SessionConfig) {
       const sessionPatch: Partial<SessionEntry> = {};
+      if (config.cwd) {
+        sessionPatch.cwd = config.cwd;
+      }
       if (config.featureId) {
         sessionPatch.featureId = config.featureId;
       }
@@ -486,7 +506,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     },
 
     destroy(sessionId: string) {
-      clearReconnect(sessionId);
+      clearReconnect(wsSessionSourceKey(sessionId));
       unregisterReconnector(wsSessionSourceKey(sessionId));
       useConnectionStatusStore.getState().clearSource(wsSessionSourceKey(sessionId));
       const session = get().sessions[sessionId];
@@ -570,6 +590,17 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     requestPlanChanges(sessionId: string, feedback: string) {
       applyPlanChangesRequest(ctx, sessionId, feedback, sendRaw, PLAN_RESTORE_PREFIX);
+    },
+
+    closeGate(sessionId: string, reason: GateCloseReason) {
+      const session = getSession(sessionId);
+      if (!session.serverSessionId) return;
+      const requestId =
+        session.pendingRequestId ||
+        session.pendingPermission?.requestId ||
+        session.pendingPermissionQueue[0]?.requestId ||
+        null;
+      sendRaw(sessionId, createGateClose(session.serverSessionId, requestId, reason));
     },
 
     retryWorktreeSetup(sessionId: string) {

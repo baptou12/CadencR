@@ -44,6 +44,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       onPlanApprove,
       onPlanRequestChanges,
       onPlanReject,
+      onGateClose,
       onOpenModelPicker,
       agentTabActive = true,
       featureId,
@@ -281,6 +282,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           }
           permission={visiblePermission}
           onDecision={onPermissionDecision}
+          onCancel={onGateClose}
           disableShortcuts={disableShortcuts}
           isSubmitting={!!isSubmittingPermission}
         />
@@ -292,7 +294,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
           onRequestChanges={onPlanRequestChanges}
-          onReject={onPlanReject}
+          onReject={onGateClose ?? onPlanReject}
           error={planApprovalError}
         />
       ) : !!visibleQuestions && visibleQuestions.length > 0 && onQuestionResponse ? (
@@ -300,6 +302,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           questions={visibleQuestions}
           open={true}
           onSubmit={onQuestionResponse}
+          onCancel={onGateClose}
           inline
           disableShortcuts={disableShortcuts}
         />

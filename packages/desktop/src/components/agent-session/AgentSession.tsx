@@ -91,6 +91,7 @@ export const AgentSession = memo(
       onPlanApprove,
       onPlanRequestChanges,
       onPlanReject,
+      onGateClose,
       contextUsage,
       currentProviderId,
       onProviderChange,
@@ -376,6 +377,7 @@ export const AgentSession = memo(
         onPlanApprove={onPlanApprove}
         onPlanRequestChanges={onPlanRequestChanges}
         onPlanReject={onPlanReject}
+        onGateClose={onGateClose}
         onOpenModelPicker={onModelChange ? () => metaBarRef.current?.openModelPicker() : undefined}
         agentTabActive={agentTabActive}
         featureId={featureId}

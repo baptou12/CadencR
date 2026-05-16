@@ -459,6 +459,7 @@ describe("ws-session-store", () => {
     // Initialise the session: backend assigns a serverSessionId, the
     // renderer learns featureId / provider / model.
     store.initSession("s1", {
+      cwd: "/tmp/test-worktree",
       featureId: 42,
       provider: "claude-code",
       model: "claude-sonnet-4-5",
@@ -490,9 +491,72 @@ describe("ws-session-store", () => {
     expect(reinitEnvelopes).toHaveLength(1);
     expect(reinitEnvelopes[0].payload).toMatchObject({
       feature_id: 42,
+      cwd: "/tmp/test-worktree",
       provider: "claude-code",
       model: "claude-sonnet-4-5",
     });
+  });
+
+  it("sends gate.close and clears pending gates only after the backend confirms", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "permission.request",
+      payload: {
+        request_id: "perm-1",
+        tool_name: "Bash",
+        tool_input: { command: "pnpm test" },
+        description: "Run tests",
+        options: [
+          {
+            decision: "allow_once",
+            label: "Allow once",
+            description: "Approve once",
+          },
+          {
+            decision: "deny",
+            label: "Deny",
+            description: "Reject",
+          },
+        ],
+      },
+    });
+
+    expect(useWsSessionStore.getState().sessions["s1"].pendingPermission?.requestId).toBe("perm-1");
+
+    store.closeGate("s1", "escape");
+
+    const closeEnvelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(closeEnvelope.domain).toBe("session");
+    expect(closeEnvelope.action).toBe("gate.close");
+    expect(closeEnvelope.payload).toMatchObject({
+      session_id: "srv-1",
+      request_id: "perm-1",
+      reason: "escape",
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].pendingPermission).not.toBeNull();
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "gate.closed",
+      payload: { session_id: "srv-1", request_id: "perm-1", reason: "escape" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingPermission).toBeNull();
+    expect(session.pendingPermissionQueue).toEqual([]);
+    expect(session.pendingRequestId).toBe("");
+    expect(session.pendingQuestions).toEqual([]);
+    expect(session.pendingPlanApproval).toBeNull();
+    expect(session.lifecycle).toEqual({ phase: "terminal", reason: "denied" });
   });
 
   it("new session defaults currentModelId to FALLBACK_MODEL_ID", async () => {

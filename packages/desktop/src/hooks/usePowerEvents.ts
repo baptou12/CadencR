@@ -25,16 +25,26 @@ import { queryClient } from "@/lib/queryClient";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import { usePowerStore } from "@/stores/power-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import type { SessionEntry } from "@/stores/ws-session-types";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { createSessionResume, createSessionSuspend } from "@/lib/ws-envelope";
 
 const RESUME_TOAST_ID = "power:resume";
 
+function hasOpenGate(entry: SessionEntry): boolean {
+  return (
+    entry.pendingPermission != null ||
+    entry.pendingPermissionQueue.length > 0 ||
+    entry.pendingQuestions.length > 0 ||
+    entry.pendingPlanApproval != null
+  );
+}
+
 function suspendActiveSessions(): void {
   const store = useWsSessionStore.getState();
   for (const [sessionId, entry] of Object.entries(store.sessions)) {
     if (!entry.serverSessionId) continue;
-    if (!isTurnActive(entry.lifecycle)) continue;
+    if (!isTurnActive(entry.lifecycle) && !hasOpenGate(entry)) continue;
     store.send(sessionId, createSessionSuspend(entry.serverSessionId));
   }
 }

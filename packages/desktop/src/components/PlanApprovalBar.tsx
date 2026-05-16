@@ -60,7 +60,7 @@ export function PlanApprovalBar({
       onReject!();
     },
     "agent",
-    { enabled: !showFeedback && !!onReject },
+    { enabled: !!onReject },
   );
 
   const handleSendFeedback = () => {
@@ -107,8 +107,13 @@ export function PlanApprovalBar({
                 handleSendFeedback();
               } else if (e.key === "Escape") {
                 e.preventDefault();
-                setShowFeedback(false);
-                setFeedback(initialFeedback ?? "");
+                e.stopPropagation();
+                if (onReject) {
+                  onReject();
+                } else {
+                  setShowFeedback(false);
+                  setFeedback(initialFeedback ?? "");
+                }
               }
             }}
             placeholder="Describe the changes you'd like..."

@@ -14,6 +14,7 @@ import {
   parseFeatureAutoNamingPayload,
   parseFeatureRenamePayload,
   parseFeatureUpdatedPayload,
+  parseGateClosedPayload,
   parseEffortPayload,
   parseInitializedPayload,
   parseLifecyclePayload,
@@ -291,6 +292,9 @@ function handleSessionAction(
       );
       break;
     }
+    case "gate.closed":
+      handleGateClosed(ctx, sessionId, envelope.payload);
+      break;
     case "feature.renamed": {
       const p = parseFeatureRenamePayload(envelope.payload);
       if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
@@ -306,6 +310,35 @@ function handleSessionAction(
       handleTurnComplete(ctx, sessionId, envelope.payload);
       break;
   }
+}
+
+function handleGateClosed(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseGateClosedPayload(payload);
+  if (!p) return;
+  const session = ctx.getSession(sessionId);
+  const hasGateState =
+    session.pendingPermission != null ||
+    session.pendingPermissionQueue.length > 0 ||
+    session.pendingRequestId !== "" ||
+    session.submittingPermissionRequestId != null ||
+    session.pendingQuestions.length > 0 ||
+    session.pendingPlanApproval != null;
+  if (!hasGateState) return;
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      pendingPermission: null,
+      pendingPermissionQueue: [],
+      pendingRequestId: "",
+      submittingPermissionRequestId: null,
+      pendingQuestions: [],
+      pendingQuestionToolInput: {},
+      pendingPlanApproval: null,
+      lifecycle: transitionTurn(session.lifecycle, {
+        type: "turn_ended",
+        reason: p.reason === "sleep" ? "streamClosed" : "denied",
+      }),
+    }),
+  );
 }
 
 function handleInitialized(ctx: StoreAccessors, sessionId: string, payload: unknown): void {

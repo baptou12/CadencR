@@ -95,6 +95,18 @@ describe("PlanApprovalBar", () => {
     expect(onReject).toHaveBeenCalledOnce();
   });
 
+  it("uses Escape to reject even while feedback is open", async () => {
+    const onReject = vi.fn();
+    const { user } = render(
+      <PlanApprovalBar onApprove={vi.fn()} onRequestChanges={vi.fn()} onReject={onReject} />,
+    );
+    await user.click(screen.getByRole("button", { name: /request changes/i }));
+
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+
+    expect(onReject).toHaveBeenCalledOnce();
+  });
+
   it("shows allowed prompts when provided", () => {
     render(
       <PlanApprovalBar

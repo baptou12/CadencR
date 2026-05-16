@@ -102,10 +102,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           pendingPlanApproval={controls.ws.pendingPlanApproval}
           onPlanApprove={controls.ws.approvePlan}
           onPlanRequestChanges={controls.ws.requestPlanChanges}
-          onPlanReject={() => {
-            controls.ws.requestPlanChanges("");
-            controls.ws.interrupt();
-          }}
+          onGateClose={() => controls.ws.closeGate("escape")}
           contextUsage={controls.ws.contextUsage}
           currentProviderId={controls.ws.currentProviderId}
           onProviderChange={controls.ws.setProvider}

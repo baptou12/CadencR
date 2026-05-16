@@ -1,5 +1,8 @@
 impl WsSessionPersistence {
-    pub async fn get_session_row(pool: &SqlitePool, session_id: i64) -> Option<SessionRow> {
+    pub async fn try_get_session_row(
+        pool: &SqlitePool,
+        session_id: i64,
+    ) -> Result<Option<SessionRow>, sqlx::Error> {
         let row: Option<(
             i64,
             i64,
@@ -19,9 +22,8 @@ impl WsSessionPersistence {
         )
         .bind(session_id)
         .fetch_optional(pool)
-        .await
-        .ok()?;
-        row.map(
+        .await?;
+        Ok(row.map(
             |(
                 id,
                 feature_id,
@@ -51,7 +53,11 @@ impl WsSessionPersistence {
                 context_window,
                 thinking_effort,
             },
-        )
+        ))
+    }
+
+    pub async fn get_session_row(pool: &SqlitePool, session_id: i64) -> Option<SessionRow> {
+        Self::try_get_session_row(pool, session_id).await.ok()?
     }
 
     #[cfg(test)]

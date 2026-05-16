@@ -10,7 +10,8 @@ use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
 
 use super::types::{SdkSessions, WsSender};
 use super::{
-    app, commands, session_compact, session_control, session_data, session_init, session_prompt,
+    app, commands, session_compact, session_control, session_data, session_gate, session_init,
+    session_prompt,
 };
 
 /// Dispatch an envelope to the appropriate domain handler.
@@ -63,6 +64,9 @@ async fn handle_session_action(
         "permission.respond" => {
             session_control::handle_permission_respond(envelope, sender, sdk_sessions, app_state)
                 .await
+        }
+        "gate.close" => {
+            session_gate::handle_gate_close(envelope, sender, sdk_sessions, app_state).await
         }
         "provider.set" => {
             session_control::handle_provider_set(envelope, sender, sdk_sessions, app_state).await

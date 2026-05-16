@@ -261,6 +261,20 @@ export function parseLifecyclePayload(
   return { kind };
 }
 
+export function parseGateClosedPayload(
+  payload: unknown,
+): { session_id?: string; request_id?: string; reason: "sleep" | "escape" } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const reason = optionalString(record, "reason");
+  if (reason !== "sleep" && reason !== "escape") return null;
+  return {
+    session_id: optionalString(record, "session_id"),
+    request_id: optionalString(record, "request_id"),
+    reason,
+  };
+}
+
 export function parseUsagePayload(payload: unknown): {
   input_tokens: number;
   output_tokens: number;

@@ -18,7 +18,7 @@ import {
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQuestionDrawer";
-import type { SessionConfig } from "@/lib/ws-envelope";
+import type { GateCloseReason, SessionConfig } from "@/lib/ws-envelope";
 import { normalizeContextWindow, type ContextUsageState } from "@/types/agent";
 import type { LiveAgentStatus } from "@/types/agent";
 import {
@@ -65,6 +65,7 @@ export interface UseWebSocketSessionReturn {
   pendingPlanApproval: PendingPlanApproval | null;
   approvePlan: () => void;
   requestPlanChanges: (feedback: string) => void;
+  closeGate: (reason: GateCloseReason) => void;
 
   contextUsage: ContextUsageState | null;
   currentProviderId: string;
@@ -207,6 +208,7 @@ export function useWebSocketSession(
       setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
       approvePlan: (): void => s.approvePlan(sessionId),
       requestPlanChanges: (feedback: string): void => s.requestPlanChanges(sessionId, feedback),
+      closeGate: (reason: GateCloseReason): void => s.closeGate(sessionId, reason),
     };
   }, [sessionId]);
 
