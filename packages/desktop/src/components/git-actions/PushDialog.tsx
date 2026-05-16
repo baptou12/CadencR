@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { usePush, usePushInput } from "@/api/generated";
 import {
   selectPushOutput,
@@ -44,6 +45,10 @@ import {
 } from "@/stores/usePushOutputStore";
 import { detectSshPrompt } from "./detectSshPrompt";
 import { PushOutputPane } from "./PushOutputPane";
+
+// Hoisted so the `keys` prop is reference-stable across re-renders (streaming
+// buffer chunks re-render this dialog frequently).
+const ESC_KEYS: string[] = ["esc"];
 
 interface PushDialogProps {
   featureId: number;
@@ -260,6 +265,10 @@ export default function PushDialog({
             title={submitting ? "Push is running — wait for it to finish." : "Close this dialog"}
           >
             {submitting ? "Running…" : "Close"}
+            {/* Render unconditionally: even while submitting and the button is
+                disabled, Radix Dialog's Escape handler still closes the dialog,
+                so the hint stays accurate. */}
+            <KbdShortcut keys={ESC_KEYS} variant="hint" />
           </Button>
         </DialogFooter>
       </DialogContent>
