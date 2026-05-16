@@ -36,6 +36,7 @@ import { SidebarContext } from "@/components/SidebarContext";
 import { useThemeSync } from "@/hooks/useTheme";
 import UniversalContextMenu from "@/components/UniversalContextMenu";
 import { RootOverlays } from "@/components/RootOverlays";
+import { RootErrorBoundary } from "@/components/RootErrorBoundary";
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -320,7 +321,9 @@ function RootLayout() {
                   }
                 }}
               >
-                <Outlet />
+                <RootErrorBoundary>
+                  <Outlet />
+                </RootErrorBoundary>
               </main>
             </ResizablePanel>
           </ResizablePanelGroup>

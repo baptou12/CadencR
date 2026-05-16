@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useListProjects, useListFeatures, useGetWorkspaceSetting } from "../api/generated";
+import { parseSavedFeature } from "@/lib/saved-feature";
 
 export const Route = createFileRoute("/")({
   component: HomePage,
@@ -10,19 +11,6 @@ export const Route = createFileRoute("/")({
     return result;
   },
 });
-
-function parseSavedFeature(
-  value: string | undefined | null,
-): { projectId: number; featureId: number; activeTab?: string } | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed.projectId === "number" && typeof parsed.featureId === "number") return parsed;
-  } catch {
-    /* invalid JSON */
-  }
-  return null;
-}
 
 function getQueryErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.length > 0) return error.message;
