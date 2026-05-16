@@ -7,7 +7,9 @@ publish:
   - provider: github
     owner: merkr-software
     repo: cadencr
-    releaseType: release
+    # Upload all multi-arch assets while the release is still mutable; the
+    # workflow publishes it after electron-builder has finished.
+    releaseType: draft
 afterPack: build/after-pack.cjs
 afterSign: build/notarize-app.cjs
 files:
