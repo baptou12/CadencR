@@ -110,41 +110,59 @@ mod tests {
         // Set up: repo with branch `feat/a` already checked out in a sibling
         // worktree. Calling `attach_to_existing_branch("feat/a")` should
         // return the existing path with `was_already_attached=true`.
+        //
+        // Both worktrees live inside dedicated tempdirs so they get cleaned up
+        // automatically on Drop, even if the test panics mid-way. The
+        // project_name is randomized so that the fallback `~/.cadencr/worktrees/
+        // <project>/<branch>` path (only hit when something goes wrong) can't
+        // collide with leftovers from a prior failed run.
         let project = tempfile::tempdir().unwrap();
+        let donor_parent = tempfile::tempdir().unwrap();
         init_repo(project.path()).await;
 
-        // Create branch `feat/a` and attach it in a new worktree.
+        // Create branch `feat/a` and attach it in a sibling worktree.
         tokio::process::Command::new("git")
             .args(["branch", "feat/a"])
             .current_dir(project.path())
             .status()
             .await
             .unwrap();
-        let donor_wt = project.path().join("..").join("donor-wt");
-        tokio::process::Command::new("git")
+        let donor_wt = donor_parent.path().join("donor-wt");
+        let add_status = tokio::process::Command::new("git")
             .args(["worktree", "add", donor_wt.to_str().unwrap(), "feat/a"])
             .current_dir(project.path())
             .status()
             .await
             .unwrap();
+        assert!(add_status.success(), "donor worktree add failed");
 
-        let result = attach_to_existing_branch("feat/a", project.path(), "donor-wt-test")
+        let project_name = format!("attach-reuse-test-{}", std::process::id());
+        let result = attach_to_existing_branch("feat/a", project.path(), &project_name)
             .await
             .unwrap();
         assert!(result.was_already_attached);
-        // git worktree list emits canonicalized paths, so a starts_with check is more robust
-        // than equality (donor_wt has `..` in it).
+        // git worktree list emits canonicalized paths, so a contains check is
+        // more robust than equality.
         assert!(
             result.worktree_path.contains("donor-wt"),
             "{}",
             result.worktree_path
         );
 
-        // Cleanup
+        // Cleanup: remove the donor worktree registration (its files are
+        // inside `donor_parent` and will go away with the tempdir). Also
+        // sweep the fallback path in case a prior run leaked.
         let _ = tokio::process::Command::new("git")
             .args(["worktree", "remove", "--force", donor_wt.to_str().unwrap()])
             .current_dir(project.path())
             .status()
             .await;
+        if let Ok(home) = std::env::var("HOME") {
+            let _ = std::fs::remove_dir_all(
+                std::path::Path::new(&home)
+                    .join(".cadencr/worktrees")
+                    .join(&project_name),
+            );
+        }
     }
 }

@@ -1,6 +1,6 @@
 ---
 import BaseLayout from "@/layouts/BaseLayout.astro";
-import { getCollection, type CollectionEntry } from "astro:content";
+import { getCollection, render, type CollectionEntry } from "astro:content";
 import Wrap from "@/components/ui/Wrap.astro";
 import Eyebrow from "@/components/ui/Eyebrow.astro";
 import Lede from "@/components/ui/Lede.astro";
@@ -11,7 +11,7 @@ type NewsEntry = CollectionEntry<"news">;
 export async function getStaticPaths() {
   const entries: NewsEntry[] = await getCollection("news");
   return entries.map((entry: NewsEntry) => ({
-    params: { slug: entry.slug },
+    params: { slug: entry.id },
     props: { entry },
   }));
 }
@@ -20,7 +20,7 @@ interface Props {
   entry: NewsEntry;
 }
 const { entry } = Astro.props;
-const { Content } = await entry.render();
+const { Content } = await render(entry);
 ---
 <BaseLayout title={`${entry.data.title} — Cadencr`} description={entry.data.summary}>
   <section class="py-16 pb-24">
