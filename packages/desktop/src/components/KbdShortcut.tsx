@@ -5,6 +5,9 @@
  */
 import { CommandIcon, CornerDownLeftIcon, ArrowUpIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { useIsTabFocused } from "@/hooks/useScopedHotkeys";
+import type { TabKind } from "@/stores/feature-layout-schema";
+import { cn } from "@/lib/utils";
 
 const ICON_SIZE = "size-2.5";
 const ICON_SIZE_SM = "size-2";
@@ -41,14 +44,55 @@ interface KbdShortcutProps {
   keys: string[];
   size?: "default" | "sm";
   variant?: Variant;
+  /**
+   * When set, the badge subscribes to the focused-tab state and renders a
+   * muted `-` placeholder whenever the named tab isn't focused — making it
+   * explicit that the keys won't fire right now.
+   */
+  scope?: TabKind;
 }
 
-export function KbdShortcut({ keys, size = "default", variant }: KbdShortcutProps) {
+export function KbdShortcut({ keys, size = "default", variant, scope }: KbdShortcutProps) {
   const resolvedVariant = variant ?? (size === "sm" ? "inline-sm" : "inline");
   const map = size === "sm" ? KEY_MAP_SM : KEY_MAP;
+  const className = VARIANT_CLASSES[resolvedVariant];
 
+  if (scope !== undefined) {
+    return <ScopedKbdShortcut keys={keys} map={map} className={className} scope={scope} />;
+  }
+  return <KbdContent keys={keys} map={map} className={className} />;
+}
+
+interface ScopedProps {
+  keys: string[];
+  map: Record<string, ReactNode>;
+  className: string;
+  scope: TabKind;
+}
+
+// Split into its own component so unscoped badges don't subscribe to the
+// feature-layout store on every render.
+function ScopedKbdShortcut({ keys, map, className, scope }: ScopedProps) {
+  const isActive = useIsTabFocused(scope);
+  if (!isActive) {
+    return (
+      <kbd className={cn(className, "opacity-50")}>
+        <span className="leading-none">-</span>
+      </kbd>
+    );
+  }
+  return <KbdContent keys={keys} map={map} className={className} />;
+}
+
+interface KbdContentProps {
+  keys: string[];
+  map: Record<string, ReactNode>;
+  className: string;
+}
+
+function KbdContent({ keys, map, className }: KbdContentProps) {
   return (
-    <kbd className={VARIANT_CLASSES[resolvedVariant]}>
+    <kbd className={className}>
       {keys.map((k, i) => {
         const icon = map[k.toLowerCase()];
         return icon ? (

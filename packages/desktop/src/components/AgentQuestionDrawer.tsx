@@ -446,7 +446,7 @@ export function AgentQuestionDrawer({
               }}
             >
               <span className="text-sm font-medium text-foreground">
-                <KbdShortcut keys={[String(optIdx + 1)]} variant="square" />
+                <KbdShortcut keys={[String(optIdx + 1)]} variant="square" scope="agent" />
                 {option.label}
               </span>
               {option.description && (
@@ -473,7 +473,7 @@ export function AgentQuestionDrawer({
             }}
           >
             <span className="text-sm font-medium text-foreground">
-              <KbdShortcut keys={["cmd", "O"]} variant="square" />
+              <KbdShortcut keys={["cmd", "O"]} variant="square" scope="agent" />
               Other...
             </span>
           </button>

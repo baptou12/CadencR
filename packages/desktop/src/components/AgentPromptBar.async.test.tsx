@@ -267,7 +267,7 @@ describe("AgentPromptBar async onSend", () => {
     );
 
     expect(screen.getByRole("textbox")).toHaveValue("Keep typing");
-    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/Permission request pending/i)).toBeInTheDocument();
     expect(screen.queryByText(/Permission Required/i)).not.toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole("textbox"), { key: "Enter" });
@@ -303,7 +303,7 @@ describe("AgentPromptBar async onSend", () => {
     act(() => vi.advanceTimersByTime(999));
 
     expect(screen.getByRole("textbox")).toHaveValue("Still typing");
-    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/Permission request pending/i)).toBeInTheDocument();
     expect(screen.queryByText(/Permission Required/i)).not.toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1));

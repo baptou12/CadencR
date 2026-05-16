@@ -39,7 +39,6 @@ export interface AgentPromptBarProps {
   permissionMode?: PermissionMode;
   onPermissionModeToggle?: () => void;
   pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
-  planFeedbackDefault?: string;
   planApproveLabel?: string;
   planApprovalError?: string | null;
   onPlanApprove?: () => void;

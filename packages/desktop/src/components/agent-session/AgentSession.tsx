@@ -9,7 +9,6 @@
 import {
   useState,
   useEffect,
-  useMemo,
   useRef,
   useImperativeHandle,
   useCallback,
@@ -37,7 +36,6 @@ import { MetaBar, type MetaBarHandle } from "./MetaBar";
 import { MetaBarSecondary } from "./MetaBarSecondary";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
-import { getLatestUserPromptText } from "./getLatestUserPromptText";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
 
 /**
@@ -269,17 +267,6 @@ export const AgentSession = memo(
       hasConversation: blocks.length > 0,
     });
     const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
-    // Hot-path short-circuit: `pendingPlanApproval` is null in the common
-    // case, so we don't want `getLatestUserPromptText(blocks)` (an O(N)
-    // reverse scan) to recompute on every streamed chunk just because
-    // `blocks` changed. Gate the deps on whether plan approval is pending —
-    // when it isn't, `blocks` drops out of the dep list entirely.
-    const blocksForPlanFeedback = pendingPlanApproval ? blocks : null;
-    const planFeedbackDefault = useMemo(
-      () => (pendingPlanApproval && blocksForPlanFeedback ? getLatestUserPromptText(blocks) : ""),
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: skip recompute when no plan approval is pending
-      [blocksForPlanFeedback, pendingPlanApproval],
-    );
 
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
     // Either the legacy on/off toggle is wired (`onToggleWorktree`) or the
@@ -376,7 +363,6 @@ export const AgentSession = memo(
         permissionMode={permissionMode}
         onPermissionModeToggle={onPermissionModeToggle}
         pendingPlanApproval={pendingPlanApproval}
-        planFeedbackDefault={planFeedbackDefault}
         planApproveLabel={planApproveLabel}
         planApprovalError={planApprovalError}
         onPlanApprove={onPlanApprove}
