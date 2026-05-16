@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
 import { PlanApprovalBar } from "./PlanApprovalBar";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
-import { PermissionRequestPendingIndicator } from "./PermissionRequestPendingIndicator";
+import { AgentPromptPendingIndicator } from "./AgentPromptPendingIndicator";
 import { ImageAttachmentPreview } from "./ImageAttachmentPreview";
 import { ImageAttachmentButton } from "./ImageAttachmentButton";
 import { SplitSendActions } from "./SplitSendActions";
@@ -18,7 +18,7 @@ import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import { useAgentPromptSend } from "./agent-prompt-send";
-import { useDeferredPermissionPrompt } from "./useDeferredPermissionPrompt";
+import { useDeferredAgentPrompts } from "./useDeferredAgentPrompts";
 import type {
   AgentPromptBarHandle,
   AgentPromptBarProps,
@@ -39,7 +39,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       onCollapse,
       onPermissionModeToggle,
       pendingPlanApproval,
-      planFeedbackDefault,
       planApproveLabel,
       planApprovalError,
       onPlanApprove,
@@ -83,14 +82,23 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
         editorRef.current?.setText(restoredDraft);
       }
     }, [restoredDraft]);
-    const { visiblePermission, permissionDeferred } = useDeferredPermissionPrompt({
+    const {
+      visiblePermission,
+      visiblePlanApproval,
+      visibleQuestions,
+      permissionDeferred,
+      planApprovalDeferred,
+      questionsDeferred,
+    } = useDeferredAgentPrompts({
       pendingPermission,
+      pendingPlanApproval,
+      pendingQuestions,
       promptText: text,
     });
     const hasSpecialState =
       !!visiblePermission ||
-      !!pendingPlanApproval ||
-      (!!pendingQuestions && pendingQuestions.length > 0);
+      !!visiblePlanApproval ||
+      (!!visibleQuestions && visibleQuestions.length > 0);
     useEffect(() => {
       if (hasSpecialState) {
         hadSpecialStateRef.current = true;
@@ -276,19 +284,20 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           disableShortcuts={disableShortcuts}
           isSubmitting={!!isSubmittingPermission}
         />
-      ) : pendingPlanApproval && onPlanApprove && onPlanRequestChanges ? (
+      ) : visiblePlanApproval && onPlanApprove && onPlanRequestChanges ? (
         <PlanApprovalBar
-          allowedPrompts={pendingPlanApproval.allowedPrompts}
-          initialFeedback={planFeedbackDefault}
+          allowedPrompts={visiblePlanApproval.allowedPrompts}
+          // Mirror the prompt-bar text so the rejection box behaves predictably.
+          initialFeedback={text}
           approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
           onRequestChanges={onPlanRequestChanges}
           onReject={onPlanReject}
           error={planApprovalError}
         />
-      ) : !!pendingQuestions && pendingQuestions.length > 0 && onQuestionResponse ? (
+      ) : !!visibleQuestions && visibleQuestions.length > 0 && onQuestionResponse ? (
         <AgentQuestionDrawer
-          questions={pendingQuestions}
+          questions={visibleQuestions}
           open={true}
           onSubmit={onQuestionResponse}
           inline
@@ -299,8 +308,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     return (
       <>
         {permissionDeferred && pendingPermission && (
-          <PermissionRequestPendingIndicator toolName={pendingPermission.toolName} />
+          <AgentPromptPendingIndicator kind="permission" detail={pendingPermission.toolName} />
         )}
+        {planApprovalDeferred && <AgentPromptPendingIndicator kind="plan" />}
+        {questionsDeferred && <AgentPromptPendingIndicator kind="question" />}
         {specialPrompt && (
           <div data-permission-area={!!visiblePermission} data-question-area>
             {specialPrompt}

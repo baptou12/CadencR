@@ -265,7 +265,7 @@ describe("AgentPromptBar", () => {
     );
 
     expect(screen.getByRole("textbox")).toHaveValue("Keep this draft");
-    expect(screen.getByText(/Permission request ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/Permission request pending/i)).toBeInTheDocument();
 
     rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
 
@@ -289,6 +289,9 @@ describe("AgentPromptBar", () => {
       />,
     );
 
+    // Plan approval is deferred while the user has just been typing — the
+    // prompt bar stays visible until the typing-idle debounce elapses.
+    await screen.findByText(/Plan ready for review/i);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
     rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);

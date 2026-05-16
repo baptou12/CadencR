@@ -131,7 +131,7 @@ export function PlanApprovalBar({
           <Button variant="default" size="sm" onClick={onApprove} className="gap-1.5">
             <Play className="size-3.5" />
             {approveLabel ?? "Approve & Execute"}
-            <KbdShortcut keys={["cmd", "Y"]} />
+            <KbdShortcut keys={["cmd", "Y"]} scope="agent" />
           </Button>
           <Button
             variant="ghost"
@@ -141,7 +141,7 @@ export function PlanApprovalBar({
           >
             <MessageSquare className="size-3.5" />
             Request Changes
-            <KbdShortcut keys={["cmd", "N"]} />
+            <KbdShortcut keys={["cmd", "N"]} scope="agent" />
           </Button>
           {onReject && (
             <Button
@@ -152,7 +152,7 @@ export function PlanApprovalBar({
             >
               <X className="size-3.5" />
               Reject & Stop
-              <KbdShortcut keys={["esc"]} />
+              <KbdShortcut keys={["esc"]} scope="agent" />
             </Button>
           )}
         </div>

@@ -20,7 +20,7 @@ import { EMPTY_LAYOUT_STATE, type TabKind } from "@/stores/feature-layout-schema
  * gate is inert (callback always fires) so storybook/tests don't need to
  * wrap.
  */
-function useIsTabFocused(scope: TabKind): boolean {
+export function useIsTabFocused(scope: TabKind): boolean {
   const context = useFeatureLayoutContext();
   const featureId = context?.featureId;
   const hotkeysEnabled = context?.hotkeysEnabled ?? true;

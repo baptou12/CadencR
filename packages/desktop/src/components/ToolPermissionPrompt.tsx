@@ -128,7 +128,7 @@ function PermissionOptionButton({
       onClick={() => onClick(index)}
     >
       <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-        {shortcutKeys && <KbdShortcut keys={shortcutKeys} variant="square" />}
+        {shortcutKeys && <KbdShortcut keys={shortcutKeys} variant="square" scope="agent" />}
         {option.label}
         {showSpinner && <Loader2 className="ml-1 size-3.5 animate-spin text-muted-foreground" />}
       </span>
