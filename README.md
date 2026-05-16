@@ -1,95 +1,135 @@
-# Cadencr
+<p align="center">
+  <img src="packages/landing/src/assets/hero.png" alt="Cadencr desktop workspace with agent stream, editor, terminal, and Git review" width="920" />
+</p>
 
-**A desktop IDE for AI coding agents — a unified workspace for Claude Code, OpenCode, and more.**
+<h1 align="center">Cadencr</h1>
 
-Cadencr replaces the terminal-based workflow of local coding agents with a structured, visual experience: projects, features, visual diffs, and parallel agent sessions in their own worktrees.
+<p align="center">
+  <strong>The IDE for the era of agents.</strong><br />
+  One workspace to read, steer, and ship with Claude Code, OpenCode, and Codex.
+</p>
 
-- **Website:** [rle-mino.github.io/cadencr](https://rle-mino.github.io/cadencr/)
-- **License:** Apache-2.0
+<p align="center">
+  <a href="https://cadencr.com">Website</a>
+  ·
+  <a href="https://cadencr.com/docs/">Docs</a>
+  ·
+  <a href="https://github.com/merkr-software/CadencR/releases">Download</a>
+</p>
 
 ---
 
-## Why Cadencr?
+## Stop babysitting agents in a terminal scrollback
 
-- **Readable diffs** — Visual diff viewer with inline commenting, not raw terminal output.
-- **Parallel agents** — Run multiple Claude Code or OpenCode sessions on the same project without stepping on each other.
-- **Structured features** — Each feature gets its own worktree and dedicated agent session.
-- **Local-first** — Everything runs on your machine. No account, no hosted state.
+CLI coding agents are powerful, but the workflow around them is still too often a pile of terminals, branches, diffs, and half-remembered context.
 
----
+Cadencr turns local coding agents into a desktop IDE experience: every task gets a focused workspace with its own agent session, Git worktree, editor, terminal, approvals, and review flow.
+
+You keep the agents you already use. Cadencr gives you the surface to supervise them without losing the thread.
+
+## What you get
+
+| Instead of... | Cadencr gives you... |
+| --- | --- |
+| One terminal per agent | A unified cockpit for Claude Code, OpenCode, and Codex sessions. |
+| Agents fighting in the same checkout | Isolated feature workspaces backed by Git worktrees. |
+| Endless tool-call scrollback | Rendered streams with grouped tools, readable outputs, approvals, and file changes. |
+| Jumping between editor, terminal, and Git UI | Files, diffs, terminal, commits, and sessions in one place. |
+| Guessing what changed | A review-first flow built around diffs, files, and human checkpoints. |
+
+## Built for real agent workflows
+
+### Run agents in parallel
+
+Start several features, fixes, or investigations at once. Each session works in its own branch and worktree, so one agent can run tests while another explores a bug or prepares a refactor.
+
+### Read what happened
+
+Cadencr turns raw agent output into something scannable: tool calls collapse, file writes are visible, long outputs stay out of the way, and approvals become explicit checkpoints.
+
+### Review before you ship
+
+Open touched files, compare diffs, use the terminal, stage changes, and prepare commits without leaving the task context. The agent can move fast; you stay in control.
+
+### Bring your own agent
+
+Cadencr is provider-neutral by design. Claude Code, OpenCode, and Codex are surfaced through shared workflows instead of hardcoded product assumptions.
 
 ## Install
 
-**Binaries are not yet published.** Until the first release, build from source — see [Build from source](#build-from-source) below.
+### macOS
 
-When releases land, installers for macOS, Linux, and Windows will be available under [GitHub Releases](https://github.com/merkr-software/cadencr/releases).
+Download the latest build from [GitHub Releases](https://github.com/merkr-software/CadencR/releases).
 
----
+> Cadencr is early `0.x` software. Expect fast iteration, frequent updates, and a few sharp edges.
 
-## Build from source
+### Run from source
 
-### Prerequisites
+Use this path if you want to try the latest code or contribute.
 
-- **Node.js 22.x** — managed via [nvm](https://github.com/nvm-sh/nvm), [fnm](https://github.com/Schniz/fnm), or [asdf](https://asdf-vm.com/). Cadencr pins `22` in `.nvmrc`, `.node-version`, and `package.json` engines; `engine-strict=true` makes install fail on a mismatched Node.
-- **pnpm** (`npm i -g pnpm`) — `npm` and `yarn` are not supported.
-- **Rust toolchain** — install via [rustup](https://rustup.rs).
+#### Requirements
 
-### Setup
+- **Node.js 22.x** — the repo enforces `>=22.18.0 <23.0.0`.
+- **pnpm** — managed through Corepack.
+- **Rust** — install with [rustup](https://rustup.rs/).
+- At least one local agent CLI you want to use: Claude Code, OpenCode, or Codex.
+
+#### Setup
 
 ```bash
-# 1. Clone
-git clone https://github.com/merkr-software/cadencr.git
-cd cadencr
+git clone https://github.com/merkr-software/CadencR.git
+cd CadencR
 
-# 2. Install
+corepack enable
 pnpm install
 
-# 3. Create local env files
 cp packages/service/.env.example packages/service/.env
-cp packages/desktop/.env.example   packages/desktop/.env
+cp packages/desktop/.env.example packages/desktop/.env
 ```
 
-Edit both `.env` files so the shared values match: any random string for `CADENCR_AUTH_TOKEN` / `VITE_API_TOKEN` (they must be identical), frontend port aligned on both sides (default `1420`), and `VITE_API_URL` pointing at the service port (default `http://127.0.0.1:5005`).
+Set the same local token in both env files:
 
-### Run
+- `CADENCR_AUTH_TOKEN` in `packages/service/.env`
+- `VITE_API_TOKEN` in `packages/desktop/.env`
+
+Then start the app:
 
 ```bash
 pnpm dev
 ```
 
-This runs the Rust service and the Electron desktop app together via Turborepo.
+## Development
 
-Other common commands are listed in [CONTRIBUTING.md](./CONTRIBUTING.md#common-commands).
-
----
-
-## Architecture
-
+```bash
+pnpm build                              # build the desktop app
+pnpm test                               # Vitest + Rust tests
+pnpm lint                               # oxlint
+pnpm format                             # oxfmt + cargo fmt
+pnpm --filter @cadencr/desktop ts-check # TypeScript checks
+pnpm --filter @cadencr/desktop knip     # unused export detection
 ```
+
+## How it works
+
+```text
 packages/
-├── desktop/                 # Desktop shell (Electron) + React frontend
-├── service/                 # Rust HTTP/WebSocket backend (Axum)
-├── claude-agent-sdk-rs/     # Rust SDK wrapping the Claude Code CLI
-├── opencode-sdk-rs/         # Rust SDK wrapping the OpenCode CLI
-└── landing/                 # Astro marketing site
+├── desktop/                 # Electron shell + React frontend
+├── service/                 # Rust API/WebSocket service, packaged as sidecar
+├── claude-agent-sdk-rs/     # Claude Code transport SDK
+├── codex-app-server-sdk-rs/ # Codex transport SDK
+├── opencode-sdk-rs/         # OpenCode transport SDK
+├── cli-discovery/           # Local agent CLI discovery
+└── landing/                 # Marketing site, docs, news, roadmap
 ```
 
-- **Frontend ↔ Backend** — HTTP (Axios) for requests, WebSocket (Zustand store) for live agent streams.
-- **Backend ↔ CLIs** — Provider-specific SDKs stream and control local agent processes.
-- **Production** — Electron spawns the compiled `cadencr-service` binary as a sidecar.
+- **Desktop ↔ Service** — HTTP for requests and WebSocket for live updates.
+- **Service ↔ Agents** — provider adapters call local CLIs through focused Rust SDKs.
+- **Work isolation** — sessions run in Git worktrees so parallel work stays separated.
+- **Release flow** — tagged desktop releases build, sign, notarize, and publish macOS artifacts from GitHub Actions.
 
----
+## Open an issue or contribute
 
-## Contributing
-
-Contributions welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development setup, commit convention, and pull request process. Please also read the [Code of Conduct](./.github/CODE_OF_CONDUCT.md).
-
-To report a security issue, use [GitHub's private vulnerability reporting](https://github.com/merkr-software/cadencr/security/advisories/new) — see [SECURITY.md](./.github/SECURITY.md).
-
----
-
-## License
-
-Apache-2.0 © 2026 Raphael Le Minor. See [LICENSE](./LICENSE).
-
-Third-party dependency and brand-asset attributions are listed in [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
+- Found a bug or have a feature idea? [Open an issue](https://github.com/merkr-software/CadencR/issues/new/choose).
+- Want to contribute? Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+- Please follow the [Code of Conduct](./.github/CODE_OF_CONDUCT.md).
+- Security reports should use [GitHub private vulnerability reporting](https://github.com/merkr-software/CadencR/security/advisories/new).
