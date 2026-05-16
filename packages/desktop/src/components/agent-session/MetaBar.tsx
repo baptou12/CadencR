@@ -1,8 +1,9 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { ArrowDownIcon, CheckIcon, GitBranchIcon } from "lucide-react";
+import { CheckIcon, GitBranchIcon } from "lucide-react";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
+import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
 import { WorktreeButtonGroup } from "./WorktreePopover";
 import type { TodoItem } from "@/types/agent";
@@ -10,11 +11,7 @@ import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
-import {
-  AUTO_SCROLL_ACTIVE_CHIP,
-  META_BAR_CHIP,
-  WORKTREE_ACTIVE_CHIP,
-} from "./meta-bar-chip-styles";
+import { META_BAR_CHIP, WORKTREE_ACTIVE_CHIP } from "./meta-bar-chip-styles";
 
 export interface MetaBarProps {
   showAutoScrollChip: boolean;
@@ -186,26 +183,7 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
       }
     >
       {showAutoScrollChip && !secondaryBelow && (
-        <ShortcutTooltip
-          label={autoScrollEnabled ? "Disable auto-scroll" : "Enable auto-scroll"}
-          keys={["cmd", "shift", "S"]}
-        >
-          <button
-            type="button"
-            aria-pressed={autoScrollEnabled}
-            onClick={onToggleAutoScroll}
-            className={cn(
-              META_BAR_CHIP,
-              autoScrollEnabled
-                ? AUTO_SCROLL_ACTIVE_CHIP
-                : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            <ArrowDownIcon className="size-3" />
-            Auto-scroll
-            {autoScrollEnabled ? <CheckIcon className="size-3" /> : <span>Off</span>}
-          </button>
-        </ShortcutTooltip>
+        <AutoScrollChip enabled={autoScrollEnabled} onToggle={onToggleAutoScroll} />
       )}
 
       {/* Mode chip — labels/colors driven by the per-provider catalog. */}
