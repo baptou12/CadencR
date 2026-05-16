@@ -4,8 +4,11 @@ title: "Terminal"
 description: "Use the built-in terminal when agent work needs a little human keyboard energy."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+import terminalImage from "@/assets/docs/terminal.png";
 
 The terminal in Cadencr is here for the moments when a task needs a command, a log, a manual check, or a small amount of direct work from you. It is useful. It is powerful. It is also **not** the only way to get work done.
 
@@ -27,9 +30,11 @@ That matters because sometimes the fastest path is not another chat message. Som
 
 Think of it as the **manual override**. Most of the time, the agent and editor do the heavy lifting. The terminal is there for the practical finishing moves.
 
-<DocScreenshotPlaceholder
-  title="Terminal inside feature work"
+<DocScreenshot
+  src={terminalImage}
+  alt="Cadencr terminal inside a feature workspace, with split panes and a focused shell"
   caption="Use the terminal panel or tab when you want commands, output, logs, or a quick manual check without leaving the feature workspace."
+  bordered={false}
 />
 
 ## When to use it
@@ -45,6 +50,31 @@ These are the most common “yep, terminal time” moments:
 | Make a tiny one-off change yourself  | Sometimes typing one command is faster than describing it three different ways |
 
 A good rule of thumb: if the task involves **commands, output, or verification**, the terminal is probably the right tool.
+
+## Controls that pay for themselves quickly
+
+The terminal has its own small keyboard scope inside a feature workspace:
+
+| Shortcut                     | What it does                         |
+| ---------------------------- | ------------------------------------ |
+| <kbd>⌘ T</kbd>               | Focus or open the terminal           |
+| <kbd>⌘ D</kbd>               | Split horizontally                   |
+| <kbd>⌘ <ShiftIcon /> D</kbd> | Split vertically                     |
+| <kbd>⌘ ⌥</kbd> + arrows      | Focus the neighbouring terminal pane |
+| <kbd>⌘ W</kbd>               | Close the focused pane               |
+
+<DocCallout title="Heads up: opposite of the editor" variant="note">
+  In the terminal, <kbd>⌘ D</kbd> splits **horizontally** and{" "}
+  <kbd>
+    ⌘ <ShiftIcon /> D
+  </kbd>{" "}
+  splits **vertically**. In the editor, those two are reversed. The defaults match what most people
+  reach for first in each surface.
+</DocCallout>
+
+### Working directory awareness
+
+Each terminal pane is launched in the feature's worktree. If something inside the shell drifts the cwd elsewhere (for example, a misbehaving `cd` in a script), Cadencr shows a small cwd warning so you do not accidentally run commands against the wrong checkout.
 
 ## When not to use it
 

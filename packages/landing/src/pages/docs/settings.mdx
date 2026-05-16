@@ -1,0 +1,47 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Settings"
+description: "A quick tour of every Settings section, what lives there, and when you actually need it."
+---
+
+import DocCallout from "@/components/docs/DocCallout.astro";
+
+Settings is the app-wide preferences page. You probably will not spend much time here, but most of the “how do I change…?” answers live in one of its sections. Open it any time with <kbd>⌘ ,</kbd>; close it with <kbd>Esc</kbd>.
+
+## Sections at a glance
+
+| Section              | What lives here                                                                         |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| **Appearance**       | Theme selector (light, dark, follow-system) and per-mode theme IDs                      |
+| **Editor**           | Editor preferences for the built-in CodeMirror surface                                  |
+| **Interface & Zoom** | Density and zoom-level preferences for the whole app                                    |
+| **Notifications**    | When (and how loudly) Cadencr pings you about agent activity                            |
+| **Runtime & Models** | Provider runtime toggles — bypass permissions, full-access modes, and **Custom models** |
+| **Git**              | Default merge strategy and Git-related behaviour                                        |
+| **CLI Providers**    | Per-provider profiles, binary discovery, and which agent CLI Cadencr should use         |
+| **About**            | Build info and a button to replay the onboarding tour                                   |
+
+## Provider profiles & custom models
+
+Cadencr is provider-neutral by design. The **CLI Providers** section is where you set up profiles for Claude Code, Codex, and OpenCode — each provider has its own binary, profile, and (optionally) authentication path. The **Runtime & Models** section lets you register custom models on top of those providers so they show up in the model picker (<kbd>⌘ P</kbd>).
+
+<DocCallout title="Provider neutrality" variant="tip">
+  Most of the rest of the app does not care which provider you picked. The picker, model selector,
+  and permission prompts adapt — your shortcuts and workflow stay the same.
+</DocCallout>
+
+## Safety-related settings
+
+A handful of toggles deserve a deliberate read before you flip them:
+
+- **Bypass permissions** (Claude) — skips per-tool approval prompts inside a session.
+- **Full access** (Codex) — equivalent unrestricted mode for Codex.
+- **Dangerous mode** — same idea, broader scope. Reserve for sandboxed worktrees.
+
+These pair best with [worktrees](../worktrees/), so a runaway agent only ever touches its own folder.
+
+## Related docs
+
+- [Approvals & permissions](../approvals/) — the prompts these settings tune
+- [Prompt](../prompting/) — model picker and permission-mode cycle from the prompt bar
+- [Shortcuts](../shortcuts/) — <kbd>⌘ ,</kbd> and friends

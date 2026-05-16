@@ -4,31 +4,35 @@ title: "Git in Cadencr"
 description: "How Git appears inside Cadencr and how it supports feature-based work."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+import gitImage from "@/assets/docs/git.png";
 
 In Cadencr, Git is visible because it helps you stay oriented: what changed, where those changes live, and what to do next.
 
 ## Why Git appears so much in Cadencr
 
-Cadencr is built around **feature-based work**. That means one task gets its own little working area, usually with its own branch and Git history.
+Cadencr is built around **feature-based work**. Each feature gets its own working area — usually a Git **worktree** on its own branch — so several features can move at the same time without stepping on each other's commits.
 
 Why do that? Because it keeps work tidy:
 
 - one feature does not casually spill into another,
 - agent changes stay reviewable,
 - you can check what happened before you commit to it, and
-- merging finished work back in feels deliberate and easier to review.
+- opening a pull request back into the target branch feels deliberate and easier to review.
 
 A few Git concepts show up directly in the Cadencr interface:
 
-| Term   | Plain-English version                              | Why you care in Cadencr                                                |
-| ------ | -------------------------------------------------- | ---------------------------------------------------------------------- |
-| Branch | A separate lane for one piece of work              | Each feature can stay focused instead of tangling with everything else |
-| Commit | A saved checkpoint with a message                  | It is the moment you say, “Yes, this set of changes belongs together”  |
-| Diff   | The before/after view of a change                  | This is how you check what really changed, not what you hope changed   |
-| Push   | Sending your branch to the remote repo             | Useful when you want to share or open a PR                             |
-| Merge  | Bringing finished work back into the target branch | The “okay, ship this lane back into the main road” step                |
+| Term     | Plain-English version                                               | Why you care in Cadencr                                                |
+| -------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Branch   | A separate lane for one piece of work                               | Each feature can stay focused instead of tangling with everything else |
+| Worktree | A checked-out copy of the repo on its own branch, in its own folder | Lets several features (and agents) work in parallel without conflicts  |
+| Commit   | A saved checkpoint with a message                                   | It is the moment you say, “Yes, this set of changes belongs together”  |
+| Diff     | The before/after view of a change                                   | This is how you check what really changed, not what you hope changed   |
+| Push     | Sending your branch to the remote repo                              | Useful when you want to share or open a PR                             |
+| Compare  | Opening a comparison or pull request against the target branch      | The “okay, this lane is ready for review” step                         |
 
 <DocCallout title="Gentle truth" variant="tip">
   In Cadencr, Git is mainly there to answer practical questions: what changed, what branch this work
@@ -39,9 +43,11 @@ A few Git concepts show up directly in the Cadencr interface:
 
 The Git tab is the calm, visual version of “so... what happened here?”
 
-<DocScreenshotPlaceholder
-  title="Git tab in a feature workspace"
-  caption="A friendly place to review changed files, compare against the target branch, and decide whether the next step is commit, push, or merge."
+<DocScreenshot
+  src={gitImage}
+  alt="Cadencr Git tab showing changed files, the diff viewer, branch picker, and the commit / push / compare actions"
+  caption="A friendly place to review changed files, compare against the target branch, and decide whether the next step is commit, push, or compare."
+  bordered={false}
 />
 
 Inside the Git tab, Cadencr helps you:
@@ -50,9 +56,23 @@ Inside the Git tab, Cadencr helps you:
 - switch between **uncommitted changes** and **changes vs the target branch**,
 - inspect the diff instead of guessing,
 - see what branch you are on and what it is compared against,
-- use header actions like **Commit**, **Push**, and **Merge** when the work is ready.
+- reach the header actions for the next sensible step: **Commit** (<kbd>⌘<ShiftIcon />K</kbd>), **Push** (<kbd>⌘<ShiftIcon />U</kbd>), and **Open compare / PR** (<kbd>⌘<ShiftIcon />O</kbd>), or the <kbd>⌘G</kbd> popover for everything else.
 
-That last part matters. The app is trying to surface the next sensible Git action instead of making you hunt for it.
+The branch picker lives behind <kbd>⌘B</kbd> while a feature is focused, so swapping branches inside a worktree never needs a mouse trip.
+
+### Reviewing the diff with the keyboard
+
+The diff viewer is built for keyboard-driven review:
+
+| Shortcut                              | What it does                 |
+| ------------------------------------- | ---------------------------- |
+| <kbd>Ctrl J</kbd> / <kbd>Ctrl K</kbd> | Next / previous file         |
+| <kbd>Ctrl L</kbd>                     | Toggle the focused file      |
+| <kbd>Ctrl D</kbd> / <kbd>Ctrl U</kbd> | Scroll half a page down / up |
+| <kbd>Ctrl H</kbd>                     | Mark file viewed / unviewed  |
+| <kbd>⌘ Enter</kbd>                    | Send pending review comments |
+
+If you prefer to drive review from the unified agent list or session view, the same shortcuts apply once the diff has focus.
 
 ## Safe everyday Git workflow in Cadencr
 
@@ -63,14 +83,18 @@ If you want the least dramatic daily rhythm, this is a good one:
 3. **Open the Git tab and review the diff.** This is your confidence step.
 4. **Commit when the change makes sense as one unit.** A commit is just a checkpoint with a label.
 5. **Push when you want the branch on the remote.** Helpful for sharing, backup, or opening a PR.
-6. **Merge when the feature is actually ready.** Not when you are tired of looking at it.
+6. **Open compare / PR when the feature is actually ready.** Cadencr will surface the comparison against the target branch and, when configured, hand off to your forge for the actual PR.
 
 A simple mental model helps here:
 
 - **Git tab** = review and understand
 - **Commit** = save this chunk of work
 - **Push** = share this branch with the remote repo
-- **Merge** = bring finished work back to the target branch
+- **Compare / PR** = hand the finished work back to the target branch for review
+
+### Worktrees in one paragraph
+
+When you start a feature, Cadencr can spin up a Git worktree for it — a real folder on disk on its own branch, separate from your main checkout. That is what lets several agents run in parallel without overwriting each other's files. The command palette's worktree picker (<kbd>⌘K</kbd>) is where you choose to reuse an existing worktree or create a new one; the rest of the time, the Git tab simply reflects the worktree the current feature is in.
 
 If your team cares about merge style, Cadencr has a **Git merge strategy** setting. If your team does **not** care, leaving the default alone is a completely respectable life choice.
 

@@ -1,0 +1,81 @@
+---
+/**
+ * Renders the keyboard shortcuts for one scope, sourced directly from the
+ * desktop app's registry (packages/desktop/src/lib/shortcuts/registry.ts).
+ *
+ * Whatever the in-app shortcuts modal (⌘/) shows for a scope, the docs show
+ * exactly the same list — including alternate combos and the registry's
+ * ordering. The doc page only has to pass the scope id.
+ */
+import { SHORTCUTS, SHORTCUT_SCOPES } from "@desktop-shortcuts/registry";
+import type { Shortcut, ShortcutKey, ShortcutScopeId } from "@desktop-shortcuts/registry";
+import { formatKey } from "@/lib/formatShortcut";
+import Kbd from "@/components/ui/Kbd.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+
+interface Props {
+  scope: ShortcutScopeId;
+  /** Optional override for the section heading. Defaults to the scope's label. */
+  heading?: string;
+  /** Skip the auto-rendered scope heading entirely. */
+  headless?: boolean;
+}
+
+const { scope, heading, headless = false } = Astro.props;
+
+const scopeMeta = SHORTCUT_SCOPES.find((s) => s.id === scope);
+// The registry uses `as const satisfies readonly Shortcut[]`, so the
+// inferred element type drops `altKeys` for entries that don't declare it.
+// Widen back to `Shortcut` so the optional field is visible.
+const items: readonly Shortcut[] = (SHORTCUTS as readonly Shortcut[]).filter(
+  (s) => s.scope === scope,
+);
+
+function renderKeys(keys: readonly ShortcutKey[]): { key: ShortcutKey; label: string }[] {
+  return keys.map((k) => ({ key: k, label: formatKey(k) }));
+}
+---
+
+{
+  !headless && scopeMeta && (
+    <header class="mb-2 mt-8">
+      <h2 class="text-[20px] font-semibold tracking-tight">{heading ?? scopeMeta.label}</h2>
+      <p class="text-[13px] text-[color:var(--color-muted-foreground)]">{scopeMeta.hint}</p>
+    </header>
+  )
+}
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 38%">Shortcut</th>
+      <th>What it does</th>
+    </tr>
+  </thead>
+  <tbody>
+    {
+      items.map((s) => (
+        <tr>
+          <td>
+            <span class="inline-flex flex-wrap items-center gap-1">
+              {renderKeys(s.keys).map(({ key, label }) => (
+                <Kbd>{key === "shift" ? <ShiftIcon /> : label}</Kbd>
+              ))}
+              {s.altKeys && (
+                <>
+                  <span class="px-1 text-[12px] text-[color:var(--color-muted-foreground)]">
+                    or
+                  </span>
+                  {renderKeys(s.altKeys).map(({ key, label }) => (
+                    <Kbd>{key === "shift" ? <ShiftIcon /> : label}</Kbd>
+                  ))}
+                </>
+              )}
+            </span>
+          </td>
+          <td>{s.description}</td>
+        </tr>
+      ))
+    }
+  </tbody>
+</table>

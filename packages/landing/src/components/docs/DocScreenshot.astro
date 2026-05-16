@@ -6,9 +6,19 @@ interface Props {
   src: ImageMetadata;
   alt: string;
   caption?: string;
+  /**
+   * When the source image already includes its own framing/border (or a
+   * window-chrome screenshot), pass `bordered={false}` so we don't draw a
+   * second border on top.
+   */
+  bordered?: boolean;
 }
 
-const { src, alt, caption } = Astro.props;
+const { src, alt, caption, bordered = true } = Astro.props;
+
+const imageClass = bordered
+  ? "block h-auto w-full rounded-xl border border-border shadow-md"
+  : "block h-auto w-full";
 ---
 <figure class="my-6">
   <Image
@@ -20,7 +30,7 @@ const { src, alt, caption } = Astro.props;
     quality={95}
     loading="lazy"
     decoding="async"
-    class="block h-auto w-full rounded-xl border border-border shadow-md"
+    class={imageClass}
   />
   {caption && (
     <figcaption class="mt-2 text-center text-xs text-muted-foreground">{caption}</figcaption>

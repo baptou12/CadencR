@@ -1,5 +1,14 @@
-<kbd
-  class="font-mono text-[10px] font-medium inline-flex items-center justify-center min-w-4 px-[5px] py-px rounded border border-border/90 bg-muted/40 text-muted-foreground"
->
+---
+/**
+ * Single-key chip used in the docs.
+ *
+ * Mirrors the desktop app's `KbdShortcut` "modal" variant
+ * (packages/desktop/src/components/KbdShortcut.tsx) so a key in the
+ * docs looks identical to the same key inside the in-app shortcuts
+ * modal (⌘/).
+ */
+---
+
+<kbd class="doc-kbd">
   <slot />
 </kbd>

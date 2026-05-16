@@ -1,90 +1,103 @@
 ---
 layout: "@/layouts/DocLayout.astro"
 title: "Custom actions"
-description: "Use the + button to run saved actions in the right context without rewriting the same request over and over."
+description: "Reusable shell commands you can run on demand or on a schedule against any feature, with project-defined variables."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import customActionsMenuImage from "@/assets/docs/custom-actions-menu.png";
 
-The `+` button in a feature or session header is basically your **"do the useful thing again"** button.
+Custom actions are **shell commands** you attach to a project. The `+` button in a feature header opens the menu of actions defined for the current project (plus any global ones), and you can either run an action right now or have it run automatically on an interval. Every action gets the same buttons on every feature of the project, but its variables and schedule are tracked **per feature**.
 
-It opens your saved custom actions so you can run a workflow you already like without typing the same instructions from scratch every time.
-
-<DocScreenshotPlaceholder
-  title="Custom actions menu"
-  caption="The + button opens saved actions you can run in the current feature or session context."
-  hint="Swap this for a screenshot of the custom actions menu opened from a workspace header."
+<DocScreenshot
+  src={customActionsMenuImage}
+  alt="Cadencr custom actions menu showing a list of saved shell commands with status dots and a schedule toggle"
+  caption="The custom actions menu opens from the + button in the feature header."
 />
 
-## What the plus button really means
-
-A custom action is a **saved prompt or workflow** you can reuse.
-
-Instead of re-explaining yourself every time, you click `+`, choose the action you want, and let Cadencr run it in the place you already are.
-
-That matters because context is doing a lot of the heavy lifting here:
-
-- in a **session**, the action can build on the conversation already happening
-- in a **feature workspace**, the action can help with the work tied to that feature
-- in both cases, you save time and reduce the chance of forgetting your usual instructions
-
-<DocCallout title="Plain-English version" variant="tip">
-  Think of custom actions as reusable shortcuts for jobs you do more than once.
+<DocCallout title="One-line mental model" variant="tip">
+  A custom action is a shell command template + variable values + an optional schedule. Pick it
+  once, reuse it everywhere in the project.
 </DocCallout>
 
-## Why custom actions are useful
+## What a custom action actually is
 
-Custom actions are handy when you have a task that is:
+Each action stores:
 
-- common enough to repeat,
-- annoying enough to not want to retype, or
-- important enough that you want it done the same way each time.
+- a **name** and icon you will see in the menu,
+- a **command** — the literal shell line that will be executed,
+- a **scope** — `Project` (visible only on features of that project) or `Global` (visible everywhere),
+- a list of **variable names** parsed from the command, and
+- a position so you can reorder them in the menu.
 
-| Use a custom action when you want to... | Why it helps                                                                        |
-| --------------------------------------- | ----------------------------------------------------------------------------------- |
-| kick off a familiar workflow            | You start faster and with less repeated setup                                       |
-| summarize what just happened            | You get a clean recap without writing a careful request every time                  |
-| review work in a consistent way         | The checks stay predictable instead of depending on your current caffeine situation |
-| prepare handoff notes or next steps     | The output comes out in a format you already find useful                            |
+The command is run with a hard **5-minute timeout** on the host machine. The working directory is the feature's worktree (so anything `cd`-relative starts from the right place automatically).
 
-## Examples of good action types
+## Variables
 
-Good custom actions usually do **one recognizable job**.
+Anywhere in the command, write `${VAR_NAME}` and Cadencr treats `VAR_NAME` as a variable. Names must be uppercase letters, digits, or underscores and start with a letter or underscore. The set of placeholders is discovered automatically — there is nothing to declare on the side.
 
-A few solid examples:
+Example commands:
 
-- **Summarize this session** — handy when the conversation got long and you want a clean recap.
-- **Turn progress into a checklist** — useful for next steps, handoff notes, or personal sanity.
-- **Review the current work for risks** — great before you call something done.
-- **Draft release notes or changelog bullets** — helpful when you want the “what changed?” version.
-- **Create beginner-friendly explanation** — nice when you want technical work translated into human.
-- **Prepare a testing pass** — useful when you want a repeatable QA-style prompt.
+```sh
+gh pr view ${PR_ID}
+npm run check --workspace=${PACKAGE}
+echo "Hi ${NAME}, the worktree is $(pwd)"
+```
 
-If you are not sure whether something deserves to be a custom action, ask yourself:
+Values are stored **per (action, feature)**, so the same "Run tests" action can have `PACKAGE=desktop` on one feature and `PACKAGE=service` on another. The action will refuse to run if a referenced variable has no value for the current feature — you fill them in once and the value sticks until you change it.
 
-> "Will I want this again in roughly the same shape?"
+There are no implicit variables. If you want the feature path or branch name in your command, use the worktree-relative cwd (the action already runs there) or pipe through `git`, e.g. `git rev-parse --abbrev-ref HEAD`.
 
-If the answer is yes, that is a strong hint.
+## Schedules
 
-## Tips for keeping actions understandable
+Every action can be scheduled to run automatically on the current feature. The schedule control is a switch plus an interval (seconds / minutes / hours), with a minimum of **5 seconds**:
 
-The best custom actions are the ones Future You can still understand.
+| Trigger      | When it fires                                                                                       |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| **Manual**   | You click the action in the menu (or run it from the header).                                       |
+| **Schedule** | A fixed-interval tokio task fires it on the feature in the background, as long as the switch is on. |
 
-- **Name them by outcome.** `Summarize session` beats `Action 2`.
-- **Keep each action focused.** One job per action is easier to trust.
-- **Say what kind of result you want.** For example: bullets, checklist, short summary, or handoff note.
-- **Use clear wording.** You do not need overly fancy prompt language.
-- **Retire confusing actions.** If you never remember what one does, that is your clue.
+Schedules are not cron — they are pure fixed intervals starting from when you enable them. Saving a new interval cancels the previous task and starts fresh, so you can change the cadence safely while the action is enabled. Like variables, the schedule is tracked per `(action, feature)` — the same action can poll every 30 s on one feature and stay off on another.
 
-<DocCallout title="A very normal beginner move" variant="note">
-  Start with one or two actions you actually reuse. You do not need to build a giant button zoo on
-  day one.
-</DocCallout>
+## Status dot
+
+Each action shows a small status dot you can read at a glance:
+
+| Dot           | Meaning                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| Grey          | Never run on this feature yet.                                            |
+| Pulsing amber | A run is in progress (manual or scheduled — Cadencr does not care which). |
+| Green         | Last run exited 0.                                                        |
+| Red           | Last run exited non-zero. Hover for the exit code.                        |
+
+## Good action shapes
+
+Custom actions are most useful for **short, repeatable shell jobs** that you do not want to retype:
+
+- run a targeted test command on the current feature,
+- poll a CI run or PR status with `gh`,
+- regenerate a small artifact (`pnpm generate:api`, `cargo sqlx prepare`, …),
+- push a quick metric to a dashboard,
+- ping a deploy that should track this feature's branch.
+
+If the action is really a one-shot "do this thing once" prompt for the agent, that is what the prompt bar is for — keep custom actions for genuine shell work.
+
+## Editor dialog
+
+The action editor dialog lets you:
+
+- create or rename an action and pick its icon,
+- pin it to the toolbar (so the top header gets a one-click button) or leave it in the overflow menu,
+- edit the command template — variable names show up as you type,
+- delete it.
+
+Per-feature variable values and the schedule live next to the action button on each feature, not inside the editor dialog — so a project owner can tweak the command in one place without overwriting everyone's variable values.
+
+When you have more actions than the toolbar can fit, the overflow dropdown keeps the rest one click away.
 
 ## Related docs
 
-- [Feature workspace](../feature-workspace/) — where custom actions often help kick off or support a task
-- [Session view](../session-view/) — useful when an action builds on an ongoing conversation
-- [Prompting](../prompting/) — helpful if you want better raw material before saving an action
-- [Workspace pages](../workspace-pages/) — the bigger tour of how these areas fit together
+- [Feature workspace](../feature-workspace/) — where the actions toolbar lives
+- [Worktrees](../worktrees/) — each action runs in the feature's worktree
+- [Settings](../settings/) — global vs project scope is set when you create the action

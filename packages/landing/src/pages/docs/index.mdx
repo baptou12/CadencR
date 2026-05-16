@@ -6,16 +6,18 @@ description: "Your friendly map to Cadencr, from first look to faster daily use.
 
 import DocCallout from "@/components/docs/DocCallout.astro";
 import DocPageGrid from "@/components/docs/DocPageGrid.astro";
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
+import overviewImage from "@/assets/docs/overview.png";
 
 This is the "show me where to click next" part of the website.
 
 If you are brand new, start with [Concept](./concept/) and [Workspace Pages](./workspace-pages/). If you already know what you need, jump straight to that page.
 
-<DocScreenshotPlaceholder
-  title="Docs hub overview"
-  caption="The docs section is designed as a short, linked map rather than one giant wall of text."
-  hint="Replace this with a screenshot of the docs home page and sidebar once they are styled exactly how you want."
+<DocScreenshot
+  src={overviewImage}
+  alt="Cadencr overview — the sidebar, a feature workspace with agent, editor, terminal, and Git tabs, plus a unified agents view in the background"
+  caption="A look at the surfaces these docs cover: sidebar, feature workspace, and the unified agents view."
+  bordered={false}
 />
 
 ## What you can learn here
@@ -34,6 +36,7 @@ You do not need to read everything in order. Use it like a reference, not a cour
 - **Start Here** explains the big picture and the main places you will spend time.
 - **Core Views** helps you stay oriented while work is happening.
 - **Features** covers the tools you will reach for once you are in motion.
+- **Reference** is the look-it-up section for approvals, worktrees, and settings.
 
 ## Browse the docs
 
@@ -82,7 +85,7 @@ You do not need to read everything in order. Use it like a reference, not a cour
 <DocPageGrid
   items={[
     {
-      title: "Prompting",
+      title: "Prompt",
       href: "./prompting/",
       description:
         "How to ask for work clearly without turning every prompt into a tiny legal document.",
@@ -114,6 +117,30 @@ You do not need to read everything in order. Use it like a reference, not a cour
       title: "Shortcuts",
       href: "./shortcuts/",
       description: "A practical keyboard cheat sheet for faster navigation and less mouse mileage.",
+    },
+  ]}
+/>
+
+### Reference
+
+<DocPageGrid
+  items={[
+    {
+      title: "Approvals & permissions",
+      href: "./approvals/",
+      description:
+        "Plan approval, tool permissions, multi-choice questions, and the permission-mode toggle.",
+    },
+    {
+      title: "Worktrees",
+      href: "./worktrees/",
+      description:
+        "Why each feature lives in its own Git worktree and how to work with them safely.",
+    },
+    {
+      title: "Settings",
+      href: "./settings/",
+      description: "A tour of every Settings section and when you actually need it.",
     },
   ]}
 />

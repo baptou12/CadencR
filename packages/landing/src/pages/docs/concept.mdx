@@ -4,16 +4,19 @@ title: "The IDE for the era of agents"
 description: "What Cadencr is, why it feels different from traditional IDEs and agent CLIs, and how to think about work inside it."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import conceptImage from "@/assets/docs/concept.png";
 
 Cadencr exists for the gap between **"I can ask an agent to help"** and **"I can actually finish this piece of work without losing context."**
 
 A classic IDE is great at editing. An agent CLI like **Claude**, **Codex**, or **OpenCode** is great at doing focused work in the terminal. Real work usually needs both, plus a way to keep files, commands, Git, and multiple agent attempts organized in one place.
 
-<DocScreenshotPlaceholder
-  title="Cadencr concept overview"
+<DocScreenshot
+  src={conceptImage}
+  alt="Cadencr concept — a feature workspace with the brief, agent sessions, files, terminal, and Git in one place"
   caption="A feature workspace brings your brief, agent sessions, files, terminal, and Git into one place."
+  bordered={false}
 />
 
 ## What Cadencr is
@@ -98,4 +101,4 @@ If you want the tour after the big idea, go here next:
 - [Editor](../editor/) for reviewing files and diffs
 - [Terminal](../terminal/) for the built-in command line
 - [Git in Cadencr](../git/) for the confidence-building part
-- [Prompting](../prompting/) for asking agents clearly and giving them useful direction
+- [Prompt](../prompting/) for asking agents clearly and giving them useful direction
