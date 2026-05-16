@@ -74,7 +74,10 @@ pub fn git_capture(dir: &std::path::Path, args: &[&str]) -> String {
 /// `feature/test-branch` checked out at HEAD with a single tracked file.
 pub fn create_test_repo(dir: &std::path::Path) {
     git_in(dir, &["init", "-b", "main"]);
+    git_in(dir, &["config", "user.email", "test@test.com"]);
+    git_in(dir, &["config", "user.name", "Test"]);
     git_in(dir, &["config", "commit.gpgsign", "false"]);
+    git_in(dir, &["config", "tag.gpgsign", "false"]);
     std::fs::write(dir.join("README.md"), "# Test\n").unwrap();
     git_in(dir, &["add", "."]);
     git_in(dir, &["commit", "-m", "initial commit"]);
