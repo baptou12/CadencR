@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import { render, screen } from "@/test-utils";
 
 const mocks = vi.hoisted(() => {
@@ -89,6 +90,16 @@ describe("MergeDialog errors", () => {
     firstRadio.focus();
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
+
+    expect(mocks.mergeMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("merges on Cmd+Enter immediately after open without clicking inside first", () => {
+    mocks.mergeMutateAsync.mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+
+    fireEvent.keyDown(document.body, { key: "Enter", code: "Enter", metaKey: true });
 
     expect(mocks.mergeMutateAsync).toHaveBeenCalledTimes(1);
   });

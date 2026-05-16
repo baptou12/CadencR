@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent, type ReactElement } from "react";
+import { useState, type ReactElement } from "react";
 import { GitMerge, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/git-merge-mode";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
+import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 
 // Hoisted to module scope so the `KbdShortcut` `keys` prop is reference-stable
 // across renders — otherwise every dialog re-render would create fresh arrays
@@ -88,13 +89,12 @@ export default function MergeDialog({
     setError(message);
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
-    if (e.key !== "Enter") return;
-    if (!(e.metaKey || e.ctrlKey)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    void handleMerge();
-  }
+  useDialogSubmitShortcut({
+    open,
+    onSubmit: () => {
+      void handleMerge();
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -103,10 +103,10 @@ export default function MergeDialog({
         // descendant — here, the first `RadioCardGroup` card. That focus ring
         // contradicts the *selected* card (the user's saved default may be
         // `--no-ff`, not the first option), so we suppress the initial focus
-        // entirely and rely on the radio's own `selected` styling. ⌘/Ctrl+Enter
-        // still submits from anywhere via `onKeyDownCapture`.
+        // entirely and rely on the radio's own `selected` styling. The
+        // document-level submit shortcut keeps ⌘/Ctrl+Enter available
+        // immediately, even before the user clicks inside the modal.
         onOpenAutoFocus={(e) => e.preventDefault()}
-        onKeyDownCapture={handleKeyDown}
         className="sm:max-w-2xl"
       >
         <DialogHeader>
