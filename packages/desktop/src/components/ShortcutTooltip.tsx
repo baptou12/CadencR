@@ -8,6 +8,8 @@ interface ShortcutTooltipProps {
   children: ReactNode;
   /** Align tooltip to the right edge instead of centering */
   alignRight?: boolean;
+  /** Align tooltip to the left edge instead of centering (useful when the trigger sits near the viewport's left edge) */
+  alignLeft?: boolean;
   /** Show tooltip above the trigger instead of below */
   above?: boolean;
   /** Additional class name for the wrapper div */
@@ -28,6 +30,7 @@ export function ShortcutTooltip({
   keys,
   children,
   alignRight,
+  alignLeft,
   above,
   className,
   disabled,
@@ -74,7 +77,7 @@ export function ShortcutTooltip({
           className={cn(
             "pointer-events-none absolute z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg",
             above ? "bottom-full mb-1.5" : "top-full mt-1.5",
-            alignRight ? "right-0" : "left-1/2 -translate-x-1/2",
+            alignRight ? "right-0" : alignLeft ? "left-0" : "left-1/2 -translate-x-1/2",
           )}
         >
           <span>{label}</span>

@@ -1,11 +1,9 @@
 import { memo } from "react";
-import { ArrowDownIcon, CheckIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { AgentTodoList } from "../AgentTodoList";
-import { ShortcutTooltip } from "../ShortcutTooltip";
+import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
 import type { TodoItem } from "@/types/agent";
-import { AUTO_SCROLL_ACTIVE_CHIP, META_BAR_CHIP } from "./meta-bar-chip-styles";
+import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 
 /**
  * Compact strip rendered *below* the prompt when the agent session container
@@ -50,26 +48,7 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   return (
     <div className="-mt-1 flex items-center gap-1.5 px-3 pb-2 pt-0">
       {showAutoScrollChip && (
-        <ShortcutTooltip
-          label={autoScrollEnabled ? "Disable auto-scroll" : "Enable auto-scroll"}
-          keys={["cmd", "shift", "S"]}
-        >
-          <button
-            type="button"
-            aria-pressed={autoScrollEnabled}
-            onClick={onToggleAutoScroll}
-            className={cn(
-              META_BAR_CHIP,
-              autoScrollEnabled
-                ? AUTO_SCROLL_ACTIVE_CHIP
-                : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            <ArrowDownIcon className="size-3" />
-            Auto-scroll
-            {autoScrollEnabled ? <CheckIcon className="size-3" /> : <span>Off</span>}
-          </button>
-        </ShortcutTooltip>
+        <AutoScrollChip enabled={autoScrollEnabled} onToggle={onToggleAutoScroll} />
       )}
 
       {hasTodos && <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />}
