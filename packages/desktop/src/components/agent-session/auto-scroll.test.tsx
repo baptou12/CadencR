@@ -298,6 +298,33 @@ describe("AgentSession auto-scroll", () => {
 
     fireAtBottomChange(true);
     expect(getAutoScrollButton()).toHaveAttribute("aria-pressed", "true");
+    // The hook also clamps to the true last item when returning to bottom,
+    // so any phantom tail space (from `defaultItemHeight` overestimation of
+    // unmeasured blocks) is collapsed — the scroller lands at scrollHeight.
+    expect(scroller.scrollTop).toBe(1000);
+  });
+
+  // Regression: while stick is already engaged, transient
+  // `atBottomStateChange(true)` ticks from measurement settles must NOT
+  // re-pin the scroller — that's `followOutput` / `totalListHeightChanged`'s
+  // job and double-pinning here would thrash on every settle.
+  it("does not re-pin on transient atBottom ticks while stick is engaged", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    scroller.scrollTop = 250;
+
+    fireAtBottomChange(true);
+    expect(scroller.scrollTop).toBe(250);
   });
 
   it("does not re-enable auto-scroll when the prompt is focused", async () => {
