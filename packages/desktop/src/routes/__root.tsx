@@ -322,7 +322,12 @@ function RootLayout() {
                 }}
               >
                 <RootErrorBoundary>
-                  <Outlet />
+                  <div
+                    key={routerState.location.pathname}
+                    className="h-full animate-in fade-in-0 duration-200 ease-out"
+                  >
+                    <Outlet />
+                  </div>
                 </RootErrorBoundary>
               </main>
             </ResizablePanel>

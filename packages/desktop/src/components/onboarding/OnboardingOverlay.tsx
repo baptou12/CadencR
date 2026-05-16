@@ -80,7 +80,10 @@ export function OnboardingOverlay() {
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-2xl px-8 py-10">
+        <div
+          key={step}
+          className="mx-auto w-full max-w-2xl px-8 py-10 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out"
+        >
           <StepBody step={step} {...stepProps} />
         </div>
       </main>

@@ -391,6 +391,62 @@
   will-change: opacity;
 }
 
+/* -------------------------------------------------------------------------
+ * Fluid animations — global gating + reusable curves
+ *
+ * `<html data-animations="off">` is the single source of truth for whether
+ * UI animations should play. `AnimationsProvider` writes the attribute based
+ * on a user setting (`animations_enabled`) and OS `prefers-reduced-motion`.
+ *
+ * The kill-switch collapses every transition/animation to a near-zero
+ * duration so flows still hit their final state synchronously — that means
+ * dialogs, popovers, etc. still mount/unmount correctly with no visible
+ * animation. We intentionally do not use `animation: none` because Radix
+ * primitives rely on `animationend` to coordinate exit unmounts; a 0.001ms
+ * duration fires the event immediately while still being instant to users.
+ *
+ * `--ease-fluid` and `fade-up` are the project-wide animation primitives.
+ * Use them via `[animation:var(--animate-fade-up)]` or via Tailwind v4's
+ * arbitrary-property syntax. The default app-wide easing for transitions is
+ * tuned to feel snappier than the browser default.
+ * ------------------------------------------------------------------------- */
+
+html[data-animations="off"] *,
+html[data-animations="off"] *::before,
+html[data-animations="off"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+@theme {
+  --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+  --animate-fade-up: fade-up 220ms var(--ease-fluid) both;
+  --animate-fade-in: fade-in 180ms var(--ease-fluid) both;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes reconnect-slide {
   0% {
     transform: translateX(-100%);

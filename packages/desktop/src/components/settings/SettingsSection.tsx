@@ -36,7 +36,14 @@ export function SettingsSection({
   const headingClass = size === "lg" ? "text-base font-semibold" : "text-sm font-semibold";
 
   return (
-    <section id={id} data-section={id ?? ""} className={cn("space-y-3 scroll-mt-6", className)}>
+    <section
+      id={id}
+      data-section={id ?? ""}
+      className={cn(
+        "space-y-3 scroll-mt-6 animate-in fade-in-0 slide-in-from-bottom-1 duration-300 ease-out",
+        className,
+      )}
+    >
       <div className="flex items-baseline justify-between gap-4">
         <h2 className={headingClass}>{title}</h2>
         {subtitle ? (
