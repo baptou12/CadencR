@@ -24,9 +24,10 @@ let intervalHandle: NodeJS.Timeout | null = null;
 
 interface InitOptions {
   getMainWindow: () => BrowserWindow | null;
+  prepareInstallUpdate?: () => Promise<void> | void;
 }
 
-export function registerAutoUpdaterIpc({ getMainWindow }: InitOptions): void {
+export function registerAutoUpdaterIpc({ getMainWindow, prepareInstallUpdate }: InitOptions): void {
   if (registered) return;
   registered = true;
   ipcMain.handle("app:check-for-updates", (event: IpcMainInvokeEvent) => {
@@ -42,11 +43,18 @@ export function registerAutoUpdaterIpc({ getMainWindow }: InitOptions): void {
       sendUpdate(getMainWindow, { channel: "update:error", message: errorMessage(error) });
     });
   });
-  ipcMain.handle("app:install-update", (event: IpcMainInvokeEvent) => {
+  ipcMain.handle("app:install-update", async (event: IpcMainInvokeEvent) => {
     assertTrustedSender(event, getMainWindow);
     if (!app.isPackaged) return;
-    // `quitAndInstall(isSilent, isForceRunAfter)` — silent install, relaunch.
-    autoUpdater.quitAndInstall(false, true);
+    try {
+      await prepareInstallUpdate?.();
+      // `quitAndInstall(isSilent, isForceRunAfter)` — silent install, relaunch.
+      autoUpdater.quitAndInstall(false, true);
+    } catch (error: unknown) {
+      const message = errorMessage(error);
+      sendUpdate(getMainWindow, { channel: "update:error", message });
+      throw error;
+    }
   });
 }
 

@@ -151,7 +151,10 @@ function wireMainProcess(): void {
     powerRegistered = true;
   }
   if (!updaterRegistered) {
-    registerAutoUpdaterIpc({ getMainWindow: () => mainWindow });
+    registerAutoUpdaterIpc({
+      getMainWindow: () => mainWindow,
+      prepareInstallUpdate: prepareForUpdateInstall,
+    });
     initAutoUpdater({ getMainWindow: () => mainWindow });
     updaterRegistered = true;
   }
@@ -238,7 +241,21 @@ app.on("before-quit", (event) => {
   }
 });
 
+async function prepareForUpdateInstall(): Promise<void> {
+  allowClose = true;
+  pendingQuit = false;
+  shutdownPower();
+  powerRegistered = false;
+  shutdownAutoUpdater();
+  await stopSidecarForExit();
+}
+
 async function stopSidecarThenQuit(): Promise<void> {
+  await stopSidecarForExit();
+  app.quit();
+}
+
+async function stopSidecarForExit(): Promise<void> {
   if (!sidecarStopPromise) {
     const currentSidecar = sidecar;
     if (!currentSidecar) return;
@@ -256,7 +273,6 @@ async function stopSidecarThenQuit(): Promise<void> {
     });
   }
   await sidecarStopPromise;
-  app.quit();
 }
 
 function closeAllWindowsForQuit(): void {

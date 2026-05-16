@@ -28,18 +28,25 @@ jobs:
       # GitHub publish provider — needs write access to releases.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - uses: actions/setup-node@v4
+      # actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Enable pnpm from packageManager
+        run: corepack enable
+
+      - name: Install Rust stable toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Verify release tag matches desktop version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          node -e "const pkg=require('./packages/desktop/package.json'); const expected='v'+pkg.version; const actual=process.env.GITHUB_REF_NAME; if (actual !== expected) { console.error('Release tag '+actual+' does not match desktop version '+expected); process.exit(1); }"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
