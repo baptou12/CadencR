@@ -102,11 +102,13 @@ export const AgentBlock = memo(function AgentBlock({
   basePath,
   toolResultMap,
 }: AgentBlockProps) {
-  // Skip the Markdown cache for the actively streaming block so partial
-  // states do not pollute the LRU. All other blocks (older history, idle
-  // sessions) are stable and benefit from the cache when Virtuoso recycles
-  // them in and out of the viewport.
-  const markdownCacheKey = isStreaming ? undefined : block.id;
+  // Always thread a cache key — including the actively streaming block — so
+  // Virtuoso re-renders that don't change the markdown content (size measure
+  // passes, sibling re-renders, panel resizes) reuse the cached React tree
+  // instead of re-running `lowlight.highlight` synchronously on every commit.
+  // The cache itself is content-keyed and LRU-bounded in `Markdown.tsx`, so
+  // streaming snapshots evict older entries cleanly.
+  const markdownCacheKey = block.id;
   switch (block.type) {
     case "text":
       return block.isError ? (

@@ -18,6 +18,14 @@ const HISTORY_PREFETCH_ROWS = 12;
 interface AgentStreamVirtuosoContext {
   isStreaming: boolean;
   showStreamingIndicator: boolean;
+  /**
+   * Block id of the *currently* streaming item, or null when the session is
+   * idle. Threaded through Virtuoso `context` (not closed over by
+   * `renderItem`) so only items whose per-block `isStreaming` flag actually
+   * flips bust their `React.memo` — older items stay stable across chunks
+   * instead of re-rendering the entire list every time the cursor advances.
+   */
+  streamingBlockId: string | null;
 }
 
 interface AgentStreamProps {
@@ -146,12 +154,19 @@ export const AgentStream = memo(function AgentStream({
   const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
   const firstItemIndex = FIRST_ITEM_INDEX_BASE - historyPrependDisplayOffset;
 
+  // The streaming cursor is, by construction, the last displayed block —
+  // there is no separate "active block" pointer in the store. Threading just
+  // its id (not the whole `isStreaming` boolean) keeps the per-item
+  // `isStreaming={ctx.streamingBlockId === block.id}` check from flipping for
+  // any block other than the one actually receiving chunks.
+  const lastBlockId = displayBlocks.at(-1)?.id;
   const virtuosoContext = useMemo(
     (): AgentStreamVirtuosoContext => ({
       isStreaming: Boolean(isStreaming),
       showStreamingIndicator,
+      streamingBlockId: isStreaming && lastBlockId ? lastBlockId : null,
     }),
-    [isStreaming, showStreamingIndicator],
+    [isStreaming, showStreamingIndicator, lastBlockId],
   );
   const onScroller = useCallback(
     (el: HTMLElement | Window | null): void => {
@@ -172,16 +187,20 @@ export const AgentStream = memo(function AgentStream({
     },
     [displayBlocks, firstItemIndex, itemKeys],
   );
+  // `renderItem` deliberately does NOT depend on `isStreaming` /
+  // `streamingBlockId`. Those reach the item via Virtuoso `context` so
+  // advancing the streaming cursor only re-renders the (up to) two blocks
+  // whose per-block `isStreaming` flag actually flipped, not the entire list.
   const renderItem = useCallback(
-    (_i: number, block: AgentBlockData) => (
+    (_i: number, block: AgentBlockData, ctx: AgentStreamVirtuosoContext) => (
       <AgentStreamItem
         block={block}
-        isStreaming={isStreaming}
+        isStreaming={ctx.streamingBlockId === block.id}
         basePath={basePath}
         toolResultMap={toolResultMap}
       />
     ),
-    [basePath, isStreaming, toolResultMap],
+    [basePath, toolResultMap],
   );
 
   if (displayBlocks.length === 0) {
@@ -207,7 +226,6 @@ export const AgentStream = memo(function AgentStream({
         increaseViewportBy={{ top: 1600, bottom: 800 }}
         minOverscanItemCount={{ top: 12, bottom: 8 }}
         overscan={{ main: 800, reverse: 800 }}
-        skipAnimationFrameInResizeObserver
         components={VIRTUOSO_COMPONENTS}
         context={virtuosoContext}
         followOutput={followOutput}

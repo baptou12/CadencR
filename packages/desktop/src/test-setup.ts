@@ -116,7 +116,7 @@ HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
 // `vi.mock("react-virtuoso", ...)` locally — the local mock wins.
 vi.mock("react-virtuoso", async () => {
   const React = await import("react");
-  type ItemContent = (index: number, data?: unknown) => unknown;
+  type ItemContent = (index: number, data?: unknown, context?: unknown) => unknown;
   type FollowOutputScalar = "auto" | "smooth" | boolean;
   type FollowOutputCallback = (isAtBottom: boolean) => FollowOutputScalar;
   type FollowOutputProp = FollowOutputCallback | FollowOutputScalar;
@@ -248,7 +248,7 @@ vi.mock("react-virtuoso", async () => {
         React.createElement(
           "div",
           { key: i, "data-virtuoso-row-index": i },
-          itemContent ? (itemContent(i, data?.[i]) as React.ReactNode) : null,
+          itemContent ? (itemContent(i, data?.[i], context) as React.ReactNode) : null,
         ),
       );
     }
