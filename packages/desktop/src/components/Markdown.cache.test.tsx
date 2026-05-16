@@ -34,4 +34,18 @@ describe("Markdown — module-level tree cache", () => {
     render(<Markdown content={content} />);
     expect(cache.size()).toBe(0);
   });
+
+  it("caches identical streaming-block content across re-renders", () => {
+    // Regression for the ResizeObserver-loop fix: AgentBlock now passes
+    // `block.id` as cacheKey even while a block is streaming. The first
+    // render writes an entry; re-rendering with the same content (Virtuoso
+    // remeasure, sibling re-render, panel resize) must reuse it instead of
+    // re-running lowlight.highlight synchronously.
+    const content = "# Streaming snapshot\n\n```\nhello world\n```";
+    const { rerender } = render(<Markdown content={content} cacheKey="streaming-block" />);
+    expect(cache.size()).toBe(1);
+
+    rerender(<Markdown content={content} cacheKey="streaming-block" />);
+    expect(cache.size()).toBe(1);
+  });
 });

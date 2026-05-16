@@ -31,7 +31,7 @@ vi.mock("react-virtuoso", () => ({
     context,
   }: {
     data?: AgentBlockData[];
-    itemContent?: (index: number, block: AgentBlockData) => ReactNode;
+    itemContent?: (index: number, block: AgentBlockData, context: unknown) => ReactNode;
     firstItemIndex?: number;
     computeItemKey?: (index: number, block: AgentBlockData) => string;
     customScrollParent?: HTMLElement;
@@ -50,7 +50,7 @@ vi.mock("react-virtuoso", () => ({
       <div data-testid="virtuoso-mock">
         {data?.map((item, i) => (
           <div key={computeItemKey?.((firstItemIndex ?? 0) + i, item) ?? item.id}>
-            {itemContent?.((firstItemIndex ?? 0) + i, item)}
+            {itemContent?.((firstItemIndex ?? 0) + i, item, context)}
           </div>
         ))}
         {components?.Footer ? <components.Footer context={context} /> : null}

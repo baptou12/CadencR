@@ -14,15 +14,17 @@ vi.mock("react-virtuoso", () => ({
     data,
     itemContent,
     components,
+    context,
   }: {
     data?: AgentBlockData[];
-    itemContent?: (index: number, block: AgentBlockData) => ReactNode;
+    itemContent?: (index: number, block: AgentBlockData, context: unknown) => ReactNode;
     components?: { Header?: () => ReactNode; Footer?: () => ReactNode };
+    context?: unknown;
   }) => (
     <div data-testid="virtuoso-mock">
       {components?.Header ? <components.Header /> : null}
       {data?.map((item, i) => (
-        <div key={item.id}>{itemContent?.(i, item)}</div>
+        <div key={item.id}>{itemContent?.(i, item, context)}</div>
       ))}
       {components?.Footer ? <components.Footer /> : null}
     </div>
