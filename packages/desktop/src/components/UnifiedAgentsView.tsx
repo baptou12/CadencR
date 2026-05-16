@@ -26,11 +26,8 @@ import {
 } from "@/components/UnifiedAgentsFilterLanguage";
 import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
-import {
-  countRunningAgents,
-  useUnifiedAgentsData,
-  type UnifiedAgentsData,
-} from "@/components/UnifiedAgentsViewData";
+import { useUnifiedAgentsData, type UnifiedAgentsData } from "@/components/UnifiedAgentsViewData";
+import { useLiveWorkingCount } from "@/stores/session-status-store";
 
 export function UnifiedAgentsView(): ReactElement {
   const [filters, setFilters] = useUnifiedAgentsFilters();
@@ -44,6 +41,14 @@ export function UnifiedAgentsView(): ReactElement {
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
   const data = useUnifiedAgentsData(filters);
+  // Count working agents via the canonical live store, scoped to what's
+  // currently visible in the grid. Selector returns a number, so unrelated
+  // session-status mutations don't re-render the header.
+  const visibleSessionIds = useMemo(
+    () => data.agents.map((entry) => entry.session.sessionDbId),
+    [data.agents],
+  );
+  const runningAgentsCount = useLiveWorkingCount(visibleSessionIds);
   const serializedFilterText = useMemo(
     () => serializeUnifiedAgentsFilterText(filters, projects),
     [filters, projects],
@@ -94,7 +99,7 @@ export function UnifiedAgentsView(): ReactElement {
         projects={projects}
         projectsError={projectsQuery.isError ? projectsQuery.error : null}
         agentsCount={data.agents.length}
-        runningAgentsCount={countRunningAgents(data.agents)}
+        runningAgentsCount={runningAgentsCount}
         agentsPerRowSetting={agentsPerRow}
         filterText={filterText}
         searchInputRef={searchInputRef}

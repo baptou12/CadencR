@@ -9,7 +9,17 @@
  *   which aggregates per-session entries on the fly;
  * - the conversation badge (`AgentSession`) and the input bar's
  *   "disabled while running" check (`AgentPromptBar`) via
- *   `useSessionStatus(sessionId)`.
+ *   `useSessionStatus(sessionId)`;
+ * - the unified-agents sidebar button counter (`UnifiedAgentsSidebarLink`)
+ *   and the unified-agents grid header counter (`UnifiedAgentsView`)
+ *   via `useLiveWorkingCount(sessionDbIds)`;
+ * - the unified-agents "Recent" filter (`UnifiedAgentsViewData`) via
+ *   `useLiveActiveSessionIds()`.
+ *
+ * `ws-session-store.sessions[id].lifecycle` is a separate WS-driven
+ * concept (turn-level state machine) used for cross-feature concerns
+ * like `powerSaveBlocker`, app-close confirmation, and "Stop all
+ * agents". It is NOT the live status — only this store is.
  *
  * Wire-format contract with the backend (`domain::session_status`):
  *
@@ -278,6 +288,64 @@ export function useFeatureStatus(featureId: number | null | undefined): {
         if (entry.featureId === featureId) entries.push(entry);
       }
       return aggregateFeatureStatus(entries);
+    }),
+  );
+}
+
+/**
+ * Count of sessions in the given id set whose live status is `"agent"`
+ * (actively working). Used by the unified-agents grid header so the
+ * "running" badge stays in lock-step with the canonical live store
+ * for sessions visible in the current grid. Returning a number means
+ * unrelated seq bumps don't re-render the consumer.
+ */
+export function useLiveWorkingCount(sessionIds: readonly number[]): number {
+  return useSessionStatusStore((s) => {
+    let count = 0;
+    for (const id of sessionIds) {
+      if (s.bySession[id]?.status === "agent") count++;
+    }
+    return count;
+  });
+}
+
+/**
+ * Global count of `agent`-status sessions across the whole store —
+ * regardless of any REST filter. Used by the unified-agents sidebar
+ * button so a newly-started agent that hasn't appeared in the cached
+ * `useGetUnifiedAgents` response yet still bumps the counter the
+ * moment its `session_status.update` lands. (The REST query is
+ * configured with `staleTime: Infinity` and won't refetch on its own.)
+ */
+export function useLiveTotalWorkingCount(): number {
+  return useSessionStatusStore((s) => {
+    let count = 0;
+    for (const entry of Object.values(s.bySession)) {
+      if (entry.status === "agent") count++;
+    }
+    return count;
+  });
+}
+
+/**
+ * Returns the sorted list of `sessionDbId`s with non-idle live status
+ * (i.e. the agent is either working or asking). Used by the unified-agents
+ * grid "Recent" filter to keep an agent visible while it's still active,
+ * even if its REST `last_activity_at` is older than the freshness window.
+ *
+ * Sorted + array-shaped so `useShallow` can element-compare and skip
+ * re-renders on `seq` bumps that don't change membership. Consumers that
+ * need O(1) lookup should wrap this in a `Set` via `useMemo`.
+ */
+export function useLiveActiveSessionIds(): readonly number[] {
+  return useSessionStatusStore(
+    useShallow((s) => {
+      const ids: number[] = [];
+      for (const [k, v] of Object.entries(s.bySession)) {
+        if (v.status !== "idle") ids.push(Number(k));
+      }
+      ids.sort((a, b) => a - b);
+      return ids;
     }),
   );
 }
