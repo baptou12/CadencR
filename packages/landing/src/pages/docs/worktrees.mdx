@@ -1,0 +1,55 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Worktrees"
+description: "Why each feature in Cadencr runs in its own Git worktree, and how to work with them without surprise."
+---
+
+import DocCallout from "@/components/docs/DocCallout.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+
+A **worktree** is a checked-out copy of your repository on its own branch, living in its own folder. Cadencr leans on worktrees so several features — and several agents — can work in parallel without overwriting each other's files.
+
+## Why Cadencr uses worktrees
+
+If two agents are editing the same checkout at once, you get one of two outcomes: a corrupted working tree, or both agents fighting over the same files. Neither is fun. Worktrees give every feature its own isolated playground:
+
+- the agent has a clean directory it can change freely,
+- you can run tests or builds against one feature without affecting the others,
+- switching features no longer means a `git stash` dance,
+- archiving or deleting a feature is just cleaning up its worktree.
+
+<DocCallout title="One-line mental model" variant="tip">
+  Feature = a focused unit of work. Worktree = the folder on disk where that work happens.
+</DocCallout>
+
+## How worktrees show up in the UI
+
+You will rarely have to think about them, but a few places make the worktree explicit:
+
+- **Command palette** (<kbd>⌘ K</kbd>) — when you start a new feature, the worktree step lets you pick an existing one or create a fresh worktree on a new branch.
+- **Git tab** — the branch displayed is the branch of the current feature's worktree. The diff is against that worktree's target branch.
+- **Terminal** — every pane starts inside the feature's worktree folder. The cwd warning appears if something drifts elsewhere.
+- **Editor** — the file tree is rooted at the worktree.
+
+## When to reuse vs create
+
+You usually want a **new worktree** when:
+
+- you are starting a new feature, fix, or refactor,
+- you want a clean branch for the agent to work on,
+- you might want to compare results from several attempts side by side.
+
+You usually want to **reuse an existing worktree** when:
+
+- you are continuing yesterday's work on the same branch,
+- the feature is mid-review and you do not want to start a new branch.
+
+## Cleaning up
+
+Archiving a feature (<kbd>⌘ <ShiftIcon /> X</kbd>) leaves its worktree alone by default. If you archive an already-archived feature, Cadencr removes the worktree from disk and prunes it from Git. That two-step is intentional — it is hard to lose work by accident.
+
+## Related docs
+
+- [Git in Cadencr](../git/) — the rest of the Git story
+- [Feature workspace](../feature-workspace/) — what lives on top of each worktree
+- [Shortcuts](../shortcuts/) — keyboard map for the surfaces that touch worktrees

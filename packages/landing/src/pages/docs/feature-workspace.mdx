@@ -4,8 +4,8 @@ title: "Feature workspace"
 description: "Your home base for one feature, fix, or task — with agent work, files, terminal, and Git in one place."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 
 A feature workspace is the main place where you do one piece of work in Cadencr. If a task needs agent help, file edits, terminal commands, and a quick Git confidence check, this is where those things live together instead of being scattered across separate windows.
 
@@ -27,11 +27,6 @@ It gives you a single, focused space for:
 
 The big mental model is simple: **one workspace = one piece of work**. That makes it easier to stay organized, easier to review changes, and much easier to come back later without asking yourself, “Wait, which tab was the important one again?”
 
-<DocScreenshotPlaceholder
-  title="Feature workspace overview"
-  caption="A single workspace can hold your agent session, editor, terminal, and Git view side by side."
-/>
-
 ## What you’ll usually see there
 
 The exact layout can change a bit, but these are the usual suspects:
@@ -44,6 +39,18 @@ The exact layout can change a bit, but these are the usual suspects:
 | Git view           | Seeing changed files and checking your work before the next step     | When you want the “okay, what actually changed?” view                    |
 
 You may see these as tabs, panes, or both. That is normal. The workspace is meant to help you move between thinking, checking, editing, and verifying without losing the thread.
+
+The four panes have one-stroke keyboard switches: <kbd>⌘ <ShiftIcon /> A</kbd> for Agent, <kbd>⌘ <ShiftIcon /> E</kbd> for Editor, <kbd>⌘ <ShiftIcon /> T</kbd> for Terminal, and <kbd>⌘ <ShiftIcon /> G</kbd> for Git.
+
+### The feature header
+
+Above the panes you get a handful of header controls that are easy to miss:
+
+- **Feature label** — <kbd>⌘ <ShiftIcon /> L</kbd> to rename inline.
+- **Feature settings popover** — <kbd>⌘ <ShiftIcon /> P</kbd> (or <kbd>⌥ P</kbd>) for the per-feature options (provider, model defaults, working directory, …).
+- **Custom actions bar** — your saved actions live here; the `+` opens the action menu. See [Custom actions](../custom-actions/).
+- **Git actions** — <kbd>⌘ G</kbd> opens the popover with commit / push / compare; the branch picker is <kbd>⌘ B</kbd>.
+- **Archive** — <kbd>⌘ <ShiftIcon /> X</kbd> archives the feature (or permanently deletes it when run on an already-archived one). Archived features stay searchable from the sidebar; they are not destroyed on first press.
 
 ## A good way to work inside it
 

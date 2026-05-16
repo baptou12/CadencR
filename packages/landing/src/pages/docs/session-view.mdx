@@ -4,8 +4,8 @@ title: "Session view"
 description: "Read a single agent session, follow progress, and jump back in without getting buried in every tiny update."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 
 ## What this page is for
 
@@ -17,12 +17,6 @@ It helps you:
 - understand what already happened
 - decide whether to nudge, redirect, or continue the work
 - come back later without needing a memory palace
-
-<DocScreenshotPlaceholder
-  title="Session view"
-  caption="A single session with the conversation, progress, and surrounding context in one place."
-  hint="Swap this for a real screenshot of an active session view."
-/>
 
 <DocCallout title="Good news" variant="tip">
   You do **not** need to read every token. Most of the time, you can scan for intent, progress, and
@@ -48,6 +42,52 @@ A good skim usually looks like this:
 | Whether it is making progress    | New files, edits, completed steps, or a concise recap               |
 | Whether it is stuck              | Repeated attempts, errors, or questions waiting on you              |
 | Whether you trust the direction  | Clear reasoning, sensible changes, and results that match your goal |
+
+## Approvals, permissions, and questions
+
+Most sessions will pause occasionally and ask for input. Each prompt has its own keyboard scope so you can clear them without leaving the keyboard.
+
+### Plan approval
+
+When an agent finishes planning, an approval bar appears:
+
+- <kbd>⌘ Y</kbd> — approve and let the agent execute
+- <kbd>⌘ N</kbd> — request changes (leaves room for feedback before execution)
+- <kbd>Esc</kbd> — reject the plan entirely
+
+### Tool permission prompts
+
+When an agent wants to run a tool that needs your say-so, Cadencr surfaces a permission card:
+
+- <kbd>⌘ Y</kbd> — allow once
+- <kbd>⌘ L</kbd> — allow for the rest of the session
+- <kbd>⌘ N</kbd> — deny
+
+If you prefer the agent to fly without these prompts inside a sandboxed worktree, the permission-mode cycle (<kbd><ShiftIcon /> Tab</kbd> in the prompt) and the “bypass permissions” settings in **Settings → Runtime & Models** are how you opt in deliberately.
+
+### Multiple-choice questions
+
+When the agent asks a multi-option question, the question drawer takes over the keyboard:
+
+- <kbd>1</kbd>–<kbd>9</kbd> — pick an option by number
+- <kbd>⌘ O</kbd> — toggle the **Other…** free-text answer
+- <kbd>Enter</kbd> — submit and continue
+- <kbd>←</kbd> / <kbd>→</kbd> — jump between questions in a multi-step batch
+
+### Stopping a runaway
+
+- <kbd>Esc</kbd> stops the current agent.
+- <kbd>⌘ Esc</kbd> stops **every** running agent across the workspace — useful when something
+  hot-loops or you want to bail before a costly tool call lands.
+- <kbd>⌘ Enter</kbd> (when the prompt is unfocused) maximizes the session into a full-screen view;
+  <kbd>
+    ⌘ <ShiftIcon /> Z
+  </kbd>
+  collapses it again.
+- <kbd>
+    ⌘ <ShiftIcon /> S
+  </kbd>
+  re-enables auto-scroll if you scrolled up to read history and the stream kept moving.
 
 ## Ways to steer or continue the work
 
@@ -90,5 +130,5 @@ editor context, or the next thing to work on.
 
 - [Feature workspace](../feature-workspace/) — your bigger home base around the session
 - [Unified agent list](../unified-agent-list/) — find the right session when you have several going
-- [Prompting](../prompting/) — write clearer requests and guide the agent more effectively
+- [Prompt](../prompting/) — write clearer requests and guide the agent more effectively
 - [Docs home](../) — the quick product overview if you are still getting oriented

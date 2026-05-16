@@ -7,8 +7,15 @@
     "strict": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
-    "paths": { "@/*": ["src/*"] }
+    "paths": {
+      "@/*": ["src/*"],
+      "@desktop-shortcuts/*": ["../desktop/src/lib/shortcuts/*"]
+    }
   },
-  "include": ["src/**/*", ".astro/types.d.ts"],
+  "include": [
+    "src/**/*",
+    ".astro/types.d.ts",
+    "../desktop/src/lib/shortcuts/registry.ts"
+  ],
   "exclude": ["dist", "design"]
 }

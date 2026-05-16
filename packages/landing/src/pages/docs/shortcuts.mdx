@@ -5,225 +5,77 @@ description: "A practical keyboard shortcuts guide for moving around Cadencr wit
 ---
 
 import DocCallout from "@/components/docs/DocCallout.astro";
+import ShortcutTable from "@/components/docs/ShortcutTable.astro";
 import Kbd from "@/components/ui/Kbd.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 
 If Cadencr is where you keep work moving, shortcuts help you spend less time reaching for the mouse.
 
 You do **not** need to memorize every key combo on day one. Learn the few that save you the most time, then add more as you go.
 
-<DocCallout title="Quick help" variant="tip">
-  If you forget a shortcut, press <Kbd>⌘</Kbd>
-  <Kbd>/</Kbd> to open the in-app shortcuts help.
+## How shortcut scopes work
+
+Cadencr binds shortcuts to **scopes** instead of throwing every binding at the global keyboard listener. The same combo can do different jobs in different scopes — that is normal and on purpose.
+
+The scopes you will meet most often:
+
+- **Global** — work anywhere in the app.
+- **Feature panes** — the Agent / Editor / Terminal / Git tabs inside a feature workspace.
+- **Feature actions** — header buttons (commit, push, branch picker, …).
+- **Agent & prompt** — when the Agent tab is focused.
+- **Plan approval / Tool permission / Agent questions** — temporary scopes that turn on while a prompt is showing.
+- **Diff viewer** — when the Git tab is focused.
+- **Editor / Terminal** — when those tabs have focus.
+
+<ShortcutTable scope="global" />
+
+<ShortcutTable scope="settings" />
+
+<ShortcutTable scope="sidebar" />
+
+<ShortcutTable scope="feature-panes" heading="Feature workspace — tabs" />
+
+<ShortcutTable scope="feature" heading="Feature workspace — actions" />
+
+<ShortcutTable scope="agent" />
+
+<DocCallout title="Why ⌘ Enter does two things" variant="note">
+  Inside a focused prompt with text, <Kbd>⌘</Kbd> <Kbd>↵</Kbd> sends. Outside the prompt it
+  maximizes the session. Same combo, different scope — pick whichever feels natural for the moment.
 </DocCallout>
 
-## Why shortcuts matter here
+<ShortcutTable scope="plan-approval" />
 
-Cadencr has a few surfaces you bounce between a lot: the sidebar, feature workspace, agent session, editor, terminal, and unified agent list.
+<ShortcutTable scope="permission-prompt" />
 
-The faster you can move between those places, the easier it is to stay focused on the work itself.
+<ShortcutTable scope="question-drawer" />
 
-A few good shortcuts help you:
+<ShortcutTable scope="diff-viewer" />
 
-- switch views without losing your train of thought,
-- stop or steer an agent quickly when it gets adventurous,
-- open files and search faster than point-and-click wandering, and
-- keep your hands on the keyboard when you are already in the zone.
+<ShortcutTable scope="editor" />
 
-## Shortcut table
+<ShortcutTable scope="terminal" />
 
-The app’s built-in help uses Mac-style symbols, so this page does too. A few shortcuts are **context-sensitive**, which is a polite way of saying “the same keys may do different jobs in different views, and that is normal.”
+<DocCallout title="Heads up: editor vs terminal" variant="note">
+  Both surfaces use <Kbd>⌘</Kbd> <Kbd>D</Kbd> / <Kbd>⌘</Kbd>{" "}
+  <Kbd>
+    <ShiftIcon />
+  </Kbd>{" "}
+  <Kbd>D</Kbd> for splits, but the directions are intentionally **opposite** — most people want
+  different defaults in each.
+</DocCallout>
 
-<table>
-  <thead>
-    <tr>
-      <th>Area</th>
-      <th>Shortcut</th>
-      <th>What it does</th>
-      <th>Why you will care</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Anywhere</td>
-      <td>⌘ /</td>
-      <td>Open keyboard shortcuts help</td>
-      <td>Helpful when you need a quick reminder.</td>
-    </tr>
-    <tr>
-      <td>Anywhere</td>
-      <td>⌘ K</td>
-      <td>Open the command palette</td>
-      <td>Great when you know what you want to do, just not where it is hiding.</td>
-    </tr>
-    <tr>
-      <td>Anywhere</td>
-      <td>⌘ B</td>
-      <td>Toggle the sidebar</td>
-      <td>Useful when you want more breathing room for actual work.</td>
-    </tr>
-    <tr>
-      <td>Anywhere</td>
-      <td>⌘ ⇧ N</td>
-      <td>Create a new session</td>
-      <td>Fast way to try another agent run or a cleaner attempt.</td>
-    </tr>
-    <tr>
-      <td>Navigation</td>
-      <td>⌘ ⌥ ← / →</td>
-      <td>Move between focus zones</td>
-      <td>Hop between sidebar, main content, and other keyboard-driven areas.</td>
-    </tr>
-    <tr>
-      <td>Navigation</td>
-      <td>⌘ ⌥ ↑ / ↓</td>
-      <td>Move within the current zone</td>
-      <td>Handy when browsing lists without touching the mouse.</td>
-    </tr>
-    <tr>
-      <td>Navigation</td>
-      <td>⌘ 1–9</td>
-      <td>Activate a visible sidebar project or feature</td>
-      <td>
-        Hold <code>⌘</code> to reveal the row numbers before choosing one.
-      </td>
-    </tr>
-    <tr>
-      <td>Navigation</td>
-      <td>Enter</td>
-      <td>Activate the focused item</td>
-      <td>The classic “yes, that one” key.</td>
-    </tr>
-    <tr>
-      <td>Feature workspace</td>
-      <td>⌘ ⇧ A / T / G / E</td>
-      <td>Jump to Agent, Terminal, Git, or Editor</td>
-      <td>
-        Probably the highest-value set to learn after <code>⌘ K</code>.
-      </td>
-    </tr>
-    <tr>
-      <td>Unified agent list</td>
-      <td>⌘ ⇧ R</td>
-      <td>Open unified agents</td>
-      <td>Perfect for “I know I had a session for this somewhere…” moments.</td>
-    </tr>
-    <tr>
-      <td>Unified agent list</td>
-      <td>⌘ ⇧ F</td>
-      <td>Jump to agent search</td>
-      <td>Start filtering instead of visually hunting through a crowded list.</td>
-    </tr>
-    <tr>
-      <td>Unified agent list</td>
-      <td>⌘ ⇧ P</td>
-      <td>Pin or unpin the active agent</td>
-      <td>Keep the important session close and the chaos slightly farther away.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>⌘ Y</td>
-      <td>Approve the visible plan</td>
-      <td>Use when a plan is ready and you want the agent to start executing.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>⌘ N</td>
-      <td>Request plan changes</td>
-      <td>Leaves room to explain what should change before execution starts.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>Enter</td>
-      <td>Send your message</td>
-      <td>Good for quick back-and-forth once you are already drafting in the prompt box.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>Esc</td>
-      <td>Stop the current agent</td>
-      <td>Useful when the agent is heading in the wrong direction.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>⌘ G</td>
-      <td>Open the current agent’s diff</td>
-      <td>Great when you want to inspect the actual change.</td>
-    </tr>
-    <tr>
-      <td>Agent session</td>
-      <td>⌘ Enter</td>
-      <td>Maximize the current agent</td>
-      <td>Helpful when you want to focus on one conversation without visual clutter.</td>
-    </tr>
-    <tr>
-      <td>Editor</td>
-      <td>⌘ P</td>
-      <td>Open fuzzy file search</td>
-      <td>The fastest way to jump to a file when you know part of its name.</td>
-    </tr>
-    <tr>
-      <td>Editor</td>
-      <td>⌘ ⇧ F</td>
-      <td>Search across file contents</td>
-      <td>Use this when you remember text, not the file it lives in.</td>
-    </tr>
-    <tr>
-      <td>Editor / Terminal</td>
-      <td>⌘ D</td>
-      <td>Split vertically</td>
-      <td>Nice when you want side-by-side comparison instead of tab ping-pong.</td>
-    </tr>
-    <tr>
-      <td>Editor / Terminal</td>
-      <td>⌘ ⇧ D</td>
-      <td>Split horizontally</td>
-      <td>Useful when stacking views feels more natural than placing them side by side.</td>
-    </tr>
-  </tbody>
-</table>
+<ShortcutTable scope="unified-agents" heading="Unified agent list" />
 
-## A few habit-building tips
+## Three habits worth forming
 
-### 1. Learn three anchors first
-
-If you only learn three things this week, make them:
-
-- <Kbd>⌘</Kbd>
-  <Kbd>K</Kbd> for command palette,
-- <Kbd>⌘</Kbd>
-  <Kbd>⇧</Kbd>
-  <Kbd>A</Kbd>, <Kbd>⌘</Kbd>
-  <Kbd>⇧</Kbd>
-  <Kbd>T</Kbd>, <Kbd>⌘</Kbd>
-  <Kbd>⇧</Kbd>
-  <Kbd>G</Kbd>, and <Kbd>⌘</Kbd>
-  <Kbd>⇧</Kbd>
-  <Kbd>E</Kbd> for tab switching, and
-- <Kbd>⌘</Kbd>
-  <Kbd>/</Kbd> for help.
-
-That little trio covers a surprising amount of daily life.
-
-### 2. Use the keyboard to move, not just to type
-
-A lot of people use shortcuts only for search. In Cadencr, the bigger win is navigation.
-
-If you practice moving between areas with <Kbd>⌘</Kbd><Kbd>⌥</Kbd><Kbd>←</Kbd> and <Kbd>⌘</Kbd><Kbd>⌥</Kbd><Kbd>→</Kbd>, the app starts feeling much easier to navigate.
-
-### 3. Keep one "save me time" shortcut in another tab of your brain
-
-When in doubt:
-
-- use <Kbd>⌘</Kbd><Kbd>P</Kbd> to find a file,
-- use <Kbd>⌘</Kbd><Kbd>⇧</Kbd><Kbd>F</Kbd> to find text,
-- use <Kbd>⌘</Kbd><Kbd>G</Kbd> to inspect what the agent changed.
-
-Those three shortcuts solve a lot of common “where is it?” moments.
+1. **Anchor on three keys**: <Kbd>⌘</Kbd> <Kbd>K</Kbd> for the command palette, <Kbd>⌘</Kbd> <Kbd>/</Kbd> for help, and <Kbd>⌘</Kbd> <Kbd><ShiftIcon /></Kbd> <Kbd>A</Kbd>/<Kbd>E</Kbd>/<Kbd>T</Kbd>/<Kbd>G</Kbd> for the four panes.
+2. **Move with the keyboard**, not just type with it. <Kbd>⌘</Kbd> <Kbd>⌥</Kbd> + arrows works almost everywhere there is something to move between.
+3. **Use approval keys** when the agent pauses. <Kbd>⌘</Kbd> <Kbd>Y</Kbd> / <Kbd>⌘</Kbd> <Kbd>N</Kbd> / <Kbd>Esc</Kbd> is a much smoother review loop than reaching for the mouse on every prompt.
 
 ## Related docs
 
-- [Feature workspace](../feature-workspace/) for the main work area these shortcuts help you move around
-- [Session view](../session-view/) for reading and steering one agent session
-- [Unified agent list](../unified-agent-list/) for the session-heavy view where search and pinning really shine
-- [Workspace pages](../workspace-pages/) for the big-picture map of where everything lives
-- [Prompting](../prompting/) if you want better inputs once you have reached the prompt box at keyboard speed
+- [Feature workspace](../feature-workspace/) for where most of these bindings apply
+- [Session view](../session-view/) for the approval and permission flows in detail
+- [Unified agent list](../unified-agent-list/) for the grid-navigation shortcuts in practice
+- [Prompt](../prompting/) for the model picker, thinking-effort, and permission-mode controls

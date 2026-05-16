@@ -1,18 +1,21 @@
 ---
 layout: "@/layouts/DocLayout.astro"
-title: "Prompting"
+title: "Prompt"
 description: "Understand the prompt bar in Cadencr: where it appears, what it can do, and how it helps you work with agents."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import Kbd from "@/components/ui/Kbd.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+import promptImage from "@/assets/docs/prompt.png";
 
 The prompt feature in Cadencr is more than a text box. It is the main control surface for working with an agent: starting work, continuing a session, attaching context, and responding when the agent needs something from you.
 
-<DocScreenshotPlaceholder
-  title="Prompt bar inside a feature or session"
+<DocScreenshot
+  src={promptImage}
+  alt="Cadencr prompt bar showing a draft, an attachment, model picker, thinking-effort, and permission-mode controls"
   caption="The prompt area is where you start work, continue a session, and manage the flow of agent interaction."
-  hint="Replace this with a screenshot of the prompt bar showing a draft, an attachment, and nearby controls."
 />
 
 <DocCallout title="Simple mental model" variant="tip">
@@ -31,29 +34,32 @@ You will usually use the prompt bar to:
 
 In other words, this is not just input. It is the main handoff point between you and the agent.
 
-## Where it appears
-
-You will mainly see the prompt feature in two places:
-
-| Place                 | Why it matters                                                                                                        |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Feature workspace** | Good when you want to work in the broader context of a feature, alongside files, Git, terminal, and multiple sessions |
-| **Session view**      | Good when you want to focus on one specific agent conversation and steer it more closely                              |
-
-The same basic prompt experience follows you in both places, so you do not have to learn two different ways of working.
-
 ## What the prompt feature includes
 
 Here are the main capabilities around the prompt bar:
 
-| Feature                    | What it does                                             | Why it is useful                                                                    |
-| -------------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| **Draft saving**           | Keeps your in-progress text around while you work        | Helpful when you switch context or come back later                                  |
-| **Prompt history**         | Lets you return to earlier prompts                       | Useful when you repeat similar actions or want to resend a previous request         |
-| **File mentions**          | Helps you reference project files directly in the prompt | Makes it easier to point the agent at the right place                               |
-| **Slash commands**         | Gives you command-style actions from the prompt area     | Speeds up common workflows without leaving the keyboard                             |
-| **Image attachments**      | Lets you attach screenshots or visual context            | Helpful when the task involves UI, design, or anything easier to show than describe |
-| **Send and stop controls** | Start a request or stop the current run                  | Keeps you in control when the agent is moving too fast or in the wrong direction    |
+| Feature               | How to reach it                                                                | Why it is useful                                                                    |
+| --------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| **Draft saving**      | Automatic — drafts persist per session                                         | Helpful when you switch context or come back later                                  |
+| **Prompt history**    | Up / down arrow from an empty prompt                                           | Useful when you repeat similar actions or want to resend a previous request         |
+| **File mentions**     | Type `@` and start typing a path                                               | Makes it easier to point the agent at the right place                               |
+| **Slash commands**    | Type `/` at the start of the prompt                                            | Speeds up common workflows without leaving the keyboard                             |
+| **Image attachments** | Paste an image, drag and drop, or use the attach button                        | Helpful when the task involves UI, design, or anything easier to show than describe |
+| **Send**              | <kbd>⌘ Enter</kbd>                                                             | Plain <kbd>Enter</kbd> inserts a newline so you can write multi-line prompts        |
+| **Stop**              | <kbd>Esc</kbd> inside the session, or <kbd>⌘ Esc</kbd> for every running agent | Keeps you in control when the agent is moving in the wrong direction                |
+| **Model picker**      | <kbd>⌘ P</kbd>                                                                 | Switch model per-message without leaving the prompt bar                             |
+| **Thinking effort**   | <kbd>⌘ T</kbd>                                                                 | Cycle reasoning effort when the task is harder (or easier) than usual               |
+| **Permission mode**   | <Kbd><ShiftIcon /></Kbd> <Kbd>Tab</Kbd>                                        | Cycle between ask / accept-edits / bypass — pick the right amount of guardrails     |
+
+### Mentions and slash commands in detail
+
+- **`@` mentions** open a file picker as you type. Pick a file (or a folder) and Cadencr inlines the reference so the agent knows exactly what to read.
+- **`/` slash commands** at the start of the prompt expose project-specific and built-in commands — pre-baked prompts your agent provider exposes. Arrow keys to pick, <kbd>Enter</kbd> or <kbd>Tab</kbd> to insert.
+- **Image attachments** support paste, drag-and-drop, and the attach button. Previews show in a strip above the prompt and stay attached until you remove them or send.
+
+### Picking model and effort per message
+
+Cadencr stays provider-neutral: the model picker (<kbd>⌘ P</kbd>) lists whatever models your active provider profile exposes — Claude, Codex, OpenCode, or a custom model you added in **Settings → Runtime & Models**. The thinking-effort cycle (<kbd>⌘ T</kbd>) toggles among the levels that model supports.
 
 ## What happens around the prompt while you work
 

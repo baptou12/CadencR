@@ -256,6 +256,47 @@
   .doc-card {
     box-shadow: var(--shadow-xs);
   }
+
+  /* Keyboard shortcut chip.
+     Mirrors the desktop app's KbdShortcut "modal" variant so a docs
+     shortcut looks the same as the in-app shortcuts modal. Sized at
+     the desktop's full-size "inline"/"modal" scale (not the compact
+     "sm" one) so the chips read as proper keys in marketing-density
+     prose. Applied to both the <Kbd> Astro component (.doc-kbd) and
+     any raw <kbd> in MDX prose. */
+  .doc-kbd,
+  .prose kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--color-border);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklch, var(--color-sidebar) 88%, var(--color-foreground) 4%);
+    color: var(--color-foreground);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    box-shadow:
+      0 1px 0 0 rgb(0 0 0 / 0.35),
+      inset 0 1px 0 0 color-mix(in oklch, var(--color-foreground) 6%, transparent);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  /* Inline SVG glyphs inside a kbd chip (e.g. the Shift arrow-up icon)
+     match the chip's text size and inherit its color. */
+  .doc-kbd svg,
+  .prose kbd svg {
+    width: 12px;
+    height: 12px;
+    display: inline-block;
+    vertical-align: middle;
+  }
 }
 
 /* Cursor blink for placeholder chrome / terminal */

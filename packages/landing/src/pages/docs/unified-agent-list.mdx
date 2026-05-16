@@ -6,6 +6,7 @@ description: "Find, filter, pin, and scan agent sessions without losing track of
 
 import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
 import unifiedAgentsImage from "@/assets/unified-agents.png";
 
 ## What this page is for
@@ -25,6 +26,7 @@ Use it when you want to:
   src={unifiedAgentsImage}
   alt="Cadencr agent cockpit showing a live grid of agent sessions with filter bar, status indicators, and resizable panels"
   caption="Multiple agent sessions visible at once — stream, edit, and review without switching tabs."
+  bordered={false}
 />
 
 ## How to find the right agent fast
@@ -33,19 +35,19 @@ Start with the filter text box. Type any word you remember from the session name
 
 Then use the available filters to narrow things down further when the list gets crowded.
 
-| If you want to...                   | Try this                    |
-| ----------------------------------- | --------------------------- |
-| Browse visually                     | Use **grid** view           |
-| Scan lots of sessions quickly       | Use **list** view           |
-| Keep today's important work nearby  | **Pin** those sessions      |
-| Move faster with less mouse mileage | Use **keyboard navigation** |
+| If you want to...                   | Try this                                              |
+| ----------------------------------- | ----------------------------------------------------- |
+| Browse visually                     | Stay on the default grid                              |
+| Pack more sessions on screen        | Use the **per-row stepper** to raise the grid density |
+| Keep today's important work nearby  | **Pin** those sessions (<kbd>⌘<ShiftIcon />P</kbd>)   |
+| Move faster with less mouse mileage | Use **keyboard navigation** (<kbd>⌘⌥</kbd> + arrows)  |
 
 A few practical tips:
 
 - Start broad, then add another word if needed.
-- Switch to **list** view when you want dense, fast scanning.
-- Switch to **grid** view when you want a more visual browse.
+- Raise the per-row count when you want dense, fast scanning; lower it when you want larger preview tiles.
 - If you find a session you will revisit, pin it right away.
+- Use <kbd>⌘<ShiftIcon />F</kbd> to jump straight into the search box without reaching for the mouse.
 
 ## How pinning and scanning help
 
@@ -64,7 +66,7 @@ You do not need a complicated system. A few boring habits work surprisingly well
 
 - Keep session names clear and human-readable when possible.
 - Use **pins sparingly** so the important sessions stay obvious.
-- Use **list** view for quick morning or end-of-day check-ins.
+- Bump the per-row count up for quick morning or end-of-day check-ins, then drop it back down when you settle into a session.
 - Unpin sessions when they stop being active.
 - Scan the unified list first when you feel lost instead of opening random tabs one by one.
 

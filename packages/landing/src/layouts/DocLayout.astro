@@ -1,23 +1,37 @@
 ---
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import Wrap from "@/components/ui/Wrap.astro";
-import Eyebrow from "@/components/ui/Eyebrow.astro";
 import DocsSidebar from "@/components/docs/DocsSidebar.astro";
 import DocsToc from "@/components/docs/DocsToc.astro";
+import { DOC_SECTIONS } from "@/lib/docs";
 
 interface Props {
   title: string;
   description?: string;
 }
 const { title, description } = Astro.props;
+
+/**
+ * Derive the page slug from the current URL and look up the matching
+ * sidebar label. The visible H1 always mirrors what the reader clicked
+ * in the sidebar, even when the SEO/frontmatter `title` is longer
+ * (e.g. "The IDE for the era of agents" vs sidebar "Concept").
+ */
+function slugFromPath(pathname: string): string {
+  const match = pathname.match(/\/docs\/?([^/]*)\/?$/);
+  return match ? match[1] : "";
+}
+
+const slug = slugFromPath(Astro.url.pathname);
+const navLabel =
+  DOC_SECTIONS.flatMap((s) => s.pages).find((p) => p.slug === slug)?.navLabel ?? title;
 ---
 <BaseLayout title={`${title} — Cadencr`} description={description}>
   <section class="py-10 pb-24">
     <Wrap>
       <div class="mb-8 max-w-[760px]">
-        <Eyebrow>Docs</Eyebrow>
-        <h1 class="mt-3 mb-3 text-[clamp(28px,3vw,38px)] font-semibold leading-[1.12] tracking-[-0.018em] [text-wrap:balance]">
-          {title}
+        <h1 class="mt-0 mb-3 text-[clamp(28px,3vw,38px)] font-semibold leading-[1.12] tracking-[-0.018em] [text-wrap:balance]">
+          {navLabel}
         </h1>
         {description && <p class="max-w-[680px] text-sm text-muted-foreground">{description}</p>}
       </div>

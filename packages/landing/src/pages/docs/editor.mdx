@@ -4,17 +4,19 @@ title: "Editor"
 description: "Browse files, search fast, compare changes, and work next to agents without losing context."
 ---
 
-import DocScreenshotPlaceholder from "@/components/docs/DocScreenshotPlaceholder.astro";
+import DocScreenshot from "@/components/docs/DocScreenshot.astro";
 import DocCallout from "@/components/docs/DocCallout.astro";
+import editorImage from "@/assets/docs/editor.png";
 
 ## What the editor is for
 
 Cadencr’s built-in editor is where you read files, make small manual fixes, and double-check what an agent just changed. It is meant to feel practical, not precious. You do not need to master every panel and tab to use it well.
 
-<DocScreenshotPlaceholder
-  title="Editor inside a feature workspace"
+<DocScreenshot
+  src={editorImage}
+  alt="Cadencr editor inside a feature workspace, with the file tree, open files, and a diff view"
   caption="The built-in editor can show your file tree, search results, open files, and diffs side by side."
-  hint="Swap this for a real screenshot of the editor with a split view, file tree, and diff tab."
+  bordered={false}
 />
 
 <DocCallout title="Beginner-friendly truth" variant="tip">
@@ -116,5 +118,5 @@ The editor tends to help agent work most when the job has a few related files, a
 
 - [Feature workspace](../feature-workspace/) — the bigger home base around the editor
 - [Session view](../session-view/) — follow one agent conversation more closely
-- [Prompting](../prompting/) — ask for clearer edits and explanations
+- [Prompt](../prompting/) — ask for clearer edits and explanations
 - [Workspace pages](../workspace-pages/) — get the bigger map of where everything lives

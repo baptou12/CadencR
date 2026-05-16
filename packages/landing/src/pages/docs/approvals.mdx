@@ -1,0 +1,88 @@
+---
+layout: "@/layouts/DocLayout.astro"
+title: "Approvals & permissions"
+description: "How Cadencr asks before agents run plans or tools — and how to tune the amount of friction."
+---
+
+import DocCallout from "@/components/docs/DocCallout.astro";
+import ShiftIcon from "@/components/icons/ShiftIcon.astro";
+
+Cadencr asks before agents do irreversible things. There are three flavours of prompt — plan approval, tool permission, and multi-choice questions — plus a permission-mode setting that decides how often you see them.
+
+## Plan approval
+
+Some workflows (notably Claude's plan mode) finish with a plan the agent wants you to bless before it executes.
+
+| Key            | Action                                     |
+| -------------- | ------------------------------------------ |
+| <kbd>⌘ Y</kbd> | Approve, agent executes                    |
+| <kbd>⌘ N</kbd> | Request changes (leaves room for feedback) |
+| <kbd>Esc</kbd> | Reject                                     |
+
+Approval bars only steal the keyboard while they are showing, so you can keep typing in the prompt the rest of the time.
+
+## Tool permission prompts
+
+When an agent wants to run a tool that touches the filesystem, network, or shell, Cadencr shows a permission card with the exact command. You decide how trusted that call is:
+
+| Key            | Action                                                            |
+| -------------- | ----------------------------------------------------------------- |
+| <kbd>⌘ Y</kbd> | Allow once — the agent runs this exact call                       |
+| <kbd>⌘ L</kbd> | Allow for the rest of this session — quieter for routine commands |
+| <kbd>⌘ N</kbd> | Deny — the agent has to find another path                         |
+
+## Multi-choice questions
+
+Agents can ask you structured questions in a side drawer. The question drawer is keyboard-first:
+
+- <kbd>1</kbd>–<kbd>9</kbd> selects an option by number.
+- <kbd>⌘ O</kbd> toggles the **Other…** free-text field.
+- <kbd>Enter</kbd> submits and moves to the next question.
+- <kbd>←</kbd> / <kbd>→</kbd> navigate batched questions.
+
+## Permission modes
+
+Each provider exposes its own catalog of permission modes — Cadencr surfaces the right set automatically based on the provider you picked for the session. Cycle through them with <kbd><ShiftIcon /> Tab</kbd> in the prompt, or pick one from the permission menu in the prompt bar.
+
+### Claude Code
+
+| Mode                                | What it does                                                                                              |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Auto-Accept Edits**               | Auto-approves file edits inside the working directory. Shell, network, and out-of-cwd writes still ask.   |
+| **Plan**                            | The agent researches and proposes — it does not edit. Plans land in a plan-approval bar for you to bless. |
+| **Auto** _(Sonnet 4.6 / Opus 4.6+)_ | Classifier-backed: safe calls run automatically, risky calls are blocked, ambiguous calls ask.            |
+| **Bypass** _(opt-in)_               | Skips every safety check. Requires the **Claude → Bypass permissions** workspace toggle to be on.         |
+
+### OpenCode
+
+| Mode      | What it does                                                                                  |
+| --------- | --------------------------------------------------------------------------------------------- |
+| **Build** | Default. Full agent with every tool enabled — equivalent to "accept edits" elsewhere.         |
+| **Plan**  | Restricted analysis-only agent. The agent can investigate but cannot edit or run shell tools. |
+
+OpenCode does not expose an "auto" or "bypass" mode — its provider adapter rejects them at the backend.
+
+### Codex
+
+| Mode                       | What it does                                                                                                                                                 |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Default**                | Workspace-write sandbox with on-request approvals. The agent edits inside the worktree and asks before reaching outside it or running network/shell calls.   |
+| **Plan**                   | Same sandbox and approval policy as Default, but the agent signals planning at the start of the turn so reviewers know what to expect.                       |
+| **Full Access** _(opt-in)_ | Maps to Codex's `approval_policy=never` + `sandbox=danger-full-access` — no approvals, no sandbox. Requires the **Codex → Full access** workspace toggle on. |
+
+<DocCallout title="The opt-in modes are intentionally a separate step" variant="note">
+  **Bypass** (Claude) and **Full Access** (Codex) are hidden behind a workspace toggle in **Settings
+  → Runtime & Models**. Flip them knowingly, and pair them with worktrees so a runaway agent cannot
+  touch your main checkout.
+</DocCallout>
+
+## Stopping a session entirely
+
+- <kbd>Esc</kbd> stops the current agent.
+- <kbd>⌘ Esc</kbd> stops every agent across the workspace.
+
+## Related docs
+
+- [Session view](../session-view/) — the surface that hosts these prompts
+- [Prompt](../prompting/) — where the permission-mode toggle lives
+- [Worktrees](../worktrees/) — pair bypass mode with isolation

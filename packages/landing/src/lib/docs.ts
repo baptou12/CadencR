@@ -3,7 +3,7 @@ interface DocPage {
   title: string;
   navLabel: string;
   description: string;
-  section: "Start Here" | "Core Views" | "Features";
+  section: "Start Here" | "Core Views" | "Features" | "Reference";
 }
 
 const DOC_PAGES: DocPage[] = [
@@ -52,8 +52,8 @@ const DOC_PAGES: DocPage[] = [
   },
   {
     slug: "prompting",
-    title: "Prompting",
-    navLabel: "Prompting",
+    title: "Prompt",
+    navLabel: "Prompt",
     description:
       "How to ask for work clearly without turning every prompt into a tiny legal document.",
     section: "Features",
@@ -94,6 +94,28 @@ const DOC_PAGES: DocPage[] = [
     description: "A practical keyboard cheat sheet for faster navigation and less mouse mileage.",
     section: "Features",
   },
+  {
+    slug: "approvals",
+    title: "Approvals & permissions",
+    navLabel: "Approvals & Permissions",
+    description:
+      "Plan approval, tool permissions, multi-choice questions, and the permission-mode toggle.",
+    section: "Reference",
+  },
+  {
+    slug: "worktrees",
+    title: "Worktrees",
+    navLabel: "Worktrees",
+    description: "Why each feature lives in its own Git worktree and how to work with them safely.",
+    section: "Reference",
+  },
+  {
+    slug: "settings",
+    title: "Settings",
+    navLabel: "Settings",
+    description: "A tour of every Settings section and when you actually need it.",
+    section: "Reference",
+  },
 ];
 
 interface DocSection {
@@ -101,7 +123,7 @@ interface DocSection {
   pages: DocPage[];
 }
 
-const SECTION_ORDER: DocPage["section"][] = ["Start Here", "Core Views", "Features"];
+const SECTION_ORDER: DocPage["section"][] = ["Start Here", "Core Views", "Features", "Reference"];
 
 export const DOC_SECTIONS: DocSection[] = SECTION_ORDER.map((section) => ({
   title: section,
