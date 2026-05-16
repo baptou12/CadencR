@@ -29,6 +29,8 @@ interface AgentQuestionDrawerProps {
   questions: AgentQuestion[];
   /** Called when the user submits their response */
   onSubmit: (response: AgentQuestionAnswers) => void;
+  /** Called when the user closes the gate without answering it */
+  onCancel?: () => void;
   /** Whether the drawer is visible */
   open: boolean;
   /** When true, uses tighter spacing for inline rendering inside AgentPromptBar */
@@ -44,6 +46,7 @@ interface AgentQuestionDrawerProps {
 export function AgentQuestionDrawer({
   questions,
   onSubmit,
+  onCancel,
   open,
   inline,
   disableShortcuts,
@@ -358,6 +361,23 @@ export function AgentQuestionDrawer({
       enableOnContentEditable: false,
     },
     [open, disableShortcuts, canGoForward, handleForward],
+  );
+
+  useScopedHotkeys(
+    "escape",
+    (event) => {
+      if (!open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel?.();
+    },
+    "agent",
+    {
+      enabled: open && !!onCancel && !disableShortcuts,
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+    },
+    [open, onCancel, disableShortcuts],
   );
 
   if (!open || !currentQuestion) {

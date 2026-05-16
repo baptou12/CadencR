@@ -11,7 +11,7 @@ import type { AgentQuestion, AgentQuestionAnswers } from "@/components/AgentQues
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { WorktreeStatus } from "@/types/workflow";
 import type { WsConnection } from "@/lib/ws-connection";
-import type { WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
+import type { GateCloseReason, WsEnvelope, SessionConfig } from "@/lib/ws-envelope";
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
@@ -151,6 +151,7 @@ export interface SessionEntry {
   oldestMessageId: number | null;
   featureId: number | null;
   sessionDbId: number | null;
+  cwd: string | null;
   queuedPrompts: QueuedPrompt[];
   /**
    * Transport health for the agent stream (driven by
@@ -206,6 +207,7 @@ export function createSessionEntry(): SessionEntry {
     oldestMessageId: null,
     featureId: null,
     sessionDbId: null,
+    cwd: null,
     queuedPrompts: [],
     streamHealth: createStreamHealth(),
   };
@@ -248,6 +250,7 @@ export interface WsSessionStore {
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
+  closeGate: (sessionId: string, reason: GateCloseReason) => void;
 
   sendRequest: (sessionId: string, envelope: WsEnvelope) => Promise<unknown>;
 

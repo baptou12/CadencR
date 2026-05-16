@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
+import { useScopedHotkeys } from "@/hooks/useScopedHotkeys";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,8 @@ interface ToolPermissionPromptProps {
   permission: PendingPermission;
   /** Called when the user makes a decision */
   onDecision: (decision: PermissionDecisionValue, feedback?: string, optionId?: string) => void;
+  /** Called when the user closes the gate without answering it */
+  onCancel?: () => void;
   /** When true, disables keyboard shortcuts */
   disableShortcuts?: boolean;
   /**
@@ -242,6 +245,7 @@ function usePermissionHotkeys({
 export function ToolPermissionPrompt({
   permission,
   onDecision,
+  onCancel,
   disableShortcuts,
   isSubmitting = false,
 }: ToolPermissionPromptProps) {
@@ -323,6 +327,21 @@ export function ToolPermissionPrompt({
   );
 
   usePermissionHotkeys({ disableShortcuts, isSubmitting, options, onTrigger: handleHotkey });
+  useScopedHotkeys(
+    "escape",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onCancel?.();
+    },
+    "agent",
+    {
+      enabled: !!onCancel && !disableShortcuts,
+      enableOnFormTags: true,
+      enableOnContentEditable: true,
+    },
+    [onCancel, disableShortcuts],
+  );
 
   return (
     <div className="border-t border-amber-500/30 bg-card px-3 py-2">

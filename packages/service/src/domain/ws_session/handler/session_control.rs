@@ -9,6 +9,7 @@ use super::super::protocol::*;
 use super::post_plan_mode::{
     should_transition_after_plan_approval, transition_session_to_post_plan_mode,
 };
+use super::session_gate::clear_persisted_gate_and_notify;
 use super::session_prompt::PermissionResponse;
 use super::{
     default_permission_mode_wire, parse_permission_mode, parse_session_id, persist_and_close_query,
@@ -23,6 +24,7 @@ use crate::domain::agents::permission_modes::permission_mode_wire;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
 use crate::domain::workflow::worktree;
+use crate::domain::ws_session::protocol::GateCloseReason;
 use crate::domain::ws_session::question_answers::format_answers_plain_text;
 
 async fn session_has_messages(
@@ -1180,12 +1182,13 @@ fn broadcast_lifecycle(sender: &WsSender, session_id: i64, kind: SessionLifecycl
 }
 
 /// Handle `session.suspend`. Provider-neutral pause driven by the renderer
-/// when the OS reports a pending suspend. For an active runtime we capture
-/// the session id (so it can be `--resume`'d after wake even if the
-/// subprocess dies), abort the in-flight turn via the existing `interrupt()`
-/// trait method, and persist `paused` to the DB. The lifecycle envelope is
-/// emitted only when there's an active runtime — a Pending session has
-/// nothing to suspend, so flipping the FE banner for it would be misleading.
+/// when the OS reports a pending suspend. Persisted permission/question gates
+/// are closed first because the user cannot answer them while the machine is
+/// asleep. For an active runtime we then capture the session id (so it can be
+/// `--resume`'d after wake even if the subprocess dies), abort the in-flight
+/// turn via the existing `interrupt()` trait method, and persist `paused` to
+/// the DB. A Pending session without a gate has nothing to suspend, so its
+/// reply stays silent.
 pub(super) async fn handle_suspend(
     envelope: WsEnvelope,
     sender: &WsSender,
@@ -1209,18 +1212,31 @@ pub(super) async fn handle_suspend(
         return;
     };
 
+    if let Err(error) = clear_persisted_gate_and_notify(
+        sender,
+        app_state,
+        db_session_id,
+        None,
+        GateCloseReason::Sleep,
+        Some(&envelope.id),
+    )
+    .await
+    {
+        send_error(
+            sender,
+            &envelope.id,
+            "DB_ERROR",
+            &format!("Failed to close pending gate before sleep: {error}"),
+        );
+        return;
+    }
+
     // Extract the live query handle while briefly holding the lock, then
     // drop it so the await on `interrupt()` doesn't block other handlers
     // (same pattern as `handle_permission_respond`).
     let active: Option<(RuntimeSessionHandle, String, i64)> = {
         let sessions = sdk_sessions.lock().await;
         let Some(handle) = sessions.get(&db_session_id) else {
-            send_error(
-                sender,
-                &envelope.id,
-                "SESSION_NOT_FOUND",
-                "Session not found",
-            );
             return;
         };
         match &handle.state {

@@ -44,6 +44,7 @@ export interface AgentPromptBarProps {
   onPlanApprove?: () => void;
   onPlanRequestChanges?: (feedback: string) => void;
   onPlanReject?: () => void;
+  onGateClose?: () => void;
   onOpenModelPicker?: () => void;
   agentTabActive?: boolean;
   featureId?: number;

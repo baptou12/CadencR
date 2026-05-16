@@ -22,6 +22,8 @@ export interface SessionConfig {
   featureId?: number;
 }
 
+export type GateCloseReason = "sleep" | "escape";
+
 export function createEnvelope(domain: string, action: string, payload: unknown): WsEnvelope {
   return {
     id: crypto.randomUUID(),
@@ -105,6 +107,18 @@ export function createSessionSuspend(sessionId: string): WsEnvelope {
 
 export function createSessionResume(sessionId: string): WsEnvelope {
   return createEnvelope("session", "resume", { session_id: sessionId });
+}
+
+export function createGateClose(
+  sessionId: string,
+  requestId: string | null,
+  reason: GateCloseReason,
+): WsEnvelope {
+  return createEnvelope("session", "gate.close", {
+    session_id: sessionId,
+    request_id: requestId,
+    reason,
+  });
 }
 
 export function createModelSet(sessionId: string, model: string): WsEnvelope {

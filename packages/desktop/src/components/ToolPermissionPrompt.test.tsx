@@ -237,6 +237,25 @@ describe("ToolPermissionPrompt", () => {
     expect(hotkeyStrings.some((s) => /^meta\+\d$/.test(String(s)))).toBe(false);
   });
 
+  it("invoking Escape closes the permission gate even while submitting", () => {
+    const onCancel = vi.fn();
+    render(
+      <ToolPermissionPrompt
+        permission={permission}
+        onDecision={vi.fn()}
+        onCancel={onCancel}
+        isSubmitting={true}
+      />,
+    );
+    const escapeCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "escape")!;
+    const handler = escapeCall[1] as (e: {
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    }) => void;
+    handler({ preventDefault: vi.fn(), stopPropagation: vi.fn() });
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   it("invoking meta+y handler approves with allow_once", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();

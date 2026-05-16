@@ -100,6 +100,8 @@ export interface AgentSessionProps {
   onPlanRequestChanges?: (feedback: string) => void;
   /** Called when user rejects the plan and stops the agent */
   onPlanReject?: () => void;
+  /** Called when the active permission/question/plan gate is closed without approval */
+  onGateClose?: () => void;
   /** Context usage data for this session */
   contextUsage?: ContextUsageState | null;
   /** Current model ID for the session (used for inline model switcher) */
