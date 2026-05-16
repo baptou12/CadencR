@@ -25,6 +25,8 @@ jobs:
       # Developer ID Application certificate from a base64-encoded .p12.
       CSC_LINK: ${{ secrets.MAC_CERTIFICATE_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      # afterPack signs the Rust sidecar before electron-builder signs the app.
+      CADENCR_MAC_CODESIGN_IDENTITY: ${{ secrets.MAC_CODESIGN_IDENTITY }}
       # GitHub publish provider — needs write access to releases.
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:

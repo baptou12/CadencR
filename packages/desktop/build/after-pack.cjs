@@ -18,6 +18,7 @@ exports.default = async function afterPack(context) {
 };
 
 function sign(target, identity, entitlements) {
+  const timestampArgs = identity === "-" ? [] : ["--timestamp"];
   execFileSync(
     "codesign",
     [
@@ -26,6 +27,7 @@ function sign(target, identity, entitlements) {
       "runtime",
       "--entitlements",
       entitlements,
+      ...timestampArgs,
       "--sign",
       identity,
       target,
