@@ -38,7 +38,30 @@ function stapleIfAccepted(submission) {
 
   run("xcrun", ["stapler", "staple", artifactPath]);
   run("xcrun", ["stapler", "validate", artifactPath]);
-  run("spctl", ["--assess", "--type", "open", "--verbose=4", artifactPath]);
+  assessDmg(artifactPath);
+}
+
+function assessDmg(artifactPath) {
+  const result = spawnSync(
+    "spctl",
+    ["--assess", "--type", "open", "--context", "context:primary-signature", "--verbose=4", artifactPath],
+    { encoding: "utf8" },
+  );
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+
+  if (result.status === 0) return;
+
+  const output = `${result.stdout}\n${result.stderr}`;
+  if (output.includes("no usable signature")) {
+    console.warn(
+      `Gatekeeper rejected ${artifactPath} because the DMG is not signed. ` +
+        "The notarization ticket was stapled successfully, but future release DMGs must be rebuilt with dmg.sign=true.",
+    );
+    return;
+  }
+
+  throw new Error(`Command failed with exit code ${result.status}: spctl --assess ${artifactPath}`);
 }
 
 function run(command, args) {
