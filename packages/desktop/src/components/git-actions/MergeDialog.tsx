@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { RadioCardGroup } from "@/components/settings/RadioCardGroup";
 import { GIT_MERGE_RADIO_OPTIONS } from "@/components/settings/gitMergeRadioOptions";
 import {
@@ -27,6 +28,12 @@ import {
 } from "@/lib/git-merge-mode";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
+
+// Hoisted to module scope so the `KbdShortcut` `keys` prop is reference-stable
+// across renders — otherwise every dialog re-render would create fresh arrays
+// and defeat any memoization inside the badge component.
+const ESC_KEYS: string[] = ["esc"];
+const SUBMIT_KEYS: string[] = ["cmd", "enter"];
 
 interface MergeDialogProps {
   featureId: number;
@@ -91,7 +98,17 @@ export default function MergeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onKeyDownCapture={handleKeyDown} className="sm:max-w-2xl">
+      <DialogContent
+        // Radix's default `onOpenAutoFocus` puts focus on the first focusable
+        // descendant — here, the first `RadioCardGroup` card. That focus ring
+        // contradicts the *selected* card (the user's saved default may be
+        // `--no-ff`, not the first option), so we suppress the initial focus
+        // entirely and rely on the radio's own `selected` styling. ⌘/Ctrl+Enter
+        // still submits from anywhere via `onKeyDownCapture`.
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onKeyDownCapture={handleKeyDown}
+        className="sm:max-w-2xl"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="size-5" />
@@ -135,10 +152,12 @@ export default function MergeDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
+            <KbdShortcut keys={ESC_KEYS} variant="hint" />
           </Button>
-          <Button onClick={handleMerge} disabled={submitting} title="Merge (⌘ Enter)">
+          <Button onClick={handleMerge} disabled={submitting}>
             {submitting && <Loader2 className="mr-2 size-4 animate-spin" />}
             Merge
+            <KbdShortcut keys={SUBMIT_KEYS} variant="hint" />
           </Button>
         </DialogFooter>
       </DialogContent>

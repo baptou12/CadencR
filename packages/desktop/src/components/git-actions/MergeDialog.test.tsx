@@ -93,6 +93,31 @@ describe("MergeDialog errors", () => {
     expect(mocks.mergeMutateAsync).toHaveBeenCalledTimes(1);
   });
 
+  it("does not auto-focus a merge-option radio card on open", () => {
+    // Regression: Radix Dialog's default `onOpenAutoFocus` used to land the
+    // focus ring on the first radio card, contradicting the *selected* card
+    // (the user's saved default may be `--no-ff`, not the first option).
+    render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+
+    const group = screen.getByRole("radiogroup", { name: /merge option/i });
+    const radios = Array.from(group.querySelectorAll('[role="radio"]'));
+    for (const radio of radios) {
+      expect(radio).not.toBe(document.activeElement);
+    }
+  });
+
+  it("renders visible keyboard-shortcut hints on the footer buttons", () => {
+    render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+
+    // The `<KbdShortcut>` badges render as `<kbd>` elements inside each
+    // button. We assert their presence so the discoverable shortcut isn't
+    // accidentally regressed back to a `title` tooltip.
+    const cancel = screen.getByRole("button", { name: /cancel/i });
+    const merge = screen.getByRole("button", { name: /^merge/i });
+    expect(cancel.querySelector("kbd")).not.toBeNull();
+    expect(merge.querySelector("kbd")).not.toBeNull();
+  });
+
   it("renders the colored flag chips alongside each merge-option label", () => {
     render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
 

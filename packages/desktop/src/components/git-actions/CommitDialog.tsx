@@ -20,10 +20,16 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { useCommit, useGetUncommittedFiles } from "@/api/generated";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { CommitOutputPane } from "./CommitOutputPane";
 import { UncommittedFileList } from "./UncommittedFileList";
+
+// Hoisted so the `keys` prop is reference-stable across the dialog's many
+// re-renders (streaming output, file-list refetch, etc.).
+const ESC_KEYS: string[] = ["esc"];
+const SUBMIT_KEYS: string[] = ["cmd", "enter"];
 
 interface CommitDialogProps {
   featureId: number;
@@ -254,10 +260,12 @@ export default function CommitDialog({
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancel
+            <KbdShortcut keys={ESC_KEYS} variant="hint" />
           </Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit} title="Commit (⌘ Enter)">
+          <Button onClick={handleSubmit} disabled={!canSubmit}>
             {submitting && <Loader2 className="size-4 animate-spin mr-2" />}
             Commit
+            <KbdShortcut keys={SUBMIT_KEYS} variant="hint" />
           </Button>
         </DialogFooter>
       </DialogContent>
