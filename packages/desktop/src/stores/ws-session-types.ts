@@ -17,6 +17,13 @@ import type { StreamingState } from "./ws-message-processing";
 import { createStreamingState } from "./ws-message-processing";
 import type { TurnLifecycle } from "./ws-turn-lifecycle";
 import { createIdleTurnLifecycle } from "./ws-turn-lifecycle";
+import {
+  createTurnTiming,
+  formatTurnDuration,
+  transitionTurnTiming,
+  type TurnTimingState,
+} from "./ws-turn-timing";
+import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import { defaultEditModeFor } from "../lib/provider-modes";
 import type { PermissionMode } from "../types/permission-mode";
@@ -94,6 +101,7 @@ export interface SessionEntry {
   isConnected: boolean;
   serverSessionId: string;
   lifecycle: TurnLifecycle;
+  turnTiming: TurnTimingState;
   streamingState: StreamingState;
   blocks: AgentBlockData[];
   /**
@@ -166,6 +174,7 @@ export function createSessionEntry(): SessionEntry {
     isConnected: false,
     serverSessionId: "",
     lifecycle: createIdleTurnLifecycle(),
+    turnTiming: createTurnTiming(),
     streamingState: createStreamingState(),
     blocks: [],
     rootBlocks: [],
@@ -275,11 +284,65 @@ export function updateSession(
 ): Partial<WsSessionStore> {
   const prev = state.sessions[sessionId];
   if (!prev) return {};
+  const next = { ...prev, ...patch };
+  if (patch.lifecycle && lifecycleChanged(prev.lifecycle, patch.lifecycle)) {
+    next.turnTiming = transitionTurnTiming(prev.turnTiming, prev.lifecycle, patch.lifecycle);
+  }
+  if (shouldAppendTurnSummary(prev.lifecycle, next.lifecycle, next.turnTiming, next.blocks)) {
+    const blocks = [...next.blocks, buildTurnSummaryBlock(next.turnTiming)];
+    Object.assign(next, blocksPatchWithDerived(next.streamingState, blocks));
+  }
   return {
     sessions: {
       ...state.sessions,
-      [sessionId]: { ...prev, ...patch },
+      [sessionId]: next,
     },
+  };
+}
+
+function lifecycleChanged(previous: TurnLifecycle, next: TurnLifecycle): boolean {
+  if (previous.phase !== next.phase) return true;
+  if (previous.phase === "paused" && next.phase === "paused")
+    return previous.reason !== next.reason;
+  if (previous.phase === "terminal" && next.phase === "terminal") {
+    return previous.reason !== next.reason;
+  }
+  if (previous.phase === "error" && next.phase === "error")
+    return previous.message !== next.message;
+  return false;
+}
+
+function shouldAppendTurnSummary(
+  previous: TurnLifecycle,
+  next: TurnLifecycle,
+  timing: TurnTimingState,
+  blocks: AgentBlockData[],
+): boolean {
+  return (
+    previous.phase !== "terminal" &&
+    next.phase === "terminal" &&
+    timing.completed != null &&
+    blocks.at(-1)?.type !== "turn_summary"
+  );
+}
+
+function buildTurnSummaryBlock(timing: TurnTimingState): AgentBlockData {
+  const completed = timing.completed ?? {
+    totalMs: 0,
+    activeMs: 0,
+    userPendingMs: 0,
+  };
+  const content = [
+    `Worked - ${formatTurnDuration(completed.totalMs)}`,
+    `Agent ${formatTurnDuration(completed.activeMs)}`,
+    `Waiting ${formatTurnDuration(completed.userPendingMs)}`,
+  ].join(" · ");
+  return {
+    id: `turn-summary-${Date.now()}`,
+    type: "turn_summary",
+    content,
+    isError: false,
+    createdAt: new Date().toISOString(),
   };
 }
 

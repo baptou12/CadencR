@@ -10,6 +10,7 @@ vi.mock("@/api/generated", () => ({
 
 import { useWebSocketSession } from "./useWebSocketSession";
 import { useWsSessionStore } from "@/stores/ws-session-store";
+import { useSessionStatusStore } from "@/stores/session-status-store";
 
 // --- Mock WebSocket ---
 
@@ -67,6 +68,7 @@ beforeEach(() => {
   MockWebSocket.reset();
   // Reset Zustand store between tests
   useWsSessionStore.setState({ sessions: {} });
+  useSessionStatusStore.setState({ bySession: {}, ws: null, isConnected: false });
   vi.stubGlobal("WebSocket", MockWebSocket);
   vi.stubGlobal("window", { ...globalThis.window });
 });
@@ -76,6 +78,7 @@ afterEach(() => {
   for (const sessionId of Object.keys(store.sessions)) {
     store.disconnect(sessionId);
   }
+  useSessionStatusStore.getState().disconnect();
   vi.restoreAllMocks();
 });
 
@@ -101,6 +104,71 @@ describe("useWebSocketSession", () => {
       await Promise.resolve();
     });
     expect(result.current.currentModelId).toBe(FALLBACK_MODEL_ID);
+  });
+
+  it("derives turn timing and summaries from backend live status updates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      useWsSessionStore.getState().setPersistedState("test-id", {
+        blocks: [],
+        lifecycle: { phase: "idle" },
+        sessionDbId: 123,
+        featureId: 7,
+      });
+    });
+    act(() => {
+      useSessionStatusStore.getState().connect();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const appWs = MockWebSocket.instances.at(-1)!;
+    act(() => {
+      appWs.simulateMessage({
+        domain: "app",
+        action: "session_status.update",
+        payload: {
+          session_id: 123,
+          feature_id: 7,
+          status: "agent",
+          kind: null,
+          seq: 1,
+        },
+      });
+    });
+    vi.setSystemTime(4_000);
+    act(() => {
+      appWs.simulateMessage({
+        domain: "app",
+        action: "session_status.update",
+        payload: {
+          session_id: 123,
+          feature_id: 7,
+          status: "idle",
+          kind: null,
+          seq: 2,
+        },
+      });
+    });
+
+    expect(result.current.turnTiming.completed).toEqual({
+      totalMs: 3_000,
+      activeMs: 3_000,
+      userPendingMs: 0,
+    });
+    expect(result.current.blocks.at(-1)).toMatchObject({
+      type: "turn_summary",
+      content: "Worked - 3s · Agent 3s · Waiting 0s",
+    });
+    vi.useRealTimers();
   });
 
   it("loads persisted history without a message limit", async () => {
@@ -257,7 +325,12 @@ describe("useWebSocketSession", () => {
       getWs().simulateMessage({
         domain: "session",
         action: "permission.request",
-        payload: { request_id: "req_42", tool_name: "Write", tool_input: {}, description: "" },
+        payload: {
+          request_id: "req_42",
+          tool_name: "Write",
+          tool_input: {},
+          description: "",
+        },
       });
     });
     expect(result.current.pendingRequestId).toBe("req_42");
@@ -281,7 +354,12 @@ describe("useWebSocketSession", () => {
       getWs().simulateMessage({
         domain: "session",
         action: "permission.request",
-        payload: { request_id: "r1", tool_name: "bash", tool_input: {}, description: "" },
+        payload: {
+          request_id: "r1",
+          tool_name: "bash",
+          tool_input: {},
+          description: "",
+        },
       });
     });
     act(() => {
@@ -324,7 +402,12 @@ describe("useWebSocketSession", () => {
       getWs().simulateMessage({
         domain: "session",
         action: "permission.request",
-        payload: { request_id: "r2", tool_name: "bash", tool_input: {}, description: "" },
+        payload: {
+          request_id: "r2",
+          tool_name: "bash",
+          tool_input: {},
+          description: "",
+        },
       });
     });
     act(() => {
@@ -436,7 +519,11 @@ describe("useWebSocketSession", () => {
       getWs().simulateMessage({
         domain: "session",
         action: "initialized",
-        payload: { session_id: "srv-1", provider: "opencode", model: "openai/gpt-5.3-codex" },
+        payload: {
+          session_id: "srv-1",
+          provider: "opencode",
+          model: "openai/gpt-5.3-codex",
+        },
       });
     });
     act(() => {
@@ -550,14 +637,21 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
               uuid: "se2",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text" },
+              },
             },
             {
               type: "stream_event",
@@ -594,10 +688,11 @@ describe("useWebSocketSession", () => {
       result.current.sendPrompt("thanks");
     });
     expect(result.current.status).toBe("agent");
-    // Now: user_message + text + user_message = 3
-    expect(result.current.blocks).toHaveLength(3);
-    expect(result.current.blocks[2].type).toBe("user_message");
-    expect(result.current.blocks[2].content).toBe("thanks");
+    // Now: user_message + text + turn_summary + user_message = 4
+    expect(result.current.blocks).toHaveLength(4);
+    expect(result.current.blocks[2].type).toBe("turn_summary");
+    expect(result.current.blocks[3].type).toBe("user_message");
+    expect(result.current.blocks[3].content).toBe("thanks");
 
     // 7. Stream events for second turn
     act(() => {
@@ -611,14 +706,21 @@ describe("useWebSocketSession", () => {
               uuid: "se4",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
               uuid: "se5",
               session_id: "srv-multi",
               parent_tool_use_id: null,
-              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text" },
+              },
             },
             {
               type: "stream_event",
@@ -635,10 +737,10 @@ describe("useWebSocketSession", () => {
         },
       });
     });
-    // user_message + text + user_message + text = 4
-    expect(result.current.blocks).toHaveLength(4);
-    expect(result.current.blocks[3].type).toBe("text");
-    expect(result.current.blocks[3].content).toBe("You're welcome");
+    // user_message + text + turn_summary + user_message + text = 5
+    expect(result.current.blocks).toHaveLength(5);
+    expect(result.current.blocks[4].type).toBe("text");
+    expect(result.current.blocks[4].content).toBe("You're welcome");
 
     // 8. Second turn ends
     act(() => {
@@ -654,13 +756,15 @@ describe("useWebSocketSession", () => {
     expect(result.current.blocks.map((b) => b.type)).toEqual([
       "user_message",
       "text",
+      "turn_summary",
       "user_message",
       "text",
+      "turn_summary",
     ]);
     expect(result.current.blocks[0].content).toBe("hello");
     expect(result.current.blocks[1].content).toBe("Hi there");
-    expect(result.current.blocks[2].content).toBe("thanks");
-    expect(result.current.blocks[3].content).toBe("You're welcome");
+    expect(result.current.blocks[3].content).toBe("thanks");
+    expect(result.current.blocks[4].content).toBe("You're welcome");
   });
 
   // ---------------------------------------------------------------------------
@@ -687,7 +791,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
@@ -697,7 +804,12 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_1",
+                  name: "ExitPlanMode",
+                  input: {},
+                },
               },
             },
           ],
@@ -741,14 +853,21 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
               uuid: "se2",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "content_block_start", index: 0, content_block: { type: "text" } },
+              event: {
+                type: "content_block_start",
+                index: 0,
+                content_block: { type: "text" },
+              },
             },
           ],
         },
@@ -965,7 +1084,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
@@ -975,7 +1097,12 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_1", name: "ExitPlanMode", input: {} },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_1",
+                  name: "ExitPlanMode",
+                  input: {},
+                },
               },
             },
             {
@@ -1004,7 +1131,10 @@ describe("useWebSocketSession", () => {
                     type: "tool_use",
                     id: "toolu_1",
                     name: "ExitPlanMode",
-                    input: { plan: "# My Plan\nDo stuff", planFilePath: "/tmp/plan.md" },
+                    input: {
+                      plan: "# My Plan\nDo stuff",
+                      planFilePath: "/tmp/plan.md",
+                    },
                   },
                 ],
                 stop_reason: null,
@@ -1048,7 +1178,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
@@ -1058,7 +1191,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -1089,7 +1226,12 @@ describe("useWebSocketSession", () => {
                 model: "claude-haiku-4-5-20251001",
                 stop_reason: null,
                 content: [
-                  { type: "tool_use", id: "toolu_bash1", name: "Bash", input: { command: "ls" } },
+                  {
+                    type: "tool_use",
+                    id: "toolu_bash1",
+                    name: "Bash",
+                    input: { command: "ls" },
+                  },
                 ],
               },
             },
@@ -1129,7 +1271,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -1156,7 +1302,12 @@ describe("useWebSocketSession", () => {
                 stop_reason: null,
                 content: [
                   { type: "text", text: "Let me search" },
-                  { type: "tool_use", id: "toolu_grep", name: "Grep", input: { pattern: "foo" } },
+                  {
+                    type: "tool_use",
+                    id: "toolu_grep",
+                    name: "Grep",
+                    input: { pattern: "foo" },
+                  },
                 ],
               },
             },
@@ -1196,7 +1347,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -1330,7 +1485,10 @@ describe("useWebSocketSession", () => {
               uuid: "child-a-start",
               session_id: "child-a",
               parent_tool_use_id: "task_a",
-              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-haiku-4-5-20251001" },
+              },
             },
             {
               type: "stream_event",
@@ -1348,7 +1506,10 @@ describe("useWebSocketSession", () => {
               uuid: "child-b-start",
               session_id: "child-b",
               parent_tool_use_id: "task_b",
-              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-haiku-4-5-20251001" },
+              },
             },
             {
               type: "stream_event",
@@ -1369,7 +1530,10 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_delta",
                 index: 0,
-                delta: { type: "input_json_delta", partial_json: '{"pattern":"parse"}' },
+                delta: {
+                  type: "input_json_delta",
+                  partial_json: '{"pattern":"parse"}',
+                },
               },
             },
             {
@@ -1380,7 +1544,10 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_delta",
                 index: 0,
-                delta: { type: "input_json_delta", partial_json: '{"file_path":"/tmp/file.ts"}' },
+                delta: {
+                  type: "input_json_delta",
+                  partial_json: '{"file_path":"/tmp/file.ts"}',
+                },
               },
             },
           ],
@@ -1420,7 +1587,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
@@ -1430,7 +1600,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
             {
@@ -1528,7 +1702,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
+              event: {
+                type: "message_start",
+                message: { model: "openai/gpt-5.3-codex" },
+              },
             },
             {
               type: "stream_event",
@@ -1557,7 +1734,10 @@ describe("useWebSocketSession", () => {
               uuid: "se3",
               session_id: "s1",
               parent_tool_use_id: "task_1",
-              event: { type: "message_start", message: { model: "openai/gpt-5.3-codex" } },
+              event: {
+                type: "message_start",
+                message: { model: "openai/gpt-5.3-codex" },
+              },
             },
           ],
         },
@@ -1623,7 +1803,10 @@ describe("useWebSocketSession", () => {
               uuid: "se1",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
             {
               type: "stream_event",
@@ -1633,7 +1816,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -1653,7 +1840,10 @@ describe("useWebSocketSession", () => {
               uuid: "se3",
               session_id: "s1",
               parent_tool_use_id: "toolu_agent",
-              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-haiku-4-5-20251001" },
+              },
             },
           ],
         },
@@ -1672,7 +1862,10 @@ describe("useWebSocketSession", () => {
               uuid: "se4",
               session_id: "s1",
               parent_tool_use_id: null,
-              event: { type: "message_start", message: { model: "claude-opus-4-6" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-opus-4-6" },
+              },
             },
           ],
         },
@@ -1706,7 +1899,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -1726,7 +1923,10 @@ describe("useWebSocketSession", () => {
               uuid: "se2",
               session_id: "s1",
               parent_tool_use_id: "toolu_agent",
-              event: { type: "message_start", message: { model: "claude-haiku-4-5-20251001" } },
+              event: {
+                type: "message_start",
+                message: { model: "claude-haiku-4-5-20251001" },
+              },
             },
           ],
         },
@@ -1819,7 +2019,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_bash1", name: "Bash" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_bash1",
+                  name: "Bash",
+                },
               },
             },
           ],
@@ -1889,7 +2093,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_bash2", name: "Bash" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_bash2",
+                  name: "Bash",
+                },
               },
             },
           ],
@@ -2061,7 +2269,11 @@ describe("useWebSocketSession", () => {
               event: {
                 type: "content_block_start",
                 index: 0,
-                content_block: { type: "tool_use", id: "toolu_agent", name: "Agent" },
+                content_block: {
+                  type: "tool_use",
+                  id: "toolu_agent",
+                  name: "Agent",
+                },
               },
             },
           ],
@@ -2168,8 +2380,18 @@ describe("useWebSocketSession", () => {
                 model: "claude-opus-4-6",
                 stop_reason: null,
                 content: [
-                  { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "echo a" } },
-                  { type: "tool_use", id: "toolu_2", name: "Bash", input: { command: "echo b" } },
+                  {
+                    type: "tool_use",
+                    id: "toolu_1",
+                    name: "Bash",
+                    input: { command: "echo a" },
+                  },
+                  {
+                    type: "tool_use",
+                    id: "toolu_2",
+                    name: "Bash",
+                    input: { command: "echo b" },
+                  },
                 ],
               },
             },
@@ -2193,8 +2415,18 @@ describe("useWebSocketSession", () => {
               message: {
                 role: "user",
                 content: [
-                  { tool_use_id: "toolu_1", type: "tool_result", content: "a", is_error: false },
-                  { tool_use_id: "toolu_2", type: "tool_result", content: "b", is_error: false },
+                  {
+                    tool_use_id: "toolu_1",
+                    type: "tool_result",
+                    content: "a",
+                    is_error: false,
+                  },
+                  {
+                    tool_use_id: "toolu_2",
+                    type: "tool_result",
+                    content: "b",
+                    is_error: false,
+                  },
                 ],
               },
             },

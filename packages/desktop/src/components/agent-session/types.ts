@@ -12,6 +12,8 @@ import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
+import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
+import type { TurnTimingState } from "@/stores/ws-turn-timing";
 
 export interface AgentSessionProps {
   /** The type of agent being displayed */
@@ -34,6 +36,10 @@ export interface AgentSessionProps {
   historyPrependDisplayOffset?: number;
   /** Current status of the agent */
   status: AgentStatus;
+  /** Provider-neutral lifecycle for active/paused/terminal turn state. */
+  lifecycle?: TurnLifecycle;
+  /** Provider-neutral timing accumulator for the current or latest turn. */
+  turnTiming?: TurnTimingState;
   /**
    * Called when the user sends a message via the prompt bar. May return a
    * Promise — the prompt bar awaits it before clearing the input so a
@@ -89,7 +95,9 @@ export interface AgentSessionProps {
    */
   enabledOptInModes?: PermissionMode[];
   /** Pending plan approval from ExitPlanMode tool call */
-  pendingPlanApproval?: { allowedPrompts?: Array<{ tool: string; prompt: string }> } | null;
+  pendingPlanApproval?: {
+    allowedPrompts?: Array<{ tool: string; prompt: string }>;
+  } | null;
   /** Label for the approve button */
   planApproveLabel?: string;
   /** Error from a failed plan approval attempt */

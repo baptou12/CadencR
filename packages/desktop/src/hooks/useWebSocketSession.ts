@@ -26,7 +26,8 @@ import {
   createIdleTurnLifecycle,
   persistedStatusToLifecycle,
 } from "@/stores/ws-turn-lifecycle";
-import { useSessionStatusStore } from "@/stores/session-status-store";
+import { createTurnTiming, type TurnTimingState } from "@/stores/ws-turn-timing";
+import { useSessionStatus } from "@/stores/session-status-store";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
 
 export interface UseWebSocketSessionReturn {
@@ -41,6 +42,7 @@ export interface UseWebSocketSessionReturn {
   /** Rendered Virtuoso row count prepended by older-history pagination. */
   historyPrependDisplayOffset: number;
   lifecycle: TurnLifecycle;
+  turnTiming: TurnTimingState;
   status: LiveAgentStatus;
   isConnected: boolean;
   sessionId: string;
@@ -114,9 +116,7 @@ export function useWebSocketSession(
   // on the frontend). Keyed by the DB session id, which the WS handler
   // populates on `session.connected` / persistedLoaded.
   const sessionDbId = session?.sessionDbId ?? null;
-  const liveStatus = useSessionStatusStore((s) =>
-    sessionDbId == null ? null : (s.bySession[sessionDbId]?.status ?? null),
-  );
+  const liveStatus = useSessionStatus(sessionDbId)?.status ?? null;
 
   useEffect(() => {
     useWsSessionStore.getState().connect(sessionId);
@@ -226,6 +226,7 @@ export function useWebSocketSession(
       toolResultMap: session?.toolResultMap ?? new Map(),
       historyPrependDisplayOffset: session?.historyPrependDisplayOffset ?? 0,
       lifecycle,
+      turnTiming: session?.turnTiming ?? createTurnTiming(),
       status,
       isConnected: session?.isConnected ?? false,
       sessionId,

@@ -18,7 +18,10 @@ vi.mock("react-virtuoso", () => ({
   }: {
     data?: AgentBlockData[];
     itemContent?: (index: number, block: AgentBlockData, context: unknown) => ReactNode;
-    components?: { Header?: () => ReactNode; Footer?: () => ReactNode };
+    components?: {
+      Header?: () => ReactNode;
+      Footer?: (props: { context?: unknown }) => ReactNode;
+    };
     context?: unknown;
   }) => (
     <div data-testid="virtuoso-mock">
@@ -26,7 +29,7 @@ vi.mock("react-virtuoso", () => ({
       {data?.map((item, i) => (
         <div key={item.id}>{itemContent?.(i, item, context)}</div>
       ))}
-      {components?.Footer ? <components.Footer /> : null}
+      {components?.Footer ? <components.Footer context={context} /> : null}
     </div>
   ),
 }));
@@ -259,7 +262,9 @@ describe("AgentSession", () => {
     );
 
     await act(async () => {
-      hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+      hotkeyHandlers.get("meta+p")?.({
+        preventDefault: vi.fn(),
+      } as unknown as KeyboardEvent);
     });
 
     const searchInput = await screen.findByPlaceholderText("Search providers or models...");
@@ -348,12 +353,43 @@ describe("AgentSession", () => {
         agentType="session"
         blocks={[]}
         status="agent"
+        lifecycle={{ phase: "active" }}
+        turnTiming={{
+          startedAt: Date.now() - 12_000,
+          segmentStartedAt: Date.now() - 12_000,
+          activeMs: 0,
+          userPendingMs: 0,
+          completed: null,
+        }}
         onSend={onSend}
         onStop={onStop}
         collapsible
       />,
     );
-    expect(screen.getByText("Working")).toBeInTheDocument();
+    expect(screen.getAllByText("Working - 12s").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the working duration visible while awaiting user input", () => {
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Need permission")]}
+        status="question"
+        lifecycle={{ phase: "paused", reason: "permission" }}
+        turnTiming={{
+          startedAt: Date.now() - 65_000,
+          segmentStartedAt: Date.now() - 5_000,
+          activeMs: 60_000,
+          userPendingMs: 0,
+          completed: null,
+        }}
+        onSend={onSend}
+        onStop={onStop}
+        collapsible
+      />,
+    );
+
+    expect(screen.getAllByText("Working - 1m 5s").length).toBeGreaterThan(0);
   });
 
   it("shows idle badge when status is idle", () => {
@@ -459,7 +495,13 @@ describe("AgentSession", () => {
         status="agent"
         onSend={onSend}
         onStop={onStop}
-        todos={[{ content: "Do the thing", activeForm: "Doing the thing", status: "in_progress" }]}
+        todos={[
+          {
+            content: "Do the thing",
+            activeForm: "Doing the thing",
+            status: "in_progress",
+          },
+        ]}
       />,
     );
     expect(screen.getByText("0/1")).toBeInTheDocument();
@@ -482,7 +524,9 @@ describe("AgentSession", () => {
     );
 
     await act(async () => {
-      hotkeyHandlers.get("meta+p")?.({ preventDefault: vi.fn() } as unknown as KeyboardEvent);
+      hotkeyHandlers.get("meta+p")?.({
+        preventDefault: vi.fn(),
+      } as unknown as KeyboardEvent);
     });
 
     expect(
@@ -613,8 +657,16 @@ describe("shallowEqualSkipFunctions", () => {
   };
 
   it("returns true when data props are identical and functions differ", () => {
-    const prev = { ...base, onSend: vi.fn(), onStop: vi.fn() } as AgentSessionProps;
-    const next = { ...base, onSend: vi.fn(), onStop: vi.fn() } as AgentSessionProps;
+    const prev = {
+      ...base,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    } as AgentSessionProps;
+    const next = {
+      ...base,
+      onSend: vi.fn(),
+      onStop: vi.fn(),
+    } as AgentSessionProps;
     expect(shallowEqualSkipFunctions(prev, next)).toBe(true);
   });
 

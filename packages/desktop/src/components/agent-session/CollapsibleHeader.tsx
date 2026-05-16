@@ -13,7 +13,7 @@ import {
 import { SlidingText } from "@/components/SlidingText";
 
 interface BadgeConfig {
-  label: string;
+  label: React.ReactNode;
   className: string;
   icon?: React.ReactNode;
 }

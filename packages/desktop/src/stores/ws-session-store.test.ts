@@ -181,13 +181,22 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "srv-1", provider: "opencode", supports_prompt_receipts: true },
+      payload: {
+        session_id: "srv-1",
+        provider: "opencode",
+        supports_prompt_receipts: true,
+      },
     });
     ws.simulateMessage({
       domain: "session",
       action: "message",
       payload: {
-        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "working" }] } }],
+        blocks: [
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "working" }] },
+          },
+        ],
       },
     });
 
@@ -210,13 +219,22 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "srv-1", provider: "opencode", supports_prompt_receipts: true },
+      payload: {
+        session_id: "srv-1",
+        provider: "opencode",
+        supports_prompt_receipts: true,
+      },
     });
     ws.simulateMessage({
       domain: "session",
       action: "message",
       payload: {
-        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "working" }] } }],
+        blocks: [
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "working" }] },
+          },
+        ],
       },
     });
     store.sendPrompt("s1", "steer now");
@@ -258,9 +276,15 @@ describe("ws-session-store", () => {
     const sent = ws.sent.map((raw) => JSON.parse(raw));
     expect(sent).toHaveLength(2);
     expect(sent[0].action).toBe("mode.set");
-    expect(sent[0].payload).toMatchObject({ session_id: "srv-1", mode: "plan" });
+    expect(sent[0].payload).toMatchObject({
+      session_id: "srv-1",
+      mode: "plan",
+    });
     expect(sent[1].action).toBe("prompt.send");
-    expect(sent[1].payload).toMatchObject({ session_id: "srv-1", text: "hello" });
+    expect(sent[1].payload).toMatchObject({
+      session_id: "srv-1",
+      text: "hello",
+    });
 
     session = useWsSessionStore.getState().sessions["s1"];
     expect(session.queuedPrompts).toHaveLength(0);
@@ -286,7 +310,10 @@ describe("ws-session-store", () => {
     const sent = ws.sent.map((raw) => JSON.parse(raw));
     expect(sent).toHaveLength(1);
     expect(sent[0].action).toBe("mode.set");
-    expect(sent[0].payload).toMatchObject({ session_id: "srv-1", mode: "plan" });
+    expect(sent[0].payload).toMatchObject({
+      session_id: "srv-1",
+      mode: "plan",
+    });
   });
 
   it("setPersistedState sets blocks and lifecycle", () => {
@@ -299,7 +326,10 @@ describe("ws-session-store", () => {
     });
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.blocks).toEqual(blocks);
-    expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+    expect(session.lifecycle).toEqual({
+      phase: "terminal",
+      reason: "completed",
+    });
     expect(session.persistedLoaded).toBe(true);
   });
 
@@ -436,7 +466,11 @@ describe("ws-session-store", () => {
     initialWs.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "srv-1", provider: "claude-code", model: "claude-sonnet-4-5" },
+      payload: {
+        session_id: "srv-1",
+        provider: "claude-code",
+        model: "claude-sonnet-4-5",
+      },
     });
     expect(useWsSessionStore.getState().sessions["s1"].serverSessionId).toBe("srv-1");
 
@@ -531,7 +565,11 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "42", provider: "opencode", model: "openai/gpt-5.3-codex" },
+      payload: {
+        session_id: "42",
+        provider: "opencode",
+        model: "openai/gpt-5.3-codex",
+      },
     });
 
     const session = useWsSessionStore.getState().sessions["s1"];
@@ -680,7 +718,11 @@ describe("ws-session-store", () => {
     ws.simulateMessage({
       domain: "session",
       action: "initialized",
-      payload: { session_id: "srv-1", provider: "opencode", model: "openai/gpt-5.4" },
+      payload: {
+        session_id: "srv-1",
+        provider: "opencode",
+        model: "openai/gpt-5.4",
+      },
     });
 
     expect(useWsSessionStore.getState().sessions["s1"].currentThinkingEffort).toBeUndefined();
@@ -853,7 +895,12 @@ describe("ws-session-store", () => {
       domain: "session",
       action: "message",
       payload: {
-        blocks: [{ type: "assistant", message: { content: [{ type: "text", text: "hello" }] } }],
+        blocks: [
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "hello" }] },
+          },
+        ],
       },
     });
     const blocksBefore = useWsSessionStore.getState().sessions["s1"].blocks;
@@ -907,7 +954,11 @@ describe("ws-session-store", () => {
                         status: "in_progress",
                         activeForm: "Writing tests",
                       },
-                      { content: "Deploy", status: "pending", activeForm: "Deploy app" },
+                      {
+                        content: "Deploy",
+                        status: "pending",
+                        activeForm: "Deploy app",
+                      },
                     ],
                   },
                 },
@@ -920,7 +971,11 @@ describe("ws-session-store", () => {
 
     const session = useWsSessionStore.getState().sessions["s1"];
     expect(session.todos).toEqual([
-      { content: "Write tests", status: "in_progress", activeForm: "Writing tests" },
+      {
+        content: "Write tests",
+        status: "in_progress",
+        activeForm: "Writing tests",
+      },
       { content: "Deploy", status: "pending", activeForm: "Deploy app" },
     ]);
   });
@@ -947,7 +1002,11 @@ describe("ws-session-store", () => {
             event: {
               type: "content_block_start",
               index: 0,
-              content_block: { type: "tool_use", id: "tu-stream-1", name: "TodoWrite" },
+              content_block: {
+                type: "tool_use",
+                id: "tu-stream-1",
+                name: "TodoWrite",
+              },
             },
           },
         ],
@@ -993,7 +1052,13 @@ describe("ws-session-store", () => {
                   id: "tu-stream-1",
                   name: "TodoWrite",
                   input: {
-                    todos: [{ content: "Task 1", status: "completed", activeForm: "Done" }],
+                    todos: [
+                      {
+                        content: "Task 1",
+                        status: "completed",
+                        activeForm: "Done",
+                      },
+                    ],
                   },
                 },
               ],
@@ -1067,11 +1132,23 @@ describe("ws-session-store", () => {
         id: "b2",
         type: "tool_call" as const,
         content: JSON.stringify({
-          todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }],
+          todos: [
+            {
+              content: "Restored task",
+              status: "pending",
+              activeForm: "Restoring",
+            },
+          ],
         }),
         toolName: "TodoWrite",
         toolArgs: JSON.stringify({
-          todos: [{ content: "Restored task", status: "pending", activeForm: "Restoring" }],
+          todos: [
+            {
+              content: "Restored task",
+              status: "pending",
+              activeForm: "Restoring",
+            },
+          ],
         }),
       },
       { id: "b3", type: "text" as const, content: "done" },
@@ -1099,11 +1176,23 @@ describe("ws-session-store", () => {
             id: "b2",
             type: "tool_call" as const,
             content: JSON.stringify({
-              todos: [{ content: "Child task", status: "completed", activeForm: "Done" }],
+              todos: [
+                {
+                  content: "Child task",
+                  status: "completed",
+                  activeForm: "Done",
+                },
+              ],
             }),
             toolName: "TodoWrite",
             toolArgs: JSON.stringify({
-              todos: [{ content: "Child task", status: "completed", activeForm: "Done" }],
+              todos: [
+                {
+                  content: "Child task",
+                  status: "completed",
+                  activeForm: "Done",
+                },
+              ],
             }),
           },
         ],
@@ -1216,7 +1305,10 @@ describe("ws-session-store", () => {
       expect(session.pendingPermission?.requestId).toBe(bashPermissionSnapshot.request_id);
       expect(session.pendingPermissionQueue).toHaveLength(0);
       expect(session.pendingRequestId).toBe(bashPermissionSnapshot.request_id);
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
       // Snake-case wire fields must be remapped to the frontend's camelCase shape.
       expect(session.pendingPermission?.options?.[0]).toMatchObject({
         decision: "allow_once",
@@ -1236,7 +1328,10 @@ describe("ws-session-store", () => {
       expect(session.pendingQuestions[0].question).toBe("Which strategy do you want?");
       expect(session.pendingQuestionToolInput).toEqual(askUserQuestionSnapshot.tool_input);
       expect(session.pendingRequestId).toBe("q-7");
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "question" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "question",
+      });
     });
 
     it("hydrates pendingPermission even when restored blocks already exist", () => {
@@ -1258,7 +1353,10 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPermission?.requestId).toBe(bashPermissionSnapshot.request_id);
       expect(session.pendingRequestId).toBe(bashPermissionSnapshot.request_id);
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
       // Live blocks survive the hydration.
       expect(session.blocks[0].id).toBe("live-1");
     });
@@ -1417,7 +1515,10 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toEqual({ plan: "## My Plan" });
       expect(session.pendingRequestId).toBe("req-plan-1");
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "planApproval",
+      });
     });
 
     it("keeps plan approval paused when the provider sends turn_complete after the plan", async () => {
@@ -1433,7 +1534,10 @@ describe("ws-session-store", () => {
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toEqual({ plan: "## My Plan" });
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "planApproval",
+      });
     });
 
     it("restores synthetic plan approval request id even when live blocks already exist", () => {
@@ -1448,7 +1552,12 @@ describe("ws-session-store", () => {
 
       store.setPersistedState("s1", {
         blocks: [
-          { id: "plan-1", type: "tool_call" as const, content: "", toolName: "ExitPlanMode" },
+          {
+            id: "plan-1",
+            type: "tool_call" as const,
+            content: "",
+            toolName: "ExitPlanMode",
+          },
         ],
         lifecycle: { phase: "terminal", reason: "completed" },
         pendingPlanApproval: { plan: "## Restored Plan" },
@@ -1457,7 +1566,10 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toEqual({ plan: "## Restored Plan" });
       expect(session.pendingRequestId).toMatch(/^plan_restore_/);
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "planApproval" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "planApproval",
+      });
     });
 
     it("approvePlan sends permission.respond and waits for backend mode.changed", async () => {
@@ -1599,11 +1711,18 @@ describe("ws-session-store", () => {
       useWsSessionStore.getState().approvePlan("s1");
 
       // Simulate turn_complete after the CLI resumes
-      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPlanApproval).toBeNull();
-      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.lifecycle).toEqual({
+        phase: "terminal",
+        reason: "completed",
+      });
     });
   });
 
@@ -1631,7 +1750,14 @@ describe("ws-session-store", () => {
             {
               type: "assistant",
               message: {
-                content: [{ type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} }],
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "tu-enter",
+                    name: "EnterPlanMode",
+                    input: {},
+                  },
+                ],
               },
             },
           ],
@@ -1660,7 +1786,14 @@ describe("ws-session-store", () => {
             {
               type: "assistant",
               message: {
-                content: [{ type: "tool_use", id: "tu-enter", name: "EnterPlanMode", input: {} }],
+                content: [
+                  {
+                    type: "tool_use",
+                    id: "tu-enter",
+                    name: "EnterPlanMode",
+                    input: {},
+                  },
+                ],
               },
             },
           ],
@@ -1722,7 +1855,10 @@ describe("ws-session-store", () => {
       session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPermission).toBeNull();
       expect(session.pendingRequestId).toBe("");
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
     });
 
     it("respondToPermission allow clears pending fields after backend ack", async () => {
@@ -1744,7 +1880,10 @@ describe("ws-session-store", () => {
       session = useWsSessionStore.getState().sessions["s1"];
       expect(session.pendingPermission).toBeNull();
       expect(session.pendingRequestId).toBe("");
-      expect(session.lifecycle).toEqual({ phase: "paused", reason: "permission" });
+      expect(session.lifecycle).toEqual({
+        phase: "paused",
+        reason: "permission",
+      });
     });
 
     it("respondToPermission uses the current pending request id after the queue advances", async () => {
@@ -1788,12 +1927,17 @@ describe("ws-session-store", () => {
         action: "message",
         payload: {
           blocks: [
-            { type: "assistant", message: { content: [{ type: "text", text: "ok, skipping" }] } },
+            {
+              type: "assistant",
+              message: { content: [{ type: "text", text: "ok, skipping" }] },
+            },
           ],
         },
       });
 
-      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "active",
+      });
     });
   });
 
@@ -1816,7 +1960,12 @@ describe("ws-session-store", () => {
         domain: "session",
         action: "message",
         payload: {
-          blocks: [{ type: "assistant", message: { content: [{ type: "text", text }] } }],
+          blocks: [
+            {
+              type: "assistant",
+              message: { content: [{ type: "text", text }] },
+            },
+          ],
         },
       });
     }
@@ -1824,7 +1973,11 @@ describe("ws-session-store", () => {
     it("terminal lifecycle returns to active when a new turn streams", async () => {
       const ws = await setupActiveSession();
 
-      ws.simulateMessage({ domain: "session", action: "turn_complete", payload: {} });
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
       expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
         phase: "terminal",
         reason: "completed",
@@ -1832,7 +1985,9 @@ describe("ws-session-store", () => {
 
       streamTextMessage(ws, "turn 2 starting");
 
-      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "active",
+      });
     });
 
     it("error lifecycle returns to active when the stream resumes", async () => {
@@ -1847,7 +2002,64 @@ describe("ws-session-store", () => {
 
       streamTextMessage(ws, "recovered");
 
-      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({ phase: "active" });
+      expect(useWsSessionStore.getState().sessions["s1"].lifecycle).toEqual({
+        phase: "active",
+      });
+    });
+
+    it("records active and user-pending timing across permission-gated turns", async () => {
+      const ws = await setupActiveSession();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000);
+      const store = useWsSessionStore.getState();
+
+      store.sendPrompt("s1", "build it");
+      vi.setSystemTime(4_000);
+      ws.simulateMessage({
+        domain: "session",
+        action: "permission.request",
+        payload: { request_id: "req-1", tool_name: "Bash", tool_input: {} },
+      });
+      vi.setSystemTime(9_000);
+      streamTextMessage(ws, "resumed after permission");
+      vi.setSystemTime(11_000);
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
+
+      const session = useWsSessionStore.getState().sessions["s1"];
+      expect(session.turnTiming.completed).toEqual({
+        totalMs: 10_000,
+        activeMs: 5_000,
+        userPendingMs: 5_000,
+      });
+      expect(session.blocks.at(-1)).toMatchObject({
+        type: "turn_summary",
+        content: "Worked - 10s · Agent 5s · Waiting 5s",
+      });
+      vi.useRealTimers();
+    });
+
+    it("adds a visible turn summary even when a turn completes without output blocks", async () => {
+      const ws = await setupActiveSession();
+      vi.useFakeTimers();
+      vi.setSystemTime(1_000);
+
+      useWsSessionStore.getState().sendPrompt("s1", "quiet turn");
+      vi.setSystemTime(4_000);
+      ws.simulateMessage({
+        domain: "session",
+        action: "turn_complete",
+        payload: {},
+      });
+
+      expect(useWsSessionStore.getState().sessions["s1"].blocks.at(-1)).toMatchObject({
+        type: "turn_summary",
+        content: "Worked - 3s · Agent 3s · Waiting 0s",
+      });
+      vi.useRealTimers();
     });
   });
 
@@ -1886,7 +2098,11 @@ describe("ws-session-store", () => {
       useWsSessionStore.getState().connect("s1");
       await tick();
       const ws = getWs();
-      ws.simulateMessage({ domain: "workflow", action: "worktree.setup_running", payload: {} });
+      ws.simulateMessage({
+        domain: "workflow",
+        action: "worktree.setup_running",
+        payload: {},
+      });
       ws.simulateMessage({
         domain: "workflow",
         action: "worktree.setup_output",
@@ -1905,7 +2121,11 @@ describe("ws-session-store", () => {
     it("handles worktree.ready event", async () => {
       useWsSessionStore.getState().connect("s1");
       await tick();
-      getWs().simulateMessage({ domain: "workflow", action: "worktree.ready", payload: {} });
+      getWs().simulateMessage({
+        domain: "workflow",
+        action: "worktree.ready",
+        payload: {},
+      });
       expect(useWsSessionStore.getState().sessions["s1"].worktreeStatus).toBe("ready");
     });
 
@@ -1968,7 +2188,10 @@ describe("ws-session-store", () => {
         domain: "session",
         action: "error",
         ref: retryMsg.id,
-        payload: { code: "NO_WORKTREE", message: "No worktree found for this feature" },
+        payload: {
+          code: "NO_WORKTREE",
+          message: "No worktree found for this feature",
+        },
       });
       await Promise.resolve();
 
@@ -2040,7 +2263,11 @@ describe("ws-session-store", () => {
       });
 
       store.compactSession("s1");
-      ws.simulateMessage({ domain: "session", action: "compact.started", payload: null });
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.lifecycle).toEqual({ phase: "active" });
@@ -2059,10 +2286,17 @@ describe("ws-session-store", () => {
       });
 
       store.compactSession("s1");
-      ws.simulateMessage({ domain: "session", action: "compact.ok", payload: null });
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.ok",
+        payload: null,
+      });
 
       const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.lifecycle).toEqual({
+        phase: "terminal",
+        reason: "completed",
+      });
       expect(session.pendingManualCompact).toBe(false);
     });
 
@@ -2129,7 +2363,10 @@ describe("ws-session-store", () => {
       });
 
       const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.lifecycle).toEqual({
+        phase: "terminal",
+        reason: "completed",
+      });
       expect(session.pendingManualCompact).toBe(false);
     });
 
@@ -2161,7 +2398,10 @@ describe("ws-session-store", () => {
       });
 
       const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+      expect(session.lifecycle).toEqual({
+        phase: "terminal",
+        reason: "completed",
+      });
       expect(session.pendingManualCompact).toBe(false);
     });
 
@@ -2450,7 +2690,10 @@ describe("ws-session-store", () => {
 
   describe("applyMutations – toolArgs during streaming", () => {
     it("preserves toolArgs when content is partial JSON", () => {
-      const validArgs = JSON.stringify({ description: "Find files", prompt: "search" });
+      const validArgs = JSON.stringify({
+        description: "Find files",
+        prompt: "search",
+      });
       const existing = [
         {
           id: "b1",
@@ -2483,7 +2726,13 @@ describe("ws-session-store", () => {
 
     it("updates toolArgs when content becomes valid JSON", () => {
       const existing = [
-        { id: "b1", type: "tool_call" as const, content: "", toolName: "Agent", toolArgs: "" },
+        {
+          id: "b1",
+          type: "tool_call" as const,
+          content: "",
+          toolName: "Agent",
+          toolArgs: "",
+        },
       ];
       const streamState = createStreamingState();
       const newArgs = JSON.stringify({ description: "Run tests" });
@@ -2492,7 +2741,12 @@ describe("ws-session-store", () => {
         [
           {
             action: "replace",
-            block: { id: "b1", type: "tool_call", content: newArgs, toolName: "Agent" },
+            block: {
+              id: "b1",
+              type: "tool_call",
+              content: newArgs,
+              toolName: "Agent",
+            },
           },
         ],
         streamState,
@@ -2526,7 +2780,12 @@ describe("ws-session-store", () => {
         [
           {
             action: "replace",
-            block: { id: "c1", type: "tool_call", content: '{"desc', toolName: "Read" },
+            block: {
+              id: "c1",
+              type: "tool_call",
+              content: '{"desc',
+              toolName: "Read",
+            },
           },
         ],
         streamState,

@@ -23,7 +23,7 @@ import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
 import { BashBlock } from "@/components/BashBlock";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
-import { CompactDivider, ClearDivider } from "@/components/StreamDividers";
+import { CompactDivider, ClearDivider, TurnSummaryDivider } from "@/components/StreamDividers";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
@@ -36,6 +36,7 @@ export type BlockType =
   | "tool_result"
   | "thinking"
   | "user_message"
+  | "turn_summary"
   | "compact_divider"
   | "clear_divider";
 
@@ -179,6 +180,8 @@ export const AgentBlock = memo(function AgentBlock({
       return <ThinkingBlock content={block.content} cacheKey={markdownCacheKey} />;
     case "user_message":
       return <UserMessageBlock content={block.content} deliveryState={block.promptDeliveryState} />;
+    case "turn_summary":
+      return <TurnSummaryDivider content={block.content} />;
     case "compact_divider":
       return <CompactDivider metadata={block.content} />;
     case "clear_divider":
@@ -246,7 +249,10 @@ function renderInlineDiffBlock(
 function AgentResultBlock({ content }: { content: string }) {
   const text = useMemo(() => {
     try {
-      const blocks = JSON.parse(content) as Array<{ type?: string; text?: string }>;
+      const blocks = JSON.parse(content) as Array<{
+        type?: string;
+        text?: string;
+      }>;
       return blocks
         .filter((b) => b.type === "text" || (!b.type && typeof b.text === "string"))
         .map((b) => b.text ?? "")

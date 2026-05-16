@@ -103,18 +103,31 @@ describe("AgentStream", () => {
     expect(container).toBeInTheDocument();
   });
 
-  it("shows streaming cursor when isStreaming is true", () => {
-    render(<AgentStream blocks={[makeBlock("1", "Some output", "tool_call")]} isStreaming />);
+  it("shows streaming cursor when a turn is active", () => {
+    render(
+      <AgentStream
+        blocks={[makeBlock("1", "Some output", "tool_call")]}
+        isStreaming
+        lifecycle={{ phase: "active" }}
+      />,
+    );
     expect(screen.getByText("█")).toBeInTheDocument();
   });
 
-  it("shows cursor when streaming with no blocks", () => {
-    render(<AgentStream blocks={[]} isStreaming />);
+  it("shows cursor when active with no blocks", () => {
+    render(<AgentStream blocks={[]} isStreaming lifecycle={{ phase: "active" }} />);
     expect(screen.getByText("█")).toBeInTheDocument();
   });
 
-  it("hides streaming cursor when disabled by loader style", () => {
-    render(<AgentStream blocks={[]} isStreaming showStreamingIndicator={false} />);
+  it("hides streaming cursor when disabled", () => {
+    render(
+      <AgentStream
+        blocks={[]}
+        isStreaming
+        lifecycle={{ phase: "active" }}
+        showStreamingIndicator={false}
+      />,
+    );
     expect(screen.queryByText("█")).not.toBeInTheDocument();
   });
 
