@@ -1,6 +1,9 @@
 import { useCallback, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { useGetWorkspaceSetting } from "@/api/generated";
 import { ONBOARDING_INTRO_SHOWN_SETTING_KEY } from "@/lib/onboarding-step";
+import { useAnimationsEnabled } from "@/lib/animations/animations-setting";
+import { Switch } from "@/components/ui/switch";
 import { OnboardingFooter } from "../OnboardingFooter";
 import type { OnboardingStepProps } from "../OnboardingOverlay";
 import { WelcomeIntro } from "./WelcomeIntro";
@@ -21,6 +24,7 @@ export function WelcomeStep({ isPersisting, onAdvance, onBack }: OnboardingStepP
   const introQuery = useGetWorkspaceSetting(ONBOARDING_INTRO_SHOWN_SETTING_KEY);
   const [introClosed, setIntroClosed] = useState(false);
   const onIntroComplete = useCallback(() => setIntroClosed(true), []);
+  const animations = useAnimationsEnabled();
 
   // Wait for the query to resolve before deciding — otherwise we'd flash the
   // welcome copy for one frame on first launch before the intro mounts.
@@ -44,6 +48,31 @@ export function WelcomeStep({ isPersisting, onAdvance, onBack }: OnboardingStepP
             straight into your first prompt.
           </p>
         </div>
+
+        <label
+          htmlFor="onboarding-animations-toggle"
+          className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-border bg-card/40 p-4"
+        >
+          <div className="flex items-start gap-3">
+            <div className="grid size-8 shrink-0 place-items-center rounded-md bg-muted text-[var(--acc-purple)]">
+              <Sparkles className="size-4" aria-hidden />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Fluid animations</div>
+              <p className="mt-0.5 text-xs text-muted-foreground leading-snug">
+                Smooth fades and slides across menus, dialogs, and panels. You can change this any
+                time in Settings → Appearance.
+              </p>
+            </div>
+          </div>
+          <Switch
+            id="onboarding-animations-toggle"
+            checked={animations.enabled}
+            onCheckedChange={animations.setEnabled}
+            disabled={animations.isLoading}
+            aria-label="Enable fluid animations"
+          />
+        </label>
 
         <OnboardingFooter
           primaryLabel="Get started"

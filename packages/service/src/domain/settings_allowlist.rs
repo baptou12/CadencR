@@ -102,6 +102,9 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // step (provider id from the agent catalog).
     "onboarding_step",
     "default_agent_provider",
+    // Master switch for fluid UI animations. When unset the frontend falls back
+    // to the OS `prefers-reduced-motion` media query. Stored as "true" / "false".
+    "animations_enabled",
     // Plays the welcome-step intro animation exactly once, on the very first
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).
@@ -322,6 +325,15 @@ mod tests {
         assert!(is_workspace_key_allowed("onboarding_step"));
         assert!(is_workspace_key_allowed("default_agent_provider"));
         assert!(is_workspace_key_allowed("onboarding_intro_shown"));
+    }
+
+    #[test]
+    fn workspace_accepts_animations_enabled() {
+        // Master switch for fluid UI animations, persisted from the Welcome
+        // onboarding step and the Settings → Appearance toggle.
+        assert!(is_workspace_key_allowed("animations_enabled"));
+        assert!(!is_feature_key_allowed("animations_enabled"));
+        assert!(!is_project_key_allowed("animations_enabled"));
     }
 
     #[test]

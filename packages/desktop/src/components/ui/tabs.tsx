@@ -39,7 +39,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
         // transparent by default and turns primary on active — yielding a
         // stable, full-width underline that doesn't depend on overflow or
         // negative-margin tricks (which were causing the "blink" before).
-        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground ring-offset-background transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-[3px] after:bg-transparent after:content-[''] data-[state=active]:after:bg-primary",
+        "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap px-3 py-2 text-xs font-medium text-muted-foreground ring-offset-background transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-[3px] after:bg-transparent after:transition-colors after:duration-200 after:content-[''] data-[state=active]:after:bg-primary",
         className,
       )}
       {...props}
@@ -52,7 +52,7 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
     <TabsPrimitive.Content
       data-slot="tabs-content"
       className={cn(
-        "min-h-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "min-h-0 flex-1 outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=active]:animate-in data-[state=active]:fade-in-0 data-[state=active]:duration-150",
         className,
       )}
       {...props}

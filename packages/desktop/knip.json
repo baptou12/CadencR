@@ -29,7 +29,8 @@
     "@vitest/coverage-v8",
     "orval",
     "@fontsource-variable/inter",
-    "electron-builder"
+    "electron-builder",
+    "tw-animate-css"
   ],
   "tags": [
     "+@public"

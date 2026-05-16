@@ -35,6 +35,7 @@ import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
+import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
 import { SettingsRow } from "@/components/settings/SettingsRow";
@@ -206,11 +207,17 @@ function Breadcrumbs(): React.JSX.Element {
 
 function AppearanceSection(): React.JSX.Element {
   return (
-    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Loader style">
+    <SettingsSection
+      id="appearance"
+      title="Appearance"
+      subtitle="Theme · Loader style · Animations"
+    >
       <SettingsCard padded className="space-y-5">
         <ThemeSelector />
         <div className="border-t border-border" />
         <LoaderStyleControl />
+        <div className="border-t border-border" />
+        <AnimationsToggle />
       </SettingsCard>
     </SettingsSection>
   );
