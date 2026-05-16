@@ -27,6 +27,7 @@ import {
   persistedStatusToLifecycle,
 } from "@/stores/ws-turn-lifecycle";
 import { useSessionStatusStore } from "@/stores/session-status-store";
+import { liveStatusFromLifecycle } from "@/lib/agent-status";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -216,11 +217,9 @@ export function useWebSocketSession(
     // first `session_status.update` arrives (race during initial WS
     // connect, or before `sessionDbId` is known), fall back to deriving
     // from the local lifecycle so the UI doesn't blink to Idle on
-    // mount. Mapping mirrors the canonical reduction:
-    //   active → agent, paused → question, anything else → idle.
-    const status: LiveAgentStatus =
-      liveStatus ??
-      (lifecycle.phase === "active" ? "agent" : lifecycle.phase === "paused" ? "question" : "idle");
+    // mount. Once the WS snapshot arrives, `liveStatus` wins forever —
+    // see `lib/agent-status.ts` for the canonical mapping.
+    const status: LiveAgentStatus = liveStatus ?? liveStatusFromLifecycle(lifecycle);
     return {
       blocks: session?.blocks ?? [],
       rootBlocks: session?.rootBlocks ?? [],

@@ -170,6 +170,29 @@ describe("UnifiedAgentsViewData", () => {
     expect(ids(visible)).toEqual([1, 2, 3]);
   });
 
+  it("keeps a stale-by-timestamp session visible when the live store marks it active", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-04T23:30:00.000Z"));
+
+    // REST says "completed" + last activity 3.5h ago, but the live WS
+    // store flips it back to non-idle (e.g. the user just resumed it):
+    // it must stay visible in the Recent grid.
+    const visible = getUnifiedAgentsMatchingFilters(
+      [
+        buildAgent({ id: 1, sessionStatus: "completed", lastActivityAt: "2026-03-04 20:00:00" }),
+        buildAgent({ id: 2, lastActivityAt: "2026-03-04 23:26:00" }),
+      ],
+      {
+        ...ALL_FILTERS,
+        mode: "recent",
+        freshMinutes: 5,
+        liveActiveSessionIds: new Set([1]),
+      },
+    );
+
+    expect(ids(visible)).toEqual([1, 2]);
+  });
+
   it("parses SQLite UTC timestamps consistently for recent filtering", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-04T23:30:00.000Z"));

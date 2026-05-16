@@ -7,11 +7,11 @@ import {
   usePersistedUnifiedAgentsFilters,
 } from "@/components/UnifiedAgentsFilterState";
 import {
-  countRunningAgents,
   getUnifiedAgentsMatchingFilters,
   UNIFIED_AGENTS_QUERY_OPTIONS,
 } from "@/components/UnifiedAgentsViewData";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
+import { useLiveTotalWorkingCount } from "@/stores/session-status-store";
 import { cn } from "@/lib/utils";
 
 export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink(): ReactElement {
@@ -39,7 +39,13 @@ export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink()
       filters.query,
     ],
   );
-  const runningCount = countRunningAgents(matchingAgents);
+  // Source the "running" count from the live session-status store so a
+  // newly-started agent (not yet in the `useGetUnifiedAgents` cache,
+  // which is `staleTime: Infinity` and never refetches) still bumps the
+  // counter the moment its WS status update lands. The matching count
+  // beside it stays REST-filtered intentionally — that's the "how many
+  // match the active filter" badge.
+  const runningCount = useLiveTotalWorkingCount();
 
   return (
     <ShortcutTooltip label="Open unified agents" keys={["cmd", "shift", "R"]} className="w-full">

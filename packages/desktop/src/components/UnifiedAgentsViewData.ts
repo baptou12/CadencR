@@ -6,6 +6,7 @@ import {
 } from "@/components/UnifiedAgentsFilterState";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 import { parseUTCDateTime } from "@/lib/date-utils";
+import { useLiveActiveSessionIds } from "@/stores/session-status-store";
 
 interface UseUnifiedAgentsDataArgs {
   mode: UnifiedAgentsFilterMode;
@@ -52,6 +53,10 @@ export function useUnifiedAgentsData({
   } = useGetUnifiedAgents(baseQueryParams, { query: UNIFIED_AGENTS_QUERY_OPTIONS });
   const queryText = query.trim().toLowerCase();
   const rawAgents = agentsData?.agents ?? [];
+  // Live "non-idle" sessions from the canonical WS store keep the "Recent"
+  // filter honest while an agent is mid-run but stale by `last_activity_at`.
+  const liveActiveIdsList = useLiveActiveSessionIds();
+  const liveActiveSessionIds = useMemo(() => new Set(liveActiveIdsList), [liveActiveIdsList]);
   const agents = useMemo(
     () =>
       orderUnifiedAgentsForDisplay(rawAgents, {
@@ -60,8 +65,9 @@ export function useUnifiedAgentsData({
         projectIds,
         queryText,
         sortOrder,
+        liveActiveSessionIds,
       }),
-    [freshMinutes, mode, projectIds, queryText, rawAgents, sortOrder],
+    [freshMinutes, mode, projectIds, queryText, rawAgents, sortOrder, liveActiveSessionIds],
   );
   const refresh = useCallback((): void => {
     void refetchAgents();
@@ -85,6 +91,10 @@ export interface UnifiedAgentMatchFilters {
   freshMinutes: number;
   projectIds: number[];
   queryText: string;
+  /** Live `sessionDbId`s with non-idle status — fed by the WS store.
+   *  Optional so call sites that don't care about the "Recent" mode (e.g.
+   *  the sidebar link's matching-count) can omit it. */
+  liveActiveSessionIds?: ReadonlySet<number>;
 }
 
 export interface UnifiedAgentFilterArgs extends UnifiedAgentMatchFilters {
@@ -127,7 +137,9 @@ function matchesCurrentFilters(
   if (!isVisibleAgent(entry)) return false;
   if (filters.projectIds.length > 0 && !filters.projectIds.includes(entry.project.id)) return false;
   if (filters.queryText && !matchesAgentQuery(entry, filters.queryText)) return false;
-  if (filters.mode === "recent") return isFreshOrActive(entry, filters.freshMinutes);
+  if (filters.mode === "recent") {
+    return isFreshOrActive(entry, filters.freshMinutes, filters.liveActiveSessionIds);
+  }
   return true;
 }
 
@@ -148,7 +160,18 @@ function isVisibleAgent(_entry: UnifiedAgentEntry): boolean {
   return true;
 }
 
-function isFreshOrActive(entry: UnifiedAgentEntry, freshMinutes: number): boolean {
+function isFreshOrActive(
+  entry: UnifiedAgentEntry,
+  freshMinutes: number,
+  liveActiveSessionIds: ReadonlySet<number> | undefined,
+): boolean {
+  // Primary signal: live WS store. Bootstrap fallback: REST flags
+  // (`status === "running"`, pending question/permission). REST can lag
+  // a few hundred ms behind the truth, but during the cold-start window
+  // before `session_status.snapshot` arrives it's the only thing
+  // keeping a long-running but stale-by-timestamp agent visible — and
+  // the live store overwrites once the snapshot lands.
+  if (liveActiveSessionIds?.has(entry.session.sessionDbId)) return true;
   if (entry.session.status === "running") return true;
   if (entry.session.pendingQuestions || entry.session.pendingPermission) return true;
   const activityTime = entry.last_activity_at
@@ -224,9 +247,9 @@ function agentCreatedTime(entry: UnifiedAgentEntry): number {
   return Number.isFinite(time) ? time : 0;
 }
 
-export function countRunningAgents(entries: UnifiedAgentEntry[]): number {
-  return entries.reduce((count, entry) => count + (entry.session.status === "running" ? 1 : 0), 0);
-}
+// `countRunningAgents` (REST-based) has been removed in favour of
+// `useLiveWorkingCount(sessionIds)` exported from `session-status-store`.
+// Consumers should pass the list of `sessionDbId`s they want counted.
 
 function matchesAgentQuery(entry: UnifiedAgentEntry, query: string): boolean {
   return entry.feature.title.toLowerCase().includes(query);

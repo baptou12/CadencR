@@ -96,13 +96,32 @@ describe("UnifiedAgentCard ws-session hydration", () => {
 
     const session = useWsSessionStore.getState().sessions["ws-feature-7"];
     expect(session?.persistedLoaded).toBe(true);
+    // REST status still seeds the lifecycle so cross-feature consumers
+    // (powerSaveBlocker, app-close confirmation, "Stop all agents")
+    // detect agents the user hasn't opened yet. The badge itself reads
+    // from `session-status-store`; this seed is overwritten the moment
+    // WS turn events arrive.
     expect(session?.lifecycle).toEqual({ phase: "active" });
     expect(session?.currentModelId).toBe("model-a");
     expect(session?.currentProviderId).toBe("codex_cli");
   });
 
-  it("patches pending metadata without replacing live blocks", () => {
+  it("does not overwrite live WS state when the session is already loaded", () => {
+    // Regression guard: re-applying the REST snapshot over a live WS
+    // session was clobbering `pendingPermission` / `pendingQuestions` /
+    // `pendingPlanApproval`. The plan-approval gate would flip into a
+    // permission gate (and approving it would mistakenly approve the
+    // plan); a live question form would disappear when the user
+    // navigated to the unified grid. The hydration must no-op once the
+    // WS handler owns the session.
     const liveBlocks: AgentBlockData[] = [{ id: "live", type: "text", content: "streaming" }];
+    const livePermission = {
+      toolName: "LivePerm",
+      input: {},
+      description: "live",
+      pattern: "live",
+      requestId: "live-1",
+    };
     useWsSessionStore.setState({
       sessions: {
         "ws-feature-7": {
@@ -111,6 +130,10 @@ describe("UnifiedAgentCard ws-session hydration", () => {
           rootBlocks: liveBlocks,
           lifecycle: { phase: "active" },
           persistedLoaded: true,
+          pendingPermission: livePermission,
+          pendingRequestId: "live-1",
+          currentModelId: "live-model",
+          hasFileChanges: false,
         },
       },
     });
@@ -138,11 +161,12 @@ describe("UnifiedAgentCard ws-session hydration", () => {
     );
 
     const session = useWsSessionStore.getState().sessions["ws-feature-7"];
+    // Every field below was set by the WS handler and must survive.
     expect(session?.blocks).toBe(liveBlocks);
-    expect(session?.pendingPermission?.toolName).toBe("Bash");
-    expect(session?.pendingRequestId).toBe("perm-1");
-    expect(session?.lifecycle).toEqual({ phase: "paused", reason: "permission" });
-    expect(session?.currentModelId).toBe("model-b");
-    expect(session?.hasFileChanges).toBe(true);
+    expect(session?.pendingPermission).toBe(livePermission);
+    expect(session?.pendingRequestId).toBe("live-1");
+    expect(session?.lifecycle).toEqual({ phase: "active" });
+    expect(session?.currentModelId).toBe("live-model");
+    expect(session?.hasFileChanges).toBe(false);
   });
 });
