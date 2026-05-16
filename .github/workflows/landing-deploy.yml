@@ -21,13 +21,13 @@ jobs:
     steps:
       # actions/checkout@v4
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Enable pnpm from packageManager
+        run: corepack enable
       # actions/setup-node@v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: pnpm
-      - name: Enable pnpm from packageManager
-        run: corepack enable
       - run: pnpm install --frozen-lockfile --filter "@cadencr/landing..."
       - run: pnpm --filter @cadencr/landing build
       # actions/upload-pages-artifact@v3
