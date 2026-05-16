@@ -42,6 +42,36 @@ interface FileDropPayload {
   message?: string;
 }
 
+type UpdateEvent =
+  | { kind: "checking" }
+  | { kind: "available"; version: string; releaseNotes: string | null }
+  | { kind: "not-available"; version: string }
+  | { kind: "error"; message: string }
+  | { kind: "download-progress"; percent: number; bytesPerSecond: number }
+  | { kind: "downloaded"; version: string };
+
+function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
+  const unsubs = [
+    onIpc<void>("update:checking", () => cb({ kind: "checking" })),
+    onIpc<{ version: string; releaseNotes: string | null }>("update:available", (p) =>
+      cb({ kind: "available", version: p.version, releaseNotes: p.releaseNotes }),
+    ),
+    onIpc<{ version: string }>("update:not-available", (p) =>
+      cb({ kind: "not-available", version: p.version }),
+    ),
+    onIpc<{ message: string }>("update:error", (p) => cb({ kind: "error", message: p.message })),
+    onIpc<{ percent: number; bytesPerSecond: number }>("update:download-progress", (p) =>
+      cb({ kind: "download-progress", percent: p.percent, bytesPerSecond: p.bytesPerSecond }),
+    ),
+    onIpc<{ version: string }>("update:downloaded", (p) =>
+      cb({ kind: "downloaded", version: p.version }),
+    ),
+  ];
+  return () => {
+    for (const off of unsubs) off();
+  };
+}
+
 function onIpc<T>(channel: string, cb: (payload: T) => void): () => void {
   const handler = (_event: Electron.IpcRendererEvent, payload: T): void => cb(payload);
   ipcRenderer.on(channel, handler);
@@ -119,4 +149,7 @@ contextBridge.exposeInMainWorld("cadencr", {
   setBusy: (busy: boolean): Promise<void> => ipcRenderer.invoke("power:set-busy", busy),
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
+  checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
+  installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
+  onUpdateEvent,
 });

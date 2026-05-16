@@ -45,6 +45,14 @@ export interface FileDropPayload {
   message?: string;
 }
 
+export type UpdateEvent =
+  | { kind: "checking" }
+  | { kind: "available"; version: string; releaseNotes: string | null }
+  | { kind: "not-available"; version: string }
+  | { kind: "error"; message: string }
+  | { kind: "download-progress"; percent: number; bytesPerSecond: number }
+  | { kind: "downloaded"; version: string };
+
 export interface CadencrDesktopBridge {
   isElectron: boolean;
   runtimeConfig: () => Promise<RuntimeConfig>;
@@ -76,6 +84,12 @@ export interface CadencrDesktopBridge {
   onPowerSuspend: (cb: () => void) => () => void;
   /** Fired right after wake-from-suspend. */
   onPowerResume: (cb: () => void) => () => void;
+  /** Ask the main process to check for an update right now. */
+  checkForUpdates: () => Promise<void>;
+  /** Quit and install a downloaded update. */
+  installUpdate: () => Promise<void>;
+  /** Subscribe to all auto-updater lifecycle events. */
+  onUpdateEvent: (cb: (event: UpdateEvent) => void) => () => void;
 }
 
 declare global {
@@ -118,6 +132,9 @@ const browserBridge: CadencrDesktopBridge = {
   setBusy: () => Promise.resolve(),
   onPowerSuspend: () => () => undefined,
   onPowerResume: () => () => undefined,
+  checkForUpdates: () => unavailable("checkForUpdates"),
+  installUpdate: () => unavailable("installUpdate"),
+  onUpdateEvent: () => () => undefined,
 };
 
 function activeBridge(): CadencrDesktopBridge {

@@ -23,6 +23,7 @@ import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useZoomHotkeys } from "@/hooks/useZoom";
 import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
 import { usePowerEvents } from "@/hooks/usePowerEvents";
+import { useAutoUpdateBridge } from "@/hooks/useAutoUpdateBridge";
 import { usePowerBusySignal } from "@/hooks/usePowerBusySignal";
 import { SuspendedBanner } from "@/components/SuspendedBanner";
 import {
@@ -48,6 +49,7 @@ function RootLayout() {
   useConnectionWatchdog();
   usePowerEvents();
   usePowerBusySignal();
+  useAutoUpdateBridge();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();

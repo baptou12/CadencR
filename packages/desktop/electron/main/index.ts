@@ -7,6 +7,7 @@ import { installApplicationMenu } from "./menu";
 import { registerPower, shutdownPower } from "./power";
 import { approvedExternalUrl, isAllowedNavigationUrl, isLoopbackDevUrl } from "./navigation";
 import { setRuntimeConfig } from "./runtime-config";
+import { initAutoUpdater, registerAutoUpdaterIpc, shutdownAutoUpdater } from "./updater";
 import {
   createDevSidecarHandle,
   spawnProductionSidecar,
@@ -25,6 +26,7 @@ let pendingQuit = false;
 let ipcRegistered = false;
 let themeEventsRegistered = false;
 let powerRegistered = false;
+let updaterRegistered = false;
 let sidecarStopPromise: Promise<void> | null = null;
 
 function installCsp(): void {
@@ -148,6 +150,11 @@ function wireMainProcess(): void {
     registerPower({ getMainWindow: () => mainWindow });
     powerRegistered = true;
   }
+  if (!updaterRegistered) {
+    registerAutoUpdaterIpc({ getMainWindow: () => mainWindow });
+    initAutoUpdater({ getMainWindow: () => mainWindow });
+    updaterRegistered = true;
+  }
 }
 
 async function bootstrap(): Promise<void> {
@@ -242,6 +249,7 @@ async function stopSidecarThenQuit(): Promise<void> {
     // if the sidecar takes a moment to shut down.
     shutdownPower();
     powerRegistered = false;
+    shutdownAutoUpdater();
     sidecarStopPromise = currentSidecar.stop().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`Failed to stop cadencr-service cleanly: ${message}`);
