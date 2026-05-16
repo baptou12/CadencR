@@ -27,7 +27,7 @@ use super::super::permissions::{
 };
 use super::super::prompt_receipts::PendingPromptReceipts;
 use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
-use super::super::provider_hooks::AcpProviderHooks;
+use super::super::provider_hooks::{AcpProviderHooks, PermissionFallbackOutcome};
 use super::super::session_permissions::{PermissionKey, SessionPermissions};
 use super::super::turn_lifecycle::{
     finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
@@ -312,13 +312,22 @@ impl AgentRuntimeSession for AcpRuntimeSession {
                 .map_err(|e| RuntimeError::new(format!("respond_permission write failed: {e}")));
         }
         let request_id = response.request_id.clone();
-        if self.hooks.respond_permission_fallback(response).await? {
-            return Ok(());
+        let decision = response.decision;
+        match self.hooks.respond_permission_fallback(response).await? {
+            PermissionFallbackOutcome::NotHandled => Err(RuntimeError::new(format!(
+                "no pending ACP permission for request_id {}",
+                request_id
+            ))),
+            PermissionFallbackOutcome::Handled => Ok(()),
+            PermissionFallbackOutcome::HandledWithCacheKey {
+                tool_name,
+                tool_input,
+            } => {
+                let key = PermissionKey::new(&tool_name, &tool_input);
+                self.session_permissions.record(key, decision).await;
+                Ok(())
+            }
         }
-        Err(RuntimeError::new(format!(
-            "no pending ACP permission for request_id {}",
-            request_id
-        )))
     }
 
     fn pid(&self) -> Option<u32> {

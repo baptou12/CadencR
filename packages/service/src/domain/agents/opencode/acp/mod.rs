@@ -9,6 +9,7 @@ mod adapter;
 mod adapter_normalize;
 mod events_subagent_synthesis;
 mod events_tool_call_question;
+mod permission_reply;
 pub(in crate::domain::agents) mod port;
 mod prompt_usage;
 mod question_sidecar;
@@ -94,6 +95,11 @@ pub(super) async fn spawn_acp_session(
     // server hosts both the question sidecar endpoints and polling endpoints. See
     // `opencode/src/cli/cmd/acp.ts` upstream: `Server.listen({hostname,port})`
     // is bound to the same `--hostname --port` flags Cadencr passes.
+    let hooks = Arc::new(OpenCodeAcpAdapter::new(
+        question_sidecar,
+        question_port,
+        &config.cwd,
+    ));
     spawn_acp_runtime_session(AcpRuntimeSpawnArgs {
         command,
         spawn_guard: Some(Box::new(reserved_question_port)),
@@ -101,7 +107,7 @@ pub(super) async fn spawn_acp_session(
         config,
         initial_content: content,
         context_window,
-        hooks: Arc::new(OpenCodeAcpAdapter::new(question_sidecar, question_port)),
+        hooks,
     })
     .await
 }
