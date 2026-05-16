@@ -235,10 +235,14 @@ describe("useTerminalWebSocket", () => {
   });
 
   it("does not send when WS is not open", () => {
+    // This path intentionally emits `console.warn("[terminal] dropped write")` —
+    // suppress it locally so the assertion-passing test doesn't pollute output.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { result } = renderAndConnect();
     // WS is still CONNECTING, not OPEN
     act(() => result.current.write("hello"));
     expect(lastWs().sent).toHaveLength(0);
+    warnSpy.mockRestore();
   });
 
   describe("intentional close suppression", () => {

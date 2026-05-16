@@ -371,6 +371,9 @@ describe("handleEnvelope stream_status", () => {
   });
 
   it("ignores envelopes with an unrecognized state without throwing", () => {
+    // The handler intentionally `console.warn`s on the malformed payload —
+    // silence it here so the test output stays clean.
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const session = createSessionEntry();
     const ctx = createTestContext(session);
 
@@ -381,5 +384,6 @@ describe("handleEnvelope stream_status", () => {
     });
 
     expect(ctx.getSession("s1").streamHealth.state).toBe("ok");
+    warnSpy.mockRestore();
   });
 });
