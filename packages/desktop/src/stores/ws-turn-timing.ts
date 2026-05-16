@@ -30,19 +30,22 @@ export function transitionTurnTiming(
   next: TurnLifecycle,
   nowMs: number = Date.now(),
 ): TurnTimingState {
-  if (previous.phase === "idle" && next.phase === "active") {
-    return startTurnTiming(nowMs);
-  }
-
-  if (previous.phase === "terminal" && next.phase === "active") {
-    return startTurnTiming(nowMs);
-  }
-
-  if (previous.phase === "error" && next.phase === "active") {
+  // Any transition from a non-in-progress phase (idle / terminal / error)
+  // into an in-progress phase (active / paused) starts a fresh timer. The
+  // paused entry-point matters when a session is bootstrapped mid-turn from
+  // a persisted snapshot that already has a pending question or permission —
+  // without it, `startedAt` stays null and the live "Working - Xs" label
+  // can never tick, even though the badge / streaming cursor display
+  // "Working".
+  if (!isInProgressPhase(previous) && isInProgressPhase(next)) {
     return startTurnTiming(nowMs);
   }
 
   return completeTurnTimingSegment(timing, previous, next, timing.segmentStartedAt, nowMs);
+}
+
+function isInProgressPhase(lifecycle: TurnLifecycle): boolean {
+  return lifecycle.phase === "active" || lifecycle.phase === "paused";
 }
 
 export function completeTurnTimingSegment(

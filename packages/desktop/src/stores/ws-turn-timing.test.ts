@@ -62,6 +62,40 @@ describe("ws turn timing", () => {
     expect(elapsedTurnTiming(timing, active, 12_000)?.totalMs).toBe(2_000);
   });
 
+  it("starts the timer when bootstrapping straight into a paused gate", () => {
+    // Sessions hydrated from a persisted snapshot can land directly in a
+    // paused state (pending question / permission) without ever going
+    // through `idle → active`. The live "Working - Xs" label has to start
+    // ticking from this entry point too, otherwise the UI stays on a bare
+    // "Working" until the gate resolves.
+    let timing = createTurnTiming();
+
+    timing = transitionTurnTiming(timing, { phase: "idle" }, questionPaused, 1_000);
+
+    expect(timing.startedAt).toBe(1_000);
+    expect(elapsedTurnTiming(timing, questionPaused, 4_500)?.totalMs).toBe(3_500);
+
+    timing = transitionTurnTiming(timing, questionPaused, active, 6_000);
+    timing = transitionTurnTiming(timing, active, terminal, 8_000);
+
+    expect(timing.completed).toEqual({
+      totalMs: 7_000,
+      activeMs: 2_000,
+      userPendingMs: 5_000,
+    });
+  });
+
+  it("restarts the timer when a paused turn ends and the next one bootstraps paused again", () => {
+    let timing = createTurnTiming();
+    timing = transitionTurnTiming(timing, { phase: "idle" }, questionPaused, 1_000);
+    timing = transitionTurnTiming(timing, questionPaused, terminal, 5_000);
+
+    timing = transitionTurnTiming(timing, terminal, permissionPaused, 10_000);
+    expect(timing.startedAt).toBe(10_000);
+    expect(timing.completed).toBeNull();
+    expect(elapsedTurnTiming(timing, permissionPaused, 12_500)?.totalMs).toBe(2_500);
+  });
+
   it("formats durations using seconds, then minutes, then hours", () => {
     expect(formatTurnDuration(4_400)).toBe("4s");
     expect(formatTurnDuration(65_000)).toBe("1m 5s");
