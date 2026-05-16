@@ -16,15 +16,7 @@
  * pre-invalidate after success — the WS `git.status` envelope drives
  * everything downstream.
  */
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type FormEvent,
-  type KeyboardEvent,
-  type ReactElement,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -45,6 +37,7 @@ import {
 } from "@/stores/usePushOutputStore";
 import { detectSshPrompt } from "./detectSshPrompt";
 import { PushOutputPane } from "./PushOutputPane";
+import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 
 // Hoisted so the `keys` prop is reference-stable across re-renders (streaming
 // buffer chunks re-render this dialog frequently).
@@ -191,23 +184,18 @@ export default function PushDialog({
     }
   }
 
-  function handleDialogKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
-    // Cmd/Ctrl+Enter closes the dialog when push is finished — same
-    // shortcut convention as commit. During a running push we leave the
-    // shortcut alone so it doesn't fight the prompt input's own Enter.
-    if (e.key !== "Enter") return;
-    if (!(e.metaKey || e.ctrlKey)) return;
-    if (submitting) return;
-    e.preventDefault();
-    onOpenChange(false);
-  }
+  // Cmd/Ctrl+Enter closes the dialog when push is finished — same shortcut
+  // convention as commit. During a running push we unregister the shortcut so
+  // it doesn't fight the prompt input's own Enter.
+  useDialogSubmitShortcut({
+    open,
+    enabled: !submitting,
+    onSubmit: () => onOpenChange(false),
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        onKeyDown={handleDialogKeyDown}
-        className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]"
-      >
+      <DialogContent className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]">
         <DialogHeader>
           <DialogTitle>Push to remote</DialogTitle>
         </DialogHeader>

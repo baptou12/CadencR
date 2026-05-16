@@ -13,6 +13,7 @@
  * mutation/query pair is shared across tests.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import { render, screen, waitFor } from "@/test-utils";
 
 // Stable mock return values: the dialog has a `useEffect` keyed on the file
@@ -149,6 +150,23 @@ describe("CommitDialog", () => {
     expect(mocks.mutateAsyncMock).toHaveBeenCalledTimes(1);
     const call = mocks.mutateAsyncMock.mock.calls[0][0];
     expect(call.data.message).toBe("feat: shortcut");
+    await waitFor(() => {
+      expect(onOpenChange).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it("submits on ⌘+Enter even when the key event starts outside dialog content", async () => {
+    mocks.mutateAsyncMock.mockResolvedValueOnce({ success: true, error: null });
+    const onOpenChange = vi.fn();
+
+    const { user } = render(<CommitDialog featureId={7} open={true} onOpenChange={onOpenChange} />);
+
+    await user.type(screen.getByPlaceholderText("Commit message"), "feat: global shortcut");
+    fireEvent.keyDown(document.body, { key: "Enter", code: "Enter", metaKey: true });
+
+    expect(mocks.mutateAsyncMock).toHaveBeenCalledTimes(1);
+    const call = mocks.mutateAsyncMock.mock.calls[0][0];
+    expect(call.data.message).toBe("feat: global shortcut");
     await waitFor(() => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     });

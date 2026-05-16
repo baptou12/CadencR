@@ -8,7 +8,7 @@
  * - Per `no-optimistic-updates.md`, we don't manually invalidate after
  *   success — the WS `git.status` envelope drives invalidation.
  */
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,6 +25,7 @@ import { useCommit, useGetUncommittedFiles } from "@/api/generated";
 import { useCommitOutputStore } from "@/stores/useCommitOutputStore";
 import { CommitOutputPane } from "./CommitOutputPane";
 import { UncommittedFileList } from "./UncommittedFileList";
+import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 
 // Hoisted so the `keys` prop is reference-stable across the dialog's many
 // re-renders (streaming output, file-list refetch, etc.).
@@ -181,19 +182,15 @@ export default function CommitDialog({
     setFailed(true);
   }
 
-  // ⌘+Enter / Ctrl+Enter submits from anywhere inside the dialog (textarea,
-  // file list, output pane). A bare Enter inside the textarea must still
-  // insert a newline, so we gate on the modifier and keep the textarea's
-  // default behaviour otherwise. We attach the listener to `DialogContent`
-  // rather than the textarea so the shortcut fires regardless of which
-  // element holds focus — useful once the user has tabbed into a checkbox
-  // or the bash block.
-  function handleDialogKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
-    if (e.key !== "Enter") return;
-    if (!(e.metaKey || e.ctrlKey)) return;
-    e.preventDefault();
-    void handleSubmit();
-  }
+  // ⌘+Enter / Ctrl+Enter submits even before Radix has focused a descendant.
+  // A bare Enter inside the textarea still inserts a newline because the
+  // document listener gates on the modifier.
+  useDialogSubmitShortcut({
+    open,
+    onSubmit: () => {
+      void handleSubmit();
+    },
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -211,10 +208,7 @@ export default function CommitDialog({
              dialog. `min-w-0` releases that constraint so the grid
              item can actually be 100% of the dialog and the BashBlock's
              `overflow-x-auto` body kicks in. */}
-      <DialogContent
-        onKeyDown={handleDialogKeyDown}
-        className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]"
-      >
+      <DialogContent className="!w-[min(90vw,48rem)] !max-w-[min(90vw,48rem)] sm:!max-w-[min(90vw,48rem)]">
         <DialogHeader>
           <DialogTitle>Commit changes</DialogTitle>
         </DialogHeader>
