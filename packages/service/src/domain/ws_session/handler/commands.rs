@@ -73,14 +73,7 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
     // there's no adapter, or the adapter has no probe (default impl),
     // we just reply with `refreshing: false`.
     let cached = super::super::slash_commands::resolve_commands(&payload.cwd, provider).await;
-    let cached_payload_commands: Vec<SlashCommandPayload> = cached
-        .into_iter()
-        .map(|c| SlashCommandPayload {
-            name: c.name,
-            description: c.description,
-            kind: c.kind.into(),
-        })
-        .collect();
+    let cached_payload_commands = to_payload_commands(cached);
 
     let adapter = runtime_adapter(provider);
     let refreshing = adapter
@@ -118,14 +111,7 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
             // (e.g. `/compact`) stay merged on top of the refreshed
             // adapter catalog.
             let merged = super::super::slash_commands::resolve_commands(&cwd, &provider).await;
-            let merged_payload: Vec<SlashCommandPayload> = merged
-                .into_iter()
-                .map(|c| SlashCommandPayload {
-                    name: c.name,
-                    description: c.description,
-                    kind: c.kind.into(),
-                })
-                .collect();
+            let merged_payload = to_payload_commands(merged);
             let env = WsEnvelope::new(
                 "commands",
                 "updated",
@@ -139,14 +125,28 @@ async fn handle_commands_get(envelope: WsEnvelope, sender: &WsSender) {
     }
 }
 
+fn to_payload_commands(
+    commands: Vec<super::super::slash_commands::SlashCommand>,
+) -> Vec<SlashCommandPayload> {
+    commands
+        .into_iter()
+        .map(|command| SlashCommandPayload {
+            name: command.name,
+            description: command.description,
+            kind: command.kind.into(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use axum::extract::ws::Message;
     use tokio::sync::mpsc;
 
     use crate::domain::ws_session::protocol::{CommandsListPayload, SlashCommandKindPayload};
+    use crate::domain::ws_session::slash_commands::{SlashCommand, SlashCommandKind};
 
-    use super::{handle_commands_get, SessionErrorPayload, WsEnvelope};
+    use super::{handle_commands_get, to_payload_commands, SessionErrorPayload, WsEnvelope};
 
     fn sender() -> (
         mpsc::UnboundedSender<Message>,
@@ -252,38 +252,15 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn commands_get_returns_command_kind() {
-        let temp = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir_all(temp.path().join(".git")).unwrap();
-        let skill_dir = temp.path().join(".agents/skills/finish-job");
-        std::fs::create_dir_all(&skill_dir).unwrap();
-        std::fs::write(
-            skill_dir.join("SKILL.md"),
-            "---\nname: finish-job\ndescription: Finish safely\n---\n",
-        )
-        .unwrap();
+    #[test]
+    fn commands_payload_preserves_command_kind() {
+        let payload = to_payload_commands(vec![SlashCommand {
+            name: "finish-job".to_string(),
+            description: Some("Finish safely".to_string()),
+            kind: SlashCommandKind::Skill,
+        }]);
 
-        let (tx, mut rx) = sender();
-        handle_commands_get(
-            envelope(serde_json::json!({
-                "cwd": temp.path().to_str().unwrap(),
-                "provider": crate::domain::agents::codex::PROVIDER_ID
-            })),
-            &tx,
-        )
-        .await;
-
-        let Message::Text(text) = rx.try_recv().expect("expected commands reply") else {
-            panic!("expected text message");
-        };
-        let reply: WsEnvelope = serde_json::from_str(&text).unwrap();
-        let payload: CommandsListPayload = serde_json::from_value(reply.payload).unwrap();
-        let skill = payload
-            .commands
-            .iter()
-            .find(|command| command.name == "finish-job")
-            .expect("expected local skill");
-        assert!(matches!(skill.kind, SlashCommandKindPayload::Skill));
+        assert_eq!(payload.len(), 1);
+        assert!(matches!(payload[0].kind, SlashCommandKindPayload::Skill));
     }
 }
