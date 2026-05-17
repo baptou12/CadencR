@@ -1,0 +1,112 @@
+---
+name: release
+description: Prepare and publish a Cadencr release from a version tag such as v0.2.0.
+argument-hint: vX.Y.Z
+user-invocable: true
+allowed-tools: Bash(git *) Bash(gh *) Bash(pnpm *) Bash(cargo *) Bash(./scripts/release.sh *) Bash(scripts/release.sh *) Read Grep Glob Edit Write Agent
+---
+
+# Release Command
+
+Prepare and publish a Cadencr release.
+
+Arguments: `$ARGUMENTS` must be exactly one semantic version tag in the form `vX.Y.Z`, for example `v0.2.0`.
+
+## Critical safety rule
+
+After `git push origin vX.Y.Z`, the GitHub release workflow starts and the version is considered consumed. If the tag or release must be deleted afterward, do **not** reuse the same version. Increment the version counters and release a new tag.
+
+The helper script creates the local tag only. The agent must push the tag explicitly after all checks pass.
+
+## Required flow
+
+1. **Validate the requested tag**
+   - Reject missing or malformed arguments.
+   - Use `TAG="$ARGUMENTS"` and `VERSION="${TAG#v}"`.
+
+2. **Inspect the release range**
+   - Fetch tags: `git fetch --tags origin`.
+   - Find the latest previous release tag: `git tag --list 'v[0-9]*' --sort=-v:refname | head -1`.
+   - Record the previous tag commit hash with `git rev-list -n 1 "$PREVIOUS_TAG"`.
+   - Summarize commits with `git log --oneline "$PREVIOUS_TAG..HEAD"`.
+
+3. **Generate release notes and changelog**
+   - Update `CHANGELOG.md` with a section for the requested tag.
+   - Include the previous tag, previous tag commit hash, release date, and grouped user-facing changes.
+   - Keep the changelog factual and concise.
+
+4. **Ask for landing news copy**
+   - Before creating or editing the landing news post, ask the developer what marketing/commercial text they want to show in the news article in addition to the changelog.
+   - Do not invent the main marketing angle without developer input.
+   - After the developer answers, create a news post under `packages/landing/src/content/news/` whose filename includes the release version, for example `cadencr-v0-2-0.mdx`.
+   - The post should sell the release clearly while remaining accurate.
+
+5. **Update every application version**
+   - Update package versions in package manifests under `packages/*/package.json` that already have a version field.
+   - Update Rust package versions in `packages/*/Cargo.toml` that already have a package version.
+   - Update lockfiles when the package manager requires it.
+   - Do not change unrelated dependency versions.
+
+6. **Run a dedicated security and regression review**
+   - If subagents are available, launch a dedicated review agent focused only on security and regressions introduced since the previous tag.
+   - Ask it to inspect the diff from `PREVIOUS_TAG..HEAD`, with special attention to secrets, release signing, updater behavior, migrations, data loss, authentication/authorization, command execution, and provider boundary regressions.
+   - If subagents are unavailable, perform the same review yourself and document the result.
+   - Fix or explicitly escalate every serious finding before continuing.
+
+7. **Check the latest main CI status**
+   - The release workflow itself should not introduce application code changes, and pre-commit hooks will catch broken release-prep edits.
+   - Instead of rerunning the full local test suite, verify that the latest `main` commit is green before releasing:
+
+```bash
+git fetch origin main
+MAIN_SHA="$(git rev-parse origin/main)"
+gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/check-runs" \
+  --jq '.check_runs[] | [.name, .status, .conclusion] | @tsv'
+gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/status" \
+  --jq '{state: .state, statuses: [.statuses[] | {context, state}]}'
+```
+
+   - Continue only if the latest `origin/main` checks are completed and successful, or if the developer explicitly accepts releasing from a non-green main.
+
+8. **Create the release preparation commit**
+   - Review the final diff and ensure it contains only release preparation changes.
+   - Commit the changelog, landing news, version bumps, and lockfile updates before tagging.
+   - Use a concise commit message such as `chore: prepare release vX.Y.Z`.
+   - The helper script requires a clean worktree so the local tag points at the committed release state.
+
+9. **Run the automated release preflight**
+   - Run: `scripts/release.sh "$TAG"`.
+   - This checks changelog/news/version files, tag and release availability, and trufflehog results.
+   - It creates the local annotated tag when all checks pass.
+   - If it fails, fix the reported issue and rerun it.
+
+10. **Push the tag manually**
+   - Show the critical safety rule again.
+   - Run: `git push origin "$TAG"`.
+   - The script must not do this step.
+
+11. **Poll GitHub for release assets**
+    - Poll until the release exists, is not a draft, and has assets.
+    - Use a bounded loop like:
+
+```bash
+for i in $(seq 1 120); do
+  gh release view "$TAG" --json isDraft,assets,url \
+    --jq 'if (.isDraft == false and (.assets | length) > 0) then "ready " + .url else "waiting" end' || true
+  sleep 30
+done
+```
+
+    - Report the final release URL and asset count.
+    - If assets do not appear before the timeout, inspect the GitHub Actions run and report the failure.
+
+## Response format
+
+When the release is complete, respond with:
+
+1. `Previous release`: previous tag and commit hash.
+2. `Release content`: changelog section and landing news file.
+3. `Security review`: review result and any fixes.
+4. `Version updates`: files changed.
+5. `Tag`: local tag and push status.
+6. `GitHub release`: URL and asset count, or the failing workflow status.
