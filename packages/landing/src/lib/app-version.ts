@@ -1,5 +1,1 @@
-import landingPackage from "../../package.json";
-
-const appVersion: string = landingPackage.version;
-
-export const DISPLAY_VERSION: string = `v${appVersion}`;
+export { DISPLAY_VERSION } from "./downloads";

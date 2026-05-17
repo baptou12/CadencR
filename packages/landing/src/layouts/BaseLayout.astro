@@ -3,17 +3,23 @@ import "@/styles/global.css";
 import NavBar from "@/components/NavBar.astro";
 import Footer from "@/components/Footer.astro";
 
+type StructuredData = Record<string, unknown> | Array<Record<string, unknown>>;
+
 interface Props {
   title?: string;
   description?: string;
+  structuredData?: StructuredData;
 }
 const {
   title = "Cadencr — IDE for the era of agents",
   description = "Cadencr is the IDE for the era of agents. One workspace for Claude, OpenCode and Codex — readable stream, per-session worktrees, and git where you can see it.",
+  structuredData,
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const ogImage = new URL("og-image.png", Astro.site).toString();
+const rssUrl = new URL("rss.xml", Astro.site).toString();
+const structuredDataJson = structuredData ? JSON.stringify(structuredData) : undefined;
 ---
 <!doctype html>
 <html lang="en">
@@ -24,6 +30,7 @@ const ogImage = new URL("og-image.png", Astro.site).toString();
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
     <link rel="canonical" href={canonical} />
+    <link rel="alternate" type="application/rss+xml" title="Cadencr news" href={rssUrl} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
@@ -34,6 +41,9 @@ const ogImage = new URL("og-image.png", Astro.site).toString();
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImage} />
     <meta name="color-scheme" content="dark" />
+    {structuredDataJson && (
+      <script type="application/ld+json" set:html={structuredDataJson} />
+    )}
   </head>
   <body>
     <NavBar />

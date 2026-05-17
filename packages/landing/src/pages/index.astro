@@ -8,8 +8,33 @@ import FeatureGit from "@/components/FeatureGit.astro";
 import FeatureTerminal from "@/components/FeatureTerminal.astro";
 import FeatureEditor from "@/components/FeatureEditor.astro";
 import CloserCTA from "@/components/CloserCTA.astro";
+import { DISPLAY_VERSION } from "@/lib/downloads";
+
+const title = "Cadencr — Agent IDE for Claude Code, OpenCode, and Codex";
+const description =
+  "Cadencr is a local agent IDE for Claude Code, OpenCode, and Codex. Read streams, manage worktrees, inspect diffs, and ship from one desktop workspace.";
+const structuredData = [
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Cadencr",
+    url: "https://cadencr.com/",
+    description,
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Cadencr",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS",
+    softwareVersion: DISPLAY_VERSION,
+    description,
+    downloadUrl: "https://cadencr.com/download/",
+    url: "https://cadencr.com/",
+  },
+];
 ---
-<BaseLayout>
+<BaseLayout title={title} description={description} structuredData={structuredData}>
   <Hero />
   <Compatibility />
   <FeatureAgentCockpit />

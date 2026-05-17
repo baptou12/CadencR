@@ -6,6 +6,7 @@ import Wrap from "@/components/ui/Wrap.astro";
 import Eyebrow from "@/components/ui/Eyebrow.astro";
 import Button from "@/components/ui/Button.astro";
 import heroImage from "@/assets/hero.png";
+const base = import.meta.env.BASE_URL;
 ---
 <section class="relative py-16 pb-14">
   <div class="hero-orbits pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true"></div>
@@ -29,7 +30,7 @@ import heroImage from "@/assets/hero.png";
           — the stream becomes readable, sessions can branch into their own worktree or terminal, and git stays where you can see it.
         </p>
         <div class="mt-5 flex flex-wrap items-center gap-2">
-          <Button href="https://github.com/merkr-software/cadencr/releases/latest" size="lg">
+          <Button href={`${base}download/`} size="lg">
             <DownloadIcon />
             Download for Mac
           </Button>
