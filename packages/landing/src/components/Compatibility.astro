@@ -1,49 +1,77 @@
 ---
+import { Image } from "astro:assets";
 import Wrap from "@/components/ui/Wrap.astro";
+import claudeLogo from "@/assets/providers/claude.png";
+import codexLogo from "@/assets/providers/codex.png";
+import opencodeLogo from "@/assets/providers/opencode.png";
+import type { ImageMetadata } from "astro";
 
 interface Provider {
   name: string;
-  mark: string;
-  status: "stable" | "soon";
-  label?: string;
+  description: string;
+  logo: ImageMetadata;
+  logoClass: string;
 }
+
 const providers: Provider[] = [
-  { name: "Claude", mark: "C", status: "stable" },
-  { name: "OpenCode", mark: "O", status: "stable" },
-  { name: "Codex", mark: "X", status: "stable" },
+  {
+    name: "Claude Code",
+    description: "Plan, execute, and review Claude sessions from one cockpit.",
+    logo: claudeLogo,
+    logoClass: "h-5 w-5",
+  },
+  {
+    name: "OpenCode",
+    description: "Run OpenCode locally while Cadencr keeps context readable.",
+    logo: opencodeLogo,
+    logoClass: "h-5 w-4",
+  },
+  {
+    name: "Codex",
+    description: "Supervise Codex worktrees, streams, terminal output, and diffs.",
+    logo: codexLogo,
+    logoClass: "h-5 w-5",
+  },
 ];
 ---
-<section id="compat" class="relative mt-9 border-y border-border/55 py-5">
-  <Wrap class="flex flex-wrap items-center gap-7">
-    <div class="max-w-[220px] font-mono text-[10.5px] uppercase leading-[1.4] tracking-[0.06em] text-muted-foreground">
-      Bring your own harness.<br />
-      Cadencr is the surface — you keep the agent.
-    </div>
-    <div class="ml-auto flex flex-wrap items-center gap-2.5">
-      {providers.map((p) => (
-        <div
-          class:list={[
-            "inline-flex items-center gap-2 rounded-lg border border-border bg-muted/25 px-[11px] py-[7px] font-mono text-xs",
-            p.status === "soon" && "opacity-[0.78]",
-          ]}
-        >
-          <span
-            aria-hidden="true"
-            class="inline-flex h-4 w-4 items-center justify-center rounded-[3px] bg-muted/55 text-[9.5px] font-semibold text-muted-foreground"
-          >
-            {p.mark}
-          </span>
-          <span>{p.name}</span>
-          <span
-            class:list={[
-              "text-[10px]",
-              p.status === "soon" ? "text-drac-orange" : "text-drac-green",
-            ]}
-          >
-            {p.label ?? p.status}
-          </span>
-        </div>
-      ))}
+<section id="compat" class="relative mt-9 border-y border-border/55 py-6">
+  <Wrap>
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] lg:items-center">
+      <div class="max-w-[390px]">
+        <p class="font-mono text-[10.5px] uppercase leading-[1.4] tracking-[0.08em] text-muted-foreground">
+          Works with your agent CLI
+        </p>
+        <p class="mt-2 text-[13px] leading-[1.6] text-muted-foreground">
+          Cadencr becomes the IDE surface for the tools you already run locally — no provider lock-in.
+        </p>
+      </div>
+
+      <div class="grid gap-2 sm:grid-cols-3">
+        {providers.map((provider) => (
+          <article class="group relative overflow-hidden rounded-xl border border-border bg-muted/20 p-3.5 transition-colors duration-150 hover:border-primary/45 hover:bg-muted/30">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background/80 shadow-xs">
+                <Image
+                  src={provider.logo}
+                  alt={`${provider.name} logo`}
+                  width={40}
+                  height={40}
+                  class:list={["object-contain", provider.logoClass]}
+                />
+              </span>
+              <h2 class="min-w-0 text-[13px] font-semibold tracking-[-0.01em] text-foreground">
+                {provider.name}
+              </h2>
+              <span class="ml-auto rounded-full border border-border bg-background/80 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-drac-green">
+                Ready
+              </span>
+            </div>
+            <p class="mt-2.5 text-[12.5px] leading-[1.5] text-muted-foreground">
+              {provider.description}
+            </p>
+          </article>
+        ))}
+      </div>
     </div>
   </Wrap>
 </section>
