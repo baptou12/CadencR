@@ -5,6 +5,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFeatures,
@@ -221,25 +222,34 @@ export function ProjectFeatures({
     <div className="flex flex-col gap-0.5">
       {activeFeatures.map(renderFeature)}
 
-      <ConfirmDialog
-        open={confirmFeatureId != null}
+      <ArchiveFeatureDialog
+        open={confirmFeatureId != null && !isConfirmDelete}
+        feature={confirmFeature}
+        projectId={projectId}
+        hasLiveWorktree={confirmFeature ? liveWorktreeFeatureIds.has(confirmFeature.id) : false}
         onOpenChange={(open) => {
           if (!open) setConfirmFeatureId(null);
         }}
-        title={isConfirmDelete ? "Delete archived session?" : "Archive session?"}
-        description={isConfirmDelete ? "This cannot be undone." : undefined}
-        confirmText={isConfirmDelete ? "Delete" : "Archive"}
-        variant={isConfirmDelete ? "destructive" : "default"}
+        onArchive={(featureId) => {
+          updateStatusMutation.mutate({
+            id: featureId,
+            data: { status: ARCHIVED_FEATURE_STATUS },
+          });
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmFeatureId != null && isConfirmDelete}
+        onOpenChange={(open) => {
+          if (!open) setConfirmFeatureId(null);
+        }}
+        title="Delete archived session?"
+        description="This cannot be undone."
+        confirmText="Delete"
+        variant="destructive"
         onConfirm={() => {
           if (confirmFeatureId == null) return;
-          if (isConfirmDelete) {
-            deleteMutation.mutate({ id: confirmFeatureId });
-          } else {
-            updateStatusMutation.mutate({
-              id: confirmFeatureId,
-              data: { status: ARCHIVED_FEATURE_STATUS },
-            });
-          }
+          deleteMutation.mutate({ id: confirmFeatureId });
         }}
       />
 

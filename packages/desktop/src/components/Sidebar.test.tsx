@@ -53,6 +53,13 @@ vi.mock("../api/generated", () => ({
   useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureLabel: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useDeleteWorktree: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useDeleteFeatureBranch: vi.fn(() => ({ mutateAsync: vi.fn() })),
+  useCheckBranchDelete: vi.fn(() => ({
+    data: { branch: "feature/a", target_branch: "main", merged: true },
+    isLoading: false,
+  })),
+  useGetGitStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],

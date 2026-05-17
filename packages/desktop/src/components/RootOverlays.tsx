@@ -1,10 +1,12 @@
 import type { Dispatch, ReactElement, SetStateAction } from "react";
 import { CommandPalette } from "@/components/CommandPalette";
+import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
+import { useListFeatures, useListFeatureWorktrees } from "@/api/generated";
 
 type ConfirmAction = "archive" | "delete" | null;
 
@@ -40,6 +42,23 @@ export function RootOverlays({
   onConfirmFeatureAction,
   appClose,
 }: RootOverlaysProps): ReactElement {
+  const { data: features = [] } = useListFeatures(
+    { project_id: activeProjectId ?? 0, include_archived: true },
+    {
+      query: {
+        enabled: activeProjectId != null && activeFeatureId != null && confirmAction === "archive",
+      },
+    },
+  );
+  const { data: featureWorktrees = [] } = useListFeatureWorktrees(
+    { project_id: activeProjectId ?? 0 },
+    { query: { enabled: activeProjectId != null && confirmAction === "archive" } },
+  );
+  const activeFeature = features.find((feature) => feature.id === activeFeatureId);
+  const activeFeatureHasLiveWorktree = featureWorktrees.some(
+    (worktree) => worktree.feature_id === activeFeatureId && worktree.live,
+  );
+
   return (
     <>
       <CommandPalette
@@ -52,15 +71,25 @@ export function RootOverlays({
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <Toaster position="top-center" />
       <PostUpdateChangelogDialog />
-      <ConfirmDialog
-        open={confirmAction != null}
+      <ArchiveFeatureDialog
+        open={confirmAction === "archive"}
+        feature={activeFeature}
+        projectId={activeProjectId ?? 0}
+        hasLiveWorktree={activeFeatureHasLiveWorktree}
         onOpenChange={(open) => {
           if (!open) setConfirmAction(null);
         }}
-        title={confirmAction === "archive" ? "Archive session?" : "Delete archived session?"}
-        description={confirmAction === "delete" ? "This cannot be undone." : undefined}
-        confirmText={confirmAction === "archive" ? "Archive" : "Delete"}
-        variant={confirmAction === "archive" ? "default" : "destructive"}
+        onArchive={onConfirmFeatureAction}
+      />
+      <ConfirmDialog
+        open={confirmAction === "delete"}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+        title="Delete archived session?"
+        description="This cannot be undone."
+        confirmText="Delete"
+        variant="destructive"
         onConfirm={onConfirmFeatureAction}
       />
       <ConfirmDialog
