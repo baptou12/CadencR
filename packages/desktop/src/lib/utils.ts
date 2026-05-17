@@ -16,8 +16,21 @@ export function slugify(name: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-/** Strip a base path prefix to produce a relative path for display. */
-export function toRelativePath(filePath: string, basePath?: string): string {
-  if (!basePath || !filePath.startsWith(basePath)) return filePath;
-  return filePath.slice(basePath.endsWith("/") ? basePath.length : basePath.length + 1);
+/**
+ * Strip the working-directory prefix from a string so paths display relative
+ * to the workspace root.
+ *
+ * Handles both:
+ *  - a path equal to or prefixed by `basePath` (e.g. `/cwd/src/foo.ts` → `src/foo.ts`)
+ *  - free-form text that embeds the path (e.g. a Bash command or a Grep
+ *    detail like `"pattern in /cwd/src/"`), where every occurrence of
+ *    `basePath + "/"` is removed.
+ *
+ * Returns the input unchanged when `basePath` is undefined or absent.
+ */
+export function toRelativePath(text: string, basePath?: string): string {
+  if (!basePath) return text;
+  const prefix = basePath.endsWith("/") ? basePath : basePath + "/";
+  if (text === basePath || text + "/" === prefix) return ".";
+  return text.replaceAll(prefix, "");
 }

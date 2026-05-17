@@ -79,4 +79,26 @@ describe("toRelativePath", () => {
   it("returns full path when it does not start with basePath", () => {
     expect(toRelativePath("/other/path/foo.ts", "/home/user/project")).toBe("/other/path/foo.ts");
   });
+
+  it("strips an embedded basePath occurrence inside a longer string", () => {
+    expect(toRelativePath("cat /home/user/project/src/foo.ts", "/home/user/project")).toBe(
+      "cat src/foo.ts",
+    );
+  });
+
+  it("strips an embedded basePath when basePath has a trailing slash", () => {
+    expect(toRelativePath("pattern in /home/user/project/src/", "/home/user/project/")).toBe(
+      "pattern in src/",
+    );
+  });
+
+  it("strips every occurrence in a string with multiple matches", () => {
+    expect(
+      toRelativePath("diff /home/user/project/a.ts /home/user/project/b.ts", "/home/user/project"),
+    ).toBe("diff a.ts b.ts");
+  });
+
+  it("returns '.' when the input equals basePath", () => {
+    expect(toRelativePath("/home/user/project", "/home/user/project")).toBe(".");
+  });
 });

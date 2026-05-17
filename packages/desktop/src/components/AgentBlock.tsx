@@ -137,9 +137,10 @@ export const AgentBlock = memo(function AgentBlock({
         const result = block.toolUseId ? toolResultMap?.get(block.toolUseId) : undefined;
         const running = !result && isToolCallRunning(block.toolArgs);
         const resultOutput = result ? extractBashResultOutput(result.content) : undefined;
+        const rawCommand = extractBashCommand(block.toolArgs);
         return (
           <BashBlock
-            command={extractBashCommand(block.toolArgs)}
+            command={rawCommand ? toRelativePath(rawCommand, basePath) : rawCommand}
             content={resultOutput ?? extractBashOutput(block.toolArgs)}
             running={running}
             isError={result?.isError}
