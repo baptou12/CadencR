@@ -58,8 +58,13 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
 function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { sessionId, featureId, projectId, data, controls, refs, agentVisible, hotkeysEnabled } =
     args;
-  const activeFeatureId = hotkeysEnabled ? featureId : undefined;
-  const activeProjectId = hotkeysEnabled ? projectId : undefined;
+  // Always thread the real feature/project IDs through `AgentSession`. They
+  // drive feature-scoped queries (working-directory lookup for basePath path
+  // trimming, file list autocomplete) that must run for every mounted agent,
+  // not just the focused one — otherwise the unified grid shows full
+  // absolute paths in tool calls for any agent that isn't currently active.
+  // Hotkey gating is handled separately via `disableShortcuts` and
+  // `agentTabActive` below; the IDs themselves don't need to be nulled.
   const onSend = useAgentSendHandler({ featureId, projectId, data, controls });
   return useMemo(
     () => ({
@@ -70,8 +75,8 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
         <AgentSession
           ref={refs.agent}
           agentType="session"
-          featureId={activeFeatureId}
-          projectId={activeProjectId}
+          featureId={featureId}
+          projectId={projectId}
           wsSessionId={sessionId}
           blocks={controls.ws.blocks}
           rootBlocks={controls.ws.rootBlocks}
@@ -132,11 +137,10 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       ),
     }),
     [
-      activeFeatureId,
-      activeProjectId,
       agentVisible,
       controls,
       data,
+      featureId,
       hotkeysEnabled,
       onSend,
       projectId,
