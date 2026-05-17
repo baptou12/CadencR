@@ -2,7 +2,7 @@
 
 ## v0.1.2 - 2026-05-17
 
-Previous release: v0.1.1 (`19d1117157eb63ccf3ccbe803de4e9ba6a756884`)
+Previous release: v0.1.1
 
 ### Added
 
