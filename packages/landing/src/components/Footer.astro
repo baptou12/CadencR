@@ -1,6 +1,7 @@
 ---
 import LogoMark from "@/components/icons/LogoMark.astro";
 import Wrap from "@/components/ui/Wrap.astro";
+import { DISPLAY_VERSION } from "@/lib/app-version";
 const base = import.meta.env.BASE_URL;
 ---
 <footer class="border-t border-border/55 pb-11 pt-9">
@@ -13,7 +14,7 @@ const base = import.meta.env.BASE_URL;
         </span>
         <span class="font-mono text-[11.5px] leading-[1.55] text-muted-foreground">
           The IDE for the era of agents.<br />
-          Apache-2.0 · v0.1.0 · built in Paris.
+          Apache-2.0 · {DISPLAY_VERSION} · built in Paris.
         </span>
       </div>
       <div

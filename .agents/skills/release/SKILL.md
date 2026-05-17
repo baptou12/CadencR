@@ -48,6 +48,8 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Update Rust package versions in `packages/*/Cargo.toml` that already have a package version.
    - Update lockfiles when the package manager requires it.
    - Do not change unrelated dependency versions.
+   - Verify the landing page displays the new version from `packages/landing/package.json` rather than a hardcoded version string.
+   - If the landing source still contains hardcoded version labels for the navbar, footer, hero, download blocks, or release CTAs, replace them with the shared landing version source and include that in the release preparation commit.
 
 6. **Run a dedicated security and regression review**
    - If subagents are available, launch a dedicated review agent focused only on security and regressions introduced since the previous tag.

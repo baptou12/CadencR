@@ -3,6 +3,7 @@ import LogoMark from "@/components/icons/LogoMark.astro";
 import GithubIcon from "@/components/icons/GithubIcon.astro";
 import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import Button from "@/components/ui/Button.astro";
+import { DISPLAY_VERSION } from "@/lib/app-version";
 
 const base = import.meta.env.BASE_URL;
 const navLinks = [
@@ -22,7 +23,7 @@ const navLinks = [
         aria-hidden="true"
         class="hidden font-mono text-[10px] text-muted-foreground rounded border border-border px-[5px] py-px sm:inline-block"
       >
-        v0.1.0
+        {DISPLAY_VERSION}
       </span>
     </a>
     <nav
