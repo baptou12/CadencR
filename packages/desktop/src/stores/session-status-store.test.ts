@@ -8,14 +8,13 @@
  */
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { useSessionStatusStore, type SessionStatusEntry } from "@/stores/session-status-store";
 import {
   aggregateFeatureStatus,
   useLiveActiveSessionIds,
   useLiveTotalWorkingCount,
   useLiveWorkingCount,
-  useSessionStatusStore,
-  type SessionStatusEntry,
-} from "@/stores/session-status-store";
+} from "@/stores/session-status-selectors";
 
 function seedSession(sessionId: number, entry: SessionStatusEntry): void {
   useSessionStatusStore.setState((s) => ({

@@ -27,7 +27,7 @@ import {
   persistedStatusToLifecycle,
 } from "@/stores/ws-turn-lifecycle";
 import { createTurnTiming, type TurnTimingState } from "@/stores/ws-turn-timing";
-import { useSessionStatus } from "@/stores/session-status-store";
+import { useSessionStatus } from "@/stores/session-status-selectors";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
 
 export interface UseWebSocketSessionReturn {

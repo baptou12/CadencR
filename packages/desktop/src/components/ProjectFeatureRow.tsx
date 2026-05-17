@@ -21,7 +21,7 @@ import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
-import { useFeatureStatus } from "@/stores/session-status-store";
+import { useFeatureStatus } from "@/stores/session-status-selectors";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
   "input",

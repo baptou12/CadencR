@@ -6,7 +6,7 @@ import {
 } from "@/components/UnifiedAgentsFilterState";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 import { parseUTCDateTime } from "@/lib/date-utils";
-import { useLiveActiveSessionIds } from "@/stores/session-status-store";
+import { useLiveActiveSessionIds } from "@/stores/session-status-selectors";
 
 interface UseUnifiedAgentsDataArgs {
   mode: UnifiedAgentsFilterMode;
