@@ -5,7 +5,7 @@ interface UseDiffKeyboardParams {
   fileNames: string[];
   focusedFileIndex: number;
   setFocusedFileIndex: (index: number) => void;
-  scrollToFileIndex: (index: number) => void;
+  scrollToFileIndex: (index: number, behavior?: ScrollBehavior) => void;
   toggleFile: (fileName: string) => void;
   blobShas: Record<string, string>;
   viewedFilesSet: Set<string>;
@@ -53,7 +53,7 @@ export function useDiffKeyboard({
       e.stopImmediatePropagation();
       const next = Math.min(focusedFileIndexRef.current + 1, fileNames.length - 1);
       setFocusedFileIndex(next);
-      scrollToFileIndex(next);
+      scrollToFileIndex(next, "smooth");
     },
     "git",
   );
@@ -65,7 +65,7 @@ export function useDiffKeyboard({
       e.stopImmediatePropagation();
       const next = Math.max(focusedFileIndexRef.current - 1, 0);
       setFocusedFileIndex(next);
-      scrollToFileIndex(next);
+      scrollToFileIndex(next, "smooth");
     },
     "git",
   );

@@ -17,6 +17,83 @@ interface DiffFileHeaderProps {
   onUnmarkViewed: () => void;
 }
 
+interface DiffFileHeaderPrefixProps {
+  displayName: string;
+  isCollapsed: boolean;
+  showName?: boolean;
+  onToggle: () => void;
+}
+
+interface DiffFileHeaderViewedProps {
+  isFileViewed: boolean;
+  onMarkViewed: () => void;
+  onUnmarkViewed: () => void;
+}
+
+export function DiffFileHeaderPrefix({
+  displayName,
+  isCollapsed,
+  showName = true,
+  onToggle,
+}: DiffFileHeaderPrefixProps): ReactElement {
+  return (
+    <>
+      <CopyButton
+        text={displayName}
+        hoverClass="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+        sizeClass="h-3.5 w-3.5"
+      />
+      <button
+        type="button"
+        className={
+          showName
+            ? "flex min-w-0 flex-1 items-center gap-2 text-left"
+            : "inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+        }
+        aria-label={isCollapsed ? `Expand ${displayName}` : `Collapse ${displayName}`}
+        onClick={onToggle}
+      >
+        {isCollapsed ? (
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+        {showName && (
+          <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
+        )}
+      </button>
+    </>
+  );
+}
+
+export function DiffFileHeaderViewed({
+  isFileViewed,
+  onMarkViewed,
+  onUnmarkViewed,
+}: DiffFileHeaderViewedProps): ReactElement {
+  return (
+    <div className="ml-2 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <Checkbox
+        checked={isFileViewed}
+        onCheckedChange={(checked: boolean | "indeterminate"): void => {
+          if (checked) onMarkViewed();
+          else onUnmarkViewed();
+        }}
+        className="h-3.5 w-3.5 cursor-pointer"
+      />
+      <span
+        className="cursor-pointer select-none"
+        onClick={(): void => {
+          if (isFileViewed) onUnmarkViewed();
+          else onMarkViewed();
+        }}
+      >
+        Viewed
+      </span>
+    </div>
+  );
+}
+
 /** Sticky file header row with collapse toggle, stats, and viewed checkbox. */
 export function DiffFileHeader({
   displayName,
@@ -34,23 +111,11 @@ export function DiffFileHeader({
     <div
       className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
     >
-      <CopyButton
-        text={displayName}
-        hoverClass="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
-        sizeClass="h-3.5 w-3.5"
+      <DiffFileHeaderPrefix
+        displayName={displayName}
+        isCollapsed={isCollapsed}
+        onToggle={onToggle}
       />
-      <button
-        type="button"
-        className="flex min-w-0 flex-1 items-center gap-2 text-left"
-        onClick={onToggle}
-      >
-        {isCollapsed ? (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-        )}
-        <span className="min-w-0 flex-1 truncate font-mono text-xs">{displayName}</span>
-      </button>
       <NumStat
         additions={additions}
         deletions={deletions}
@@ -58,25 +123,11 @@ export function DiffFileHeader({
         className="text-xs shrink-0"
       />
       {showViewedCheckbox && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-2 shrink-0">
-          <Checkbox
-            checked={isFileViewed}
-            onCheckedChange={(checked: boolean | "indeterminate"): void => {
-              if (checked) onMarkViewed();
-              else onUnmarkViewed();
-            }}
-            className="h-3.5 w-3.5 cursor-pointer"
-          />
-          <span
-            className="cursor-pointer select-none"
-            onClick={(): void => {
-              if (isFileViewed) onUnmarkViewed();
-              else onMarkViewed();
-            }}
-          >
-            Viewed
-          </span>
-        </div>
+        <DiffFileHeaderViewed
+          isFileViewed={isFileViewed}
+          onMarkViewed={onMarkViewed}
+          onUnmarkViewed={onUnmarkViewed}
+        />
       )}
     </div>
   );

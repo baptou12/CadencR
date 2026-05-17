@@ -11,6 +11,10 @@ export interface FileDiffSection {
   hunks: string[];
 }
 
+export function hasTextHunks(section: FileDiffSection): boolean {
+  return section.hunks.some((hunk) => hunk.includes("\n@@"));
+}
+
 export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
   if (!rawDiff.trim()) return [];
 
@@ -29,6 +33,11 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
     const blockStart = i;
     let oldFileName = "";
     let newFileName = "";
+    const gitNames = lines[i].match(/^diff --git a\/(.*) b\/(.*)$/);
+    if (gitNames) {
+      oldFileName = gitNames[1];
+      newFileName = gitNames[2];
+    }
     i++;
 
     // Parse header lines until we hit a hunk or next diff
@@ -50,15 +59,11 @@ export function parseUnifiedDiff(rawDiff: string): FileDiffSection[] {
       // DiffFile.createInstance expects hunks as an array with
       // the full diff text (headers + hunks) as a single string entry
       const fullBlock = lines.slice(blockStart, i).join("\n");
-      // Only include sections that have actual @@ hunk headers —
-      // diffs without them (e.g. binary files, mode-only changes) can't be parsed
-      if (fullBlock.includes("\n@@")) {
-        sections.push({
-          oldFileName: oldFileName || "/dev/null",
-          newFileName: newFileName || "/dev/null",
-          hunks: [fullBlock],
-        });
-      }
+      sections.push({
+        oldFileName: oldFileName || "/dev/null",
+        newFileName: newFileName || "/dev/null",
+        hunks: [fullBlock],
+      });
     }
   }
 
