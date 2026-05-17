@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <radialGradient id="purple-bloom" cx="50%" cy="50%" r="62%">
+      <stop offset="0%" stop-color="#2b203f"/>
+      <stop offset="46%" stop-color="#191a27"/>
+      <stop offset="100%" stop-color="#14151f"/>
+    </radialGradient>
+    <linearGradient id="edge-line" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#bd93f9" stop-opacity="0"/>
+      <stop offset="48%" stop-color="#bd93f9" stop-opacity="0.68"/>
+      <stop offset="52%" stop-color="#8be9fd" stop-opacity="0.68"/>
+      <stop offset="100%" stop-color="#8be9fd" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="logo-shadow" x="-80%" y="-80%" width="260%" height="260%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="16" flood-color="#bd93f9" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="#191a27"/>
+  <rect width="1280" height="640" fill="url(#purple-bloom)"/>
+  <path d="M184 474 H1096" stroke="url(#edge-line)" stroke-width="1.5" opacity="0.8"/>
+
+  <g transform="translate(250 220) scale(0.185546875)" filter="url(#logo-shadow)">
+    <rect x="104" y="104" width="824" height="824" rx="185" ry="185" fill="#171924"/>
+    <g transform="translate(512 512) scale(8.24) translate(-50 -50)">
+      <circle cx="50" cy="50" r="16" fill="#b388ff"/>
+      <g transform="rotate(-90 50 50)">
+        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#454f63" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 20" fill="none"/>
+        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#b2ff59" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(240 50 50)"/>
+        <circle cx="50" cy="50" r="28" pathLength="360" stroke="#80d8ff" stroke-width="5" stroke-linecap="round" stroke-dasharray="40 320" fill="none" transform="rotate(60 50 50)"/>
+      </g>
+    </g>
+  </g>
+
+  <text
+    x="480"
+    y="338"
+    fill="#f8f8f2"
+    font-family="Avenir Next, Montserrat, Helvetica Neue, Arial, sans-serif"
+    font-size="86"
+    font-weight="700"
+    letter-spacing="0.1em"
+  >CADENCR</text>
+
+  <text x="482" y="414" fill="#a9b1d6" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="30" font-weight="500" letter-spacing="0.6">The IDE for the era of agents.</text>
+</svg>
