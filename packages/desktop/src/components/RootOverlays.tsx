@@ -4,6 +4,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
+import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
 
 type ConfirmAction = "archive" | "delete" | null;
 
@@ -50,6 +51,7 @@ export function RootOverlays({
       <UnifiedAgentsShortcut />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <Toaster position="top-center" richColors />
+      <PostUpdateChangelogDialog />
       <ConfirmDialog
         open={confirmAction != null}
         onOpenChange={(open) => {

@@ -33,6 +33,7 @@ function makeElectronBridge(): CadencrDesktopBridge {
     onPowerSuspend: vi.fn(() => () => undefined),
     onPowerResume: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(() => Promise.resolve()),
+    fetchChangelog: vi.fn(() => Promise.resolve(null)),
     installUpdate: vi.fn(() => Promise.resolve()),
     onUpdateEvent: vi.fn(() => () => undefined),
   };

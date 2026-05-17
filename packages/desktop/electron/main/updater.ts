@@ -10,9 +10,16 @@ const { autoUpdater } = pkg;
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const FIRST_CHECK_DELAY_MS = 10_000; // 10 s after ready — let the sidecar boot
 
+// GitHub repo backing the public releases / changelog. Matches the `publish`
+// block in `electron-builder.yml`.
+const GH_OWNER = "merkr-software";
+const GH_REPO = "cadencr";
+const CHANGELOG_FETCH_TIMEOUT_MS = 8_000;
+
 type UpdateChannel =
   | { channel: "update:checking" }
-  | { channel: "update:available"; version: string; releaseNotes: string | null }
+  | { channel: "update:available"; version: string }
+  | { channel: "update:changelog"; version: string; markdown: string | null }
   | { channel: "update:not-available"; version: string }
   | { channel: "update:error"; message: string }
   | { channel: "update:download-progress"; percent: number; bytesPerSecond: number }
@@ -56,6 +63,14 @@ export function registerAutoUpdaterIpc({ getMainWindow, prepareInstallUpdate }: 
       throw error;
     }
   });
+  ipcMain.handle(
+    "app:fetch-changelog",
+    async (event: IpcMainInvokeEvent, version: unknown): Promise<string | null> => {
+      assertTrustedSender(event, getMainWindow);
+      if (typeof version !== "string" || version.length === 0) return null;
+      return fetchChangelog(version);
+    },
+  );
 }
 
 export function initAutoUpdater({ getMainWindow }: InitOptions): void {
@@ -74,10 +89,18 @@ export function initAutoUpdater({ getMainWindow }: InitOptions): void {
     sendUpdate(getMainWindow, { channel: "update:checking" });
   });
   autoUpdater.on("update-available", (info) => {
-    sendUpdate(getMainWindow, {
-      channel: "update:available",
-      version: info.version,
-      releaseNotes: typeof info.releaseNotes === "string" ? info.releaseNotes : null,
+    // Notify the renderer immediately so the sidebar can light up; the
+    // changelog body arrives separately once GitHub responds. Splitting the
+    // two events keeps the store's `applyEvent` reducer linear (no special-
+    // casing a second `available` fire) and prevents the second emit from
+    // racing with `download-progress`.
+    sendUpdate(getMainWindow, { channel: "update:available", version: info.version });
+    void fetchChangelog(info.version).then((markdown) => {
+      sendUpdate(getMainWindow, {
+        channel: "update:changelog",
+        version: info.version,
+        markdown,
+      });
     });
   });
   autoUpdater.on("update-not-available", (info) => {
@@ -128,4 +151,52 @@ function sendUpdate(getMainWindow: () => BrowserWindow | null, payload: UpdateCh
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+// --- GitHub changelog fetching ---------------------------------------------
+
+/** Process-lifetime cache of release-notes lookups, keyed by `v{semver}`. */
+const changelogCache = new Map<string, string | null>();
+
+interface GithubReleasePayload {
+  tag_name?: unknown;
+  body?: unknown;
+}
+
+/**
+ * Fetch the markdown release notes for `version` from the GitHub Releases
+ * API. Returns `null` when the release doesn't exist or the request fails.
+ * Accepts either `"0.2.0"` or `"v0.2.0"`.
+ */
+export async function fetchChangelog(version: string): Promise<string | null> {
+  const tag = version.startsWith("v") ? version : `v${version}`;
+  if (changelogCache.has(tag)) return changelogCache.get(tag) ?? null;
+
+  const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases/tags/${encodeURIComponent(tag)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHANGELOG_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": `Cadencr/${app.getVersion()}`,
+      },
+    });
+    if (!res.ok) {
+      changelogCache.set(tag, null);
+      return null;
+    }
+    const payload = (await res.json()) as GithubReleasePayload;
+    const body = typeof payload.body === "string" ? payload.body.trim() : "";
+    const result = body.length > 0 ? body : null;
+    changelogCache.set(tag, result);
+    return result;
+  } catch (error) {
+    console.warn(`[updater] fetchChangelog(${tag}) failed:`, errorMessage(error));
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
