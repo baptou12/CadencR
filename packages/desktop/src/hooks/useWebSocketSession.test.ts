@@ -6,6 +6,10 @@ vi.mock("@/api/generated", () => ({
   useGetFeatureAgentState: vi.fn(() => ({ data: undefined, isLoading: false })),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],
   getGetFeatureSettingsQueryKey: (id: number) => ["features", "settings", id],
+  // `session-status-handlers.ts > lookupFeature` reads from this key when an
+  // envelope fires. Without it, `dispatchEnvelope` throws and the store logs
+  // a noisy stack trace even though the tests still pass.
+  getListFeaturesQueryKey: () => ["features", "list"],
 }));
 
 import { useWebSocketSession } from "./useWebSocketSession";

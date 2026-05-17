@@ -1,9 +1,41 @@
 import "@testing-library/jest-dom/vitest";
-import { vi, afterEach } from "vitest";
+import { vi, afterEach, afterAll, beforeAll } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { server } from "./test/msw-server";
 
 // Automatically cleanup DOM after each test
 afterEach(cleanup);
+
+// ---------------------------------------------------------------------------
+// MSW — intercept HTTP so unmocked React Query hooks resolve cleanly
+// ---------------------------------------------------------------------------
+//
+// Many component tests mount real components whose React Query hooks fire
+// axios requests against `http://127.0.0.1:5005`. There is no backend in
+// jsdom, so without MSW every unmocked hook would emit a full `AxiosError:
+// Network Error` stack via React Query's default `onError` — dozens of lines
+// per test. MSW's catch-all handler (see `./test/msw-server.ts`) returns an
+// empty JSON body for any request, so hooks resolve to an empty payload and
+// stay silent. Tests that need a real response shape mock at the hook layer
+// (`vi.mock("@/api/generated", …)`), which short-circuits before the request
+// reaches MSW.
+//
+// `onUnhandledRequest: "bypass"` keeps non-API fetches (asset URLs, etc.)
+// silent — unmatched requests just fall through to the (absent) network.
+beforeAll(() => {
+  server.listen({ onUnhandledRequest: "bypass" });
+  // MSW's interceptor installs `globalThis.WebSocket` as a non-writable
+  // property. WebSocket-focused tests (`ws-connection.test.ts`,
+  // `useTerminalWebSocket.test.ts`) swap `globalThis.WebSocket` for a
+  // `MockWebSocket` class and would otherwise throw on assignment. Flip the
+  // descriptor to writable; the value is left untouched.
+  Object.defineProperty(globalThis, "WebSocket", {
+    writable: true,
+    configurable: true,
+  });
+});
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
 
 // ---------------------------------------------------------------------------
 // navigator.platform — pretend tests run on macOS
