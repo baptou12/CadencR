@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.3 - 2026-05-17
+
+Previous release: v0.1.2 (42c9183a091f1e37e5fc40c4dc8d31a6e1977bf9)
+
+### Added
+
+- Added a dedicated download page that recommends the right macOS build when the browser exposes platform details.
+- Added direct manual download targets for macOS DMG and ZIP artifacts.
+
+### Changed
+
+- Updated landing page download CTAs to point to the dedicated download page.
+- Derived the landing site version and release asset URLs from package metadata.
+- Replaced the desktop update notification toast with a sidebar update pill and post-update changelog dialog.
+
+### Fixed
+
+- Fixed GitHub release CTA icon sizing and visual alignment in the recommended download card.
+- Kept download asset sizes on one line in the manual target list.
+- Themed Sonner toast variants with desktop design tokens.
+
 ## v0.1.2 - 2026-05-17
 
 Previous release: v0.1.1
