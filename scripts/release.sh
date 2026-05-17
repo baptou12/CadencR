@@ -14,6 +14,10 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
 }
 
+release_notes_script() {
+  echo "scripts/release-notes.sh"
+}
+
 run() {
   echo "+ $*" >&2
   "$@"
@@ -65,8 +69,10 @@ assert_tag_available() {
 assert_changelog_ready() {
   local tag="$1"
   [ -f CHANGELOG.md ] || fail "CHANGELOG.md is missing"
-  grep -Eq "^##[[:space:]]+(\\[$tag\\]|$tag)($|[[:space:]-])" CHANGELOG.md \
-    || fail "CHANGELOG.md must contain a section for $tag"
+  local tmp
+  tmp="$(mktemp)"
+  "$(release_notes_script)" "$tag" "$tmp"
+  rm -f "$tmp"
 }
 
 assert_landing_news_ready() {

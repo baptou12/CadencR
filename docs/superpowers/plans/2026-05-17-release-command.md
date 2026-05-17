@@ -27,12 +27,16 @@
 
 **Files:**
 - Create: `scripts/release.sh`
+- Create: `scripts/release-notes.sh`
+- Modify: `.github/workflows/desktop-release.yml`
 
 - [x] Validate `vX.Y.Z` argument.
 - [x] Verify clean worktree.
 - [x] Find latest previous `v*` tag and commit hash.
 - [x] Verify local tag, remote tag, and GitHub release are not already occupied.
 - [x] Verify `CHANGELOG.md`, landing news, and version files are updated.
+- [x] Extract the matching changelog section into GitHub release notes.
+- [x] Publish the GitHub release with `--notes-file` from the extracted changelog section.
 - [x] Run trufflehog from previous release commit.
 - [x] Create local annotated tag only after all checks pass.
 

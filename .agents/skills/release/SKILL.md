@@ -34,6 +34,7 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Update `CHANGELOG.md` with a section for the requested tag.
    - Include the previous tag, previous tag commit hash, release date, and grouped user-facing changes.
    - Keep the changelog factual and concise.
+   - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.
 
 4. **Ask for landing news copy**
    - Before creating or editing the landing news post, ask the developer what marketing/commercial text they want to show in the news article in addition to the changelog.
@@ -76,7 +77,7 @@ gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/status" \
 
 9. **Run the automated release preflight**
    - Run: `scripts/release.sh "$TAG"`.
-   - This checks changelog/news/version files, tag and release availability, and trufflehog results.
+   - This checks that the changelog section can be extracted for GitHub release notes, plus news/version files, tag and release availability, and trufflehog results.
    - It creates the local annotated tag when all checks pass.
    - If it fails, fix the reported issue and rerun it.
 
