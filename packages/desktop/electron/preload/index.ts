@@ -44,7 +44,8 @@ interface FileDropPayload {
 
 type UpdateEvent =
   | { kind: "checking" }
-  | { kind: "available"; version: string; releaseNotes: string | null }
+  | { kind: "available"; version: string }
+  | { kind: "changelog"; version: string; markdown: string | null }
   | { kind: "not-available"; version: string }
   | { kind: "error"; message: string }
   | { kind: "download-progress"; percent: number; bytesPerSecond: number }
@@ -53,8 +54,11 @@ type UpdateEvent =
 function onUpdateEvent(cb: (event: UpdateEvent) => void): () => void {
   const unsubs = [
     onIpc<void>("update:checking", () => cb({ kind: "checking" })),
-    onIpc<{ version: string; releaseNotes: string | null }>("update:available", (p) =>
-      cb({ kind: "available", version: p.version, releaseNotes: p.releaseNotes }),
+    onIpc<{ version: string }>("update:available", (p) =>
+      cb({ kind: "available", version: p.version }),
+    ),
+    onIpc<{ version: string; markdown: string | null }>("update:changelog", (p) =>
+      cb({ kind: "changelog", version: p.version, markdown: p.markdown }),
     ),
     onIpc<{ version: string }>("update:not-available", (p) =>
       cb({ kind: "not-available", version: p.version }),
@@ -151,5 +155,7 @@ contextBridge.exposeInMainWorld("cadencr", {
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
+  fetchChangelog: (version: string): Promise<string | null> =>
+    ipcRenderer.invoke("app:fetch-changelog", version),
   onUpdateEvent,
 });

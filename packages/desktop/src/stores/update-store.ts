@@ -13,7 +13,10 @@ export type UpdateStatus =
 interface UpdateState {
   status: UpdateStatus;
   version: string | null;
-  releaseNotes: string | null;
+  /** Markdown body fetched from the GitHub release, or `null` if not yet/never available. */
+  changelogMarkdown: string | null;
+  /** True while the main process is fetching the changelog for `version` from GitHub. */
+  changelogLoading: boolean;
   /** Download percent, 0–100. */
   progress: number;
   error: string | null;
@@ -25,7 +28,8 @@ interface UpdateState {
 export const useUpdateStore = create<UpdateState>((set) => ({
   status: "idle",
   version: null,
-  releaseNotes: null,
+  changelogMarkdown: null,
+  changelogLoading: false,
   progress: 0,
   error: null,
   checkForUpdates: async () => {
@@ -52,10 +56,20 @@ export const useUpdateStore = create<UpdateState>((set) => ({
         set({
           status: "downloading",
           version: event.version,
-          releaseNotes: event.releaseNotes,
+          changelogMarkdown: null,
+          changelogLoading: true,
           progress: 0,
           error: null,
         });
+        return;
+      case "changelog":
+        // Ignore stale changelogs that arrive after the user moved on to a
+        // different update cycle.
+        set((prev) =>
+          prev.version === event.version
+            ? { changelogMarkdown: event.markdown, changelogLoading: false }
+            : prev,
+        );
         return;
       case "not-available":
         set({ status: "up-to-date", version: event.version, error: null });

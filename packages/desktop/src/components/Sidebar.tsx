@@ -8,8 +8,11 @@ import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink";
 import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicator";
+import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
+import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
+import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
@@ -34,7 +37,7 @@ export function Sidebar() {
           onSelectFeature={setSelectedFeatureId}
         />
       </div>
-      <SidebarSettingsLink />
+      <SidebarFooter />
     </aside>
   );
 }
@@ -168,22 +171,25 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
   );
 }
 
-function SidebarSettingsLink(): ReactElement {
+function SidebarFooter(): ReactElement {
   return (
-    <div className="border-t border-border/40 flex items-center">
-      <Link
-        to="/settings"
-        data-nav-item
-        className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-xs text-foreground/80 hover:bg-accent hover:text-foreground transition-colors focus-visible:outline-none focus-visible:bg-accent"
-      >
-        <span className="flex items-center gap-2">
-          <Settings className="size-4" />
-          <span>Settings</span>
-        </span>
-        <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
-      </Link>
-      {/* Hidden when healthy; renders a status pill + popover otherwise. */}
-      <ConnectionStatusIndicator className="mr-2" />
+    <div className="flex flex-col items-center gap-1 py-2">
+      <SidebarUpdateButton />
+      <div className="relative flex w-full items-center justify-center">
+        <Link
+          to="/settings"
+          data-nav-item
+          className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}
+        >
+          <span className="flex items-center gap-2">
+            <Settings className="size-4" />
+            <span>Settings</span>
+          </span>
+          <span className="text-[10px] text-muted-foreground tabular-nums">v{APP_VERSION}</span>
+        </Link>
+        {/* Hidden when healthy; renders a status pill + popover otherwise. */}
+        <ConnectionStatusIndicator className="absolute right-3" />
+      </div>
     </div>
   );
 }

@@ -47,7 +47,13 @@ export interface FileDropPayload {
 
 export type UpdateEvent =
   | { kind: "checking" }
-  | { kind: "available"; version: string; releaseNotes: string | null }
+  | { kind: "available"; version: string }
+  | {
+      /** Markdown body for `version`, fetched from GitHub. `null` on miss/failure. */
+      kind: "changelog";
+      version: string;
+      markdown: string | null;
+    }
   | { kind: "not-available"; version: string }
   | { kind: "error"; message: string }
   | { kind: "download-progress"; percent: number; bytesPerSecond: number }
@@ -88,6 +94,11 @@ export interface CadencrDesktopBridge {
   checkForUpdates: () => Promise<void>;
   /** Quit and install a downloaded update. */
   installUpdate: () => Promise<void>;
+  /**
+   * Fetch the markdown release notes for a given version from GitHub.
+   * Returns `null` when the release isn't published or the request fails.
+   */
+  fetchChangelog: (version: string) => Promise<string | null>;
   /** Subscribe to all auto-updater lifecycle events. */
   onUpdateEvent: (cb: (event: UpdateEvent) => void) => () => void;
 }
@@ -134,6 +145,7 @@ const browserBridge: CadencrDesktopBridge = {
   onPowerResume: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),
   installUpdate: () => unavailable("installUpdate"),
+  fetchChangelog: () => Promise.resolve(null),
   onUpdateEvent: () => () => undefined,
 };
 
