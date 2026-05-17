@@ -43,14 +43,14 @@ describe("buildResumeCommand", () => {
     expect(result.command).toBe('cd "/tmp" && codex resume "abc\\"; echo \\$HOME \\`pwd\\`"');
   });
 
-  it("builds opencode command without --resume flag", () => {
+  it("builds opencode resume command with --session flag", () => {
     const result = buildResumeCommand({
       providerId: PROVIDER_IDS.OPENCODE,
       sessionId: "ses_abc123",
       cwd: "/home/user/project",
     });
     expect(result.supported).toBe(true);
-    expect(result.command).toBe('cd "/home/user/project" && opencode');
+    expect(result.command).toBe('cd "/home/user/project" && opencode --session "ses_abc123"');
   });
 
   it("builds codex resume command", () => {

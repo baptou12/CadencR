@@ -36,7 +36,7 @@ export function buildResumeCommand({
       };
     case PROVIDER_IDS.OPENCODE:
       return {
-        command: withCd("opencode", cwd),
+        command: withCd(`opencode --session ${quote(sessionId)}`, cwd),
         supported: true,
       };
     case PROVIDER_IDS.CODEX_CLI:
