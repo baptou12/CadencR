@@ -64,7 +64,7 @@ const softwareApplicationJsonLd = {
         <div class="mt-5 flex flex-wrap gap-2">
           <a
             href={defaultDownload?.url ?? LATEST_RELEASE_URL}
-            class="inline-flex h-10 items-center gap-2 rounded-lg border border-transparent bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:stroke-[2]"
+            class="inline-flex h-10 items-center gap-2 rounded-lg border border-transparent bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:shrink-0 [&_svg]:stroke-[2]"
             data-download-primary
           >
             <DownloadIcon />
@@ -72,7 +72,7 @@ const softwareApplicationJsonLd = {
           </a>
           <a
             href={LATEST_RELEASE_URL}
-            class="inline-flex h-10 items-center gap-2 rounded-lg border border-border bg-background px-4 text-[13px] font-medium transition-colors hover:bg-accent"
+            class="-my-px inline-flex h-[42px] items-center gap-2 rounded-lg border border-border bg-background px-4 text-[13px] font-medium transition-colors hover:bg-accent [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:shrink-0 [&_svg]:stroke-[2]"
           >
             <GithubIcon />
             View GitHub release
