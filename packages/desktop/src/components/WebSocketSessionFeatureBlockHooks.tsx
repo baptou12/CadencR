@@ -14,9 +14,13 @@ import { useAgentCatalog } from "@/api/agentRuntime";
 import {
   useGetBranch,
   useGetFeatureSettings,
+  useGetProjectSettings,
   useListProjects,
   useGetGitStatus,
+  useSetProjectSetting,
 } from "@/api/generated";
+import { toast } from "sonner";
+import { apiErrorMessage } from "@/lib/api-errors";
 import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
 import { useResolvedModelContext } from "@/contexts/ResolvedModelContext";
@@ -25,6 +29,10 @@ import { useScopedShortcut } from "@/hooks/useShortcut";
 import { useWebSocketSession } from "@/hooks/useWebSocketSession";
 import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
 import { nextProviderMode } from "@/lib/provider-modes";
+import {
+  DEFAULT_WORKTREE_MODE_KEY,
+  defaultWorktreeModeFromSettings,
+} from "@/lib/default-worktree-mode";
 import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
@@ -55,6 +63,7 @@ interface SessionControls {
   ws: ReturnType<typeof useWebSocketSession>;
   useWorktree: boolean;
   setUseWorktree: Dispatch<SetStateAction<boolean>>;
+  toggleWorktree: () => void;
   selectedBranch: string | null;
   setSelectedBranch: Dispatch<SetStateAction<string | null>>;
   initializedRef: RefObject<string | null>;
@@ -176,7 +185,11 @@ export function useSessionControls(
   });
   const [useWorktree, setUseWorktree] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const worktreeDefaultProjectRef = useRef<number | null>(null);
   const initializedRef = useRef<string | null>(null);
+  const { data: projectSettingsData } = useGetProjectSettings(projectId);
+  const setProjectSetting = useSetProjectSetting();
+  const defaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
   const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModelContext();
   const agentCatalog = useAgentCatalog();
   const resolvedProviderId = resolveProvider("session");
@@ -193,11 +206,33 @@ export function useSessionControls(
     activeProviderId,
     enabledOptInModes,
   );
+  useEffect(() => {
+    if (projectSettingsData == null || worktreeDefaultProjectRef.current === projectId) return;
+    worktreeDefaultProjectRef.current = projectId;
+    setUseWorktree(defaultWorktreeMode === "new");
+  }, [defaultWorktreeMode, projectId, projectSettingsData]);
+  const toggleWorktree = useCallback((): void => {
+    const next = !useWorktree;
+    setUseWorktree(next);
+    setProjectSetting.mutate(
+      {
+        id: projectId,
+        data: { key: DEFAULT_WORKTREE_MODE_KEY, value: next ? "new" : "skip" },
+      },
+      {
+        onError: (err) => {
+          setUseWorktree(!next);
+          toast.error(apiErrorMessage(err, "Failed to save worktree preference"));
+        },
+      },
+    );
+  }, [projectId, setProjectSetting, useWorktree]);
   return useMemo<SessionControls>(
     () => ({
       ws,
       useWorktree,
       setUseWorktree,
+      toggleWorktree,
       selectedBranch,
       setSelectedBranch,
       initializedRef,
@@ -226,6 +261,7 @@ export function useSessionControls(
       resolvedThinkingEffort,
       selectedBranch,
       supportedThinkingEfforts,
+      toggleWorktree,
       useWorktree,
       ws,
     ],

@@ -12,6 +12,7 @@ vi.mock("@tanstack/react-router", () => ({
 const generatedMocks = vi.hoisted(() => ({
   createProject: vi.fn(),
   createFeature: vi.fn(),
+  setProjectSetting: vi.fn().mockResolvedValue({ success: true }),
 }));
 
 vi.mock("../api/generated", () => ({
@@ -31,6 +32,8 @@ vi.mock("../api/generated", () => ({
   })),
   useCreateProject: vi.fn(() => ({ mutate: generatedMocks.createProject })),
   useCreateFeature: vi.fn(() => ({ mutate: generatedMocks.createFeature })),
+  useGetProjectSettings: vi.fn(() => ({ data: [] })),
+  useSetProjectSetting: vi.fn(() => ({ mutateAsync: generatedMocks.setProjectSetting })),
   getListProjectsQueryKey: vi.fn(() => ["/api/projects"] as const),
   getListFeaturesQueryKey: vi.fn(
     (params?: { project_id?: number }) => ["/api/features", params] as const,
@@ -45,6 +48,7 @@ describe("CommandPalette", () => {
     mockNavigate.mockClear();
     generatedMocks.createProject.mockClear();
     generatedMocks.createFeature.mockClear();
+    generatedMocks.setProjectSetting.mockClear();
   });
 
   it("renders when open", () => {

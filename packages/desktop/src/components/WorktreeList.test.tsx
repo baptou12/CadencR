@@ -11,6 +11,7 @@ const worktreeData = [
     head: "abc123",
     feature_id: 1,
     feature_title: "Feature A",
+    feature_status: "active",
   },
   {
     path: "/wt/feature-b",
@@ -18,6 +19,7 @@ const worktreeData = [
     head: "def456",
     feature_id: 2,
     feature_title: "Feature B",
+    feature_status: "archived",
   },
   {
     path: "/wt/orphan",
@@ -25,6 +27,7 @@ const worktreeData = [
     head: "ghi789",
     feature_id: null,
     feature_title: null,
+    feature_status: null,
   },
 ];
 
@@ -97,6 +100,15 @@ describe("WorktreeList", () => {
     expect(screen.getByText("feature/a")).toBeInTheDocument();
     expect(screen.getByText("feature/b")).toBeInTheDocument();
     expect(screen.getByText("orphan-branch")).toBeInTheDocument();
+  });
+
+  it("makes archived feature attachments visible in project settings", () => {
+    render(<WorktreeList projectId={1} />);
+
+    const archivedBadge = screen.getByText("Archived feature");
+
+    expect(archivedBadge).toHaveClass("bg-amber-500/10");
+    expect(archivedBadge).toHaveClass("border-amber-500/45");
   });
 
   it("requires double-click to confirm deletion", async () => {

@@ -1,5 +1,6 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   SettingsIcon,
   FolderPlusIcon,
@@ -26,6 +27,8 @@ import {
   getListProjectsQueryKey,
   getListFeaturesQueryKey,
   useCreateFeature,
+  useGetProjectSettings,
+  useSetProjectSetting,
   type CreateFeatureRequest,
 } from "../api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -35,6 +38,11 @@ import {
 } from "@/components/command-palette/WorktreeChoice";
 import { CommandPaletteWorktreeStep } from "@/components/command-palette/CommandPaletteWorktreeStep";
 import { ProjectFeatureGroup } from "@/components/command-palette/ProjectFeatureGroup";
+import { apiErrorMessage } from "@/lib/api-errors";
+import {
+  DEFAULT_WORKTREE_MODE_KEY,
+  defaultWorktreeModeFromSettings,
+} from "@/lib/default-worktree-mode";
 
 interface CommandPaletteProps {
   open: boolean;
@@ -57,8 +65,12 @@ export function CommandPalette({
   const [worktreeChoice, setWorktreeChoice] = useState<WorktreeChoiceValue>({ mode: "new" });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
   const projectsQuery = useListProjects();
+  const projectSettingsQuery = useGetProjectSettings(pendingProjectId ?? 0, {
+    query: { enabled: pendingProjectId != null },
+  });
+  const setProjectSetting = useSetProjectSetting();
+  const projectDefaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsQuery.data);
 
   const createProjectMutation = useCreateProject({
     mutation: {
@@ -118,7 +130,6 @@ export function CommandPalette({
     },
     [onOpenChange],
   );
-
   const handleFeatureSelect = useCallback(
     (projectId: number, featureId: number) => {
       void navigate({
@@ -140,7 +151,6 @@ export function CommandPalette({
     createProjectMutation.mutate({ data: { name, path: folder } });
     close();
   }, [createProjectMutation, close]);
-
   const startWorktreePick = useCallback((projectId: number) => {
     setPendingProjectId(projectId);
     setWorktreeChoice({ mode: "new" });
@@ -148,9 +158,25 @@ export function CommandPalette({
     setMode("pick-worktree-mode");
   }, []);
 
-  const handleConfirmCreateFeature = useCallback(() => {
+  useEffect(() => {
+    if (mode !== "pick-worktree-mode") return;
+    setWorktreeChoice(projectDefaultWorktreeMode === "skip" ? { mode: "skip" } : { mode: "new" });
+  }, [mode, projectDefaultWorktreeMode]);
+
+  const handleConfirmCreateFeature = useCallback(async () => {
     if (pendingProjectId == null) return;
     if (!isWorktreeChoiceValid(worktreeChoice)) return;
+    if (worktreeChoice.mode !== "reuse" && worktreeChoice.mode !== projectDefaultWorktreeMode) {
+      try {
+        await setProjectSetting.mutateAsync({
+          id: pendingProjectId,
+          data: { key: DEFAULT_WORKTREE_MODE_KEY, value: worktreeChoice.mode },
+        });
+      } catch (err) {
+        toast.error(apiErrorMessage(err, "Failed to save worktree preference"));
+        return;
+      }
+    }
     const data: CreateFeatureRequest = {
       project_id: pendingProjectId,
       title: "Untitled Feature",
@@ -161,8 +187,14 @@ export function CommandPalette({
     }
     createFeatureMutation.mutate({ data });
     close();
-  }, [pendingProjectId, worktreeChoice, createFeatureMutation, close]);
-
+  }, [
+    pendingProjectId,
+    worktreeChoice,
+    projectDefaultWorktreeMode,
+    setProjectSetting,
+    createFeatureMutation,
+    close,
+  ]);
   const handleProjectPick = useCallback(
     (projectId: number) => {
       if (mode === "pick-project-feature") {
@@ -176,7 +208,6 @@ export function CommandPalette({
   );
 
   const handleOpenDiff = useCallback(() => {
-    // Dispatch the same keyboard event that FeatureTopBar listens for
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "D",
@@ -194,8 +225,6 @@ export function CommandPalette({
       if (mode === "pick-worktree-mode") {
         if (e.key === "Escape" || (e.key === "Backspace" && search === "")) {
           e.preventDefault();
-          // Step back: if we got here from a project pick step, return there.
-          // Otherwise (active project) go back to the root commands.
           setSearch("");
           if (activeProjectId == null) {
             setMode("pick-project-feature");
@@ -217,7 +246,6 @@ export function CommandPalette({
     [mode, search, worktreeChoice, activeProjectId, handleConfirmCreateFeature],
   );
 
-  // Sort projects: active project first
   const projects = projectsQuery.data ?? [];
   const sortedProjects = activeProjectId
     ? [
@@ -337,7 +365,6 @@ export function CommandPalette({
           {activeFeatureId != null && (
             <CommandItem
               onSelect={() => {
-                // Dispatch Ctrl+` to toggle terminal panel
                 window.dispatchEvent(
                   new KeyboardEvent("keydown", {
                     key: "`",
