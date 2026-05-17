@@ -459,3 +459,45 @@ html[data-animations="off"] *::after {
   animation: reconnect-slide 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   will-change: transform;
 }
+
+/* -------------------------------------------------------------------------
+ * Sonner toast variants
+ *
+ * Base chrome (bg / text / border) is owned by the <Toaster /> wrapper in
+ * components/ui/sonner.tsx via --normal-bg / --normal-text / --normal-border.
+ * Each variant adds a 3px left accent strip and recolors the icon — that's
+ * the entire visual difference. Adding new variants? Register them here,
+ * not at the call site.
+ * ------------------------------------------------------------------------- */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  border-left-width: 3px;
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] {
+  border-left-color: var(--acc-green);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] {
+  border-left-color: var(--acc-red);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] {
+  border-left-color: var(--acc-orange);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] {
+  border-left-color: var(--acc-cyan);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="success"] [data-icon] {
+  color: var(--acc-green);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="error"] [data-icon] {
+  color: var(--acc-red);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="warning"] [data-icon] {
+  color: var(--acc-orange);
+}
+[data-sonner-toaster] [data-sonner-toast][data-type="info"] [data-icon] {
+  color: var(--acc-cyan);
+}
+/* The toast description is muted relative to the title so a glance still
+ * separates "what happened" from the details. */
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--muted-foreground);
+}
