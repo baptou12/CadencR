@@ -104,7 +104,7 @@ export function formatTurnDuration(durationMs: number): string {
   return `${seconds}s`;
 }
 
-function startTurnTiming(nowMs: number): TurnTimingState {
+export function startTurnTiming(nowMs: number): TurnTimingState {
   return {
     startedAt: nowMs,
     segmentStartedAt: nowMs,

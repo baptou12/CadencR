@@ -115,25 +115,48 @@ export function applyUpdate(
   payload: Record<string, unknown>,
 ): {
   next: Record<number, SessionStatusEntry> | null;
+  sessionId: number | null;
   featureId: number | null;
   prevStatus: LiveAgentStatus | undefined;
   nextStatus: LiveAgentStatus | null;
+  entry: Pick<SessionStatusEntry, "status" | "kind"> | null;
 } {
   const sessionId = typeof payload.session_id === "number" ? payload.session_id : null;
   const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
   const seq = typeof payload.seq === "number" ? payload.seq : 0;
   if (sessionId == null || featureId == null) {
-    return { next: null, featureId: null, prevStatus: undefined, nextStatus: null };
+    return {
+      next: null,
+      sessionId: null,
+      featureId: null,
+      prevStatus: undefined,
+      nextStatus: null,
+      entry: null,
+    };
   }
   if (!isStatus(payload.status)) {
-    return { next: null, featureId, prevStatus: undefined, nextStatus: null };
+    return {
+      next: null,
+      sessionId,
+      featureId,
+      prevStatus: undefined,
+      nextStatus: null,
+      entry: null,
+    };
   }
   const kind = isPendingKind(payload.kind) ? payload.kind : null;
 
   const existing = prev[sessionId];
   if (existing && seq <= existing.seq) {
     // Out-of-order — drop.
-    return { next: null, featureId, prevStatus: existing.status, nextStatus: payload.status };
+    return {
+      next: null,
+      sessionId,
+      featureId,
+      prevStatus: existing.status,
+      nextStatus: null,
+      entry: null,
+    };
   }
 
   const sameValue =
@@ -144,7 +167,14 @@ export function applyUpdate(
   if (sameValue) {
     // Skipping the `set` keeps every selector subscribed to `bySession`
     // referentially stable through the long Agent-streaming runs.
-    return { next: null, featureId, prevStatus: existing.status, nextStatus: payload.status };
+    return {
+      next: null,
+      sessionId,
+      featureId,
+      prevStatus: existing.status,
+      nextStatus: payload.status,
+      entry: { status: payload.status, kind },
+    };
   }
 
   return {
@@ -152,9 +182,11 @@ export function applyUpdate(
       ...prev,
       [sessionId]: { status: payload.status, kind, featureId, seq },
     },
+    sessionId,
     featureId,
     prevStatus: existing?.status,
     nextStatus: payload.status,
+    entry: { status: payload.status, kind },
   };
 }
 

@@ -38,15 +38,15 @@
  * narrow selector and never subscribes to the whole store.
  */
 import { create } from "zustand";
-import { useShallow } from "zustand/react/shallow";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
 import { createEnvelope, parseEnvelope } from "@/lib/ws-envelope";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { useConnectionStatusStore } from "@/stores/connection-status-store";
 import { registerReconnector, unregisterReconnector } from "@/lib/ws-reconnect";
 import { useWsSessionStore } from "@/stores/ws-session-store";
-import { updateSession } from "@/stores/ws-session-types";
+import { updateSession, type SessionEntry, type WsSessionStore } from "@/stores/ws-session-types";
 import { transitionTurn, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
+import { startTurnTiming } from "@/stores/ws-turn-timing";
 import {
   applySnapshot,
   applyUpdate,
@@ -104,24 +104,21 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
     if (handleAppEnvelope(domain, action, payload)) return;
     if (domain !== "app") return;
     if (action === "session_status.snapshot") {
-      const bySession = applySnapshot(get().bySession, payload);
+      const previous = get().bySession;
+      const bySession = applySnapshot(previous, payload);
       set({ bySession });
-      syncWsLifecycles(
-        Object.entries(bySession).map(([id, entry]) => ({
-          id: Number(id),
-          entry,
-        })),
-      );
+      syncWsLifecycles(previous, bySession);
       return;
     }
     if (action === "session_status.update") {
       const result = applyUpdate(get().bySession, payload);
       if (result.next) set({ bySession: result.next });
-      if (result.nextStatus && typeof payload.session_id === "number") {
-        syncWsLifecycle(payload.session_id, {
-          status: result.nextStatus,
-          kind: isPendingKindPayload(payload.kind) ? payload.kind : null,
-        });
+      if (
+        result.entry &&
+        result.sessionId != null &&
+        (result.next || result.entry.status !== "idle")
+      ) {
+        syncWsLifecycle(result.sessionId, result.entry, result.prevStatus);
       }
       if (result.featureId != null && result.nextStatus) {
         notifyTransition(result.featureId, result.prevStatus, result.nextStatus);
@@ -247,17 +244,35 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
 });
 
 function syncWsLifecycles(
-  entries: Array<{
-    id: number;
-    entry: Pick<SessionStatusEntry, "status" | "kind">;
-  }>,
+  previous: Record<number, SessionStatusEntry>,
+  next: Record<number, SessionStatusEntry>,
 ): void {
-  for (const { id, entry } of entries) syncWsLifecycle(id, entry);
+  const store = useWsSessionStore.getState();
+  const sessionIdsByDbId = new Map<number, string>();
+  for (const [sessionId, session] of Object.entries(store.sessions)) {
+    if (session.sessionDbId != null) sessionIdsByDbId.set(session.sessionDbId, sessionId);
+  }
+
+  let updated: WsSessionStore = store;
+  let changed = false;
+  for (const [rawId, entry] of Object.entries(next)) {
+    const sessionDbId = Number(rawId);
+    const sessionId = sessionIdsByDbId.get(sessionDbId);
+    if (!sessionId) continue;
+    const session = updated.sessions[sessionId];
+    if (!session) continue;
+    const patch = lifecyclePatchFromStatus(session, entry, previous[sessionDbId]?.status);
+    if (!patch) continue;
+    updated = { ...updated, ...updateSession(updated, sessionId, patch) };
+    changed = true;
+  }
+  if (changed) useWsSessionStore.setState(updated);
 }
 
 function syncWsLifecycle(
   sessionDbId: number,
   entry: Pick<SessionStatusEntry, "status" | "kind">,
+  previousStatus?: LiveAgentStatus,
 ): void {
   const store = useWsSessionStore.getState();
   const match = Object.entries(store.sessions).find(
@@ -265,9 +280,35 @@ function syncWsLifecycle(
   );
   if (!match) return;
   const [sessionId, session] = match;
+  const patch = lifecyclePatchFromStatus(session, entry, previousStatus);
+  if (!patch) return;
+  useWsSessionStore.setState(updateSession(store, sessionId, patch));
+}
+
+type LifecyclePatch =
+  | Pick<SessionEntry, "lifecycle">
+  | Pick<SessionEntry, "lifecycle" | "turnTiming">;
+
+function lifecyclePatchFromStatus(
+  session: SessionEntry,
+  entry: Pick<SessionStatusEntry, "status" | "kind">,
+  previousStatus?: LiveAgentStatus,
+): LifecyclePatch | null {
   const lifecycle = lifecycleFromStatus(session.lifecycle, entry.status, entry.kind);
-  if (lifecycle === session.lifecycle) return;
-  useWsSessionStore.setState(updateSession(store, sessionId, { lifecycle }));
+  const resetStaleActiveTiming =
+    lifecycle === session.lifecycle && enteredAgentFromIdle(previousStatus, entry.status);
+  if (lifecycle === session.lifecycle && !resetStaleActiveTiming) return null;
+  return {
+    lifecycle,
+    ...(resetStaleActiveTiming ? { turnTiming: startTurnTiming(Date.now()) } : {}),
+  };
+}
+
+function enteredAgentFromIdle(
+  previousStatus: LiveAgentStatus | undefined,
+  nextStatus: LiveAgentStatus,
+): boolean {
+  return nextStatus === "agent" && (previousStatus == null || previousStatus === "idle");
 }
 
 function lifecycleFromStatus(
@@ -288,133 +329,4 @@ function lifecycleFromStatus(
     });
   }
   return lifecycle;
-}
-
-function isPendingKindPayload(value: unknown): value is PendingKind {
-  return value === "permission" || value === "question";
-}
-
-/**
- * Reduce per-session entries down to a single feature-level
- * `(status, kind)`. Mirrors the Rust `aggregate_feature` used in tests.
- *
- * Question wins over Agent wins over Idle. When two sessions are both
- * Question, the entry with the lower `session_id` wins (deterministic).
- */
-export function aggregateFeatureStatus(entries: readonly SessionStatusEntry[]): {
-  status: LiveAgentStatus;
-  kind: PendingKind | null;
-} {
-  let best: { status: LiveAgentStatus; kind: PendingKind | null } = {
-    status: "idle",
-    kind: null,
-  };
-  for (const e of entries) {
-    if (e.status === "question") {
-      if (best.status !== "question") {
-        best = { status: "question", kind: e.kind };
-      }
-    } else if (e.status === "agent" && best.status === "idle") {
-      best = { status: "agent", kind: null };
-    }
-  }
-  return best;
-}
-
-const EMPTY_FEATURE_STATUS: {
-  status: LiveAgentStatus;
-  kind: PendingKind | null;
-} = {
-  status: "idle",
-  kind: null,
-};
-
-/**
- * Per-session selector. Returns `null` when the store has no entry for
- * `sessionId` — callers should treat that as Idle (no event has yet
- * driven this session out of the default).
- */
-export function useSessionStatus(sessionId: number | null | undefined): SessionStatusEntry | null {
-  return useSessionStatusStore((s) =>
-    sessionId == null ? null : (s.bySession[sessionId] ?? null),
-  );
-}
-
-/**
- * Per-feature aggregate. `useShallow` skips re-rendering when the
- * resulting `{status, kind}` pair is unchanged across store mutations —
- * so a Delta-driven seq bump on an unrelated session never reaches React.
- */
-export function useFeatureStatus(featureId: number | null | undefined): {
-  status: LiveAgentStatus;
-  kind: PendingKind | null;
-} {
-  return useSessionStatusStore(
-    useShallow((s) => {
-      if (featureId == null) return EMPTY_FEATURE_STATUS;
-      const entries: SessionStatusEntry[] = [];
-      for (const entry of Object.values(s.bySession)) {
-        if (entry.featureId === featureId) entries.push(entry);
-      }
-      return aggregateFeatureStatus(entries);
-    }),
-  );
-}
-
-/**
- * Count of sessions in the given id set whose live status is `"agent"`
- * (actively working). Used by the unified-agents grid header so the
- * "running" badge stays in lock-step with the canonical live store
- * for sessions visible in the current grid. Returning a number means
- * unrelated seq bumps don't re-render the consumer.
- */
-export function useLiveWorkingCount(sessionIds: readonly number[]): number {
-  return useSessionStatusStore((s) => {
-    let count = 0;
-    for (const id of sessionIds) {
-      if (s.bySession[id]?.status === "agent") count++;
-    }
-    return count;
-  });
-}
-
-/**
- * Global count of `agent`-status sessions across the whole store —
- * regardless of any REST filter. Used by the unified-agents sidebar
- * button so a newly-started agent that hasn't appeared in the cached
- * `useGetUnifiedAgents` response yet still bumps the counter the
- * moment its `session_status.update` lands. (The REST query is
- * configured with `staleTime: Infinity` and won't refetch on its own.)
- */
-export function useLiveTotalWorkingCount(): number {
-  return useSessionStatusStore((s) => {
-    let count = 0;
-    for (const entry of Object.values(s.bySession)) {
-      if (entry.status === "agent") count++;
-    }
-    return count;
-  });
-}
-
-/**
- * Returns the sorted list of `sessionDbId`s with non-idle live status
- * (i.e. the agent is either working or asking). Used by the unified-agents
- * grid "Recent" filter to keep an agent visible while it's still active,
- * even if its REST `last_activity_at` is older than the freshness window.
- *
- * Sorted + array-shaped so `useShallow` can element-compare and skip
- * re-renders on `seq` bumps that don't change membership. Consumers that
- * need O(1) lookup should wrap this in a `Set` via `useMemo`.
- */
-export function useLiveActiveSessionIds(): readonly number[] {
-  return useSessionStatusStore(
-    useShallow((s) => {
-      const ids: number[] = [];
-      for (const [k, v] of Object.entries(s.bySession)) {
-        if (v.status !== "idle") ids.push(Number(k));
-      }
-      ids.sort((a, b) => a - b);
-      return ids;
-    }),
-  );
 }

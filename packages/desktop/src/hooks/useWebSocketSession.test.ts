@@ -78,6 +78,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   const store = useWsSessionStore.getState();
   for (const sessionId of Object.keys(store.sessions)) {
     store.disconnect(sessionId);
@@ -108,6 +109,85 @@ describe("useWebSocketSession", () => {
       await Promise.resolve();
     });
     expect(result.current.currentModelId).toBe(FALLBACK_MODEL_ID);
+  });
+
+  it("restarts stale local timing when backend live status first reports agent", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const { result } = renderHook(() => useWebSocketSession("test-id"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => {
+      useWsSessionStore.getState().setPersistedState("test-id", {
+        blocks: [],
+        lifecycle: { phase: "active" },
+        sessionDbId: 123,
+        featureId: 7,
+      });
+    });
+    act(() => {
+      useSessionStatusStore.setState({
+        bySession: {
+          123: { status: "idle", kind: null, featureId: 7, seq: 1 },
+        },
+      });
+    });
+    expect(result.current.status).toBe("idle");
+    expect(result.current.turnTiming.startedAt).toBe(1_000);
+
+    vi.setSystemTime(181_000);
+    act(() => {
+      useSessionStatusStore.getState().connect();
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const appWs = MockWebSocket.instances.at(-1)!;
+    act(() => {
+      appWs.simulateMessage({
+        domain: "app",
+        action: "session_status.update",
+        payload: {
+          session_id: 123,
+          feature_id: 7,
+          status: "agent",
+          kind: null,
+          seq: 2,
+        },
+      });
+    });
+
+    expect(result.current.turnTiming.startedAt).toBe(181_000);
+
+    vi.setSystemTime(185_000);
+    act(() => {
+      appWs.simulateMessage({
+        domain: "app",
+        action: "session_status.update",
+        payload: {
+          session_id: 123,
+          feature_id: 7,
+          status: "idle",
+          kind: null,
+          seq: 3,
+        },
+      });
+    });
+
+    expect(result.current.turnTiming.completed).toEqual({
+      totalMs: 4_000,
+      activeMs: 4_000,
+      userPendingMs: 0,
+    });
+    expect(result.current.blocks.at(-1)).toMatchObject({
+      type: "turn_summary",
+      content: "Worked - 4s · Agent 4s · Waiting 0s",
+    });
+    vi.useRealTimers();
   });
 
   it("derives turn timing and summaries from backend live status updates", async () => {

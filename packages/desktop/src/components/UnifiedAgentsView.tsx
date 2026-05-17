@@ -27,7 +27,7 @@ import {
 import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { useUnifiedAgentsData, type UnifiedAgentsData } from "@/components/UnifiedAgentsViewData";
-import { useLiveWorkingCount } from "@/stores/session-status-store";
+import { useLiveWorkingCount } from "@/stores/session-status-selectors";
 
 export function UnifiedAgentsView(): ReactElement {
   const [filters, setFilters] = useUnifiedAgentsFilters();

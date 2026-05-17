@@ -11,7 +11,7 @@ import {
   UNIFIED_AGENTS_QUERY_OPTIONS,
 } from "@/components/UnifiedAgentsViewData";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
-import { useLiveTotalWorkingCount } from "@/stores/session-status-store";
+import { useLiveTotalWorkingCount } from "@/stores/session-status-selectors";
 import { cn } from "@/lib/utils";
 
 export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink(): ReactElement {

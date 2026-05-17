@@ -35,10 +35,7 @@ import { MetaBarSecondary } from "./MetaBarSecondary";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
-import {
-  isTurnInProgress as isLifecycleInProgress,
-  useTurnWorkingLabel,
-} from "@/components/TurnWorkingLabel";
+import { useTurnWorkingLabel } from "@/components/TurnWorkingLabel";
 
 /**
  * Container width below which the auto-scroll, todos, and info chips slide
@@ -142,10 +139,10 @@ export const AgentSession = memo(
     // summary is a sidebar-level question ("any agent busy in this feature?");
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
-    const isStreaming = status === "agent";
-    const isTurnInProgress = lifecycle?.phase === "active" || lifecycle?.phase === "paused";
+    const isAgentWorking = status === "agent";
     const shouldShowStreamingIndicator = true;
-    const workingLabel = useTurnWorkingLabel(lifecycle, turnTiming);
+    const workingLifecycle = isAgentWorking ? lifecycle : undefined;
+    const workingLabel = useTurnWorkingLabel(workingLifecycle, turnTiming);
 
     // ---- Collapsible state ----
     const [internalOpen, setInternalOpen] = useState(true);
@@ -243,10 +240,9 @@ export const AgentSession = memo(
     };
 
     const isIdle = status === "idle" && blocks.length === 0;
-    const badge =
-      status === "agent" || isTurnInProgress
-        ? { ...STATUS_BADGE.agent, label: workingLabel }
-        : STATUS_BADGE[status];
+    const badge = isAgentWorking
+      ? { ...STATUS_BADGE.agent, label: workingLabel }
+      : STATUS_BADGE[status];
     const IconComponent = icon ?? AGENT_ICONS[agentType] ?? Loader2Icon;
     const displayLabel = label ?? AGENT_LABELS[agentType] ?? capitalize(agentType);
 
@@ -338,13 +334,13 @@ export const AgentSession = memo(
     ) : null;
 
     const streamContent =
-      blocks.length > 0 || isTurnInProgress ? (
+      blocks.length > 0 || isAgentWorking ? (
         <AgentStream
           blocks={blocks}
           rootBlocks={rootBlocks}
           toolResultMap={toolResultMap}
-          isStreaming={isStreaming}
-          lifecycle={lifecycle}
+          isStreaming={isAgentWorking}
+          lifecycle={workingLifecycle}
           workingLabel={workingLabel}
           basePath={projectPath}
           scrollContainerRef={scrollContainerRef}
@@ -420,7 +416,7 @@ export const AgentSession = memo(
             <ContextUsageBar
               usage={contextUsage}
               className="flex-1 px-0 py-0"
-              isStreaming={isTurnInProgress}
+              isStreaming={isAgentWorking}
             />
           </div>
         )}
@@ -507,7 +503,7 @@ export const AgentSession = memo(
                   <ContextUsageBar
                     usage={contextUsage}
                     className="flex-1 px-0 py-0"
-                    isStreaming={isTurnInProgress}
+                    isStreaming={isAgentWorking}
                   />
                 </div>
               )}

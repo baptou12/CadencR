@@ -369,7 +369,7 @@ describe("AgentSession", () => {
     expect(screen.getAllByText("Working - 12s").length).toBeGreaterThan(0);
   });
 
-  it("keeps the working duration visible while awaiting user input", () => {
+  it("shows awaiting input instead of working duration while awaiting user input", () => {
     render(
       <AgentSession
         agentType="session"
@@ -389,7 +389,8 @@ describe("AgentSession", () => {
       />,
     );
 
-    expect(screen.getAllByText("Working - 1m 5s").length).toBeGreaterThan(0);
+    expect(screen.getByText("Awaiting input")).toBeInTheDocument();
+    expect(screen.queryByText(/Working/)).not.toBeInTheDocument();
   });
 
   it("shows idle badge when status is idle", () => {
