@@ -37,9 +37,10 @@ The helper script creates the local tag only. The agent must push the tag explic
    - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.
 
 4. **Ask for landing news copy**
-   - Before creating or editing the landing news post, ask the developer what marketing/commercial text they want to show in the news article in addition to the changelog.
+   - Ask the developer whether this release needs a landing news post and, if yes, what marketing/commercial text they want to show in addition to the changelog.
    - Do not invent the main marketing angle without developer input.
-   - After the developer answers, create a news post under `packages/landing/src/content/news/` whose filename includes the release version, for example `cadencr-v0-2-0.mdx`.
+   - If the developer requests no news post, continue with changelog-only release notes and do not create a landing news file.
+   - If the developer provides news copy, create a post under `packages/landing/src/content/news/` whose filename includes the release version, for example `cadencr-v0-2-0.mdx`.
    - The post should sell the release clearly while remaining accurate.
 
 5. **Update every application version**
@@ -71,13 +72,13 @@ gh api "repos/{owner}/{repo}/commits/$MAIN_SHA/status" \
 
 8. **Create the release preparation commit**
    - Review the final diff and ensure it contains only release preparation changes.
-   - Commit the changelog, landing news, version bumps, and lockfile updates before tagging.
+   - Commit the changelog, optional landing news, version bumps, and lockfile updates before tagging.
    - Use a concise commit message such as `chore: prepare release vX.Y.Z`.
    - The helper script requires a clean worktree so the local tag points at the committed release state.
 
 9. **Run the automated release preflight**
    - Run: `scripts/release.sh "$TAG"`.
-   - This checks that the changelog section can be extracted for GitHub release notes, plus news/version files, tag and release availability, and trufflehog results.
+   - This checks that the changelog section can be extracted for GitHub release notes, plus optional news/version files, tag and release availability, and trufflehog results.
    - It creates the local annotated tag when all checks pass.
    - If it fails, fix the reported issue and rerun it.
 
@@ -106,7 +107,7 @@ done
 When the release is complete, respond with:
 
 1. `Previous release`: previous tag and commit hash.
-2. `Release content`: changelog section and landing news file.
+2. `Release content`: changelog section and landing news file, or note that the release is changelog-only.
 3. `Security review`: review result and any fixes.
 4. `Version updates`: files changed.
 5. `Tag`: local tag and push status.

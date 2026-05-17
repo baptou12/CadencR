@@ -81,8 +81,9 @@ assert_landing_news_ready() {
   local news_dir="packages/landing/src/content/news"
 
   [ -d "$news_dir" ] || fail "landing news directory is missing: $news_dir"
-  grep -R -E "($tag|$version)" "$news_dir"/*.mdx >/dev/null 2>&1 \
-    || fail "landing news must contain a release article mentioning $tag or $version"
+  if ! grep -R -E "($tag|$version)" "$news_dir"/*.mdx >/dev/null 2>&1; then
+    echo "release: no landing news article found for $tag; continuing with changelog-only notes" >&2
+  fi
 }
 
 assert_versions_ready() {
