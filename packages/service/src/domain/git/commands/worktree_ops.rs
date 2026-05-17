@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::domain::git::models::WorktreeInfo;
 use crate::error::AppError;
-use crate::shared::git_cli::{run_git, run_git_safe_refs};
+use crate::shared::git_cli::{run_git, run_git_safe, run_git_safe_refs};
 use crate::shared::worktree_paths::compute_worktree_path;
 
 /// List all worktrees for a repository.
@@ -171,10 +171,16 @@ pub async fn create_worktree(
     Ok((worktree_str, branch_name.to_string()))
 }
 
-/// Remove a git worktree.
-pub async fn remove_worktree(repo_path: &Path, worktree_path: &Path) -> Result<(), AppError> {
+/// Remove a git worktree. Safe removal refuses dirty worktrees; force removal
+/// passes Git's `--force` escape hatch for explicit user-confirmed cleanup.
+pub async fn remove_worktree(
+    repo_path: &Path,
+    worktree_path: &Path,
+    force: bool,
+) -> Result<(), AppError> {
     let wt_str = worktree_path.to_string_lossy().to_string();
-    run_git_safe_refs(&["worktree", "remove"], &["--force"], &[&wt_str], repo_path).await?;
+    let flags: &[&str] = if force { &["--force"] } else { &[] };
+    run_git_safe(&["worktree", "remove"], flags, &[&wt_str], repo_path).await?;
     Ok(())
 }
 
@@ -310,5 +316,48 @@ detached
         let worktrees = parse_worktree_list(output);
         assert_eq!(worktrees.len(), 1);
         assert_eq!(worktrees[0].branch, "(detached)");
+    }
+
+    #[tokio::test]
+    async fn remove_worktree_requires_force_for_dirty_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        let wt = dir.path().join("wt");
+        std::fs::create_dir(&repo).unwrap();
+        crate::shared::git_cli::run_git(&["init"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["config", "user.email", "test@example.com"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["config", "user.name", "Test"], &repo)
+            .await
+            .unwrap();
+        std::fs::write(repo.join("README.md"), "hello").unwrap();
+        crate::shared::git_cli::run_git(&["add", "README.md"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(&["commit", "-m", "init"], &repo)
+            .await
+            .unwrap();
+        crate::shared::git_cli::run_git(
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/dirty",
+                wt.to_str().unwrap(),
+            ],
+            &repo,
+        )
+        .await
+        .unwrap();
+        std::fs::write(wt.join("dirty.txt"), "dirty").unwrap();
+
+        let safe = remove_worktree(&repo, &wt, false).await;
+        assert!(safe.is_err());
+
+        remove_worktree(&repo, &wt, true).await.unwrap();
+        assert!(!wt.exists());
     }
 }

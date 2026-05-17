@@ -44,6 +44,7 @@ pub async fn push(state: &AppState, body: PushBody) -> Result<SuccessResponse, A
         return Ok(SuccessResponse {
             success: false,
             error: Some("a push is already running for this feature".into()),
+            blocked_reason: None,
         });
     }
 
@@ -73,6 +74,7 @@ pub async fn push(state: &AppState, body: PushBody) -> Result<SuccessResponse, A
     let response = SuccessResponse {
         success: outcome.success,
         error: final_error,
+        blocked_reason: None,
     };
     broadcast_complete(
         &outcome.senders,
@@ -101,11 +103,13 @@ pub async fn push_input(
         return Ok(SuccessResponse {
             success: false,
             error: Some("no active push for this feature".into()),
+            blocked_reason: None,
         });
     }
     Ok(SuccessResponse {
         success: true,
         error: None,
+        blocked_reason: None,
     })
 }
 

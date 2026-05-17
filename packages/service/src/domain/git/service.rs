@@ -429,17 +429,18 @@ pub async fn remove_worktree(
             .await?
             .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
 
-    commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path)).await?;
+    commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path), true).await?;
     repository::delete_feature_settings(
         &state.write_pool,
         params.feature_id,
-        &[SETTING_WORKTREE_PATH, SETTING_WORKTREE_BRANCH],
+        &[SETTING_WORKTREE_PATH],
     )
     .await?;
 
     Ok(SuccessResponse {
         success: true,
         error: None,
+        blocked_reason: None,
     })
 }
 
@@ -453,30 +454,26 @@ pub async fn delete_worktree(
             .await?
             .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
 
-    if commands::has_uncommitted_changes(Path::new(&wt_path)).await? {
-        return Ok(SuccessResponse {
-            success: false,
-            error: Some("Worktree has uncommitted or untracked changes".into()),
-        });
-    }
-
-    match commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path)).await {
+    match commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path), params.force)
+        .await
+    {
         Ok(_) => {
             repository::delete_feature_settings(
                 &state.write_pool,
                 params.feature_id,
-                &[SETTING_WORKTREE_PATH, SETTING_WORKTREE_BRANCH],
+                &[SETTING_WORKTREE_PATH],
             )
             .await?;
             Ok(SuccessResponse {
                 success: true,
                 error: None,
+                blocked_reason: None,
             })
         }
-        Err(e) => Ok(SuccessResponse {
-            success: false,
-            error: Some(e.to_string()),
-        }),
+        Err(e) if !params.force && is_dirty_worktree_remove_error(&e) => {
+            Ok(dirty_worktree_response())
+        }
+        Err(e) => Ok(error_response(e)),
     }
 }
 
@@ -527,6 +524,7 @@ pub async fn retry_worktree_setup(
     Ok(SuccessResponse {
         success: true,
         error: None,
+        blocked_reason: None,
     })
 }
 
@@ -578,6 +576,7 @@ pub async fn list_project_worktrees(
                 head: w.head,
                 feature_id: feat.map(|f| f.feature_id),
                 feature_title: feat.map(|f| f.feature_title.clone()),
+                feature_status: feat.map(|f| f.feature_status.clone()),
             }
         })
         .collect())
@@ -615,17 +614,46 @@ pub async fn remove_orphan_worktree(
     body: RemoveOrphanWorktreeBody,
 ) -> Result<SuccessResponse, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, body.project_id).await?;
-    match commands::remove_worktree(Path::new(&project_path), Path::new(&body.worktree_path)).await
+    match commands::remove_worktree(
+        Path::new(&project_path),
+        Path::new(&body.worktree_path),
+        body.force,
+    )
+    .await
     {
         Ok(_) => Ok(SuccessResponse {
             success: true,
             error: None,
+            blocked_reason: None,
         }),
-        Err(e) => Ok(SuccessResponse {
-            success: false,
-            error: Some(e.to_string()),
-        }),
+        Err(e) if !body.force && is_dirty_worktree_remove_error(&e) => {
+            Ok(dirty_worktree_response())
+        }
+        Err(e) => Ok(error_response(e)),
     }
+}
+
+fn dirty_worktree_response() -> SuccessResponse {
+    SuccessResponse {
+        success: false,
+        error: Some("Worktree has uncommitted or untracked changes".into()),
+        blocked_reason: Some("dirty_worktree".into()),
+    }
+}
+
+fn error_response(err: AppError) -> SuccessResponse {
+    SuccessResponse {
+        success: false,
+        error: Some(err.to_string()),
+        blocked_reason: None,
+    }
+}
+
+fn is_dirty_worktree_remove_error(err: &AppError) -> bool {
+    let message = err.to_string();
+    message.contains("contains modified or untracked files")
+        || message.contains("has local modifications")
+        || message.contains("use --force")
 }
 
 pub async fn get_original_branch(
@@ -681,10 +709,27 @@ pub async fn delete_feature_branch(
 ) -> Result<SuccessResponse, AppError> {
     let (project_path, branch) =
         get_project_and_branch(state, params.project_id, params.feature_id).await?;
-    let result = commands::delete_branch(Path::new(&project_path), &branch).await?;
+    let result = commands::delete_branch(Path::new(&project_path), &branch, params.force).await?;
     Ok(SuccessResponse {
         success: result.success,
         error: result.error,
+        blocked_reason: None,
+    })
+}
+
+pub async fn check_branch_delete(
+    state: &AppState,
+    params: BranchDeleteCheckParams,
+) -> Result<BranchDeleteCheckResponse, AppError> {
+    let (project_path, branch) =
+        get_project_and_branch(state, params.project_id, params.feature_id).await?;
+    let (repo_path, target_branch) =
+        resolve_merge_conflict_repo_and_target(state, params.feature_id, project_path).await?;
+    let merged = commands::is_branch_merged(Path::new(&repo_path), &branch, &target_branch).await?;
+    Ok(BranchDeleteCheckResponse {
+        branch,
+        target_branch,
+        merged,
     })
 }
 

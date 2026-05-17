@@ -91,6 +91,8 @@ pub struct RemoveWorktreeParams {
 pub struct DeleteWorktreeParams {
     pub project_id: i64,
     pub feature_id: i64,
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -113,6 +115,8 @@ pub struct ListFeatureWorktreesParams {
 pub struct RemoveOrphanWorktreeBody {
     pub project_id: i64,
     pub worktree_path: String,
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -129,6 +133,14 @@ pub struct CheckMergeConflictsParams {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DeleteFeatureBranchParams {
+    pub project_id: i64,
+    pub feature_id: i64,
+    #[serde(default)]
+    pub force: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct BranchDeleteCheckParams {
     pub project_id: i64,
     pub feature_id: i64,
 }
@@ -254,6 +266,7 @@ pub struct ProjectWorktreeInfo {
     pub head: String,
     pub feature_id: Option<i64>,
     pub feature_title: Option<String>,
+    pub feature_status: Option<String>,
 }
 
 /// Per-feature worktree metadata sourced from `feature_settings`.
@@ -297,12 +310,21 @@ pub struct SuccessResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct CreateWorktreeResponse {
     pub worktree_path: String,
     pub branch: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct BranchDeleteCheckResponse {
+    pub branch: String,
+    pub target_branch: String,
+    pub merged: bool,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -603,6 +625,7 @@ mod tests {
         let resp = SuccessResponse {
             success: true,
             error: None,
+            blocked_reason: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(!json.contains("error"));
@@ -610,6 +633,7 @@ mod tests {
         let resp = SuccessResponse {
             success: false,
             error: Some("oops".into()),
+            blocked_reason: None,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("oops"));

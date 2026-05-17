@@ -50,6 +50,61 @@ async fn create_worktree_copies_provider_config_before_returning() {
     worktree_remove(&repo, &wt_path);
 }
 
+#[tokio::test]
+async fn delete_worktree_then_branch_keeps_branch_metadata() {
+    let server = start_test_server().await;
+    let repo = server.repo_path();
+    let wt_path = server.tmp_dir.path().join("archive-wt");
+    git_in(&repo, &["branch", "feature/archive-cleanup", "main"]);
+    git_in(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            wt_path.to_str().unwrap(),
+            "feature/archive-cleanup",
+        ],
+    );
+    sqlx::query(
+        "UPDATE feature_settings SET value = ? WHERE feature_id = 1 AND key = 'worktree_path'",
+    )
+    .bind(wt_path.to_string_lossy().to_string())
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE feature_settings SET value = 'feature/archive-cleanup' \
+         WHERE feature_id = 1 AND key = 'worktree_branch'",
+    )
+    .execute(&server.pool)
+    .await
+    .unwrap();
+
+    let wt_resp = server
+        .client
+        .delete(format!(
+            "{}/api/git/worktree/safe?project_id=1&feature_id=1",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wt_resp.status(), 200);
+
+    let branch_resp = server
+        .client
+        .delete(format!(
+            "{}/api/git/branch?project_id=1&feature_id=1&force=true",
+            server.base_url
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(branch_resp.status(), 200);
+    let body: serde_json::Value = branch_resp.json().await.unwrap();
+    assert_eq!(body["success"], true, "{body:?}");
+}
+
 // ---------------------------------------------------------------------------
 // PATCH /api/features/{id}/target-branch
 // ---------------------------------------------------------------------------
