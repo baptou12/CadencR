@@ -73,6 +73,7 @@ pub async fn commit(state: &AppState, body: CommitBody) -> Result<SuccessRespons
     let response = SuccessResponse {
         success: outcome.success,
         error: outcome.error.clone(),
+        blocked_reason: None,
     };
     broadcast_complete(
         &outcome.senders,

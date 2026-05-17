@@ -110,7 +110,7 @@ pub async fn remove_worktree_handler(
     Ok(Json(service::remove_worktree(&state, params).await?))
 }
 
-#[utoipa::path(delete, path = "/api/git/worktree/safe", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = SuccessResponse)))]
+#[utoipa::path(delete, path = "/api/git/worktree/safe", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,), ("force" = Option<bool>, Query,)), responses((status = 200, body = SuccessResponse)))]
 pub async fn delete_worktree_handler(
     State(state): State<AppState>,
     Query(params): Query<DeleteWorktreeParams>,
@@ -176,12 +176,20 @@ pub async fn merge_feature_branch_handler(
     ))
 }
 
-#[utoipa::path(delete, path = "/api/git/branch", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = SuccessResponse)))]
+#[utoipa::path(delete, path = "/api/git/branch", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,), ("force" = Option<bool>, Query,)), responses((status = 200, body = SuccessResponse)))]
 pub async fn delete_feature_branch_handler(
     State(state): State<AppState>,
     Query(params): Query<DeleteFeatureBranchParams>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     Ok(Json(service::delete_feature_branch(&state, params).await?))
+}
+
+#[utoipa::path(get, path = "/api/git/branch/delete-check", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = BranchDeleteCheckResponse)))]
+pub async fn check_branch_delete_handler(
+    State(state): State<AppState>,
+    Query(params): Query<BranchDeleteCheckParams>,
+) -> Result<Json<BranchDeleteCheckResponse>, AppError> {
+    Ok(Json(service::check_branch_delete(&state, params).await?))
 }
 
 #[utoipa::path(get, path = "/api/git/has-uncommitted-changes", params(("project_id" = i64, Query,), ("feature_id" = i64, Query,)), responses((status = 200, body = HasUncommittedChangesResponse)))]
@@ -328,52 +336,30 @@ pub async fn update_target_branch_handler(
 // Router
 // ---------------------------------------------------------------------------
 
+#[rustfmt::skip]
 pub fn git_router() -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/git/branch",
-            get(get_branch_handler).delete(delete_feature_branch_handler),
-        )
+        .route("/api/git/branch", get(get_branch_handler).delete(delete_feature_branch_handler))
+        .route("/api/git/branch/delete-check", get(check_branch_delete_handler))
         .route("/api/git/stats", get(get_stats_handler))
         .route("/api/git/diff", get(get_diff_handler))
         .route("/api/git/changed-files", get(get_changed_files_handler))
         .route("/api/git/file-content", get(get_file_content_handler))
-        .route(
-            "/api/git/file-content-batch",
-            post(get_file_content_batch_handler),
-        )
+        .route("/api/git/file-content-batch", post(get_file_content_batch_handler))
         .route("/api/git/commit-log", get(get_commit_log_handler))
         .route("/api/git/file-blob-shas", get(get_file_blob_shas_handler))
         .route("/api/git/files", get(list_files_handler))
         .route("/api/git/worktree/info", get(get_worktree_info_handler))
-        .route(
-            "/api/git/worktree",
-            post(create_worktree_handler).delete(remove_worktree_handler),
-        )
+        .route("/api/git/worktree", post(create_worktree_handler).delete(remove_worktree_handler))
         .route("/api/git/worktree/safe", delete(delete_worktree_handler))
-        .route(
-            "/api/git/worktree/retry",
-            post(retry_worktree_setup_handler),
-        )
+        .route("/api/git/worktree/retry", post(retry_worktree_setup_handler))
         .route("/api/git/worktrees", get(list_project_worktrees_handler))
-        .route(
-            "/api/git/feature-worktrees",
-            get(list_feature_worktrees_handler),
-        )
-        .route(
-            "/api/git/worktree/orphan",
-            delete(remove_orphan_worktree_handler),
-        )
+        .route("/api/git/feature-worktrees", get(list_feature_worktrees_handler))
+        .route("/api/git/worktree/orphan", delete(remove_orphan_worktree_handler))
         .route("/api/git/original-branch", get(get_original_branch_handler))
-        .route(
-            "/api/git/merge-conflicts",
-            get(check_merge_conflicts_handler),
-        )
+        .route("/api/git/merge-conflicts", get(check_merge_conflicts_handler))
         .route("/api/git/merge", post(merge_feature_branch_handler))
-        .route(
-            "/api/git/has-uncommitted-changes",
-            get(has_uncommitted_changes_handler),
-        )
+        .route("/api/git/has-uncommitted-changes", get(has_uncommitted_changes_handler))
         .route("/api/git/blame", get(get_blame_handler))
         // Git workflow overhaul
         .route("/api/git/branches", get(list_branches_handler))

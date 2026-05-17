@@ -53,6 +53,7 @@ use crate::domain::workspace::routes as workspace_routes;
         routes::check_merge_conflicts_handler,
         routes::merge_feature_branch_handler,
         routes::delete_feature_branch_handler,
+        routes::check_branch_delete_handler,
         routes::has_uncommitted_changes_handler,
         routes::get_blame_handler,
         routes::list_branches_handler,

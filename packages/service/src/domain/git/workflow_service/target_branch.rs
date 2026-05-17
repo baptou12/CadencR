@@ -129,6 +129,7 @@ pub async fn update_target_branch(
     Ok(SuccessResponse {
         success: true,
         error: None,
+        blocked_reason: None,
     })
 }
 

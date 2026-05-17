@@ -122,7 +122,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           hasMore={controls.ws.hasMore}
           onLoadOlder={controls.ws.loadOlderMessages}
           useWorktree={controls.useWorktree}
-          onToggleWorktree={() => controls.setUseWorktree((v) => !v)}
+          onToggleWorktree={controls.toggleWorktree}
           worktreeProjectId={projectId}
           worktreeDefaultBranch={data.defaultBranch}
           worktreeSelectedBranch={controls.selectedBranch}

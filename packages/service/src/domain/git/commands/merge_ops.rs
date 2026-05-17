@@ -74,9 +74,31 @@ pub async fn check_merge_conflicts(
     })
 }
 
-/// Delete a local branch using -d (safe, only if fully merged).
-pub async fn delete_branch(repo_path: &Path, branch_name: &str) -> Result<MergeResult, AppError> {
-    match run_git_safe_refs(&["branch"], &["-d"], &[branch_name], repo_path).await {
+/// Return true when `branch_name` is fully contained in `target_branch`.
+pub async fn is_branch_merged(
+    repo_path: &Path,
+    branch_name: &str,
+    target_branch: &str,
+) -> Result<bool, AppError> {
+    crate::shared::git_cli::guard_positionals(&[branch_name, target_branch])?;
+    let output = Command::new("git")
+        .args(["merge-base", "--is-ancestor", branch_name, target_branch])
+        .current_dir(repo_path)
+        .output()
+        .await
+        .map_err(|e| AppError::GitCommandError(format!("Failed to run git merge-base: {e}")))?;
+    Ok(output.status.success())
+}
+
+/// Delete a local branch. Safe mode uses -d; force mode uses -D after explicit
+/// user confirmation from the archive cleanup flow.
+pub async fn delete_branch(
+    repo_path: &Path,
+    branch_name: &str,
+    force: bool,
+) -> Result<MergeResult, AppError> {
+    let flag = if force { "-D" } else { "-d" };
+    match run_git_safe_refs(&["branch"], &[flag], &[branch_name], repo_path).await {
         Ok(_) => Ok(MergeResult {
             success: true,
             error: None,

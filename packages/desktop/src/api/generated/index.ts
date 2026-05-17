@@ -149,6 +149,12 @@ export interface BlameResponse {
   lines: BlameLine[];
 }
 
+export interface BranchDeleteCheckResponse {
+  branch: string;
+  merged: boolean;
+  target_branch: string;
+}
+
 export type BranchInfoAttachedFeatureId = number | null;
 
 export type BranchInfoAttachedWorktreePath = string | null;
@@ -743,9 +749,12 @@ export interface GitStatusSnapshot {
   untracked_count: number;
 }
 
+export type GitSuccessResponseBlockedReason = string | null;
+
 export type GitSuccessResponseError = string | null;
 
 export interface GitSuccessResponse {
+  blocked_reason?: GitSuccessResponseBlockedReason;
   error?: GitSuccessResponseError;
   success: boolean;
 }
@@ -891,11 +900,14 @@ export interface ProjectSetting {
 
 export type ProjectWorktreeInfoFeatureId = number | null;
 
+export type ProjectWorktreeInfoFeatureStatus = string | null;
+
 export type ProjectWorktreeInfoFeatureTitle = string | null;
 
 export interface ProjectWorktreeInfo {
   branch: string;
   feature_id?: ProjectWorktreeInfoFeatureId;
+  feature_status?: ProjectWorktreeInfoFeatureStatus;
   feature_title?: ProjectWorktreeInfoFeatureTitle;
   head: string;
   path: string;
@@ -968,6 +980,7 @@ export interface ReadFileResponse {
 }
 
 export interface RemoveOrphanWorktreeBody {
+  force?: boolean;
   project_id: number;
   worktree_path: string;
 }
@@ -1467,6 +1480,12 @@ export type GetBranchParams = {
 export type DeleteFeatureBranchParams = {
   project_id: number;
   feature_id: number;
+  force?: boolean;
+};
+
+export type CheckBranchDeleteParams = {
+  project_id: number;
+  feature_id: number;
 };
 
 export type ListBranchesParams = {
@@ -1559,6 +1578,7 @@ export type GetWorktreeInfo200 = null | WorktreeInfo;
 export type DeleteWorktreeParams = {
   project_id: number;
   feature_id: number;
+  force?: boolean;
 };
 
 export type ListProjectWorktreesParams = {
@@ -5867,6 +5887,65 @@ export const useDeleteFeatureBranch = <TError = ErrorType<unknown>, TContext = u
 
   return useMutation(mutationOptions);
 };
+
+export const checkBranchDelete = (params: CheckBranchDeleteParams, signal?: AbortSignal) => {
+  return customInstance<BranchDeleteCheckResponse>({
+    url: `/api/git/branch/delete-check`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getCheckBranchDeleteQueryKey = (params?: CheckBranchDeleteParams) => {
+  return [`/api/git/branch/delete-check`, ...(params ? [params] : [])] as const;
+};
+
+export const getCheckBranchDeleteQueryOptions = <
+  TData = Awaited<ReturnType<typeof checkBranchDelete>>,
+  TError = ErrorType<unknown>,
+>(
+  params: CheckBranchDeleteParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof checkBranchDelete>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getCheckBranchDeleteQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof checkBranchDelete>>> = ({ signal }) =>
+    checkBranchDelete(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof checkBranchDelete>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type CheckBranchDeleteQueryResult = NonNullable<
+  Awaited<ReturnType<typeof checkBranchDelete>>
+>;
+export type CheckBranchDeleteQueryError = ErrorType<unknown>;
+
+export function useCheckBranchDelete<
+  TData = Awaited<ReturnType<typeof checkBranchDelete>>,
+  TError = ErrorType<unknown>,
+>(
+  params: CheckBranchDeleteParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof checkBranchDelete>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getCheckBranchDeleteQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const listBranches = (params: ListBranchesParams, signal?: AbortSignal) => {
   return customInstance<BranchInfo[]>({ url: `/api/git/branches`, method: "GET", params, signal });

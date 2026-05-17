@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { GitBranchIcon, FolderPlusIcon } from "lucide-react";
+import { GitBranchIcon, FolderPlusIcon, BanIcon } from "lucide-react";
 import {
   CommandGroup,
   CommandInput,
@@ -10,10 +10,13 @@ import {
 import { useListBranches, type BranchInfo } from "@/api/generated";
 import { useBranchList, type BranchListRowContext } from "@/components/branch-chip/BranchList";
 
-export type WorktreeChoiceValue = { mode: "new" } | { mode: "reuse"; branch: string };
+export type WorktreeChoiceValue =
+  | { mode: "new" }
+  | { mode: "skip" }
+  | { mode: "reuse"; branch: string };
 
 export function isWorktreeChoiceValid(value: WorktreeChoiceValue): boolean {
-  if (value.mode === "new") return true;
+  if (value.mode === "new" || value.mode === "skip") return true;
   return value.branch.trim().length > 0;
 }
 
@@ -33,6 +36,10 @@ export function WorktreeChoice({ projectId, value, onChange }: WorktreeChoicePro
 
   const handlePickNew = useCallback(() => {
     onChange({ mode: "new" });
+  }, [onChange]);
+
+  const handlePickSkip = useCallback(() => {
+    onChange({ mode: "skip" });
   }, [onChange]);
 
   const handlePickReuseRow = useCallback(() => {
@@ -70,6 +77,13 @@ export function WorktreeChoice({ projectId, value, onChange }: WorktreeChoicePro
             icon={<FolderPlusIcon className="mr-2" />}
             label="New worktree"
             description="Create a fresh branch on a new worktree"
+          />
+          <ModeRow
+            active={value.mode === "skip"}
+            onSelect={handlePickSkip}
+            icon={<BanIcon className="mr-2" />}
+            label="No worktree"
+            description="Run in the project directory for this conversation"
           />
           <ModeRow
             active={value.mode === "reuse"}

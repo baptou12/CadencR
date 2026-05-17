@@ -40,6 +40,7 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "model_session",
     "agent_runtime_session",
     "branch_prefix",
+    "default_worktree_mode",
     "color",
     "setup_worktree",
     "bypass_acknowledged",
@@ -227,6 +228,13 @@ mod tests {
                 "{k} must be rejected on workspace"
             );
         }
+    }
+
+    #[test]
+    fn project_allows_default_worktree_mode_only() {
+        assert!(is_project_key_allowed("default_worktree_mode"));
+        assert!(!is_feature_key_allowed("default_worktree_mode"));
+        assert!(!is_workspace_key_allowed("default_worktree_mode"));
     }
 
     #[test]

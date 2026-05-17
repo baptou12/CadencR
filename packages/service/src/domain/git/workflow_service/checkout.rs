@@ -133,6 +133,7 @@ fn success() -> SuccessResponse {
     SuccessResponse {
         success: true,
         error: None,
+        blocked_reason: None,
     }
 }
 

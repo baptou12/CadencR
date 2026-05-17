@@ -1,0 +1,17 @@
+import { settingsArrayToMap, type SettingEntry } from "@/api/settings";
+
+export const DEFAULT_WORKTREE_MODE_KEY = "default_worktree_mode";
+
+export type DefaultWorktreeMode = "new" | "skip";
+
+export function parseDefaultWorktreeMode(value: string | null | undefined): DefaultWorktreeMode {
+  return value === "skip" ? "skip" : "new";
+}
+
+export function defaultWorktreeModeFromSettings(
+  settings: SettingEntry[] | undefined,
+  fallback: DefaultWorktreeMode = "new",
+): DefaultWorktreeMode {
+  const value = settingsArrayToMap(settings)[DEFAULT_WORKTREE_MODE_KEY];
+  return value == null || value === "" ? fallback : parseDefaultWorktreeMode(value);
+}
