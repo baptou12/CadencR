@@ -347,6 +347,9 @@ function ToolCallBlock({
   const summary = parseToolCall(canonicalName, args);
   const detail =
     summary?.detail && basePath ? toRelativePath(summary.detail, basePath) : summary?.detail;
+  const toolColorClass = isFileChangeTool(canonicalName)
+    ? "text-primary"
+    : "text-[var(--block-tool-accent)]";
 
   return (
     <div className="my-1 rounded-md border border-border bg-[var(--block-tool-bg)]">
@@ -355,8 +358,8 @@ function ToolCallBlock({
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
         onClick={() => setExpanded(!expanded)}
       >
-        <WrenchIcon className="size-3 text-[var(--block-tool-accent)]" />
-        <span className="font-medium text-[var(--block-tool-accent)]">{canonicalName}</span>
+        <WrenchIcon className={cn("size-3", toolColorClass)} />
+        <span className={cn("font-medium", toolColorClass)}>{canonicalName}</span>
         {detail && <span className="truncate text-muted-foreground">{detail}</span>}
         <ChevronRightIcon
           className={cn(

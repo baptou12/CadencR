@@ -28,7 +28,7 @@ export function extractApplyPatchText(args: Record<string, unknown>): string | u
 
 export function isApplyPatchToolName(toolName: string | undefined): boolean {
   if (!toolName) return false;
-  return toolName === "ApplyPatch" || toolName === "apply_patch";
+  return toolName === "ApplyPatch" || toolName === "apply_patch" || toolName === "Patch";
 }
 
 export function parseApplyPatchChanges(patchText: string): ApplyPatchChange[] {
