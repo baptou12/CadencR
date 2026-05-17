@@ -15,6 +15,7 @@ describe("normalizeToolName", () => {
   it("normalizes apply_patch aliases to ApplyPatch", () => {
     expect(normalizeToolName("apply_patch")).toBe("ApplyPatch");
     expect(normalizeToolName("ApplyPatch")).toBe("ApplyPatch");
+    expect(normalizeToolName("Patch")).toBe("ApplyPatch");
   });
 });
 
@@ -28,6 +29,7 @@ describe("isFileChangeTool", () => {
   it("treats ApplyPatch alias as file-changing", () => {
     expect(isFileChangeTool("apply_patch")).toBe(true);
     expect(isFileChangeTool("ApplyPatch")).toBe(true);
+    expect(isFileChangeTool("Patch")).toBe(true);
     expect(isFileChangeTool("Read")).toBe(false);
   });
 });

@@ -1,8 +1,11 @@
 import { useMemo } from "react";
 import { PencilIcon, FilePlusIcon } from "lucide-react";
+import { useTheme } from "@/hooks/useTheme";
 import { toRelativePath } from "@/lib/utils";
-import { ReadOnlyDiffView } from "@/components/editor/ReadOnlyDiffView";
 import { NumStat } from "@/components/NumStat";
+import { PatchDiffView } from "@/components/diff/PatchDiffView";
+import { createUnifiedPatch } from "@/lib/create-unified-patch";
+import { countHunkStats, parseUnifiedDiff } from "@/lib/parse-unified-diff";
 
 interface InlineDiffBlockProps {
   filePath: string;
@@ -14,36 +17,9 @@ interface InlineDiffBlockProps {
   toolName?: string;
 }
 
-/** Count added/removed lines by simple line-by-line comparison. */
-function countLineChanges(
-  oldContent: string,
-  newContent: string,
-): { additions: number; deletions: number } {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-  const oldSet = new Map<string, number>();
-  for (const line of oldLines) {
-    oldSet.set(line, (oldSet.get(line) ?? 0) + 1);
-  }
-  for (const line of newLines) {
-    const count = oldSet.get(line);
-    if (count && count > 0) {
-      oldSet.set(line, count - 1);
-    }
-  }
-  // Lines remaining in oldSet are deletions
-  let deletions = 0;
-  for (const count of oldSet.values()) {
-    deletions += count;
-  }
-  // Simple heuristic: additions = newLines.length - (oldLines.length - deletions)
-  const additions = newLines.length - (oldLines.length - deletions);
-  return { additions: Math.max(0, additions), deletions };
-}
-
 /**
  * Compact inline diff block for displaying file changes during agent execution.
- * Uses CodeMirror in read-only unified mode with the Cadencr theme.
+ * Uses the shared patch diff renderer with a synthesized unified patch.
  */
 export function InlineDiffBlock({
   filePath,
@@ -53,9 +29,17 @@ export function InlineDiffBlock({
   toolName,
 }: InlineDiffBlockProps) {
   const ToolIcon = toolName === "Write" ? FilePlusIcon : PencilIcon;
+  const { theme } = useTheme();
   const displayPath = useMemo(() => toRelativePath(filePath, basePath), [filePath, basePath]);
 
-  const stats = useMemo(() => countLineChanges(oldContent, newContent), [oldContent, newContent]);
+  const patch = useMemo(
+    () => createUnifiedPatch({ filePath: displayPath, oldContent, newContent }),
+    [displayPath, oldContent, newContent],
+  );
+  const stats = useMemo(() => {
+    const [section] = parseUnifiedDiff(patch);
+    return countHunkStats(section?.hunks ?? []);
+  }, [patch]);
 
   if (oldContent === newContent) {
     return (
@@ -70,11 +54,14 @@ export function InlineDiffBlock({
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--editor-border)] bg-[var(--editor-bg)]">
       {/* Compact file header */}
-      <div className="flex items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--editor-cyan)_15%,var(--editor-bg))] px-3 py-1 text-xs">
+      <div
+        data-testid="inline-diff-header"
+        className="flex items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--primary)_15%,var(--editor-bg))] px-3 py-1 text-xs"
+      >
         {toolName && (
           <>
-            <ToolIcon className="size-3 shrink-0 text-[var(--editor-cyan)]" />
-            <span className="font-medium text-[var(--editor-cyan)]">{toolName}</span>
+            <ToolIcon className="size-3 shrink-0 text-primary" />
+            <span className="font-medium text-primary">{toolName}</span>
           </>
         )}
         <span className="flex-1 truncate font-mono text-[var(--editor-fg)]" title={filePath}>
@@ -84,12 +71,14 @@ export function InlineDiffBlock({
       </div>
 
       {/* Diff content */}
-      <ReadOnlyDiffView
-        oldContent={oldContent}
-        newContent={newContent}
-        filePath={filePath}
+      <PatchDiffView
+        patch={patch}
         mode="unified"
-        className="max-h-[500px] overflow-auto"
+        className="cadencr-patch-diff-inline max-h-[500px] overflow-auto"
+        themeAppearance={theme.appearance}
+        themeId={theme.id}
+        disableFileHeader
+        hunkSeparators="simple"
       />
     </div>
   );

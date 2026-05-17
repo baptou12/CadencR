@@ -2,10 +2,33 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { InlineDiffBlock } from "./InlineDiffBlock";
 
-// Mock CodeMirror-based ReadOnlyDiffView to avoid DOM issues in jsdom
-vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
-  ReadOnlyDiffView: ({ oldContent, newContent }: { oldContent: string; newContent: string }) =>
-    oldContent !== newContent ? <div data-testid="diff-view">diff content</div> : null,
+const mocks = vi.hoisted(() => ({
+  patchDiffViewMock: vi.fn(
+    ({
+      patch,
+      className,
+      hunkSeparators,
+    }: {
+      patch: string;
+      className?: string;
+      disableFileHeader?: boolean;
+      hunkSeparators?: string;
+    }) => (
+      <div
+        data-testid="diff-view"
+        data-class-name={className}
+        data-hunk-separators={hunkSeparators}
+        data-patch={patch}
+      >
+        diff content
+      </div>
+    ),
+  ),
+}));
+
+vi.mock("@/components/diff/PatchDiffView", () => ({
+  PatchDiffView: (props: Parameters<typeof mocks.patchDiffViewMock>[0]) =>
+    mocks.patchDiffViewMock(props),
 }));
 
 describe("InlineDiffBlock", () => {
@@ -57,4 +80,68 @@ describe("InlineDiffBlock", () => {
     );
     expect(screen.getByText("src/foo.ts")).toBeInTheDocument();
   });
+});
+
+it("passes a unified patch to the shared diff renderer", () => {
+  render(
+    <InlineDiffBlock
+      filePath="test.ts"
+      oldContent={"one\ntwo\nthree\n"}
+      newContent={"one\nTWO\nthree\n"}
+    />,
+  );
+  expect(screen.getByTestId("diff-view")).toHaveAttribute(
+    "data-patch",
+    expect.stringContaining("@@ -1,3 +1,3 @@"),
+  );
+});
+
+it("keeps the agent tool-call header instead of Pierre's file header", () => {
+  render(
+    <InlineDiffBlock
+      filePath="test.ts"
+      oldContent={"one\n"}
+      newContent={"two\n"}
+      toolName="Edit"
+    />,
+  );
+  expect(screen.getByText("Edit")).toBeInTheDocument();
+  expect(mocks.patchDiffViewMock).toHaveBeenCalledWith(
+    expect.objectContaining({ disableFileHeader: true }),
+  );
+});
+
+it("uses compact Pierre hunk separators for inline diffs", () => {
+  render(
+    <InlineDiffBlock
+      filePath="test.ts"
+      oldContent={"one\n"}
+      newContent={"two\n"}
+      toolName="Edit"
+    />,
+  );
+
+  expect(mocks.patchDiffViewMock).toHaveBeenCalledWith(
+    expect.objectContaining({ hunkSeparators: "simple" }),
+  );
+  expect(screen.getByTestId("diff-view")).toHaveAttribute(
+    "data-class-name",
+    expect.stringContaining("cadencr-patch-diff-inline"),
+  );
+});
+
+it("uses primary color tokens for edit tool-call headers", () => {
+  render(
+    <InlineDiffBlock
+      filePath="test.ts"
+      oldContent={"one\n"}
+      newContent={"two\n"}
+      toolName="ApplyPatch"
+    />,
+  );
+
+  expect(screen.getByText("ApplyPatch")).toHaveClass("text-primary");
+  expect(screen.getByTestId("inline-diff-header")).toHaveClass(
+    "bg-[color-mix(in_srgb,var(--primary)_15%,var(--editor-bg))]",
+  );
 });

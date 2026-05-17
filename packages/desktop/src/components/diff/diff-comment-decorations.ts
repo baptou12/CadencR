@@ -22,6 +22,7 @@ export interface CommentLineData {
 
 export interface ActiveWidget {
   lineNumber: number;
+  side?: "old" | "new";
 }
 
 export interface CommentCallbacks {

@@ -6,7 +6,6 @@ import {
   useGetCommitLog,
   useGetDiff,
   useGetChangedFiles,
-  useGetFileContentBatch,
   getGetFileContentQueryKey,
   useListDiffViewed,
   useMarkDiffViewed,
@@ -154,33 +153,6 @@ export function useDiffData(featureId: number, mode: DiffMode, targetBranch?: st
     }
     return set;
   }, [changedFiles, isUncommittedView]);
-
-  // ---- Batch file content prefetch ----
-  // Seeding runs in `onSuccess` (via `seedBatchFileContentCache`) so cache
-  // keys are derived from the request variables — not from current React
-  // state. A late response from a previous commit/branch/mode therefore
-  // cannot seed the cache under the *new* key, which `staleTime: Infinity`
-  // would otherwise pin indefinitely.
-  const batchFileContent = useGetFileContentBatch({
-    mutation: {
-      onSuccess: (items, variables) =>
-        seedBatchFileContentCache(queryClient, items, variables.data),
-    },
-  });
-
-  const batchMutate = batchFileContent.mutate;
-  useEffect(() => {
-    if (fileNames.length === 0) return;
-    batchMutate({
-      data: {
-        feature_id: featureId,
-        file_paths: fileNames,
-        mode,
-        target_branch: targetBranch,
-        commit_sha: selectedCommit ?? undefined,
-      },
-    });
-  }, [batchMutate, featureId, fileNames, mode, targetBranch, selectedCommit]);
 
   // ---- Blob SHAs & viewed tracking ----
   const { data: blobShasList = [] } = useGetFileBlobShas({ feature_id: featureId });

@@ -1,189 +1,126 @@
+import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent } from "@testing-library/react";
 import { render } from "@/test-utils";
 import { DiffFileBlock } from "./DiffFileBlock";
 
-interface MockFileContent {
-  old_content: string | null;
-  new_content: string | null;
-  old_size: number;
-  new_size: number;
-  is_binary: boolean;
-  is_large: boolean;
-}
-
 const mocks = vi.hoisted(() => ({
-  refetch: vi.fn(),
-  useGetFileContentMock: vi.fn(),
-  readOnlyDiffViewMock: vi.fn((_props: unknown) => <div data-testid="diff-view" />),
+  patchDiffViewMock: vi.fn(
+    ({
+      patch,
+      collapsed,
+      renderHeaderPrefix,
+      renderHeaderMetadata,
+    }: {
+      patch: string;
+      collapsed?: boolean;
+      renderHeaderPrefix?: () => ReactNode;
+      renderHeaderMetadata?: () => ReactNode;
+    }) => (
+      <div
+        data-testid="patch-diff-view"
+        data-patch={patch}
+        data-collapsed={String(Boolean(collapsed))}
+      >
+        {renderHeaderPrefix?.()}
+        {renderHeaderMetadata?.()}
+      </div>
+    ),
+  ),
 }));
 
-vi.mock("@/api/generated", () => ({
-  useGetFileContent: mocks.useGetFileContentMock,
+vi.mock("./PatchDiffView", () => ({
+  PatchDiffView: (props: Parameters<typeof mocks.patchDiffViewMock>[0]) =>
+    mocks.patchDiffViewMock(props),
 }));
 
-vi.mock("@/components/editor/ReadOnlyDiffView", () => ({
-  ReadOnlyDiffView: (props: unknown) => mocks.readOnlyDiffViewMock(props),
-}));
-
-function mockContent(data: MockFileContent | undefined, isFetching = false): void {
-  mocks.useGetFileContentMock.mockReturnValue({
-    data,
-    refetch: mocks.refetch,
-    isFetching,
-  });
-}
+const patch = `diff --git a/src/foo.ts b/src/foo.ts
+--- a/src/foo.ts
++++ b/src/foo.ts
+@@ -1 +1 @@
+-old
++new
+`;
 
 const baseProps = {
-  section: { oldFileName: "src/foo.ts", newFileName: "src/foo.ts", hunks: ["@@ -1 +1 @@"] },
-  featureId: 1,
-  mode: "worktree" as const,
+  section: { oldFileName: "src/foo.ts", newFileName: "src/foo.ts", hunks: [patch] },
   diffMode: "unified" as const,
   displayName: "src/foo.ts",
   additions: 1,
-  deletions: 0,
-};
-
-const smallText: MockFileContent = {
-  old_content: "old line",
-  new_content: "new line",
-  old_size: 8,
-  new_size: 8,
-  is_binary: false,
-  is_large: false,
-};
-
-const largeFile: MockFileContent = {
-  old_content: null,
-  new_content: null,
-  old_size: 0,
-  new_size: 1_500_000,
-  is_binary: false,
-  is_large: true,
-};
-
-const binaryFile: MockFileContent = {
-  old_content: null,
-  new_content: null,
-  old_size: 0,
-  new_size: 4096,
-  is_binary: true,
-  is_large: false,
+  deletions: 1,
+  themeAppearance: "dark" as const,
+  themeId: "dracula" as const,
+  isFocused: false,
+  isFileViewed: false,
+  showViewedCheckbox: true,
+  onToggleFile: vi.fn(),
+  onMarkViewedFile: vi.fn(),
+  onUnmarkViewedFile: vi.fn(),
 };
 
 beforeEach(() => {
-  mocks.useGetFileContentMock.mockReset();
-  mocks.refetch.mockReset();
-  mocks.readOnlyDiffViewMock.mockClear();
-  mockContent(undefined);
+  mocks.patchDiffViewMock.mockClear();
 });
 
 describe("DiffFileBlock", () => {
-  it("does not render a lazy-load spacer for collapsed files", () => {
-    const { container } = render(<DiffFileBlock {...baseProps} isCollapsed />);
-    expect(container.firstChild).toBeNull();
+  it("renders a cheap header instead of hydrating Pierre for collapsed files", () => {
+    const { getByText, queryByTestId } = render(<DiffFileBlock {...baseProps} isCollapsed />);
+    expect(getByText("src/foo.ts")).toBeInTheDocument();
+    expect(queryByTestId("patch-diff-view")).not.toBeInTheDocument();
   });
 
-  it("renders the diff view immediately for a manually expanded small file", () => {
-    mockContent(smallText);
-    const { getByTestId } = render(
-      <DiffFileBlock {...baseProps} isCollapsed={false} forceRender />,
-    );
-    expect(getByTestId("diff-view")).toBeInTheDocument();
+  it("renders the authoritative patch hunk instead of fetching full file contents", () => {
+    const { getByTestId } = render(<DiffFileBlock {...baseProps} isCollapsed={false} />);
+    expect(getByTestId("patch-diff-view")).toHaveAttribute("data-patch", patch);
   });
 
-  it("renders a 'Display diff' placeholder for large files instead of CodeMirror", () => {
-    mockContent(largeFile);
-    const { getByText, queryByTestId } = render(
-      <DiffFileBlock {...baseProps} isCollapsed={false} forceRender />,
-    );
-    expect(getByText("Large file")).toBeInTheDocument();
-    expect(getByText("Display diff")).toBeInTheDocument();
-    expect(queryByTestId("diff-view")).not.toBeInTheDocument();
-  });
-
-  it("renders a binary placeholder without a 'Display diff' button", () => {
-    mockContent(binaryFile);
-    const { getByText, queryByText, queryByTestId } = render(
-      <DiffFileBlock {...baseProps} isCollapsed={false} forceRender />,
+  it("renders a binary placeholder for binary/no-hunk patches", () => {
+    const binaryPatch = `diff --git a/image.png b/image.png
+Binary files a/image.png and b/image.png differ
+`;
+    const { getByText, getByTestId } = render(
+      <DiffFileBlock
+        {...baseProps}
+        section={{
+          oldFileName: "image.png",
+          newFileName: "image.png",
+          hunks: [binaryPatch],
+        }}
+        isCollapsed={false}
+      />,
     );
     expect(getByText("Binary file")).toBeInTheDocument();
-    expect(queryByText("Display diff")).not.toBeInTheDocument();
-    expect(queryByTestId("diff-view")).not.toBeInTheDocument();
+    expect(getByTestId("patch-diff-view")).toHaveAttribute("data-patch", binaryPatch);
   });
 
-  it("opting in on a line-count-large file with cached content does not refetch", async () => {
-    // Batch already returned content (file is small bytewise) but the unified
-    // diff has 6k changed lines, so the line-count gate flips isLarge=true.
-    mockContent({ ...smallText, is_large: false });
-    const { getByText, findByTestId } = render(
-      <DiffFileBlock
-        {...baseProps}
-        isCollapsed={false}
-        forceRender
-        additions={6_000}
-        deletions={0}
-      />,
-    );
-    fireEvent.click(getByText("Display diff"));
-    expect(mocks.refetch).not.toHaveBeenCalled();
-    expect(await findByTestId("diff-view")).toBeInTheDocument();
-  });
-
-  it("memoizes on structurally-equal section so unchanged files don't re-render CodeMirror", () => {
-    // Live-update perf: when the WS-triggered diff refetch returns the same
-    // hunks for this file but a fresh `section` object reference (because
-    // `parseUnifiedDiff` always builds new objects), `React.memo` must bail
-    // out — otherwise CodeMirror re-mounts on every keystroke from the agent.
-    // Counts compared as deltas to stay robust under React 18 StrictMode's
-    // double-invoke on initial mount.
-    mockContent(smallText);
-    const { rerender } = render(<DiffFileBlock {...baseProps} isCollapsed={false} forceRender />);
-    const initialCalls = mocks.readOnlyDiffViewMock.mock.calls.length;
+  it("memoizes structurally-equal sections so unchanged files don't re-render", () => {
+    const { rerender } = render(<DiffFileBlock {...baseProps} isCollapsed={false} />);
+    const initialCalls = mocks.patchDiffViewMock.mock.calls.length;
     expect(initialCalls).toBeGreaterThan(0);
 
-    // Same hunk content, brand-new object identity (the parseUnifiedDiff path).
-    const sectionWithSameHunks = {
-      oldFileName: "src/foo.ts",
-      newFileName: "src/foo.ts",
-      hunks: ["@@ -1 +1 @@"],
-    };
     rerender(
       <DiffFileBlock
         {...baseProps}
-        section={sectionWithSameHunks}
+        section={{
+          oldFileName: "src/foo.ts",
+          newFileName: "src/foo.ts",
+          hunks: [patch],
+        }}
         isCollapsed={false}
-        forceRender
       />,
     );
-    expect(mocks.readOnlyDiffViewMock.mock.calls.length).toBe(initialCalls);
+    expect(mocks.patchDiffViewMock.mock.calls.length).toBe(initialCalls);
 
-    // Now flip the hunks — the memo MUST re-render so the new diff shows.
     rerender(
       <DiffFileBlock
         {...baseProps}
-        section={{ ...sectionWithSameHunks, hunks: ["@@ -1 +1 @@\n-old\n+changed"] }}
+        section={{
+          oldFileName: "src/foo.ts",
+          newFileName: "src/foo.ts",
+          hunks: [patch.replace("+new", "+changed")],
+        }}
         isCollapsed={false}
-        forceRender
       />,
     );
-    expect(mocks.readOnlyDiffViewMock.mock.calls.length).toBeGreaterThan(initialCalls);
-  });
-
-  it("opting in on a large file shows a loader, then refetches and renders the diff", async () => {
-    mockContent(largeFile);
-    const { getByText, rerender, findByTestId, findByText } = render(
-      <DiffFileBlock {...baseProps} isCollapsed={false} forceRender />,
-    );
-    fireEvent.click(getByText("Display diff"));
-    expect(mocks.refetch).toHaveBeenCalledTimes(1);
-    // Spinner appears immediately, before the (synchronous) editor mounts.
-    expect(await findByText("Computing diff…")).toBeInTheDocument();
-
-    // Simulate the refetch returning full content.
-    mockContent({ ...largeFile, old_content: "x", new_content: "y", is_large: true });
-    rerender(<DiffFileBlock {...baseProps} isCollapsed={false} forceRender />);
-    // The double-RAF defer flips opt-in to "yes" on the next frame.
-    expect(await findByTestId("diff-view")).toBeInTheDocument();
+    expect(mocks.patchDiffViewMock.mock.calls.length).toBeGreaterThan(initialCalls);
   });
 });

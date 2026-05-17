@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseUnifiedDiff, langFromPath } from "./parse-unified-diff";
+import { parseUnifiedDiff, langFromPath, hasTextHunks } from "./parse-unified-diff";
 
 const SINGLE_FILE_DIFF = `diff --git a/src/foo.ts b/src/foo.ts
 index abc123..def456 100644
@@ -82,16 +82,18 @@ describe("parseUnifiedDiff", () => {
     expect(result).toHaveLength(1);
   });
 
-  it("skips files with --- and +++ but no @@ hunk headers", () => {
+  it("keeps binary/no-hunk files so the Git tab can show placeholders", () => {
     const noHunkDiff = `diff --git a/image.png b/image.png
 --- a/image.png
 +++ b/image.png
 Binary files a/image.png and b/image.png differ`;
     const result = parseUnifiedDiff(noHunkDiff);
-    expect(result).toHaveLength(0);
+    expect(result).toHaveLength(1);
+    expect(result[0].newFileName).toBe("image.png");
+    expect(hasTextHunks(result[0])).toBe(false);
   });
 
-  it("skips mode-only changes without hunks alongside valid diffs", () => {
+  it("keeps mode-only changes without hunks alongside valid diffs", () => {
     const mixed = `diff --git a/script.sh b/script.sh
 old mode 100644
 new mode 100755
@@ -102,8 +104,11 @@ diff --git a/src/a.ts b/src/a.ts
 -old
 +new`;
     const result = parseUnifiedDiff(mixed);
-    expect(result).toHaveLength(1);
-    expect(result[0].newFileName).toBe("src/a.ts");
+    expect(result).toHaveLength(2);
+    expect(result[0].newFileName).toBe("script.sh");
+    expect(hasTextHunks(result[0])).toBe(false);
+    expect(result[1].newFileName).toBe("src/a.ts");
+    expect(hasTextHunks(result[1])).toBe(true);
   });
 });
 
