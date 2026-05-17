@@ -50,7 +50,7 @@ export function RootOverlays({
       />
       <UnifiedAgentsShortcut />
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
-      <Toaster position="top-center" richColors />
+      <Toaster position="top-center" />
       <PostUpdateChangelogDialog />
       <ConfirmDialog
         open={confirmAction != null}
