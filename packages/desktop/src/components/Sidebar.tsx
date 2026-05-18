@@ -25,7 +25,7 @@ export function Sidebar() {
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
 
   return (
-    <aside ref={sidebarRef} className="flex h-full flex-col bg-sidebar">
+    <aside ref={sidebarRef} className="flex h-full flex-col border-r border-border/60 bg-sidebar">
       <SidebarHeader onCollapse={() => setCollapsed(true)} />
       <div className="flex-1 min-w-0 min-h-0 overflow-hidden p-2">
         <div className="mb-2 px-1">

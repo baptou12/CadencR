@@ -310,7 +310,7 @@ function UnifiedAgentsHeader({
 }: UnifiedAgentsHeaderProps): ReactElement {
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } = useSidebarCollapsed();
   return (
-    <header className="titlebar-drag shrink-0 border-b bg-background px-4 py-3">
+    <header className="titlebar-drag shrink-0 border-b border-border/40 bg-background px-4 py-3">
       <div className="flex items-center gap-3">
         {sidebarCollapsed && <SidebarCollapsedChrome onExpand={() => setSidebarCollapsed(false)} />}
         <div className="min-w-0 flex-1">

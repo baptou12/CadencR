@@ -205,6 +205,12 @@ export const SHORTCUTS = [
     description: "Move selection down",
     scope: "unified-agents",
   },
+  {
+    id: "agents-open-feature",
+    keys: ["mod", "o"],
+    description: "Open active agent's feature page",
+    scope: "unified-agents",
+  },
 
   // ─── Feature panes ───────────────────────────────────────────────────
   {

@@ -10,10 +10,28 @@ import { UnifiedAgentCard } from "./UnifiedAgentCard";
 const mocks = vi.hoisted(() => ({
   WebSocketSessionFeatureBlock: vi.fn(() => <div data-testid="ws-block" />),
   togglePin: vi.fn(),
+  navigate: vi.fn(),
+  shortcutCallback: null as ((e: KeyboardEvent) => void) | null,
+  shortcutEnabled: true,
 }));
 
 vi.mock("@/components/WebSocketSessionFeatureBlock", () => ({
   WebSocketSessionFeatureBlock: mocks.WebSocketSessionFeatureBlock,
+}));
+
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
+}));
+
+vi.mock("@/hooks/useShortcut", () => ({
+  useShortcut: (
+    _id: string,
+    callback: (e: KeyboardEvent) => void,
+    options?: { enabled?: boolean },
+  ) => {
+    mocks.shortcutCallback = callback;
+    mocks.shortcutEnabled = options?.enabled ?? true;
+  },
 }));
 
 vi.mock("@/contexts/ResolvedModelContext", () => ({
@@ -81,6 +99,8 @@ function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): Unifi
 describe("UnifiedAgentCard ws-session hydration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.shortcutCallback = null;
+    mocks.shortcutEnabled = true;
     useWsSessionStore.setState({ sessions: {} });
   });
 
@@ -168,5 +188,32 @@ describe("UnifiedAgentCard ws-session hydration", () => {
     expect(session?.lifecycle).toEqual({ phase: "active" });
     expect(session?.currentModelId).toBe("live-model");
     expect(session?.hasFileChanges).toBe(false);
+  });
+});
+
+describe("UnifiedAgentCard CMD+O shortcut", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.shortcutCallback = null;
+    mocks.shortcutEnabled = true;
+    useWsSessionStore.setState({ sessions: {} });
+  });
+
+  it("navigates to the feature page when the shortcut fires", () => {
+    render(<UnifiedAgentCard entry={makeEntry()} index={0} isActive onActivate={vi.fn()} />);
+    const event = new KeyboardEvent("keydown");
+    Object.defineProperty(event, "preventDefault", { value: vi.fn() });
+    mocks.shortcutCallback?.(event);
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: "/projects/$projectId/features/$featureId",
+      params: { projectId: "3", featureId: "7" },
+    });
+  });
+
+  it("is disabled when the card is not active so only one listener fires per grid", () => {
+    render(
+      <UnifiedAgentCard entry={makeEntry()} index={0} isActive={false} onActivate={vi.fn()} />,
+    );
+    expect(mocks.shortcutEnabled).toBe(false);
   });
 });
