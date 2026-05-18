@@ -1,4 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +26,23 @@ interface ShortcutTooltipProps {
   disabled?: boolean;
 }
 
-/** Tooltip shown on hover. Renders below the trigger by default. */
+interface TooltipPosition {
+  top: number;
+  left: number;
+  /** Horizontal `transform: translateX(...)` to apply for the requested alignment. */
+  translateX: string;
+}
+
+const GAP_PX = 6;
+
+/**
+ * Tooltip shown on hover. Rendered into a portal at `document.body` and
+ * positioned with `position: fixed` from the trigger's bounding rect, so
+ * ancestor `overflow: hidden|auto` chains (tab strips, card frames, pane
+ * content) can never clip the bubble — historically the failure mode was
+ * tooltips on tab triggers being invisible because `TabsList` sets
+ * `overflow: auto` and unified-agent cards set `overflow: hidden`.
+ */
 export function ShortcutTooltip({
   label,
   keys,
@@ -36,27 +54,45 @@ export function ShortcutTooltip({
   disabled,
 }: ShortcutTooltipProps) {
   const [visible, setVisible] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const suppressUntilLeaveRef = useRef(false);
-  const prevDisabledRef = useRef(disabled);
 
+  // While disabled, force-hide and arm a one-shot suppress so the synthetic
+  // mouseenter fired when an overlay (popover) above the trigger unmounts
+  // doesn't immediately re-open the tooltip — the user has to leave and
+  // re-enter the trigger first.
   useEffect(() => {
-    const wasDisabled = prevDisabledRef.current;
-    prevDisabledRef.current = disabled;
-    if (disabled) {
-      setVisible(false);
-      return;
-    }
-    if (wasDisabled) {
-      // Disabled just turned off — ignore the synthetic mouseenter that
-      // fires when an overlay (popover) above the trigger unmounts.
-      suppressUntilLeaveRef.current = true;
-      setVisible(false);
-    }
+    if (!disabled) return;
+    setVisible(false);
+    suppressUntilLeaveRef.current = true;
   }, [disabled]);
 
+  // Position once on every visibility transition before paint, then keep it
+  // glued to the trigger across scroll/resize while visible. `useLayoutEffect`
+  // avoids the empty-paint flicker the previous mouseenter→setState path had.
+  useLayoutEffect(() => {
+    if (!visible) return undefined;
+    const sync = (): void => {
+      const trigger = wrapperRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const top = above ? rect.top - GAP_PX : rect.bottom + GAP_PX;
+      if (alignRight) setPosition({ top, left: rect.right, translateX: "-100%" });
+      else if (alignLeft) setPosition({ top, left: rect.left, translateX: "0" });
+      else setPosition({ top, left: rect.left + rect.width / 2, translateX: "-50%" });
+    };
+    sync();
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("scroll", sync, true);
+      window.removeEventListener("resize", sync);
+    };
+  }, [visible, above, alignLeft, alignRight]);
+
   function handleMouseEnter(): void {
-    if (disabled) return;
-    if (suppressUntilLeaveRef.current) return;
+    if (disabled || suppressUntilLeaveRef.current) return;
     setVisible(true);
   }
 
@@ -67,23 +103,29 @@ export function ShortcutTooltip({
 
   return (
     <div
+      ref={wrapperRef}
       className={cn("relative inline-flex", className)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
       {children}
-      {visible && !disabled && (
-        <div
-          className={cn(
-            "pointer-events-none absolute z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg",
-            above ? "bottom-full mb-1.5" : "top-full mt-1.5",
-            alignRight ? "right-0" : alignLeft ? "left-0" : "left-1/2 -translate-x-1/2",
-          )}
-        >
-          <span>{label}</span>
-          {keys?.length ? <KbdShortcut keys={keys} size="sm" /> : null}
-        </div>
-      )}
+      {visible && !disabled && position
+        ? createPortal(
+            <div
+              style={{
+                position: "fixed",
+                top: position.top,
+                left: position.left,
+                transform: `translate(${position.translateX}, ${above ? "-100%" : "0"})`,
+              }}
+              className="pointer-events-none z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg"
+            >
+              <span>{label}</span>
+              {keys?.length ? <KbdShortcut keys={keys} size="sm" /> : null}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

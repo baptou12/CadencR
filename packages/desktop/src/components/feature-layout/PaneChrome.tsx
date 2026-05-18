@@ -3,6 +3,7 @@ import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { XIcon } from "lucide-react";
 
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { LayoutLeaf, TabKind } from "@/stores/feature-layout-schema";
 import { cn } from "@/lib/utils";
@@ -184,23 +185,25 @@ function DraggableTabTrigger({
       }}
       className="group relative inline-flex shrink-0"
     >
-      <TabsTrigger
-        value={tab}
-        data-feature-tab-kind={tab}
-        data-feature-id={featureId}
-        {...attributes}
-        {...listeners}
-        onClick={onActivate}
-        className={cn(
-          "cursor-grab active:cursor-grabbing",
-          !isRootPane && "pr-7",
-          !isFocusedPane && "data-[state=active]:after:bg-transparent",
-        )}
-      >
-        <def.Icon className="size-4 shrink-0" />
-        <span>{def.label}</span>
-        {def.badge}
-      </TabsTrigger>
+      <ShortcutTooltip label={def.label} keys={def.shortcut}>
+        <TabsTrigger
+          value={tab}
+          data-feature-tab-kind={tab}
+          data-feature-id={featureId}
+          {...attributes}
+          {...listeners}
+          onClick={onActivate}
+          className={cn(
+            "cursor-grab active:cursor-grabbing",
+            !isRootPane && "pr-7",
+            !isFocusedPane && "data-[state=active]:after:bg-transparent",
+          )}
+        >
+          <def.Icon className="size-4 shrink-0" />
+          <span>{def.label}</span>
+          {def.badge}
+        </TabsTrigger>
+      </ShortcutTooltip>
       {!isRootPane && (
         <button
           type="button"
@@ -235,17 +238,19 @@ function StaticTabTrigger({
 }: StaticTabTriggerProps): ReactNode {
   const def = tabs[tab];
   return (
-    <TabsTrigger
-      value={tab}
-      data-feature-tab-kind={tab}
-      data-feature-id={featureId}
-      onClick={onActivate}
-      className={cn("group", !isFocusedPane && "data-[state=active]:after:bg-transparent")}
-    >
-      <def.Icon className="size-4 shrink-0" />
-      <span>{def.label}</span>
-      {def.badge}
-    </TabsTrigger>
+    <ShortcutTooltip label={def.label} keys={def.shortcut}>
+      <TabsTrigger
+        value={tab}
+        data-feature-tab-kind={tab}
+        data-feature-id={featureId}
+        onClick={onActivate}
+        className={cn("group", !isFocusedPane && "data-[state=active]:after:bg-transparent")}
+      >
+        <def.Icon className="size-4 shrink-0" />
+        <span>{def.label}</span>
+        {def.badge}
+      </TabsTrigger>
+    </ShortcutTooltip>
   );
 }
 

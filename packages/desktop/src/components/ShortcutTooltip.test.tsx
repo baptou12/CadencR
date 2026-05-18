@@ -21,17 +21,7 @@ describe("ShortcutTooltip", () => {
     expect(screen.queryByText("Test")).not.toBeInTheDocument();
   });
 
-  it("shows tooltip on hover", () => {
-    render(
-      <ShortcutTooltip label="My label" keys={["cmd", "S"]}>
-        <button>Btn</button>
-      </ShortcutTooltip>,
-    );
-    fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
-    expect(screen.getByText("My label")).toBeInTheDocument();
-  });
-
-  it("hides tooltip on mouse leave", () => {
+  it("shows tooltip on hover and hides on leave", () => {
     render(
       <ShortcutTooltip label="My label" keys={["cmd", "S"]}>
         <button>Btn</button>
@@ -45,6 +35,18 @@ describe("ShortcutTooltip", () => {
     expect(screen.queryByText("My label")).not.toBeInTheDocument();
   });
 
+  it("renders without a keys row when keys is empty or omitted", () => {
+    render(
+      <ShortcutTooltip label="No keys">
+        <button>Btn</button>
+      </ShortcutTooltip>,
+    );
+    const wrapper = screen.getByText("Btn").parentElement!;
+    fireEvent.mouseEnter(wrapper);
+    const bubble = screen.getByText("No keys").parentElement!;
+    expect(bubble.querySelector("kbd")).toBeNull();
+  });
+
   it("applies className to wrapper", () => {
     render(
       <ShortcutTooltip label="Test" className="flex-1">
@@ -55,35 +57,46 @@ describe("ShortcutTooltip", () => {
     expect(wrapper.className).toContain("flex-1");
   });
 
-  it("positions tooltip above when above prop is set", () => {
+  it("positions tooltip above the trigger when above prop is set", () => {
     render(
       <ShortcutTooltip label="Above" keys={["cmd", "B"]} above>
         <button>Btn</button>
       </ShortcutTooltip>,
     );
-    const wrapper = screen.getByText("Btn").parentElement!;
-    fireEvent.mouseEnter(wrapper);
+    fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
 
-    const tooltip =
-      screen.getByText("Above").closest("div.pointer-events-none") ??
-      screen.getByText("Above").parentElement!;
-    expect(tooltip?.className).toContain("bottom-full");
-    expect(tooltip?.className).not.toContain("top-full");
+    const bubble = screen.getByText("Above").parentElement!;
+    // The new portal model uses inline `position: fixed` and a translateY
+    // of -100% to lift the bubble above the trigger.
+    expect(bubble.style.position).toBe("fixed");
+    expect(bubble.style.transform).toContain("-100%");
   });
 
-  it("positions tooltip below by default", () => {
+  it("positions tooltip below the trigger by default", () => {
     render(
       <ShortcutTooltip label="Below" keys={["cmd", "B"]}>
         <button>Btn</button>
       </ShortcutTooltip>,
     );
+    fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
+
+    const bubble = screen.getByText("Below").parentElement!;
+    expect(bubble.style.position).toBe("fixed");
+    // Below mode keeps the Y translate at 0; alignRight/Left only changes X.
+    expect(bubble.style.transform).toContain(", 0");
+  });
+
+  it("portals the bubble outside the wrapper so ancestor overflow can't clip it", () => {
+    render(
+      <ShortcutTooltip label="Portaled">
+        <button>Btn</button>
+      </ShortcutTooltip>,
+    );
     const wrapper = screen.getByText("Btn").parentElement!;
     fireEvent.mouseEnter(wrapper);
-
-    const tooltip =
-      screen.getByText("Below").closest("div.pointer-events-none") ??
-      screen.getByText("Below").parentElement!;
-    expect(tooltip?.className).toContain("top-full");
-    expect(tooltip?.className).not.toContain("bottom-full");
+    const bubble = screen.getByText("Portaled").parentElement!;
+    // The bubble lives directly under `document.body`, not inside the wrapper.
+    expect(wrapper.contains(bubble)).toBe(false);
+    expect(bubble.parentElement).toBe(document.body);
   });
 });

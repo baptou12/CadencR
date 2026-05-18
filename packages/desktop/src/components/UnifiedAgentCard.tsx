@@ -1,9 +1,11 @@
-import { memo, useLayoutEffect, type ReactElement } from "react";
+import { memo, useCallback, useLayoutEffect, type ReactElement } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { UnifiedAgentEntry } from "@/api/generated";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { WebSocketSessionFeatureBlock } from "@/components/WebSocketSessionFeatureBlock";
 import { ResolvedModelProvider } from "@/contexts/ResolvedModelContext";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
+import { useShortcut } from "@/hooks/useShortcut";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { cn } from "@/lib/utils";
@@ -35,14 +37,40 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
   useHydrateUnifiedWsSession(entry);
   const pinControls = useUnifiedAgentPinControls(entry);
   const prefetchFeature = useFeaturePrefetch(entry.feature.id, entry.project.id);
-  const activate = (): void => onActivate(index);
+  // Stable so the surrounding `React.memo` and the section's focus/pointer
+  // handlers don't tear down every render while the grid streams updates.
+  const activate = useCallback((): void => onActivate(index), [onActivate, index]);
+  // CMD+O on the active card opens its dedicated feature page. Gated on
+  // `isActive` so only the focused card listens — the listener is bubble-
+  // phase (react-hotkeys-hook), and Cadencr doesn't bind CMD+O elsewhere
+  // outside of a scoped drawer, so the active-card gate is the disambiguator.
+  const navigate = useNavigate();
+  useShortcut(
+    "agents-open-feature",
+    (event) => {
+      event.preventDefault();
+      void navigate({
+        to: "/projects/$projectId/features/$featureId",
+        params: {
+          projectId: String(entry.project.id),
+          featureId: String(entry.feature.id),
+        },
+      });
+    },
+    { enabled: isActive },
+  );
   const baseClass = cn(
-    "group/card relative flex h-full min-h-[420px] flex-col overflow-hidden rounded-[10px] border bg-card shadow-sm outline-none transition-[border-color,box-shadow]",
-    // Gate the focus ring on `!isActive` — active state already paints a
-    // primary border, so layering both produces a doubled-up border on focus.
-    isActive
-      ? "border-primary/45"
-      : "border-border hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring",
+    "group/card relative flex h-full min-h-[420px] flex-col overflow-hidden rounded-[10px] border bg-card outline-none transition-[border-color,box-shadow] duration-200",
+    // Active = focused agent (set via `onFocusCapture={activate}`). The
+    // active class paints a primary-tinted border + floating shadow and
+    // plays a one-shot 200ms border flash; the global
+    // `data-animations="off"` kill-switch collapses it to a static state.
+    // `--card` and `--background` resolve to the same color in dark mode, so
+    // the card body, its inner embedded header (bg-background), and the
+    // surrounding grid all share a bg. The border is the *only* delineator
+    // — at /40 it disappears at the top edge — so keep the resting opacity
+    // high enough to read while still being discreet.
+    isActive ? "unified-agent-active" : "border-border/70 hover:border-primary/35",
   );
 
   return (

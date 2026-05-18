@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useIsFetching, useIsMutating, useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const TOAST_ID = "global-ops";
@@ -87,7 +88,10 @@ export function useOperationToasts() {
           <span key={i}>{line}</span>
         ))}
       </div>,
-      { id: TOAST_ID },
+      {
+        id: TOAST_ID,
+        icon: <Loader2 className="size-4 animate-spin text-muted-foreground" />,
+      },
     );
     prevActiveRef.current = true;
   }, [fetchCount, mutateCount, queryClient]);

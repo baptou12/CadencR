@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { AlertTriangleIcon, GitBranchIcon, Loader2Icon, PinIcon } from "lucide-react";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
+import { SlidingText } from "@/components/SlidingText";
 import { Button } from "@/components/ui/button";
 import { FeatureLabelChip } from "@/components/FeatureLabelChip";
 import { cn } from "@/lib/utils";
@@ -63,7 +64,7 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
             <span className="shrink-0 text-muted-foreground">/</span>
           </>
         )}
-        <span className="min-w-0 truncate font-semibold leading-none">{title}</span>
+        <SlidingText text={title} className="min-w-0 flex-1 font-semibold leading-none" />
         <FeatureLabelChip label={label} className="max-w-24 leading-3" />
         <WorktreeIndicator status={worktreeStatus} branch={worktreeBranch} />
       </div>
@@ -102,20 +103,22 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
           </Button>
         </ShortcutTooltip>
       ) : null}
-      <Button
-        asChild
-        variant="ghost"
-        size="sm"
-        className="h-6 shrink-0 rounded-md px-2 font-mono text-[10.5px] text-muted-foreground hover:bg-accent/70 hover:text-foreground"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <Link
-          to="/projects/$projectId/features/$featureId"
-          params={{ projectId: String(projectId), featureId: String(featureId) }}
+      <ShortcutTooltip label="Open feature page" keys={["cmd", "o"]} alignRight>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-6 shrink-0 rounded-md px-2 font-mono text-[10.5px] text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+          onClick={(event) => event.stopPropagation()}
         >
-          Open
-        </Link>
-      </Button>
+          <Link
+            to="/projects/$projectId/features/$featureId"
+            params={{ projectId: String(projectId), featureId: String(featureId) }}
+          >
+            Open
+          </Link>
+        </Button>
+      </ShortcutTooltip>
     </div>
   );
 });

@@ -21,6 +21,7 @@ import { FeatureLabelEditor } from "@/components/FeatureLabelEditor";
 import { NumStat } from "@/components/NumStat";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 import { useFeaturePrefetch } from "@/hooks/useFeaturePrefetch";
+import { useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useFeatureStatus } from "@/stores/session-status-selectors";
 
 const ROW_KEYDOWN_IGNORED_SELECTOR = [
@@ -101,6 +102,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   );
 
   const prefetchFeature = useFeaturePrefetch(feature.id, projectId);
+  const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   const hasLabel = !!feature.label;
   const showMetaLine = isEditingLabel || hasLabel || hasStats;
@@ -114,13 +116,14 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={navRef}
           role="button"
           tabIndex={0}
           data-nav-item
           data-nav-type="feature"
           data-nav-id={String(feature.id)}
           data-nav-project-id={String(projectId)}
-          className={`group/feature flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none hover:bg-accent ${
+          className={`group/feature relative flex min-w-0 cursor-pointer items-center gap-1 rounded-md py-1.5 pl-3 pr-1.5 text-sm outline-none hover:bg-accent ${
             activeFeatureId === feature.id ? "bg-accent" : ""
           } ${isArchived ? "opacity-50" : ""}`}
           onClick={(e) => {
@@ -137,7 +140,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
             }
           }}
         >
-          <SidebarShortcutBadge />
+          <SidebarShortcutBadge ref={badgeRef} />
 
           {/* Live status icon driven by the per-session backend store. */}
           <div className="shrink-0 w-3.5">
