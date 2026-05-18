@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde_json::Value;
+use tempfile::TempDir;
 use tokio::time::sleep;
 
 use crate::domain::agents::adapter::RuntimeError;
@@ -14,11 +15,11 @@ const QUESTION_LOOKUP_RETRIES: usize = 10;
 const QUESTION_LOOKUP_DELAY: Duration = Duration::from_millis(100);
 const QUESTION_HTTP_TIMEOUT: Duration = Duration::from_secs(2);
 
-#[derive(Clone)]
 pub(super) struct QuestionSidecar {
     base_url: String,
     directory: String,
     http: reqwest::Client,
+    _instructions_dir: Option<TempDir>,
 }
 
 impl QuestionSidecar {
@@ -30,7 +31,13 @@ impl QuestionSidecar {
                 .timeout(QUESTION_HTTP_TIMEOUT)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
+            _instructions_dir: None,
         }
+    }
+
+    pub(super) fn with_instructions_dir(mut self, instructions_dir: TempDir) -> Self {
+        self._instructions_dir = Some(instructions_dir);
+        self
     }
 
     pub(super) async fn reply_tool_call(

@@ -9,6 +9,7 @@ mod adapter;
 mod adapter_normalize;
 mod events_subagent_synthesis;
 mod events_tool_call_question;
+mod instructions;
 mod permission_reply;
 pub(in crate::domain::agents) mod port;
 mod prompt_usage;
@@ -30,6 +31,7 @@ use crate::domain::agents::acp::AcpClientInfo;
 use crate::domain::agents::adapter::{AgentRuntimeSession, RuntimeError, RuntimeSpawnConfig};
 
 use self::adapter::OpenCodeAcpAdapter;
+use self::instructions::apply_instruction_config;
 use self::port::reserve_local_port;
 use self::question_sidecar::QuestionSidecar;
 
@@ -52,11 +54,12 @@ pub(super) async fn session_finished(_runtime_session_id: &str) -> bool {
 /// supported OpenCode transport.
 pub(super) async fn spawn_acp_session(
     content: Value,
-    config: RuntimeSpawnConfig,
+    mut config: RuntimeSpawnConfig,
 ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
     let binary = opencode_sdk_rs::process::resolve_binary().await?;
     let reserved_question_port = reserve_local_port()?;
     let question_port = reserved_question_port.port();
+    let instructions_dir = apply_instruction_config(&mut config)?;
     let mut command = Command::new(&binary);
     command
         .arg("acp")
@@ -84,7 +87,8 @@ pub(super) async fn spawn_acp_session(
             command.env(key, value);
         }
     }
-    let question_sidecar = QuestionSidecar::new(question_port, &config.cwd);
+    let question_sidecar =
+        QuestionSidecar::new(question_port, &config.cwd).with_instructions_dir(instructions_dir);
     let context_window = match config.model.as_deref() {
         Some(model) => {
             crate::domain::agents::providers::opencode::context_window_for_model(model).await

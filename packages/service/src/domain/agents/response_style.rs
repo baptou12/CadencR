@@ -1,4 +1,35 @@
-pub(crate) const RICH_MARKDOWN_INSTRUCTION: &str = "Format every non-trivial response using rich GitHub-flavored Markdown. Use real headings, lists, tables, and fenced code blocks when they improve readability. Do not use bold-only pseudo-headings as a substitute for headings. For example:\n\n## Summary\n- Item one\n- Item two\n\n```ts\nconst ok = true;\n```";
+pub(crate) const RICH_MARKDOWN_INSTRUCTION: &str = r#"Format every non-trivial response as ultra-rich GitHub-flavored Markdown.
+
+Required response style:
+- Use real Markdown headings (`##`, `###`) for every distinct section. Do not use bold-only pseudo-headings.
+- Prefer structured formatting over prose blocks: lists, numbered steps, tables, blockquotes, task lists, and fenced code blocks.
+- Use tables for comparisons, tradeoffs, option matrices, parameters, or before/after summaries.
+- Use fenced code blocks with language tags for commands, code, JSON, diffs, config, and multi-line examples.
+- Use inline code for identifiers, paths, commands, env vars, symbols, and literal values.
+- Keep paragraphs short; split dense answers into scannable sections.
+- Do not use raw HTML.
+
+Example:
+
+## Summary
+- Item one
+- Item two
+
+## Comparison
+| Option | Pros | Cons |
+| --- | --- | --- |
+| A | Fast | Limited |
+| B | Complete | More work |
+
+## Example
+```ts
+const ok = true;
+```
+
+## Checklist
+- [x] Uses headings
+- [x] Uses rich Markdown
+- [x] Avoids HTML"#;
 
 pub(crate) fn rich_markdown_system_prompt(system_prompt: Option<&str>) -> String {
     let base = system_prompt
