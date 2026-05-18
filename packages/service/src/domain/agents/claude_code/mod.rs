@@ -2,6 +2,7 @@ mod catalog;
 pub mod custom_models;
 mod events;
 pub mod profiles;
+mod prompt_receipts;
 pub mod routes;
 mod worktree_config;
 
@@ -13,6 +14,7 @@ use tokio::sync::mpsc;
 
 use self::catalog::fallback_models;
 use self::events::{context_window_for_model_from_raw, normalize_event};
+use self::prompt_receipts::ClaudePromptReceipts;
 use super::adapter::{
     AgentRuntimeAdapter, AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
     RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionUpdate, RuntimeSlashCommand,
@@ -92,12 +94,16 @@ impl ClaudeCodeAdapter {
 
 pub struct ClaudeCodeSession {
     query: claude_agent_sdk_rs::Query,
+    prompt_receipts: std::sync::Arc<ClaudePromptReceipts>,
 }
 
 impl ClaudeCodeSession {
     #[cfg(test)]
     pub(crate) fn from_query(query: claude_agent_sdk_rs::Query) -> Self {
-        Self { query }
+        Self {
+            query,
+            prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
+        }
     }
 }
 
@@ -183,9 +189,24 @@ impl AgentRuntimeSession for ClaudeCodeSession {
     fn take_message_rx(&mut self) -> RuntimeMessageRx {
         let mut source_rx = self.query.take_message_rx();
         let (tx, rx) = mpsc::channel(64);
+        let prompt_receipts = std::sync::Arc::clone(&self.prompt_receipts);
 
         tokio::spawn(async move {
             while let Some(msg) = source_rx.recv().await {
+                if let Ok(claude_agent_sdk_rs::SdkMessage::User {
+                    message,
+                    is_replay: Some(true),
+                    ..
+                }) = &msg
+                {
+                    if let Some(event) = prompt_receipts.acknowledge_replay(message) {
+                        if tx.send(Ok(event)).await.is_err() {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+
                 let mapped = msg.map(normalize_event).map_err(RuntimeError::from);
                 if tx.send(mapped).await.is_err() {
                     break;
@@ -205,6 +226,28 @@ impl AgentRuntimeSession for ClaudeCodeSession {
             .stream_input(content)
             .await
             .map_err(RuntimeError::from)
+    }
+
+    async fn stream_input_with_client_message_id(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        let Some(client_message_id) = client_message_id else {
+            return self.stream_input(content).await;
+        };
+
+        self.prompt_receipts
+            .enqueue(client_message_id.clone(), &content);
+        let result = self
+            .query
+            .stream_input(content)
+            .await
+            .map_err(RuntimeError::from);
+        if result.is_err() {
+            self.prompt_receipts.discard(&client_message_id);
+        }
+        result
     }
 
     async fn interrupt(&self) -> Result<(), RuntimeError> {
@@ -276,6 +319,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     fn supports_builtin_compact_command(&self) -> bool {
         false
+    }
+
+    fn supports_prompt_receipts(&self) -> bool {
+        true
     }
 
     async fn runtime_slash_commands(
@@ -436,7 +483,10 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         let query = claude_agent_sdk_rs::query(content, options)
             .await
             .map_err(RuntimeError::from)?;
-        Ok(Box::new(ClaudeCodeSession { query }))
+        Ok(Box::new(ClaudeCodeSession {
+            query,
+            prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
+        }))
     }
 }
 
@@ -474,6 +524,12 @@ mod tests {
             supports_fast_mode: None,
             supports_auto_mode: supports_auto,
         }
+    }
+
+    #[test]
+    fn adapter_advertises_prompt_receipts() {
+        let adapter = new_test_adapter();
+        assert!(adapter.supports_prompt_receipts());
     }
 
     #[test]
