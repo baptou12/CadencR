@@ -20,8 +20,13 @@ import { popResize, pushResize } from "@/lib/resize-coordinator";
 const ROW_HEIGHT = 640;
 const MIN_ROW_HEIGHT = 420;
 const MAX_ROW_HEIGHT = 1200;
-const ROW_HEIGHTS_KEY = "unified_agents_row_heights_v2";
-const ROW_WIDTHS_KEY = "unified_agents_row_widths_v1";
+// v3: rekey rows by *row index* instead of session IDs. Previously the key
+// embedded the row's session IDs (`columns:3|sessions:42,17,89`), so any
+// agent churn — creation, archive, pin, sort, filter — produced a brand-new
+// key and the saved height/width was effectively unreachable. Row index is
+// stable across that churn: row 0 stays row 0 no matter what's in it.
+const ROW_HEIGHTS_KEY = "unified_agents_row_heights_v3";
+const ROW_WIDTHS_KEY = "unified_agents_row_widths_v2";
 
 type RowLayoutKey = string;
 type RowHeightMap = Record<RowLayoutKey, number>;
@@ -57,7 +62,7 @@ export const UnifiedAgentsGrid = memo(function UnifiedAgentsGrid({
       className="min-h-0 flex-1"
       overscan={900}
       itemContent={(rowIndex, rowAgents) => {
-        const rowLayoutKey = getRowLayoutKey(rowAgents, columns);
+        const rowLayoutKey = getRowLayoutKey(rowIndex, columns);
         return (
           <UnifiedAgentsRow
             rowAgents={rowAgents}
@@ -319,9 +324,8 @@ function clampRowHeight(height: number): number {
   return Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.round(height)));
 }
 
-function getRowLayoutKey(rowAgents: UnifiedAgentEntry[], columns: number): RowLayoutKey {
-  const sessionIds = rowAgents.map((entry) => entry.session.sessionDbId);
-  return buildUnifiedAgentsRowLayoutKey(columns, sessionIds);
+function getRowLayoutKey(rowIndex: number, columns: number): RowLayoutKey {
+  return buildUnifiedAgentsRowLayoutKey(columns, rowIndex);
 }
 
 function getAgentPanelId(entry: UnifiedAgentEntry): string {
@@ -342,11 +346,8 @@ function notifyPersistenceError(message: string, error: unknown): void {
   window.queueMicrotask(() => toast.error(message));
 }
 
-export function buildUnifiedAgentsRowLayoutKey(
-  columns: number,
-  sessionIds: readonly number[],
-): string {
-  return `columns:${columns}|sessions:${sessionIds.join(",")}`;
+export function buildUnifiedAgentsRowLayoutKey(columns: number, rowIndex: number): string {
+  return `columns:${columns}|row:${rowIndex}`;
 }
 
 export function buildUnifiedAgentPanelId(
