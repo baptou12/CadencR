@@ -164,6 +164,20 @@ impl AgentRuntimeSession for CodexSession {
         self.stream_converted_input(input).await
     }
 
+    async fn stream_input_with_client_message_id(
+        &self,
+        content: Value,
+        client_message_id: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        self.stream_input(content).await?;
+        if let Some(client_message_id) = client_message_id {
+            let _ = self
+                .local_tx
+                .send(Ok(RuntimeEvent::prompt_received_event(client_message_id)));
+        }
+        Ok(())
+    }
+
     async fn interrupt(&self) -> Result<(), RuntimeError> {
         // Live turn: surface RPC failures so the UI shows Stop failed.
         if let Some(turn_id) = self.active_turn_id.read().await.clone() {
