@@ -191,7 +191,7 @@ function RootLayout() {
 
   useZoomHotkeys();
 
-  const appClose = useAppClose(queryClient);
+  const appClose = useAppClose(queryClient, activeFeatureId);
 
   useShortcut("toggle-sidebar", (e) => {
     e.preventDefault();

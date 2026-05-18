@@ -80,6 +80,72 @@ describe("useGlobalShortcut", () => {
     expect(callback).toHaveBeenCalledOnce();
   });
 
+  // Regression: GitHub issue #2. All letter shortcuts must respect the
+  // user's keyboard layout, not the physical QWERTY key position. On
+  // AZERTY the labelled "A" key sits where Q is on QWERTY (e.code ===
+  // "KeyQ" while e.key === "a"); on QWERTZ "Y" sits where Z is.
+  describe("non-QWERTY layouts", () => {
+    it.each([
+      // AZERTY: labelled "A" key (physical KeyQ).
+      {
+        name: "AZERTY cmd+a fires on labelled A",
+        binding: "meta+a",
+        key: "a",
+        code: "KeyQ",
+        shift: false,
+        shouldFire: true,
+      },
+      {
+        name: "AZERTY cmd+q does NOT fire on labelled A",
+        binding: "meta+q",
+        key: "a",
+        code: "KeyQ",
+        shift: false,
+        shouldFire: false,
+      },
+      // AZERTY: labelled "Q" key (physical KeyA).
+      {
+        name: "AZERTY cmd+q fires on labelled Q",
+        binding: "meta+q",
+        key: "q",
+        code: "KeyA",
+        shift: false,
+        shouldFire: true,
+      },
+      // QWERTZ: labelled "Y" key (physical KeyZ).
+      {
+        name: "QWERTZ cmd+y fires on labelled Y",
+        binding: "meta+y",
+        key: "y",
+        code: "KeyZ",
+        shift: false,
+        shouldFire: true,
+      },
+      {
+        name: "QWERTZ cmd+z does NOT fire on labelled Y",
+        binding: "meta+z",
+        key: "y",
+        code: "KeyZ",
+        shift: false,
+        shouldFire: false,
+      },
+      // Uppercase e.key when Shift is held.
+      {
+        name: "AZERTY cmd+shift+a fires on labelled A",
+        binding: "meta+shift+a",
+        key: "A",
+        code: "KeyQ",
+        shift: true,
+        shouldFire: true,
+      },
+    ])("$name", ({ binding, key, code, shift, shouldFire }) => {
+      renderHook(() => useGlobalShortcut(binding, callback));
+      fireKey(key, { metaKey: true, shiftKey: shift, code });
+      if (shouldFire) expect(callback).toHaveBeenCalledOnce();
+      else expect(callback).not.toHaveBeenCalled();
+    });
+  });
+
   it("handles meta+shift+] via e.code (shift turns ] into })", () => {
     renderHook(() => useGlobalShortcut("meta+shift+]", callback));
     // On macOS, Shift+] produces e.key === "}" but e.code stays "BracketRight"

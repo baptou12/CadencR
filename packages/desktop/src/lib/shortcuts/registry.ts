@@ -134,6 +134,22 @@ export const SHORTCUTS = [
     scope: "global",
     aliases: ["exit"],
   },
+  {
+    // Renderer-side fallback for ⌘W / Ctrl+W. Fires only when the focused
+    // tab's owning surface has nothing to close — the editor-close /
+    // terminal-close scoped handlers take ⌘W on their tabs when buffers /
+    // panes exist there. Scoping the bypass to the focused surface (not
+    // the whole feature) lets ⌘W close the window on an empty editor even
+    // when a terminal pane is open elsewhere in the same feature.
+    //
+    // ⌘W is deliberately NOT an Electron menu accelerator: a menu
+    // accelerator intercepts the chord at the AppKit level before the
+    // editor/terminal handlers ever see it, breaking close-the-tab.
+    id: "app-close",
+    keys: ["mod", "w"],
+    description: "Close window",
+    scope: "global",
+  },
   { id: "zoom-in", keys: ["mod", "plus"], description: "Zoom in", scope: "global" },
   { id: "zoom-out", keys: ["mod", "minus"], description: "Zoom out", scope: "global" },
   { id: "zoom-reset", keys: ["mod", "0"], description: "Reset zoom", scope: "global" },

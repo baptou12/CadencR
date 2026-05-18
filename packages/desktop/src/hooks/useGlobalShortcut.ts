@@ -50,8 +50,17 @@ function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
   if (e.shiftKey !== parsed.shift) return false;
   if (e.altKey !== parsed.alt) return false;
 
-  // Single letter — use e.code to avoid ctrl modifier mangling e.key
+  // Single letter — prefer e.key so the shortcut respects the user's
+  // keyboard layout. On AZERTY/QWERTZ the labelled "A"/"Y" keys sit at
+  // different physical positions than QWERTY (e.code === "KeyQ"/"KeyZ"),
+  // but e.key reports the character the user actually pressed. Fall back
+  // to e.code only when e.key is mangled by Ctrl — Ctrl+J turns e.key into
+  // "\n" (U+000A) while e.code stays "KeyJ", which keeps vim-style chords
+  // working on every layout.
   if (/^[a-z]$/.test(parsed.key)) {
+    if (/^[a-zA-Z]$/.test(e.key)) {
+      return e.key.toLowerCase() === parsed.key;
+    }
     return e.code === `Key${parsed.key.toUpperCase()}`;
   }
 
