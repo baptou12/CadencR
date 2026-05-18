@@ -281,15 +281,20 @@ export interface WsSessionStore {
 // ---------------------------------------------------------------------------
 
 export function updateSession(
-  state: WsSessionStore,
+  state: Pick<WsSessionStore, "sessions">,
   sessionId: string,
   patch: Partial<SessionEntry>,
 ): Partial<WsSessionStore> {
   const prev = state.sessions[sessionId];
   if (!prev) return {};
-  const next = { ...prev, ...patch };
-  if (patch.lifecycle && lifecycleChanged(prev.lifecycle, patch.lifecycle)) {
-    next.turnTiming = transitionTurnTiming(prev.turnTiming, prev.lifecycle, patch.lifecycle);
+  const normalizedPatch = normalizeSessionPatch(prev, patch);
+  const next = { ...prev, ...normalizedPatch };
+  if (normalizedPatch.lifecycle && lifecycleChanged(prev.lifecycle, normalizedPatch.lifecycle)) {
+    next.turnTiming = transitionTurnTiming(
+      prev.turnTiming,
+      prev.lifecycle,
+      normalizedPatch.lifecycle,
+    );
   }
   if (shouldAppendTurnSummary(prev.lifecycle, next.lifecycle, next.turnTiming, next.blocks)) {
     const blocks = [...next.blocks, buildTurnSummaryBlock(next.turnTiming)];
@@ -301,6 +306,28 @@ export function updateSession(
       [sessionId]: next,
     },
   };
+}
+
+function normalizeSessionPatch(
+  prev: SessionEntry,
+  patch: Partial<SessionEntry>,
+): Partial<SessionEntry> {
+  if (
+    patch.lifecycle?.phase === "terminal" &&
+    patch.lifecycle.reason === "completed" &&
+    isEmptyUserPausedSettlement(prev, patch.blocks ?? prev.blocks)
+  ) {
+    return { ...patch, lifecycle: createIdleTurnLifecycle() };
+  }
+  return patch;
+}
+
+function isEmptyUserPausedSettlement(session: SessionEntry, blocks: AgentBlockData[]): boolean {
+  return (
+    session.lifecycle.phase === "paused" &&
+    session.lifecycle.reason === "user" &&
+    blocks.length === 0
+  );
 }
 
 function lifecycleChanged(previous: TurnLifecycle, next: TurnLifecycle): boolean {

@@ -1,3 +1,5 @@
+import type { SessionState } from "@/api/generated";
+
 /**
  * DB-side `agent_sessions.status` column value (6-value legacy enum).
  * Not exposed on the canonical `AgentStatus` wire format any more — this
@@ -5,6 +7,13 @@
  * resume a session from a persisted row over REST.
  */
 type DbSessionStatus = "idle" | "running" | "completed" | "error" | "paused" | "waiting";
+type PersistedLifecycleSession = Pick<
+  SessionState,
+  "status" | "blocks" | "runtimeSessionId" | "pendingPermission" | "pendingQuestions"
+>;
+interface PersistedLifecycleOptions {
+  runningStatus?: "idle" | "active";
+}
 
 export type TurnPauseReason =
   | "permission"
@@ -98,9 +107,15 @@ export function transitionTurn(current: TurnLifecycle, event: TurnEvent): TurnLi
   }
 }
 
-export function persistedStatusToLifecycle(status: DbSessionStatus | string): TurnLifecycle {
+export function persistedStatusToLifecycle(
+  status: DbSessionStatus | string,
+  options?: PersistedLifecycleOptions,
+): TurnLifecycle {
   switch (status) {
+    case "running":
+      return options?.runningStatus === "active" ? { phase: "active" } : { phase: "idle" };
     case "paused":
+    case "waiting":
       return { phase: "paused", reason: "user" };
     case "completed":
       return { phase: "terminal", reason: "completed" };
@@ -109,6 +124,35 @@ export function persistedStatusToLifecycle(status: DbSessionStatus | string): Tu
     default:
       return { phase: "idle" };
   }
+}
+
+export function persistedSessionToLifecycle(
+  session: PersistedLifecycleSession,
+  options?: PersistedLifecycleOptions,
+): TurnLifecycle {
+  if (hasPendingSnapshotValue(session.pendingQuestions)) {
+    return { phase: "paused", reason: "question" };
+  }
+  if (hasPendingSnapshotValue(session.pendingPermission)) {
+    return { phase: "paused", reason: "permission" };
+  }
+  if (isEmptyPrePromptPausedSession(session)) {
+    return createIdleTurnLifecycle();
+  }
+  return persistedStatusToLifecycle(session.status, options);
+}
+
+function isEmptyPrePromptPausedSession(session: PersistedLifecycleSession): boolean {
+  if (session.status !== "paused" && session.status !== "waiting") return false;
+  if (session.blocks.length > 0) return false;
+  return !session.runtimeSessionId;
+}
+
+function hasPendingSnapshotValue(value: unknown): boolean {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
 }
 
 export function isTurnActive(lifecycle: TurnLifecycle): boolean {
