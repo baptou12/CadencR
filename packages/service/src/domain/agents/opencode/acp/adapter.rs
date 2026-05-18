@@ -374,7 +374,6 @@ mod tests {
     fn synthesize_tool_call_completion_returns_empty_for_non_subagent_or_blank_body() {
         let adapter = adapter();
         let mut idx = EventIndexer::default();
-        // Non-subagent tool: ignored regardless of body shape.
         assert!(adapter
             .synthesize_tool_call_completion(
                 "call_BASH",
@@ -385,7 +384,6 @@ mod tests {
                 &mut idx,
             )
             .is_empty());
-        // Subagent tool but no extractable body: also ignored.
         assert!(adapter
             .synthesize_tool_call_completion(
                 "call_TASK",
