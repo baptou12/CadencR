@@ -18,6 +18,11 @@ vi.mock("@/components/FeatureTopBar", () => ({
 
 vi.mock("@/components/feature-layout/FeatureLayoutContext", () => ({
   FeatureLayoutProvider: ({ children }: { children: ReactNode }) => children,
+  useFeatureLayoutContext: () => null,
+}));
+
+vi.mock("@/components/editor/EditorFuzzyShortcut", () => ({
+  EditorFuzzyShortcut: () => null,
 }));
 
 vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({

@@ -8,9 +8,10 @@ import {
   useImperativeHandle,
 } from "react";
 import type { EditorView } from "@codemirror/view";
-import { useScopedGlobalShortcutById, useScopedShortcut } from "@/hooks/useShortcut";
+import { useScopedShortcut } from "@/hooks/useShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
+import { useFeatureLayoutContext } from "@/components/feature-layout/FeatureLayoutContext";
 import {
   getFocusedTab,
   selectFeatureLayout,
@@ -30,7 +31,6 @@ import {
 import { Button } from "@/components/ui/button";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
-import FileSearchDialog from "./FileSearchDialog";
 import { saveAll } from "./editorSaveRegistry";
 import { toast } from "sonner";
 import { useFileWatcher } from "@/hooks/useFileWatcher";
@@ -58,18 +58,24 @@ const FeatureEditorTab = memo(
     { featureId, projectId, projectPath, focusedOverride },
     ref,
   ) {
+    // In embedded/unified mode the layout store is keyed by a per-card id
+    // (`-sessionDbId`), not the real feature id. The `FeatureLayoutProvider`
+    // wrapping this tab seeds the correct key; fall back to `featureId` for
+    // tests / hosts that don't wrap us in a provider.
+    const layoutFeatureId = useFeatureLayoutContext()?.featureId ?? featureId;
     const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
       useEditorState(featureId);
     const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
-    // The editor's hotkeys (cmd+P, cmd+D, etc.) only fire while
-    // the editor tab is the globally focused feature tab. With split panes,
-    // the editor can be visible next to the agent without owning keyboard focus.
+    // Gate the split-pane / nav shortcuts on this layout having editor as
+    // the focused tab. With split panes the editor can be visible next to
+    // the agent without owning keyboard focus, so visibility isn't enough.
+    // CMD+P lives in `EditorFuzzyShortcut` at the WS-block level so its
+    // listener is registered before this tab's lazy chunk loads.
     const layoutEditorFocused = useFeatureLayoutStore(
-      (s) => getFocusedTab(selectFeatureLayout(featureId)(s)) === "editor",
+      (s) => getFocusedTab(selectFeatureLayout(layoutFeatureId)(s)) === "editor",
     );
     const isEditorFocused = focusedOverride ?? layoutEditorFocused;
-    const [fileSearchOpen, setFileSearchOpen] = useState(false);
     const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
     const [pendingProceed, setPendingProceed] = useState<(() => void) | null>(null);
     const [isSavingAll, setIsSavingAll] = useState(false);
@@ -159,16 +165,6 @@ const FeatureEditorTab = memo(
       setPendingProceed(null);
     }
 
-    useScopedGlobalShortcutById(
-      "editor-fuzzy",
-      (e) => {
-        e.preventDefault();
-        setFileSearchOpen(true);
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-
     // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
     useScopedShortcut(
       "editor-split-v",
@@ -254,13 +250,6 @@ const FeatureEditorTab = memo(
 
     return (
       <div ref={rootRef} className="flex h-full">
-        <FileSearchDialog
-          projectId={projectId}
-          featureId={featureId}
-          open={fileSearchOpen}
-          onOpenChange={setFileSearchOpen}
-        />
-
         <Dialog
           open={leaveDialogOpen}
           onOpenChange={(open) => {

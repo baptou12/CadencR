@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactElement } from "react";
+import { EditorFuzzyShortcut } from "@/components/editor/EditorFuzzyShortcut";
 import { FeatureContentSearchShortcut } from "@/components/FeatureContentSearchShortcut";
 import { FeatureTopBar } from "@/components/FeatureTopBar";
 import { FeatureLayoutProvider } from "@/components/feature-layout/FeatureLayoutContext";
@@ -157,6 +158,7 @@ function WebSocketSessionFeatureBody(
           enabled={hotkeysEnabled}
         />
       )}
+      <EditorFuzzyShortcut featureId={featureId} projectId={projectId} enabled={hotkeysEnabled} />
       <SessionFeatureTopBar
         featureId={featureId}
         projectId={projectId}
