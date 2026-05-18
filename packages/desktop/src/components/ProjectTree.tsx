@@ -1,4 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEventHandler,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight, ChevronDown, Ellipsis, Plus, PlusIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,7 +40,7 @@ import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { desktopBridge } from "@/lib/desktop-bridge";
-import { useProjectTreeNumberShortcuts } from "@/hooks/useProjectTreeNumberShortcuts";
+import { ShortcutHintsProvider, useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
 
@@ -52,9 +59,7 @@ export function ProjectTree({
   const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
   const projects = projectsQuery.data ?? [];
-  const treeRef = useRef<HTMLDivElement>(null);
   const { collapsed } = useSidebarCollapsed();
-  useProjectTreeNumberShortcuts(treeRef, !collapsed);
 
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
   const setProjectSetting = useSetProjectSetting();
@@ -136,180 +141,216 @@ export function ProjectTree({
   };
 
   return (
-    <div ref={treeRef} className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
-      <div className="flex items-center justify-between px-2">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleAddProject}
-          disabled={isSelectingFolder || createProjectMutation.isLoading}
-        >
-          <Plus />
-        </Button>
-      </div>
-
-      <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
-        <div className="flex min-w-0 flex-col gap-0.5 px-1">
-          {projects.map((project) => {
-            const isExpanded = expanded[project.id] ?? false;
-            const isActive = activeProjectId === project.id;
-
-            return (
-              <div key={project.id}>
-                {/* Project row */}
-                <ContextMenu>
-                  <ContextMenuTrigger asChild>
-                    <button
-                      type="button"
-                      data-nav-item
-                      data-nav-type="project"
-                      data-nav-id={String(project.id)}
-                      onClick={() => toggleExpand(project.id)}
-                      className={`group/project flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
-                        isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
-                      }`}
-                    >
-                      <SidebarShortcutBadge />
-                      {isExpanded ? (
-                        <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                      ) : (
-                        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                      )}
-                      <ProjectColorDot projectId={project.id} />
-                      <span className="min-w-0 truncate">{project.name}</span>
-
-                      <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
-                        {/* New session */}
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpanded((prev) => ({ ...prev, [project.id]: true }));
-                            pendingProjectIdRef.current = project.id;
-                            createWsSessionMutation.mutate({
-                              data: { project_id: project.id, type: "ws-session" },
-                            });
-                          }}
-                        >
-                          <PlusIcon className="h-3.5 w-3.5" />
-                        </span>
-
-                        {/* Project menu */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Ellipsis className="h-3.5 w-3.5" />
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSettingsProject({
-                                  id: project.id,
-                                  name: project.name,
-                                });
-                              }}
-                            >
-                              Project Settings
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteProject({
-                                  id: project.id,
-                                  name: project.name,
-                                });
-                              }}
-                            >
-                              Delete Project
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </button>
-                  </ContextMenuTrigger>
-                  <ContextMenuContent>
-                    <ContextMenuItem
-                      onSelect={() => {
-                        setExpanded((prev) => ({ ...prev, [project.id]: true }));
-                        pendingProjectIdRef.current = project.id;
-                        createWsSessionMutation.mutate({
-                          data: { project_id: project.id, type: "ws-session" },
-                        });
-                      }}
-                    >
-                      New Session
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
-                    >
-                      Project Settings
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      variant="destructive"
-                      onSelect={() => setDeleteProject({ id: project.id, name: project.name })}
-                    >
-                      Delete Project
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-
-                {/* Features (expanded) */}
-                {isExpanded && (
-                  <ProjectFeatures
-                    projectId={project.id}
-                    projectPath={project.path}
-                    activeFeatureId={isActive ? activeFeatureId : null}
-                    onSelectFeature={onSelectFeature}
-                  />
-                )}
-              </div>
-            );
-          })}
-
-          {projects.length === 0 && (
-            <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
-          )}
+    <ShortcutHintsProvider enabled={!collapsed}>
+      <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+        <div className="flex items-center justify-between px-2">
+          <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleAddProject}
+            disabled={isSelectingFolder || createProjectMutation.isLoading}
+          >
+            <Plus />
+          </Button>
         </div>
-      </ScrollArea>
 
-      {settingsProject && (
-        <ProjectSettingsDialog
-          projectId={settingsProject.id}
-          projectName={settingsProject.name}
-          open={true}
+        <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
+          <div className="flex min-w-0 flex-col gap-0.5 px-1">
+            {projects.map((project) => {
+              const isExpanded = expanded[project.id] ?? false;
+              const isActive = activeProjectId === project.id;
+
+              return (
+                <div key={project.id}>
+                  {/* Project row */}
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <ProjectRowButton
+                        projectId={project.id}
+                        isActive={isActive}
+                        onClick={() => toggleExpand(project.id)}
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                        <ProjectColorDot projectId={project.id} />
+                        <span className="min-w-0 truncate">{project.name}</span>
+
+                        <div className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 group-hover/project:opacity-100">
+                          {/* New session */}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                              pendingProjectIdRef.current = project.id;
+                              createWsSessionMutation.mutate({
+                                data: { project_id: project.id, type: "ws-session" },
+                              });
+                            }}
+                          >
+                            <PlusIcon className="h-3.5 w-3.5" />
+                          </span>
+
+                          {/* Project menu */}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-accent"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Ellipsis className="h-3.5 w-3.5" />
+                              </span>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSettingsProject({
+                                    id: project.id,
+                                    name: project.name,
+                                  });
+                                }}
+                              >
+                                Project Settings
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteProject({
+                                    id: project.id,
+                                    name: project.name,
+                                  });
+                                }}
+                              >
+                                Delete Project
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </ProjectRowButton>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem
+                        onSelect={() => {
+                          setExpanded((prev) => ({ ...prev, [project.id]: true }));
+                          pendingProjectIdRef.current = project.id;
+                          createWsSessionMutation.mutate({
+                            data: { project_id: project.id, type: "ws-session" },
+                          });
+                        }}
+                      >
+                        New Session
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
+                      >
+                        Project Settings
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        variant="destructive"
+                        onSelect={() => setDeleteProject({ id: project.id, name: project.name })}
+                      >
+                        Delete Project
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+
+                  {/* Features (expanded) */}
+                  {isExpanded && (
+                    <ProjectFeatures
+                      projectId={project.id}
+                      projectPath={project.path}
+                      activeFeatureId={isActive ? activeFeatureId : null}
+                      onSelectFeature={onSelectFeature}
+                    />
+                  )}
+                </div>
+              );
+            })}
+
+            {projects.length === 0 && (
+              <p className="px-2 py-4 text-center text-xs text-muted-foreground">No projects yet</p>
+            )}
+          </div>
+        </ScrollArea>
+
+        {settingsProject && (
+          <ProjectSettingsDialog
+            projectId={settingsProject.id}
+            projectName={settingsProject.name}
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) setSettingsProject(null);
+            }}
+          />
+        )}
+
+        <ConfirmDialog
+          open={deleteProject !== null}
           onOpenChange={(open) => {
-            if (!open) setSettingsProject(null);
+            if (!open) setDeleteProject(null);
+          }}
+          title={`Delete "${deleteProject?.name}"?`}
+          description="This will permanently delete the project and all its features, plans, sessions, and settings. This action cannot be undone."
+          confirmText="Delete"
+          variant="destructive"
+          onConfirm={() => {
+            if (deleteProject) {
+              deleteProjectMutation.mutate({ id: deleteProject.id });
+            }
           }}
         />
-      )}
-
-      <ConfirmDialog
-        open={deleteProject !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteProject(null);
-        }}
-        title={`Delete "${deleteProject?.name}"?`}
-        description="This will permanently delete the project and all its features, plans, sessions, and settings. This action cannot be undone."
-        confirmText="Delete"
-        variant="destructive"
-        onConfirm={() => {
-          if (deleteProject) {
-            deleteProjectMutation.mutate({ id: deleteProject.id });
-          }
-        }}
-      />
-    </div>
+      </div>
+    </ShortcutHintsProvider>
   );
 }
+
+interface ProjectRowButtonProps {
+  projectId: number;
+  isActive: boolean;
+  onClick: MouseEventHandler<HTMLButtonElement>;
+  children: ReactNode;
+}
+
+/**
+ * Project row trigger. Owns its own nav-shortcut registration so `⌘N`
+ * activates this row. Forwards the DOM ref so `ContextMenuTrigger asChild`
+ * can still attach its own listeners.
+ */
+const ProjectRowButton = forwardRef<HTMLButtonElement, ProjectRowButtonProps>(
+  function ProjectRowButton({ projectId, isActive, onClick, children, ...rest }, forwardedRef) {
+    const { navRef, badgeRef } = useNavShortcutHint<HTMLButtonElement>();
+    const assignRef = (node: HTMLButtonElement | null): void => {
+      navRef.current = node;
+      if (typeof forwardedRef === "function") forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    };
+    return (
+      <button
+        ref={assignRef}
+        type="button"
+        data-nav-item
+        data-nav-type="project"
+        data-nav-id={String(projectId)}
+        onClick={onClick}
+        className={`group/project relative flex w-full min-w-0 items-center gap-1 rounded-md px-1.5 py-1.5 text-left text-sm outline-none transition-colors ${
+          isActive ? "text-accent-foreground font-medium" : "hover:bg-accent/50"
+        }`}
+        {...rest}
+      >
+        <SidebarShortcutBadge ref={badgeRef} />
+        {children}
+      </button>
+    );
+  },
+);
