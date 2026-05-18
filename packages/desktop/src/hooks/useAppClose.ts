@@ -4,7 +4,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useEditorStore } from "@/stores/editor-store";
 import { useTerminalStore } from "@/hooks/useTerminalState";
-import { useGlobalShortcut } from "@/hooks/useGlobalShortcut";
+import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
 import { getListFeaturesQueryKey } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
@@ -23,6 +23,23 @@ function lookupFeatureTitle(featureId: number | null, queryClient: QueryClient):
     if (feature) return feature.title;
   }
   return null;
+}
+
+// True when the focused tab in `featureId` still owns ⌘W — i.e. there's
+// something for the editor/terminal sibling handler to close. In that case
+// the app-close fallback bails so the sibling handler can take the chord.
+// Exported for testing; production callers use it via the ⌘W handler below.
+export function shouldBypassAppClose(featureId: number | null): boolean {
+  if (featureId == null) return false;
+  const focusedTab = getFocusedTabForFeature(featureId);
+  if (focusedTab === "editor") {
+    const panes = useEditorStore.getState().features[featureId]?.panes ?? {};
+    return Object.values(panes).some((p) => p.tabs.length > 0);
+  }
+  if (focusedTab === "terminal") {
+    return useTerminalStore.getState().features[featureId]?.root != null;
+  }
+  return false;
 }
 
 function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
@@ -44,7 +61,7 @@ function getRunningAgents(queryClient: QueryClient): RunningAgentInfo[] {
   return agents;
 }
 
-export function useAppClose(queryClient: QueryClient) {
+export function useAppClose(queryClient: QueryClient, activeFeatureId: number | null) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [runningAgents, setRunningAgents] = useState<RunningAgentInfo[]>([]);
 
@@ -83,28 +100,13 @@ export function useAppClose(queryClient: QueryClient) {
     void desktopBridge.requestQuit();
   });
 
-  // CMD+W stays as a raw capture-phase listener: it's a fallback "close
-  // window when nothing else owns CMD+W" — not a customizable binding.
-  // EditorSubTabs / TerminalPanel still own ⌘W on their respective tabs.
-  // CMD+W → close app, but only when nothing else owns CMD+W:
-  //   - EditorSubTabs owns CMD+W while editor buffers exist (closes the buffer)
-  //   - TerminalPanel owns CMD+W while terminal panes exist (kills the split)
-  // Both of those handlers are also capture-phase on window, so they fire as
-  // siblings to this one. Without the terminal check below, CMD+W on the
-  // terminal tab would still close the application (the user-reported bug):
-  // this handler runs first, sees no editor buffers, and calls `requestClose()`
-  // regardless of what `e.preventDefault()` does inside the sibling.
-  //
-  // Mirrors the editor's existing pattern — "if there's something to close
-  // in the active surface, bail and let that surface's handler take CMD+W".
-  useGlobalShortcut("meta+w", (e) => {
-    const hasBuffers = Object.values(useEditorStore.getState().features).some((f) =>
-      Object.values(f.panes).some((p) => p.tabs.length > 0),
-    );
-    const hasTerminals = Object.values(useTerminalStore.getState().features).some(
-      (f) => f.root !== null,
-    );
-    if (hasBuffers || hasTerminals) return;
+  // ⌘W / Ctrl+W → close the window when nothing else owns the chord. The
+  // editor/terminal sibling handlers take ⌘W on their own tabs; this is
+  // the "I'm on an empty editor / non-owning tab, ⌘W should close the
+  // window" fallback. Scoping the bypass to the *focused tab's* owning
+  // surface (not the whole feature) is intentional — see registry entry.
+  useGlobalShortcutById("app-close", (e) => {
+    if (shouldBypassAppClose(activeFeatureId)) return;
     e.preventDefault();
     requestClose();
   });

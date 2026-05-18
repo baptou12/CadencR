@@ -1,5 +1,5 @@
 import { useRef, type RefObject } from "react";
-import { useScopedGlobalShortcut } from "@/hooks/useScopedHotkeys";
+import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 
 interface UseDiffKeyboardParams {
   fileNames: string[];
@@ -46,8 +46,8 @@ export function useDiffKeyboard({
   const focusedFileIndexRef = useRef(focusedFileIndex);
   focusedFileIndexRef.current = focusedFileIndex;
 
-  useScopedGlobalShortcut(
-    "ctrl+j",
+  useScopedGlobalShortcutById(
+    "diff-next-file",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -58,8 +58,8 @@ export function useDiffKeyboard({
     "git",
   );
 
-  useScopedGlobalShortcut(
-    "ctrl+k",
+  useScopedGlobalShortcutById(
+    "diff-prev-file",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -70,8 +70,8 @@ export function useDiffKeyboard({
     "git",
   );
 
-  useScopedGlobalShortcut(
-    "ctrl+l",
+  useScopedGlobalShortcutById(
+    "diff-toggle-file",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -83,8 +83,8 @@ export function useDiffKeyboard({
     "git",
   );
 
-  useScopedGlobalShortcut(
-    "ctrl+d",
+  useScopedGlobalShortcutById(
+    "diff-scroll-down",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -96,8 +96,8 @@ export function useDiffKeyboard({
     "git",
   );
 
-  useScopedGlobalShortcut(
-    "ctrl+u",
+  useScopedGlobalShortcutById(
+    "diff-scroll-up",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -109,8 +109,8 @@ export function useDiffKeyboard({
     "git",
   );
 
-  useScopedGlobalShortcut(
-    "ctrl+h",
+  useScopedGlobalShortcutById(
+    "diff-mark-viewed",
     (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
