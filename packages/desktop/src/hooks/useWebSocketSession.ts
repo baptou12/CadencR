@@ -24,7 +24,7 @@ import type { LiveAgentStatus } from "@/types/agent";
 import {
   type TurnLifecycle,
   createIdleTurnLifecycle,
-  persistedStatusToLifecycle,
+  persistedSessionToLifecycle,
 } from "@/stores/ws-turn-lifecycle";
 import { createTurnTiming, type TurnTimingState } from "@/stores/ws-turn-timing";
 import { useSessionStatus } from "@/stores/session-status-selectors";
@@ -146,7 +146,7 @@ export function useWebSocketSession(
     const lastSession = sessions[sessions.length - 1];
     const restoredBlocks = serverBlocksToAgentBlocks(lastSession.blocks);
 
-    const restoredLifecycle = persistedStatusToLifecycle(lastSession.status);
+    const restoredLifecycle = persistedSessionToLifecycle(lastSession);
 
     const persistedContextUsage: ContextUsageState | null =
       lastSession.inputTokens > 0 ||

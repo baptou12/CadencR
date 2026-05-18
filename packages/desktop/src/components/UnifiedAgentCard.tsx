@@ -9,7 +9,7 @@ import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { cn } from "@/lib/utils";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { createSessionEntry, type SessionEntry } from "@/stores/ws-session-types";
-import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
+import { persistedSessionToLifecycle, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { normalizeContextWindow } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import { parsePermissionMode } from "@/types/permission-mode";
@@ -147,7 +147,14 @@ function buildPersistedSnapshot(entry: UnifiedAgentEntry): PersistedSnapshot {
     // already running before app launch wouldn't be detected by those
     // consumers until the user opens its feature and WS turn events fire.
     // The WS handler overwrites this on the next turn event.
-    lifecycle: restSnapshotToLifecycle(entry, { pendingPermission, pendingQuestions }),
+    lifecycle: persistedSessionToLifecycle(
+      {
+        ...entry.session,
+        pendingPermission,
+        pendingQuestions,
+      },
+      { runningStatus: "active" },
+    ),
     hasMore: entry.session.hasMore,
     oldestMessageId: entry.session.oldestMessageId,
     featureId: entry.feature.id,
@@ -168,7 +175,14 @@ function buildUnifiedSessionPatch(
   const pendingPermission = asPendingPermission(entry.session.pendingPermission);
   const pendingQuestions = asQuestions(entry.session.pendingQuestions) ?? [];
   const permissionMode = parsePermissionMode(entry.session.permissionMode);
-  const lifecycle = restSnapshotToLifecycle(entry, { pendingPermission, pendingQuestions });
+  const lifecycle = persistedSessionToLifecycle(
+    {
+      ...entry.session,
+      pendingPermission,
+      pendingQuestions,
+    },
+    { runningStatus: "active" },
+  );
   const patch: Partial<SessionEntry> = {
     pendingPermission,
     pendingQuestions,
@@ -206,32 +220,6 @@ function pendingRequestIdPatch(
 function shouldPatchLifecycle(session: SessionEntry, nextLifecycle: TurnLifecycle): boolean {
   if (nextLifecycle.phase === "active" || nextLifecycle.phase === "paused") return true;
   return session.lifecycle.phase !== "active";
-}
-
-/**
- * REST-bootstrap mapping. Used only to seed `ws-session-store.lifecycle`
- * so cross-feature consumers (`usePowerBusySignal`, `useAppClose`, "Stop
- * all agents", `usePowerEvents` for the suspended reason) detect agents
- * the user hasn't opened yet. The visible badge reads live status from
- * `session-status-store` — the WS handler overwrites this lifecycle the
- * moment a turn event arrives.
- */
-function restSnapshotToLifecycle(
-  entry: UnifiedAgentEntry,
-  pending: {
-    pendingPermission: PendingPermission | null;
-    pendingQuestions: AgentQuestion[];
-  },
-): TurnLifecycle {
-  if (pending.pendingQuestions.length > 0) return { phase: "paused", reason: "question" };
-  if (pending.pendingPermission) return { phase: "paused", reason: "permission" };
-  if (entry.session.status === "running") return { phase: "active" };
-  if (entry.session.status === "completed") return { phase: "terminal", reason: "completed" };
-  if (entry.session.status === "error") return { phase: "error" };
-  if (entry.session.status === "paused" || entry.session.status === "waiting") {
-    return { phase: "paused", reason: "user" };
-  }
-  return { phase: "idle" };
 }
 
 function hasSessionPatchChanges(session: SessionEntry, patch: Partial<SessionEntry>): boolean {
