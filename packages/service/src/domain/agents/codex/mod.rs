@@ -246,6 +246,10 @@ impl AgentRuntimeAdapter for CodexAdapter {
         });
     }
 
+    fn supports_prompt_receipts(&self) -> bool {
+        true
+    }
+
     fn worktree_config_paths(&self) -> &'static [&'static str] {
         worktree_config::CONFIG_PATHS
     }
@@ -328,6 +332,12 @@ mod tests {
         assert!(adapter.accepts_model("gpt-5.4"));
         assert!(adapter.accepts_model("codex-mini"));
         assert!(!adapter.accepts_model("openai/gpt-5.4"));
+    }
+
+    #[test]
+    fn advertises_prompt_receipts_for_steering_messages() {
+        let adapter = CodexAdapter;
+        assert!(adapter.supports_prompt_receipts());
     }
 
     #[test]
