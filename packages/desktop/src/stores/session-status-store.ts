@@ -296,7 +296,9 @@ function lifecyclePatchFromStatus(
 ): LifecyclePatch | null {
   const lifecycle = lifecycleFromStatus(session.lifecycle, entry.status, entry.kind);
   const resetStaleActiveTiming =
-    lifecycle === session.lifecycle && enteredAgentFromIdle(previousStatus, entry.status);
+    lifecycle === session.lifecycle &&
+    (session.turnTiming.startedAt == null || session.blocks.length === 0) &&
+    enteredAgentFromIdle(previousStatus, entry.status);
   if (lifecycle === session.lifecycle && !resetStaleActiveTiming) return null;
   return {
     lifecycle,
