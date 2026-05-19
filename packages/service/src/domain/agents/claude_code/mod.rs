@@ -193,18 +193,17 @@ impl AgentRuntimeSession for ClaudeCodeSession {
 
         tokio::spawn(async move {
             while let Some(msg) = source_rx.recv().await {
-                if let Ok(claude_agent_sdk_rs::SdkMessage::User {
-                    message,
-                    is_replay: Some(true),
-                    ..
-                }) = &msg
-                {
-                    if let Some(event) = prompt_receipts.acknowledge_replay(message) {
+                if let Ok(sdk_msg) = &msg {
+                    if let Some(event) = acknowledge_user_prompt_receipt(sdk_msg, &prompt_receipts)
+                    {
                         if tx.send(Ok(event)).await.is_err() {
                             break;
                         }
+                        continue;
                     }
-                    continue;
+                    if is_unmatched_replay_user_message(sdk_msg) {
+                        continue;
+                    }
                 }
 
                 let mapped = msg.map(normalize_event).map_err(RuntimeError::from);
@@ -275,6 +274,26 @@ impl AgentRuntimeSession for ClaudeCodeSession {
     fn pid(&self) -> Option<u32> {
         self.query.pid()
     }
+}
+
+fn acknowledge_user_prompt_receipt(
+    msg: &claude_agent_sdk_rs::SdkMessage,
+    prompt_receipts: &ClaudePromptReceipts,
+) -> Option<RuntimeEvent> {
+    let claude_agent_sdk_rs::SdkMessage::User { message, .. } = msg else {
+        return None;
+    };
+    prompt_receipts.acknowledge_replay(message)
+}
+
+fn is_unmatched_replay_user_message(msg: &claude_agent_sdk_rs::SdkMessage) -> bool {
+    matches!(
+        msg,
+        claude_agent_sdk_rs::SdkMessage::User {
+            is_replay: Some(true),
+            ..
+        }
+    )
 }
 
 #[async_trait]
@@ -492,10 +511,16 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
 #[cfg(test)]
 mod tests {
-    use super::{map_permission_mode, ClaudeCodeAdapter, ProbeState};
+    use serde_json::json;
+
+    use super::{
+        acknowledge_user_prompt_receipt, is_unmatched_replay_user_message, map_permission_mode,
+        ClaudeCodeAdapter, ProbeState,
+    };
     use crate::domain::agents::adapter::{
         AgentRuntimeAdapter, RuntimePermissionMode, RuntimeSlashCommand, RuntimeSlashCommandKind,
     };
+    use crate::domain::agents::claude_code::prompt_receipts::ClaudePromptReceipts;
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
     fn new_test_adapter() -> ClaudeCodeAdapter {
@@ -530,6 +555,47 @@ mod tests {
     fn adapter_advertises_prompt_receipts() {
         let adapter = new_test_adapter();
         assert!(adapter.supports_prompt_receipts());
+    }
+
+    #[test]
+    fn acknowledges_matching_plain_user_echo_as_prompt_receipt() {
+        let receipts = ClaudePromptReceipts::default();
+        receipts.enqueue("client-1".to_string(), &json!("And the lint please"));
+        let msg = claude_agent_sdk_rs::SdkMessage::User {
+            uuid: None,
+            session_id: "session-1".to_string(),
+            message: json!({
+                "role": "user",
+                "content": "And the lint please"
+            }),
+            parent_tool_use_id: None,
+            is_synthetic: None,
+            tool_use_result: None,
+            is_replay: None,
+        };
+
+        let event = acknowledge_user_prompt_receipt(&msg, &receipts).expect("receipt");
+
+        assert_eq!(event.prompt_received_client_message_id(), Some("client-1"));
+        assert!(!is_unmatched_replay_user_message(&msg));
+    }
+
+    #[test]
+    fn suppresses_unmatched_explicit_replay_user_echo() {
+        let msg = claude_agent_sdk_rs::SdkMessage::User {
+            uuid: None,
+            session_id: "session-1".to_string(),
+            message: json!({
+                "role": "user",
+                "content": "something else"
+            }),
+            parent_tool_use_id: None,
+            is_synthetic: None,
+            tool_use_result: None,
+            is_replay: Some(true),
+        };
+
+        assert!(is_unmatched_replay_user_message(&msg));
     }
 
     #[test]
