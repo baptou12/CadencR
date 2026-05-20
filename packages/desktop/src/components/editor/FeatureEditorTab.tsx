@@ -63,11 +63,10 @@ const FeatureEditorTab = memo(
     const layoutFeatureId = useFeatureLayoutContext()?.featureId ?? featureId;
     const { initFeature, splitTree, activePaneId, sidebarVisible, toggleSidebar, panes } =
       useEditorState(featureId);
-    const splitEditorPane = useEditorStore((s) => s.splitEditorPane);
     const navigatePane = useEditorStore((s) => s.navigatePane);
-    // Gate the split-pane / nav shortcuts on this layout having editor as
-    // the focused tab. With split panes the editor can be visible next to
-    // the agent without owning keyboard focus, so visibility isn't enough.
+    // Gate the pane-nav shortcuts on this layout having editor as the
+    // focused tab. With split panes the editor can be visible next to the
+    // agent without owning keyboard focus, so visibility isn't enough.
     // CMD+P lives in `EditorFuzzyShortcut` at the WS-block level so its
     // listener is registered before this tab's lazy chunk loads.
     const layoutEditorFocused = useFeatureLayoutStore(
@@ -168,7 +167,7 @@ const FeatureEditorTab = memo(
       persistCollapsed(String(sidebarVisible));
     }, [persistCollapsed, sidebarVisible, toggleSidebar]);
 
-    // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
+    // Pane nav shortcuts. Tab-scoped via the wrapper hook.
     useScopedGlobalShortcutById(
       "editor-toggle-sidebar",
       (e) => {
@@ -176,24 +175,6 @@ const FeatureEditorTab = memo(
         e.stopImmediatePropagation();
         if (e.repeat) return;
         handleToggleSidebar();
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-split-v",
-      (e) => {
-        e.preventDefault();
-        splitEditorPane(featureId, activePaneId, "vertical");
-      },
-      "editor",
-      { enabled: isEditorFocused },
-    );
-    useScopedShortcut(
-      "editor-split-h",
-      (e) => {
-        e.preventDefault();
-        splitEditorPane(featureId, activePaneId, "horizontal");
       },
       "editor",
       { enabled: isEditorFocused },

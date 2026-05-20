@@ -430,18 +430,6 @@ export const SHORTCUTS = [
     scope: "editor",
   },
   {
-    id: "editor-split-v",
-    keys: ["mod", "d"],
-    description: "Split pane vertically",
-    scope: "editor",
-  },
-  {
-    id: "editor-split-h",
-    keys: ["mod", "shift", "d"],
-    description: "Split pane horizontally",
-    scope: "editor",
-  },
-  {
     id: "editor-nav-pane-left",
     keys: ["mod", "alt", "left"],
     description: "Focus pane left",
