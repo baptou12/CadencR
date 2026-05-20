@@ -22,7 +22,9 @@ import {
   type VirtualFileMetrics,
 } from "@pierre/diffs";
 import { renderDiffChildren, templateRender, useVirtualizer } from "@pierre/diffs/react";
+import { parseUnifiedDiff } from "@/lib/parse-unified-diff";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
+import { cn } from "@/lib/utils";
 import { CommentExtendLine, CommentWidgetLine } from "./DiffCommentWidget";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import { ensurePierreThemesRegistered, getPierreThemeName } from "./pierre-theme";
@@ -65,6 +67,11 @@ interface SafePatchDiffProps<LAnnotation> {
   className?: string;
 }
 
+interface RenderableFilePatch {
+  key: string;
+  patch: string;
+}
+
 const VIRTUAL_FILE_METRICS: Partial<VirtualFileMetrics> = {
   hunkLineCount: 80,
   lineHeight: 19,
@@ -72,6 +79,18 @@ const VIRTUAL_FILE_METRICS: Partial<VirtualFileMetrics> = {
   hunkSeparatorHeight: 32,
   fileGap: 0,
 };
+
+function getRenderableFilePatches(patch: string): RenderableFilePatch[] {
+  const sections = parseUnifiedDiff(patch);
+  if (sections.length === 0) return [{ key: "single", patch }];
+
+  return sections.flatMap((section, sectionIndex) =>
+    section.hunks.map((filePatch, hunkIndex) => ({
+      key: `${sectionIndex}:${section.oldFileName}->${section.newFileName}:${hunkIndex}`,
+      patch: filePatch,
+    })),
+  );
+}
 
 function SafePatchDiff<LAnnotation>({
   patch,
@@ -297,6 +316,7 @@ function PatchDiffViewImpl({
   renderHeaderMetadata,
 }: PatchDiffViewProps) {
   ensurePierreThemesRegistered();
+  const filePatches = useMemo(() => getRenderableFilePatches(patch), [patch]);
   const lineAnnotations = useMemo(
     () => buildLineAnnotations(commentLines, activeWidget, commentCallbacks),
     [commentLines, activeWidget, commentCallbacks],
@@ -338,18 +358,23 @@ function PatchDiffViewImpl({
     ],
   );
 
+  const diffClassName = cn(className, "group/patch-file", focused && "cadencr-patch-diff-focused");
+
   return (
-    <SafePatchDiff
-      patch={patch}
-      options={options}
-      lineAnnotations={lineAnnotations}
-      renderAnnotation={renderAnnotation}
-      renderHeaderPrefix={renderHeaderPrefix}
-      renderHeaderMetadata={renderHeaderMetadata}
-      className={[className, "group/patch-file", focused ? "cadencr-patch-diff-focused" : null]
-        .filter(Boolean)
-        .join(" ")}
-    />
+    <>
+      {filePatches.map((filePatch) => (
+        <SafePatchDiff
+          key={filePatch.key}
+          patch={filePatch.patch}
+          options={options}
+          lineAnnotations={lineAnnotations}
+          renderAnnotation={renderAnnotation}
+          renderHeaderPrefix={renderHeaderPrefix}
+          renderHeaderMetadata={renderHeaderMetadata}
+          className={diffClassName}
+        />
+      ))}
+    </>
   );
 }
 

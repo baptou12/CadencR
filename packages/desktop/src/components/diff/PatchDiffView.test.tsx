@@ -36,7 +36,12 @@ vi.mock("@pierre/diffs", () => ({
   VirtualizedFileDiff: mocks.FileDiffMock,
   registerCustomTheme: vi.fn(),
   areOptionsEqual: vi.fn(() => true),
-  getSingularPatch: vi.fn((patch: string) => ({ name: "src/foo.ts", patch })),
+  getSingularPatch: vi.fn((patch: string) => {
+    if (patch.includes("\ndiff --git ")) {
+      throw new Error("PatchDiff: Provided patch must include only 1 patch, with 1 diff");
+    }
+    return { name: "src/foo.ts", patch };
+  }),
 }));
 
 vi.mock("@pierre/diffs/react", () => ({
@@ -97,6 +102,33 @@ describe("PatchDiffView", () => {
     );
   });
 
+  it("renders every file diff when given a multi-file patch", () => {
+    const multiPatch = `${patch}diff --git a/src/bar.ts b/src/bar.ts
+--- a/src/bar.ts
++++ b/src/bar.ts
+@@ -1 +1 @@
+-a
++b
+`;
+
+    render(
+      <PatchDiffView patch={multiPatch} mode="unified" themeAppearance="dark" themeId="dracula" />,
+    );
+
+    const renderedPatches = screen.getAllByTestId("pierre-patch");
+    expect(renderedPatches).toHaveLength(2);
+    expect(renderedPatches[0]).toHaveAttribute("data-patch", patch.trimEnd());
+    expect(renderedPatches[1]).toHaveAttribute(
+      "data-patch",
+      `diff --git a/src/bar.ts b/src/bar.ts
+--- a/src/bar.ts
++++ b/src/bar.ts
+@@ -1 +1 @@
+-a
++b
+`,
+    );
+  });
   it("supports split mode through Pierre options", () => {
     render(<PatchDiffView patch={patch} mode="split" themeAppearance="light" themeId="aurora" />);
     expect(mocks.setOptionsMock).toHaveBeenCalledWith(
