@@ -27,12 +27,15 @@ The helper script creates the local tag only. The agent must push the tag explic
 2. **Inspect the release range**
    - Fetch tags: `git fetch --tags origin`.
    - Find the latest previous release tag: `git tag --list 'v[0-9]*' --sort=-v:refname | head -1`.
-   - Record the previous tag commit hash with `git rev-list -n 1 "$PREVIOUS_TAG"`.
    - Summarize commits with `git log --oneline "$PREVIOUS_TAG..HEAD"`.
+   - You may inspect the previous tag commit hash internally when useful for validation, but do not include it in published release notes or the final user-facing summary.
 
 3. **Generate release notes and changelog**
    - Update `CHANGELOG.md` with a section for the requested tag.
-   - Include the previous tag, previous tag commit hash, release date, and grouped user-facing changes.
+   - Include the previous tag version and release date; do not include the previous tag commit hash.
+   - Write the changelog around user impact: what changed for users, what got better, and what was fixed.
+   - Use emoji-prefixed changelog section headings for standard groups, such as `### ✨ Added`, `### 🔧 Changed`, and `### 🐛 Fixed`.
+   - Avoid contributor/internal framing unless it directly affects users.
    - Keep the changelog factual and concise.
    - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.
 
@@ -108,7 +111,7 @@ done
 
 When the release is complete, respond with:
 
-1. `Previous release`: previous tag and commit hash.
+1. `Previous release`: previous tag version only.
 2. `Release content`: changelog section and landing news file, or note that the release is changelog-only.
 3. `Security review`: review result and any fixes.
 4. `Version updates`: files changed.

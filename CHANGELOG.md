@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.2.1 - 2026-05-20
+
+Previous release: v0.2.0
+
+### ✨ Added
+
+- Added clearer task tracking in agent sessions, so Claude task updates can appear as structured todos instead of being buried in tool output.
+
+### 🔧 Changed
+
+- Made keyboard shortcuts more reliable across keyboard layouts and prevented native zoom shortcuts from fighting the app's saved zoom preference.
+- Made reconnect behavior more aggressive and surfaced offline status more clearly when the local backend disconnects.
+- Improved diff navigation by opening changed files at the first edited line and making edit actions less visually heavy.
+
+### 🐛 Fixed
+
+- Fixed prompt drafts leaking between conversations.
+- Fixed prompt receipt timing for Codex steering messages and Claude Code steering prompts by using replayed user messages, reducing confusing pending/sent states.
+- Fixed landing-page SEO indexing and mobile horizontal scrolling issues.
+
 ## v0.2.0 - 2026-05-18
 
 Previous release: v0.1.3 (df0a9d0038c7869d9b04199d2f78bb5f3dc3ac67)
