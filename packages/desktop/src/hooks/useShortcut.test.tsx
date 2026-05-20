@@ -33,6 +33,11 @@ function ZoomInHarness({ onFire }: { onFire: () => void }): ReactElement {
   return <div data-testid="zoom-in-harness" tabIndex={0} />;
 }
 
+function ZoomOutHarness({ onFire }: { onFire: () => void }): ReactElement {
+  useShortcut("zoom-out", onFire);
+  return <div data-testid="zoom-out-harness" tabIndex={0} />;
+}
+
 function GlobalHarness({ onFire }: { onFire: () => void }): ReactElement {
   useGlobalShortcutById("shortcuts-help", onFire);
   return <div data-testid="g" tabIndex={0} />;
@@ -127,8 +132,32 @@ describe("useShortcut", () => {
     });
     expect(onFire).toHaveBeenCalledTimes(1);
 
-    fireEvent.keyDown(document.body, { key: "+", metaKey: true, code: "Slash" });
+    fireEvent.keyDown(document.body, {
+      key: "=",
+      metaKey: true,
+      shiftKey: true,
+      code: "Equal",
+    });
     expect(onFire).toHaveBeenCalledTimes(2);
+
+    fireEvent.keyDown(document.body, { key: "+", metaKey: true, code: "Slash" });
+    expect(onFire).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not fire Cmd+Minus from shifted underscore", () => {
+    const onFire = vi.fn();
+    render(<ZoomOutHarness onFire={onFire} />);
+
+    fireEvent.keyDown(document.body, { key: "-", metaKey: true, code: "Minus" });
+    expect(onFire).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(document.body, {
+      key: "-",
+      metaKey: true,
+      shiftKey: true,
+      code: "Minus",
+    });
+    expect(onFire).toHaveBeenCalledTimes(1);
   });
 });
 

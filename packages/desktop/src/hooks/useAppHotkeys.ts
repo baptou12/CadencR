@@ -30,7 +30,7 @@ const HOTKEY_DEFAULTS = {
 };
 
 interface ExpandedHotkey {
-  exactKey?: string;
+  exactKeys?: string[];
   hotkey: string;
 }
 
@@ -63,7 +63,7 @@ function normalizeShortcutInput(hotkey: string): string {
 function dedupeHotkeys(hotkeys: ExpandedHotkey[]): ExpandedHotkey[] {
   const seen = new Set<string>();
   return hotkeys.filter((hotkey) => {
-    const key = `${hotkey.hotkey}:${hotkey.exactKey ?? ""}`;
+    const key = `${hotkey.hotkey}:${hotkey.exactKeys?.join("|") ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -84,7 +84,7 @@ function expandShortcutInput(keys: ShortcutKeys): ExpandedHotkey[] {
 
 function toHotkeyCallback(definition: ExpandedHotkey, callback: HotkeyCallback): HotkeyCallback {
   return (event: KeyboardEvent, context: HotkeyCallbackContext) => {
-    if (definition.exactKey && event.key !== definition.exactKey) return;
+    if (definition.exactKeys && !definition.exactKeys.includes(event.key)) return;
     callback(event, context);
   };
 }

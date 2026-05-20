@@ -1,5 +1,5 @@
 export interface CharacterHotkeyVariant {
-  exactKey?: string;
+  exactKeys?: string[];
   hotkey: string;
 }
 
@@ -17,9 +17,17 @@ function withOptionalShift(
   exactKey: string,
 ): CharacterHotkeyVariant[] {
   return [
-    { hotkey: [...modifiers, key].join("+"), exactKey },
-    { hotkey: [...modifiers, "Shift", key].join("+"), exactKey },
+    { hotkey: [...modifiers, key].join("+"), exactKeys: [exactKey] },
+    { hotkey: [...modifiers, "Shift", key].join("+"), exactKeys: [exactKey] },
   ];
+}
+
+function characterVariant(
+  modifiers: string[],
+  key: string,
+  exactKeys: string[],
+): CharacterHotkeyVariant {
+  return { hotkey: [...modifiers, key].join("+"), exactKeys };
 }
 
 export function expandCharacterHotkey(hotkey: string): CharacterHotkeyVariant[] {
@@ -31,15 +39,21 @@ export function expandCharacterHotkey(hotkey: string): CharacterHotkeyVariant[] 
   const hasExplicitShift = modifiers.some(isShiftToken);
 
   if (key === "Plus") {
-    const engineKeys = ["=", "/"];
+    const equalKey = [
+      characterVariant(modifiers, "=", ["+"]),
+      characterVariant([...modifiers, "Shift"], "=", ["+", "="]),
+    ];
+    const slashKey = withOptionalShift(modifiers, "/", "+");
     if (hasExplicitShift) {
-      return engineKeys.map((engineKey) => ({
-        hotkey: [...modifiers, engineKey].join("+"),
-        exactKey: "+",
-      }));
+      return [
+        characterVariant(modifiers, "=", ["+", "="]),
+        characterVariant(modifiers, "/", ["+"]),
+      ];
     }
-    return engineKeys.flatMap((engineKey) => withOptionalShift(modifiers, engineKey, "+"));
+    return [...equalKey, ...slashKey];
   }
+
+  if (key === "-") return [{ hotkey, exactKeys: ["-"] }];
 
   if (!isSingleNonLetterCharacter(key)) return [{ hotkey }];
   if (hasExplicitShift) return [{ hotkey }];

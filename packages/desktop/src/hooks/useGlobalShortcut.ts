@@ -42,7 +42,7 @@ export function useGlobalShortcut(
     const handler = (e: KeyboardEvent) => {
       if (!enabledRef.current) return;
       const matches = variants.some((variant) => {
-        if (variant.exactKey && e.key !== variant.exactKey) return false;
+        if (variant.exactKeys && !variant.exactKeys.includes(e.key)) return false;
         return matchesKeyboardEvent(e, variant.parsed);
       });
       if (matches) callbackRef.current(e);
