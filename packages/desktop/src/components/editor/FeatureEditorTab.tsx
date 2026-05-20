@@ -4,11 +4,12 @@ import {
   useRef,
   useState,
   useCallback,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
 import type { EditorView } from "@codemirror/view";
-import { useScopedShortcut } from "@/hooks/useShortcut";
+import { useScopedGlobalShortcutById, useScopedShortcut } from "@/hooks/useShortcut";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFeatureLayoutContext } from "@/components/feature-layout/FeatureLayoutContext";
@@ -19,7 +20,6 @@ import {
 } from "@/stores/feature-layout-store";
 import { PanelLeft } from "lucide-react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { EditorSidebarLayout } from "./EditorSidebarLayout";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
 import { saveAll } from "./editorSaveRegistry";
@@ -48,9 +49,6 @@ export interface FeatureEditorTabHandle {
   focusActiveEditor: () => void;
 }
 
-const SIDEBAR_MIN_SIZE = "120px";
-const SIDEBAR_DEFAULT_SIZE = "220px";
-const SIDEBAR_MAX_SIZE = "500px";
 const EDITOR_SIDEBAR_COLLAPSED_SETTING = "editor_sidebar_collapsed";
 
 const FeatureEditorTab = memo(
@@ -165,7 +163,23 @@ const FeatureEditorTab = memo(
       setPendingProceed(null);
     }
 
+    const handleToggleSidebar = useCallback((): void => {
+      toggleSidebar();
+      persistCollapsed(String(sidebarVisible));
+    }, [persistCollapsed, sidebarVisible, toggleSidebar]);
+
     // Split pane + nav shortcuts. Tab-scoped via the wrapper hook.
+    useScopedGlobalShortcutById(
+      "editor-toggle-sidebar",
+      (e) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.repeat) return;
+        handleToggleSidebar();
+      },
+      "editor",
+      { enabled: isEditorFocused },
+    );
     useScopedShortcut(
       "editor-split-v",
       (e) => {
@@ -241,12 +255,31 @@ const FeatureEditorTab = memo(
       }
     }, [persistedCollapsed, sidebarVisible, toggleSidebar]);
 
-    function handleToggleSidebar(): void {
-      toggleSidebar();
-      persistCollapsed(String(sidebarVisible));
-    }
-
     const dirtyCount = getDirtyTabs().length;
+
+    const sidebar = useMemo(
+      () => (
+        <div className="flex h-full flex-col bg-card">
+          <SidebarHeader onToggle={handleToggleSidebar} />
+          <div className="flex-1 overflow-hidden">
+            <FileTree projectId={projectId} featureId={featureId} />
+          </div>
+        </div>
+      ),
+      [featureId, handleToggleSidebar, projectId],
+    );
+
+    const editorPane = useMemo(
+      () => (
+        <EditorSplitTree
+          node={splitTree}
+          featureId={featureId}
+          projectId={projectId}
+          onEditorViewChange={handleEditorViewChange}
+        />
+      ),
+      [featureId, handleEditorViewChange, projectId, splitTree],
+    );
 
     return (
       <div ref={rootRef} className="flex h-full">
@@ -278,52 +311,12 @@ const FeatureEditorTab = memo(
           </DialogContent>
         </Dialog>
 
-        {sidebarVisible ? (
-          <ResizablePanelGroup id="editor-sidebar" orientation="horizontal" className="h-full">
-            <ResizablePanel
-              defaultSize={SIDEBAR_DEFAULT_SIZE}
-              minSize={SIDEBAR_MIN_SIZE}
-              maxSize={SIDEBAR_MAX_SIZE}
-              className="flex flex-col bg-card border-r border-border"
-            >
-              <SidebarHeader onToggle={handleToggleSidebar} />
-              <div className="flex-1 overflow-hidden">
-                <FileTree projectId={projectId} featureId={featureId} />
-              </div>
-            </ResizablePanel>
-            <ResizableHandle />
-            <ResizablePanel>
-              <EditorSplitTree
-                node={splitTree}
-                featureId={featureId}
-                projectId={projectId}
-                onEditorViewChange={handleEditorViewChange}
-              />
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        ) : (
-          <div className="flex h-full w-full">
-            <div className="flex w-9 shrink-0 justify-center border-r border-border bg-card pt-2">
-              <button
-                type="button"
-                title="Show sidebar"
-                aria-label="Show file tree sidebar"
-                className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                onClick={handleToggleSidebar}
-              >
-                <PanelLeft className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="min-w-0 flex-1">
-              <EditorSplitTree
-                node={splitTree}
-                featureId={featureId}
-                projectId={projectId}
-                onEditorViewChange={handleEditorViewChange}
-              />
-            </div>
-          </div>
-        )}
+        <EditorSidebarLayout
+          sidebarVisible={sidebarVisible}
+          sidebar={sidebar}
+          editor={editorPane}
+          onToggleSidebar={handleToggleSidebar}
+        />
       </div>
     );
   }),

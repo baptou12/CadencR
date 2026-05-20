@@ -110,6 +110,9 @@ export const FeatureGitTab = memo(function FeatureGitTab({
     },
     [persistFileListCollapsed],
   );
+  const handleToggleFileListCollapsed = useCallback((): void => {
+    setFileListCollapsed(!fileListCollapsed);
+  }, [fileListCollapsed, setFileListCollapsed]);
 
   // Translate the active toggle into the diff endpoints' `mode` parameter.
   // "uncommitted" hits the working-tree path on the server (alias of the legacy
@@ -130,6 +133,18 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   });
 
   useScopedGlobalShortcutById(
+    "diff-toggle-sidebar",
+    (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.repeat) return;
+      handleToggleFileListCollapsed();
+    },
+    "git",
+    { enabled: hotkeysEnabled && !isFileListCollapseLoading },
+  );
+
+  useScopedGlobalShortcutById(
     "diff-send-comments",
     (e) => {
       e.preventDefault();
@@ -144,7 +159,7 @@ export const FeatureGitTab = memo(function FeatureGitTab({
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <button
           type="button"
-          onClick={() => setFileListCollapsed(!fileListCollapsed)}
+          onClick={handleToggleFileListCollapsed}
           disabled={isFileListCollapseLoading}
           aria-pressed={!fileListCollapsed}
           aria-label={fileListCollapsed ? "Expand file list" : "Collapse file list"}

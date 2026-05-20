@@ -5,12 +5,16 @@ import { waitFor } from "@testing-library/react";
 import FeatureEditorTab from "../FeatureEditorTab";
 
 const mockUseFileWatcher = vi.fn();
+const mockUseScopedShortcut = vi.fn();
+const mockUseScopedGlobalShortcutById = vi.fn();
 const mockSplitEditorPane = vi.fn();
 const mockNavigatePane = vi.fn();
 const mockInitFeature = vi.fn();
 const mockEditorFocus = vi.fn();
+const mockEditorUnmount = vi.fn();
 const mockToggleSidebar = vi.fn();
 const mockPersistCollapsed = vi.fn();
+let mockSidebarVisible = false;
 const mockUseDebouncedSetting = vi.fn<
   (
     key: string,
@@ -21,12 +25,9 @@ const mockUseDebouncedSetting = vi.fn<
   }
 >(() => ({ value: null, setValue: mockPersistCollapsed }));
 
-vi.mock("@tanstack/react-hotkeys", () => ({
-  useHotkeys: vi.fn(),
-}));
-
-vi.mock("@/hooks/useGlobalShortcut", () => ({
-  useGlobalShortcut: vi.fn(),
+vi.mock("@/hooks/useShortcut", () => ({
+  useScopedShortcut: (...args: unknown[]) => mockUseScopedShortcut(...args),
+  useScopedGlobalShortcutById: (...args: unknown[]) => mockUseScopedGlobalShortcutById(...args),
 }));
 
 vi.mock("@/hooks/useFileWatcher", () => ({
@@ -50,7 +51,7 @@ vi.mock("@/hooks/useEditorState", () => ({
     initFeature: mockInitFeature,
     splitTree: { id: "root" },
     activePaneId: "pane-1",
-    sidebarVisible: false,
+    sidebarVisible: mockSidebarVisible,
     toggleSidebar: mockToggleSidebar,
     panes: {
       "pane-1": {
@@ -83,7 +84,10 @@ vi.mock("../EditorSplitTree", () => ({
   }) => {
     useEffect(() => {
       onEditorViewChange?.("pane-1", { focus: mockEditorFocus });
-      return () => onEditorViewChange?.("pane-1", null);
+      return () => {
+        mockEditorUnmount();
+        onEditorViewChange?.("pane-1", null);
+      };
     }, [onEditorViewChange]);
     return <div data-testid="editor-split-tree" />;
   },
@@ -99,12 +103,6 @@ vi.mock("../ContentSearchDialog", () => ({
 
 vi.mock("../editorSaveRegistry", () => ({
   saveAll: vi.fn(),
-}));
-
-vi.mock("@/components/ui/resizable", () => ({
-  ResizablePanelGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ResizablePanel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  ResizableHandle: () => <div />,
 }));
 
 vi.mock("@/components/ui/dialog", () => ({
@@ -125,12 +123,16 @@ vi.mock("@/components/ui/button", () => ({
 describe("FeatureEditorTab", () => {
   beforeEach(() => {
     mockUseFileWatcher.mockReset();
+    mockUseScopedShortcut.mockReset();
+    mockUseScopedGlobalShortcutById.mockReset();
     mockSplitEditorPane.mockReset();
     mockNavigatePane.mockReset();
     mockInitFeature.mockReset();
     mockEditorFocus.mockReset();
+    mockEditorUnmount.mockReset();
     mockToggleSidebar.mockReset();
     mockPersistCollapsed.mockReset();
+    mockSidebarVisible = false;
     mockUseDebouncedSetting.mockReset();
     mockUseDebouncedSetting.mockReturnValue({ value: null, setValue: mockPersistCollapsed });
   });
@@ -153,7 +155,7 @@ describe("FeatureEditorTab", () => {
     render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
     const expandButton = screen.getByRole("button", { name: "Show file tree sidebar" });
-    expect(expandButton.parentElement).toHaveClass("w-9");
+    expect(expandButton.parentElement).toHaveClass("w-full");
     expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
   });
 
@@ -172,5 +174,55 @@ describe("FeatureEditorTab", () => {
     render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
     await waitFor(() => expect(mockEditorFocus).toHaveBeenCalled());
+  });
+
+  it("keeps the editor split tree mounted when the sidebar visibility changes", () => {
+    mockSidebarVisible = true;
+    const { rerender } = render(
+      <FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />,
+    );
+
+    expect(screen.getByTestId("file-tree")).toBeInTheDocument();
+
+    mockSidebarVisible = false;
+    rerender(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project-next" />);
+
+    expect(screen.getByRole("button", { name: "Show file tree sidebar" })).toBeInTheDocument();
+    expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
+    expect(mockEditorUnmount).not.toHaveBeenCalled();
+  });
+
+  it("keeps the visible sidebar resizable", () => {
+    mockSidebarVisible = true;
+
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    expect(screen.getByRole("separator", { name: "Resize file tree sidebar" })).toBeVisible();
+  });
+
+  it("binds the sidebar toggle shortcut through the capture-phase shortcut path", () => {
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+
+    expect(mockUseScopedGlobalShortcutById).toHaveBeenCalledWith(
+      "editor-toggle-sidebar",
+      expect.any(Function),
+      "editor",
+      expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("ignores repeat events for the sidebar toggle shortcut", () => {
+    render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
+    const shortcutCall = mockUseScopedGlobalShortcutById.mock.calls.find(
+      ([id]) => id === "editor-toggle-sidebar",
+    );
+    expect(shortcutCall).toBeDefined();
+    const callback = shortcutCall?.[1] as (event: KeyboardEvent) => void;
+
+    callback(new KeyboardEvent("keydown", { repeat: true }));
+    expect(mockToggleSidebar).not.toHaveBeenCalled();
+
+    callback(new KeyboardEvent("keydown"));
+    expect(mockToggleSidebar).toHaveBeenCalledOnce();
   });
 });

@@ -390,6 +390,12 @@ export const SHORTCUTS = [
     scope: "diff-viewer",
   },
   {
+    id: "diff-toggle-sidebar",
+    keys: ["mod", "e"],
+    description: "Toggle Git file list",
+    scope: "diff-viewer",
+  },
+  {
     id: "diff-send-comments",
     keys: ["mod", "enter"],
     description: "Send pending comments",
@@ -404,6 +410,12 @@ export const SHORTCUTS = [
 
   // ─── Editor ──────────────────────────────────────────────────────────
   { id: "editor-fuzzy", keys: ["mod", "p"], description: "Fuzzy file search", scope: "editor" },
+  {
+    id: "editor-toggle-sidebar",
+    keys: ["mod", "e"],
+    description: "Toggle explorer",
+    scope: "editor",
+  },
   { id: "editor-close", keys: ["mod", "w"], description: "Close buffer", scope: "editor" },
   {
     id: "editor-next-tab",
