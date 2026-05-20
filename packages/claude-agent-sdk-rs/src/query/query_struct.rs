@@ -259,6 +259,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
 
         let options = Options {
             path_to_cli: Some(script_path),
+            replay_user_messages: false,
             ..Options::default()
         };
 

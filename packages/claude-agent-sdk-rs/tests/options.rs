@@ -171,6 +171,16 @@ fn to_cli_args_always_includes_replay_user_messages() {
 }
 
 #[test]
+fn to_cli_args_can_disable_replay_user_messages_for_mock_clis() {
+    let opts = OptionsBuilder::new().replay_user_messages(false).build();
+    let args = opts.to_cli_args();
+    assert!(
+        !args.iter().any(|a| a == "--replay-user-messages"),
+        "Expected --replay-user-messages to be omitted when disabled"
+    );
+}
+
+#[test]
 fn to_cli_args_always_forces_summarized_thinking_display() {
     // Opus 4.7 disables thinking display by default; Cadencr surfaces thinking
     // summaries in the UI, so `--thinking-display summarized` must always be

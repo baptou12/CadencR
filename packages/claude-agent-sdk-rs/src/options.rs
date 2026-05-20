@@ -32,6 +32,11 @@ pub struct Options {
     /// Always `true` — Cadencr always uses streaming partial messages.
     /// Hardcoded in `to_cli_args` via `--output-format stream-json`.
     pub include_partial_messages: bool,
+    /// Re-emit stdin user messages on stdout so hosts can acknowledge
+    /// when a steering prompt has actually reached Claude Code. Enabled by
+    /// default; tests may disable it for mock CLIs that exit without draining
+    /// every startup/control stdin frame.
+    pub replay_user_messages: bool,
     /// Language / locale override passed to the CLI.
     pub language: Option<String>,
 
@@ -70,6 +75,7 @@ impl Default for Options {
                 "local".to_string(),
             ],
             include_partial_messages: true,
+            replay_user_messages: true,
             language: None,
             can_use_tool: None,
             abort_signal: None,
@@ -100,7 +106,9 @@ impl Options {
         args.push("--include-partial-messages".to_string());
         // Re-emit stdin user messages on stdout so hosts can acknowledge
         // when a steering prompt has actually reached Claude Code.
-        args.push("--replay-user-messages".to_string());
+        if self.replay_user_messages {
+            args.push("--replay-user-messages".to_string());
+        }
         // Force summarized thinking output. Opus 4.7 disables thinking display by
         // default, but Cadencr surfaces thinking summaries in the UI, so we
         // enforce `summarized` regardless of the model's default.
@@ -237,6 +245,11 @@ impl OptionsBuilder {
 
     pub fn language(mut self, lang: impl Into<String>) -> Self {
         self.inner.language = Some(lang.into());
+        self
+    }
+
+    pub fn replay_user_messages(mut self, enabled: bool) -> Self {
+        self.inner.replay_user_messages = enabled;
         self
     }
 
