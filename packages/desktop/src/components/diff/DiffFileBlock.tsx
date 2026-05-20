@@ -1,5 +1,6 @@
 import { memo, useCallback, type ReactNode } from "react";
 import type { ThemeAppearance, ThemeId } from "@/lib/themes";
+import { firstChangedNewLine } from "@/lib/diff-line";
 import { type FileDiffSection, hasTextHunks } from "@/lib/parse-unified-diff";
 import {
   DiffFileHeader,
@@ -82,8 +83,8 @@ function DiffFileBlockImpl({
     [displayName, onAddComment],
   );
   const onOpenFile = useCallback(
-    (): void => onOpenFileInEditor?.(displayName),
-    [displayName, onOpenFileInEditor],
+    (): void => onOpenFileInEditor?.(displayName, firstChangedNewLine(section.hunks[0] ?? "")),
+    [displayName, onOpenFileInEditor, section.hunks],
   );
 
   const renderHeaderPrefix = useCallback(

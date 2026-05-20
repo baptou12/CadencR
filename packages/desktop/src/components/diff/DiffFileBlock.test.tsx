@@ -73,7 +73,7 @@ describe("DiffFileBlock", () => {
     expect(getByTestId("patch-diff-view")).toHaveAttribute("data-patch", patch);
   });
 
-  it("renders a hover editor button in expanded file metadata", async () => {
+  it("opens the file at the first changed line from the expanded header", async () => {
     const onOpenFileInEditor = vi.fn();
     const { user } = render(
       <DiffFileBlock {...baseProps} isCollapsed={false} onOpenFileInEditor={onOpenFileInEditor} />,
@@ -81,10 +81,10 @@ describe("DiffFileBlock", () => {
 
     await user.click(screen.getByRole("button", { name: "Open src/foo.ts in editor" }));
 
-    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts");
+    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", 1);
   });
 
-  it("renders a hover editor button before numstats for collapsed files", async () => {
+  it("opens the file at the first changed line from the collapsed header", async () => {
     const onOpenFileInEditor = vi.fn();
     const { user } = render(
       <DiffFileBlock {...baseProps} isCollapsed onOpenFileInEditor={onOpenFileInEditor} />,
@@ -92,7 +92,7 @@ describe("DiffFileBlock", () => {
 
     await user.click(screen.getByRole("button", { name: "Open src/foo.ts in editor" }));
 
-    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts");
+    expect(onOpenFileInEditor).toHaveBeenCalledWith("src/foo.ts", 1);
   });
 
   it("renders a binary placeholder for binary/no-hunk patches", () => {

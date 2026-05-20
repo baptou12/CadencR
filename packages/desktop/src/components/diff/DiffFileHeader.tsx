@@ -86,7 +86,7 @@ export function DiffFileHeaderOpenInEditor({
         event.stopPropagation();
         onOpenFileInEditor();
       }}
-      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/95 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/header:opacity-100 group-hover/patch-file:opacity-100"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/header:opacity-100 group-hover/patch-file:opacity-100"
     >
       <PencilIcon className="h-3.5 w-3.5" />
     </button>
