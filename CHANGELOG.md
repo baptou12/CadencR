@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.2.2 - 2026-05-20
+
+Previous release: v0.2.1 - 2026-05-20
+
+### 🔧 Changed
+
+- Removed the `Cmd+D` editor split shortcuts to avoid conflicts with normal editor selection workflows.
+
+### 🐛 Fixed
+
+- Fixed image-only prompts so provider conversations can start with screenshots or visual context without requiring extra text.
+- Fixed multi-file patch rendering so changed files display reliably in patch views.
+- Fixed sidebar toggles so editor buffers stay open while resizing or hiding the sidebar.
+- Fixed agent session state so working status appears before runtime startup work begins.
+- Fixed app visibility restores so existing agents are not reconnected unnecessarily.
+- Fixed GitHub Copilot model routing through OpenCode-backed sessions.
+
+### 🔒 Security
+
+- Updated OpenSSL dependencies to include the latest patched `0.10.x` release.
+
 ## v0.2.1 - 2026-05-20
 
 Previous release: v0.2.0
