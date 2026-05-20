@@ -57,20 +57,34 @@ const pastMilestones: PastRoadmapMilestone[] = [
       "Provider-neutral adapters and Rust SDKs brought OpenCode and Codex beside Claude, turning Cadencr into a multi-agent control surface.",
     phase: "past",
   },
+  {
+    dateLabel: "May 2026",
+    datetime: "2026-05",
+    title: "Open-source hardening",
+    description:
+      "Packaging, documentation, licensing, and reliability work landed so the project could be shared publicly with confidence.",
+    phase: "past",
+  },
 ];
 
 const currentMilestone: RoadmapMilestone = {
-  title: "Open-source hardening",
+  title: "Stability & Performance",
   description:
-    "Stability, performance, packaging, documentation, and reliability work are the current focus so the project can be shared publicly.",
+    "Eliminating stream, reconnect, startup, and render jank until large local workspaces feel boringly reliable.",
   phase: "current",
 };
 
 const futureMilestones: RoadmapMilestone[] = [
   {
-    title: "Stability & Performance",
+    title: "Editor improvements",
     description:
-      "Keep eliminating stream, reconnect, startup, and render jank until large local workspaces feel boringly reliable.",
+      "Make the read-side editor better for reviewing agent changes, navigating files, and understanding context.",
+    phase: "future",
+  },
+  {
+    title: "Git improvements",
+    description:
+      "Deepen branch, diff, review, merge, and recovery flows so agent work can be inspected and landed faster.",
     phase: "future",
   },
   {
@@ -83,18 +97,6 @@ const futureMilestones: RoadmapMilestone[] = [
     title: "Windows distribution",
     description:
       "Bring the desktop app, backend service, terminal handling, and installer flow to Windows users.",
-    phase: "future",
-  },
-  {
-    title: "Git improvements",
-    description:
-      "Deepen branch, diff, review, merge, and recovery flows so agent work can be inspected and landed faster.",
-    phase: "future",
-  },
-  {
-    title: "Editor improvements",
-    description:
-      "Make the read-side editor better for reviewing agent changes, navigating files, and understanding context.",
     phase: "future",
   },
   {
