@@ -42,7 +42,7 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
   const activate = useCallback((): void => onActivate(index), [onActivate, index]);
   // CMD+O on the active card opens its dedicated feature page. Gated on
   // `isActive` so only the focused card listens — the listener is bubble-
-  // phase (react-hotkeys-hook), and Cadencr doesn't bind CMD+O elsewhere
+  // phase (@tanstack/react-hotkeys), and Cadencr doesn't bind CMD+O elsewhere
   // outside of a scoped drawer, so the active-card gate is the disambiguator.
   const navigate = useNavigate();
   useShortcut(

@@ -1,15 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { act, render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 import { AgentQuestionDrawer, parseAskUserQuestions } from "./AgentQuestionDrawer";
 import type { AgentQuestion } from "./AgentQuestionDrawer";
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 
 const mockedUseHotkeys = vi.mocked(useHotkeys);
+
+interface RegisteredHotkey {
+  callback: (event: KeyboardEvent) => void;
+  hotkey: string;
+}
+
+function registeredHotkeys(): RegisteredHotkey[] {
+  return mockedUseHotkeys.mock.calls.flatMap(([definitions]) =>
+    definitions.map((definition) => ({
+      callback: definition.callback as (event: KeyboardEvent) => void,
+      hotkey: String(definition.hotkey),
+    })),
+  );
+}
+
+function findRegisteredHotkey(hotkey: string): RegisteredHotkey {
+  const match = registeredHotkeys().find((definition) => definition.hotkey === hotkey);
+  if (!match) throw new Error(`Expected hotkey ${hotkey} to be registered`);
+  return match;
+}
 
 const simpleQuestion: AgentQuestion = {
   question: "What is your name?",
@@ -125,15 +145,71 @@ describe("AgentQuestionDrawer", () => {
     expect(screen.getByText(/┌───┐/)).toBeInTheDocument();
   });
 
-  it("registers digit hotkeys (no cmd) and meta+o for Other", () => {
+  it("registers digit hotkeys (no Mod) and Mod+O for Other", () => {
     render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
-    const hotkeyStrings = mockedUseHotkeys.mock.calls.map((call) => call[0]);
+    const hotkeyStrings = registeredHotkeys().map((definition) => definition.hotkey);
     // Digit hotkeys without modifier
-    expect(hotkeyStrings).toContain("1,2,3,4,5,6,7,8,9");
+    expect(hotkeyStrings).toEqual(
+      expect.arrayContaining(["1", "2", "3", "4", "5", "6", "7", "8", "9"]),
+    );
     // cmd+O for Other
-    expect(hotkeyStrings).toContain("meta+o");
+    expect(hotkeyStrings).toContain("Mod+O");
     // No cmd+digit hotkeys remain (those are reserved for the sidebar)
-    expect(hotkeyStrings.some((s) => /meta\+\d/.test(String(s)))).toBe(false);
+    expect(hotkeyStrings.some((s) => /Mod\+\d/.test(s))).toBe(false);
+  });
+
+  it("does not select options from AZERTY physical digit keys unless they emit digits", () => {
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    const preventDefault = vi.fn();
+
+    act(() => {
+      findRegisteredHotkey("1").callback({
+        code: "Digit1",
+        key: "&",
+        preventDefault,
+      } as unknown as KeyboardEvent);
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(screen.getByText("Red").closest("button")).not.toHaveClass("border-primary");
+
+    act(() => {
+      findRegisteredHotkey("Shift+1").callback({
+        code: "Digit1",
+        key: "1",
+        preventDefault,
+      } as unknown as KeyboardEvent);
+    });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(screen.getByText("Red").closest("button")).toHaveClass("border-primary");
+  });
+
+  it("selects the second option from the digit character, not the AZERTY é key", () => {
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    const preventDefault = vi.fn();
+
+    act(() => {
+      findRegisteredHotkey("Shift+2").callback({
+        code: "Digit2",
+        key: "é",
+        preventDefault,
+      } as unknown as KeyboardEvent);
+    });
+
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(screen.getByText("Blue").closest("button")).not.toHaveClass("border-primary");
+
+    act(() => {
+      findRegisteredHotkey("Shift+2").callback({
+        code: "Digit2",
+        key: "2",
+        preventDefault,
+      } as unknown as KeyboardEvent);
+    });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(screen.getByText("Blue").closest("button")).toHaveClass("border-primary");
   });
 
   it("invoking Escape closes the question gate", () => {
@@ -146,8 +222,7 @@ describe("AgentQuestionDrawer", () => {
         open
       />,
     );
-    const escapeCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "escape")!;
-    const handler = escapeCall[1] as (e: {
+    const handler = findRegisteredHotkey("Escape").callback as unknown as (e: {
       preventDefault: () => void;
       stopPropagation: () => void;
     }) => void;

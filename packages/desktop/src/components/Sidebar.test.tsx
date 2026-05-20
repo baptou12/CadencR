@@ -19,7 +19,7 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 

@@ -102,9 +102,15 @@ importers:
       '@replit/codemirror-vim':
         specifier: ^6.3.0
         version: 6.3.0(@codemirror/commands@6.10.3)(@codemirror/language@6.12.3)(@codemirror/search@6.6.0)(@codemirror/state@6.6.0)(@codemirror/view@6.40.0)
+      '@tanstack/hotkeys':
+        specifier: 0.8.0
+        version: 0.8.0
       '@tanstack/query-sync-storage-persister':
         specifier: ^4.43.0
         version: 4.43.0
+      '@tanstack/react-hotkeys':
+        specifier: 0.10.0
+        version: 0.10.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-query':
         specifier: ^4.43.0
         version: 4.43.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -180,9 +186,6 @@ importers:
       react-dom:
         specifier: ^19.2.4
         version: 19.2.4(react@19.2.4)
-      react-hotkeys-hook:
-        specifier: ^5.2.4
-        version: 5.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.2.14)(react@19.2.4)
@@ -3219,6 +3222,10 @@ packages:
     resolution: {integrity: sha512-79pf/RkhteYZTRgcR4F9kbk84P2N8rugQJswxfIqovlbRiT3yI7eBE+5QorIrZaOKktsgzRlXh1l/du/xpl4iA==}
     engines: {node: '>=20.19'}
 
+  '@tanstack/hotkeys@0.8.0':
+    resolution: {integrity: sha512-vqH7X9nb0MTJ/O08++dB5bP9jgj4+BIPOUu/U+6myG86lDsirZSVSobpq5UQpE7nBuk62i8eIYeOhd+OMl/UrA==}
+    engines: {node: '>=18'}
+
   '@tanstack/query-core@4.43.0':
     resolution: {integrity: sha512-m1QeUUIpNXDYxmfuuWNFZLky0EwVmbE0hj8ulZ2nIGA1183raJgDCn0IKlxug80NotRqzodxAaoYTKHbE1/P/Q==}
 
@@ -3227,6 +3234,13 @@ packages:
 
   '@tanstack/query-sync-storage-persister@4.43.0':
     resolution: {integrity: sha512-o5IYArYNUmV3ZMq/AheHd8SCJ3YJXpwvmA3yQasKsbk2F5wvSSsTa58k7uccBH4U/zYohHJgKg5KlHKmw7U5hA==}
+
+  '@tanstack/react-hotkeys@0.10.0':
+    resolution: {integrity: sha512-GwOSndI5j3qBVYTmgP1mYyRTnlxb2MS17cwGlsavSxMQPSnmDf+m3LzMIpRMs+3zzQMjg3cYhHsFYizYlFI2tw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      react: '>=16.8'
+      react-dom: '>=16.8'
 
   '@tanstack/react-query-persist-client@4.43.0':
     resolution: {integrity: sha512-YSisR6PZCvdeNF/BBJeB3CV8L4qRPfUBx2E+oBQ6rGoPMkpyNWoWcVhTDmTrh8mxyNLAsyb43U1Y555/XfCReA==}
@@ -3251,6 +3265,12 @@ packages:
     peerDependencies:
       react: '>=18.0.0 || >=19.0.0'
       react-dom: '>=18.0.0 || >=19.0.0'
+
+  '@tanstack/react-store@0.11.0':
+    resolution: {integrity: sha512-tX4YXh3PDkmpvGQWkWqKpzs/MSqbtuwY9dWdWhtV9Q50PmO+jOkUKIWIX4G85dwt7lxdHLXsiaEKPdKmC8F41w==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@tanstack/react-store@0.9.3':
     resolution: {integrity: sha512-y2iHd/N9OkoQbFJLUX1T9vbc2O9tjH0pQRgTcx1/Nz4IlwLvkgpuglXUx+mXt0g5ZDFrEeDnONPqkbfxXJKwRg==}
@@ -3294,6 +3314,9 @@ packages:
   '@tanstack/router-vite-plugin@1.167.0':
     resolution: {integrity: sha512-awXexcTE5viDHobAeaEidAoOUcx/6eknWGtU/uHq2n5go15VnK2JlQlJ/75yP8B8H/BCjZ4HKebK50xQsx/EkA==}
     engines: {node: '>=20.19'}
+
+  '@tanstack/store@0.11.0':
+    resolution: {integrity: sha512-WlzzCt3xi0G6pCAJu1U+2jiECwabETDpQDi3hfkFZvJii9AuZqEKbOiVarX1/bWhTNjU486yQtJCCasi/0q+Cw==}
 
   '@tanstack/store@0.9.3':
     resolution: {integrity: sha512-8reSzl/qGWGGVKhBoxXPMWzATSbZLZFWhwBAFO9NAyp0TxzfBP0mIrGb8CP8KrQTmvzXlR/vFPPUrHTLBGyFyw==}
@@ -6045,12 +6068,6 @@ packages:
     resolution: {integrity: sha512-BrYwPOdXi5mqkk5lw+Uvt0ThHx32rCt3BkukS4X23A2AIWDPSGX6iaWTc0y9TU/mHDA/6qOSGel+B2ERkOvD1w==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
-
-  react-hotkeys-hook@5.2.4:
-    resolution: {integrity: sha512-BgKg+A1+TawkYluh5Bo4cTmcgMN5L29uhJbDUQdHwPX+qgXRjIPYU5kIDHyxnAwCkCBiu9V5OpB2mpyeluVF2A==}
-    peerDependencies:
-      react: '>=16.8.0'
-      react-dom: '>=16.8.0'
 
   react-is@17.0.2:
     resolution: {integrity: sha512-w2GsyukL62IJnlaff/nRegPQR94C/XXamvMWmSHRJ4y7Ts/4ocGRmTHvOs8PSE6pB3dWOrD/nueuU5sduBsQ4w==}
@@ -10423,6 +10440,10 @@ snapshots:
 
   '@tanstack/history@1.162.0': {}
 
+  '@tanstack/hotkeys@0.8.0':
+    dependencies:
+      '@tanstack/store': 0.11.0
+
   '@tanstack/query-core@4.43.0': {}
 
   '@tanstack/query-persist-client-core@4.43.0':
@@ -10432,6 +10453,13 @@ snapshots:
   '@tanstack/query-sync-storage-persister@4.43.0':
     dependencies:
       '@tanstack/query-persist-client-core': 4.43.0
+
+  '@tanstack/react-hotkeys@0.10.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@tanstack/hotkeys': 0.8.0
+      '@tanstack/react-store': 0.11.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
 
   '@tanstack/react-query-persist-client@4.43.0(@tanstack/react-query@4.43.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4))':
     dependencies:
@@ -10454,6 +10482,13 @@ snapshots:
       isbot: 5.1.35
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
+
+  '@tanstack/react-store@0.11.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@tanstack/store': 0.11.0
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+      use-sync-external-store: 1.6.0(react@19.2.4)
 
   '@tanstack/react-store@0.9.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
@@ -10528,6 +10563,8 @@ snapshots:
       - vite
       - vite-plugin-solid
       - webpack
+
+  '@tanstack/store@0.11.0': {}
 
   '@tanstack/store@0.9.3': {}
 
@@ -14229,11 +14266,6 @@ snapshots:
   react-error-boundary@6.1.1(react@19.2.4):
     dependencies:
       react: 19.2.4
-
-  react-hotkeys-hook@5.2.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
 
   react-is@17.0.2: {}
 

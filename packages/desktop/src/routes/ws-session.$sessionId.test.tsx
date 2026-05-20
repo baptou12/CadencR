@@ -45,7 +45,7 @@ vi.mock("@tanstack/react-router", () => ({
   },
 }));
 
-vi.mock("react-hotkeys-hook", () => ({ useHotkeys: vi.fn() }));
+vi.mock("@tanstack/react-hotkeys", () => ({ useHotkeys: vi.fn() }));
 
 vi.mock("@/components/FeatureTopBar", () => ({
   FeatureTopBar: ({ featureId }: { featureId: number }) => (

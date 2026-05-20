@@ -66,7 +66,7 @@ vi.mock("../prompt-editor/PromptEditor", () => {
 // The global react-virtuoso test mock exposes a custom event so tests
 // can deterministically simulate Virtuoso reaching the top item.
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 

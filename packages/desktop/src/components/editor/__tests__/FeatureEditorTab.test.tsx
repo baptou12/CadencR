@@ -21,7 +21,7 @@ const mockUseDebouncedSetting = vi.fn<
   }
 >(() => ({ value: null, setValue: mockPersistCollapsed }));
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 

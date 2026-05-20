@@ -5,7 +5,7 @@ import type { AgentBlockData } from "../AgentBlock";
 import type { TurnTimingState } from "@/stores/ws-turn-timing";
 import type { ContextUsageState } from "@/types/agent";
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 

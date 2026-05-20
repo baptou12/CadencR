@@ -18,6 +18,21 @@ function Harness({ onFire }: { onFire: () => void }): ReactElement {
   return <div data-testid="harness" tabIndex={0} />;
 }
 
+function PaneAgentHarness({ onFire }: { onFire: () => void }): ReactElement {
+  useShortcut("pane-agent", onFire);
+  return <div data-testid="pane-agent-harness" tabIndex={0} />;
+}
+
+function ZoomResetHarness({ onFire }: { onFire: () => void }): ReactElement {
+  useShortcut("zoom-reset", onFire);
+  return <div data-testid="zoom-reset-harness" tabIndex={0} />;
+}
+
+function ZoomInHarness({ onFire }: { onFire: () => void }): ReactElement {
+  useShortcut("zoom-in", onFire);
+  return <div data-testid="zoom-in-harness" tabIndex={0} />;
+}
+
 function GlobalHarness({ onFire }: { onFire: () => void }): ReactElement {
   useGlobalShortcutById("shortcuts-help", onFire);
   return <div data-testid="g" tabIndex={0} />;
@@ -68,6 +83,53 @@ describe("useShortcut", () => {
     fireEvent.keyDown(input, { key: "b", metaKey: true, code: "KeyB" });
     expect(onFire).toHaveBeenCalledTimes(1);
   });
+
+  it("fires Cmd+Shift+A on the labelled A key for AZERTY layouts", () => {
+    const onFire = vi.fn();
+    render(<PaneAgentHarness onFire={onFire} />);
+
+    fireEvent.keyDown(document.body, {
+      key: "A",
+      metaKey: true,
+      shiftKey: true,
+      code: "KeyQ",
+    });
+
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires Cmd+0 from the digit character even when Shift produces it", () => {
+    const onFire = vi.fn();
+    render(<ZoomResetHarness onFire={onFire} />);
+
+    fireEvent.keyDown(document.body, {
+      key: "0",
+      metaKey: true,
+      shiftKey: true,
+      code: "Digit0",
+    });
+
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires Cmd+Plus from the plus character, not the equals character", () => {
+    const onFire = vi.fn();
+    render(<ZoomInHarness onFire={onFire} />);
+
+    fireEvent.keyDown(document.body, { key: "=", metaKey: true, code: "Equal" });
+    expect(onFire).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.body, {
+      key: "+",
+      metaKey: true,
+      shiftKey: true,
+      code: "Equal",
+    });
+    expect(onFire).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(document.body, { key: "+", metaKey: true, code: "Slash" });
+    expect(onFire).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("useGlobalShortcutById", () => {
@@ -75,7 +137,7 @@ describe("useGlobalShortcutById", () => {
     const onFire = vi.fn();
     render(<GlobalHarness onFire={onFire} />);
 
-    fireEvent.keyDown(window, { key: "/", metaKey: true });
+    fireEvent.keyDown(window, { key: "?", metaKey: true, shiftKey: true });
     expect(onFire).toHaveBeenCalledTimes(1);
   });
 

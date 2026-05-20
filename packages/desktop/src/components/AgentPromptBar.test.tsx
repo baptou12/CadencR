@@ -8,17 +8,21 @@ interface HotkeyEntry {
   handler: (e: Partial<KeyboardEvent>) => void;
   options?: { enabled?: boolean };
 }
+interface HotkeyDefinition {
+  callback: (e: Partial<KeyboardEvent>) => void;
+  hotkey: string;
+  options?: { enabled?: boolean };
+}
 const hotkeyHandlers = new Map<string, HotkeyEntry>();
-vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: vi.fn(
-    (
-      key: string,
-      handler: (e: Partial<KeyboardEvent>) => void,
-      options?: { enabled?: boolean },
-    ) => {
-      hotkeyHandlers.set(key, { handler, options });
-    },
-  ),
+vi.mock("@tanstack/react-hotkeys", () => ({
+  useHotkeys: vi.fn((definitions: HotkeyDefinition[]) => {
+    definitions.forEach((definition) => {
+      hotkeyHandlers.set(definition.hotkey, {
+        handler: definition.callback,
+        options: definition.options,
+      });
+    });
+  }),
 }));
 
 function callHotkey(key: string, e: Partial<KeyboardEvent> = { preventDefault: vi.fn() }): void {
@@ -330,7 +334,7 @@ describe("AgentPromptBar", () => {
     render(<AgentPromptBar onSend={onSend} onStop={onStop} status="agent" />);
     // Focus the textbox (inside the wrapper)
     screen.getByRole("textbox").focus();
-    const entry = hotkeyHandlers.get("escape");
+    const entry = hotkeyHandlers.get("Escape");
     expect(entry).toBeDefined();
     entry!.handler({ preventDefault: vi.fn() });
     expect(onStop).toHaveBeenCalled();
@@ -344,7 +348,7 @@ describe("AgentPromptBar", () => {
       </div>,
     );
     screen.getByTestId("outside").focus();
-    const entry = hotkeyHandlers.get("escape");
+    const entry = hotkeyHandlers.get("Escape");
     expect(entry).toBeDefined();
     entry!.handler({ preventDefault: vi.fn() });
     expect(onStop).not.toHaveBeenCalled();
@@ -364,13 +368,13 @@ describe("AgentPromptBar", () => {
     };
 
     const { rerender } = render(<AgentPromptBar {...props} />);
-    callHotkey("meta+p");
+    callHotkey("Mod+P");
     expect(onOpenModelPicker).toHaveBeenCalledTimes(1);
 
     rerender(<AgentPromptBar {...props} agentTabActive={false} />);
-    callHotkey("meta+p");
-    callHotkey("shift+tab");
-    callHotkey("meta+enter");
+    callHotkey("Mod+P");
+    callHotkey("Shift+Tab");
+    callHotkey("Mod+Enter");
     expect(onOpenModelPicker).toHaveBeenCalledTimes(1); // still 1, not 2
     expect(onPermissionModeToggle).not.toHaveBeenCalled();
     expect(onToggleMaximize).not.toHaveBeenCalled();
@@ -381,7 +385,7 @@ describe("AgentPromptBar", () => {
       <AgentPromptBar onSend={onSend} onStop={onStop} status="agent" agentTabActive={false} />,
     );
     screen.getByRole("textbox").focus();
-    hotkeyHandlers.get("escape")!.handler({ preventDefault: vi.fn() });
+    hotkeyHandlers.get("Escape")!.handler({ preventDefault: vi.fn() });
     expect(onStop).toHaveBeenCalled();
   });
 });

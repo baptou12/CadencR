@@ -1,87 +1,27 @@
+import { matchesKeyboardEvent, parseHotkey } from "@tanstack/hotkeys";
 import { useEffect, useRef } from "react";
+import { expandCharacterHotkey } from "@/lib/shortcuts/character-hotkeys";
 
 interface GlobalShortcutOptions {
   /** When false, the listener is not attached. Default: true. */
   enabled?: boolean;
 }
 
-interface ParsedShortcut {
-  meta: boolean;
-  ctrl: boolean;
-  shift: boolean;
-  alt: boolean;
-  key: string;
-}
-
-function parseShortcut(shortcut: string): ParsedShortcut {
-  const parts = shortcut.toLowerCase().split("+");
-  const key = parts.pop() ?? "";
-  return {
-    meta: parts.includes("meta"),
-    ctrl: parts.includes("ctrl"),
-    shift: parts.includes("shift"),
-    alt: parts.includes("alt"),
-    key,
-  };
-}
-
-// Names that the *KeyboardEvent.code* uses, keyed by the short tokens callers
-// pass into `useGlobalShortcut("meta+alt+left")` — and their `Arrow…` long
-// form, so either spelling works. Without this mapping, "left" never matches
-// `e.key === "ArrowLeft"`, which is exactly the bug that left CMD+OPT+Arrow
-// silently dead in the terminal after we dropped react-hotkeys-hook for these
-// shortcuts (react-hotkeys-hook normalises `left` → `ArrowLeft` internally).
-const codeByKey: Record<string, string> = {
-  "[": "BracketLeft",
-  "]": "BracketRight",
-  left: "ArrowLeft",
-  right: "ArrowRight",
-  up: "ArrowUp",
-  down: "ArrowDown",
-  arrowleft: "ArrowLeft",
-  arrowright: "ArrowRight",
-  arrowup: "ArrowUp",
-  arrowdown: "ArrowDown",
-};
-
-function matchesShortcut(e: KeyboardEvent, parsed: ParsedShortcut): boolean {
-  if (e.metaKey !== parsed.meta) return false;
-  if (e.ctrlKey !== parsed.ctrl) return false;
-  if (e.shiftKey !== parsed.shift) return false;
-  if (e.altKey !== parsed.alt) return false;
-
-  // Single letter — prefer e.key so the shortcut respects the user's
-  // keyboard layout. On AZERTY/QWERTZ the labelled "A"/"Y" keys sit at
-  // different physical positions than QWERTY (e.code === "KeyQ"/"KeyZ"),
-  // but e.key reports the character the user actually pressed. Fall back
-  // to e.code only when e.key is mangled by Ctrl — Ctrl+J turns e.key into
-  // "\n" (U+000A) while e.code stays "KeyJ", which keeps vim-style chords
-  // working on every layout.
-  if (/^[a-z]$/.test(parsed.key)) {
-    if (/^[a-zA-Z]$/.test(e.key)) {
-      return e.key.toLowerCase() === parsed.key;
-    }
-    return e.code === `Key${parsed.key.toUpperCase()}`;
-  }
-
-  // Aliased keys (brackets, arrows) — match via e.code so modifier mangling
-  // and long/short spellings don't matter.
-  if (codeByKey[parsed.key]) {
-    return e.code === codeByKey[parsed.key];
-  }
-
-  return e.key.toLowerCase() === parsed.key.toLowerCase();
+function normalizeTanStackShortcut(shortcut: string): string {
+  return shortcut
+    .split("+")
+    .map((part) => part.trim())
+    .join("+");
 }
 
 /**
  * Capture-phase keydown listener that fires before CodeMirror, xterm.js,
  * or any other embedded component can swallow the event.
  *
- * Use this instead of useHotkeys when the shortcut must work regardless
- * of which element has focus. The listener is attached for the component's
- * lifetime; toggling `enabled` flips a ref instead of detaching/re-attaching,
- * so consumers like `useScopedGlobalShortcut` can gate on rapidly-changing
- * state (active tab) without DOM churn.
+ * Use this instead of TanStack's React hook when the shortcut must work
+ * before CodeMirror, xterm.js, or another embedded surface can stop
+ * propagation. Matching still goes through `@tanstack/hotkeys`, so layout
+ * behavior stays consistent with normal shortcuts.
  */
 export function useGlobalShortcut(
   shortcut: string,
@@ -95,10 +35,17 @@ export function useGlobalShortcut(
   enabledRef.current = options?.enabled ?? true;
 
   useEffect(() => {
-    const parsed = parseShortcut(shortcut);
+    const variants = expandCharacterHotkey(normalizeTanStackShortcut(shortcut)).map((variant) => ({
+      ...variant,
+      parsed: parseHotkey(variant.hotkey),
+    }));
     const handler = (e: KeyboardEvent) => {
       if (!enabledRef.current) return;
-      if (matchesShortcut(e, parsed)) callbackRef.current(e);
+      const matches = variants.some((variant) => {
+        if (variant.exactKey && e.key !== variant.exactKey) return false;
+        return matchesKeyboardEvent(e, variant.parsed);
+      });
+      if (matches) callbackRef.current(e);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);

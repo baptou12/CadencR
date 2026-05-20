@@ -34,7 +34,7 @@ interface FeatureLayoutShellProps extends FeatureTabActivationHandlers {
  *   - DnD context (one per page) with sensors, collision detection, overlay.
  *   - Tab content registry (mounts every tab body once, portals it).
  *   - Layout hydration on mount (`useFeatureLayoutHydration`).
- *   - Keyboard shortcuts (preserves meta+shift+A/T/G/E).
+ *   - Keyboard shortcuts (preserves Mod+Shift+A/T/G/E).
  *   - The split-tree renderer.
  */
 function flatVisibleLayout(state: FeatureLayoutState): FeatureLayoutState {

@@ -270,17 +270,18 @@ export function AgentQuestionDrawer({
     highlightTimerRef.current = setTimeout(() => setHighlightedIndex(null), 300);
   }, []);
 
-  // 1 through 9 to select/toggle option by index. cmd+O toggles "Other..."
+  // 1 through 9 selects/toggles an option by index. Mod+O toggles "Other..."
   const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
   // Default (no enableOnFormTags) — pressing "1" while typing in the free-text
   // input must insert the character, not select an option. Same applies to
   // Enter and arrow navigation while focused inside the textarea.
-  useScopedHotkeys(
-    "1,2,3,4,5,6,7,8,9",
+  useScopedShortcut(
+    "q-select-1-9",
     (e) => {
       if (!open || !currentQuestion?.options) return;
+      if (!/^[1-9]$/.test(e.key)) return;
       const digit = Number(e.key);
-      if (digit < 1 || digit > currentQuestion.options.length) return;
+      if (digit > currentQuestion.options.length) return;
       e.preventDefault();
       const option = currentQuestion.options[digit - 1];
       handleOptionToggle(option.label);

@@ -8,7 +8,7 @@ import type { FeatureTabActivationHandlers } from "@/components/feature-layout/t
 type FeatureLayoutHotkeysOptions = FeatureTabActivationHandlers & { enabled?: boolean };
 
 /**
- * Preserves the existing meta+shift+A/T/G/E shortcuts. Each hotkey:
+ * Preserves the existing Mod+Shift+A/T/G/E shortcuts. Each hotkey:
  *   1. Locates the pane currently hosting the requested tab.
  *   2. Sets that pane's active tab.
  *   3. Records the pane as `focusedPaneId` so the renderer can give it focus.

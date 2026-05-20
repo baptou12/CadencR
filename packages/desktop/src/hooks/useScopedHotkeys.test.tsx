@@ -143,12 +143,9 @@ describe("useScopedHotkeys", () => {
   });
 
   it("re-evaluates after a focus toggle when caller passes deps (regression)", () => {
-    // With caller-supplied deps react-hotkeys-hook memoises the wrapper
-    // callback. If the first render mounts while another tab is focused, the
-    // cached closure captures `isFocused === false`. Once focus returns to
-    // this scope, `enabled` flips back to true and listeners reattach, but
-    // the stale closure used to short-circuit and the digit shortcuts in
-    // AgentQuestionDrawer silently stopped firing.
+    // With caller-supplied deps, the wrapper must still see current focus.
+    // If the first render mounts while another tab is focused, returning to
+    // this scope must allow the shortcut to fire.
     cleanup = seedLayout("terminal");
     const onFire = vi.fn();
     render(withProvider(<ScopedHarness scope="agent" onFire={onFire} withDeps />));
@@ -169,6 +166,48 @@ describe("useScopedHotkeys", () => {
     render(withProvider(<ScopedHarness scope="git" onFire={onFire} enabled={false} />));
 
     fireEvent.keyDown(document.body, { key: "x", metaKey: true, code: "KeyX" });
+
+    expect(onFire).not.toHaveBeenCalled();
+  });
+
+  it("fires digit-list callbacks from digit characters even when Shift produces them", () => {
+    cleanup = seedLayout("agent");
+    const onFire = vi.fn();
+    render(withProvider(<ScopedHarness scope="agent" onFire={onFire} combo="1,2,3,4" />));
+
+    fireEvent.keyDown(document.body, { key: "é", code: "Digit2" });
+    expect(onFire).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.body, { key: "2", code: "Digit2", shiftKey: true });
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not treat punctuation as digit-row shortcuts", () => {
+    cleanup = seedLayout("agent");
+    const onFire = vi.fn();
+    render(withProvider(<ScopedHarness scope="agent" onFire={onFire} combo="4" />));
+
+    fireEvent.keyDown(document.body, { key: "'", code: "Quote" });
+    expect(onFire).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document.body, { key: "4", code: "Digit4", shiftKey: true });
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps raw scoped hotkeys disabled inside form fields by default", () => {
+    cleanup = seedLayout("git");
+    const onFire = vi.fn();
+    const { getByTestId } = render(
+      withProvider(
+        <>
+          <ScopedHarness scope="git" onFire={onFire} combo="1" />
+          <textarea data-testid="ta" />
+        </>,
+      ),
+    );
+    getByTestId("ta").focus();
+
+    fireEvent.keyDown(getByTestId("ta"), { key: "1", code: "Digit1" });
 
     expect(onFire).not.toHaveBeenCalled();
   });

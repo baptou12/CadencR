@@ -29,7 +29,7 @@ const attachmentMocks = vi.hoisted(() => ({
   restoreAttachments: vi.fn(),
 }));
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 

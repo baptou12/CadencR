@@ -36,10 +36,14 @@ vi.mock("react-virtuoso", () => ({
 
 const hotkeyHandlers = new Map<string, (event: KeyboardEvent) => void>();
 
-vi.mock("react-hotkeys-hook", () => ({
-  useHotkeys: vi.fn((keys: string, handler: (event: KeyboardEvent) => void) => {
-    hotkeyHandlers.set(keys, handler);
-  }),
+vi.mock("@tanstack/react-hotkeys", () => ({
+  useHotkeys: vi.fn(
+    (definitions: Array<{ callback: (event: KeyboardEvent) => void; hotkey: string }>) => {
+      definitions.forEach((definition) => {
+        hotkeyHandlers.set(definition.hotkey, definition.callback);
+      });
+    },
+  ),
 }));
 
 vi.mock("../api/generated", async (importOriginal) => ({
@@ -262,7 +266,7 @@ describe("AgentSession", () => {
     );
 
     await act(async () => {
-      hotkeyHandlers.get("meta+p")?.({
+      hotkeyHandlers.get("Mod+P")?.({
         preventDefault: vi.fn(),
       } as unknown as KeyboardEvent);
     });
@@ -525,7 +529,7 @@ describe("AgentSession", () => {
     );
 
     await act(async () => {
-      hotkeyHandlers.get("meta+p")?.({
+      hotkeyHandlers.get("Mod+P")?.({
         preventDefault: vi.fn(),
       } as unknown as KeyboardEvent);
     });

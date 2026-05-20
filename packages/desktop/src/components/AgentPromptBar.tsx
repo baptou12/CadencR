@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
-import { useHotkeys } from "react-hotkeys-hook";
 import { useScopedShortcut } from "@/hooks/useShortcut";
+import { useShortcut } from "@/hooks/useShortcut";
 import { Loader2, Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
@@ -261,8 +261,8 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     // `agent-stop` (Esc) is bound globally and gated in-callback so it fires
     // even while focus is inside another tab — we only swallow it when the
     // user is actually pointed at this prompt bar with a turn in flight.
-    useHotkeys(
-      "escape",
+    useShortcut(
+      "agent-stop",
       (e) => {
         if (!isRunning) return;
         if (!wrapperRef.current?.contains(document.activeElement)) return;

@@ -41,13 +41,11 @@ afterAll(() => server.close());
 // navigator.platform — pretend tests run on macOS
 // ---------------------------------------------------------------------------
 //
-// jsdom reports an empty `navigator.platform`, which the keyboard-shortcut
-// formatter (`lib/shortcuts/format.ts`) reads to decide whether the registry
-// `mod` token resolves to `meta` (mac) or `ctrl` (non-mac). The historical
-// hand-written bindings used literal `meta+…` strings, so all existing tests
-// fire `metaKey: true`. Forcing the platform to mac here keeps those tests
-// authoritative; cross-platform coverage lives in `resolve.test.ts`, which
-// stubs the module-level platform flag directly.
+// jsdom reports an empty `navigator.platform`, which shortcut display and
+// TanStack's `Mod` resolver use to decide whether the primary modifier is
+// Command (macOS) or Control (Windows/Linux). Forcing the platform to mac here
+// keeps tests aligned with the desktop default; cross-platform resolver and
+// matcher coverage lives in the shortcut unit tests.
 Object.defineProperty(navigator, "platform", {
   configurable: true,
   value: "MacIntel",

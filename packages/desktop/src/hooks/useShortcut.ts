@@ -4,53 +4,48 @@
  * store sitting on top of it — is the actual source of truth for which
  * combo fires which action.
  *
- * The underlying hooks (`useHotkeys`, `useScopedHotkeys`,
+ * The underlying hooks (`useAppHotkeys`, `useScopedHotkeys`,
  * `useGlobalShortcut`, `useScopedGlobalShortcut`) remain available for
  * non-customizable bindings (digit grids, vim chords, bare-escape page
  * dismissals, etc.).
  *
- * Defaults vs. the raw hooks: `enableOnFormTags` /
- * `enableOnContentEditable` default to `true` here because nearly every
- * existing call site set them manually. Callers that need the opposite
- * (e.g. `BranchChip`, sidebar-activate) pass `false` explicitly.
+ * Defaults vs. TanStack's raw hooks: input/contenteditable shortcuts are
+ * enabled and matching is layout-aware through `@tanstack/hotkeys`.
  */
-import {
-  useHotkeys,
-  type HotkeyCallback,
-  type Options as HotkeysOptions,
-} from "react-hotkeys-hook";
+import type { HotkeyCallback } from "@tanstack/hotkeys";
 import type { DependencyList } from "react";
 
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
 import { resolveHotkeyTrigger, tokensToHotkeyString } from "@/lib/shortcuts/resolve";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
+import { useAppHotkeys, type ShortcutHotkeyOptions } from "./useAppHotkeys";
 import { useGlobalShortcut } from "./useGlobalShortcut";
 import { useScopedGlobalShortcut, useScopedHotkeys } from "./useScopedHotkeys";
 import type { TabKind } from "@/stores/feature-layout-schema";
 
-const HOTKEY_DEFAULTS = {
-  enableOnFormTags: true,
+const SHORTCUT_DEFAULTS = {
   enableOnContentEditable: true,
+  enableOnFormTags: true,
 } as const;
 
-function mergeOptions(options: HotkeysOptions | undefined): HotkeysOptions {
-  return options ? { ...HOTKEY_DEFAULTS, ...options } : HOTKEY_DEFAULTS;
+function mergeShortcutOptions(options: ShortcutHotkeyOptions | undefined): ShortcutHotkeyOptions {
+  return options ? { ...SHORTCUT_DEFAULTS, ...options } : SHORTCUT_DEFAULTS;
 }
 
 /**
  * Customizable form-aware shortcut. Equivalent to `useHotkeys` but binds
  * the combo currently resolved for `id` (registry default + any override).
  * `altKeys` in the registry are bound automatically via the array form
- * `react-hotkeys-hook` already supports.
+ * TanStack's array registration supports.
  */
 export function useShortcut(
   id: ShortcutId,
   callback: HotkeyCallback,
-  options?: HotkeysOptions,
+  options?: ShortcutHotkeyOptions,
   deps?: DependencyList,
 ): void {
   const resolved = useResolvedShortcut(id);
-  useHotkeys(resolveHotkeyTrigger(resolved), callback, mergeOptions(options), deps);
+  useAppHotkeys(resolveHotkeyTrigger(resolved), callback, mergeShortcutOptions(options), deps);
 }
 
 /** Customizable shortcut, gated on which feature-workspace tab has focus. */
@@ -58,11 +53,17 @@ export function useScopedShortcut(
   id: ShortcutId,
   callback: HotkeyCallback,
   scope: TabKind,
-  options?: HotkeysOptions,
+  options?: ShortcutHotkeyOptions,
   deps?: DependencyList,
 ): void {
   const resolved = useResolvedShortcut(id);
-  useScopedHotkeys(resolveHotkeyTrigger(resolved), callback, scope, mergeOptions(options), deps);
+  useScopedHotkeys(
+    resolveHotkeyTrigger(resolved),
+    callback,
+    scope,
+    mergeShortcutOptions(options),
+    deps,
+  );
 }
 
 /**

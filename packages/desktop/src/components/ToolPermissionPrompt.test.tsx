@@ -1,19 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@/test-utils";
-import { useHotkeys } from "react-hotkeys-hook";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 import React, { useState } from "react";
 import { ToolPermissionPrompt } from "./ToolPermissionPrompt";
 import type { PendingPermission } from "./ToolPermissionPrompt";
 
-vi.mock("react-hotkeys-hook", async () => {
-  const actual = await vi.importActual<typeof import("react-hotkeys-hook")>("react-hotkeys-hook");
-  return {
-    ...actual,
-    useHotkeys: vi.fn(),
-  };
-});
+vi.mock("@tanstack/react-hotkeys", () => ({ useHotkeys: vi.fn() }));
 
 const mockedUseHotkeys = vi.mocked(useHotkeys);
+
+interface RegisteredHotkey {
+  callback: (event: KeyboardEvent) => void;
+  hotkey: string;
+}
+
+function registeredHotkeys(): RegisteredHotkey[] {
+  return mockedUseHotkeys.mock.calls.flatMap(([definitions]) =>
+    definitions.map((definition) => ({
+      callback: definition.callback as (event: KeyboardEvent) => void,
+      hotkey: String(definition.hotkey),
+    })),
+  );
+}
+
+function findRegisteredHotkey(hotkey: string): RegisteredHotkey {
+  const match = registeredHotkeys().find((definition) => definition.hotkey === hotkey);
+  if (!match) throw new Error(`Expected hotkey ${hotkey} to be registered`);
+  return match;
+}
 
 const permission: PendingPermission = {
   toolName: "Bash",
@@ -227,14 +241,14 @@ describe("ToolPermissionPrompt", () => {
     expect(screen.getByText("/etc/hosts")).toBeInTheDocument();
   });
 
-  it("registers meta+y, meta+l, and meta+n hotkeys (no cmd+digit)", () => {
+  it("registers Mod+Y, Mod+L, and Mod+N hotkeys (no Mod+digit)", () => {
     render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
-    const hotkeyStrings = mockedUseHotkeys.mock.calls.map((call) => call[0]);
-    expect(hotkeyStrings).toContain("meta+y");
-    expect(hotkeyStrings).toContain("meta+l");
-    expect(hotkeyStrings).toContain("meta+n");
-    // cmd+digit shortcuts must be gone — they're reserved for the sidebar.
-    expect(hotkeyStrings.some((s) => /^meta\+\d$/.test(String(s)))).toBe(false);
+    const hotkeyStrings = registeredHotkeys().map((definition) => definition.hotkey);
+    expect(hotkeyStrings).toContain("Mod+Y");
+    expect(hotkeyStrings).toContain("Mod+L");
+    expect(hotkeyStrings).toContain("Mod+N");
+    // Mod+digit shortcuts must be gone — they're reserved for the sidebar.
+    expect(hotkeyStrings.some((s) => /^Mod\+\d$/.test(s))).toBe(false);
   });
 
   it("invoking Escape closes the permission gate even while submitting", () => {
@@ -247,8 +261,7 @@ describe("ToolPermissionPrompt", () => {
         isSubmitting={true}
       />,
     );
-    const escapeCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "escape")!;
-    const handler = escapeCall[1] as (e: {
+    const handler = findRegisteredHotkey("Escape").callback as unknown as (e: {
       preventDefault: () => void;
       stopPropagation: () => void;
     }) => void;
@@ -256,13 +269,14 @@ describe("ToolPermissionPrompt", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
-  it("invoking meta+y handler approves with allow_once", () => {
+  it("invoking Mod+Y handler approves with allow_once", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
-      const yCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+y")!;
-      const handler = yCall[1] as (e: { preventDefault: () => void }) => void;
+      const handler = findRegisteredHotkey("Mod+Y").callback as unknown as (e: {
+        preventDefault: () => void;
+      }) => void;
       handler({ preventDefault: vi.fn() });
       vi.runAllTimers();
       expect(onDecision).toHaveBeenCalledWith("allow_once");
@@ -271,13 +285,14 @@ describe("ToolPermissionPrompt", () => {
     }
   });
 
-  it("invoking meta+l handler approves with allow_future", () => {
+  it("invoking Mod+L handler approves with allow_future", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
-      const lCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+l")!;
-      const handler = lCall[1] as (e: { preventDefault: () => void }) => void;
+      const handler = findRegisteredHotkey("Mod+L").callback as unknown as (e: {
+        preventDefault: () => void;
+      }) => void;
       handler({ preventDefault: vi.fn() });
       vi.runAllTimers();
       expect(onDecision).toHaveBeenCalledWith("allow_future");
@@ -286,13 +301,15 @@ describe("ToolPermissionPrompt", () => {
     }
   });
 
-  it("invoking shifted meta+y handler does not approve with allow_once", () => {
+  it("invoking shifted Mod+Y handler does not approve with allow_once", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
-      const yCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+y")!;
-      const handler = yCall[1] as (e: { preventDefault: () => void; shiftKey: boolean }) => void;
+      const handler = findRegisteredHotkey("Mod+Y").callback as unknown as (e: {
+        preventDefault: () => void;
+        shiftKey: boolean;
+      }) => void;
       handler({ preventDefault: vi.fn(), shiftKey: true });
       vi.runAllTimers();
       expect(onDecision).not.toHaveBeenCalled();
@@ -301,13 +318,14 @@ describe("ToolPermissionPrompt", () => {
     }
   });
 
-  it("invoking meta+n handler triggers deny flow", () => {
+  it("invoking Mod+N handler triggers deny flow", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={permission} onDecision={onDecision} />);
-      const nCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+n")!;
-      const handler = nCall[1] as (e: { preventDefault: () => void }) => void;
+      const handler = findRegisteredHotkey("Mod+N").callback as unknown as (e: {
+        preventDefault: () => void;
+      }) => void;
       handler({ preventDefault: vi.fn() });
       vi.runAllTimers();
       expect(onDecision).toHaveBeenCalledWith("deny", undefined);
@@ -340,13 +358,14 @@ describe("ToolPermissionPrompt", () => {
     expect(alwaysBtn.textContent).toContain("L");
   });
 
-  it("invoking meta+l uses the persistent Codex MCP approval option", () => {
+  it("invoking Mod+L uses the persistent Codex MCP approval option", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={onDecision} />);
-      const lCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+l")!;
-      const handler = lCall[1] as (e: { preventDefault: () => void }) => void;
+      const handler = findRegisteredHotkey("Mod+L").callback as unknown as (e: {
+        preventDefault: () => void;
+      }) => void;
       handler({ preventDefault: vi.fn() });
       vi.runAllTimers();
       expect(onDecision).toHaveBeenCalledWith(
@@ -369,13 +388,14 @@ describe("ToolPermissionPrompt", () => {
     expect(cancelBtn.querySelector("kbd")).toBeNull();
   });
 
-  it("invoking meta+n uses Deny and continue instead of Cancel for Codex MCP options", () => {
+  it("invoking Mod+N uses Deny and continue instead of Cancel for Codex MCP options", () => {
     const onDecision = vi.fn();
     vi.useFakeTimers();
     try {
       render(<ToolPermissionPrompt permission={codexMcpPermission} onDecision={onDecision} />);
-      const nCall = mockedUseHotkeys.mock.calls.find((call) => call[0] === "meta+n")!;
-      const handler = nCall[1] as (e: { preventDefault: () => void }) => void;
+      const handler = findRegisteredHotkey("Mod+N").callback as unknown as (e: {
+        preventDefault: () => void;
+      }) => void;
       handler({ preventDefault: vi.fn() });
       vi.runAllTimers();
       expect(onDecision).toHaveBeenCalledWith(

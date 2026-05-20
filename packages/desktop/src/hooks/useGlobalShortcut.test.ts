@@ -55,6 +55,12 @@ describe("useGlobalShortcut", () => {
     expect(callback).toHaveBeenCalledOnce();
   });
 
+  it("handles TanStack Mod+Shift+letter syntax on AZERTY by labelled key", () => {
+    renderHook(() => useGlobalShortcut("Mod+Shift+A", callback));
+    fireKey("A", { metaKey: true, shiftKey: true, code: "KeyQ" });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
   it("handles ctrl+key using e.code for letters", () => {
     // ctrl+j produces a control character for e.key, but e.code stays KeyJ
     renderHook(() => useGlobalShortcut("ctrl+j", callback));
@@ -74,9 +80,31 @@ describe("useGlobalShortcut", () => {
     expect(callback).toHaveBeenCalledOnce();
   });
 
+  it("handles meta+? by exact character even when Shift produces it", () => {
+    renderHook(() => useGlobalShortcut("meta+?", callback));
+    fireKey("?", { metaKey: true, shiftKey: true, code: "Slash" });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("does not treat AZERTY plus on physical Slash as Mod+/", () => {
+    renderHook(() => useGlobalShortcut("Mod+/", callback));
+    fireKey("+", { metaKey: true, code: "Slash" });
+    expect(callback).not.toHaveBeenCalled();
+  });
+
   it("handles digit keys", () => {
     renderHook(() => useGlobalShortcut("meta+1", callback));
     fireKey("1", { metaKey: true, code: "Digit1" });
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it("handles digit characters that require Shift without accepting shifted symbols", () => {
+    renderHook(() => useGlobalShortcut("meta+1", callback));
+
+    fireKey("!", { metaKey: true, shiftKey: true, code: "Digit1" });
+    expect(callback).not.toHaveBeenCalled();
+
+    fireKey("1", { metaKey: true, shiftKey: true, code: "Digit1" });
     expect(callback).toHaveBeenCalledOnce();
   });
 

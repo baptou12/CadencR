@@ -15,48 +15,46 @@ async function importResolve() {
   return await import("./resolve");
 }
 
-describe("tokensToHotkeyString (mac)", () => {
-  it('translates "mod" to "meta"', async () => {
+describe("tokensToHotkeyString", () => {
+  it('preserves "mod" as TanStack "Mod"', async () => {
     platformMock.isMac = true;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["mod", "k"])).toBe("meta+k");
+    expect(tokensToHotkeyString(["mod", "k"])).toBe("Mod+K");
   });
 
-  it('translates "plus" to "=" so ⌘+ works without shift', async () => {
+  it('translates "plus" to a project token that matches the literal + character', async () => {
     platformMock.isMac = true;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["mod", "plus"])).toBe("meta+=");
+    expect(tokensToHotkeyString(["mod", "plus"])).toBe("Mod+Plus");
   });
 
-  it("emits literal punctuation that both engines parse identically", async () => {
+  it("emits TanStack-compatible aliases and punctuation", async () => {
     platformMock.isMac = true;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["mod", "shift", "rbracket"])).toBe("meta+shift+]");
-    expect(tokensToHotkeyString(["mod", "slash"])).toBe("meta+/");
-    expect(tokensToHotkeyString(["mod", "comma"])).toBe("meta+comma");
-    expect(tokensToHotkeyString(["mod", "alt", "left"])).toBe("meta+alt+left");
-    expect(tokensToHotkeyString(["shift", "tab"])).toBe("shift+tab");
+    expect(tokensToHotkeyString(["mod", "shift", "rbracket"])).toBe("Mod+Shift+]");
+    expect(tokensToHotkeyString(["mod", "slash"])).toBe("Mod+/");
+    expect(tokensToHotkeyString(["mod", "comma"])).toBe("Mod+,");
+    expect(tokensToHotkeyString(["mod", "alt", "left"])).toBe("Mod+Alt+ArrowLeft");
+    expect(tokensToHotkeyString(["shift", "tab"])).toBe("Shift+Tab");
   });
 
-  it("passes letters and digits through, lowercased", async () => {
+  it("passes letters uppercased and digits unchanged", async () => {
     platformMock.isMac = true;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["mod", "shift", "N"])).toBe("meta+shift+n");
-    expect(tokensToHotkeyString(["mod", "0"])).toBe("meta+0");
+    expect(tokensToHotkeyString(["mod", "shift", "N"])).toBe("Mod+Shift+N");
+    expect(tokensToHotkeyString(["mod", "0"])).toBe("Mod+0");
   });
-});
 
-describe("tokensToHotkeyString (non-mac)", () => {
-  it('translates "mod" to "ctrl" — fixes the latent meta-only bug', async () => {
+  it('keeps "mod" platform-adaptive on non-mac too', async () => {
     platformMock.isMac = false;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["mod", "b"])).toBe("ctrl+b");
+    expect(tokensToHotkeyString(["mod", "b"])).toBe("Mod+B");
   });
 
-  it('leaves literal "ctrl" alone (vim chords are ctrl on every platform)', async () => {
+  it('normalizes literal "ctrl" to TanStack "Control"', async () => {
     platformMock.isMac = false;
     const { tokensToHotkeyString } = await importResolve();
-    expect(tokensToHotkeyString(["ctrl", "j"])).toBe("ctrl+j");
+    expect(tokensToHotkeyString(["ctrl", "j"])).toBe("Control+J");
   });
 });
 
@@ -64,15 +62,31 @@ describe("resolveHotkeyTrigger", () => {
   it("returns a plain string when there are no altKeys", async () => {
     platformMock.isMac = true;
     const { resolveHotkeyTrigger } = await importResolve();
-    expect(resolveHotkeyTrigger({ keys: ["mod", "k"] })).toBe("meta+k");
+    expect(resolveHotkeyTrigger({ keys: ["mod", "k"] })).toBe("Mod+K");
   });
 
   it("returns [primary, alt] when altKeys is set — both bound to the same action", async () => {
     platformMock.isMac = true;
     const { resolveHotkeyTrigger } = await importResolve();
     expect(resolveHotkeyTrigger({ keys: ["mod", "shift", "p"], altKeys: ["alt", "p"] })).toEqual([
-      "meta+shift+p",
-      "alt+p",
+      "Mod+Shift+P",
+      "Alt+P",
+    ]);
+  });
+
+  it("expands digit-range shortcuts for TanStack registrations", async () => {
+    platformMock.isMac = true;
+    const { resolveHotkeyTrigger } = await importResolve();
+    expect(resolveHotkeyTrigger({ keys: ["1-9"] })).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
     ]);
   });
 });

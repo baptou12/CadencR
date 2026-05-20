@@ -155,7 +155,7 @@ export const SHORTCUTS = [
   { id: "zoom-reset", keys: ["mod", "0"], description: "Reset zoom", scope: "global" },
   {
     id: "shortcuts-help",
-    keys: ["mod", "slash"],
+    keys: ["mod", "?"],
     description: "Show keyboard shortcuts",
     scope: "global",
     aliases: ["help", "cheatsheet"],

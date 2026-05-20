@@ -152,9 +152,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     //
     // We use the *global* capture-phase variant rather than `useHotkeys` so
     // the shortcuts still fire while xterm's textarea has focus.
-    // `react-hotkeys-hook` ignores keydowns on form tags by default, which
-    // is exactly what was breaking CMD+D: the moment a user clicked into
-    // the terminal, every split shortcut went dead.
+    // Bubble-phase hotkeys can be swallowed by xterm before they reach app
+    // handlers; capture phase keeps split shortcuts alive in the terminal.
 
     // Helper: split + focus the newly-created pane. The store returns the new
     // leaf id; we focus it on the next rAF so React has had a chance to mount
