@@ -21,6 +21,30 @@ import {
  */
 
 const STALE_MODIFIER_HINT_MS = 1_000;
+const NAV_SHORTCUT_CODES = [
+  "Digit1",
+  "Digit2",
+  "Digit3",
+  "Digit4",
+  "Digit5",
+  "Digit6",
+  "Digit7",
+  "Digit8",
+  "Digit9",
+] as const;
+const DEFAULT_NAV_SHORTCUT_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+
+interface KeyboardLayoutMapLike {
+  get(code: string): string | undefined;
+}
+
+interface KeyboardApiLike {
+  getLayoutMap?: () => Promise<KeyboardLayoutMapLike>;
+}
+
+interface NavigatorWithKeyboard extends Navigator {
+  keyboard?: KeyboardApiLike;
+}
 
 interface ShortcutHintRegistration {
   navRef: RefObject<HTMLElement | null>;
@@ -33,10 +57,10 @@ interface ShortcutHintsApi {
 
 const ShortcutHintsContext = createContext<ShortcutHintsApi | null>(null);
 
-function shortcutIndex(event: KeyboardEvent): number | null {
+function shortcutIndex(event: KeyboardEvent, keys: readonly string[]): number | null {
   if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
-  if (!/^[1-9]$/.test(event.key)) return null;
-  return Number(event.key) - 1;
+  const index = keys.indexOf(event.key);
+  return index >= 0 ? index : null;
 }
 
 function isAppSwitcherShortcut(event: KeyboardEvent): boolean {
@@ -61,7 +85,11 @@ function orderedEntries(
   return live.map(({ entry }) => entry);
 }
 
-function paintBadges(entries: ShortcutHintRegistration[], visible: boolean): void {
+function paintBadges(
+  entries: ShortcutHintRegistration[],
+  visible: boolean,
+  keys: readonly string[],
+): void {
   // Reset every badge first. `data-visible="false"` drives opacity, so
   // the fade-out transition runs.
   for (const entry of entries) {
@@ -74,9 +102,22 @@ function paintBadges(entries: ShortcutHintRegistration[], visible: boolean): voi
   entries.slice(0, 9).forEach((entry, index) => {
     const badge = entry.badgeRef.current;
     if (!badge) return;
-    badge.textContent = String(index + 1);
+    badge.textContent = keys[index] ?? String(index + 1);
     badge.dataset.visible = "true";
   });
+}
+
+async function readNavShortcutKeys(): Promise<readonly string[]> {
+  const keyboard = (navigator as NavigatorWithKeyboard).keyboard;
+  const layoutMap = await keyboard?.getLayoutMap?.();
+  if (!layoutMap) return DEFAULT_NAV_SHORTCUT_KEYS;
+  return NAV_SHORTCUT_CODES.map(
+    (code, index) => layoutMap.get(code) ?? DEFAULT_NAV_SHORTCUT_KEYS[index],
+  );
+}
+
+function sameShortcutKeys(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((key, index) => key === b[index]);
 }
 
 interface ShortcutHintsProviderProps {
@@ -96,6 +137,7 @@ export function ShortcutHintsProvider({
   const entriesRef = useRef<Set<ShortcutHintRegistration>>(new Set());
   const hintsVisibleRef = useRef(false);
   const staleHideTimerRef = useRef<number | null>(null);
+  const shortcutKeysRef = useRef<readonly string[]>(DEFAULT_NAV_SHORTCUT_KEYS);
 
   const api = useMemo<ShortcutHintsApi>(
     () => ({
@@ -120,19 +162,19 @@ export function ShortcutHintsProvider({
 
     const showHints = (): void => {
       if (hintsVisibleRef.current) return;
-      paintBadges(ordered(), true);
+      paintBadges(ordered(), true, shortcutKeysRef.current);
       hintsVisibleRef.current = true;
     };
 
     const refreshHints = (): void => {
       if (!hintsVisibleRef.current) return;
-      paintBadges(ordered(), true);
+      paintBadges(ordered(), true, shortcutKeysRef.current);
     };
 
     const hideHints = (): void => {
       clearStaleHideTimer();
       if (!hintsVisibleRef.current) return;
-      paintBadges(ordered(), false);
+      paintBadges(ordered(), false, shortcutKeysRef.current);
       hintsVisibleRef.current = false;
     };
 
@@ -161,7 +203,7 @@ export function ShortcutHintsProvider({
         scheduleStaleHide();
       }
 
-      const index = shortcutIndex(event);
+      const index = shortcutIndex(event, shortcutKeysRef.current);
       if (index == null) return;
 
       const target = ordered()[index]?.navRef.current;
@@ -190,6 +232,19 @@ export function ShortcutHintsProvider({
       hideHints();
     };
   }, [enabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void readNavShortcutKeys().then((keys) => {
+      if (cancelled) return;
+      if (sameShortcutKeys(shortcutKeysRef.current, keys)) return;
+      shortcutKeysRef.current = keys;
+      if (hintsVisibleRef.current) paintBadges(orderedEntries(entriesRef.current), true, keys);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return <ShortcutHintsContext.Provider value={api}>{children}</ShortcutHintsContext.Provider>;
 }

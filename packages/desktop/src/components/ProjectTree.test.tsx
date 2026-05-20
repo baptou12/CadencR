@@ -96,6 +96,19 @@ function visibleShortcutBadgeTexts(container: HTMLElement): string[] {
     .filter(Boolean);
 }
 
+function mockKeyboardLayout(
+  entries: readonly (readonly [string, string])[],
+): ReturnType<typeof vi.fn> {
+  const getLayoutMap = vi.fn(() => Promise.resolve(new Map(entries)));
+  Object.defineProperty(navigator, "keyboard", {
+    configurable: true,
+    value: {
+      getLayoutMap,
+    },
+  });
+  return getLayoutMap;
+}
+
 describe("ProjectTree", () => {
   beforeEach(() => {
     resetMockIds();
@@ -105,6 +118,7 @@ describe("ProjectTree", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    Reflect.deleteProperty(navigator, "keyboard");
   });
 
   it("renders project list", () => {
@@ -166,6 +180,57 @@ describe("ProjectTree", () => {
         params: { sessionId: "ws-feature-10" },
       }),
     );
+  });
+
+  it("uses command-number character keys on layouts where digits require Shift", async () => {
+    const getLayoutMap = mockKeyboardLayout([
+      ["Digit1", "&"],
+      ["Digit2", "é"],
+      ["Digit3", '"'],
+    ]);
+    const onSelectFeature = vi.fn();
+    const { container } = render(
+      <ProjectTree
+        activeProjectId={null}
+        activeFeatureId={null}
+        onSelectFeature={onSelectFeature}
+      />,
+    );
+    await vi.waitFor(() => expect(getLayoutMap).toHaveBeenCalled());
+    await act(async () => undefined);
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+    await vi.waitFor(() => expect(visibleShortcutBadgeTexts(container)).toEqual(["&", "é"]));
+    fireEvent.keyUp(window, { key: "Meta", metaKey: false });
+
+    fireEvent.keyDown(window, { key: "&", code: "Digit1", metaKey: true });
+    expect(screen.getByText("Feature One")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "é", code: "Digit2", metaKey: true });
+    expect(onSelectFeature).toHaveBeenCalledWith(10);
+
+    fireEvent.keyDown(window, { key: "1", code: "Digit1", metaKey: true, shiftKey: true });
+    expect(screen.getByText("Feature One")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "2", code: "Digit2", metaKey: true, shiftKey: true });
+    expect(onSelectFeature).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows sidebar command hints using the active keyboard layout characters", async () => {
+    const getLayoutMap = mockKeyboardLayout([
+      ["Digit1", "&"],
+      ["Digit2", "é"],
+      ["Digit3", '"'],
+    ]);
+    const { container } = render(
+      <ProjectTree activeProjectId={1} activeFeatureId={null} onSelectFeature={vi.fn()} />,
+    );
+    const badges = (): string[] => visibleShortcutBadgeTexts(container);
+
+    await vi.waitFor(() => expect(getLayoutMap).toHaveBeenCalled());
+    await act(async () => undefined);
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true });
+
+    await vi.waitFor(() => expect(badges()).toEqual(["&", "é", '"']));
   });
 
   it("shows visible command-number hints while command is held", () => {
