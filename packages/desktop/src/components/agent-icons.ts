@@ -1,4 +1,4 @@
-import { PlayIcon, MessageSquareIcon, FlaskConicalIcon, TagIcon } from "lucide-react";
+import { PlayIcon, MessageSquareIcon, TagIcon } from "lucide-react";
 import type { AgentType } from "../types/agent-types";
 
 export const AGENT_ICONS: Record<AgentType, typeof PlayIcon> = {
