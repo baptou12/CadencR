@@ -25,12 +25,16 @@ export function useZoom() {
   const setting = useDebouncedSetting(ZOOM_KEY, 0);
   const currentRef = useRef(ZOOM_DEFAULT);
 
-  const persisted = setting.value ? Number(setting.value) : ZOOM_DEFAULT;
-  currentRef.current = persisted;
+  const hasPersistedValue = setting.value != null;
+  const persisted = hasPersistedValue ? Number(setting.value) : ZOOM_DEFAULT;
+  if (!setting.isLoading || hasPersistedValue) {
+    currentRef.current = persisted;
+  }
 
   useEffect(() => {
+    if (setting.isLoading && !hasPersistedValue) return;
     applyZoom(persisted);
-  }, [persisted]);
+  }, [hasPersistedValue, persisted, setting.isLoading]);
 
   const setZoom = useCallback(
     (level: number) => {

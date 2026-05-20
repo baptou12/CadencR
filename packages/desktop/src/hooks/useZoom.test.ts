@@ -42,15 +42,16 @@ function bridge(): CadencrDesktopBridge {
 
 const mockSetValue = vi.fn();
 const mockSettingValue = { current: null as string | null };
+const mockSettingLoading = { current: false };
 vi.mock("./useDebouncedSetting", () => ({
   useDebouncedSetting: () => ({
     value: mockSettingValue.current,
     setValue: mockSetValue,
-    isLoading: false,
+    isLoading: mockSettingLoading.current,
   }),
 }));
 
-vi.mock("react-hotkeys-hook", () => ({
+vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
 }));
 
@@ -59,6 +60,7 @@ describe("useZoom", () => {
     mockSetZoom.mockClear();
     mockSetValue.mockClear();
     mockSettingValue.current = null;
+    mockSettingLoading.current = false;
     setDesktopBridgeOverrideForTests(bridge());
   });
 
@@ -79,6 +81,15 @@ describe("useZoom", () => {
     mockSettingValue.current = "120";
     renderHook(() => useZoom());
     expect(mockSetZoom).toHaveBeenCalledWith(1.2);
+  });
+
+  it("does not apply the default zoom while the persisted setting is still loading", () => {
+    mockSettingValue.current = null;
+    mockSettingLoading.current = true;
+
+    renderHook(() => useZoom());
+
+    expect(mockSetZoom).not.toHaveBeenCalled();
   });
 
   it("zoomIn increases by 10%", () => {
