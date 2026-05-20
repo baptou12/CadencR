@@ -27,6 +27,17 @@ describe("buildUserMessageContent", () => {
     });
   });
 
+  it("omits the text block for image-only messages", () => {
+    const result = buildUserMessageContent("", [{ base64: "abc123", mimeType: "image/png" }]);
+
+    expect(JSON.parse(result)).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "abc123" },
+      },
+    ]);
+  });
+
   it("handles multiple images", () => {
     const result = buildUserMessageContent("two images", [
       { base64: "img1", mimeType: "image/png" },

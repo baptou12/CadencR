@@ -20,16 +20,23 @@ interface ParsedUserMessageContent {
   images: ParsedUserMessageImage[];
 }
 
+type UserMessageContentBlock =
+  | { type: "text"; text: string }
+  | {
+      type: "image";
+      source: { type: "base64"; media_type: string; data: string };
+    };
+
 /** Build the `content` string for a user_message block (plain text or JSON with images). */
 export function buildUserMessageContent(text: string, images?: ImagePayload[]): string {
   if (!images || images.length === 0) return text;
-  return JSON.stringify([
-    { type: "text", text },
-    ...images.map((img) => ({
-      type: "image",
-      source: { type: "base64", media_type: img.mimeType, data: img.base64 },
-    })),
-  ]);
+  const blocks: UserMessageContentBlock[] = text.length > 0 ? [{ type: "text", text }] : [];
+  const imageBlocks = images.map((img) => ({
+    type: "image" as const,
+    source: { type: "base64" as const, media_type: img.mimeType, data: img.base64 },
+  }));
+  blocks.push(...imageBlocks);
+  return JSON.stringify(blocks);
 }
 
 export function parseUserMessageContent(content: string): ParsedUserMessageContent {

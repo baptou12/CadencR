@@ -151,6 +151,7 @@ mod tests {
                 }
             }
         ]));
+        assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0]["type"], "image");
         assert_eq!(blocks[0]["mimeType"], "image/png");
         assert_eq!(blocks[0]["data"], "BASE64==");

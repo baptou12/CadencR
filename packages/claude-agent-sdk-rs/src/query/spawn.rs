@@ -180,4 +180,46 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init",
         let sid = q.session_id().await;
         assert_eq!(sid, Some("sess_init".to_string()));
     }
+
+    #[tokio::test]
+    async fn query_writes_image_only_content_without_synthesizing_text() {
+        let dir = TempDir::new().unwrap();
+        let captured_path = dir.path().join("user_prompt.json");
+        let script = format!(
+            r#"#!/bin/sh
+set -e
+CAPTURED='{}'
+read -r INIT_REQ
+INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{}}}}}}\n' "$INIT_ID"
+read -r USER_PROMPT
+printf '%s' "$USER_PROMPT" > "$CAPTURED"
+echo '{{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_image","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}}'
+echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_image","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"permission_denials":[],"structured_output":null}}'
+"#,
+            captured_path.display()
+        );
+        let script_path = write_mock_cli(dir.path(), &script);
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+        let content = serde_json::json!([{
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": "abc"
+            }
+        }]);
+
+        let mut q = query(content.clone(), options).await.unwrap();
+        while q.next().await.is_some() {}
+
+        let captured_raw = std::fs::read_to_string(captured_path).expect("captured prompt");
+        let captured: serde_json::Value =
+            serde_json::from_str(captured_raw.trim()).expect("captured prompt JSON");
+        assert_eq!(captured["message"]["content"], content);
+    }
 }

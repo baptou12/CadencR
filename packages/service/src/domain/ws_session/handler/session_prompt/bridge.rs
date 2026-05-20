@@ -24,11 +24,14 @@ pub(crate) fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_
     if images.is_empty() {
         serde_json::Value::String(text.to_string())
     } else {
-        let mut blocks: Vec<serde_json::Value> = Vec::with_capacity(1 + images.len());
-        blocks.push(serde_json::json!({
-            "type": "text",
-            "text": text
-        }));
+        let mut blocks: Vec<serde_json::Value> =
+            Vec::with_capacity(images.len() + usize::from(!text.is_empty()));
+        if !text.is_empty() {
+            blocks.push(serde_json::json!({
+                "type": "text",
+                "text": text
+            }));
+        }
         for img in images {
             blocks.push(serde_json::json!({
                 "type": "image",
@@ -52,6 +55,27 @@ pub(crate) fn build_persist_content(text: &str, images: &[ImagePayload]) -> Stri
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{build_content_value, ImagePayload};
+
+    #[test]
+    fn content_blocks_match_text_presence() {
+        let images = vec![ImagePayload {
+            base64: "abc".into(),
+            mime_type: "image/png".into(),
+        }];
+        let image_only = build_content_value("", &images);
+        assert_eq!(image_only.as_array().map(Vec::len), Some(1));
+        assert_eq!(image_only[0]["type"], "image");
+        assert_eq!(image_only[0]["source"]["data"], "abc");
+        let content = build_content_value("hello", &images);
+        assert_eq!(content.as_array().map(Vec::len), Some(2));
+        assert_eq!(content[0]["text"], "hello");
+        assert_eq!(content[1]["source"]["data"], "abc");
+    }
+}
+
 #[derive(Clone)]
 pub struct PermissionResponse {
     pub(crate) request_id: String,
@@ -71,10 +95,6 @@ pub(super) struct WsBridgeCanUseTool {
     pub(super) db_session_id: i64,
     pub(super) write_pool: sqlx::SqlitePool,
     pub(super) session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
-    /// Per-connection SDK session table, used by the post-`ExitPlanMode`
-    /// path to push a `set_permission_mode` control command into the live
-    /// CLI process before returning `Allow` — so the agent never resumes
-    /// the turn in stale `plan` mode while the chip pretends otherwise.
     pub(super) sdk_sessions: SdkSessions,
 }
 
@@ -90,7 +110,6 @@ impl RuntimeToolPermissionHandler for WsBridgeCanUseTool {
             "WsBridgeCanUseTool::can_use_tool called"
         );
 
-        // EnterPlanMode: persist permission_mode = 'plan' to DB
         if request.tool_name == "EnterPlanMode" {
             let _ = sqlx::query("UPDATE agent_sessions SET permission_mode = 'plan' WHERE id = ?")
                 .bind(self.db_session_id)
@@ -103,7 +122,6 @@ impl RuntimeToolPermissionHandler for WsBridgeCanUseTool {
             };
         }
 
-        // Intercept ExitPlanMode: persist to DB, send plan_approval event, and block until user responds.
         if request.tool_name == "ExitPlanMode" {
             return self.handle_exit_plan_mode(&request).await;
         }
@@ -133,8 +151,6 @@ impl WsBridgeCanUseTool {
 
         let enriched_input = self.attach_plan_to_exit_block(request).await;
         if enriched_input != request.input {
-            // Enriched retry: refresh the DB payload without re-broadcasting
-            // askUser (still the same gate).
             let enriched_payload = self.plan_permission_payload(request, enriched_input);
             WsSessionPersistence::set_pending_user_input_static(
                 &self.write_pool,
@@ -156,9 +172,6 @@ impl WsBridgeCanUseTool {
                         "permission response request_id mismatch, applying latest response",
                     );
                 }
-                // Plan-approval gate: a Deny *with* feedback hands the turn
-                // back to the agent (user is asking for a revision). Bare
-                // Denies terminate the turn like any other rejection.
                 WsSessionPersistence::mark_agent_resumed_static(
                     &self.write_pool,
                     &self.session_status_tx,
@@ -174,9 +187,6 @@ impl WsBridgeCanUseTool {
                 self.apply_exit_plan_decision(request, response).await
             }
             None => {
-                // Channel closed before a response. Clear the DB gate AND
-                // broadcast Idle so any subscribed client still showing
-                // Question drops back to idle.
                 WsSessionPersistence::mark_agent_resumed_static(
                     &self.write_pool,
                     &self.session_status_tx,
@@ -234,16 +244,7 @@ impl WsBridgeCanUseTool {
         }
     }
 
-    /// Push the post-plan-approval permission mode to the live CLI process,
-    /// update the per-connection handle + DB, and broadcast `mode.changed`
-    /// so the chip flips at the same moment the agent actually sees the new
-    /// mode. Runs synchronously (within the `can_use_tool` callback) so the
-    /// SDK can never resume the turn in stale `plan` mode.
-    ///
-    /// Mutations are gated on the CLI accepting the change: if
-    /// `set_permission_mode` fails we surface an error envelope and leave
-    /// the handle / DB / chip alone. Lying about CLI state is exactly the
-    /// bug class this whole code path was rewritten to fix.
+    /// Push post-plan permission mode to CLI, DB, and UI in one synchronous path.
     async fn transition_to_post_plan_mode(&self) {
         if let Err(e) = transition_session_to_post_plan_mode(
             &self.sdk_sessions,

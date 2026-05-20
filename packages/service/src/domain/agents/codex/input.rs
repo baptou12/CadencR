@@ -161,6 +161,7 @@ mod tests {
             &mut temp_files,
         )
         .unwrap();
+        assert_eq!(input.len(), 1);
         let path = input[0]["path"].as_str().unwrap();
 
         assert!(path.ends_with(".webp"));
