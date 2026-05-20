@@ -140,7 +140,6 @@ export const AgentSession = memo(
     // mixing scopes created dual-source bugs where the header showed
     // "In Progress" next to a visible Resume button.
     const isAgentWorking = status === "agent";
-    const shouldShowStreamingIndicator = true;
     const workingLifecycle = isAgentWorking ? lifecycle : undefined;
     const workingLabel = useTurnWorkingLabel(workingLifecycle, turnTiming);
 
