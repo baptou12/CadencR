@@ -12,6 +12,8 @@ import { AgentStreamItem } from "./agent-session/AgentStreamItem";
 import { buildDisplayBlockKeys, filterRenderableBlocks } from "./agentStreamDisplay";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { isTurnInProgress } from "@/components/TurnWorkingLabel";
+import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
+import { AgentMasonryStream } from "@/components/AgentMasonryStream";
 
 type ScrollRef = (el: HTMLElement | null) => void;
 const FIRST_ITEM_INDEX_BASE = 1_000_000;
@@ -77,6 +79,7 @@ interface AgentStreamProps {
   isLoadingOlder?: boolean;
   /** Number of rendered Virtuoso rows prepended by older-history pagination. */
   historyPrependDisplayOffset?: number;
+  verbosityMode?: AgentVerbosityMode;
 }
 
 const StreamingCursor = memo(function StreamingCursor({ label }: { label: string }) {
@@ -155,6 +158,7 @@ export const AgentStream = memo(function AgentStream({
   onStartReached,
   isLoadingOlder = false,
   historyPrependDisplayOffset = 0,
+  verbosityMode = "maximal",
 }: AgentStreamProps) {
   const rootBlocks = useRootBlocks(blocks, rootBlocksProp);
   const displayBlocks = useMemo(() => filterRenderableBlocks(rootBlocks), [rootBlocks]);
@@ -207,6 +211,7 @@ export const AgentStream = memo(function AgentStream({
         isStreaming={ctx.streamingBlockId === block.id}
         basePath={basePath}
         toolResultMap={toolResultMap}
+        verbosityMode={verbosityMode}
       />
     ),
     [basePath, toolResultMap],
@@ -219,6 +224,19 @@ export const AgentStream = memo(function AgentStream({
           <TurnProgressCursor lifecycle={lifecycle} label={workingLabel} />
         )}
       </div>
+    );
+  }
+
+
+  if (verbosityMode === "masonry") {
+    return (
+      <AgentMasonryStream
+        blocks={displayBlocks}
+        isStreaming={isStreaming}
+        basePath={basePath}
+        toolResultMap={toolResultMap}
+        verbosityMode={verbosityMode}
+      />
     );
   }
 

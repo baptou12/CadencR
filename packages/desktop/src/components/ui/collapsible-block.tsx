@@ -22,6 +22,10 @@ interface CollapsibleBlockProps {
   bodyClassName?: string;
   /** Class for the truncation indicator */
   truncationClassName?: string;
+  /** Controlled expand state (optional) */
+  expanded?: boolean;
+  /** Controlled state callback */
+  onExpandedChange?: (next: boolean) => void;
 }
 
 export function CollapsibleBlock({
@@ -35,10 +39,19 @@ export function CollapsibleBlock({
   toggleClassName,
   bodyClassName,
   truncationClassName,
+  expanded,
+  onExpandedChange,
 }: CollapsibleBlockProps) {
-  const [showAll, setShowAll] = useState(false);
+  const [internalShowAll, setInternalShowAll] = useState(false);
+  const showAll = expanded ?? internalShowAll;
   const needsCollapse = totalCount > visibleCount;
   const hiddenCount = totalCount - visibleCount;
+
+  const toggleShowAll = () => {
+    const next = !showAll;
+    onExpandedChange?.(next);
+    if (expanded === undefined) setInternalShowAll(next);
+  };
 
   return (
     <div className={cn("my-1 rounded-md border overflow-hidden", className)}>
@@ -48,7 +61,7 @@ export function CollapsibleBlock({
           <button
             type="button"
             className={cn("shrink-0", toggleClassName)}
-            onClick={() => setShowAll(!showAll)}
+            onClick={toggleShowAll}
           >
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>

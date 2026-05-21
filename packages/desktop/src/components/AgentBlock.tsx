@@ -28,6 +28,7 @@ import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { isTaskTodoTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
+import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
 
 /** Block types that the agent stream can produce */
@@ -97,6 +98,9 @@ interface AgentBlockProps {
   basePath?: string;
   /** Map of toolUseId → tool_result block for inlining results into tool_call blocks */
   toolResultMap?: Map<string, AgentBlockData>;
+  verbosityMode?: AgentVerbosityMode;
+  isCollapsedByPolicy?: boolean;
+  onExpandedChange?: (next: boolean) => void;
 }
 
 export const AgentBlock = memo(function AgentBlock({
@@ -104,6 +108,9 @@ export const AgentBlock = memo(function AgentBlock({
   isStreaming,
   basePath,
   toolResultMap,
+  verbosityMode = "maximal",
+  isCollapsedByPolicy = false,
+  onExpandedChange,
 }: AgentBlockProps) {
   // Always thread a cache key — including the actively streaming block — so
   // Virtuoso re-renders that don't change the markdown content (size measure
@@ -148,6 +155,8 @@ export const AgentBlock = memo(function AgentBlock({
             isError={result?.isError}
             messageId={result ? messageIdFromBlockId(result.id) : undefined}
             truncatedContent={result?.truncatedContent === true}
+            expanded={verbosityMode === "auto_collapse" ? !isCollapsedByPolicy : undefined}
+            onExpandedChange={onExpandedChange}
           />
         );
       }
@@ -180,7 +189,14 @@ export const AgentBlock = memo(function AgentBlock({
       return null;
     }
     case "thinking":
-      return <ThinkingBlock content={block.content} cacheKey={markdownCacheKey} />;
+      return (
+        <ThinkingBlock
+          content={block.content}
+          cacheKey={markdownCacheKey}
+          expanded={verbosityMode === "auto_collapse" ? !isCollapsedByPolicy : undefined}
+          onExpandedChange={onExpandedChange}
+        />
+      );
     case "user_message":
       return (
         <UserMessageBlock

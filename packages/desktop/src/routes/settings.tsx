@@ -34,6 +34,7 @@ import { DangerousModeToggle } from "@/components/settings/DangerousModeToggle";
 import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
+import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
@@ -410,6 +411,7 @@ function RuntimeSection(): React.JSX.Element {
     >
       <SettingsCard>
         <ModelSelector level="global" />
+        <AgentVerbositySettings />
       </SettingsCard>
     </SettingsSection>
   );

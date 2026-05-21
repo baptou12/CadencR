@@ -37,6 +37,8 @@ import { CollapsibleHeader } from "./CollapsibleHeader";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
 import { SessionHint } from "./SessionHint";
 import { useTurnWorkingLabel } from "@/components/TurnWorkingLabel";
+import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { AGENT_VERBOSITY_SETTING_KEY, parseAgentVerbosityMode } from "@/lib/agent-verbosity";
 
 /**
  * Container width below which the auto-scroll, todos, and info chips slide
@@ -280,6 +282,9 @@ export const AgentSession = memo(
     const showWorktreeChip = blocks.length === 0 && !!onToggleWorktree;
     const showAutoScrollChip = !!shouldShowPromptBar;
 
+    const verbositySetting = useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY);
+    const verbosityMode = parseAgentVerbosityMode(verbositySetting.value);
+
     const isNarrow = useNarrowContainer(containerRef, META_BAR_COMPACT_THRESHOLD_PX);
 
     // When narrow, secondary chips render below the prompt — so they don't
@@ -354,6 +359,7 @@ export const AgentSession = memo(
           onStartReached={onStartReached}
           isLoadingOlder={isLoadingOlder}
           historyPrependDisplayOffset={historyPrependDisplayOffset}
+          verbosityMode={verbosityMode}
         />
       ) : null;
 

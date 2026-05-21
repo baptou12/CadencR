@@ -1,14 +1,21 @@
-import { memo } from "react";
+import { memo, useEffect, useState } from "react";
 import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "../AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
 import AgentStreamContextMenu from "./AgentStreamContextMenu";
+import { isToolAutoCollapsible, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 
 interface AgentStreamItemProps {
   block: AgentBlockData;
   isStreaming?: boolean;
   basePath?: string;
   toolResultMap: Map<string, AgentBlockData>;
+  verbosityMode?: AgentVerbosityMode;
+}
+
+function shouldAutoCollapse(block: AgentBlockData): boolean {
+  if (block.type === "thinking") return true;
+  return block.type === "tool_call" && isToolAutoCollapsible(block.toolName);
 }
 
 function formatTimestamp(iso: string): string {
@@ -33,7 +40,22 @@ export const AgentStreamItem = memo(function AgentStreamItem({
   isStreaming,
   basePath,
   toolResultMap,
+  verbosityMode = "maximal",
 }: AgentStreamItemProps) {
+  const [collapsedByPolicy, setCollapsedByPolicy] = useState(false);
+  useEffect(() => {
+    if (verbosityMode !== "auto_collapse" || !shouldAutoCollapse(block)) {
+      setCollapsedByPolicy(false);
+      return;
+    }
+    if (isStreaming) {
+      setCollapsedByPolicy(false);
+      return;
+    }
+    const timer = setTimeout(() => setCollapsedByPolicy(true), 3000);
+    return () => clearTimeout(timer);
+  }, [block, isStreaming, verbosityMode]);
+
   const showHeader = (block.type === "text" || block.type === "user_message") && !!block.createdAt;
   const isUserMessage = block.type === "user_message";
 
@@ -56,6 +78,9 @@ export const AgentStreamItem = memo(function AgentStreamItem({
           isStreaming={isStreaming}
           basePath={basePath}
           toolResultMap={toolResultMap}
+          verbosityMode={verbosityMode}
+          isCollapsedByPolicy={collapsedByPolicy}
+          onExpandedChange={(next) => setCollapsedByPolicy(!next)}
         />
       </div>
     </AgentStreamContextMenu>

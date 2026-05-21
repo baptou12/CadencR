@@ -31,6 +31,8 @@ export interface BashBlockProps {
   truncatedContent?: boolean;
   bodyExtraClassName?: string;
   runningFooter?: ReactNode;
+  expanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
 }
 
 export const BashBlock = memo(function BashBlock({
@@ -43,6 +45,8 @@ export const BashBlock = memo(function BashBlock({
   truncatedContent,
   bodyExtraClassName,
   runningFooter,
+  expanded,
+  onExpandedChange,
 }: BashBlockProps): ReactElement {
   const lines = content?.split("\n") ?? [];
   const totalLines = lines.length;
@@ -74,6 +78,8 @@ export const BashBlock = memo(function BashBlock({
               bodyExtraClassName,
             )}
             truncationClassName="text-[var(--block-bash-muted-fg)]/70"
+            expanded={expanded}
+            onExpandedChange={onExpandedChange}
             header={
               <>
                 <TerminalIcon className="size-3 shrink-0" />

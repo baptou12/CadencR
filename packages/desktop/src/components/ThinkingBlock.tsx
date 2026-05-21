@@ -7,14 +7,25 @@ import { cn } from "@/lib/utils";
 interface ThinkingBlockProps {
   content: string;
   cacheKey?: string;
+  expanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
 }
 
 export const ThinkingBlock = memo(function ThinkingBlock({
   content,
   cacheKey,
+  expanded,
+  onExpandedChange,
 }: ThinkingBlockProps): ReactElement | null {
-  const [expanded, setExpanded] = useState(true);
+  const [internalExpanded, setInternalExpanded] = useState(true);
+  const isExpanded = expanded ?? internalExpanded;
   if (!content.trim()) return null;
+
+  const toggleExpanded = () => {
+    const next = !isExpanded;
+    onExpandedChange?.(next);
+    if (expanded === undefined) setInternalExpanded(next);
+  };
 
   // The agent's internal monologue. Surface + accent come from the theme's
   // `--block-thinking-*` tokens; the outline uses the neutral `--border`
@@ -24,18 +35,18 @@ export const ThinkingBlock = memo(function ThinkingBlock({
       <button
         type="button"
         className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs"
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
       >
         <BrainIcon className="size-3 text-[var(--block-thinking-accent)]" />
         <span className="font-medium text-[var(--block-thinking-accent)]">Thinking</span>
         <ChevronRightIcon
           className={cn(
             "ml-auto size-3 text-muted-foreground transition-transform",
-            expanded && "rotate-90",
+            isExpanded && "rotate-90",
           )}
         />
       </button>
-      {expanded && (
+      {isExpanded && (
         <div className="border-t border-border px-3 py-2">
           <Markdown
             content={content}
