@@ -77,7 +77,6 @@ const VIRTUAL_FILE_METRICS: Partial<VirtualFileMetrics> = {
   lineHeight: 19,
   diffHeaderHeight: 38,
   hunkSeparatorHeight: 32,
-  fileGap: 0,
 };
 
 function getRenderableFilePatches(patch: string): RenderableFilePatch[] {
@@ -161,7 +160,6 @@ function SafePatchDiff<LAnnotation>({
         renderHeaderMetadata,
         renderAnnotation,
         renderGutterUtility: undefined,
-        renderHoverUtility: undefined,
         lineAnnotations,
         getHoveredLine,
       }),

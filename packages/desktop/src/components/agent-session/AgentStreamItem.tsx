@@ -1,9 +1,13 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { format, isToday } from "date-fns";
 import { AgentBlock, type AgentBlockData } from "../AgentBlock";
 import { parseUTCDateTime } from "@/lib/date-utils";
 import AgentStreamContextMenu from "./AgentStreamContextMenu";
-import { isToolAutoCollapsible, type AgentVerbosityMode } from "@/lib/agent-verbosity";
+import {
+  AGENT_AUTO_COLLAPSE_DELAY_MS,
+  isToolAutoCollapsible,
+  type AgentVerbosityMode,
+} from "@/lib/agent-verbosity";
 
 interface AgentStreamItemProps {
   block: AgentBlockData;
@@ -13,28 +17,12 @@ interface AgentStreamItemProps {
   verbosityMode?: AgentVerbosityMode;
 }
 
-function shouldAutoCollapse(block: AgentBlockData): boolean {
-  if (block.type === "thinking") return true;
-  return block.type === "tool_call" && isToolAutoCollapsible(block.toolName);
-}
-
 function formatTimestamp(iso: string): string {
   const date = parseUTCDateTime(iso);
   if (isToday(date)) return format(date, "HH:mm");
   return format(date, "yyyy/MM/dd HH:mm");
 }
 
-/**
- * Single item rendered inside `AgentStream`. Memoised so a parent re-render
- * (e.g. a panel resize that bubbles new layout dimensions) does not walk into
- * the underlying `AgentBlock` tree. Props must remain stable: `toolResultMap`
- * is memoised upstream, `basePath` / `isStreaming` are primitives.
- *
- * Keep this wrapper layout-neutral. Virtuoso owns measurement and scroll
- * anchoring; browser-level `content-visibility: auto` uses estimated
- * off-screen heights, which makes `scrollHeight` change while scrolling back
- * through long conversations and causes visible jumps/flicker.
- */
 export const AgentStreamItem = memo(function AgentStreamItem({
   block,
   isStreaming,
@@ -43,8 +31,22 @@ export const AgentStreamItem = memo(function AgentStreamItem({
   verbosityMode = "maximal",
 }: AgentStreamItemProps) {
   const [collapsedByPolicy, setCollapsedByPolicy] = useState(false);
+
+  const wasStreamingRef = useRef(false);
+  if (isStreaming) wasStreamingRef.current = true;
+
+  const blockId = block.id;
+  const blockType = block.type;
+  const toolName = block.type === "tool_call" ? block.toolName : undefined;
+
   useEffect(() => {
-    if (verbosityMode !== "auto_collapse" || !shouldAutoCollapse(block)) {
+    if (verbosityMode !== "auto_collapse") {
+      setCollapsedByPolicy(false);
+      return;
+    }
+    const autoCollapsible =
+      blockType === "thinking" || (blockType === "tool_call" && isToolAutoCollapsible(toolName));
+    if (!autoCollapsible) {
       setCollapsedByPolicy(false);
       return;
     }
@@ -52,9 +54,15 @@ export const AgentStreamItem = memo(function AgentStreamItem({
       setCollapsedByPolicy(false);
       return;
     }
-    const timer = setTimeout(() => setCollapsedByPolicy(true), 3000);
+    if (!wasStreamingRef.current) {
+      setCollapsedByPolicy(true);
+      return;
+    }
+    const timer = setTimeout(() => setCollapsedByPolicy(true), AGENT_AUTO_COLLAPSE_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [block, isStreaming, verbosityMode]);
+  }, [blockId, blockType, toolName, isStreaming, verbosityMode]);
+
+  const handleExpandedChange = useCallback((next: boolean) => setCollapsedByPolicy(!next), []);
 
   const showHeader = (block.type === "text" || block.type === "user_message") && !!block.createdAt;
   const isUserMessage = block.type === "user_message";
@@ -80,7 +88,7 @@ export const AgentStreamItem = memo(function AgentStreamItem({
           toolResultMap={toolResultMap}
           verbosityMode={verbosityMode}
           isCollapsedByPolicy={collapsedByPolicy}
-          onExpandedChange={(next) => setCollapsedByPolicy(!next)}
+          onExpandedChange={handleExpandedChange}
         />
       </div>
     </AgentStreamContextMenu>

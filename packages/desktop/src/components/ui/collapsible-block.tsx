@@ -58,11 +58,7 @@ export function CollapsibleBlock({
       <div className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", headerClassName)}>
         {header}
         {needsCollapse && (
-          <button
-            type="button"
-            className={cn("shrink-0", toggleClassName)}
-            onClick={toggleShowAll}
-          >
+          <button type="button" className={cn("shrink-0", toggleClassName)} onClick={toggleShowAll}>
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>
         )}

@@ -1,55 +1,49 @@
-import { LayoutGrid, ListTree, Minimize2 } from "lucide-react";
+import { createElement, useMemo } from "react";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
+  AGENT_VERBOSITY_OPTIONS,
   AGENT_VERBOSITY_SETTING_KEY,
-  AGENT_VERBOSITY_MODES,
   parseAgentVerbosityMode,
   type AgentVerbosityMode,
 } from "@/lib/agent-verbosity";
-import { IconTile } from "@/components/settings/IconTile";
-import { SettingsRow } from "@/components/settings/SettingsRow";
-
-const LABELS: Record<AgentVerbosityMode, string> = {
-  maximal: "Maximal (default)",
-  auto_collapse: "Auto-collapse (3s)",
-  masonry: "Masonry tools",
-};
+import { RadioCardGroup, type RadioCardOption } from "@/components/settings/RadioCardGroup";
 
 export function AgentVerbositySettings(): React.JSX.Element {
-  const modeSetting = useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY);
+  const modeSetting = useDebouncedSetting(AGENT_VERBOSITY_SETTING_KEY, 0);
   const currentMode = parseAgentVerbosityMode(modeSetting.value);
 
+  const options = useMemo<RadioCardOption<AgentVerbosityMode>[]>(
+    () =>
+      AGENT_VERBOSITY_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        description: option.description,
+        visual: createElement(option.icon, {
+          className: "mt-0.5 size-4",
+          style: { color: option.iconColorVar },
+        }),
+      })),
+    [],
+  );
+
   return (
-    <SettingsRow
-      align="start"
-      icon={
-        <IconTile tint="violet">
-          <ListTree className="size-4" />
-        </IconTile>
-      }
-      label="Agent output verbosity"
-      description="Choose between full stream detail, timed auto-collapse for tools/thinking, or compact side-by-side tool layout."
-      control={
-        <div className="flex items-center gap-2">
-          <select
-            value={currentMode}
-            onChange={(event) => modeSetting.setValue(event.target.value)}
-            className="h-8 rounded-md border border-border bg-card px-2 text-sm"
-            aria-label="Agent output verbosity"
-          >
-            {AGENT_VERBOSITY_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {LABELS[mode]}
-              </option>
-            ))}
-          </select>
-          {currentMode === "maximal" && <ListTree className="size-4 text-muted-foreground" />}
-          {currentMode === "auto_collapse" && (
-            <Minimize2 className="size-4 text-muted-foreground" />
-          )}
-          {currentMode === "masonry" && <LayoutGrid className="size-4 text-muted-foreground" />}
-        </div>
-      }
-    />
+    <div className="space-y-2 rounded-xl border border-border/60 bg-card/30 p-3">
+      <div>
+        <div className="text-sm font-medium">Agent output verbosity</div>
+        <p className="text-xs text-muted-foreground">
+          Control how much of each agent turn stays expanded in the stream. Switching modes does not
+          affect what the agent does — only how its output is rendered.
+        </p>
+      </div>
+      <RadioCardGroup<AgentVerbosityMode>
+        ariaLabel="Agent output verbosity"
+        value={currentMode}
+        onChange={modeSetting.setValue}
+        options={options}
+        layout="stack"
+        showDot={false}
+        disabled={modeSetting.isLoading}
+      />
+    </div>
   );
 }
