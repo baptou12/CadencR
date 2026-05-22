@@ -70,6 +70,11 @@ vi.mock("@/api/generated", () => ({
   useReadFile: vi.fn(() => mockReadFileReturn),
   useWriteFile: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetBlame: vi.fn(() => ({ data: undefined })),
+  useGetFeatureWorkingDir: vi.fn(() => ({ data: undefined })),
+}));
+
+vi.mock("@/lib/lsp/useLsp", () => ({
+  useLsp: vi.fn(() => []),
 }));
 
 vi.mock("@/stores/editor-store", () => ({

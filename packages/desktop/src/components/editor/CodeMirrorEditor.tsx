@@ -1,9 +1,10 @@
 import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import { EditorView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
-import { useReadFile, useWriteFile, useGetBlame } from "@/api/generated";
+import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
+import { useLsp } from "@/lib/lsp/useLsp";
 import { getLanguageExtension } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
@@ -73,6 +74,19 @@ export default function CodeMirrorEditor({
   isAutoSaveEnabledRef.current = isAutoSaveEnabled;
 
   const blameCompartment = useRef(new Compartment());
+  const lspCompartment = useRef(new Compartment());
+
+  // Workspace root for LSP. The working-dir query is also fired by other
+  // components (file watcher, project tree) — React Query dedupes by key, so
+  // this is effectively free.
+  const cwdQuery = useGetFeatureWorkingDir(
+    featureId,
+    { project_id: projectId },
+    { query: { enabled: Boolean(featureId && projectId), refetchOnWindowFocus: false } },
+  );
+  const workspaceRoot = cwdQuery.data?.path ?? undefined;
+  const lspExtension = useLsp({ workspaceRoot, filePath, featureId, paneId });
+
   const { data: blameData } = useGetBlame(
     { project_id: projectId, feature_id: featureId, file_path: filePath },
     {
@@ -185,6 +199,16 @@ export default function CodeMirrorEditor({
     view.dispatch({ effects: blameCompartment.current.reconfigure(ext) });
   }, [isBlameEnabled, blameData]);
 
+  // Hot-swap LSP extensions once the client for this file's language is ready.
+  // `lspExtension` is `[]` until the session and WebSocket are open; we
+  // reconfigure the compartment then so the editor picks up cmd-click + F12
+  // without remounting.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({ effects: lspCompartment.current.reconfigure(lspExtension) });
+  }, [lspExtension]);
+
   const cursorExtension = useMemo(() => {
     return EditorView.updateListener.of((update) => {
       if (update.selectionSet) {
@@ -264,7 +288,11 @@ export default function CodeMirrorEditor({
         vimMode={isVimEnabled}
         onChange={handleChange}
         onSave={handleSave}
-        extraExtensions={[cursorExtension, blameCompartment.current.of([])]}
+        extraExtensions={[
+          cursorExtension,
+          blameCompartment.current.of([]),
+          lspCompartment.current.of([]),
+        ]}
         editorViewRef={viewRef}
         onEditorViewChange={handleEditorViewChange}
         className="flex-1 overflow-auto"
