@@ -16,18 +16,26 @@ interface CollapsibleBlockProps {
   className?: string;
   /** Class for the header bar */
   headerClassName?: string;
-  /** Class for the toggle button */
+  /** Class for the inner "Show last N / Show all N" toggle button */
   toggleClassName?: string;
   /** Class for the body/content area */
   bodyClassName?: string;
   /** Class for the truncation indicator */
   truncationClassName?: string;
-  /** Controlled expand state (optional) */
-  expanded?: boolean;
-  /** Controlled state callback */
-  onExpandedChange?: (next: boolean) => void;
+  /**
+   * Outer body fold. When true, the body is not rendered at all — only the
+   * header remains. Used by the auto-collapse verbosity mode and by callers
+   * that own their own outer toggle.
+   */
+  bodyHidden?: boolean;
 }
 
+/**
+ * Two collapse axes — one shows the last N / all N lines (controlled by an
+ * inline button that only appears when `totalCount > visibleCount`), the
+ * other completely hides the body (`bodyHidden`). Callers can drive either,
+ * neither, or both.
+ */
 export function CollapsibleBlock({
   totalCount,
   visibleCount,
@@ -39,38 +47,36 @@ export function CollapsibleBlock({
   toggleClassName,
   bodyClassName,
   truncationClassName,
-  expanded,
-  onExpandedChange,
+  bodyHidden = false,
 }: CollapsibleBlockProps) {
-  const [internalShowAll, setInternalShowAll] = useState(false);
-  const showAll = expanded ?? internalShowAll;
+  const [showAll, setShowAll] = useState(false);
   const needsCollapse = totalCount > visibleCount;
   const hiddenCount = totalCount - visibleCount;
-
-  const toggleShowAll = () => {
-    const next = !showAll;
-    onExpandedChange?.(next);
-    if (expanded === undefined) setInternalShowAll(next);
-  };
 
   return (
     <div className={cn("my-1 rounded-md border overflow-hidden", className)}>
       <div className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", headerClassName)}>
         {header}
-        {needsCollapse && (
-          <button type="button" className={cn("shrink-0", toggleClassName)} onClick={toggleShowAll}>
+        {!bodyHidden && needsCollapse && (
+          <button
+            type="button"
+            className={cn("shrink-0", toggleClassName)}
+            onClick={() => setShowAll((prev) => !prev)}
+          >
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>
         )}
       </div>
-      <div className={bodyClassName}>
-        {!showAll && needsCollapse && (
-          <div className={cn("text-xs", truncationClassName)}>
-            ... ({hiddenCount} {unit} above)
-          </div>
-        )}
-        {children({ showAll: showAll || !needsCollapse })}
-      </div>
+      {!bodyHidden && (
+        <div className={bodyClassName}>
+          {!showAll && needsCollapse && (
+            <div className={cn("text-xs", truncationClassName)}>
+              ... ({hiddenCount} {unit} above)
+            </div>
+          )}
+          {children({ showAll: showAll || !needsCollapse })}
+        </div>
+      )}
     </div>
   );
 }

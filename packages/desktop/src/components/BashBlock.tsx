@@ -1,11 +1,12 @@
 import { memo, useMemo, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2Icon, TerminalIcon } from "lucide-react";
+import { ChevronRightIcon, Loader2Icon, TerminalIcon } from "lucide-react";
 import { getGetMessageFullContentQueryKey, getMessageFullContent } from "@/api/generated";
 import { cn } from "@/lib/utils";
 import { parseAnsi } from "@/lib/ansi-to-html";
 import { copyToClipboard } from "@/lib/clipboard";
 import { extractBashResultOutput } from "@/lib/tool-adapter";
+import { useControllableBoolean } from "@/hooks/useControllableBoolean";
 import { CollapsibleBlock } from "@/components/ui/collapsible-block";
 import {
   ContextMenu,
@@ -57,6 +58,16 @@ export const BashBlock = memo(function BashBlock({
     [command],
   );
 
+  // `expanded` controls whether the body is rendered at all (the outer
+  // fold toggle, mirrored at the end of the header bar). The internal
+  // "Show last N / Show all N" button inside `CollapsibleBlock` keeps its
+  // own state — those are two independent collapse axes.
+  const { value: isBodyOpen, toggle: toggleBodyOpen } = useControllableBoolean({
+    value: expanded,
+    onChange: onExpandedChange,
+    defaultValue: true,
+  });
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -70,7 +81,7 @@ export const BashBlock = memo(function BashBlock({
               "bg-[var(--block-bash-header-bg)] py-1",
               isError ? "text-destructive" : "text-[var(--block-bash-muted-fg)]",
             )}
-            toggleClassName="ml-auto text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
+            toggleClassName="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
             bodyClassName={cn(
               "px-3 py-2 text-xs leading-relaxed overflow-x-auto font-mono",
               "bg-[var(--block-bash-body-bg)]",
@@ -78,15 +89,34 @@ export const BashBlock = memo(function BashBlock({
               bodyExtraClassName,
             )}
             truncationClassName="text-[var(--block-bash-muted-fg)]/70"
-            expanded={expanded}
-            onExpandedChange={onExpandedChange}
+            bodyHidden={!isBodyOpen}
             header={
               <>
                 <TerminalIcon className="size-3 shrink-0" />
                 <span className="font-medium text-[var(--block-bash-fg)]">Bash</span>
-                <pre className="font-mono whitespace-pre-wrap break-all">
-                  {formattedCommand ?? "Running command…"}
+                <pre
+                  className={cn(
+                    "min-w-0 flex-1 font-mono",
+                    // Collapsed: single-line ellipsis with the full command on
+                    // hover. Expanded: wrap with line breaks before shell
+                    // operators (inserted by `formatShellCommand`).
+                    isBodyOpen ? "whitespace-pre-wrap break-all" : "truncate",
+                  )}
+                  title={command ?? undefined}
+                >
+                  {(isBodyOpen ? formattedCommand : command) ?? "Running command…"}
                 </pre>
+                <button
+                  type="button"
+                  onClick={toggleBodyOpen}
+                  className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
+                  aria-expanded={isBodyOpen}
+                  aria-label={isBodyOpen ? "Collapse output" : "Expand output"}
+                >
+                  <ChevronRightIcon
+                    className={cn("size-3 transition-transform", isBodyOpen && "rotate-90")}
+                  />
+                </button>
               </>
             }
           >

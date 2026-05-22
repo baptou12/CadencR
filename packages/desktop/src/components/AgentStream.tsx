@@ -9,7 +9,8 @@ import {
 } from "react-virtuoso";
 import { type AgentBlockData, buildToolResultMap } from "./AgentBlock";
 import { AgentStreamItem } from "./agent-session/AgentStreamItem";
-import { buildDisplayBlockKeys, filterRenderableBlocks } from "./agentStreamDisplay";
+import { CompactFlowRow } from "./agent-session/CompactFlowRow";
+import { buildDisplayItems, filterRenderableBlocks, type DisplayItem } from "./agentStreamDisplay";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { isTurnInProgress } from "@/components/TurnWorkingLabel";
 import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
@@ -101,7 +102,7 @@ const StreamFooter = memo(function StreamFooter({
 
 const VIRTUOSO_COMPONENTS = {
   Footer: StreamFooter,
-} satisfies Components<AgentBlockData, AgentStreamVirtuosoContext>;
+} satisfies Components<DisplayItem, AgentStreamVirtuosoContext>;
 
 function useRootBlocks(
   blocks: AgentBlockData[],
@@ -162,7 +163,11 @@ export const AgentStream = memo(function AgentStream({
   const rootBlocks = useRootBlocks(blocks, rootBlocksProp);
   const displayBlocks = useMemo(() => filterRenderableBlocks(rootBlocks), [rootBlocks]);
   const toolResultMap = useToolResultMap(blocks, toolResultMapProp);
-  const itemKeys = useMemo(() => buildDisplayBlockKeys(displayBlocks), [displayBlocks]);
+  const isCompact = verbosityMode === "compact";
+  const displayItems = useMemo(
+    () => buildDisplayItems(displayBlocks, { compact: isCompact }),
+    [displayBlocks, isCompact],
+  );
   const firstItemIndex = FIRST_ITEM_INDEX_BASE - historyPrependDisplayOffset;
 
   // The streaming cursor is, by construction, the last displayed block —
@@ -195,28 +200,33 @@ export const AgentStream = memo(function AgentStream({
   const computeItemKey = useCallback(
     (i: number): string => {
       const localIndex = i - firstItemIndex;
-      return itemKeys[localIndex] ?? displayBlocks[localIndex]?.id ?? String(i);
+      return displayItems[localIndex]?.key ?? String(i);
     },
-    [displayBlocks, firstItemIndex, itemKeys],
+    [displayItems, firstItemIndex],
   );
   // `renderItem` deliberately does NOT depend on `isStreaming` /
   // `streamingBlockId`. Those reach the item via Virtuoso `context` so
   // advancing the streaming cursor only re-renders the (up to) two blocks
   // whose per-block `isStreaming` flag actually flipped, not the entire list.
   const renderItem = useCallback(
-    (_i: number, block: AgentBlockData, ctx: AgentStreamVirtuosoContext) => (
-      <AgentStreamItem
-        block={block}
-        isStreaming={ctx.streamingBlockId === block.id}
-        basePath={basePath}
-        toolResultMap={toolResultMap}
-        verbosityMode={verbosityMode}
-      />
-    ),
+    (_i: number, item: DisplayItem, ctx: AgentStreamVirtuosoContext) => {
+      if (item.kind === "flow") {
+        return <CompactFlowRow blocks={item.blocks} basePath={basePath} />;
+      }
+      return (
+        <AgentStreamItem
+          block={item.block}
+          isStreaming={ctx.streamingBlockId === item.block.id}
+          basePath={basePath}
+          toolResultMap={toolResultMap}
+          verbosityMode={verbosityMode}
+        />
+      );
+    },
     [basePath, toolResultMap, verbosityMode],
   );
 
-  if (displayBlocks.length === 0) {
+  if (displayItems.length === 0) {
     return (
       <div className="p-3">
         {showStreamingIndicator && (
@@ -235,7 +245,7 @@ export const AgentStream = memo(function AgentStream({
         style={{ height: "100%" }}
         ref={virtuosoRef}
         scrollerRef={onScroller}
-        data={displayBlocks}
+        data={displayItems}
         firstItemIndex={firstItemIndex}
         computeItemKey={computeItemKey}
         initialTopMostItemIndex={{ index: "LAST", align: "end" }}

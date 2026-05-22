@@ -1,8 +1,9 @@
-import { ListTree, Minimize2, type LucideIcon } from "lucide-react";
+import { FoldVerticalIcon, LayoutGrid, ListTree, Minimize2, type LucideIcon } from "lucide-react";
+import { isFileChangeTool } from "@/lib/tool-adapter";
 
 export const AGENT_VERBOSITY_SETTING_KEY = "agent_stream_verbosity_mode";
 
-export const AGENT_VERBOSITY_MODES = ["maximal", "auto_collapse"] as const;
+export const AGENT_VERBOSITY_MODES = ["maximal", "auto_collapse", "collapsed", "compact"] as const;
 
 export type AgentVerbosityMode = (typeof AGENT_VERBOSITY_MODES)[number];
 
@@ -32,9 +33,25 @@ export const AGENT_VERBOSITY_OPTIONS: readonly AgentVerbosityOption[] = [
     value: "auto_collapse",
     label: "Auto-collapse",
     description:
-      "After a turn finishes, fold Bash output and thinking blocks so the stream stays scannable. Click any block to re-expand.",
+      "Three seconds after each Bash command, Edit, or thinking step finishes running, fold its block so the stream stays scannable. Click any block to re-expand.",
     icon: Minimize2,
     iconColorVar: "var(--acc-yellow)",
+  },
+  {
+    value: "collapsed",
+    label: "Collapsed",
+    description:
+      "Bash commands, Edits, and thinking steps appear pre-folded so the stream stays compact from the start. Click any block to expand it.",
+    icon: FoldVerticalIcon,
+    iconColorVar: "var(--acc-orange)",
+  },
+  {
+    value: "compact",
+    label: "Compact flow",
+    description:
+      "Lay tools out as a flex-wrap of tiles between the agent's text blocks. Each tile shows just the tool name (plus the command for Bash or the numstat for Edit). Dense, glance-friendly view.",
+    icon: LayoutGrid,
+    iconColorVar: "var(--acc-green)",
   },
 ] as const;
 
@@ -48,7 +65,21 @@ export function parseAgentVerbosityMode(value: string | null | undefined): Agent
  * Tools whose output participates in auto-collapse. Only tools whose render
  * path threads the controlled `expanded` prop are included — listing a tool
  * here without wiring the prop is a silent no-op.
+ *
+ * Currently: `Bash` (BashBlock) and the file-change tools (InlineDiffBlock).
+ * Thinking blocks are handled separately in `AgentStreamItem` because their
+ * block type — not their tool name — gates the behavior.
  */
 export function isToolAutoCollapsible(toolName: string | undefined): boolean {
-  return toolName === "Bash";
+  return toolName === "Bash" || isFileChangeTool(toolName);
+}
+
+/**
+ * Modes that drive the controlled `expanded` prop on auto-collapsible blocks.
+ * `auto_collapse` folds them 3 s after they finish; `collapsed` folds them
+ * immediately when they appear. Other modes leave blocks uncontrolled so they
+ * keep their own internal state.
+ */
+export function verbosityControlsCollapse(mode: AgentVerbosityMode): boolean {
+  return mode === "auto_collapse" || mode === "collapsed";
 }

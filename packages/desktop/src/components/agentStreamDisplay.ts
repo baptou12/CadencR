@@ -1,5 +1,69 @@
 import type { AgentBlockData } from "./AgentBlock";
 
+/**
+ * A renderable row in the agent stream. In every mode except "compact" each
+ * block is its own row. In "compact" mode, consecutive non-text blocks are
+ * folded into a single `flow` row so the renderer can lay them out as a
+ * flex-wrap of tiles between text/user-message rows.
+ */
+export type DisplayItem =
+  | { kind: "block"; key: string; block: AgentBlockData }
+  | { kind: "flow"; key: string; blocks: AgentBlockData[] };
+
+const FLOW_BREAKING_TYPES = new Set<AgentBlockData["type"]>([
+  "text",
+  "user_message",
+  "turn_summary",
+  "compact_divider",
+  "clear_divider",
+]);
+
+function isFlowEligible(block: AgentBlockData): boolean {
+  if (FLOW_BREAKING_TYPES.has(block.type)) return false;
+  // Surface Task/Agent results inline as their own row (they own their card
+  // chrome); skip the rest, which the renderer hides anyway.
+  if (block.type === "tool_result") {
+    return block.sourceToolName !== "Agent" && block.sourceToolName !== "Task";
+  }
+  return true;
+}
+
+export function buildDisplayItems(
+  blocks: AgentBlockData[],
+  options: { compact: boolean },
+): DisplayItem[] {
+  // Keys must be unique across the whole Virtuoso list — duplicate block ids
+  // (e.g. re-prepended history batches) get suffixed deterministically so
+  // re-renders stay stable.
+  const seenCounts = new Map<string, number>();
+  const nextKey = (base: string): string => {
+    const seen = seenCounts.get(base) ?? 0;
+    seenCounts.set(base, seen + 1);
+    return seen === 0 ? base : `${base}#${seen}`;
+  };
+
+  if (!options.compact) {
+    return blocks.map((block) => ({ kind: "block", key: nextKey(block.id), block }));
+  }
+  const items: DisplayItem[] = [];
+  let buffer: AgentBlockData[] = [];
+  const flushBuffer = (): void => {
+    if (buffer.length === 0) return;
+    items.push({ kind: "flow", key: nextKey(`flow:${buffer[0].id}`), blocks: buffer });
+    buffer = [];
+  };
+  for (const block of blocks) {
+    if (isFlowEligible(block)) {
+      buffer.push(block);
+      continue;
+    }
+    flushBuffer();
+    items.push({ kind: "block", key: nextKey(block.id), block });
+  }
+  flushBuffer();
+  return items;
+}
+
 function isHiddenByRenderer(block: AgentBlockData): boolean {
   if (block.type === "thinking") return !block.content.trim();
   if (block.type !== "tool_result") return false;
@@ -14,31 +78,6 @@ export function filterRenderableBlocks(blocks: AgentBlockData[]): AgentBlockData
     visible.push(block);
   }
   return visible;
-}
-
-export function buildDisplayBlockKeys(blocks: AgentBlockData[]): string[] {
-  const ids = blocks.map((block) => block.id);
-  const uniqueIds = new Set<string>();
-  let hasDuplicate = false;
-  for (const id of ids) {
-    if (uniqueIds.has(id)) {
-      hasDuplicate = true;
-      break;
-    }
-    uniqueIds.add(id);
-  }
-  if (!hasDuplicate) return ids;
-
-  const totalById = new Map<string, number>();
-  for (const id of ids) totalById.set(id, (totalById.get(id) ?? 0) + 1);
-  const seenById = new Map<string, number>();
-  return ids.map((id: string): string => {
-    const total = totalById.get(id) ?? 0;
-    if (total <= 1) return id;
-    const seen = seenById.get(id) ?? 0;
-    seenById.set(id, seen + 1);
-    return `${id}#${seen}`;
-  });
 }
 
 export function deriveAgentStreamDisplayBlocks(blocks: AgentBlockData[]): AgentBlockData[] {

@@ -231,10 +231,11 @@ function Breadcrumbs(): React.JSX.Element {
 
 function AppearanceSection(): React.JSX.Element {
   return (
-    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations">
+    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations · Verbosity">
       <SettingsCard padded className="space-y-5">
         <ThemeSelector />
         <AnimationsToggle />
+        <AgentVerbositySettings />
       </SettingsCard>
     </SettingsSection>
   );
@@ -411,7 +412,6 @@ function RuntimeSection(): React.JSX.Element {
     >
       <SettingsCard>
         <ModelSelector level="global" />
-        <AgentVerbositySettings />
       </SettingsCard>
     </SettingsSection>
   );

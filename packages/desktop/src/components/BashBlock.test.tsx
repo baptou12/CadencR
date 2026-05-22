@@ -66,6 +66,41 @@ describe("BashBlock lazy ANSI parse", () => {
   });
 });
 
+describe("BashBlock collapsed-header UX", () => {
+  it("truncates the command header to one line when collapsed and keeps the full text in the title", () => {
+    const longCommand = "echo " + "abcdefghij".repeat(40);
+    const { container } = render(<BashBlock command={longCommand} content="ok" expanded={false} />);
+    const pre = container.querySelector("pre");
+    expect(pre).not.toBeNull();
+    expect(pre?.className).toContain("truncate");
+    // Native browser tooltip preserves the full command on hover.
+    expect(pre?.getAttribute("title")).toBe(longCommand);
+  });
+
+  it("wraps the command across lines when expanded", () => {
+    const command = "ls -la && echo done";
+    const { container } = render(<BashBlock command={command} content="ok" expanded={true} />);
+    const pre = container.querySelector("pre");
+    expect(pre?.className).toContain("whitespace-pre-wrap");
+    expect(pre?.className).not.toContain("truncate");
+  });
+
+  it("notifies onExpandedChange when the chevron toggle is clicked", async () => {
+    const onExpandedChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <BashBlock
+        command="echo hi"
+        content="ok"
+        expanded={true}
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Collapse output" }));
+    expect(onExpandedChange).toHaveBeenCalledWith(false);
+  });
+});
+
 describe("BashBlock server-truncated output", () => {
   it("fetches the full message content when expanding server-truncated output", async () => {
     const user = userEvent.setup();

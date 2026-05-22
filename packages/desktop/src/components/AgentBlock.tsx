@@ -1,4 +1,4 @@
-import { useState, useCallback, memo, useMemo, type ReactElement } from "react";
+import { useState, useCallback, memo, useMemo } from "react";
 import { cn, toRelativePath } from "@/lib/utils";
 import { ChevronRightIcon, WrenchIcon, CopyIcon, CheckIcon } from "lucide-react";
 import {
@@ -10,14 +10,13 @@ import {
   extractBashCommand,
   extractBashOutput,
   extractBashResultOutput,
-  extractInlineDiffPreviews,
   isFileChangeTool,
   isToolCallRunning,
   normalizeToolName,
 } from "@/lib/tool-adapter";
 import { CadencrMcpBlock } from "@/components/CadencrMcpBlock";
 import { Markdown } from "@/components/Markdown";
-import { InlineDiffBlock } from "@/components/InlineDiffBlock";
+import { renderFileChangeBlocks } from "@/components/file-change-block";
 import { UserMessageBlock } from "@/components/UserMessageBlock";
 import { TaskAgentBlock } from "@/components/TaskAgentBlock";
 import { PlanBlock } from "@/components/PlanBlock";
@@ -28,7 +27,7 @@ import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { isTaskTodoTool } from "@/lib/tool-adapter";
 import { parseToolArgsObject, stringArg } from "@/lib/tool-args";
-import type { AgentVerbosityMode } from "@/lib/agent-verbosity";
+import { verbosityControlsCollapse, type AgentVerbosityMode } from "@/lib/agent-verbosity";
 import type { PromptDeliveryState } from "@/types/agent";
 
 /** Block types that the agent stream can produce */
@@ -119,6 +118,13 @@ export const AgentBlock = memo(function AgentBlock({
   // The cache itself is content-keyed and LRU-bounded in `Markdown.tsx`, so
   // streaming snapshots evict older entries cleanly.
   const markdownCacheKey = block.id;
+  // `controlledExpanded` is the value threaded into the auto-collapsible
+  // child blocks (Bash, file-change tools, thinking). `undefined` lets each
+  // block keep its own internal state (Maximal / Compact modes); a boolean
+  // takes over and the parent owns the fold (Auto-collapse / Collapsed).
+  const controlledExpanded = verbosityControlsCollapse(verbosityMode)
+    ? !isCollapsedByPolicy
+    : undefined;
   switch (block.type) {
     case "text":
       return block.isError ? (
@@ -155,14 +161,20 @@ export const AgentBlock = memo(function AgentBlock({
             isError={result?.isError}
             messageId={result ? messageIdFromBlockId(result.id) : undefined}
             truncatedContent={result?.truncatedContent === true}
-            expanded={verbosityMode === "auto_collapse" ? !isCollapsedByPolicy : undefined}
+            expanded={controlledExpanded}
             onExpandedChange={onExpandedChange}
           />
         );
       }
       // Edit/Write: unified diff block (no separate ToolCallBlock header)
       if (isFileChangeTool(block.toolName)) {
-        const fileChangeBlocks = renderFileChangeBlocks(block.toolName, block.toolArgs, basePath);
+        const fileChangeBlocks = renderFileChangeBlocks(
+          block.toolName,
+          block.toolArgs,
+          basePath,
+          controlledExpanded,
+          onExpandedChange,
+        );
         if (fileChangeBlocks) return fileChangeBlocks;
       }
       return (
@@ -193,7 +205,7 @@ export const AgentBlock = memo(function AgentBlock({
         <ThinkingBlock
           content={block.content}
           cacheKey={markdownCacheKey}
-          expanded={verbosityMode === "auto_collapse" ? !isCollapsedByPolicy : undefined}
+          expanded={controlledExpanded}
           onExpandedChange={onExpandedChange}
         />
       );
@@ -229,46 +241,6 @@ function messageIdFromBlockId(id: string): number | undefined {
 
 function hasAttachedPlanContent(args: string | undefined): boolean {
   return !!stringArg(parseToolArgsObject(args), "plan");
-}
-
-function renderFileChangeBlocks(
-  toolName: string | undefined,
-  toolArgs: string | undefined,
-  basePath: string | undefined,
-): ReactElement | null {
-  const normalizedToolName = normalizeToolName(toolName ?? "");
-  const diffs = extractInlineDiffPreviews(toolName ?? "", toolArgs).filter(isVisibleInlineDiff);
-  if (diffs.length === 0) return null;
-  if (diffs.length === 1) {
-    return renderInlineDiffBlock(diffs[0], basePath, normalizedToolName);
-  }
-  return (
-    <div className="space-y-2">
-      {diffs.map((diff, index) => renderInlineDiffBlock(diff, basePath, normalizedToolName, index))}
-    </div>
-  );
-}
-
-function isVisibleInlineDiff(diff: { filePath: string }): boolean {
-  return !diff.filePath.includes(".claude/plans/");
-}
-
-function renderInlineDiffBlock(
-  diff: { filePath: string; oldContent: string; newContent: string },
-  basePath: string | undefined,
-  toolName: string,
-  index?: number,
-): ReactElement {
-  return (
-    <InlineDiffBlock
-      key={index === undefined ? undefined : `${diff.filePath}:${index}`}
-      filePath={diff.filePath}
-      oldContent={diff.oldContent}
-      newContent={diff.newContent}
-      basePath={basePath}
-      toolName={toolName}
-    />
-  );
 }
 
 /** Render the final text output from an Agent/Task tool_result (JSON content blocks). */

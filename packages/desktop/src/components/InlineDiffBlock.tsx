@@ -1,13 +1,14 @@
 import { useMemo } from "react";
-import { PencilIcon, FilePlusIcon } from "lucide-react";
+import { ChevronRightIcon, PencilIcon, FilePlusIcon } from "lucide-react";
 import { useTheme } from "@/hooks/useTheme";
-import { toRelativePath } from "@/lib/utils";
+import { useControllableBoolean } from "@/hooks/useControllableBoolean";
+import { cn, toRelativePath } from "@/lib/utils";
 import { NumStat } from "@/components/NumStat";
 import { PatchDiffView } from "@/components/diff/PatchDiffView";
 import { useOpenDiffInEditor } from "@/components/diff/OpenDiffInEditorContext";
 import { createUnifiedPatch } from "@/lib/create-unified-patch";
 import { firstChangedNewLine } from "@/lib/diff-line";
-import { countHunkStats, parseUnifiedDiff } from "@/lib/parse-unified-diff";
+import { countPatchStats } from "@/lib/patch-stats";
 
 interface InlineDiffBlockProps {
   filePath: string;
@@ -18,6 +19,13 @@ interface InlineDiffBlockProps {
   /** Tool name (Edit or Write) — shown as a label in the header */
   toolName?: string;
   onOpenFileInEditor?: (filePath: string, lineNumber?: number) => void;
+  /**
+   * Controlled expand state. When provided, the diff body is hidden while
+   * `expanded === false`; clicking the header toggles `onExpandedChange`. When
+   * omitted, the diff stays fully expanded (legacy behavior).
+   */
+  expanded?: boolean;
+  onExpandedChange?: (next: boolean) => void;
 }
 
 /**
@@ -31,21 +39,28 @@ export function InlineDiffBlock({
   basePath,
   toolName,
   onOpenFileInEditor,
+  expanded,
+  onExpandedChange,
 }: InlineDiffBlockProps) {
   const ToolIcon = toolName === "Write" ? FilePlusIcon : PencilIcon;
   const { theme } = useTheme();
   const contextOpenFileInEditor = useOpenDiffInEditor();
   const openFileInEditor = onOpenFileInEditor ?? contextOpenFileInEditor;
   const displayPath = useMemo(() => toRelativePath(filePath, basePath), [filePath, basePath]);
+  // When controlled, the parent decides visibility. When uncontrolled (the
+  // legacy callsite), the block stays expanded — matching pre-existing
+  // behavior so non-verbosity callers don't suddenly hide their diffs.
+  const { value: isExpanded, toggle: toggleExpanded } = useControllableBoolean({
+    value: expanded,
+    onChange: onExpandedChange,
+    defaultValue: true,
+  });
 
   const patch = useMemo(
     () => createUnifiedPatch({ filePath: displayPath, oldContent, newContent }),
     [displayPath, oldContent, newContent],
   );
-  const stats = useMemo(() => {
-    const [section] = parseUnifiedDiff(patch);
-    return countHunkStats(section?.hunks ?? []);
-  }, [patch]);
+  const stats = useMemo(() => countPatchStats(patch), [patch]);
 
   if (oldContent === newContent) {
     return (
@@ -86,18 +101,31 @@ export function InlineDiffBlock({
             <span className="text-[11px] font-medium">Edit</span>
           </button>
         )}
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          className="shrink-0 text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Collapse diff" : "Expand diff"}
+        >
+          <ChevronRightIcon
+            className={cn("size-3 transition-transform", isExpanded && "rotate-90")}
+          />
+        </button>
       </div>
 
       {/* Diff content */}
-      <PatchDiffView
-        patch={patch}
-        mode="unified"
-        className="cadencr-patch-diff-inline max-h-[500px] overflow-auto"
-        themeAppearance={theme.appearance}
-        themeId={theme.id}
-        disableFileHeader
-        hunkSeparators="simple"
-      />
+      {isExpanded && (
+        <PatchDiffView
+          patch={patch}
+          mode="unified"
+          className="cadencr-patch-diff-inline max-h-[500px] overflow-auto"
+          themeAppearance={theme.appearance}
+          themeId={theme.id}
+          disableFileHeader
+          hunkSeparators="simple"
+        />
+      )}
     </div>
   );
 }
