@@ -34,6 +34,7 @@ import { DangerousModeToggle } from "@/components/settings/DangerousModeToggle";
 import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
+import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
@@ -230,10 +231,11 @@ function Breadcrumbs(): React.JSX.Element {
 
 function AppearanceSection(): React.JSX.Element {
   return (
-    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations">
+    <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations · Verbosity">
       <SettingsCard padded className="space-y-5">
         <ThemeSelector />
         <AnimationsToggle />
+        <AgentVerbositySettings />
       </SettingsCard>
     </SettingsSection>
   );

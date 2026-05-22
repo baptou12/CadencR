@@ -111,6 +111,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // Master switch for fluid UI animations. When unset the frontend falls back
     // to the OS `prefers-reduced-motion` media query. Stored as "true" / "false".
     "animations_enabled",
+    // Global agent stream verbosity. One of the AGENT_VERBOSITY_MODES values
+    // in packages/desktop/src/lib/agent-verbosity.ts (currently "maximal" |
+    // "auto_collapse" | "collapsed" | "compact"). The frontend is the source
+    // of truth for the set; this allowlist only gates the write endpoint.
+    "agent_stream_verbosity_mode",
     // Plays the welcome-step intro animation exactly once, on the very first
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).
@@ -338,6 +343,16 @@ mod tests {
         assert!(is_workspace_key_allowed("onboarding_step"));
         assert!(is_workspace_key_allowed("default_agent_provider"));
         assert!(is_workspace_key_allowed("onboarding_intro_shown"));
+    }
+
+    #[test]
+    fn workspace_accepts_agent_stream_verbosity_mode() {
+        // Persisted by the global Settings page → "Agent output verbosity"
+        // picker via useDebouncedSetting. Without this, switching modes
+        // returns 400 and the FE toast "Could not save setting".
+        assert!(is_workspace_key_allowed("agent_stream_verbosity_mode"));
+        assert!(!is_feature_key_allowed("agent_stream_verbosity_mode"));
+        assert!(!is_project_key_allowed("agent_stream_verbosity_mode"));
     }
 
     #[test]

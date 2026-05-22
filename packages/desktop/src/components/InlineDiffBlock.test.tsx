@@ -152,6 +152,52 @@ it("uses compact Pierre hunk separators for inline diffs", () => {
   );
 });
 
+describe("InlineDiffBlock controlled expand API", () => {
+  it("hides the diff body when controlled `expanded` is false", () => {
+    render(
+      <InlineDiffBlock
+        filePath="test.ts"
+        oldContent={"one\n"}
+        newContent={"two\n"}
+        expanded={false}
+      />,
+    );
+    expect(screen.queryByTestId("diff-view")).not.toBeInTheDocument();
+  });
+
+  it("renders the diff body when controlled `expanded` is true", () => {
+    render(
+      <InlineDiffBlock
+        filePath="test.ts"
+        oldContent={"one\n"}
+        newContent={"two\n"}
+        expanded={true}
+      />,
+    );
+    expect(screen.getByTestId("diff-view")).toBeInTheDocument();
+  });
+
+  it("calls onExpandedChange with the next state when the chevron is clicked", async () => {
+    const onExpandedChange = vi.fn();
+    const { user } = render(
+      <InlineDiffBlock
+        filePath="test.ts"
+        oldContent={"one\n"}
+        newContent={"two\n"}
+        expanded={true}
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Collapse diff" }));
+    expect(onExpandedChange).toHaveBeenCalledWith(false);
+  });
+
+  it("stays expanded when no `expanded` prop is provided (legacy callers)", () => {
+    render(<InlineDiffBlock filePath="test.ts" oldContent={"one\n"} newContent={"two\n"} />);
+    expect(screen.getByTestId("diff-view")).toBeInTheDocument();
+  });
+});
+
 it("uses primary color tokens for edit tool-call headers", () => {
   render(
     <InlineDiffBlock

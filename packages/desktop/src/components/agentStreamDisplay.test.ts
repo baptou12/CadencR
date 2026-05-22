@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentBlockData } from "./AgentBlock";
 import {
-  buildDisplayBlockKeys,
+  buildDisplayItems,
   countRenderableDisplayRows,
   deriveAgentStreamDisplayBlocks,
   filterRenderableBlocks,
@@ -63,16 +63,7 @@ describe("agentStreamDisplay", () => {
     const displayBlocks = deriveAgentStreamDisplayBlocks([prepended, previousFirst]);
 
     expect(displayBlocks.map((item) => item.id)).toEqual(["older", "current-first"]);
-    expect(buildDisplayBlockKeys(displayBlocks)).toEqual(["older", "current-first"]);
     expect(displayBlocks[1]).toBe(previousFirst);
-  });
-
-  it("builds deterministic keys when duplicate block ids are visible", () => {
-    const first = block("dup", "first");
-    const second = block("dup", "second");
-    const unique = block("unique", "unique");
-
-    expect(buildDisplayBlockKeys([first, second, unique])).toEqual(["dup#0", "dup#1", "unique"]);
   });
 
   it("counts prepended rows after filtering hidden rows and child rows", () => {
@@ -95,5 +86,45 @@ describe("agentStreamDisplay", () => {
         block("child", "child", { parentToolUseId: "task-1" }),
       ]),
     ).toBe(0);
+  });
+
+  describe("buildDisplayItems (compact mode grouping)", () => {
+    it("wraps every block in its own item when compact is off", () => {
+      const text = block("t1", "hello");
+      const bash = block("b1", "ls", { type: "tool_call", toolName: "Bash" });
+      const items = buildDisplayItems([text, bash], { compact: false });
+      expect(items.map((item) => item.kind)).toEqual(["block", "block"]);
+      expect(items.map((item) => item.key)).toEqual(["t1", "b1"]);
+    });
+
+    it("groups consecutive non-text blocks into a flow row when compact is on", () => {
+      const text = block("t1", "hello");
+      const bash = block("b1", "ls", { type: "tool_call", toolName: "Bash" });
+      const edit = block("e1", "edit", { type: "tool_call", toolName: "Edit" });
+      const thinking = block("th1", "thinking…", { type: "thinking" });
+      const user = block("u1", "user said", { type: "user_message" });
+      const followup = block("th2", "thinking again", { type: "thinking" });
+
+      const items = buildDisplayItems([text, bash, edit, thinking, user, followup], {
+        compact: true,
+      });
+
+      expect(items.map((item) => item.kind)).toEqual([
+        "block", // text
+        "flow", // [bash, edit, thinking]
+        "block", // user
+        "flow", // [followup]
+      ]);
+      const flow = items[1];
+      if (flow.kind !== "flow") throw new Error("expected flow row");
+      expect(flow.blocks.map((b) => b.id)).toEqual(["b1", "e1", "th1"]);
+    });
+
+    it("deduplicates item keys when block ids repeat", () => {
+      const a = block("dup", "first");
+      const b = block("dup", "second");
+      const items = buildDisplayItems([a, b], { compact: false });
+      expect(items.map((item) => item.key)).toEqual(["dup", "dup#1"]);
+    });
   });
 });

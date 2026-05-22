@@ -16,14 +16,26 @@ interface CollapsibleBlockProps {
   className?: string;
   /** Class for the header bar */
   headerClassName?: string;
-  /** Class for the toggle button */
+  /** Class for the inner "Show last N / Show all N" toggle button */
   toggleClassName?: string;
   /** Class for the body/content area */
   bodyClassName?: string;
   /** Class for the truncation indicator */
   truncationClassName?: string;
+  /**
+   * Outer body fold. When true, the body is not rendered at all — only the
+   * header remains. Used by the auto-collapse verbosity mode and by callers
+   * that own their own outer toggle.
+   */
+  bodyHidden?: boolean;
 }
 
+/**
+ * Two collapse axes — one shows the last N / all N lines (controlled by an
+ * inline button that only appears when `totalCount > visibleCount`), the
+ * other completely hides the body (`bodyHidden`). Callers can drive either,
+ * neither, or both.
+ */
 export function CollapsibleBlock({
   totalCount,
   visibleCount,
@@ -35,6 +47,7 @@ export function CollapsibleBlock({
   toggleClassName,
   bodyClassName,
   truncationClassName,
+  bodyHidden = false,
 }: CollapsibleBlockProps) {
   const [showAll, setShowAll] = useState(false);
   const needsCollapse = totalCount > visibleCount;
@@ -44,24 +57,26 @@ export function CollapsibleBlock({
     <div className={cn("my-1 rounded-md border overflow-hidden", className)}>
       <div className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", headerClassName)}>
         {header}
-        {needsCollapse && (
+        {!bodyHidden && needsCollapse && (
           <button
             type="button"
             className={cn("shrink-0", toggleClassName)}
-            onClick={() => setShowAll(!showAll)}
+            onClick={() => setShowAll((prev) => !prev)}
           >
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>
         )}
       </div>
-      <div className={bodyClassName}>
-        {!showAll && needsCollapse && (
-          <div className={cn("text-xs", truncationClassName)}>
-            ... ({hiddenCount} {unit} above)
-          </div>
-        )}
-        {children({ showAll: showAll || !needsCollapse })}
-      </div>
+      {!bodyHidden && (
+        <div className={bodyClassName}>
+          {!showAll && needsCollapse && (
+            <div className={cn("text-xs", truncationClassName)}>
+              ... ({hiddenCount} {unit} above)
+            </div>
+          )}
+          {children({ showAll: showAll || !needsCollapse })}
+        </div>
+      )}
     </div>
   );
 }
