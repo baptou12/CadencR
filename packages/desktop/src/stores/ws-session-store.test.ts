@@ -94,6 +94,47 @@ function tick(): Promise<void> {
 
 const activeTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
+async function connectInitializedSession(
+  sessionId = "s1",
+): Promise<{ store: ReturnType<typeof useWsSessionStore.getState>; ws: MockWebSocket }> {
+  const store = useWsSessionStore.getState();
+  store.connect(sessionId);
+  await tick();
+  const ws = getWs();
+  ws.simulateMessage({
+    domain: "session",
+    action: "initialized",
+    payload: { session_id: "srv-1" },
+  });
+  return { store, ws };
+}
+
+function simulatePermissionRequest(ws: MockWebSocket, requestId: string): void {
+  ws.simulateMessage({
+    domain: "session",
+    action: "permission.request",
+    payload: {
+      request_id: requestId,
+      tool_name: "Bash",
+      tool_input: { command: "pnpm test" },
+      description: "Run tests",
+      options: [{ decision: "allow_once", label: "Allow once", description: "Once" }],
+    },
+  });
+}
+
+function simulateQuestionRequest(ws: MockWebSocket, requestId: string): void {
+  ws.simulateMessage({
+    domain: "session",
+    action: "permission.request",
+    payload: {
+      request_id: requestId,
+      tool_name: "AskUserQuestion",
+      tool_input: { question: "Which model?", options: ["Sonnet", "Opus"] },
+    },
+  });
+}
+
 describe("ws-session-store", () => {
   it("connect creates a WebSocket and sets isConnected on open", async () => {
     useWsSessionStore.getState().connect("s1");
@@ -672,6 +713,118 @@ describe("ws-session-store", () => {
     expect(session.pendingQuestions).toEqual([]);
     expect(session.pendingPlanApproval).toBeNull();
     expect(session.lifecycle).toEqual({ phase: "terminal", reason: "denied" });
+  });
+
+  it("drops stale gate state when the backend reports SESSION_NOT_FOUND", async () => {
+    const { ws } = await connectInitializedSession();
+    simulatePermissionRequest(ws, "perm-1");
+    expect(useWsSessionStore.getState().sessions["s1"].pendingPermission?.requestId).toBe("perm-1");
+
+    // Backend asynchronously reports the session is gone (e.g. CLI died,
+    // sdk_sessions handle dropped). The gate must disappear so the user
+    // can move on instead of clicking buttons that bounce.
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      payload: { code: "SESSION_NOT_FOUND", message: "Session not found" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingPermission).toBeNull();
+    expect(session.pendingPermissionQueue).toEqual([]);
+    expect(session.pendingRequestId).toBe("");
+    expect(session.pendingQuestions).toEqual([]);
+    expect(session.pendingPlanApproval).toBeNull();
+    // Error block surfaces the reason so the user understands the dismissal.
+    expect(session.blocks.at(-1)).toMatchObject({
+      type: "error",
+      content: "Session not found",
+    });
+  });
+
+  it("drops the pending question when an INVALID_STATE error arrives", async () => {
+    const { ws } = await connectInitializedSession();
+    simulateQuestionRequest(ws, "q-1");
+    expect(useWsSessionStore.getState().sessions["s1"].pendingQuestions).toHaveLength(1);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      payload: { code: "INVALID_STATE", message: "Session not active" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingQuestions).toEqual([]);
+    expect(session.pendingRequestId).toBe("");
+  });
+
+  it("preserves the gate when an unrelated error (DB_ERROR) arrives", async () => {
+    const { ws } = await connectInitializedSession();
+    simulatePermissionRequest(ws, "perm-keep");
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      payload: { code: "DB_ERROR", message: "Disk full" },
+    });
+
+    // DB errors don't mean the gate is unanswerable — keep the user's UI.
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingPermission?.requestId).toBe("perm-keep");
+  });
+
+  it("clears the gate when respondToPermission reply is a session-dead error", async () => {
+    const { store, ws } = await connectInitializedSession();
+    simulatePermissionRequest(ws, "perm-dead");
+
+    store.respondToPermission("s1", "perm-dead", "allow_once");
+    const respondEnvelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(respondEnvelope.action).toBe("permission.respond");
+    expect(useWsSessionStore.getState().sessions["s1"].submittingPermissionRequestId).toBe(
+      "perm-dead",
+    );
+
+    // Backend replies to that envelope (matched by ref) with INVALID_STATE.
+    // Because `sendRequest` intercepts the reply, `handleError` isn't
+    // invoked — `respondToPermission` must clear the gate itself.
+    ws.simulateMessage({
+      domain: "session",
+      action: "error",
+      ref: respondEnvelope.id,
+      payload: { code: "INVALID_STATE", message: "Session not yet active" },
+    });
+    await tick();
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.pendingPermission).toBeNull();
+    expect(session.pendingPermissionQueue).toEqual([]);
+    expect(session.pendingRequestId).toBe("");
+    expect(session.submittingPermissionRequestId).toBeNull();
+    expect(session.lifecycle).toEqual({
+      phase: "error",
+      message: "Session not yet active",
+    });
+    expect(session.blocks.at(-1)).toMatchObject({
+      type: "error",
+      content: "Session not yet active",
+    });
+  });
+
+  it("keeps the gate on respondToPermission timeout so a reconnect can retry", async () => {
+    const { store, ws } = await connectInitializedSession();
+    simulatePermissionRequest(ws, "perm-retry");
+
+    store.respondToPermission("s1", "perm-retry", "allow_once");
+    const respondEnvelope = JSON.parse(ws.sent[ws.sent.length - 1]);
+    // Simulate the WS-level null payload that `sendRequest` resolves with on
+    // timeout — the gate stays so the user can retry once the WS recovers.
+    const session = useWsSessionStore.getState().sessions["s1"];
+    const cb = session.pendingWsRequests.get(respondEnvelope.id);
+    cb?.(null);
+    await tick();
+
+    const after = useWsSessionStore.getState().sessions["s1"];
+    expect(after.pendingPermission?.requestId).toBe("perm-retry");
+    expect(after.submittingPermissionRequestId).toBeNull();
   });
 
   it("new session defaults currentModelId to FALLBACK_MODEL_ID", async () => {
@@ -1637,16 +1790,7 @@ describe("ws-session-store", () => {
 
   describe("plan approval gate", () => {
     async function setupWithInit() {
-      const store = useWsSessionStore.getState();
-      store.connect("s1");
-      await tick();
-      const ws = getWs();
-      ws.simulateMessage({
-        domain: "session",
-        action: "initialized",
-        payload: { session_id: "srv-1" },
-      });
-      return { store, ws };
+      return connectInitializedSession();
     }
 
     function streamExitPlanMode(ws: MockWebSocket) {

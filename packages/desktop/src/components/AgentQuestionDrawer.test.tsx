@@ -231,6 +231,27 @@ describe("AgentQuestionDrawer", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("renders a dismiss button when onCancel is provided and calls it on click", async () => {
+    const onCancel = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AgentQuestionDrawer
+        questions={[questionWithOptions]}
+        onSubmit={onSubmit}
+        onCancel={onCancel}
+        open
+      />,
+    );
+    const dismissButton = screen.getByRole("button", { name: /dismiss question/i });
+    await user.click(dismissButton);
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not render a dismiss button when onCancel is omitted", () => {
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    expect(screen.queryByRole("button", { name: /dismiss question/i })).toBeNull();
+  });
+
   it("blurs the option button after click so Enter can validate", async () => {
     const user = userEvent.setup();
     render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
