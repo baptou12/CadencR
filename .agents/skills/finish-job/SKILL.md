@@ -30,8 +30,18 @@ This phase must use three separate review agents in parallel when the environmen
 
 Before launching them:
 
-- Capture the full current diff once.
-- Pass that diff to all three agents.
+- Capture the full current diff once. Write it to a worktree-safe tmp path that embeds the current branch name so concurrent Cadencr worktrees do not clobber each other's diffs. Use the current branch (falling back to the short SHA for detached HEAD) and slug it for the filesystem:
+
+  ```bash
+  BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+  [ "$BRANCH" = "HEAD" ] && BRANCH="$(git rev-parse --short HEAD)"
+  SAFE_BRANCH="$(printf '%s' "$BRANCH" | tr '/ ' '--')"
+  DIFF_FILE="/tmp/finish-job-diff-${SAFE_BRANCH}.patch"
+  git diff > "$DIFF_FILE"
+  ```
+
+  Never reuse a static path like `/tmp/finish-job-diff.txt` — parallel worktrees on different branches would overwrite each other.
+- Pass that diff file (or its contents) to all three agents.
 - Tell each agent to review the diff brutally and flag anything weak, redundant, sloppy, or avoidable.
 - Tell each agent to focus only on the current diff and not to rely on broader conversation context.
 
