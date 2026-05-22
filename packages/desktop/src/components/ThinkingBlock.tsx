@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { BrainIcon, ChevronRightIcon } from "lucide-react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 interface ThinkingBlockProps {
   content: string;
@@ -46,7 +47,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
           )}
         />
       </button>
-      {isExpanded && (
+      <CollapsibleSection open={isExpanded}>
         <div className="border-t border-border px-3 py-2">
           <Markdown
             content={content}
@@ -54,7 +55,7 @@ export const ThinkingBlock = memo(function ThinkingBlock({
             className="text-xs text-muted-foreground"
           />
         </div>
-      )}
+      </CollapsibleSection>
     </div>
   );
 });

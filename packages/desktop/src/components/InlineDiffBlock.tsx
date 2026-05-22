@@ -4,6 +4,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useControllableBoolean } from "@/hooks/useControllableBoolean";
 import { cn, toRelativePath } from "@/lib/utils";
 import { NumStat } from "@/components/NumStat";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { PatchDiffView } from "@/components/diff/PatchDiffView";
 import { useOpenDiffInEditor } from "@/components/diff/OpenDiffInEditorContext";
 import { createUnifiedPatch } from "@/lib/create-unified-patch";
@@ -115,7 +116,7 @@ export function InlineDiffBlock({
       </div>
 
       {/* Diff content */}
-      {isExpanded && (
+      <CollapsibleSection open={isExpanded}>
         <PatchDiffView
           patch={patch}
           mode="unified"
@@ -125,7 +126,7 @@ export function InlineDiffBlock({
           disableFileHeader
           hunkSeparators="simple"
         />
-      )}
+      </CollapsibleSection>
     </div>
   );
 }

@@ -78,7 +78,7 @@ export const BashBlock = memo(function BashBlock({
             unit="lines"
             className={isError ? "border-destructive/40" : "border-border"}
             headerClassName={cn(
-              "bg-[var(--block-bash-header-bg)] py-1",
+              "bg-[var(--block-bash-header-bg)]",
               isError ? "text-destructive" : "text-[var(--block-bash-muted-fg)]",
             )}
             toggleClassName="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
@@ -106,18 +106,22 @@ export const BashBlock = memo(function BashBlock({
                 >
                   {(isBodyOpen ? formattedCommand : command) ?? "Running command…"}
                 </pre>
-                <button
-                  type="button"
-                  onClick={toggleBodyOpen}
-                  className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
-                  aria-expanded={isBodyOpen}
-                  aria-label={isBodyOpen ? "Collapse output" : "Expand output"}
-                >
-                  <ChevronRightIcon
-                    className={cn("size-3 transition-transform", isBodyOpen && "rotate-90")}
-                  />
-                </button>
               </>
+            }
+            // Rendered after the "Show all N / Show last N" toggle so the
+            // fold chevron stays pinned to the very end of the header bar.
+            headerTrailing={
+              <button
+                type="button"
+                onClick={toggleBodyOpen}
+                className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
+                aria-expanded={isBodyOpen}
+                aria-label={isBodyOpen ? "Collapse output" : "Expand output"}
+              >
+                <ChevronRightIcon
+                  className={cn("size-3 transition-transform", isBodyOpen && "rotate-90")}
+                />
+              </button>
             }
           >
             {({ showAll }) =>

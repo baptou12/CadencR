@@ -115,9 +115,27 @@ export function useAgentSessionScroll({
     setAutoScrollEnabledState(enabled);
   }, []);
 
+  /**
+   * `scrollToIndex({ index: 'LAST', align: 'end' })` is Virtuoso's
+   * measurement-aware "go to the real bottom" — but when the last item is a
+   * `CompactFlowRow` with flex-wrap content, the row's measured height lags
+   * one frame behind the actual layout (a newly-appended tile can wrap to a
+   * new line *after* Virtuoso reads the row's height). In that race the
+   * align-end target ends up halfway through the last line. Direct-pinning
+   * the scroller to its post-layout `scrollHeight` on the next frame closes
+   * that gap — same end state, but uses the live DOM measurement Virtuoso's
+   * one-shot align doesn't re-read.
+   */
+  const pinScrollerToEnd = useCallback((): void => {
+    const el = scrollerElRef.current;
+    if (!el || !stickRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, []);
+
   const pinToEnd = useCallback((): void => {
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
-  }, []);
+    requestAnimationFrame(pinScrollerToEnd);
+  }, [pinScrollerToEnd]);
 
   const captureHistoryAnchor = useCallback((): void => {
     const el = scrollerElRef.current;
@@ -237,9 +255,9 @@ export function useAgentSessionScroll({
     (_height: number): void => {
       restoreHistoryAnchor();
       if (!stickRef.current) return;
-      virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
+      pinToEnd();
     },
-    [restoreHistoryAnchor],
+    [restoreHistoryAnchor, pinToEnd],
   );
 
   // Conversation switch: parent reuses this hook instance across sessionId
