@@ -16,7 +16,7 @@ import type { HotkeyCallback } from "@tanstack/hotkeys";
 import type { DependencyList } from "react";
 
 import { useResolvedShortcut } from "@/lib/shortcuts/overrides";
-import { resolveHotkeyTrigger, tokensToHotkeyString } from "@/lib/shortcuts/resolve";
+import { resolveHotkeyTrigger } from "@/lib/shortcuts/resolve";
 import type { ShortcutId } from "@/lib/shortcuts/registry";
 import { useAppHotkeys, type ShortcutHotkeyOptions } from "./useAppHotkeys";
 import { useGlobalShortcut } from "./useGlobalShortcut";
@@ -67,10 +67,10 @@ export function useScopedShortcut(
 }
 
 /**
- * Customizable capture-phase shortcut. `useGlobalShortcut` accepts a
- * single combo, so this wrapper deliberately does NOT support `altKeys`
- * — no global-path shortcut needs it today (only `feature-settings`
- * uses alt-keys and that one binds via `useShortcut`).
+ * Customizable capture-phase shortcut. Binds the registry default combo
+ * plus any `altKeys` — needed for actions whose canonical key sits in
+ * different physical positions across layouts (e.g. `Mod+/` on QWERTY,
+ * `Mod+?` on AZERTY where `/` requires Shift+:).
  */
 export function useGlobalShortcutById(
   id: ShortcutId,
@@ -78,10 +78,10 @@ export function useGlobalShortcutById(
   options?: { enabled?: boolean },
 ): void {
   const resolved = useResolvedShortcut(id);
-  useGlobalShortcut(tokensToHotkeyString(resolved.keys), callback, options);
+  useGlobalShortcut(resolveHotkeyTrigger(resolved), callback, options);
 }
 
-/** Capture-phase + tab-focus gate. Same `altKeys` caveat as `useGlobalShortcutById`. */
+/** Capture-phase + tab-focus gate. */
 export function useScopedGlobalShortcutById(
   id: ShortcutId,
   callback: (e: KeyboardEvent) => void,
@@ -89,5 +89,5 @@ export function useScopedGlobalShortcutById(
   options?: { enabled?: boolean },
 ): void {
   const resolved = useResolvedShortcut(id);
-  useScopedGlobalShortcut(tokensToHotkeyString(resolved.keys), callback, scope, options);
+  useScopedGlobalShortcut(resolveHotkeyTrigger(resolved), callback, scope, options);
 }

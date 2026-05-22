@@ -162,11 +162,40 @@ describe("useShortcut", () => {
 });
 
 describe("useGlobalShortcutById", () => {
-  it("binds the capture-phase listener for the registry default combo", () => {
+  it("opens shortcuts-help on QWERTY (⌘+/ — unshifted slash)", () => {
     const onFire = vi.fn();
     render(<GlobalHarness onFire={onFire} />);
 
-    fireEvent.keyDown(window, { key: "?", metaKey: true, shiftKey: true });
+    fireEvent.keyDown(window, { key: "/", metaKey: true, code: "Slash" });
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens shortcuts-help on AZERTY-FR via the labelled `?` key (Shift+,)", () => {
+    const onFire = vi.fn();
+    render(<GlobalHarness onFire={onFire} />);
+
+    // AZERTY-FR: the labelled "?" key is physically the comma key with Shift.
+    // event.key === "?", code === "Comma", shiftKey === true.
+    fireEvent.keyDown(window, {
+      key: "?",
+      metaKey: true,
+      shiftKey: true,
+      code: "Comma",
+    });
+    expect(onFire).toHaveBeenCalledTimes(1);
+  });
+
+  it("also opens shortcuts-help on QWERTY via ⌘+Shift+/", () => {
+    const onFire = vi.fn();
+    render(<GlobalHarness onFire={onFire} />);
+
+    // QWERTY users producing "?" the other way (Shift+/) should also work.
+    fireEvent.keyDown(window, {
+      key: "?",
+      metaKey: true,
+      shiftKey: true,
+      code: "Slash",
+    });
     expect(onFire).toHaveBeenCalledTimes(1);
   });
 
