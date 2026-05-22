@@ -6,7 +6,28 @@ import { transitionTurn } from "./ws-turn-lifecycle";
 import { blocksPatchWithDerived } from "./ws-block-mutations";
 import type { LocalUserMessageOptions } from "./ws-pending-prompts";
 import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
+import type { AgentBlockData } from "@/components/AgentBlock";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
+
+/**
+ * Build an inline error block (rendered by `ErrorBlock`). Increments the
+ * session's block counter to keep IDs unique. Caller is responsible for
+ * appending the block to `session.blocks` and any additional patch (e.g.
+ * lifecycle transitions, `removePendingPromptBlocks`, etc.).
+ */
+export function makeErrorBlock(
+  session: SessionEntry,
+  content: string,
+  options: { code?: string; idPrefix?: string } = {},
+): AgentBlockData {
+  session.streamingState.counter += 1;
+  return {
+    id: `${options.idPrefix ?? "ws-err"}-${session.streamingState.counter}`,
+    type: "error",
+    content,
+    ...(options.code ? { errorCode: options.code } : {}),
+  };
+}
 
 export function appendLocalUserMessage(
   session: SessionEntry,

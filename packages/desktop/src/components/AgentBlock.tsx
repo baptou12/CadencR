@@ -24,6 +24,7 @@ import { PlanBlock } from "@/components/PlanBlock";
 import { BashBlock } from "@/components/BashBlock";
 import { ThinkingBlock } from "@/components/ThinkingBlock";
 import { CompactDivider, ClearDivider, TurnSummaryDivider } from "@/components/StreamDividers";
+import { ErrorBlock } from "@/components/ErrorBlock";
 import { CodeBlockHeader } from "@/components/CodeBlockHeader";
 import { useCodeBlockActions } from "@/components/CodeBlockActionsContext";
 import { isTaskTodoTool } from "@/lib/tool-adapter";
@@ -40,7 +41,8 @@ export type BlockType =
   | "user_message"
   | "turn_summary"
   | "compact_divider"
-  | "clear_divider";
+  | "clear_divider"
+  | "error";
 
 /** Build a lookup map from toolUseId → tool_result block. */
 export function buildToolResultMap(blocks: AgentBlockData[]): Map<string, AgentBlockData> {
@@ -87,6 +89,8 @@ export interface AgentBlockData {
   clientMessageId?: string;
   /** Receipt state for local user prompt blocks when a runtime supports it. */
   promptDeliveryState?: PromptDeliveryState;
+  /** For `error` blocks — machine-readable code from the backend. */
+  errorCode?: string;
 }
 
 interface AgentBlockProps {
@@ -114,13 +118,7 @@ export const AgentBlock = memo(function AgentBlock({
   const markdownCacheKey = block.id;
   switch (block.type) {
     case "text":
-      return block.isError ? (
-        <div className="text-red-400 text-sm">
-          <TextBlock content={block.content} cacheKey={markdownCacheKey} />
-        </div>
-      ) : (
-        <TextBlock content={block.content} cacheKey={markdownCacheKey} />
-      );
+      return <TextBlock content={block.content} cacheKey={markdownCacheKey} />;
     case "code":
       return <CodeBlock content={block.content} language={block.language} />;
     case "tool_call": {
@@ -196,6 +194,8 @@ export const AgentBlock = memo(function AgentBlock({
       return <CompactDivider metadata={block.content} />;
     case "clear_divider":
       return <ClearDivider previousSessionId={block.content} />;
+    case "error":
+      return <ErrorBlock content={block.content} code={block.errorCode} />;
     default:
       return null;
   }

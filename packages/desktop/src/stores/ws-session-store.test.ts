@@ -2617,7 +2617,11 @@ describe("ws-session-store", () => {
       expect(session.pendingManualCompact).toBe(true);
     });
 
-    it("compact errors clear the pending manual compact flag", async () => {
+    it("errors during compaction surface inline without stopping the agent", async () => {
+      // Steering a prompt during /compact fails on the runtime side; the
+      // backend reports `session.error` even though compaction is still
+      // running. The UI must surface the error inline and leave the
+      // compaction lifecycle untouched (no fake "stopped" state).
       const store = useWsSessionStore.getState();
       store.connect("s1");
       await tick();
@@ -2636,8 +2640,11 @@ describe("ws-session-store", () => {
       });
 
       const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.pendingManualCompact).toBe(false);
-      expect(session.lifecycle.phase).toBe("error");
+      expect(session.pendingManualCompact).toBe(true);
+      expect(session.lifecycle.phase).not.toBe("error");
+      const errorBlock = session.blocks.find((b) => b.type === "error");
+      expect(errorBlock?.content).toBe("compact failed");
+      expect(errorBlock?.errorCode).toBe("SDK_ERROR");
     });
 
     it("sets contextUsage.wasCompacted when compact_boundary arrives", async () => {
