@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { getLspLanguageId } from "./language-id";
 import { pathToFileUri } from "./file-uri";
-import { ensureLspClient } from "./client-manager";
+import { acquireLspClient, releaseLspClient } from "./client-manager";
 import { lspModClickExtension } from "./mod-click";
 import { type CadencrWorkspace } from "./cadencr-workspace";
 
@@ -41,17 +41,27 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
   );
   const languageId = useMemo(() => getLspLanguageId(filePath), [filePath]);
 
-  // Step 1: ensure the client. Re-run when the workspace root or language
-  // changes (i.e. the user opened a file in a different language).
+  // Step 1: acquire a refcounted client. Re-run when the workspace root or
+  // language changes (i.e. the user opened a file in a different language).
+  // We always release on cleanup, even on error / unmount-before-resolve,
+  // so the refcount stays balanced — the client-manager's grace timer
+  // keeps the WS warm if the user re-mounts quickly.
   useEffect(() => {
     if (!workspaceRoot || !languageId) {
       setReady(null);
       return;
     }
     let cancelled = false;
-    ensureLspClient(workspaceRoot, languageId)
+    let acquiredKey: { workspaceRoot: string; languageId: string } | null = null;
+    acquireLspClient(workspaceRoot, languageId)
       .then((entry) => {
-        if (cancelled) return;
+        acquiredKey = { workspaceRoot, languageId };
+        if (cancelled) {
+          // Lost the race against unmount; release immediately so the
+          // grace timer can run instead of leaking a refcount.
+          releaseLspClient(workspaceRoot, languageId);
+          return;
+        }
         setReady(entry);
       })
       .catch((err: unknown) => {
@@ -61,6 +71,9 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
       });
     return () => {
       cancelled = true;
+      if (acquiredKey) {
+        releaseLspClient(acquiredKey.workspaceRoot, acquiredKey.languageId);
+      }
     };
   }, [workspaceRoot, languageId]);
 

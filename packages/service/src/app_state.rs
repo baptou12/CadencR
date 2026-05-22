@@ -8,6 +8,7 @@ use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
+use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
@@ -69,6 +70,10 @@ pub struct AppState {
     /// `/api/lsp/sessions/{id}/connect`; this map is the bridge between the
     /// two requests. See `domain::lsp`.
     pub lsp_sessions: Arc<LspRegistry>,
+    /// Per-`(workspace, language)` crash backoff. Stops a misconfigured
+    /// language server from being relaunched on every WS reconnect. See
+    /// `domain::lsp::lifecycle`.
+    pub lsp_crashes: Arc<CrashTracker>,
 }
 
 impl AppState {
@@ -118,6 +123,7 @@ impl AppState {
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
+            lsp_crashes: CrashTracker::new(),
         }
     }
 }

@@ -18,6 +18,7 @@
 pub mod catalog;
 pub mod downloader;
 pub mod framing;
+pub mod lifecycle;
 pub mod proxy;
 pub mod registry;
 pub mod routes;

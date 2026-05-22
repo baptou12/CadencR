@@ -21,6 +21,7 @@ use crate::api::middleware::{validate_ws_origin, validate_ws_token};
 use crate::app_state::AppState;
 use crate::error::AppError;
 
+use super::lifecycle::CrashKey;
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
 use super::spawn::{resolve_language, resolve_server, spawn_server};
@@ -111,19 +112,41 @@ pub async fn connect_handler(
         Ok(spec) => spec,
         Err(err) => return err.into_response(),
     };
+
+    // Crash backoff: if this `(workspace, language)` has been crashing,
+    // reject the upgrade with 503 and a Retry-After hint so the renderer
+    // can surface "language server is unhealthy; try again in N s".
+    let crash_key = CrashKey {
+        workspace_root: spec.workspace_root.clone(),
+        language_id: spec.language_id.clone(),
+    };
+    if let Err(remaining) = state.lsp_crashes.check(&crash_key).await {
+        let secs = remaining.as_secs().max(1);
+        return AppError::ServiceUnavailable(format!(
+            "language server crashed recently; retry in {secs}s"
+        ))
+        .into_response();
+    }
+
     let server_spec = match resolve_server(&spec.language_id).await {
         Ok(s) => s,
         Err(err) => return err.into_response(),
     };
     let child = match spawn_server(&server_spec, &spec.workspace_root) {
         Ok(c) => c,
-        Err(err) => return err.into_response(),
+        Err(err) => {
+            // Spawn-time failure (binary not executable, missing libs, …)
+            // counts as a crash for backoff purposes.
+            state.lsp_crashes.record_crash(crash_key).await;
+            return err.into_response();
+        }
     };
 
     let ws = ws.protocols([selected_proto]);
     let display_name = server_spec.display_name.clone();
+    let crash_tracker = state.lsp_crashes.clone();
     ws.on_upgrade(move |socket| async move {
-        run_proxy(socket, child, &display_name).await;
+        run_proxy(socket, child, &display_name, crash_tracker, crash_key).await;
     })
     .into_response()
 }

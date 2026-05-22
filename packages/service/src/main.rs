@@ -132,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
                     domain::features::run_registry::FeatureRunRegistry::new(),
                 ),
                 lsp_sessions: domain::lsp::LspRegistry::new(),
+                lsp_crashes: domain::lsp::lifecycle::CrashTracker::new(),
             };
 
             // Push user-selected CLI binary paths into the SDK overrides
