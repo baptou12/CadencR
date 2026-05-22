@@ -160,6 +160,7 @@ function SafePatchDiff<LAnnotation>({
         renderHeaderMetadata,
         renderAnnotation,
         renderGutterUtility: undefined,
+        renderHoverUtility: undefined,
         lineAnnotations,
         getHoveredLine,
       }),
