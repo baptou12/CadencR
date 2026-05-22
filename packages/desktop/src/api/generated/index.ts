@@ -874,6 +874,21 @@ export interface MovePathResponse {
   new_path: string;
 }
 
+export interface OpenLspSessionRequest {
+  /** LSP `TextDocumentItem` language id (e.g. `"typescript"`, `"rust"`,
+`"python"`). The renderer derives this from the same catalog the
+service uses; see `domain/lsp/spawn.rs::resolve_server`. */
+  language_id: string;
+  /** Absolute path to the workspace root the language server should index. */
+  workspace_root: string;
+}
+
+export interface OpenLspSessionResponse {
+  /** Opaque single-use id. Connect within 30 s by upgrading
+`GET /api/lsp/sessions/{session_id}/connect` to WebSocket. */
+  session_id: string;
+}
+
 export interface OriginalBranchResponse {
   original_branch: string;
   worktree_branch: string;
@@ -1495,7 +1510,7 @@ export type GetFeatureAgentStateParams = {
    */
   after?: string | null;
   /**
-   * Max number of messages per session for initial load (default: all)
+   * Max number of messages per session for full loads (default: 100, max: 200)
    */
   limit?: number | null;
   /**
@@ -7882,6 +7897,73 @@ export function useHealth<
 
   return query;
 }
+
+export const openSession = (openLspSessionRequest: OpenLspSessionRequest, signal?: AbortSignal) => {
+  return customInstance<OpenLspSessionResponse>({
+    url: `/api/lsp/sessions`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: openLspSessionRequest,
+    signal,
+  });
+};
+
+export const getOpenSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openSession>>,
+    TError,
+    { data: OpenLspSessionRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof openSession>>,
+  TError,
+  { data: OpenLspSessionRequest },
+  TContext
+> => {
+  const mutationKey = ["openSession"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof openSession>>,
+    { data: OpenLspSessionRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return openSession(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type OpenSessionMutationResult = NonNullable<Awaited<ReturnType<typeof openSession>>>;
+export type OpenSessionMutationBody = OpenLspSessionRequest;
+export type OpenSessionMutationError = ErrorType<void>;
+
+export const useOpenSession = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openSession>>,
+    TError,
+    { data: OpenLspSessionRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof openSession>>,
+  TError,
+  { data: OpenLspSessionRequest },
+  TContext
+> => {
+  const mutationOptions = getOpenSessionMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const openapiSpec = (signal?: AbortSignal) => {
   return customInstance<void>({ url: `/api/openapi.json`, method: "GET", signal });

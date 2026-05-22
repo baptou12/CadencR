@@ -8,6 +8,7 @@ use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
+use crate::domain::lsp::LspRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
@@ -63,6 +64,11 @@ pub struct AppState {
     /// Active explicit auto-rename requests keyed by feature_id. Prevents
     /// duplicate model runs racing to update the same title.
     pub auto_name_runs: Arc<FeatureRunRegistry>,
+    /// Pending LSP session reservations. The renderer POSTs
+    /// `/api/lsp/sessions` to reserve, then upgrades
+    /// `/api/lsp/sessions/{id}/connect`; this map is the bridge between the
+    /// two requests. See `domain::lsp`.
+    pub lsp_sessions: Arc<LspRegistry>,
 }
 
 impl AppState {
@@ -111,6 +117,7 @@ impl AppState {
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
+            lsp_sessions: LspRegistry::new(),
         }
     }
 }
