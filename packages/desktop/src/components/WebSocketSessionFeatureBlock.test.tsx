@@ -1,15 +1,18 @@
-import { render } from "@/test-utils";
+import { act, render } from "@/test-utils";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketSessionFeatureBlock } from "./WebSocketSessionFeatureBlock";
 
 const mocks = vi.hoisted(() => ({
+  FeatureLayoutShell: vi.fn(() => null),
   setPaneActiveTab: vi.fn(),
   useSessionFeatureData: vi.fn(),
   useSessionControls: vi.fn(),
   useSessionRefs: vi.fn(),
   useWsSessionEffects: vi.fn(),
   useWsSessionShortcuts: vi.fn(),
+  useSessionTabs: vi.fn(() => ({})),
+  focusedTabId: "agent",
 }));
 
 vi.mock("@/components/FeatureTopBar", () => ({
@@ -26,25 +29,35 @@ vi.mock("@/components/editor/EditorFuzzyShortcut", () => ({
 }));
 
 vi.mock("@/components/feature-layout/FeatureLayoutShell", () => ({
-  FeatureLayoutShell: () => null,
+  FeatureLayoutShell: mocks.FeatureLayoutShell,
 }));
 
 vi.mock("@/hooks/useSaveLastOpenedFeature", () => ({
   useSaveLastOpenedFeature: vi.fn(),
 }));
 
-vi.mock("@/stores/feature-layout-store", () => ({
-  findPaneContaining: () => null,
-  getFocusedTab: () => "agent",
-  isTabVisible: () => false,
-  selectFeatureLayout: () => () => ({}),
-  useFeatureLayoutStore: (
-    selector: (state: {
-      features: Record<number, unknown>;
-      setPaneActiveTab: typeof mocks.setPaneActiveTab;
-    }) => unknown,
-  ) => selector({ features: {}, setPaneActiveTab: mocks.setPaneActiveTab }),
-}));
+vi.mock("@/stores/feature-layout-store", () => {
+  const state = {
+    features: {},
+    setPaneActiveTab: mocks.setPaneActiveTab,
+  };
+  const useFeatureLayoutStore = Object.assign(
+    (
+      selector: (state: {
+        features: Record<number, unknown>;
+        setPaneActiveTab: typeof mocks.setPaneActiveTab;
+      }) => unknown,
+    ): unknown => selector(state),
+    { getState: () => state },
+  );
+  return {
+    findPaneContaining: () => null,
+    getFocusedTab: () => mocks.focusedTabId,
+    isTabVisible: () => false,
+    selectFeatureLayout: () => () => ({}),
+    useFeatureLayoutStore,
+  };
+});
 
 vi.mock("@/components/WebSocketSessionFeatureBlockHooks", () => ({
   useSessionFeatureData: mocks.useSessionFeatureData,
@@ -55,12 +68,14 @@ vi.mock("@/components/WebSocketSessionFeatureBlockHooks", () => ({
 }));
 
 vi.mock("@/components/WebSocketSessionFeatureBlockTabs", () => ({
-  useSessionTabs: () => ({}),
+  useSessionTabs: mocks.useSessionTabs,
 }));
 
 describe("WebSocketSessionFeatureBlock", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    mocks.focusedTabId = "agent";
     mocks.useSessionFeatureData.mockReturnValue({
       projectPath: "/repo",
       gitStats: undefined,
@@ -114,6 +129,219 @@ describe("WebSocketSessionFeatureBlock", () => {
 
     expect(mocks.useWsSessionEffects).toHaveBeenCalledWith(
       expect.objectContaining({ autoInitSession: true, hotkeysEnabled: false }),
+    );
+  });
+
+  it("does not mount hidden non-agent panes during route open", () => {
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+      />,
+    );
+
+    const layoutCalls = mocks.FeatureLayoutShell.mock.calls as unknown as Array<[unknown]>;
+    const props = layoutCalls.at(-1)?.[0];
+    expect(props).toEqual(expect.objectContaining({ mountInactiveTabs: false }));
+  });
+
+  it("defers non-agent data and tab hydration on initial route open", () => {
+    vi.useFakeTimers();
+
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+      />,
+    );
+
+    expect(mocks.useSessionFeatureData).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      "/repo",
+      1,
+      2,
+      expect.objectContaining({
+        gitMetadataEnabled: false,
+        projectLookupEnabled: false,
+      }),
+    );
+    expect(mocks.useSessionControls).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      1,
+      2,
+      "/repo",
+      expect.objectContaining({
+        loadPersistedState: true,
+        agentCatalogEnabled: false,
+      }),
+    );
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: false }),
+    );
+  });
+
+  it("enables deferred non-agent work after the agent-first delay", () => {
+    vi.useFakeTimers();
+
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+      />,
+    );
+
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(mocks.useSessionControls).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      1,
+      2,
+      "/repo",
+      expect.objectContaining({ agentCatalogEnabled: true }),
+    );
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+  });
+
+  it("keeps deferred non-agent work enabled after returning from a non-agent tab", () => {
+    vi.useFakeTimers();
+
+    const props = {
+      sessionId: "ws-feature-1",
+      cwd: "/repo",
+      featureId: 1,
+      projectId: 2,
+    };
+    const { rerender } = render(<WebSocketSessionFeatureBlock {...props} />);
+
+    act(() => {
+      vi.runOnlyPendingTimers();
+    });
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+
+    mocks.focusedTabId = "editor";
+    rerender(<WebSocketSessionFeatureBlock {...props} />);
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+
+    mocks.focusedTabId = "agent";
+    rerender(<WebSocketSessionFeatureBlock {...props} />);
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+  });
+
+  it("keeps non-agent work enabled after a pre-delay manual non-agent visit", () => {
+    vi.useFakeTimers();
+
+    const props = {
+      sessionId: "ws-feature-1",
+      cwd: "/repo",
+      featureId: 1,
+      projectId: 2,
+    };
+    const { rerender } = render(<WebSocketSessionFeatureBlock {...props} />);
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: false }),
+    );
+
+    mocks.focusedTabId = "editor";
+    rerender(<WebSocketSessionFeatureBlock {...props} />);
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+
+    mocks.focusedTabId = "agent";
+    rerender(<WebSocketSessionFeatureBlock {...props} />);
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+  });
+
+  it("does not defer when opening directly to a non-agent tab", () => {
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+        requestedFocusTab="git"
+      />,
+    );
+
+    expect(mocks.useSessionControls).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      1,
+      2,
+      "/repo",
+      expect.objectContaining({ agentCatalogEnabled: true }),
+    );
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+  });
+
+  it("does not defer when the restored focused tab is non-agent", () => {
+    mocks.focusedTabId = "editor";
+
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+      />,
+    );
+
+    expect(mocks.useSessionControls).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      1,
+      2,
+      "/repo",
+      expect.objectContaining({ agentCatalogEnabled: true }),
+    );
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
+    );
+  });
+
+  it("hydrates an embedded non-agent tab only when that tab is focused", () => {
+    mocks.focusedTabId = "terminal";
+
+    render(
+      <WebSocketSessionFeatureBlock
+        sessionId="ws-feature-1"
+        cwd="/repo"
+        featureId={1}
+        projectId={2}
+        embedded
+      />,
+    );
+
+    expect(mocks.useSessionControls).toHaveBeenLastCalledWith(
+      "ws-feature-1",
+      1,
+      2,
+      "/repo",
+      expect.objectContaining({
+        loadPersistedState: false,
+        agentCatalogEnabled: false,
+      }),
+    );
+    expect(mocks.useSessionTabs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ nonAgentTabsEnabled: true }),
     );
   });
 });

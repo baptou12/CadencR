@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@/test-utils";
 import { act, waitFor } from "@testing-library/react";
 import React from "react";
@@ -309,6 +309,10 @@ async function selectBranchAndSend(branch: string): Promise<void> {
 }
 
 describe("WsSessionPage route", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.mocked(AgentSession).mockClear();
     mocks.mockFocusPromptBar.mockClear();
@@ -325,12 +329,27 @@ describe("WsSessionPage route", () => {
     mocks.mockSplitEditorFocused.mockReturnValue(false);
   });
 
-  it("mounts every tab body via the layout shell", async () => {
-    render(<WsSessionPage />);
-    expect(screen.getByTestId("agent-session")).toBeInTheDocument();
-    expect(screen.getByTestId("terminal-tab")).toBeInTheDocument();
-    expect(screen.getByTestId("git-tab")).toBeInTheDocument();
-    expect(await screen.findByTestId("editor-tab")).toBeInTheDocument();
+  it("defers non-agent tab bodies until after the agent-first delay", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<WsSessionPage />);
+      expect(screen.getByTestId("agent-session")).toBeInTheDocument();
+      expect(screen.queryByTestId("terminal-tab")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("git-tab")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("editor-tab")).not.toBeInTheDocument();
+      expect(screen.getByText(/Loading Terminal after the conversation/)).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(1200);
+      });
+      vi.useRealTimers();
+
+      expect(screen.getByTestId("terminal-tab")).toBeInTheDocument();
+      expect(screen.getByTestId("git-tab")).toBeInTheDocument();
+      expect(await screen.findByTestId("editor-tab")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("forwards session todos to AgentSession when the agent tab is visible", () => {

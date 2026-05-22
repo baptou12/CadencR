@@ -23,6 +23,7 @@ import {
   useWsSessionShortcuts,
 } from "@/components/WebSocketSessionFeatureBlockHooks";
 import { useSessionTabs } from "@/components/WebSocketSessionFeatureBlockTabs";
+import { useAgentFirstNonAgentWork } from "@/components/useAgentFirstNonAgentWork";
 import { useEditorStore } from "@/stores/editor-store";
 import { toRelativePath } from "@/lib/utils";
 
@@ -76,17 +77,25 @@ function WebSocketSessionFeatureBody(
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
   const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
+  const nonAgentTabRequested =
+    focusedTabId !== "agent" || (requestedFocusTab != null && requestedFocusTab !== "agent");
+  const nonAgentWorkEnabled = useAgentFirstNonAgentWork({
+    enabled: !embedded || nonAgentTabRequested,
+    immediate: nonAgentTabRequested,
+    resetKey: sessionId,
+  });
 
   // `useSaveLastOpenedFeature` is mounted once at the route level; we used to
   // also call it here, which produced a duplicate
   // `PUT /api/workspace/settings/lastOpenedFeature` on every open.
   const gitVisible = isTabVisible(layoutState, "git");
   const data = useSessionFeatureData(sessionId, cwd, featureId, projectId, {
-    gitMetadataEnabled: !embedded || gitVisible,
-    projectLookupEnabled: !embedded,
+    gitMetadataEnabled: nonAgentWorkEnabled && (!embedded || gitVisible),
+    projectLookupEnabled: nonAgentWorkEnabled,
   });
   const controls = useSessionControls(sessionId, featureId, projectId, data.effectiveCwd, {
     loadPersistedState: !embedded,
+    agentCatalogEnabled: !embedded && nonAgentWorkEnabled,
   });
   const refs = useSessionRefs();
   const requestedFocusKeyRef = useRef<string | null>(null);
@@ -148,6 +157,7 @@ function WebSocketSessionFeatureBody(
     controls,
     refs,
     layoutState,
+    nonAgentWorkEnabled,
     hotkeysEnabled,
     sendFromGitTab,
   });
@@ -188,7 +198,7 @@ function WebSocketSessionFeatureBody(
           tabs={tabs}
           splitsEnabled={!embedded}
           hotkeysEnabled={hotkeysEnabled}
-          mountInactiveTabs={!embedded}
+          mountInactiveTabs={false}
           onTerminalActivate={() => requestAnimationFrame(() => refs.terminal.current?.activate())}
           onEditorActivate={() =>
             requestAnimationFrame(() => refs.editor.current?.focusActiveEditor())
@@ -253,6 +263,7 @@ function useFeatureBlockTabs(args: {
   controls: ReturnType<typeof useSessionControls>;
   refs: ReturnType<typeof useSessionRefs>;
   layoutState: Parameters<typeof isTabVisible>[0];
+  nonAgentWorkEnabled: boolean;
   hotkeysEnabled: boolean;
   sendFromGitTab: (message: string) => void;
 }): ReturnType<typeof useSessionTabs> {
@@ -264,6 +275,7 @@ function useFeatureBlockTabs(args: {
     controls: args.controls,
     refs: args.refs,
     agentVisible: isTabVisible(args.layoutState, "agent"),
+    nonAgentTabsEnabled: args.nonAgentWorkEnabled,
     hotkeysEnabled: args.hotkeysEnabled,
     sendFromGitTab: args.sendFromGitTab,
   });

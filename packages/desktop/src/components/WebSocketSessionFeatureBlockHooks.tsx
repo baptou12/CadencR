@@ -181,7 +181,7 @@ export function useSessionControls(
   featureId: number,
   projectId: number,
   effectiveCwd: string,
-  options?: { loadPersistedState?: boolean },
+  options?: { agentCatalogEnabled?: boolean; loadPersistedState?: boolean },
 ): SessionControls {
   const ws = useWebSocketSession(sessionId, featureId, {
     loadPersisted: options?.loadPersistedState ?? true,
@@ -194,7 +194,11 @@ export function useSessionControls(
   const setProjectSetting = useSetProjectSetting();
   const defaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
   const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModelContext();
-  const agentCatalog = useAgentCatalog({ cwd: effectiveCwd, staleTime: 30_000 });
+  const agentCatalog = useAgentCatalog({
+    cwd: effectiveCwd,
+    enabled: options?.agentCatalogEnabled ?? true,
+    staleTime: 30_000,
+  });
   const resolvedProviderId = resolveProvider("session");
   const resolvedModelId = resolveModel("session");
   const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);

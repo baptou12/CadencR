@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo } from "react";
+import { lazy, Suspense, useCallback, useMemo, type ReactElement } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
@@ -35,6 +35,7 @@ interface UseSessionTabsArgs {
   controls: ReturnType<typeof useSessionControls>;
   refs: ReturnType<typeof useSessionRefs>;
   agentVisible: boolean;
+  nonAgentTabsEnabled: boolean;
   hotkeysEnabled: boolean;
   sendFromGitTab: (message: string) => void;
 }
@@ -153,45 +154,51 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
 }
 
 function useTerminalTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { featureId, projectId, refs } = args;
+  const { featureId, projectId, refs, nonAgentTabsEnabled } = args;
   return useMemo(
     () => ({
       label: "Terminal",
       Icon: TerminalIcon,
       shortcut: ["cmd", "shift", "T"],
-      content: (
+      content: nonAgentTabsEnabled ? (
         <FeatureTerminalTab ref={refs.terminal} featureId={featureId} projectId={projectId} />
+      ) : (
+        <DeferredTabContent label="Terminal" />
       ),
     }),
-    [featureId, projectId, refs.terminal],
+    [featureId, nonAgentTabsEnabled, projectId, refs.terminal],
   );
 }
 
 function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { featureId, data, sendFromGitTab } = args;
+  const { featureId, data, nonAgentTabsEnabled, sendFromGitTab } = args;
   return useMemo(
     () => ({
       label: "Git",
       Icon: GitCompareArrowsIcon,
       shortcut: ["cmd", "shift", "G"],
       badge: <GitBadge featureId={featureId} gitBranch={data.gitBranch} />,
-      content: (
+      content: nonAgentTabsEnabled ? (
         <FeatureGitTab featureId={featureId} diffMode="worktree" onSendComments={sendFromGitTab} />
+      ) : (
+        <DeferredTabContent label="Git" />
       ),
     }),
-    [data.gitBranch, featureId, sendFromGitTab],
+    [data.gitBranch, featureId, nonAgentTabsEnabled, sendFromGitTab],
   );
 }
 
 function useEditorTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { featureId, projectId, data, refs } = args;
+  const { featureId, projectId, data, refs, nonAgentTabsEnabled } = args;
   const projectPathOrCwd = data.effectiveCwd ?? data.projectPath;
   return useMemo(
     () => ({
       label: "Editor",
       Icon: CodeIcon,
       shortcut: ["cmd", "shift", "E"],
-      content: projectPathOrCwd ? (
+      content: !nonAgentTabsEnabled ? (
+        <DeferredTabContent label="Editor" />
+      ) : projectPathOrCwd ? (
         <Suspense fallback={null}>
           <FeatureEditorTab
             ref={refs.editor}
@@ -202,7 +209,15 @@ function useEditorTab(args: UseSessionTabsArgs): FeatureTabDef {
         </Suspense>
       ) : null,
     }),
-    [featureId, projectId, projectPathOrCwd, refs.editor],
+    [featureId, nonAgentTabsEnabled, projectId, projectPathOrCwd, refs.editor],
+  );
+}
+
+function DeferredTabContent({ label }: { label: string }): ReactElement {
+  return (
+    <div className="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
+      Loading {label} after the conversation…
+    </div>
   );
 }
 

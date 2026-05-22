@@ -17,6 +17,7 @@ import {
   useCadencrFileTree,
 } from "@/components/file-tree/CadencrFileTree";
 import { FileTreeContextMenu } from "./FileTreeContextMenu";
+import { useDeferredFullTreeLoad } from "./useDeferredFullTreeLoad";
 import { useFileTreeDraft, type DraftKind } from "./useFileTreeDraft";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { validateSimpleName } from "@/lib/validate-name";
@@ -61,11 +62,18 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
     feature_id: featureId,
     exclude_gitignored: true,
   });
-  const all = useTreeAll({
-    project_id: projectId,
-    feature_id: featureId,
-    exclude_gitignored: false,
+  const fullTreeEnabled = useDeferredFullTreeLoad({
+    featureId,
+    trackedReady: tracked.data != null,
   });
+  const all = useTreeAll(
+    {
+      project_id: projectId,
+      feature_id: featureId,
+      exclude_gitignored: false,
+    },
+    { query: { enabled: fullTreeEnabled } },
+  );
 
   const entries = all.data ?? tracked.data;
   // One pass to produce both the pierre `paths` array and the minimal set
