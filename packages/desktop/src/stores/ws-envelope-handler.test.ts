@@ -350,7 +350,36 @@ describe("handleEnvelope error handling", () => {
 
     expect(toast.error).not.toHaveBeenCalled();
     const updated = ctx.getSession("s1");
-    expect(updated.blocks.some((b) => b.isError)).toBe(true);
+    const errorBlock = updated.blocks.find((b) => b.type === "error");
+    expect(errorBlock).toBeDefined();
+    expect(errorBlock?.content).toBe("SDK exploded");
+    expect(errorBlock?.errorCode).toBe("SDK_ERROR");
+    expect(updated.lifecycle.phase).toBe("error");
+  });
+
+  it("keeps the compaction lifecycle alive when an error arrives during /compact", () => {
+    // Sending a `prompt.send` while the runtime is mid-compaction makes the
+    // steering RPC fail; the backend emits `session.error` but the compaction
+    // is still running. The UI must surface the error without claiming the
+    // agent stopped — `pendingManualCompact` stays true and the lifecycle
+    // does not flip to `error`.
+    vi.mocked(toast.error).mockClear();
+    const session = createSessionEntry();
+    session.pendingManualCompact = true;
+    session.lifecycle = { phase: "active" };
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "error",
+      payload: { code: "SDK_ERROR", message: "steer failed" },
+    });
+
+    const updated = ctx.getSession("s1");
+    expect(updated.pendingManualCompact).toBe(true);
+    expect(updated.lifecycle.phase).toBe("active");
+    const errorBlock = updated.blocks.find((b) => b.type === "error");
+    expect(errorBlock?.content).toBe("steer failed");
   });
 });
 

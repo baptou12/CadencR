@@ -218,14 +218,7 @@ pub(super) fn build_blocks(messages: &[AgentMessageRow]) -> Vec<AgentBlock> {
             }
             "error" => {
                 push_block(
-                    make_simple_block(
-                        "text",
-                        format!("Error: {}", msg.content),
-                        msg,
-                        id,
-                        Some(true),
-                        false,
-                    ),
+                    make_simple_block("error", msg.content.clone(), msg, id, None, false),
                     parent_idx,
                     &mut all,
                     &mut root_indices,
@@ -346,13 +339,14 @@ mod tests {
     }
 
     #[test]
-    fn test_build_blocks_error_message_is_flagged() {
+    fn test_build_blocks_error_message_becomes_error_block() {
+        // Persisted error messages surface as their own `error` block kind in
+        // the API response (the frontend renders them with a dedicated UI).
         let msgs = vec![make_message(1, 1, "error", "OpenCode stream failed")];
         let blocks = build_blocks(&msgs);
 
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].type_, "text");
-        assert_eq!(blocks[0].content, "Error: OpenCode stream failed");
-        assert_eq!(blocks[0].is_error, Some(true));
+        assert_eq!(blocks[0].type_, "error");
+        assert_eq!(blocks[0].content, "OpenCode stream failed");
     }
 }

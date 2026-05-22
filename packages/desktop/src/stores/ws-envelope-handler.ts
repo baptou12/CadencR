@@ -50,6 +50,7 @@ import {
   type PermissionMode,
 } from "@/types/permission-mode";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
+import { makeErrorBlock } from "./ws-session-store-helpers";
 import {
   deferTailPromptTurnBoundary,
   markPromptReceived,
@@ -531,33 +532,34 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
   }
 
   const session = ctx.getSession(sessionId);
-  const state = session.streamingState;
-  if (p?.message) {
-    state.counter += 1;
-    const blocks = removePendingPromptBlocks([
-      ...session.blocks,
-      {
-        id: `ws-err-${state.counter}`,
-        type: "text" as const,
-        content: `Error: ${p.message}`,
-        isError: true,
-      },
-    ]);
-    ctx.set(
-      updateSession(ctx.get(), sessionId, {
-        lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored", message: p.message }),
+  // A manual compaction holds the prompt turn — a follow-up `prompt.send` while
+  // compacting fails the steering RPC and the backend emits `session.error`,
+  // but the underlying compaction is still running. Surface the error inline
+  // (so the user sees what happened) without flipping the turn to `error` or
+  // clearing the compaction flag — both of those would lie about the agent
+  // having stopped.
+  const lifecyclePatch = session.pendingManualCompact
+    ? {}
+    : {
+        lifecycle: transitionTurn(session.lifecycle, {
+          type: "turn_errored" as const,
+          ...(p?.message ? { message: p.message } : {}),
+        }),
         pendingManualCompact: false,
-        ...blocksPatchWithDerived(state, blocks),
-      }),
-    );
-  } else {
-    ctx.set(
-      updateSession(ctx.get(), sessionId, {
-        lifecycle: transitionTurn(session.lifecycle, { type: "turn_errored" }),
-        pendingManualCompact: false,
-      }),
-    );
+      };
+  if (!p?.message) {
+    if (Object.keys(lifecyclePatch).length === 0) return;
+    ctx.set(updateSession(ctx.get(), sessionId, lifecyclePatch));
+    return;
   }
+  const errorBlock = makeErrorBlock(session, p.message, { code: p.code });
+  const blocks = removePendingPromptBlocks([...session.blocks, errorBlock]);
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      ...lifecyclePatch,
+      ...blocksPatchWithDerived(session.streamingState, blocks),
+    }),
+  );
 }
 
 function handleModeRejectedByCli(

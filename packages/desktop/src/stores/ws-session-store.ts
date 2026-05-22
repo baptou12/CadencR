@@ -47,6 +47,7 @@ import {
 } from "./ws-session-actions";
 import {
   appendLocalUserMessage,
+  makeErrorBlock,
   buildQueuedInitEnvelopes,
   buildQueuedPromptPatch,
   buildSlashCommandsKey,
@@ -201,23 +202,14 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             session.pendingWsRequests.clear();
           }
           const wasRunning = session != null && isTurnActive(session.lifecycle);
-          const errorBlock = wasRunning
-            ? {
-                id: `ws-err-close-${Date.now()}`,
-                type: "text" as const,
-                content: "Connection lost while streaming. Reconnecting…",
-                isError: true,
-              }
-            : undefined;
-          const closedBlocks = errorBlock
-            ? [...(session?.blocks ?? []), errorBlock]
-            : (session?.blocks ?? []);
-          const closedDerived = errorBlock
-            ? blocksPatchWithDerived(
-                session?.streamingState ?? createStreamingState(),
-                closedBlocks,
-              )
-            : { blocks: closedBlocks };
+          const closedDerived = wasRunning
+            ? blocksPatchWithDerived(session.streamingState, [
+                ...session.blocks,
+                makeErrorBlock(session, "Connection lost while streaming. Reconnecting…", {
+                  idPrefix: "ws-err-close",
+                }),
+              ])
+            : { blocks: session?.blocks ?? [] };
           set(
             updateSession(get(), sessionId, {
               conn: null,
@@ -280,21 +272,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           } catch (err) {
             console.error("[ws-session] handleEnvelope error:", err);
             const session = getSession(sessionId);
-            session.streamingState.counter += 1;
-            const blocks = [
-              ...session.blocks,
-              {
-                id: `ws-err-${session.streamingState.counter}`,
-                type: "text" as const,
-                content: `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
-                isError: true,
-              },
-            ];
+            const errorBlock = makeErrorBlock(
+              session,
+              `Internal error: ${err instanceof Error ? err.message : "unknown"}`,
+            );
             set(
               updateSession(
                 get(),
                 sessionId,
-                blocksPatchWithDerived(session.streamingState, blocks),
+                blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
               ),
             );
           }
@@ -439,20 +425,13 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           const error = parseErrorPayload(payload);
           if (error?.message || payload === null) {
             const session = getSession(sessionId);
-            session.streamingState.counter += 1;
             const message = error?.message ?? "Permission response timed out.";
-            const blocks = [
-              ...session.blocks,
-              {
-                id: `ws-permission-error-${session.streamingState.counter}`,
-                type: "text" as const,
-                content: message,
-                isError: true,
-              },
-            ];
+            const errorBlock = makeErrorBlock(session, message, {
+              idPrefix: "ws-permission-error",
+            });
             set(
               updateSession(get(), sessionId, {
-                ...blocksPatchWithDerived(session.streamingState, blocks),
+                ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
                 submittingPermissionRequestId: null,
               }),
             );
