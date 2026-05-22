@@ -22,9 +22,13 @@ function normalizeTanStackShortcut(shortcut: string): string {
  * before CodeMirror, xterm.js, or another embedded surface can stop
  * propagation. Matching still goes through `@tanstack/hotkeys`, so layout
  * behavior stays consistent with normal shortcuts.
+ *
+ * Accepts a single combo or an array of combos — pass multiple when one
+ * action needs to fire on layout-specific alternatives (e.g. `Mod+/` on
+ * QWERTY plus `Mod+?` on AZERTY).
  */
 export function useGlobalShortcut(
-  shortcut: string,
+  shortcut: string | readonly string[],
   callback: (e: KeyboardEvent) => void,
   options?: GlobalShortcutOptions,
 ): void {
@@ -34,11 +38,16 @@ export function useGlobalShortcut(
   const enabledRef = useRef(true);
   enabledRef.current = options?.enabled ?? true;
 
+  const shortcutKey = Array.isArray(shortcut) ? shortcut.join("|") : (shortcut as string);
+
   useEffect(() => {
-    const variants = expandCharacterHotkey(normalizeTanStackShortcut(shortcut)).map((variant) => ({
-      ...variant,
-      parsed: parseHotkey(variant.hotkey),
-    }));
+    const combos = Array.isArray(shortcut) ? shortcut : [shortcut as string];
+    const variants = combos.flatMap((combo) =>
+      expandCharacterHotkey(normalizeTanStackShortcut(combo)).map((variant) => ({
+        ...variant,
+        parsed: parseHotkey(variant.hotkey),
+      })),
+    );
     const handler = (e: KeyboardEvent) => {
       if (!enabledRef.current) return;
       const matches = variants.some((variant) => {
@@ -49,5 +58,7 @@ export function useGlobalShortcut(
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [shortcut]);
+    // shortcutKey is a stable join of the combo list, so the effect re-runs
+    // only when the registered combos actually change.
+  }, [shortcutKey]);
 }

@@ -154,8 +154,12 @@ export const SHORTCUTS = [
   { id: "zoom-out", keys: ["mod", "minus"], description: "Zoom out", scope: "global" },
   { id: "zoom-reset", keys: ["mod", "0"], description: "Reset zoom", scope: "global" },
   {
+    // QWERTY users press ⌘+/ (event.key === "/"); AZERTY users press the
+    // labelled "?" key which is Shift+, → event.key === "?". Bind both so
+    // the help modal opens on every layout.
     id: "shortcuts-help",
-    keys: ["mod", "?"],
+    keys: ["mod", "slash"],
+    altKeys: ["mod", "?"],
     description: "Show keyboard shortcuts",
     scope: "global",
     aliases: ["help", "cheatsheet"],

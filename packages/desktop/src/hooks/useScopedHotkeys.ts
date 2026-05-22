@@ -63,7 +63,7 @@ export function useScopedHotkeys(
 
 /** Capture-phase variant for shortcuts that must fire while CodeMirror or xterm holds focus. */
 export function useScopedGlobalShortcut(
-  shortcut: string,
+  shortcut: string | readonly string[],
   callback: (e: KeyboardEvent) => void,
   scope: TabKind,
   options?: { enabled?: boolean },
