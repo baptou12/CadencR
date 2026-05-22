@@ -1,292 +1,370 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { Loader2 } from "lucide-react";
-import { useFileTree } from "@/api/generated";
+import { useCallback, useMemo } from "react";
+import { toast } from "sonner";
+import type {
+  ContextMenuItem as FileTreeContextMenuItem,
+  ContextMenuOpenContext as FileTreeContextMenuOpenContext,
+  FileTreeRenameEvent,
+} from "@pierre/trees";
+import { useGetUncommittedFiles, useTreeAll } from "@/api/generated";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useFileTreeEditStore } from "@/stores/file-tree-edit-store";
+import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
 import {
-  FileTreeMutationsProvider,
-  useFileTreeMutationsContext,
-} from "@/hooks/useFileTreeMutations";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import FileTreeItem from "./FileTreeItem";
-import FileTreeInlineCreate from "./FileTreeInlineCreate";
-import type { FileTreeEntry } from "@/api/generated";
+  buildPierreInputs,
+  CadencrFileTree,
+  fromPierrePath,
+  gitStatusFromUncommittedFiles,
+  useCadencrFileTree,
+} from "@/components/file-tree/CadencrFileTree";
+import { FileTreeContextMenu } from "./FileTreeContextMenu";
+import { useFileTreeDraft, type DraftKind } from "./useFileTreeDraft";
+import { apiErrorMessage } from "@/lib/api-errors";
+import { validateSimpleName } from "@/lib/validate-name";
 
 interface FileTreeProps {
   projectId: number;
   featureId: number;
 }
 
-interface TreeNodeProps {
-  projectId: number;
-  featureId: number;
-  dirPath: string;
-  depth: number;
-  activeFilePath: string | null;
-  expandedDirs: Set<string>;
-  onToggle: (path: string) => void;
-  onOpenFile: (path: string) => void;
-  onWillCreate: (folderPath: string) => void;
+/** Parent dir of an FS-form path; "" for top-level entries. */
+function parentDirOf(fsPath: string): string {
+  const idx = fsPath.lastIndexOf("/");
+  return idx === -1 ? "" : fsPath.slice(0, idx);
+}
+
+/** Basename of an FS-form path. */
+function basenameOf(fsPath: string): string {
+  return fsPath.slice(fsPath.lastIndexOf("/") + 1);
 }
 
 /**
- * Inline input row rendered at the top of any `TreeNode` whose `dirPath`
- * matches the active `creating.parentDir`. This unifies the create UX
- * across right-click contexts: in the empty root area, on a folder row,
- * and on a file row — the input always shows up as a new tree row at
- * `dirPath`'s level, never as a popover.
+ * Editor file tree, backed by `@pierre/trees`. Pierre owns rendering,
+ * virtualization, inline rename, drag-and-drop. We own data fetching
+ * (`useTreeAll`), mutations (`useFileTreeMutations`), the context menu,
+ * the inline-create draft (`useFileTreeDraft`), and tree-level
+ * shortcuts (Enter = rename, ⌘⌫ = trash).
  */
-function InlineCreateRow({ dirPath, depth }: { dirPath: string; depth: number }) {
-  // Narrow selector: only this dirPath's row re-renders when `creating` flips
-  // in or out of matching state. Returning the same `null` keeps the
-  // subscription quiet for every non-matching node.
-  //
-  // The inline row is only used when no anchor row exists (the root context
-  // menu); when `anchorPath` is set, `FileTreeItem` renders a popover at
-  // that row instead.
-  const creating = useFileTreeEditStore((s) =>
-    s.creating?.parentDir === dirPath && s.creating.anchorPath === undefined ? s.creating : null,
-  );
-  const { createFile, createFolder, submitCreate } = useFileTreeMutationsContext();
-
-  if (!creating) return null;
-
-  function handleSubmit(name: string) {
-    if (!creating) return;
-    submitCreate(creating.kind, creating.parentDir, name, () =>
-      useFileTreeEditStore.getState().cancel(),
-    );
-  }
-
-  return (
-    <FileTreeInlineCreate
-      kind={creating.kind}
-      depth={depth}
-      pending={createFile.isPending || createFolder.isPending}
-      onSubmit={handleSubmit}
-      onCancel={() => useFileTreeEditStore.getState().cancel()}
-    />
-  );
-}
-
-function TreeNode({
-  projectId,
-  featureId,
-  dirPath,
-  depth,
-  activeFilePath,
-  expandedDirs,
-  onToggle,
-  onOpenFile,
-  onWillCreate,
-}: TreeNodeProps) {
-  const {
-    data: entries,
-    isLoading,
-    isError,
-  } = useFileTree(
-    { project_id: projectId, feature_id: featureId, dir_path: dirPath },
-    { query: { enabled: true } },
-  );
-
-  // Render the inline create row even during loading/error states so the
-  // user can keep typing while the tree refetches.
-  const inlineCreate = <InlineCreateRow dirPath={dirPath} depth={depth} />;
-
-  if (isLoading) {
-    return (
-      <>
-        {inlineCreate}
-        <div
-          className="flex items-center gap-1 px-2 py-0.5 text-xs text-muted-foreground"
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
-        >
-          <Loader2 className="w-3 h-3 animate-spin" />
-          <span>Loading…</span>
-        </div>
-      </>
-    );
-  }
-
-  if (isError || !entries) {
-    return (
-      <>
-        {inlineCreate}
-        <div
-          className="px-4 py-0.5 text-xs text-destructive"
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
-        >
-          Failed to load
-        </div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {inlineCreate}
-      {entries.map((entry) => (
-        <EntryRow
-          key={entry.path}
-          entry={entry}
-          depth={depth}
-          projectId={projectId}
-          featureId={featureId}
-          activeFilePath={activeFilePath}
-          expandedDirs={expandedDirs}
-          onToggle={onToggle}
-          onOpenFile={onOpenFile}
-          onWillCreate={onWillCreate}
-        />
-      ))}
-    </>
-  );
-}
-
-interface EntryRowProps {
-  entry: FileTreeEntry;
-  depth: number;
-  projectId: number;
-  featureId: number;
-  activeFilePath: string | null;
-  expandedDirs: Set<string>;
-  onToggle: (path: string) => void;
-  onOpenFile: (path: string) => void;
-  onWillCreate: (folderPath: string) => void;
-}
-
-function EntryRow({
-  entry,
-  depth,
-  projectId,
-  featureId,
-  activeFilePath,
-  expandedDirs,
-  onToggle,
-  onOpenFile,
-  onWillCreate,
-}: EntryRowProps) {
-  const isExpanded = expandedDirs.has(entry.path);
-  const isActive = activeFilePath === entry.path;
-
-  return (
-    <>
-      <FileTreeItem
-        entry={entry}
-        depth={depth}
-        isExpanded={isExpanded}
-        isActive={isActive}
-        projectId={projectId}
-        featureId={featureId}
-        onToggle={onToggle}
-        onOpenFile={onOpenFile}
-        onWillCreate={onWillCreate}
-      />
-      {entry.is_dir && isExpanded && (
-        <TreeNode
-          projectId={projectId}
-          featureId={featureId}
-          dirPath={entry.path}
-          depth={depth + 1}
-          activeFilePath={activeFilePath}
-          expandedDirs={expandedDirs}
-          onToggle={onToggle}
-          onOpenFile={onOpenFile}
-          onWillCreate={onWillCreate}
-        />
-      )}
-    </>
-  );
-}
-
 export default function FileTree({ projectId, featureId }: FileTreeProps) {
-  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
-  const { activePaneId, panes, openFile } = useEditorState(featureId);
+  const { activePaneId, panes, openFile, renameFilePath } = useEditorState(featureId);
   const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
   const { value: maxTabsSetting } = useDebouncedSetting("editor_max_tabs");
   const maxTabs = useMemo(() => parseInt(maxTabsSetting ?? "10", 10), [maxTabsSetting]);
 
-  function startRootCreate(kind: "file" | "folder") {
-    useFileTreeEditStore.getState().startCreate({ parentDir: "", kind });
-  }
+  const mutations = useFileTreeMutations(projectId, featureId);
 
-  // Cancel any in-flight edit popover when the feature changes — stale state
-  // from another feature would point at a path that no longer exists.
-  useEffect(() => {
-    useFileTreeEditStore.getState().cancel();
-  }, [featureId]);
+  // Two-pass fetch: tracked first (fast — walker skips gitignored dirs
+  // wholesale), then all entries (slow — walks node_modules etc.). The
+  // pane unblocks as soon as `tracked` lands; `all` upgrades the model
+  // in place once it resolves.
+  const tracked = useTreeAll({
+    project_id: projectId,
+    feature_id: featureId,
+    exclude_gitignored: true,
+  });
+  const all = useTreeAll({
+    project_id: projectId,
+    feature_id: featureId,
+    exclude_gitignored: false,
+  });
 
-  const handleToggle = useCallback((path: string) => {
-    setExpandedDirs((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
+  const entries = all.data ?? tracked.data;
+  // One pass to produce both the pierre `paths` array and the minimal set
+  // of gitignored "roots" feeding `useGitignoredDimming`.
+  const { paths, ignoredPathPrefixes } = useMemo(() => {
+    if (entries == null) return EMPTY_INPUTS;
+    const { paths: p, ignoredRoots } = buildPierreInputs(entries);
+    return { paths: p, ignoredPathPrefixes: ignoredRoots };
+  }, [entries]);
 
-  const handleOpenFile = useCallback(
-    (filePath: string) => {
-      openFile(activePaneId, filePath, maxTabs);
-    },
-    [openFile, activePaneId, maxTabs],
+  // Live uncommitted-file statuses. WS git handler invalidates
+  // `/api/git/uncommitted-files` on every `git.status` envelope; pierre
+  // decorates changed rows and dots every ancestor folder. We deliberately
+  // don't feed gitignored entries here — pierre's ancestor walk would dot
+  // the project root via every `node_modules/` (see
+  // `gitStatusFromUncommittedFiles`).
+  const uncommitted = useGetUncommittedFiles({ feature_id: featureId });
+  const gitStatus = useMemo(
+    () => gitStatusFromUncommittedFiles(uncommitted.data),
+    [uncommitted.data],
   );
 
-  const handleWillCreate = useCallback((folderPath: string) => {
-    setExpandedDirs((prev) => {
-      if (prev.has(folderPath)) return prev;
-      const next = new Set(prev);
-      next.add(folderPath);
-      return next;
-    });
-  }, []);
+  // ── Open-file & focus bridge ───────────────────────────────────────────
+  const initialSelectedPaths = useMemo(
+    () => (activeFilePath ? [activeFilePath] : undefined),
+    // Only set the initial selection once when the model is constructed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const { model } = useCadencrFileTree({
+    paths,
+    gitStatus,
+    ignoredPathPrefixes,
+    // Pierre's built-in search input is hidden — search is reached through
+    // the global CMD+P file-picker (see `EditorFuzzyShortcut`).
+    search: false,
+    fileTreeSearchMode: "expand-matches",
+    initialSelectedPaths,
+    renaming: {
+      canRename: (item: { path: string }) => item.path !== "",
+      onError: (message: string) => toast.error(message),
+      onRename: (event: FileTreeRenameEvent) => handleRename(event),
+    },
+    dragAndDrop: {
+      canDrag: (selected: readonly string[]) => selected.length > 0,
+      canDrop: ({ target }: { target: { kind: string } }) =>
+        target.kind === "directory" || target.kind === "root",
+      onDropComplete: (event: {
+        draggedPaths: readonly string[];
+        target: { directoryPath: string | null };
+      }) => handleDropComplete(event.draggedPaths, event.target.directoryPath),
+      onDropError: (message: string) => toast.error(message),
+    },
+  });
+
+  // ── Inline-create draft state (Pierre placeholder + rename) ────────────
+  const onFileCreated = useCallback(
+    (fsPath: string) => {
+      openFile(activePaneId, fsPath, maxTabs);
+    },
+    [activePaneId, maxTabs, openFile],
+  );
+  const { startCreate, isDraftPath, tryHandleAsCreate } = useFileTreeDraft({
+    model,
+    projectId,
+    featureId,
+    mutations,
+    onFileCreated,
+    featureKey: featureId,
+  });
+
+  // Open files only on explicit click — pierre retargets `e.target` to
+  // the shadow host, so `closest()` won't find the row. Walk
+  // `composedPath()` (which crosses the shadow boundary) instead. Using
+  // selection as the trigger conflated rename/move with file open.
+  const handleTreeClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 0 || e.defaultPrevented) return;
+      const path = e.nativeEvent.composedPath();
+      let row: HTMLElement | null = null;
+      for (const node of path) {
+        if (node instanceof HTMLElement && node.hasAttribute("data-item-path")) {
+          row = node;
+          break;
+        }
+      }
+      if (!row) return;
+      if (row.getAttribute("data-item-type") !== "file") return;
+      const pierrePath = row.getAttribute("data-item-path");
+      if (!pierrePath || isDraftPath(pierrePath)) return;
+      openFile(activePaneId, fromPierrePath(pierrePath), maxTabs);
+    },
+    [activePaneId, isDraftPath, maxTabs, openFile],
+  );
+
+  // Pierre fires `onRename` for both renames and inline-draft commits.
+  // Try create first; otherwise treat as a rename of an existing entry.
+  const handleRename = useCallback(
+    (event: FileTreeRenameEvent) => {
+      if (tryHandleAsCreate(event)) return;
+
+      const pierreSource = event.sourcePath;
+      const pierreDest = event.destinationPath;
+      const fsSource = fromPierrePath(pierreSource);
+      const fsDest = fromPierrePath(pierreDest);
+      const newName = basenameOf(fsDest);
+
+      const validationError = validateSimpleName(newName);
+      if (validationError) {
+        toast.error(validationError);
+        model.move(pierreDest, pierreSource);
+        return;
+      }
+
+      mutations.rename.mutate(
+        {
+          data: {
+            project_id: projectId,
+            feature_id: featureId,
+            old_path: fsSource,
+            new_name: newName,
+          },
+        },
+        {
+          onSuccess: () => {
+            // Keep any open tab for the renamed path (and tabs under a
+            // renamed folder) pointing at the new filesystem path.
+            renameFilePath(fsSource, fsDest);
+          },
+          onError: () => {
+            // Pierre already mutated its local model. Reverse it.
+            model.move(pierreDest, pierreSource);
+          },
+        },
+      );
+    },
+    [featureId, model, mutations.rename, projectId, renameFilePath, tryHandleAsCreate],
+  );
+
+  const handleDropComplete = useCallback(
+    (draggedPaths: readonly string[], pierreTargetDir: string | null) => {
+      const fsParent = pierreTargetDir ? fromPierrePath(pierreTargetDir) : "";
+      for (const pierreSource of draggedPaths) {
+        const fsSource = fromPierrePath(pierreSource);
+        const basename = basenameOf(fsSource);
+        const fsDest = fsParent ? `${fsParent}/${basename}` : basename;
+        mutations.move.mutate(
+          {
+            data: {
+              project_id: projectId,
+              feature_id: featureId,
+              old_path: fsSource,
+              new_parent_path: fsParent,
+            },
+          },
+          {
+            onSuccess: () => {
+              // Update any open tabs whose path is (or sits under) the
+              // moved source so they follow the file/folder.
+              renameFilePath(fsSource, fsDest);
+            },
+            onError: () => {
+              const trailing = pierreSource.endsWith("/") ? "/" : "";
+              const pierreDest = `${fsDest}${trailing}`;
+              model.move(pierreDest, pierreSource);
+            },
+          },
+        );
+      }
+    },
+    [featureId, model, mutations.move, projectId, renameFilePath],
+  );
+
+  // Direct trash, no confirmation: the backend moves to the system trash
+  // (recoverable from Finder/Explorer). We strip the row from pierre's
+  // local model on success so it disappears before the slow refetch
+  // reconciles (`tree-all` can take 100s of ms on monorepos).
+  const trashPath = useCallback(
+    (pierrePath: string) => {
+      const fsPath = fromPierrePath(pierrePath);
+      if (!fsPath) return;
+      const isFolder = pierrePath.endsWith("/");
+      mutations.trash.mutate(
+        {
+          data: { project_id: projectId, feature_id: featureId, path: fsPath },
+        },
+        {
+          onSuccess: () => {
+            if (model.getItem(pierrePath) != null) {
+              model.remove(pierrePath, isFolder ? { recursive: true } : undefined);
+            }
+          },
+          onError: (err) => toast.error(apiErrorMessage(err, "Failed to move to trash")),
+        },
+      );
+    },
+    [featureId, model, mutations.trash, projectId],
+  );
+
+  // ── Context-menu actions ───────────────────────────────────────────────
+  const handleMenuAction = useCallback(
+    (
+      action: "new-file" | "new-folder" | "open" | "reveal" | "rename" | "delete",
+      item: FileTreeContextMenuItem,
+      context: FileTreeContextMenuOpenContext,
+    ) => {
+      const fsItemPath = fromPierrePath(item.path);
+      switch (action) {
+        case "new-file":
+        case "new-folder": {
+          const kind: DraftKind = action === "new-file" ? "file" : "folder";
+          // For a directory: the new entry lands inside it. For a file: the
+          // new entry lands next to it (in its parent dir).
+          const parentDir = item.kind === "directory" ? fsItemPath : parentDirOf(fsItemPath);
+          context.close({ restoreFocus: false });
+          startCreate(kind, parentDir);
+          return;
+        }
+        case "open":
+          context.close();
+          openFile(activePaneId, fsItemPath, maxTabs);
+          return;
+        case "reveal":
+          context.close();
+          void mutations.reveal(fsItemPath);
+          return;
+        case "rename":
+          context.close({ restoreFocus: false });
+          model.startRenaming(item.path);
+          return;
+        case "delete":
+          context.close();
+          trashPath(item.path);
+          return;
+        default:
+          return;
+      }
+    },
+    [activePaneId, maxTabs, model, mutations, openFile, startCreate, trashPath],
+  );
+
+  const renderContextMenu = useCallback(
+    (item: FileTreeContextMenuItem, context: FileTreeContextMenuOpenContext) => (
+      <FileTreeContextMenu item={item} context={context} onAction={handleMenuAction} />
+    ),
+    [handleMenuAction],
+  );
+
+  // Tree-level shortcuts: Enter → rename focused row; ⌘⌫ → move to trash.
+  // Pierre owns arrow keys, F2, etc.
+  const handleTreeKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // Skip when typing inside pierre's rename input / search box.
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        return;
+      }
+      // Skip while pierre's context menu is open; it owns the active
+      // verb and would otherwise double-fire trash/rename through both
+      // the menu row and this handler.
+      if (document.querySelector("[data-file-tree-context-menu-root]")) return;
+      const focusedPierrePath = model.getFocusedPath();
+      if (!focusedPierrePath) return;
+      // Pierre owns keys while the draft placeholder is being renamed.
+      if (isDraftPath(focusedPierrePath)) return;
+
+      if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        model.startRenaming(focusedPierrePath);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
+        e.preventDefault();
+        trashPath(focusedPierrePath);
+        return;
+      }
+    },
+    [isDraftPath, model, trashPath],
+  );
 
   return (
-    <FileTreeMutationsProvider projectId={projectId} featureId={featureId}>
-      <div className="flex flex-col h-full">
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="flex-1 overflow-y-auto py-1" role="tree" aria-label="File tree">
-              <TreeNode
-                projectId={projectId}
-                featureId={featureId}
-                dirPath=""
-                depth={0}
-                activeFilePath={activeFilePath}
-                expandedDirs={expandedDirs}
-                onToggle={handleToggle}
-                onOpenFile={handleOpenFile}
-                onWillCreate={handleWillCreate}
-              />
-              {/* Spacer that fills the rest of the tree area so right-click on
-                  the empty space below entries still hits the root trigger. */}
-              <div className="min-h-[200px]" aria-hidden />
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent
-            // The selected item opens an inline-input row whose `onBlur`
-            // cancels editing. Radix's default focus restoration would
-            // immediately steal focus from that input back to the trigger
-            // (the tree div), firing the cancel. Skip focus restoration —
-            // the inline row focuses its own input.
-            onCloseAutoFocus={(event) => event.preventDefault()}
-          >
-            <ContextMenuItem onSelect={() => startRootCreate("file")}>New File…</ContextMenuItem>
-            <ContextMenuItem onSelect={() => startRootCreate("folder")}>
-              New Folder…
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
-      </div>
-    </FileTreeMutationsProvider>
+    <div className="flex h-full flex-col" onKeyDown={handleTreeKeyDown} onClick={handleTreeClick}>
+      <CadencrFileTree
+        model={model}
+        // Only block on the fast (`tracked`) query — the slow (`all`)
+        // query upgrades the tree in place once it arrives.
+        isLoading={tracked.isLoading && !tracked.data}
+        errorMessage={tracked.isError && !tracked.data ? "Failed to load file tree" : null}
+        renderContextMenu={renderContextMenu}
+        aria-label="Project file tree"
+      />
+    </div>
   );
 }
+
+// Stable empty inputs so the memo doesn't churn while the queries are in
+// flight (`useTreeAll().data` is `undefined` before the first response).
+const EMPTY_INPUTS: { paths: readonly string[]; ignoredPathPrefixes: readonly string[] } = {
+  paths: [],
+  ignoredPathPrefixes: [],
+};

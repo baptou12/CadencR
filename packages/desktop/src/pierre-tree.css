@@ -1,0 +1,74 @@
+/* -------------------------------------------------------------------------
+ * `@pierre/trees` theme overrides
+ *
+ * Pierre exposes a `--trees-*-override` CSS variable for every styled token
+ * it reads. Setting these at `:root` makes every `<FileTree>` adopt the
+ * Cadencr design tokens (shadcn HSL vars defined in `theme.css`) so the
+ * tree blends into the sidebar instead of looking like a foreign widget.
+ *
+ * Pierre's three-tier fallback chain is: override → theme → built-in
+ * defaults. We use the `*-override` slot exclusively so we don't have to
+ * map all theme-tier variables.
+ *
+ * Whenever the active theme switches (`html[data-theme="…"]`), shadcn
+ * vars below update and pierre repaints with the new palette
+ * automatically.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* Surface — match the sidebar the tree lives in. */
+  --trees-bg-override: var(--sidebar);
+  --trees-fg-override: var(--sidebar-foreground);
+
+  /* Hover / muted rows. */
+  --trees-bg-muted-override: var(--sidebar-accent);
+  --trees-fg-muted-override: var(--muted-foreground);
+
+  /* Borders & separators. */
+  --trees-border-color-override: var(--sidebar-border);
+
+  /* Accent (chevrons, indent guides, active hints). */
+  --trees-accent-override: var(--primary);
+
+  /* Selection — uses the popover-foreground/background pair so the row
+   * stands out clearly from `--sidebar` without becoming garish. */
+  --trees-selected-bg-override: var(--sidebar-accent);
+  --trees-selected-fg-override: var(--sidebar-accent-foreground);
+  --trees-selected-focused-border-color-override: var(--ring);
+
+  /* Focus ring — match the standard shadcn focus ring. */
+  --trees-focus-ring-color-override: var(--ring);
+  --trees-focus-ring-width-override: 1px;
+  --trees-focus-ring-offset-override: -1px;
+
+  /* Search input (visible only if `search: true` on the tree — we keep it
+   * off, but theme it anyway so the path is consistent). */
+  --trees-search-bg-override: var(--input);
+  --trees-search-fg-override: var(--foreground);
+
+  /* Typography — pull from the app font stack so the tree matches the
+   * rest of the chrome. Sizes stay at pierre defaults; density-aware
+   * vars below scale them. */
+  --trees-font-family-override: var(--font-sans);
+  --trees-font-size-override: 13px;
+
+  /* Layout density. 0.9 is slightly tighter than pierre's default of 1.0
+   * to match the rest of our chrome (sidebar items, tabs). */
+  --trees-density-override: 0.9;
+
+  /* Git-status colors map to our accent palette so the dimming/badging
+   * is theme-aware. */
+  --trees-status-added-override: var(--acc-green);
+  --trees-status-deleted-override: var(--acc-red);
+  --trees-status-modified-override: var(--acc-orange);
+  --trees-status-renamed-override: var(--acc-cyan);
+  --trees-status-untracked-override: var(--acc-yellow);
+  --trees-status-ignored-override: var(--muted-foreground);
+
+  --trees-git-added-color-override: var(--acc-green);
+  --trees-git-deleted-color-override: var(--acc-red);
+  --trees-git-modified-color-override: var(--acc-orange);
+  --trees-git-renamed-color-override: var(--acc-cyan);
+  --trees-git-untracked-color-override: var(--acc-yellow);
+  --trees-git-ignored-color-override: var(--muted-foreground);
+}

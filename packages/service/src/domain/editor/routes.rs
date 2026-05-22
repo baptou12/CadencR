@@ -56,6 +56,21 @@ fn default_dir_path() -> String {
     ".".to_string()
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct TreeAllParams {
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
+    /// When true, gitignored files are omitted from the result — fast,
+    /// because the walker skips `node_modules`, `target`, etc. wholesale.
+    /// When false (default) the walker traverses everything so the UI can
+    /// display all files (gitignored dimmed). Callers that want the tree
+    /// to paint quickly should issue the `exclude_gitignored=true` query
+    /// first and then merge in the `exclude_gitignored=false` response.
+    #[serde(default)]
+    pub exclude_gitignored: bool,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct FileTreeEntry {
     pub name: String,
@@ -219,6 +234,93 @@ pub async fn tree_handler(
     Ok(axum::Json(entries))
 }
 
+#[utoipa::path(get, path = "/api/editor/tree-all",
+    params(TreeAllParams),
+    responses((status = 200, body = Vec<FileTreeEntry>)))]
+pub async fn tree_all_handler(
+    State(state): State<AppState>,
+    Query(params): Query<TreeAllParams>,
+) -> Result<axum::Json<Vec<FileTreeEntry>>, AppError> {
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
+    let exclude_gitignored = params.exclude_gitignored;
+
+    let entries = tokio::task::spawn_blocking(move || -> Result<Vec<FileTreeEntry>, AppError> {
+        // The `ignore` crate walks recursively and applies `.gitignore`,
+        // `.ignore`, hidden-file rules, etc. When `exclude_gitignored` is true
+        // (the default) the walker skips ignored entries entirely, which is
+        // what makes the tree feasible on projects with `node_modules` /
+        // `target` / `dist` etc. When false we walk everything and mark
+        // ignored entries so the UI can dim them.
+        let gitignore = if exclude_gitignored {
+            None
+        } else {
+            service::build_gitignore(&project_root)
+        };
+
+        let mut walker = ignore::WalkBuilder::new(&project_root);
+        walker
+            .hidden(false)
+            .git_ignore(exclude_gitignored)
+            .git_global(exclude_gitignored)
+            .git_exclude(exclude_gitignored)
+            // Always exclude `.git`: large, noisy, never useful to show.
+            // Other heavy dirs (`node_modules`, `target`, `dist`, …) are
+            // typically gitignored, so the `exclude_gitignored=true` query
+            // (the fast first pass) skips them naturally. The slow
+            // `exclude_gitignored=false` query intentionally walks them so
+            // we can show all files in the tree.
+            .filter_entry(|entry| entry.file_name() != ".git");
+
+        let mut entries: Vec<FileTreeEntry> = Vec::new();
+        for result in walker.build() {
+            let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
+            // Skip the project root itself.
+            if entry.depth() == 0 {
+                continue;
+            }
+
+            let path = entry.path();
+            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            let relative = path
+                .strip_prefix(&project_root)
+                .map_err(|e| AppError::Internal(e.to_string()))?
+                .to_string_lossy()
+                .to_string();
+
+            // When excluding gitignored entries, the walker has already
+            // filtered them out; `gitignore` is `None` and the helper
+            // short-circuits to `false`.
+            let is_gitignored = service::is_gitignored(gitignore.as_ref(), path, is_dir);
+
+            entries.push(FileTreeEntry {
+                name,
+                path: relative,
+                is_dir,
+                is_gitignored,
+            });
+        }
+
+        // Directories first, then case-insensitive name. Pierre re-sorts
+        // internally, but emitting a stable order avoids hydration jitter
+        // and keeps the non-pierre per-directory endpoint behaviour
+        // consistent across the surface.
+        entries.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        Ok(entries)
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
+
+    Ok(axum::Json(entries))
+}
+
 // ---------------------------------------------------------------------------
 // Content search types & handler
 // ---------------------------------------------------------------------------
@@ -356,6 +458,7 @@ pub fn editor_router() -> Router<AppState> {
         .route("/api/editor/read", get(read_file_handler))
         .route("/api/editor/write", post(write_file_handler))
         .route("/api/editor/tree", get(tree_handler))
+        .route("/api/editor/tree-all", get(tree_all_handler))
         .route("/api/editor/search", get(search_handler))
         .route("/api/editor/content-search", get(content_search_handler))
 }

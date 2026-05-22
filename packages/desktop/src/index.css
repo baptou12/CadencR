@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
 @import "./theme.css";
+@import "./pierre-tree.css";
 
 @theme inline {
   --font-sans:

@@ -54,6 +54,22 @@ pub struct RenamePathResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct MovePathRequest {
+    pub project_id: i64,
+    #[serde(default)]
+    pub feature_id: Option<i64>,
+    pub old_path: String,
+    /// Target directory, relative to the project root. Use `""` or `"."` to
+    /// move the entry to the project root.
+    pub new_parent_path: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MovePathResponse {
+    pub new_path: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct TrashPathRequest {
     pub project_id: i64,
     #[serde(default)]
@@ -233,6 +249,89 @@ pub async fn rename_editor_path_handler(
     Ok(axum::Json(RenamePathResponse { new_path: relative }))
 }
 
+#[utoipa::path(post, path = "/api/editor/move",
+    request_body = MovePathRequest,
+    responses((status = 200, body = MovePathResponse)))]
+pub async fn move_editor_path_handler(
+    State(state): State<AppState>,
+    Json(body): Json<MovePathRequest>,
+) -> Result<axum::Json<MovePathResponse>, AppError> {
+    let project_root =
+        resolve_feature_editor_root(&state.read_pool, body.project_id, body.feature_id).await?;
+
+    let old_abs = service::validate_path(&project_root, &body.old_path)?;
+
+    // Resolve the new parent. An empty string or "." means the project root.
+    let parent_input = if body.new_parent_path.is_empty() {
+        "."
+    } else {
+        body.new_parent_path.as_str()
+    };
+    let new_parent_abs = service::validate_path(&project_root, parent_input)?;
+
+    if !new_parent_abs.is_dir() {
+        return Err(AppError::BadRequest(
+            "Move target must be a directory".to_string(),
+        ));
+    }
+
+    let file_name = old_abs
+        .file_name()
+        .ok_or_else(|| AppError::BadRequest("Cannot move root path".to_string()))?;
+    let new_abs = new_parent_abs.join(file_name);
+
+    if !new_abs.starts_with(&project_root) {
+        return Err(AppError::BadRequest(
+            "Move destination is outside the project directory".to_string(),
+        ));
+    }
+
+    // Block self-move and move-into-own-descendant. We compare the canonical
+    // paths so callers can't sneak through with a different relative form.
+    if new_parent_abs == old_abs || new_parent_abs.starts_with(&old_abs) {
+        return Err(AppError::BadRequest(
+            "Cannot move a path into itself or its own descendant".to_string(),
+        ));
+    }
+
+    // No-op when the entry already lives in the destination directory.
+    if new_abs == old_abs {
+        let relative = old_abs
+            .strip_prefix(&project_root)
+            .unwrap_or(old_abs.as_path())
+            .to_string_lossy()
+            .to_string();
+        return Ok(axum::Json(MovePathResponse { new_path: relative }));
+    }
+
+    let project_root_for_response = project_root.clone();
+    let new_abs_for_blocking = new_abs.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        if new_abs_for_blocking.exists() {
+            return Err(AppError::BadRequest(format!(
+                "Destination already exists: {}",
+                new_abs_for_blocking.display()
+            )));
+        }
+        std::fs::rename(&old_abs, &new_abs_for_blocking).map_err(|e| match e.kind() {
+            std::io::ErrorKind::PermissionDenied => AppError::BadRequest(format!(
+                "Permission denied: {}",
+                new_abs_for_blocking.display()
+            )),
+            _ => AppError::Internal(e.to_string()),
+        })
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
+
+    let relative = new_abs
+        .strip_prefix(&project_root_for_response)
+        .unwrap_or(new_abs.as_path())
+        .to_string_lossy()
+        .to_string();
+    Ok(axum::Json(MovePathResponse { new_path: relative }))
+}
+
 #[utoipa::path(delete, path = "/api/editor/trash",
     request_body = TrashPathRequest,
     responses((status = 200, body = TrashPathResponse)))]
@@ -298,6 +397,7 @@ pub fn editor_mutation_router() -> Router<AppState> {
             post(create_editor_folder_handler),
         )
         .route("/api/editor/rename", patch(rename_editor_path_handler))
+        .route("/api/editor/move", post(move_editor_path_handler))
         .route("/api/editor/trash", delete(trash_editor_path_handler))
         .route("/api/editor/root", get(get_editor_root_handler))
 }
@@ -351,6 +451,32 @@ mod tests {
         // host trash is system-dependent, but the call must succeed.
         // (Skipped on CI environments without a trash backend.)
         let _ = trash::delete(&validated);
+    }
+
+    #[test]
+    fn move_rejects_moving_directory_into_its_descendant() {
+        let tmp = TempDir::new().unwrap();
+        let root = fs::canonicalize(tmp.path()).unwrap();
+        fs::create_dir_all(root.join("a/b")).unwrap();
+
+        let old_abs = service::validate_path(&root, "a").unwrap();
+        let new_parent_abs = service::validate_path(&root, "a/b").unwrap();
+        // The handler's descendant guard: `new_parent_abs.starts_with(&old_abs)`
+        // is true here, so the move would be rejected.
+        assert!(new_parent_abs.starts_with(&old_abs));
+    }
+
+    #[test]
+    fn move_to_same_parent_is_noop() {
+        let tmp = TempDir::new().unwrap();
+        let root = fs::canonicalize(tmp.path()).unwrap();
+        fs::create_dir_all(root.join("dir")).unwrap();
+        fs::write(root.join("dir/file.txt"), "").unwrap();
+
+        let old_abs = service::validate_path(&root, "dir/file.txt").unwrap();
+        let new_parent_abs = service::validate_path(&root, "dir").unwrap();
+        let candidate = new_parent_abs.join(old_abs.file_name().unwrap());
+        assert_eq!(candidate, old_abs);
     }
 
     #[test]

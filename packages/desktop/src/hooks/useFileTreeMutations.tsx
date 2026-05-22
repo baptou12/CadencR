@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   useCreateEditorFile,
   useCreateEditorFolder,
   useRenameEditorPath,
+  useMoveEditorPath,
   useTrashEditorPath,
   useGetEditorRoot,
 } from "@/api/generated";
@@ -20,6 +21,10 @@ export type FileTreeMutations = ReturnType<typeof useFileTreeMutations>;
  * `/api/editor/tree` cache on success so the tree refreshes via the
  * canonical refetch (no optimistic updates — see `no-optimistic-updates.md`).
  * Errors surface as sonner toasts (see `error-handling.md`).
+ *
+ * The prefix `"/api/editor/tree"` covers both the per-directory `tree` query
+ * (still used by ad-hoc callers) and the recursive `tree-all` query the
+ * pierre file tree reads from.
  */
 export function useFileTreeMutations(projectId: number, featureId: number) {
   const qc = useQueryClient();
@@ -54,6 +59,15 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
         void invalidateTree();
       },
       onError: (err) => toast.error(apiErrorMessage(err, "Failed to rename")),
+    },
+  });
+
+  const move = useMoveEditorPath({
+    mutation: {
+      onSuccess: () => {
+        void invalidateTree();
+      },
+      onError: (err) => toast.error(apiErrorMessage(err, "Failed to move")),
     },
   });
 
@@ -94,64 +108,12 @@ export function useFileTreeMutations(projectId: number, featureId: number) {
     [rootQuery.data?.root],
   );
 
-  /**
-   * Submit a "create file"/"create folder" with a name typed into either the
-   * inline tree row or the popover. Centralized here so the two callers
-   * (`InlineCreateRow`, `FileTreeItem`) stay in sync.
-   */
-  const submitCreate = useCallback(
-    (kind: "file" | "folder", parentDir: string, name: string, onSuccess: () => void) => {
-      const childPath = parentDir ? `${parentDir}/${name}` : name;
-      if (kind === "file") {
-        createFile.mutate(
-          { data: { project_id: projectId, feature_id: featureId, file_path: childPath } },
-          { onSuccess },
-        );
-      } else {
-        createFolder.mutate(
-          { data: { project_id: projectId, feature_id: featureId, dir_path: childPath } },
-          { onSuccess },
-        );
-      }
-    },
-    [createFile, createFolder, projectId, featureId],
-  );
-
-  // Memoize the return so consumers (FileTreeItem, InlineCreateRow) get stable
-  // refs and downstream `React.memo` actually short-circuits.
+  // Memoize the return so consumers get stable refs and downstream
+  // `React.memo` actually short-circuits.
   return useMemo(
-    () => ({ createFile, createFolder, rename, trash, reveal, submitCreate }),
-    [createFile, createFolder, rename, trash, reveal, submitCreate],
+    () => ({ createFile, createFolder, rename, move, trash, reveal }),
+    [createFile, createFolder, rename, move, trash, reveal],
   );
-}
-
-/**
- * Context that lets the FileTree call `useFileTreeMutations` once at the top
- * and share the result with hundreds of rows. Per-row use of the hook would
- * subscribe each row to the `/api/editor/root` query and instantiate four
- * mutation hooks unnecessarily — see `frontend-performance.md`.
- */
-const FileTreeMutationsContext = createContext<FileTreeMutations | null>(null);
-
-interface ProviderProps {
-  projectId: number;
-  featureId: number;
-  children: ReactNode;
-}
-
-export function FileTreeMutationsProvider({ projectId, featureId, children }: ProviderProps) {
-  const value = useFileTreeMutations(projectId, featureId);
-  return (
-    <FileTreeMutationsContext.Provider value={value}>{children}</FileTreeMutationsContext.Provider>
-  );
-}
-
-export function useFileTreeMutationsContext(): FileTreeMutations {
-  const ctx = useContext(FileTreeMutationsContext);
-  if (!ctx) {
-    throw new Error("useFileTreeMutationsContext used outside <FileTreeMutationsProvider>");
-  }
-  return ctx;
 }
 
 /**

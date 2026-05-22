@@ -269,7 +269,11 @@ index abc..def 100644
     render(<DiffViewer featureId={1} mode="worktree" />);
 
     expect(await screen.findByRole("button", { name: "Expand Git file list" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Filter files...")).not.toBeInTheDocument();
+    // `ResizableSidebarLayout` keeps the sidebar mounted (hidden via
+    // CSS + `aria-hidden`) so state inside it survives collapse/expand,
+    // so we check the visibility contract instead of DOM presence.
+    const filterInput = screen.queryByPlaceholderText("Filter files...");
+    expect(filterInput?.closest("[aria-hidden='true']")).not.toBeNull();
   });
 
   it("does not emit nested button warnings for file headers", () => {

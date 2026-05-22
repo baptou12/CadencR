@@ -29,6 +29,11 @@ export function useEditorState(featureId: number) {
       useEditorStore.getState().setActiveFile(featureId, paneId, filePath),
     [featureId],
   );
+  const renameFilePath = useCallback(
+    (oldPath: string, newPath: string) =>
+      useEditorStore.getState().renameFilePath(featureId, oldPath, newPath),
+    [featureId],
+  );
   const setDirty = useCallback(
     (paneId: string, filePath: string, isDirty: boolean) =>
       useEditorStore.getState().setDirty(featureId, paneId, filePath, isDirty),
@@ -67,6 +72,7 @@ export function useEditorState(featureId: number) {
     openFile,
     closeTab,
     setActiveFile,
+    renameFilePath,
     setDirty,
     setCursorPosition,
     toggleSidebar,

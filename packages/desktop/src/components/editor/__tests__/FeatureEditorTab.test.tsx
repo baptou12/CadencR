@@ -141,7 +141,13 @@ describe("FeatureEditorTab", () => {
     render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
     expect(mockUseFileWatcher).toHaveBeenCalledWith("/project");
-    expect(screen.queryByTestId("file-tree")).not.toBeInTheDocument();
+    // The file tree stays mounted (so the pierre model survives a
+    // collapse / expand cycle) but is hidden via CSS when the sidebar
+    // is collapsed. `ResizableSidebarLayout` wraps the sidebar slot in
+    // a div with the `hidden` Tailwind class (display: none).
+    const fileTree = screen.queryByTestId("file-tree");
+    expect(fileTree).toBeInTheDocument();
+    expect(fileTree?.closest(".hidden")).not.toBeNull();
     expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
   });
 

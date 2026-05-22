@@ -859,6 +859,21 @@ export interface ModelSettings {
   session: string;
 }
 
+export type MovePathRequestFeatureId = number | null;
+
+export interface MovePathRequest {
+  feature_id?: MovePathRequestFeatureId;
+  /** Target directory, relative to the project root. Use `""` or `"."` to
+move the entry to the project root. */
+  new_parent_path: string;
+  old_path: string;
+  project_id: number;
+}
+
+export interface MovePathResponse {
+  new_path: string;
+}
+
 export interface OriginalBranchResponse {
   original_branch: string;
   worktree_branch: string;
@@ -1453,6 +1468,20 @@ export type FileTreeParams = {
   project_id: number;
   feature_id?: number | null;
   dir_path?: string;
+};
+
+export type TreeAllParams = {
+  project_id: number;
+  feature_id?: number | null;
+  /**
+ * When true, gitignored files are omitted from the result — fast,
+because the walker skips `node_modules`, `target`, etc. wholesale.
+When false (default) the walker traverses everything so the UI can
+display all files (gitignored dimmed). Callers that want the tree
+to paint quickly should issue the `exclude_gitignored=true` query
+first and then merge in the `exclude_gitignored=false` response.
+ */
+  exclude_gitignored?: boolean;
 };
 
 export type ListFeaturesParams = {
@@ -3344,6 +3373,73 @@ export const useCreateEditorFolder = <TError = ErrorType<unknown>, TContext = un
   return useMutation(mutationOptions);
 };
 
+export const moveEditorPath = (movePathRequest: MovePathRequest, signal?: AbortSignal) => {
+  return customInstance<MovePathResponse>({
+    url: `/api/editor/move`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: movePathRequest,
+    signal,
+  });
+};
+
+export const getMoveEditorPathMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof moveEditorPath>>,
+    TError,
+    { data: MovePathRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof moveEditorPath>>,
+  TError,
+  { data: MovePathRequest },
+  TContext
+> => {
+  const mutationKey = ["moveEditorPath"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof moveEditorPath>>,
+    { data: MovePathRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return moveEditorPath(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MoveEditorPathMutationResult = NonNullable<Awaited<ReturnType<typeof moveEditorPath>>>;
+export type MoveEditorPathMutationBody = MovePathRequest;
+export type MoveEditorPathMutationError = ErrorType<unknown>;
+
+export const useMoveEditorPath = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof moveEditorPath>>,
+    TError,
+    { data: MovePathRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof moveEditorPath>>,
+  TError,
+  { data: MovePathRequest },
+  TContext
+> => {
+  const mutationOptions = getMoveEditorPathMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const readFile = (params: ReadFileParams, signal?: AbortSignal) => {
   return customInstance<ReadFileResponse>({
     url: `/api/editor/read`,
@@ -3684,6 +3780,59 @@ export function useFileTree<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof fileTree>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getFileTreeQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const treeAll = (params: TreeAllParams, signal?: AbortSignal) => {
+  return customInstance<FileTreeEntry[]>({
+    url: `/api/editor/tree-all`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getTreeAllQueryKey = (params?: TreeAllParams) => {
+  return [`/api/editor/tree-all`, ...(params ? [params] : [])] as const;
+};
+
+export const getTreeAllQueryOptions = <
+  TData = Awaited<ReturnType<typeof treeAll>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeAllParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeAll>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getTreeAllQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof treeAll>>> = ({ signal }) =>
+    treeAll(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof treeAll>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type TreeAllQueryResult = NonNullable<Awaited<ReturnType<typeof treeAll>>>;
+export type TreeAllQueryError = ErrorType<unknown>;
+
+export function useTreeAll<
+  TData = Awaited<ReturnType<typeof treeAll>>,
+  TError = ErrorType<unknown>,
+>(
+  params: TreeAllParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof treeAll>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getTreeAllQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

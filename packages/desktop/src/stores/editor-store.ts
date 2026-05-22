@@ -220,6 +220,13 @@ interface EditorStore {
     goToLine?: number,
   ) => void;
   closeTab: (featureId: number, paneId: string, filePath: string) => void;
+  /**
+   * Update every tab across every pane whose path equals `oldPath` or
+   * lives under `oldPath/` (folder rename) so the tab points at the new
+   * filesystem path. Called after the file tree confirms a rename/move
+   * with the backend.
+   */
+  renameFilePath: (featureId: number, oldPath: string, newPath: string) => void;
   setActiveFile: (featureId: number, paneId: string, filePath: string) => void;
   setDirty: (featureId: number, paneId: string, filePath: string, isDirty: boolean) => void;
   setCursorPosition: (
@@ -325,6 +332,71 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       if (!feature) return state;
       const next = updatePane(feature, paneId, (pane) => ({ ...pane, activeFilePath: filePath }));
       return updateFeature(state, featureId, next);
+    }),
+
+  renameFilePath: (featureId, oldPath, newPath) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+      if (oldPath === newPath) return state;
+      const oldPrefix = `${oldPath}/`;
+
+      // Remap a single open tab path. Returns the same string when the
+      // path is unrelated to the renamed source.
+      const remap = (path: string): string => {
+        if (path === oldPath) return newPath;
+        if (path.startsWith(oldPrefix)) return `${newPath}/${path.slice(oldPrefix.length)}`;
+        return path;
+      };
+
+      // Walk every pane; rewrite each tab's `filePath` / `fileName` and
+      // the pane's `activeFilePath`. Re-runs `disambiguateTabNames` so
+      // the visible tab labels stay correct after the rename. If the
+      // rename collapses two tabs onto the same path (e.g. the
+      // destination was already open as its own tab), drop the
+      // duplicate so a file path only ever appears once per pane —
+      // prefer the dirty tab to preserve unsaved work.
+      let anyChanged = false;
+      const nextPanes: Record<string, EditorPaneState> = {};
+      for (const [paneId, pane] of Object.entries(feature.panes)) {
+        let paneChanged = false;
+        const seen = new Map<string, number>(); // filePath → index in newTabs
+        const newTabs: EditorTab[] = [];
+        for (const t of pane.tabs) {
+          const nextPath = remap(t.filePath);
+          const nextTab =
+            nextPath === t.filePath
+              ? t
+              : { ...t, filePath: nextPath, fileName: getFileName(nextPath) };
+          if (nextPath !== t.filePath) paneChanged = true;
+          const existingIdx = seen.get(nextPath);
+          if (existingIdx === undefined) {
+            seen.set(nextPath, newTabs.length);
+            newTabs.push(nextTab);
+            continue;
+          }
+          // Duplicate path: keep dirty one; drop the other.
+          paneChanged = true;
+          const existing = newTabs[existingIdx];
+          if (!existing.isDirty && nextTab.isDirty) {
+            newTabs[existingIdx] = nextTab;
+          }
+        }
+        const nextActive =
+          pane.activeFilePath != null ? remap(pane.activeFilePath) : pane.activeFilePath;
+        if (!paneChanged && nextActive === pane.activeFilePath) {
+          nextPanes[paneId] = pane;
+          continue;
+        }
+        anyChanged = true;
+        nextPanes[paneId] = {
+          ...pane,
+          tabs: paneChanged ? disambiguateTabNames(newTabs) : pane.tabs,
+          activeFilePath: nextActive,
+        };
+      }
+      if (!anyChanged) return state;
+      return updateFeature(state, featureId, { ...feature, panes: nextPanes });
     }),
 
   setDirty: (featureId, paneId, filePath, isDirty) =>

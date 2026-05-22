@@ -82,6 +82,11 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "editor_auto_save",
     "editor_git_blame",
     "editor_max_tabs",
+    // File-tree icon set used by the editor's @pierre/trees-based file tree.
+    // One of "minimal", "standard", or "complete" — defaulting to "standard"
+    // when unset. Stored as a workspace setting because the choice is global,
+    // not project- or feature-scoped.
+    "editor_file_tree_icon_set",
     "editor_sidebar_collapsed",
     "git_sidebar_collapsed",
     "git_merge_mode",
@@ -342,6 +347,15 @@ mod tests {
         assert!(is_workspace_key_allowed("animations_enabled"));
         assert!(!is_feature_key_allowed("animations_enabled"));
         assert!(!is_project_key_allowed("animations_enabled"));
+    }
+
+    #[test]
+    fn workspace_accepts_editor_file_tree_icon_set() {
+        // The Settings → Appearance picker writes "minimal" / "standard" /
+        // "complete" via useDebouncedSetting → PUT /api/workspace/settings/{key}.
+        assert!(is_workspace_key_allowed("editor_file_tree_icon_set"));
+        assert!(!is_feature_key_allowed("editor_file_tree_icon_set"));
+        assert!(!is_project_key_allowed("editor_file_tree_icon_set"));
     }
 
     #[test]

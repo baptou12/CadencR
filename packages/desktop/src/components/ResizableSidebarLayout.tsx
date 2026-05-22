@@ -181,27 +181,33 @@ function ResizableSidebarLayoutImpl({
     ? `${shouldShowRail ? collapsedWidth : 0}px minmax(0, 1fr)`
     : `${sidebarWidth}px 1px minmax(0, 1fr)`;
 
+  // Always mount the sidebar — even when collapsed — and toggle visibility
+  // via CSS. This keeps any state inside the sidebar alive across
+  // collapse/expand cycles. In particular, the editor file tree's pierre
+  // model holds tens of thousands of paths; rebuilding it on every expand
+  // (which is what happens when the sidebar unmounts) feels sluggish.
+  // `display: none` is enough — pierre's virtualizer recovers via its
+  // resize observer when the column un-hides.
   return (
     <div
       className={`grid overflow-hidden ${className}`}
       style={{ gridTemplateColumns: columnTemplate }}
     >
       <div
-        className={`min-w-0 overflow-hidden ${
+        className={`relative min-w-0 overflow-hidden ${
           shouldShowRail ? "border-r border-border bg-card" : ""
         }`}
       >
-        {collapsed ? (
-          shouldShowRail ? (
-            <CollapsedRail
-              disabled={disabled}
-              expandButtonLabel={expandButtonLabel}
-              expandButtonTitle={expandButtonTitle}
-              onExpand={() => onCollapsedChange(false)}
-            />
-          ) : null
-        ) : (
-          sidebar
+        <div className={collapsed ? "hidden" : "h-full w-full"} aria-hidden={collapsed}>
+          {sidebar}
+        </div>
+        {collapsed && shouldShowRail && (
+          <CollapsedRail
+            disabled={disabled}
+            expandButtonLabel={expandButtonLabel}
+            expandButtonTitle={expandButtonTitle}
+            onExpand={() => onCollapsedChange(false)}
+          />
         )}
       </div>
       {!collapsed && <ResizeSeparator label={separatorLabel} onPointerDown={startResize} />}
