@@ -15,6 +15,8 @@
 //! [`@codemirror/lsp-client`]: https://code.haverbeke.berlin/codemirror/lsp-client
 //! [LSP 3.17]: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/
 
+pub mod catalog;
+pub mod downloader;
 pub mod framing;
 pub mod proxy;
 pub mod registry;

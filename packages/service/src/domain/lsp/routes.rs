@@ -23,7 +23,7 @@ use crate::error::AppError;
 
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
-use super::spawn::{resolve_server, spawn_server};
+use super::spawn::{resolve_language, resolve_server, spawn_server};
 
 pub fn lsp_router() -> Router<AppState> {
     Router::new()
@@ -76,7 +76,10 @@ pub async fn open_session_handler(
     }
     // Fail fast at reservation time so the renderer can show "no server for
     // this language" before opening a WS that would immediately error out.
-    resolve_server(&req.language_id)?;
+    // We only validate the *language* here — actual binary discovery /
+    // download happens lazily on the WS upgrade so we don't block the
+    // renderer's request on a 30s network fetch.
+    resolve_language(&req.language_id)?;
     let session_id = state
         .lsp_sessions
         .reserve(SessionSpec {
@@ -108,7 +111,7 @@ pub async fn connect_handler(
         Ok(spec) => spec,
         Err(err) => return err.into_response(),
     };
-    let server_spec = match resolve_server(&spec.language_id) {
+    let server_spec = match resolve_server(&spec.language_id).await {
         Ok(s) => s,
         Err(err) => return err.into_response(),
     };
@@ -118,9 +121,9 @@ pub async fn connect_handler(
     };
 
     let ws = ws.protocols([selected_proto]);
-    let display_name = server_spec.display_name;
+    let display_name = server_spec.display_name.clone();
     ws.on_upgrade(move |socket| async move {
-        run_proxy(socket, child, display_name).await;
+        run_proxy(socket, child, &display_name).await;
     })
     .into_response()
 }

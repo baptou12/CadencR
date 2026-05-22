@@ -42,6 +42,7 @@ notify-debouncer-mini = "0.7"
 dotenvy = "0.15"
 tempfile = "3"
 trash = "5"
+flate2 = "1"
 
 [[bin]]
 name = "dump-openapi"

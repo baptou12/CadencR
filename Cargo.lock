@@ -387,6 +387,7 @@ dependencies = [
  "dashmap",
  "dirs",
  "dotenvy",
+ "flate2",
  "futures",
  "ignore",
  "libc",
