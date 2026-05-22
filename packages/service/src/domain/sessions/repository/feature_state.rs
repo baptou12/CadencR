@@ -74,13 +74,10 @@ pub async fn get_feature_agent_state(
     } else {
         HashMap::new()
     };
-    let full_todo_fetch_ids = if limit.is_some() || !before_map.is_empty() {
-        full_fetch_ids.as_slice()
-    } else {
-        &[]
-    };
+    let include_full_fetch_todos = limit.is_some() && before_map.is_empty();
     let todo_fetch_ids = todo_fetch_session_ids(
-        full_todo_fetch_ids,
+        &full_fetch_ids,
+        include_full_fetch_todos,
         &incremental_messages,
         &updated_tool_calls,
     );

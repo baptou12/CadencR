@@ -5,10 +5,11 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 use crate::app_state::AppState;
+use crate::domain::sessions::limits::normalize_agent_message_limit;
 use crate::domain::sessions::models::*;
 use crate::domain::sessions::repository;
 use crate::domain::sessions::unified_agents::{
-    list_unified_agents, normalize_message_limit, set_agent_pinned, UnifiedAgentsQuery,
+    list_unified_agents, set_agent_pinned, UnifiedAgentsQuery,
 };
 use crate::error::AppError;
 
@@ -16,7 +17,7 @@ use crate::error::AppError;
 pub struct AgentStateParams {
     /// JSON-encoded map of session_id -> last_message_id for incremental fetching
     pub after: Option<String>,
-    /// Max number of messages per session for initial load (default: all)
+    /// Max number of messages per session for full loads (default: 100, max: 200)
     pub limit: Option<i64>,
     /// JSON-encoded map of session_id -> before_message_id for loading older messages
     pub before: Option<String>,
@@ -58,12 +59,13 @@ pub async fn get_feature_agent_state_handler(
         .before
         .as_deref()
         .and_then(|s| serde_json::from_str(s).ok());
+    let limit = normalize_agent_message_limit(params.limit);
     Ok(Json(
         repository::get_feature_agent_state(
             &state.read_pool,
             feature_id,
             after_map,
-            params.limit,
+            Some(limit),
             before_map,
         )
         .await?,
@@ -84,7 +86,7 @@ pub async fn get_unified_agents_handler(
                 mode: params.mode.unwrap_or_default(),
                 fresh_minutes: params.fresh_minutes.unwrap_or(5).max(1),
                 project_id: params.project_id,
-                message_limit: normalize_message_limit(params.message_limit),
+                message_limit: normalize_agent_message_limit(params.message_limit),
             },
         )
         .await?,

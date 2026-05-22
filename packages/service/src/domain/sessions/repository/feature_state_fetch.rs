@@ -20,96 +20,111 @@ pub(super) struct FullMessagesResult {
     pub oldest_message_id: HashMap<i64, i64>,
 }
 
-/// Fetch messages for sessions that need a full (re)hydration. Picks
-/// per-session paginated SQL when `limit` or `before_map` is set, else falls
-/// back to an unbounded batch IN-query for the original fast path.
+/// Fetch messages for sessions that need a full (re)hydration. Limited fetches
+/// use per-session indexed queries so SQLite can stop after `limit + 1` rows;
+/// unbounded legacy fetches keep the original batch IN-query.
 pub(super) async fn fetch_full_messages(
     pool: &SqlitePool,
     session_ids: &[i64],
     limit: Option<i64>,
     before_map: &HashMap<i64, i64>,
 ) -> Result<FullMessagesResult, AppError> {
-    let mut messages: HashMap<i64, Vec<AgentMessageRow>> = HashMap::new();
-    let mut has_more: HashMap<i64, bool> = HashMap::new();
-    let mut oldest_message_id: HashMap<i64, i64> = HashMap::new();
-
     if session_ids.is_empty() {
-        return Ok(FullMessagesResult {
-            messages,
-            has_more,
-            oldest_message_id,
-        });
+        return Ok(empty_full_messages_result());
     }
 
-    if limit.is_some() || !before_map.is_empty() {
-        // Built once per call (not per session) and only on the paginated
-        // path — the unbounded branch below issues its own batch IN-query.
-        let paginated_with_before_sql = format!(
-            "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?"
-        );
-        let paginated_sql = format!(
-            "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?"
-        );
-        let msg_limit = limit.unwrap_or(i64::MAX);
-        for sid in session_ids {
-            let mut q = if let Some(&before_id) = before_map.get(sid) {
-                sqlx::query_as::<_, AgentMessageRow>(&paginated_with_before_sql)
-                    .bind(sid)
-                    .bind(before_id)
-            } else {
-                sqlx::query_as::<_, AgentMessageRow>(&paginated_sql).bind(sid)
-            };
-            // Fetch limit+1 to detect has_more
-            q = q.bind(msg_limit + 1);
-            let mut msgs = q.fetch_all(pool).await?;
-            let session_has_more = msgs.len() as i64 > msg_limit;
-            if session_has_more {
-                msgs.truncate(msg_limit as usize);
-            }
-            // Reverse to restore ASC order for block building
-            msgs.reverse();
-            if let Some(oldest) = msgs.first().map(|m| m.id) {
-                oldest_message_id.insert(*sid, oldest);
-            }
-
-            // Fetch parent Agent/Task tool_call rows referenced by children
-            // in this page but not already present, so build_blocks can nest them.
-            let parent_msgs = fetch_missing_parents(pool, *sid, &msgs).await?;
-            if !parent_msgs.is_empty() {
-                // Merge parents at the front (they have lower IDs)
-                let mut merged = parent_msgs;
-                merged.append(&mut msgs);
-                msgs = merged;
-            }
-
-            has_more.insert(*sid, session_has_more);
-            messages.insert(*sid, msgs);
-        }
-    } else {
-        // Unbounded batch fetch (no limit) — original fast path
-        let placeholders = session_ids
-            .iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "{MESSAGE_SELECT} FROM agent_messages WHERE session_id IN ({placeholders}) ORDER BY id ASC"
-        );
-        let mut q = sqlx::query_as::<_, AgentMessageRow>(&sql);
-        for sid in session_ids {
-            q = q.bind(sid);
-        }
-        let msgs = q.fetch_all(pool).await?;
-        for msg in msgs {
-            messages.entry(msg.session_id).or_default().push(msg);
-        }
+    if !before_map.is_empty() || limit.is_some() {
+        return fetch_before_or_latest_per_session(pool, session_ids, limit, before_map).await;
     }
 
-    Ok(FullMessagesResult {
-        messages,
-        has_more,
-        oldest_message_id,
-    })
+    fetch_unbounded_batch(pool, session_ids).await
+}
+
+fn empty_full_messages_result() -> FullMessagesResult {
+    FullMessagesResult {
+        messages: HashMap::new(),
+        has_more: HashMap::new(),
+        oldest_message_id: HashMap::new(),
+    }
+}
+
+async fn fetch_before_or_latest_per_session(
+    pool: &SqlitePool,
+    session_ids: &[i64],
+    limit: Option<i64>,
+    before_map: &HashMap<i64, i64>,
+) -> Result<FullMessagesResult, AppError> {
+    let mut result = empty_full_messages_result();
+    let with_before_sql = format!(
+        "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?"
+    );
+    let latest_sql = format!(
+        "{MESSAGE_SELECT} FROM agent_messages WHERE session_id = ? ORDER BY id DESC LIMIT ?"
+    );
+    let msg_limit = limit.unwrap_or(i64::MAX - 1).max(1);
+    for sid in session_ids {
+        let mut q = if let Some(&before_id) = before_map.get(sid) {
+            sqlx::query_as::<_, AgentMessageRow>(&with_before_sql)
+                .bind(sid)
+                .bind(before_id)
+        } else {
+            sqlx::query_as::<_, AgentMessageRow>(&latest_sql).bind(sid)
+        };
+        q = q.bind(msg_limit.saturating_add(1));
+        let mut msgs = q.fetch_all(pool).await?;
+        let session_has_more = msgs.len() as i64 > msg_limit;
+        if session_has_more {
+            msgs.truncate(msg_limit as usize);
+        }
+        msgs.reverse();
+        finish_paginated_session(pool, &mut result, *sid, msgs, session_has_more).await?;
+    }
+    Ok(result)
+}
+
+async fn finish_paginated_session(
+    pool: &SqlitePool,
+    result: &mut FullMessagesResult,
+    session_id: i64,
+    mut msgs: Vec<AgentMessageRow>,
+    session_has_more: bool,
+) -> Result<(), AppError> {
+    if let Some(oldest) = msgs.first().map(|m| m.id) {
+        result.oldest_message_id.insert(session_id, oldest);
+    }
+    let parent_msgs = fetch_missing_parents(pool, session_id, &msgs).await?;
+    if !parent_msgs.is_empty() {
+        let mut merged = parent_msgs;
+        merged.append(&mut msgs);
+        msgs = merged;
+    }
+    result.has_more.insert(session_id, session_has_more);
+    result.messages.insert(session_id, msgs);
+    Ok(())
+}
+
+async fn fetch_unbounded_batch(
+    pool: &SqlitePool,
+    session_ids: &[i64],
+) -> Result<FullMessagesResult, AppError> {
+    let placeholders = session_ids
+        .iter()
+        .map(|_| "?")
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!(
+        "{MESSAGE_SELECT} FROM agent_messages WHERE session_id IN ({placeholders}) ORDER BY id ASC"
+    );
+    let mut query = sqlx::query_as::<_, AgentMessageRow>(&sql);
+    for sid in session_ids {
+        query = query.bind(sid);
+    }
+    let rows = query.fetch_all(pool).await?;
+    let mut result = empty_full_messages_result();
+    for row in rows {
+        result.messages.entry(row.session_id).or_default().push(row);
+    }
+    Ok(result)
 }
 
 pub(super) struct IncrementalData {
@@ -119,10 +134,15 @@ pub(super) struct IncrementalData {
 
 pub(super) fn todo_fetch_session_ids(
     full_fetch_ids: &[i64],
+    include_full_fetches: bool,
     incremental_messages: &HashMap<i64, Vec<AgentMessageRow>>,
     updated_tool_calls: &HashMap<i64, HashMap<i64, String>>,
 ) -> Vec<i64> {
-    let mut ids = full_fetch_ids.to_vec();
+    let mut ids = if include_full_fetches {
+        full_fetch_ids.to_vec()
+    } else {
+        Vec::new()
+    };
     for (session_id, messages) in incremental_messages {
         if messages.iter().any(is_todo_source_message)
             || updated_tool_calls.contains_key(session_id)
@@ -204,34 +224,34 @@ pub(super) async fn fetch_latest_todos(
         return Ok(todos_by_session);
     }
 
-    let placeholders = session_ids
+    let target_values = session_ids
         .iter()
-        .map(|_| "?")
+        .map(|_| "(?)")
         .collect::<Vec<_>>()
         .join(",");
+    let message_select_m = "SELECT m.id AS id, m.session_id AS session_id, m.content AS content, m.message_type AS message_type, m.tool_name AS tool_name, m.tool_use_id AS tool_use_id, m.parent_tool_use_id AS parent_tool_use_id, m.created_at AS created_at, m.model AS model";
     let sql = format!(
-        "WITH task_create_ids AS ( \
-            SELECT session_id, tool_use_id FROM agent_messages \
-            WHERE session_id IN ({placeholders}) \
-              AND message_type = 'tool_call' \
-              AND tool_name = 'TaskCreate' \
-              AND tool_use_id IS NOT NULL \
+        "WITH target_sessions(session_id) AS (VALUES {target_values}), \
+         task_create_ids AS ( \
+            SELECT DISTINCT m.session_id, m.tool_use_id FROM agent_messages m \
+            JOIN target_sessions t ON t.session_id = m.session_id \
+            WHERE m.message_type = 'tool_call' \
+              AND m.tool_name = 'TaskCreate' \
+              AND m.tool_use_id IS NOT NULL \
          ) \
-         {MESSAGE_SELECT} FROM agent_messages \
-         WHERE session_id IN ({placeholders}) AND ( \
-           (message_type = 'tool_call' AND tool_name IN ('TodoWrite', 'TaskCreate', 'TaskUpdate')) \
-           OR (message_type IN ('tool_result', 'tool_error') AND EXISTS ( \
-                SELECT 1 FROM task_create_ids \
-                WHERE task_create_ids.session_id = agent_messages.session_id \
-                  AND task_create_ids.tool_use_id = agent_messages.tool_use_id \
-           )) \
-         ) \
+         {message_select_m} FROM agent_messages m \
+         JOIN target_sessions t ON t.session_id = m.session_id \
+         WHERE m.message_type = 'tool_call' \
+           AND m.tool_name IN ('TodoWrite', 'TaskCreate', 'TaskUpdate') \
+         UNION ALL \
+         {message_select_m} FROM agent_messages m \
+         JOIN task_create_ids tci \
+           ON tci.session_id = m.session_id \
+          AND tci.tool_use_id = m.tool_use_id \
+         WHERE m.message_type IN ('tool_result', 'tool_error') \
          ORDER BY session_id ASC, id ASC"
     );
     let mut query = sqlx::query_as::<_, AgentMessageRow>(&sql);
-    for sid in session_ids {
-        query = query.bind(sid);
-    }
     for sid in session_ids {
         query = query.bind(sid);
     }
@@ -250,10 +270,26 @@ pub(super) async fn fetch_latest_todos(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use serde_json::json;
 
     use super::super::test_support::{insert_message, insert_session, setup_test_db};
-    use super::fetch_latest_todos;
+    use super::{fetch_latest_todos, todo_fetch_session_ids};
+
+    #[test]
+    fn todo_fetch_session_ids_skips_full_fetches_for_before_pagination() {
+        let ids = todo_fetch_session_ids(&[1, 2], false, &HashMap::new(), &HashMap::new());
+
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn todo_fetch_session_ids_keeps_initial_limited_fetches() {
+        let ids = todo_fetch_session_ids(&[2, 1], true, &HashMap::new(), &HashMap::new());
+
+        assert_eq!(ids, vec![1, 2]);
+    }
 
     #[tokio::test]
     async fn fetch_latest_todos_reconstructs_persisted_task_tools() {

@@ -1,5 +1,6 @@
 import { createPermissionRespond, createPromptSend } from "@/lib/ws-envelope";
 import { getFeatureAgentState } from "@/api/generated";
+import { AGENT_STATE_OLDER_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import { serverBlocksToAgentBlocks } from "@/hooks/useFeatureAgentState";
 import { upsertPendingPermission } from "@/lib/pending-permission-queue";
 import { parseAskUserQuestions, type AgentQuestion } from "@/components/AgentQuestionDrawer";
@@ -332,7 +333,7 @@ export async function loadOlderSessionMessages(
   const beforeParam = JSON.stringify({ [session.sessionDbId]: session.oldestMessageId });
   const data = await getFeatureAgentState(session.featureId, {
     before: beforeParam,
-    limit: 100,
+    limit: AGENT_STATE_OLDER_MESSAGE_LIMIT,
   });
 
   const serverSession = data.sessions.find((s) => s.sessionDbId === session.sessionDbId);

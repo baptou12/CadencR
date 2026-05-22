@@ -27,11 +27,10 @@ import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import { parsePermissionMode, type PermissionMode } from "@/types/permission-mode";
-
-/** Number of messages to fetch per session on initial load */
-const INITIAL_MESSAGE_LIMIT = 100;
-/** Number of messages to fetch when loading older history */
-const OLDER_MESSAGE_LIMIT = 100;
+import {
+  AGENT_STATE_INITIAL_MESSAGE_LIMIT,
+  AGENT_STATE_OLDER_MESSAGE_LIMIT,
+} from "@/lib/agent-state-limits";
 
 export { serverBlocksToAgentBlocks };
 
@@ -110,7 +109,7 @@ export function useFeatureAgentState(featureId: number) {
 
   const afterParam = afterMessageIds ? JSON.stringify(afterMessageIds) : undefined;
   // Only apply limit on initial load (no afterMessageIds yet)
-  const initialLimit = afterMessageIds ? undefined : INITIAL_MESSAGE_LIMIT;
+  const initialLimit = afterMessageIds ? undefined : AGENT_STATE_INITIAL_MESSAGE_LIMIT;
   const query = useGetFeatureAgentState(
     featureId,
     { after: afterParam, limit: initialLimit },
@@ -243,7 +242,7 @@ export function useFeatureAgentState(featureId: number) {
   // The hook seeds React Query before the network round-trips so cold opens
   // paint immediately on re-open. Gated on `prevFeatureIdRef` so switching
   // features never paints the previous feature's cached blocks.
-  useAgentStateIdbCache(featureId, query.data, prevFeatureIdRef, INITIAL_MESSAGE_LIMIT);
+  useAgentStateIdbCache(featureId, query.data, prevFeatureIdRef, AGENT_STATE_INITIAL_MESSAGE_LIMIT);
 
   const loadOlderMessages = useCallback(
     async (sessionDbId: number) => {
@@ -253,7 +252,7 @@ export function useFeatureAgentState(featureId: number) {
       const beforeParam = JSON.stringify({ [sessionDbId]: acc.oldestMessageId });
       const data = await getFeatureAgentState(featureId, {
         before: beforeParam,
-        limit: OLDER_MESSAGE_LIMIT,
+        limit: AGENT_STATE_OLDER_MESSAGE_LIMIT,
       });
 
       const serverSession = data.sessions.find((s) => s.sessionDbId === sessionDbId);

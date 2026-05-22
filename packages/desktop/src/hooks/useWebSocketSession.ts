@@ -29,6 +29,7 @@ import {
 import { createTurnTiming, type TurnTimingState } from "@/stores/ws-turn-timing";
 import { useSessionStatus } from "@/stores/session-status-selectors";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
+import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -127,11 +128,9 @@ export function useWebSocketSession(
   // Load persisted state from DB when featureId is provided.
   const loadPersisted = options?.loadPersisted ?? true;
   const persistedLoaded = session?.persistedLoaded ?? false;
-  const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, undefined, {
-    query: {
-      enabled: loadPersisted && !!featureId && !persistedLoaded,
-      cacheTime: 0,
-    },
+  const persistedStateParams = useMemo(() => ({ limit: AGENT_STATE_INITIAL_MESSAGE_LIMIT }), []);
+  const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, persistedStateParams, {
+    query: { enabled: loadPersisted && !!featureId && !persistedLoaded, cacheTime: 0 },
   });
 
   useEffect(() => {

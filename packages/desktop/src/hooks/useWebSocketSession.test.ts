@@ -255,7 +255,7 @@ describe("useWebSocketSession", () => {
     vi.useRealTimers();
   });
 
-  it("loads persisted history without a message limit", async () => {
+  it("loads persisted history with the initial message limit", async () => {
     const { useGetFeatureAgentState } = await import("@/api/generated");
     const mockedQuery = useGetFeatureAgentState as ReturnType<typeof vi.fn>;
     mockedQuery.mockReturnValue({ data: undefined, isLoading: false });
@@ -268,7 +268,13 @@ describe("useWebSocketSession", () => {
 
     expect(mockedQuery).toHaveBeenCalled();
     const lastCall = mockedQuery.mock.calls[mockedQuery.mock.calls.length - 1];
-    expect(lastCall).toHaveLength(3);
+    expect(lastCall).toEqual([
+      42,
+      { limit: 100 },
+      expect.objectContaining({
+        query: expect.objectContaining({ enabled: true, cacheTime: 0 }),
+      }),
+    ]);
   });
 
   it("can skip persisted history loading when a caller already hydrated the session", async () => {
@@ -288,7 +294,7 @@ describe("useWebSocketSession", () => {
 
     expect(mockedQuery).toHaveBeenCalledWith(
       42,
-      undefined,
+      { limit: 100 },
       expect.objectContaining({
         query: expect.objectContaining({ enabled: false }),
       }),

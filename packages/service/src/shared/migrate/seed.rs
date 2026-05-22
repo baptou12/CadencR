@@ -74,6 +74,45 @@ pub(super) async fn repair_agent_sessions_pin_column(pool: &SqlitePool) -> anyho
     Ok(())
 }
 
+pub(super) async fn repair_agent_messages_perf_indexes(pool: &SqlitePool) -> anyhow::Result<()> {
+    if !table_exists(pool, "agent_messages").await? {
+        return Ok(());
+    }
+
+    // Legacy Electron-runner databases can have their sqlx migration history
+    // seeded as already-applied, so the SQL migration that owns these indexes
+    // may be skipped. Keep this as a compatibility repair, not schema source
+    // of truth; fresh databases get the same indexes from the migration file.
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_agent_messages_session_id_desc
+         ON agent_messages(session_id, id DESC)",
+    )
+    .execute(pool)
+    .await?;
+
+    if table_has_column(pool, "agent_messages", "message_type").await?
+        && table_has_column(pool, "agent_messages", "tool_name").await?
+    {
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_agent_messages_session_type_tool
+             ON agent_messages(session_id, message_type, tool_name)",
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    if table_has_column(pool, "agent_messages", "tool_use_id").await? {
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_agent_messages_session_tool_use
+             ON agent_messages(session_id, tool_use_id)",
+        )
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{run_migrations, MigrationContext};

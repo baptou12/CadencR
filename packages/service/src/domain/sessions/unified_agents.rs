@@ -2,15 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use sqlx::{FromRow, SqlitePool};
 
+use super::limits::MAX_AGENT_MESSAGE_LIMIT;
 use super::models::{
     UnifiedAgentEntry, UnifiedAgentFeature, UnifiedAgentProject, UnifiedAgentsMode,
     UnifiedAgentsResponse,
 };
 use super::repository;
 use crate::error::AppError;
-
-const DEFAULT_MESSAGE_LIMIT: i64 = 100;
-const MAX_MESSAGE_LIMIT: i64 = 200;
 
 #[derive(Debug, FromRow)]
 struct UnifiedAgentCandidate {
@@ -48,7 +46,7 @@ pub async fn list_unified_agents(
     let feature_ids: HashSet<i64> = candidates.iter().map(|c| c.feature_id).collect();
     let candidate_session_ids: HashSet<i64> = candidates.iter().map(|c| c.session_id).collect();
     let mut states_by_session = HashMap::new();
-    let limit = query.message_limit.clamp(1, MAX_MESSAGE_LIMIT);
+    let limit = query.message_limit.clamp(1, MAX_AGENT_MESSAGE_LIMIT);
 
     for feature_id in feature_ids {
         let state =
@@ -141,12 +139,6 @@ async fn load_candidates(
         q = q.bind(format!("-{} minutes", query.fresh_minutes.max(1)));
     }
     Ok(q.fetch_all(pool).await?)
-}
-
-pub fn normalize_message_limit(message_limit: Option<i64>) -> i64 {
-    message_limit
-        .unwrap_or(DEFAULT_MESSAGE_LIMIT)
-        .clamp(1, MAX_MESSAGE_LIMIT)
 }
 
 pub async fn set_agent_pinned(

@@ -7,6 +7,8 @@ mod checksum_repair;
 mod checksum_repair_data;
 mod seed;
 mod support;
+#[cfg(test)]
+mod test_fixtures;
 
 use support::{backup_database, emit_phase, has_pending_migrations, table_exists};
 
@@ -66,6 +68,7 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
     checksum_repair::repair_known_sqlx_checksum_mismatches(ctx.pool, &migrator).await?;
     migrator.run(ctx.pool).await?;
     seed::repair_agent_sessions_pin_column(ctx.pool).await?;
+    seed::repair_agent_messages_perf_indexes(ctx.pool).await?;
 
     info!("Database migrations completed successfully");
     Ok(())
@@ -73,6 +76,7 @@ pub async fn run_migrations(ctx: &MigrationContext<'_>) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::test_fixtures::create_pre_agent_message_index_schema;
     use super::*;
     use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
     use std::str::FromStr;
@@ -265,6 +269,45 @@ mod tests {
         assert!(!super::support::table_exists(&pool, "workflow_queue")
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn agent_messages_perf_index_migration_runs_on_existing_schema() {
+        const AGENT_MESSAGE_INDEX_VERSION: i64 = 20260522120000;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let path = tmp.path().to_str().unwrap();
+        let pool = test_pool(path).await;
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool)
+            .await
+            .unwrap();
+        create_pre_agent_message_index_schema(&pool).await;
+        seed_applied_migrations_before(&pool, AGENT_MESSAGE_INDEX_VERSION).await;
+        run_migrations(&MigrationContext::pool_only(&pool))
+            .await
+            .unwrap();
+        let indexes: Vec<String> =
+            sqlx::query_scalar("SELECT name FROM pragma_index_list('agent_messages')")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        for expected in [
+            "idx_agent_messages_session_id_desc",
+            "idx_agent_messages_session_type_tool",
+            "idx_agent_messages_session_tool_use",
+        ] {
+            assert!(
+                indexes.contains(&expected.to_string()),
+                "missing {expected}"
+            );
+        }
+
+        let fk_violations: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM pragma_foreign_key_check")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(fk_violations, 0);
     }
 
     async fn seed_applied_migrations_before(pool: &SqlitePool, version: i64) {
