@@ -251,6 +251,48 @@ describe("ToolPermissionPrompt", () => {
     expect(hotkeyStrings.some((s) => /^Mod\+\d$/.test(s))).toBe(false);
   });
 
+  it("clicking the dismiss button invokes onCancel", async () => {
+    const onCancel = vi.fn();
+    const { user } = render(
+      <ToolPermissionPrompt permission={permission} onDecision={vi.fn()} onCancel={onCancel} />,
+    );
+    await user.click(screen.getByRole("button", { name: /dismiss permission request/i }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("dismiss button still closes the gate while submitting", async () => {
+    const onCancel = vi.fn();
+    const { user } = render(
+      <ToolPermissionPrompt
+        permission={permission}
+        onDecision={vi.fn()}
+        onCancel={onCancel}
+        isSubmitting={true}
+      />,
+    );
+    const dismissButton = screen.getByRole("button", { name: /dismiss permission request/i });
+    expect(dismissButton).not.toBeDisabled();
+    await user.click(dismissButton);
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("keeps permission decision buttons disabled while submitting", () => {
+    render(
+      <ToolPermissionPrompt
+        permission={permission}
+        onDecision={vi.fn()}
+        onCancel={vi.fn()}
+        isSubmitting={true}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /allow once/i })).toBeDisabled();
+  });
+
+  it("does not render a dismiss button without onCancel", () => {
+    render(<ToolPermissionPrompt permission={permission} onDecision={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /dismiss permission request/i })).toBeNull();
+  });
+
   it("invoking Escape closes the permission gate even while submitting", () => {
     const onCancel = vi.fn();
     render(

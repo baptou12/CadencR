@@ -10,6 +10,7 @@ import {
   MessageCircleQuestionIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  X,
 } from "lucide-react";
 
 /** A single question from an AskUserQuestion tool call */
@@ -399,37 +400,54 @@ export function AgentQuestionDrawer({
 
   return (
     <div className={cn("bg-card", inline ? "px-3 py-2" : "border-t border-border px-4 py-3")}>
-      {/* Progress indicator with navigation arrows */}
-      {questions.length > 1 && (
+      {/* Header row: progress indicator (multi-question) + dismiss X */}
+      {(questions.length > 1 || onCancel) && (
         <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
-          <button
-            type="button"
-            disabled={!canGoBack}
-            onClick={handleBack}
-            className={cn(
-              "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-              canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
-            )}
-            aria-label="Previous question"
-          >
-            <ChevronLeftIcon className="size-3.5" />
-          </button>
-          <MessageCircleQuestionIcon className="size-3" />
-          <span>
-            Question {currentIndex + 1} of {questions.length}
-          </span>
-          <button
-            type="button"
-            disabled={!canGoForward}
-            onClick={handleForward}
-            className={cn(
-              "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
-              canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
-            )}
-            aria-label="Next question"
-          >
-            <ChevronRightIcon className="size-3.5" />
-          </button>
+          {questions.length > 1 && (
+            <>
+              <button
+                type="button"
+                disabled={!canGoBack}
+                onClick={handleBack}
+                className={cn(
+                  "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
+                  canGoBack ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
+                )}
+                aria-label="Previous question"
+              >
+                <ChevronLeftIcon className="size-3.5" />
+              </button>
+              <MessageCircleQuestionIcon className="size-3" />
+              <span>
+                Question {currentIndex + 1} of {questions.length}
+              </span>
+              <button
+                type="button"
+                disabled={!canGoForward}
+                onClick={handleForward}
+                className={cn(
+                  "inline-flex size-5 items-center justify-center rounded hover:bg-muted/50 transition-colors",
+                  canGoForward ? "text-foreground cursor-pointer" : "opacity-30 cursor-default",
+                )}
+                aria-label="Next question"
+              >
+                <ChevronRightIcon className="size-3.5" />
+              </button>
+            </>
+          )}
+          {onCancel && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onCancel}
+              aria-label="Dismiss question (Esc)"
+              title="Dismiss (Esc) - stops the agent"
+              className="ml-auto size-5 text-muted-foreground"
+            >
+              <X className="size-3.5" />
+            </Button>
+          )}
         </div>
       )}
 

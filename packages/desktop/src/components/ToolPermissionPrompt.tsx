@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
-import { ShieldAlertIcon, SendIcon, Loader2 } from "lucide-react";
+import { SendIcon, Loader2 } from "lucide-react";
 import { getPermissionPreview } from "./permission-preview";
+import { ToolPermissionPromptHeader } from "./ToolPermissionPromptHeader";
 
 export type PermissionDecisionValue = "allow_once" | "allow_future" | "deny";
 
@@ -345,15 +346,7 @@ export function ToolPermissionPrompt({
 
   return (
     <div className="border-t border-amber-500/30 bg-card px-3 py-2">
-      {/* Header */}
-      <div className="mb-2 flex items-center gap-2 text-xs text-amber-400">
-        <ShieldAlertIcon className="size-3.5" />
-        <span className="font-medium">Permission Required</span>
-        <span className="text-muted-foreground">-</span>
-        <code className="rounded bg-muted px-1 py-0.5 text-[11px] text-foreground">
-          {permission.toolName}
-        </code>
-      </div>
+      <ToolPermissionPromptHeader toolName={permission.toolName} onCancel={onCancel} />
 
       {/* Description */}
       <p className="mb-1.5 text-sm text-foreground">{permission.description}</p>

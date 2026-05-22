@@ -87,6 +87,12 @@ pub(super) async fn clear_persisted_gate_and_notify(
         return Ok(false);
     };
     if !row.has_pending_user_input() {
+        // Idempotent ack: the DB row has no pending gate, but the renderer
+        // may still be holding stale gate state (e.g. it raced an earlier
+        // answer or the row was cleared on another path). Send the
+        // `gate.closed` envelope anyway so the FE drops its prompt UI
+        // instead of staying stuck on a gate the backend will not honor.
+        send_gate_closed(sender, db_session_id, request_id, reason, ref_id);
         return Ok(true);
     }
 

@@ -37,6 +37,7 @@ import {
 import { handleEnvelope } from "./ws-envelope-handler";
 import type { StoreAccessors } from "./ws-envelope-handler";
 import { parseErrorPayload } from "./ws-envelope-payload";
+import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
 import {
   applyApprovePlan,
   applyPersistedState,
@@ -429,10 +430,25 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
             const errorBlock = makeErrorBlock(session, message, {
               idPrefix: "ws-permission-error",
             });
+            // If the backend says the session/permission is unanswerable,
+            // drop the gate so the user is not staring at buttons that
+            // will only ever bounce back the same error. Timeouts (payload
+            // === null) leave the gate in place — the WS reconnects and a
+            // retry can still land.
+            const isDeadSessionError = isGateClosingErrorCode(error?.code);
+            const gatePatch: Partial<SessionEntry> = isDeadSessionError
+              ? {
+                  ...buildClearedGatePatch(session),
+                  lifecycle: transitionTurn(session.lifecycle, {
+                    type: "turn_errored",
+                    message,
+                  }),
+                }
+              : { submittingPermissionRequestId: null };
             set(
               updateSession(get(), sessionId, {
                 ...blocksPatchWithDerived(session.streamingState, [...session.blocks, errorBlock]),
-                submittingPermissionRequestId: null,
+                ...gatePatch,
               }),
             );
             return;

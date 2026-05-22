@@ -27,6 +27,7 @@ import {
   parseStreamStatusPayload,
   parseUsagePayload,
 } from "./ws-envelope-payload";
+import { buildClearedGatePatch, isGateClosingErrorCode } from "./ws-gate-state";
 import { handleWorktreeEvent } from "./ws-worktree-handler";
 import { useGitStatusStore } from "./useGitStatusStore";
 import {
@@ -326,23 +327,11 @@ function handleGateClosed(ctx: StoreAccessors, sessionId: string, payload: unkno
   const p = parseGateClosedPayload(payload);
   if (!p) return;
   const session = ctx.getSession(sessionId);
-  const hasGateState =
-    session.pendingPermission != null ||
-    session.pendingPermissionQueue.length > 0 ||
-    session.pendingRequestId !== "" ||
-    session.submittingPermissionRequestId != null ||
-    session.pendingQuestions.length > 0 ||
-    session.pendingPlanApproval != null;
-  if (!hasGateState) return;
+  const gatePatch = buildClearedGatePatch(session);
+  if (!gatePatch) return;
   ctx.set(
     updateSession(ctx.get(), sessionId, {
-      pendingPermission: null,
-      pendingPermissionQueue: [],
-      pendingRequestId: "",
-      submittingPermissionRequestId: null,
-      pendingQuestions: [],
-      pendingQuestionToolInput: {},
-      pendingPlanApproval: null,
+      ...gatePatch,
       lifecycle: transitionTurn(session.lifecycle, {
         type: "turn_ended",
         reason: p.reason === "sleep" ? "streamClosed" : "denied",
@@ -532,13 +521,14 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
   }
 
   const session = ctx.getSession(sessionId);
+  const gatePatch = isGateClosingErrorCode(p?.code) ? buildClearedGatePatch(session) : null;
   // A manual compaction holds the prompt turn — a follow-up `prompt.send` while
   // compacting fails the steering RPC and the backend emits `session.error`,
   // but the underlying compaction is still running. Surface the error inline
   // (so the user sees what happened) without flipping the turn to `error` or
   // clearing the compaction flag — both of those would lie about the agent
   // having stopped.
-  const lifecyclePatch = session.pendingManualCompact
+  const lifecyclePatch: Partial<SessionEntry> = session.pendingManualCompact
     ? {}
     : {
         lifecycle: transitionTurn(session.lifecycle, {
@@ -548,8 +538,9 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
         pendingManualCompact: false,
       };
   if (!p?.message) {
-    if (Object.keys(lifecyclePatch).length === 0) return;
-    ctx.set(updateSession(ctx.get(), sessionId, lifecyclePatch));
+    const patch = { ...lifecyclePatch, ...gatePatch };
+    if (Object.keys(patch).length === 0) return;
+    ctx.set(updateSession(ctx.get(), sessionId, patch));
     return;
   }
   const errorBlock = makeErrorBlock(session, p.message, { code: p.code });
@@ -558,6 +549,7 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
     updateSession(ctx.get(), sessionId, {
       ...lifecyclePatch,
       ...blocksPatchWithDerived(session.streamingState, blocks),
+      ...gatePatch,
     }),
   );
 }
