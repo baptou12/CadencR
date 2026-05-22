@@ -46,11 +46,21 @@ class CadencrWorkspaceFile implements WorkspaceFile {
  */
 export type DisplayFileHandler = (absPath: string) => Promise<EditorView | null>;
 
+/**
+ * How long `displayFile` will wait for the editor for a newly-opened tab to
+ * mount before giving up and resolving to `null`. The CodeMirror editor is
+ * lazy-loaded behind Suspense — first navigation can take a beat — but if
+ * mount never happens, the click should silently no-op rather than hang.
+ */
+const DISPLAY_FILE_TIMEOUT_MS = 5_000;
+
 /** @public */
 export class CadencrWorkspace extends Workspace {
   files: WorkspaceFile[] = [];
   private fileVersions: Record<string, number> = Object.create(null);
   private displayFileHandler: DisplayFileHandler | null = null;
+  /** URIs awaiting their editor view to be created by `openFile`. */
+  private pendingDisplays = new Map<string, ((view: EditorView | null) => void)[]>();
 
   constructor(client: LSPClient) {
     super(client);
@@ -86,16 +96,44 @@ export class CadencrWorkspace extends Workspace {
     // Single-view-per-URI: if another pane already shows this file, ignore the
     // second LSP plugin mount rather than throw. The first view drives sync;
     // the second still gets syntax highlighting + plain editing.
-    if (this.getFile(uri)) return;
-    const file = new CadencrWorkspaceFile(
-      uri,
-      languageId,
-      this.nextFileVersion(uri),
-      view.state.doc,
-      view,
-    );
-    this.files.push(file);
-    this.client.didOpen(file);
+    if (!this.getFile(uri)) {
+      const file = new CadencrWorkspaceFile(
+        uri,
+        languageId,
+        this.nextFileVersion(uri),
+        view.state.doc,
+        view,
+      );
+      this.files.push(file);
+      this.client.didOpen(file);
+    }
+    this.resolvePendingDisplay(uri, view);
+  }
+
+  private resolvePendingDisplay(uri: string, view: EditorView | null): void {
+    const resolvers = this.pendingDisplays.get(uri);
+    if (!resolvers) return;
+    this.pendingDisplays.delete(uri);
+    for (const resolve of resolvers) resolve(view);
+  }
+
+  private waitForDisplay(uri: string): Promise<EditorView | null> {
+    return new Promise((resolve) => {
+      const arr = this.pendingDisplays.get(uri) ?? [];
+      arr.push(resolve);
+      this.pendingDisplays.set(uri, arr);
+      setTimeout(() => {
+        const current = this.pendingDisplays.get(uri);
+        if (!current) return;
+        const remaining = current.filter((r) => r !== resolve);
+        if (remaining.length === 0) {
+          this.pendingDisplays.delete(uri);
+        } else {
+          this.pendingDisplays.set(uri, remaining);
+        }
+        resolve(null);
+      }, DISPLAY_FILE_TIMEOUT_MS);
+    });
   }
 
   closeFile(uri: string, view: EditorView): void {
@@ -111,6 +149,16 @@ export class CadencrWorkspace extends Workspace {
     const absPath = fileUriToPath(uri);
     if (!absPath) return null;
     if (!this.displayFileHandler) return null;
-    return await this.displayFileHandler(absPath);
+    // Host has two ways to satisfy the request: return the view directly if
+    // it already knows it (rare), or trigger an async tab-open and let our
+    // `openFile` resolve the pending entry when CodeMirror mounts the new
+    // editor. The race is fine — whichever finishes first wins.
+    const waitPromise = this.waitForDisplay(uri);
+    const direct = await this.displayFileHandler(absPath);
+    if (direct) {
+      this.resolvePendingDisplay(uri, direct);
+      return direct;
+    }
+    return await waitPromise;
   }
 }
