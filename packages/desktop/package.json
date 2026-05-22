@@ -46,6 +46,7 @@
     "@codemirror/lang-yaml": "^6.1.2",
     "@codemirror/language": "^6.10.8",
     "@codemirror/legacy-modes": "^6.4.2",
+    "@codemirror/lsp-client": "^6.2.4",
     "@codemirror/merge": "^6.12.1",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",

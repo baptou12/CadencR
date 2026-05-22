@@ -11,6 +11,9 @@
     "electron/**/*.{ts,tsx}",
     "src/**/*.{ts,tsx}"
   ],
+  "ignore": [
+    "src/lib/lsp/**"
+  ],
   "ignoreBinaries": [
     "oxlint",
     "oxfmt",
@@ -30,7 +33,8 @@
     "orval",
     "@fontsource-variable/inter",
     "electron-builder",
-    "tw-animate-css"
+    "tw-animate-css",
+    "@codemirror/lsp-client"
   ],
   "tags": [
     "+@public"
