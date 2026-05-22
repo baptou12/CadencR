@@ -11,13 +11,9 @@ import { subscribeResize } from "@/lib/resize-coordinator";
  *   2. User scrolls up → stop auto-scrolling.
  *   3. User clicks the chip → scroll to bottom (rule 1 re-engages).
  *
- * Implementation note: with virtualization, `scrollerEl.scrollHeight` only
- * reflects items Virtuoso has already measured. Items below the rendered
- * window use an estimated height, and async sub-components (markdown
- * highlighting, BashBlock `useQuery`) re-measure later. A single
- * `scrollTop = scrollHeight` is therefore stale by the next paint and the
- * scroller lands mid-list. We delegate bottom-pinning to react-virtuoso's
- * measurement-aware APIs:
+ * With virtualization, raw `scrollTop = scrollHeight` is stale as markdown,
+ * code blocks, and query-backed blocks remeasure. Bottom-pinning is delegated
+ * to react-virtuoso's measurement-aware APIs:
  *
  *   - `followOutput`: returns 'auto' while stick is engaged. Virtuoso re-runs
  *     it on every data change AND after async measurement settles, so the
@@ -29,9 +25,7 @@ import { subscribeResize } from "@/lib/resize-coordinator";
  *     to programmatically reach the true last item; Virtuoso renders forward
  *     until it actually arrives. Used by the chip and conversation-switch.
  *
- * Disengage stays on synchronous user input (`wheel` / `touchmove` upward) so
- * a streaming-token re-anchor in the same commit can't undo the user's
- * scroll.
+ * Disengage stays on user input so streaming re-anchors cannot undo it.
  */
 
 interface UseAgentSessionScrollOptions {
@@ -55,6 +49,17 @@ interface UseAgentSessionScrollOptions {
 }
 
 type ScrollRef = (el: HTMLElement | null) => void;
+const HISTORY_SCROLL_TOP_PX = 160;
+const SCROLLBAR_HIT_TARGET_PX = 20;
+
+function canScroll(el: HTMLElement): boolean {
+  return el.scrollHeight > el.clientHeight;
+}
+
+function isVerticalScrollbarPointer(el: HTMLElement, e: PointerEvent): boolean {
+  const rect = el.getBoundingClientRect();
+  return e.clientX >= rect.right - SCROLLBAR_HIT_TARGET_PX && e.clientX <= rect.right + 1;
+}
 
 interface UseAgentSessionScrollResult {
   virtuosoRef: React.RefObject<VirtuosoHandle | null>;
@@ -68,6 +73,11 @@ interface UseAgentSessionScrollResult {
   scrollToBottom: () => void;
 }
 
+interface HistoryAnchor {
+  scrollTop: number;
+  scrollHeight: number;
+}
+
 export function useAgentSessionScroll({
   blocks,
   conversationKey,
@@ -79,18 +89,21 @@ export function useAgentSessionScroll({
   const virtuosoRef = useRef<VirtuosoHandle | null>(null);
   const scrollerElRef = useRef<HTMLElement | null>(null);
   const stickRef = useRef(true);
+  const historyLoadArmedRef = useRef(false);
   const loadingOlderRef = useRef(false);
+  const loadGenerationRef = useRef(0);
+  const historyAnchorRef = useRef<HistoryAnchor | null>(null);
+  const lastScrollTopRef = useRef(0);
+  const suppressScrollIntentRef = useRef(false);
+  const userScrollIntentRef = useRef(false);
   const touchStartYRef = useRef(0);
   const prevConversationKeyRef = useRef<string | null>(conversationKey);
-  // Tracks whether we've already fired the one-shot first-paint scroll. We
-  // only need to bottom-pin via `scrollToIndex` once after blocks first
-  // become non-empty; subsequent appends are handled by `followOutput`.
+  // One-shot first-paint bottom pin; subsequent appends use `followOutput`.
   const didFirstPaintScrollRef = useRef(false);
   const [autoScrollEnabled, setAutoScrollEnabledState] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
 
-  // Latest-callbacks pattern so the Virtuoso `startReached` handler stays
-  // stable while reading current pagination state.
+  // Stable Virtuoso handlers read current pagination state through refs.
   const hasMoreRef = useRef(hasMore);
   const onLoadOlderRef = useRef(onLoadOlder);
   hasMoreRef.current = hasMore;
@@ -106,43 +119,109 @@ export function useAgentSessionScroll({
     virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
   }, []);
 
+  const captureHistoryAnchor = useCallback((): void => {
+    const el = scrollerElRef.current;
+    historyAnchorRef.current = el
+      ? { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight }
+      : null;
+  }, []);
+
+  const armUserScrollIntent = useCallback((): void => {
+    userScrollIntentRef.current = true;
+  }, []);
+
+  const restoreHistoryAnchor = useCallback((): void => {
+    const anchor = historyAnchorRef.current;
+    const el = scrollerElRef.current;
+    if (!anchor || !el || stickRef.current) return;
+
+    const scrollHeightDelta = el.scrollHeight - anchor.scrollHeight;
+    if (scrollHeightDelta <= 0) return;
+
+    const targetScrollTop = anchor.scrollTop + scrollHeightDelta;
+    if (Math.abs(el.scrollTop - targetScrollTop) <= 1) return;
+
+    el.scrollTop = targetScrollTop;
+    lastScrollTopRef.current = targetScrollTop;
+  }, []);
+
+  const scheduleHistoryAnchorRestore = useCallback((): void => {
+    let frames = 0;
+    const restoreFrame = (): void => {
+      restoreHistoryAnchor();
+      frames += 1;
+      if (frames < 3) requestAnimationFrame(restoreFrame);
+    };
+
+    requestAnimationFrame(restoreFrame);
+    window.setTimeout(() => {
+      restoreHistoryAnchor();
+      historyAnchorRef.current = null;
+    }, 750);
+  }, [restoreHistoryAnchor]);
+
+  const requestOlderHistory = useCallback((): void => {
+    if (!hasMoreRef.current || !onLoadOlderRef.current || loadingOlderRef.current) return;
+    captureHistoryAnchor();
+    const loadGeneration = loadGenerationRef.current;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    void onLoadOlderRef
+      .current()
+      .then(() => {
+        if (loadGeneration !== loadGenerationRef.current) return;
+        scheduleHistoryAnchorRestore();
+        historyLoadArmedRef.current = false;
+        userScrollIntentRef.current = false;
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+      })
+      .catch(() => {
+        if (loadGeneration !== loadGenerationRef.current) return;
+        historyAnchorRef.current = null;
+        historyLoadArmedRef.current = false;
+        userScrollIntentRef.current = false;
+        loadingOlderRef.current = false;
+        setIsLoadingOlder(false);
+        toast.error("Failed to load older messages");
+      });
+  }, [captureHistoryAnchor, scheduleHistoryAnchorRestore]);
+
+  const resetHistoryLoadIntent = useCallback((): void => {
+    historyLoadArmedRef.current = false;
+    userScrollIntentRef.current = false;
+    historyAnchorRef.current = null;
+    lastScrollTopRef.current = scrollerElRef.current?.scrollTop ?? 0;
+  }, []);
+
+  const suppressProgrammaticScrollIntent = useCallback((): void => {
+    suppressScrollIntentRef.current = true;
+    requestAnimationFrame(() => {
+      lastScrollTopRef.current = scrollerElRef.current?.scrollTop ?? lastScrollTopRef.current;
+      suppressScrollIntentRef.current = false;
+    });
+  }, []);
+
   const scrollToBottom = useCallback((): void => {
+    resetHistoryLoadIntent();
     setAutoScrollEnabled(true);
     pinToEnd();
-  }, [setAutoScrollEnabled, pinToEnd]);
+  }, [resetHistoryLoadIntent, setAutoScrollEnabled, pinToEnd]);
 
-  // Virtuoso re-evaluates `followOutput` whenever `data` changes AND after
-  // async item measurement settles. Returning 'auto' while stick is engaged
-  // keeps the view pinned across markdown highlighting, `useQuery` resolves,
-  // and any other deferred-height updates.
   const followOutput = useCallback<FollowOutputCallback>(() => {
     return stickRef.current ? "auto" : false;
   }, []);
 
-  // Measurement-aware re-engagement. We do NOT disengage here: Virtuoso also
-  // calls this with `false` during transient measurement settles, and using
-  // it for disengage would defeat the whole point of switching off raw
-  // `scroll` events.
   const onAtBottomStateChange = useCallback(
     (atBottom: boolean): void => {
       if (!atBottom) return;
-      // Capture stick state *before* re-enabling so we can tell whether the
-      // user is returning from a scrolled-up position. Only in that case do
-      // we need to clamp the scroller — while stick is already engaged,
-      // `followOutput` and `onTotalListHeightChanged` already keep the view
-      // pinned through measurement settles, and re-pinning here would just
-      // thrash on every transient atBottom flicker.
       const wasDisengaged = !stickRef.current;
+      resetHistoryLoadIntent();
       setAutoScrollEnabled(true);
       if (!wasDisengaged) return;
-      // Returning to bottom: snap to the true last item. Virtuoso's
-      // "atBottom" is measured against scrollHeight, which can overshoot
-      // when unmeasured items below were estimated taller than reality.
-      // `scrollToIndex(LAST, end)` is measurement-aware and removes any
-      // phantom tail space the user might have scrolled into.
       pinToEnd();
     },
-    [setAutoScrollEnabled, pinToEnd],
+    [resetHistoryLoadIntent, setAutoScrollEnabled, pinToEnd],
   );
 
   // The "opens almost at the bottom" gap on cold-open comes from Virtuoso
@@ -154,10 +233,14 @@ export function useAgentSessionScroll({
   // catches every settle step until the list stabilises. Gated on
   // `stickRef.current` so it never fights older-history prepend (stick is
   // off when the user is scrolled up).
-  const onTotalListHeightChanged = useCallback((_height: number): void => {
-    if (!stickRef.current) return;
-    virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
-  }, []);
+  const onTotalListHeightChanged = useCallback(
+    (_height: number): void => {
+      restoreHistoryAnchor();
+      if (!stickRef.current) return;
+      virtuosoRef.current?.scrollToIndex({ index: "LAST", align: "end", behavior: "auto" });
+    },
+    [restoreHistoryAnchor],
+  );
 
   // Conversation switch: parent reuses this hook instance across sessionId
   // changes, so a "scrolled up" stick state would otherwise leak into the
@@ -167,11 +250,16 @@ export function useAgentSessionScroll({
   useLayoutEffect(() => {
     if (prevConversationKeyRef.current === conversationKey) return;
     prevConversationKeyRef.current = conversationKey;
+    loadGenerationRef.current += 1;
+    loadingOlderRef.current = false;
     stickRef.current = true;
+    resetHistoryLoadIntent();
+    setIsLoadingOlder(false);
     setAutoScrollEnabledState(true);
     didFirstPaintScrollRef.current = false;
+    suppressProgrammaticScrollIntent();
     pinToEnd();
-  }, [conversationKey, pinToEnd]);
+  }, [conversationKey, resetHistoryLoadIntent, suppressProgrammaticScrollIntent, pinToEnd]);
 
   // First-paint catch-up: when blocks arrive after mount (the common case for
   // opening an existing conversation), Virtuoso's `initialTopMostItemIndex`
@@ -207,10 +295,28 @@ export function useAgentSessionScroll({
     (e: WheelEvent): void => {
       if (e.deltaY >= 0) return;
       const el = scrollerElRef.current;
-      if (!el || el.scrollHeight <= el.clientHeight) return;
+      if (!el || !canScroll(el)) return;
+      armUserScrollIntent();
+      historyLoadArmedRef.current = true;
       setAutoScrollEnabled(false);
     },
-    [setAutoScrollEnabled],
+    [armUserScrollIntent, setAutoScrollEnabled],
+  );
+  const onPointerDown = useCallback(
+    (e: PointerEvent): void => {
+      const el = scrollerElRef.current;
+      if (!el || !canScroll(el) || !isVerticalScrollbarPointer(el, e)) return;
+      historyLoadArmedRef.current = true;
+      armUserScrollIntent();
+    },
+    [armUserScrollIntent],
+  );
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent): void => {
+      if (!["ArrowUp", "PageUp", "Home"].includes(e.key)) return;
+      armUserScrollIntent();
+    },
+    [armUserScrollIntent],
   );
   const onTouchStart = useCallback((e: TouchEvent): void => {
     touchStartYRef.current = e.touches[0]?.clientY ?? 0;
@@ -220,47 +326,60 @@ export function useAgentSessionScroll({
       const y = e.touches[0]?.clientY ?? 0;
       if (y <= touchStartYRef.current + 5) return;
       const el = scrollerElRef.current;
-      if (!el || el.scrollHeight <= el.clientHeight) return;
+      if (!el || !canScroll(el)) return;
+      armUserScrollIntent();
+      historyLoadArmedRef.current = true;
       setAutoScrollEnabled(false);
     },
-    [setAutoScrollEnabled],
+    [armUserScrollIntent, setAutoScrollEnabled],
   );
+  const onScroll = useCallback((): void => {
+    const el = scrollerElRef.current;
+    if (!el) return;
+    const currentScrollTop = el.scrollTop;
+    const previousScrollTop = lastScrollTopRef.current;
+    lastScrollTopRef.current = currentScrollTop;
+
+    if (suppressScrollIntentRef.current || !canScroll(el)) return;
+    if (!userScrollIntentRef.current) return;
+    const isScrollingUp = currentScrollTop < previousScrollTop - 1;
+    if (!isScrollingUp) return;
+
+    historyLoadArmedRef.current = true;
+    setAutoScrollEnabled(false);
+    if (currentScrollTop <= HISTORY_SCROLL_TOP_PX) requestOlderHistory();
+  }, [requestOlderHistory, setAutoScrollEnabled]);
 
   const scrollContainerRef = useCallback<ScrollRef>(
     (el) => {
       const prev = scrollerElRef.current;
       if (prev === el) return;
       if (prev) {
+        prev.removeEventListener("keydown", onKeyDown);
+        prev.removeEventListener("pointerdown", onPointerDown);
         prev.removeEventListener("wheel", onWheel);
+        prev.removeEventListener("scroll", onScroll);
         prev.removeEventListener("touchstart", onTouchStart);
         prev.removeEventListener("touchmove", onTouchMove);
       }
       scrollerElRef.current = el;
       if (el) {
+        lastScrollTopRef.current = el.scrollTop;
+        el.addEventListener("keydown", onKeyDown);
+        el.addEventListener("pointerdown", onPointerDown, { passive: true });
         el.addEventListener("wheel", onWheel, { passive: true });
+        el.addEventListener("scroll", onScroll, { passive: true });
         el.addEventListener("touchstart", onTouchStart, { passive: true });
         el.addEventListener("touchmove", onTouchMove, { passive: true });
       }
     },
-    [onWheel, onTouchStart, onTouchMove],
+    [onKeyDown, onPointerDown, onWheel, onScroll, onTouchStart, onTouchMove],
   );
 
   const onStartReached = useCallback((): void => {
-    if (!hasMoreRef.current || !onLoadOlderRef.current || loadingOlderRef.current) return;
-    loadingOlderRef.current = true;
-    setIsLoadingOlder(true);
-    void onLoadOlderRef
-      .current()
-      .then(() => {
-        loadingOlderRef.current = false;
-        setIsLoadingOlder(false);
-      })
-      .catch(() => {
-        loadingOlderRef.current = false;
-        setIsLoadingOlder(false);
-        toast.error("Failed to load older messages");
-      });
-  }, []);
+    if (!historyLoadArmedRef.current) return;
+    requestOlderHistory();
+  }, [requestOlderHistory]);
 
   return {
     virtuosoRef,

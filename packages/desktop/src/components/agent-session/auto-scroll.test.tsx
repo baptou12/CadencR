@@ -553,7 +553,7 @@ describe("AgentSession auto-scroll", () => {
     expect(scroller.scrollTop).toBe(50);
   });
 
-  it("loads older history when Virtuoso reaches the first item", async () => {
+  it("does not auto-load older history from an initial top signal", () => {
     const onLoadOlder = vi.fn(async () => 0);
     render(
       <AgentSession
@@ -568,6 +568,28 @@ describe("AgentSession auto-scroll", () => {
     );
 
     stubGeometry(getScroller(), 1000, 400);
+    fireStartReached();
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it("loads older history after the user scrolls upward to the first item", async () => {
+    const onLoadOlder = vi.fn(async () => 0);
+    render(
+      <AgentSession
+        agentType="session"
+        blocks={[makeBlock("1", "Hello")]}
+        status="agent"
+        onSend={vi.fn()}
+        onStop={vi.fn()}
+        hasMore
+        onLoadOlder={onLoadOlder}
+      />,
+    );
+
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     fireStartReached();
 
     await waitFor(() => expect(onLoadOlder).toHaveBeenCalledTimes(1));
@@ -587,6 +609,9 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     fireStartReached();
     expect(onLoadOlder).not.toHaveBeenCalled();
   });
@@ -612,7 +637,9 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    stubGeometry(getScroller(), 1000, 400);
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     expect(container.querySelector(".animate-spin")).not.toBeInTheDocument();
 
     fireStartReached();
@@ -641,17 +668,20 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    stubGeometry(getScroller(), 1000, 400);
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     fireStartReached();
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Failed to load older messages"));
   });
 
-  // Prepend anchoring is owned by Virtuoso's `firstItemIndex`; the scroll
-  // hook must not also apply a manual scrollHeight delta or the real browser
-  // path double-adjusts. The component-level AgentStream test asserts the
-  // `firstItemIndex` decrement that preserves the visible content.
-  it("does not manually adjust scrollTop after older messages are prepended", async () => {
+  // Prepend anchoring starts with Virtuoso's `firstItemIndex`, but the first
+  // pass only knows estimated item heights. Once the prepended rows measure,
+  // the hook compensates by the actual scrollHeight delta so the previously
+  // visible content stays anchored instead of jumping upward into the newly
+  // loaded history.
+  it("compensates scrollTop by the measured height delta after older messages are prepended", async () => {
     let resolveLoad: () => void = () => {};
     const onLoadOlder = vi.fn(
       () =>
@@ -680,7 +710,8 @@ describe("AgentSession auto-scroll", () => {
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
 
     // Older blocks land at the front. The hook leaves scrollTop alone;
-    // Virtuoso receives the prepend offset and performs the real anchoring.
+    // once Virtuoso reports the measured total height, the hook preserves
+    // the previous visual anchor by adding the measured scrollHeight delta.
     act(() => resolveLoad());
     stubGeometry(scroller, 1000, 200);
     rerender(
@@ -689,8 +720,9 @@ describe("AgentSession auto-scroll", () => {
         blocks={[makeBlock("0a", ""), makeBlock("0b", ""), makeBlock("1", "Old")]}
       />,
     );
+    fireTotalHeightChange(1000);
 
-    await waitFor(() => expect(scroller.scrollTop).toBe(80));
+    await waitFor(() => expect(scroller.scrollTop).toBe(480));
   });
 
   // Conversation switch: the same `AgentSession` instance is reused when the
@@ -772,7 +804,9 @@ describe("AgentSession auto-scroll", () => {
       />,
     );
 
-    stubGeometry(getScroller(), 1000, 400);
+    const scroller = getScroller();
+    stubGeometry(scroller, 1000, 400);
+    userWheelUp(scroller, 100);
     fireStartReached();
     fireStartReached();
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
