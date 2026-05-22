@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 interface CollapsibleBlockProps {
   /** Total number of items in the list */
@@ -10,6 +11,12 @@ interface CollapsibleBlockProps {
   unit: string;
   /** Header content (icons, labels, etc.) — placed before the toggle button */
   header: ReactNode;
+  /**
+   * Optional header slot rendered *after* the inner "Show last N / Show all N"
+   * toggle, so callers can place their own controls (e.g. a fold chevron) at
+   * the very end of the header bar without putting them ahead of the toggle.
+   */
+  headerTrailing?: ReactNode;
   /** Render the visible slice of items */
   children: (range: { showAll: boolean }) => ReactNode;
   /** Class for the outer wrapper */
@@ -41,6 +48,7 @@ export function CollapsibleBlock({
   visibleCount,
   unit,
   header,
+  headerTrailing,
   children,
   className,
   headerClassName,
@@ -66,8 +74,9 @@ export function CollapsibleBlock({
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>
         )}
+        {headerTrailing}
       </div>
-      {!bodyHidden && (
+      <CollapsibleSection open={!bodyHidden}>
         <div className={bodyClassName}>
           {!showAll && needsCollapse && (
             <div className={cn("text-xs", truncationClassName)}>
@@ -76,7 +85,7 @@ export function CollapsibleBlock({
           )}
           {children({ showAll: showAll || !needsCollapse })}
         </div>
-      )}
+      </CollapsibleSection>
     </div>
   );
 }
