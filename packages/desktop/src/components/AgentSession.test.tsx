@@ -185,7 +185,7 @@ describe("AgentSession", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
-  it("shows empty state when idle with no blocks", () => {
+  it("shows the new-session hint card when idle with no blocks", () => {
     render(
       <AgentSession
         agentType="session"
@@ -195,7 +195,8 @@ describe("AgentSession", () => {
         onStop={onStop}
       />,
     );
-    expect(screen.getByText("Send a message to start a session.")).toBeInTheDocument();
+    expect(screen.getByText("Start your first turn")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /show another tip/i })).toBeInTheDocument();
   });
 
   it("shows cross-provider models before a session starts without standalone provider actions", async () => {

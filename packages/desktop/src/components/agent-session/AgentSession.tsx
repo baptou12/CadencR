@@ -35,6 +35,7 @@ import { MetaBarSecondary } from "./MetaBarSecondary";
 import { useNarrowContainer } from "./useNarrowContainer";
 import { CollapsibleHeader } from "./CollapsibleHeader";
 import { useAutoScrollShortcut } from "./useAutoScrollShortcut";
+import { SessionHint } from "./SessionHint";
 import { useTurnWorkingLabel } from "@/components/TurnWorkingLabel";
 
 /**
@@ -272,7 +273,6 @@ export const AgentSession = memo(
       onProviderChange,
       hasConversation: blocks.length > 0,
     });
-    const emptyStateMessage = collapsible ? "No output yet" : "Send a message to start a session.";
 
     // Same gate as `canChangeProvider` — see useAgentSessionModelState.
     // Either the legacy on/off toggle is wired (`onToggleWorktree`) or the
@@ -432,7 +432,7 @@ export const AgentSession = memo(
         <div ref={containerRef} className={cn("flex h-full flex-col", className)}>
           {isIdle ? (
             <div className="flex flex-1 items-center justify-center px-4 pt-4 pb-8">
-              <p className="text-sm text-muted-foreground">{emptyStateMessage}</p>
+              <SessionHint />
             </div>
           ) : (
             <div className="flex-1 min-h-0 px-4 pt-4 pb-8">{streamContent}</div>
@@ -476,7 +476,7 @@ export const AgentSession = memo(
           <>
             {blocks.length === 0 && status === "idle" ? (
               <div className="flex flex-1 items-center justify-center border-t border-border/30 p-6 text-sm text-muted-foreground">
-                {emptyStateMessage}
+                No output yet
               </div>
             ) : (
               <div className="flex-1 min-h-0 border-t border-border/30 px-3 pb-6">
