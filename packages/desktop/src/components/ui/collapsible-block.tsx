@@ -35,6 +35,13 @@ interface CollapsibleBlockProps {
    * that own their own outer toggle.
    */
   bodyHidden?: boolean;
+  /**
+   * Click handler for the entire header row. When provided, clicking anywhere
+   * on the header (except inner buttons that `stopPropagation`) fires this.
+   * Used to mirror the collapse toggle so the whole row is a click target,
+   * matching the behavior of other tool blocks.
+   */
+  onHeaderClick?: () => void;
 }
 
 /**
@@ -56,6 +63,7 @@ export function CollapsibleBlock({
   bodyClassName,
   truncationClassName,
   bodyHidden = false,
+  onHeaderClick,
 }: CollapsibleBlockProps) {
   const [showAll, setShowAll] = useState(false);
   const needsCollapse = totalCount > visibleCount;
@@ -63,13 +71,23 @@ export function CollapsibleBlock({
 
   return (
     <div className={cn("my-1 rounded-md border overflow-hidden", className)}>
-      <div className={cn("flex items-center gap-2 px-3 py-1.5 text-xs", headerClassName)}>
+      <div
+        onClick={onHeaderClick}
+        className={cn(
+          "flex items-center gap-2 px-3 py-1.5 text-xs",
+          onHeaderClick && "cursor-pointer",
+          headerClassName,
+        )}
+      >
         {header}
         {!bodyHidden && needsCollapse && (
           <button
             type="button"
             className={cn("shrink-0", toggleClassName)}
-            onClick={() => setShowAll((prev) => !prev)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowAll((prev) => !prev);
+            }}
           >
             {showAll ? `Show last ${visibleCount}` : `Show all ${totalCount}`}
           </button>

@@ -76,6 +76,7 @@ export const BashBlock = memo(function BashBlock({
             totalCount={totalLines}
             visibleCount={maxLines}
             unit="lines"
+            onHeaderClick={toggleBodyOpen}
             className={isError ? "border-destructive/40" : "border-border"}
             headerClassName={cn(
               "bg-[var(--block-bash-header-bg)]",
@@ -125,7 +126,10 @@ export const BashBlock = memo(function BashBlock({
             headerTrailing={
               <button
                 type="button"
-                onClick={toggleBodyOpen}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleBodyOpen();
+                }}
                 className="text-[var(--block-bash-muted-fg)] hover:text-[var(--block-bash-fg)]"
                 aria-expanded={isBodyOpen}
                 aria-label={isBodyOpen ? "Collapse output" : "Expand output"}

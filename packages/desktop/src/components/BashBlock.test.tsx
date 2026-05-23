@@ -117,6 +117,42 @@ describe("BashBlock collapsed-header UX", () => {
     await user.click(screen.getByRole("button", { name: "Collapse output" }));
     expect(onExpandedChange).toHaveBeenCalledWith(false);
   });
+
+  it("toggles when the user clicks anywhere on the collapsed header row", async () => {
+    // Mirrors InlineDiffBlock: with auto-collapse / collapsed verbosity
+    // modes the whole row needs to be hit-testable, not just the chevron.
+    const onExpandedChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <BashBlock
+        command="echo hi"
+        content="ok"
+        expanded={false}
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+    await user.click(screen.getByText("Bash"));
+    expect(onExpandedChange).toHaveBeenCalledWith(true);
+  });
+
+  it("does not double-toggle when the chevron inside the header row is clicked", async () => {
+    // The chevron button lives inside the click-to-toggle row; if its
+    // click propagated to the row handler too, we'd toggle twice and
+    // appear to do nothing.
+    const onExpandedChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <BashBlock
+        command="echo hi"
+        content="ok"
+        expanded={true}
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Collapse output" }));
+    expect(onExpandedChange).toHaveBeenCalledTimes(1);
+    expect(onExpandedChange).toHaveBeenCalledWith(false);
+  });
 });
 
 describe("BashBlock server-truncated output", () => {

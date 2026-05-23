@@ -75,10 +75,12 @@ export function InlineDiffBlock({
 
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--editor-border)] bg-[var(--editor-bg)]">
-      {/* Compact file header */}
+      {/* Compact file header — clicking anywhere on the row toggles expand;
+          nested buttons (Edit, chevron) stop propagation. */}
       <div
         data-testid="inline-diff-header"
-        className="flex items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--primary)_15%,var(--editor-bg))] px-3 py-1 text-xs"
+        onClick={toggleExpanded}
+        className="flex cursor-pointer items-center gap-2 border-b border-[var(--editor-border)] bg-[color-mix(in_srgb,var(--primary)_15%,var(--editor-bg))] px-3 py-1.5 text-xs"
       >
         {toolName && (
           <>
@@ -95,8 +97,11 @@ export function InlineDiffBlock({
             type="button"
             aria-label={`Edit ${displayPath} in editor`}
             title="Edit in editor"
-            onClick={() => openFileInEditor(filePath, firstChangedNewLine(patch))}
-            className="inline-flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-primary transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              openFileInEditor(filePath, firstChangedNewLine(patch));
+            }}
+            className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 leading-4 text-primary transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
           >
             <PencilIcon className="size-3" />
             <span className="text-[11px] font-medium">Edit</span>
@@ -104,7 +109,10 @@ export function InlineDiffBlock({
         )}
         <button
           type="button"
-          onClick={toggleExpanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpanded();
+          }}
           className="shrink-0 text-primary/70 transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
           aria-expanded={isExpanded}
           aria-label={isExpanded ? "Collapse diff" : "Expand diff"}
