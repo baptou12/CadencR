@@ -1,5 +1,6 @@
 #![allow(clippy::single_match)]
 
+pub mod app_paths;
 pub mod atomic_file;
 pub mod bounded_command;
 pub mod capped_read;

@@ -2,9 +2,9 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import type { Readable } from "node:stream";
+import { resolveDatabasePath } from "./app-paths";
 import { createStartupWatchdog, recordStartupProgress, waitForHealthy } from "./sidecar-health";
 import { NEWER_DATABASE_RECOVERY_DETAIL, isNewerDatabaseStartupFailure } from "./startup-recovery";
 
@@ -92,7 +92,7 @@ export async function waitForDevSidecar(
 }
 
 export function productionDbPath(): string {
-  const dbPath = path.join(os.homedir(), ".cadencr", "database", "cadencr.db");
+  const dbPath = resolveDatabasePath();
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   return dbPath;
 }
