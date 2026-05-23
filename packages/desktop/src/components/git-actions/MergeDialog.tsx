@@ -1,5 +1,5 @@
 import { useState, type ReactElement } from "react";
-import { GitMerge, Loader2 } from "lucide-react";
+import { AlertTriangle, GitMerge, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -35,6 +35,11 @@ import { useDialogSubmitShortcut } from "./useDialogSubmitShortcut";
 // and defeat any memoization inside the badge component.
 const ESC_KEYS: string[] = ["esc"];
 const SUBMIT_KEYS: string[] = ["cmd", "enter"];
+// Cap on rendered conflict-file rows. A pathological merge can flag hundreds
+// of files; per `frontend-performance.md` we don't render unbounded lists.
+// The user only needs to see *which* files conflicted — they'll resolve them
+// in the editor / git tools, not by reading this list. 50 is enough to scan.
+const MAX_CONFLICT_ROWS = 50;
 
 interface MergeDialogProps {
   featureId: number;
@@ -57,10 +62,12 @@ export default function MergeDialog({
 
   const effectiveMode = mode ?? parseGitMergeMode(setting.data?.value);
   const submitting = merge.isPending;
+  const [conflictFiles, setConflictFiles] = useState<string[] | null>(null);
 
   async function handleMerge(): Promise<void> {
     if (submitting) return;
     setError(null);
+    setConflictFiles(null);
     try {
       const result = await merge.mutateAsync({
         data: {
@@ -70,7 +77,9 @@ export default function MergeDialog({
         },
       });
       if (!result.success) {
-        showError(formatMergeErrorText(result.error));
+        const files = result.conflict_files ?? [];
+        setConflictFiles(files.length > 0 ? files : null);
+        setError(formatMergeErrorText(result.error));
         return;
       }
       if (saveAsDefault) {
@@ -81,12 +90,8 @@ export default function MergeDialog({
       toast.success(`Merged with ${gitMergeModeFlag(effectiveMode)}`);
       onOpenChange(false);
     } catch (err) {
-      showError(formatMergeError(err));
+      setError(formatMergeError(err));
     }
-  }
-
-  function showError(message: string): void {
-    setError(message);
   }
 
   useDialogSubmitShortcut({
@@ -146,7 +151,22 @@ export default function MergeDialog({
             Save as default
           </label>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <div
+              role="alert"
+              className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <div className="space-y-2">
+                  <p className="font-medium">{error}</p>
+                  {conflictFiles && conflictFiles.length > 0 && (
+                    <ConflictFileList files={conflictFiles} />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
@@ -165,10 +185,37 @@ export default function MergeDialog({
   );
 }
 
+function ConflictFileList({ files }: { files: string[] }): ReactElement {
+  const visible = files.slice(0, MAX_CONFLICT_ROWS);
+  const overflow = files.length - visible.length;
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wide opacity-80">
+        Conflicting file{files.length === 1 ? "" : "s"}
+      </p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-5 font-mono text-xs">
+        {visible.map((file) => (
+          <li key={file}>{file}</li>
+        ))}
+      </ul>
+      {overflow > 0 && (
+        <p className="mt-1 text-xs opacity-80">
+          + {overflow} more file{overflow === 1 ? "" : "s"}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function formatMergeError(err: unknown): string {
   return formatMergeErrorText(apiErrorMessage(err, "Merge failed."));
 }
 
+// The backend returns its own structured sentences for the conflict and
+// dirty-worktree cases. We only rewrite the messages that read poorly in a
+// modal (the "Bad request: …" prefix) and add a generic prefix when git's
+// raw error needs one. Conflict messages already start with "Merge conflict
+// in …" and are passed through unchanged.
 function formatMergeErrorText(message: string | null | undefined): string {
   const cleaned = message?.replace(/^Bad request:\s*/i, "").trim();
   if (!cleaned) return "Merge failed.";
@@ -182,6 +229,9 @@ function formatMergeErrorText(message: string | null | undefined): string {
     normalized.includes("uncommitted changes")
   ) {
     return "Cannot merge because the source feature worktree has uncommitted changes. Commit, stash, or discard those changes, then try again.";
+  }
+  if (normalized.startsWith("merge conflict") || normalized.startsWith("git merge ")) {
+    return cleaned;
   }
 
   return `Merge failed: ${cleaned}`;

@@ -49,29 +49,35 @@ pub async fn check_merge_conflicts(
         });
     }
 
-    // Parse conflicting file names from the "CONFLICT" lines in stdout.
-    // Format: "CONFLICT (content): Merge conflict in <path>"
-    let conflict_files: Vec<String> = stdout
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            if let Some(rest) = line.strip_prefix("CONFLICT") {
-                // Extract path after "Merge conflict in "
-                if let Some(path) = rest.rsplit("Merge conflict in ").next() {
-                    let path = path.trim();
-                    if !path.is_empty() {
-                        return Some(path.to_string());
-                    }
-                }
-            }
-            None
-        })
-        .collect();
-
     Ok(MergeConflictResult {
         has_conflicts: true,
-        conflict_files,
+        conflict_files: parse_conflict_files(&stdout),
     })
+}
+
+/// Pull conflicted paths out of git's "CONFLICT (...): Merge conflict in <path>"
+/// lines, deduplicating in document order. Shared by the conflict-preview
+/// (`check_merge_conflicts`) and real-merge (`workflow_service::merge_runner`)
+/// codepaths so the two never drift.
+pub fn parse_conflict_files(stdout: &str) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("CONFLICT") else {
+            continue;
+        };
+        let Some(path) = rest.rsplit("Merge conflict in ").next() else {
+            continue;
+        };
+        let path = path.trim();
+        if path.is_empty() {
+            continue;
+        }
+        if !seen.iter().any(|existing| existing == path) {
+            seen.push(path.to_string());
+        }
+    }
+    seen
 }
 
 /// Return true when `branch_name` is fully contained in `target_branch`.
@@ -102,10 +108,47 @@ pub async fn delete_branch(
         Ok(_) => Ok(MergeResult {
             success: true,
             error: None,
+            conflict_files: None,
         }),
         Err(e) => Ok(MergeResult {
             success: false,
             error: Some(e.to_string()),
+            conflict_files: None,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_conflict_files_in_document_order() {
+        let stdout = "\
+            Auto-merging foo.txt\n\
+            CONFLICT (content): Merge conflict in foo.txt\n\
+            Auto-merging dir/bar.rs\n\
+            CONFLICT (add/add): Merge conflict in dir/bar.rs\n";
+        assert_eq!(
+            parse_conflict_files(stdout),
+            vec!["foo.txt".to_string(), "dir/bar.rs".to_string()],
+        );
+    }
+
+    #[test]
+    fn parses_conflict_files_deduplicates_repeated_paths() {
+        // Git can emit multiple CONFLICT lines for the same path (e.g.
+        // `(content)` plus `(modify/delete)`). The shared parser must
+        // dedup so consumers don't render the same file twice.
+        let stdout = "\
+            CONFLICT (content): Merge conflict in foo.txt\n\
+            CONFLICT (modify/delete): Merge conflict in foo.txt\n";
+        assert_eq!(parse_conflict_files(stdout), vec!["foo.txt".to_string()]);
+    }
+
+    #[test]
+    fn parses_conflict_files_skips_unrelated_lines() {
+        assert!(parse_conflict_files("Auto-merging foo.txt\n").is_empty());
+        assert!(parse_conflict_files("").is_empty());
     }
 }

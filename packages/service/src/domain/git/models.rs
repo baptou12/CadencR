@@ -291,6 +291,12 @@ pub struct MergeResult {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Set when the merge failed because of a content conflict. Lists the
+    /// files git reported as conflicted so the UI can show them verbatim
+    /// instead of an opaque "merge failed" string. `None` when the failure
+    /// was something else (dirty target worktree, fast-forward refused, …).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]

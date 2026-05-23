@@ -20,6 +20,7 @@ mod branches;
 pub mod checkout;
 mod commit_push;
 mod merge;
+mod merge_runner;
 mod push;
 mod status;
 mod streaming;
