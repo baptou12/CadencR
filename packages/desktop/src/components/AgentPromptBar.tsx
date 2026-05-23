@@ -356,7 +356,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
                   ? "Send a message to resume…"
                   : "Send a message… (@ files, / commands, $ skills)"
               }
-              className="max-h-[70vh] min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
+              className="max-h-[40vh] min-h-0 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-0 py-0 text-sm leading-[22px] shadow-none focus:border-0 focus:ring-0"
               mentionFiles={filesQuery.data}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
