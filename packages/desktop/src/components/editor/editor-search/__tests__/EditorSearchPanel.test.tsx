@@ -250,6 +250,7 @@ describe("EditorSearchPanel", () => {
       query: "abc",
       caseSensitive: false,
       regex: false,
+      replacement: "",
     });
   });
 
@@ -260,6 +261,7 @@ describe("EditorSearchPanel", () => {
       query: "foo",
       caseSensitive: true,
       regex: false,
+      replacement: "",
     });
   });
 
@@ -270,6 +272,7 @@ describe("EditorSearchPanel", () => {
       query: "foo",
       caseSensitive: false,
       regex: true,
+      replacement: "",
     });
   });
 

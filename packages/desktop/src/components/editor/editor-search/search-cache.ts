@@ -2,9 +2,20 @@ export interface PaneSearchState {
   query: string;
   caseSensitive: boolean;
   regex: boolean;
+  /**
+   * Persisted replacement string. Survives panel close/reopen within a
+   * pane. Optional for backward compatibility with callers that predate
+   * the replace UI; reads default to `""`.
+   */
+  replacement?: string;
 }
 
-const DEFAULT_STATE: PaneSearchState = { query: "", caseSensitive: false, regex: false };
+const DEFAULT_STATE: PaneSearchState = {
+  query: "",
+  caseSensitive: false,
+  regex: false,
+  replacement: "",
+};
 
 const cache = new Map<string, PaneSearchState>();
 

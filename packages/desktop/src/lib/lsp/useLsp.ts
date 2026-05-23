@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { keymap, type EditorView } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
-import { type LSPClient } from "@codemirror/lsp-client";
+import { renameKeymap, serverCompletion, type LSPClient } from "@codemirror/lsp-client";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { getLspLanguageId } from "./language-id";
@@ -147,7 +147,18 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
     const uri = pathToFileUri(absPath);
     return [
       ready.client.plugin(uri, languageId),
-      keymap.of(jumpToDefinitionKeymap),
+      // LSP-driven completion source. `editor-buffer-keymap` already mounts
+      // `autocompletion()` + `completionKeymap` (Ctrl-Space etc.), so this
+      // just plugs the server into the existing completion stack.
+      serverCompletion(),
+      keymap.of([
+        ...jumpToDefinitionKeymap,
+        // F2 → textDocument/rename. Opens an inline rename panel.
+        // (⇧⌥F formatting was removed: on macOS the chord types "Ï"
+        // into the buffer because the OS swallows ⌥F to produce a dead
+        // key. Reintroduce via a toast-driven command if needed.)
+        ...renameKeymap,
+      ]),
       lspModClickExtension(),
       lspModHoverExtension(),
     ];

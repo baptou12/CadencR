@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { EditorView } from "@codemirror/view";
 import { useScopedGlobalShortcutById, useScopedShortcut } from "@/hooks/useShortcut";
+import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useEditorStore } from "@/stores/editor-store";
 import { useFeatureLayoutContext } from "@/components/feature-layout/FeatureLayoutContext";
@@ -202,6 +203,11 @@ const FeatureEditorTab = memo(
     useScopedShortcut(
       "editor-nav-pane-up",
       (e) => {
+        // Mod+Alt+ArrowUp is also "Add cursor above" inside the editor
+        // buffer. Let the buffer keymap own the chord when CodeMirror has
+        // focus; pane nav still works from the file tree, search results,
+        // or any non-editor child of the editor tab.
+        if (isInCodeMirrorEditor(e.target)) return;
         e.preventDefault();
         navigatePane(featureId, "up");
       },
@@ -211,6 +217,7 @@ const FeatureEditorTab = memo(
     useScopedShortcut(
       "editor-nav-pane-down",
       (e) => {
+        if (isInCodeMirrorEditor(e.target)) return;
         e.preventDefault();
         navigatePane(featureId, "down");
       },

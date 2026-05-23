@@ -97,7 +97,7 @@ describe("getRegistryShortcut", () => {
     const { getRegistryShortcut } = await importResolve();
     expect(getRegistryShortcut("command-palette")).toMatchObject({
       id: "command-palette",
-      keys: ["mod", "k"],
+      keys: ["mod", "shift", "p"],
       scope: "global",
     });
   });

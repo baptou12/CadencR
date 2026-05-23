@@ -5,14 +5,16 @@ import { Loader2Icon } from "lucide-react";
 import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useLsp, type LspStatus } from "@/lib/lsp/useLsp";
+import { useLsp } from "@/lib/lsp/useLsp";
 import { getLanguageExtension } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
-import { LspStatusIndicator } from "./LspStatusIndicator";
+import { EditorStatusBar } from "./EditorStatusBar";
 import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
+import { editorBufferKeymap } from "./editor-buffer-keymap";
+import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
 import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
@@ -22,7 +24,14 @@ interface CodeMirrorEditorProps {
   featureId: number;
   searchOpen: boolean;
   searchReopenSignal: number;
+  /** Optional: when omitted the panel renders without a replace row. */
+  searchReplaceMode?: boolean;
+  searchReplaceFocusSignal?: number;
+  /** Optional: pane-level toggle for the go-to-line overlay. */
+  goToLineOpen?: boolean;
+  goToLineReopenSignal?: number;
   onCloseSearch: () => void;
+  onCloseGoToLine?: () => void;
   onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
@@ -31,6 +40,23 @@ const AUTO_SAVE_DELAY_MS = 1500;
 export function clampEditorLineNumber(lineNumber: number, lineCount: number): number {
   return Math.min(Math.max(1, lineNumber), Math.max(1, lineCount));
 }
+
+/** Move the caret to (and scroll into view) the given 1-based line, clamped. */
+export function scrollToEditorLine(view: EditorView, lineNumber: number): void {
+  const target = clampEditorLineNumber(lineNumber, view.state.doc.lines);
+  const line = view.state.doc.line(target);
+  view.dispatch({
+    selection: { anchor: line.from },
+    effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+  });
+}
+
+// Module-level singletons. Both extensions are stateless descriptors — the
+// per-EditorView state lives on the view itself, so reusing the same value
+// across editor mounts avoids re-allocating the keymap / decoration set on
+// every tab open.
+const BUFFER_KEYMAP_EXT = editorBufferKeymap();
+const BUFFER_SEARCH_EXT = bufferSearchExtension();
 
 function getLanguageName(filePath: string): string {
   const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
@@ -65,7 +91,12 @@ export default function CodeMirrorEditor({
   featureId,
   searchOpen,
   searchReopenSignal,
+  searchReplaceMode = false,
+  searchReplaceFocusSignal = 0,
+  goToLineOpen = false,
+  goToLineReopenSignal = 0,
   onCloseSearch,
+  onCloseGoToLine,
   onEditorViewChange,
 }: CodeMirrorEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
@@ -201,8 +232,6 @@ export default function CodeMirrorEditor({
     [onEditorViewChange, paneId],
   );
 
-  const bufferSearch = useMemo(() => bufferSearchExtension(), []);
-
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
   // Hot-swap blame extension when data or setting changes.
@@ -263,16 +292,7 @@ export default function CodeMirrorEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !data || pendingGoToLine == null) return;
-
-    const lineCount = view.state.doc.lines;
-    const targetLine = clampEditorLineNumber(pendingGoToLine, lineCount);
-    const line = view.state.doc.line(targetLine);
-
-    view.dispatch({
-      selection: { anchor: line.from },
-      effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-    });
-
+    scrollToEditorLine(view, pendingGoToLine);
     clearPendingGoToLine(featureId, paneId, filePath);
   }, [data, pendingGoToLine, featureId, paneId, filePath, clearPendingGoToLine]);
 
@@ -304,7 +324,8 @@ export default function CodeMirrorEditor({
           cursorExtension,
           blameCompartment.current.of([]),
           lspCompartment.current.of([]),
-          bufferSearch,
+          BUFFER_SEARCH_EXT,
+          BUFFER_KEYMAP_EXT,
         ]}
         editorViewRef={viewRef}
         onEditorViewChange={handleEditorViewChange}
@@ -316,10 +337,23 @@ export default function CodeMirrorEditor({
           featureId={featureId}
           paneId={paneId}
           reopenSignal={searchReopenSignal}
+          replaceMode={searchReplaceMode}
+          replaceFocusSignal={searchReplaceFocusSignal}
           onClose={onCloseSearch}
         />
       )}
-      <StatusBar
+      {goToLineOpen && editorView && !searchOpen && onCloseGoToLine && (
+        // Go-to-line and search share the top-right corner — render only
+        // one at a time so they don't overlap. Search takes priority since
+        // it's the more common action; opening go-to-line while find is
+        // visible is intentionally a no-op until the user dismisses find.
+        <EditorGoToLinePanel
+          view={editorView}
+          reopenSignal={goToLineReopenSignal}
+          onClose={onCloseGoToLine}
+        />
+      )}
+      <EditorStatusBar
         line={cursorPosition.line}
         col={cursorPosition.col}
         language={getLanguageName(filePath)}
@@ -328,46 +362,6 @@ export default function CodeMirrorEditor({
         lspLanguageId={lsp.languageId}
         lspError={lsp.errorMessage}
       />
-    </div>
-  );
-}
-
-interface StatusBarProps {
-  line: number;
-  col: number;
-  language: string;
-  autoSavedVisible: boolean;
-  lspStatus: LspStatus;
-  lspLanguageId: string | null;
-  lspError?: string;
-}
-
-function StatusBar({
-  line,
-  col,
-  language,
-  autoSavedVisible,
-  lspStatus,
-  lspLanguageId,
-  lspError,
-}: StatusBarProps) {
-  return (
-    <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
-      <span>
-        Ln {line}, Col {col}
-      </span>
-      <div className="flex items-center gap-3">
-        {autoSavedVisible && <span>Auto-saved</span>}
-        <span className="inline-flex items-center gap-1">
-          <LspStatusIndicator
-            status={lspStatus}
-            languageId={lspLanguageId}
-            errorMessage={lspError}
-          />
-          {language}
-        </span>
-        <span>UTF-8</span>
-      </div>
     </div>
   );
 }

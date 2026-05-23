@@ -55,7 +55,7 @@ export const SESSION_HINT_BEHAVIORS: readonly string[] = [
   "Pane navigation is consistent everywhere: the same modifier + arrow keys move focus in the Editor, the Terminal, and the Unified Agents grid.",
   "Open Settings with one shortcut, edit what you need, and press Esc to drop straight back into the workspace.",
   "Status colors are reserved across the whole app: green means ready, orange means in-progress, red means retry — they never mean anything else.",
-  "The keyboard-shortcuts reference is always one chord away (⌘/), so you can look up a binding mid-stream without losing your place.",
+  "The keyboard-shortcuts reference is always one chord away (⌘⇧?), so you can look up a binding mid-stream without losing your place.",
   "Archived features still live in the command palette — archive is a soft delete, so you can restore them later if you change your mind.",
   "You can run different agents on different providers at the same time — one feature on Claude Code, another on OpenCode — and the workspace stays consistent.",
   "The Unified Agents grid lets you arrow-key between every active session across every feature, so a busy workspace stays scannable.",

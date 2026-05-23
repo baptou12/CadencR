@@ -162,12 +162,12 @@ describe("useShortcut", () => {
 });
 
 describe("useGlobalShortcutById", () => {
-  it("opens shortcuts-help on QWERTY (⌘+/ — unshifted slash)", () => {
+  it("does NOT open shortcuts-help on ⌘+/ — that combo belongs to the editor's Toggle Line Comment", () => {
     const onFire = vi.fn();
     render(<GlobalHarness onFire={onFire} />);
 
     fireEvent.keyDown(window, { key: "/", metaKey: true, code: "Slash" });
-    expect(onFire).toHaveBeenCalledTimes(1);
+    expect(onFire).not.toHaveBeenCalled();
   });
 
   it("opens shortcuts-help on AZERTY-FR via the labelled `?` key (Shift+,)", () => {
@@ -209,7 +209,7 @@ describe("useGlobalShortcutById", () => {
       });
     });
 
-    fireEvent.keyDown(window, { key: "/", metaKey: true });
+    fireEvent.keyDown(window, { key: "?", metaKey: true, shiftKey: true, code: "Slash" });
     expect(onFire).not.toHaveBeenCalled();
 
     fireEvent.keyDown(window, {

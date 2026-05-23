@@ -38,7 +38,11 @@ vi.mock("@codemirror/state", () => {
     }
   }
   return {
-    EditorState: { create: vi.fn(() => ({})), readOnly: { of: vi.fn(() => []) } },
+    EditorState: {
+      create: vi.fn(() => ({})),
+      readOnly: { of: vi.fn(() => []) },
+      allowMultipleSelections: { of: vi.fn(() => []) },
+    },
     Compartment: MockCompartment,
   };
 });

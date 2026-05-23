@@ -20,6 +20,7 @@ import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { ProjectFeatureRow } from "@/components/ProjectFeatureRow";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
+import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
@@ -167,6 +168,9 @@ export function ProjectFeatures({
   const handleActiveFeatureLabelShortcut = useCallback(
     (event: KeyboardEvent): void => {
       if (!activeFeature) return;
+      // Mod+Shift+L is also "Select all occurrences" inside the editor
+      // buffer. Let the buffer keymap win when focus is in CodeMirror.
+      if (isInCodeMirrorEditor(event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       handleStartLabelEdit(activeFeature);

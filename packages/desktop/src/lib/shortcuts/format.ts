@@ -43,6 +43,8 @@ const MAC_GLYPHS: Record<string, string> = {
   backtick: "`",
   lbracket: "[",
   rbracket: "]",
+  question: "?",
+  f2: "F2",
 };
 
 /** Tokens whose display differs from macOS. Anything not listed here falls

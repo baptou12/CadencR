@@ -31,14 +31,30 @@ export default function EditorPane({
   const isFocusedPane = activePaneId === paneId;
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchReopenSignal, setSearchReopenSignal] = useState(0);
+  // Replace mode is sticky: once the user opens the replace row, repeated ⌘F
+  // calls keep it visible until the panel is closed. ⌘⌥F always re-opens
+  // into replace mode and bumps `replaceFocusSignal` so the replace input
+  // grabs focus even if the panel is already open in find-only mode.
+  const [replaceMode, setReplaceMode] = useState(false);
+  const [replaceFocusSignal, setReplaceFocusSignal] = useState(0);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [goToLineReopenSignal, setGoToLineReopenSignal] = useState(0);
 
-  const openSearch = useCallback((): void => {
+  const openSearch = useCallback((withReplace: boolean): void => {
     setSearchOpen((wasOpen) => {
       if (wasOpen) setSearchReopenSignal((n) => n + 1);
       return true;
     });
+    if (withReplace) {
+      setReplaceMode(true);
+      setReplaceFocusSignal((n) => n + 1);
+    }
   }, []);
-  const closeSearch = useCallback((): void => setSearchOpen(false), []);
+  const closeSearch = useCallback((): void => {
+    setSearchOpen(false);
+    // Reset replace visibility so the next ⌘F lands in find-only mode.
+    setReplaceMode(false);
+  }, []);
 
   useScopedGlobalShortcutById(
     "editor-buffer-search",
@@ -46,7 +62,39 @@ export default function EditorPane({
       if (!isFocusedPane || !activeFilePath) return;
       event.preventDefault();
       event.stopPropagation();
-      openSearch();
+      openSearch(false);
+    },
+    "editor",
+    { enabled: isFocusedPane && Boolean(activeFilePath) },
+  );
+
+  useScopedGlobalShortcutById(
+    "editor-replace",
+    (event) => {
+      if (!isFocusedPane || !activeFilePath) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openSearch(true);
+    },
+    "editor",
+    { enabled: isFocusedPane && Boolean(activeFilePath) },
+  );
+
+  const openGoToLine = useCallback((): void => {
+    setGoToLineOpen((wasOpen) => {
+      if (wasOpen) setGoToLineReopenSignal((n) => n + 1);
+      return true;
+    });
+  }, []);
+  const closeGoToLine = useCallback((): void => setGoToLineOpen(false), []);
+
+  useScopedGlobalShortcutById(
+    "editor-go-to-line",
+    (event) => {
+      if (!isFocusedPane || !activeFilePath) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openGoToLine();
     },
     "editor",
     { enabled: isFocusedPane && Boolean(activeFilePath) },
@@ -85,7 +133,12 @@ export default function EditorPane({
               featureId={featureId}
               searchOpen={searchOpen}
               searchReopenSignal={searchReopenSignal}
+              searchReplaceMode={replaceMode}
+              searchReplaceFocusSignal={replaceFocusSignal}
+              goToLineOpen={goToLineOpen}
+              goToLineReopenSignal={goToLineReopenSignal}
               onCloseSearch={closeSearch}
+              onCloseGoToLine={closeGoToLine}
               onEditorViewChange={onEditorViewChange}
             />
           </Suspense>
