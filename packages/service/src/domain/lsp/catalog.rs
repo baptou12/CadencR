@@ -67,7 +67,16 @@ pub const CATALOG: &[CatalogEntry] = &[
         ],
         bin_name: "typescript-language-server",
         args: &["--stdio"],
-        well_known_relative_to_home: &[".bun/bin", ".npm-global/bin", ".volta/bin"],
+        // Cover every reasonable place an npm-style global install ends up.
+        // `Library/pnpm` is pnpm's `--global` target on macOS; `.cadencr-tools`
+        // is where Cadencr writes its bundled install (see installer docs).
+        well_known_relative_to_home: &[
+            ".bun/bin",
+            ".npm-global/bin",
+            ".volta/bin",
+            "Library/pnpm",
+            ".cadencr-tools/node_modules/.bin",
+        ],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
         // TS server is an npm package; downloader for it would need Node at

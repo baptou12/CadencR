@@ -107,11 +107,18 @@ export function releaseLspClient(workspaceRoot: string, languageId: string): voi
 }
 
 async function createEntry(workspaceRoot: string, languageId: string): Promise<ClientEntry> {
-  const { session_id } = await openSession({
+  const session = await openSession({
     workspace_root: workspaceRoot,
     language_id: languageId,
+  }).catch((err: unknown) => {
+    // Axios wraps the body inside `err.response.data.error`. Surface the
+    // backend's install hint verbatim rather than swallow it as a bare
+    // "Request failed with status 404".
+    const axiosErr = err as { response?: { data?: { error?: string } } };
+    const detail = axiosErr?.response?.data?.error;
+    throw new Error(detail ?? (err instanceof Error ? err.message : "Failed to open LSP session"));
   });
-  const transport = await connectLspWs(session_id);
+  const transport = await connectLspWs(session.session_id);
   let workspaceRef: CadencrWorkspace | null = null;
   const client = new LSPClient({
     rootUri: pathToFileUri(workspaceRoot),

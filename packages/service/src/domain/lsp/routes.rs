@@ -24,7 +24,7 @@ use crate::error::AppError;
 use super::lifecycle::CrashKey;
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
-use super::spawn::{resolve_language, resolve_server, spawn_server};
+use super::spawn::{resolve_server, spawn_server};
 
 pub fn lsp_router() -> Router<AppState> {
     Router::new()
@@ -75,17 +75,18 @@ pub async fn open_session_handler(
             req.workspace_root
         )));
     }
-    // Fail fast at reservation time so the renderer can show "no server for
-    // this language" before opening a WS that would immediately error out.
-    // We only validate the *language* here — actual binary discovery /
-    // download happens lazily on the WS upgrade so we don't block the
-    // renderer's request on a 30s network fetch.
-    resolve_language(&req.language_id)?;
+    // Do the full binary discovery (and, if necessary, the on-demand
+    // download) at reservation time. The WS upgrade later can't surface
+    // an informative error to the browser — a non-101 status appears as a
+    // bare `error` event with no body — so we have to fail visibly here
+    // while we can still return JSON. Renderer reads `.error` and toasts.
+    let server = resolve_server(&req.language_id).await?;
     let session_id = state
         .lsp_sessions
         .reserve(SessionSpec {
             workspace_root,
             language_id: req.language_id,
+            server,
         })
         .await;
     Ok(Json(OpenLspSessionResponse { session_id }))
@@ -128,22 +129,19 @@ pub async fn connect_handler(
         .into_response();
     }
 
-    let server_spec = match resolve_server(&spec.language_id).await {
-        Ok(s) => s,
-        Err(err) => return err.into_response(),
-    };
-    let child = match spawn_server(&server_spec, &spec.workspace_root) {
+    // Binary was already resolved (and downloaded if needed) at POST time;
+    // here we just spawn it. If the binary went missing between POST and
+    // WS upgrade (unlikely — < 30s window) the spawn returns Internal.
+    let child = match spawn_server(&spec.server, &spec.workspace_root) {
         Ok(c) => c,
         Err(err) => {
-            // Spawn-time failure (binary not executable, missing libs, …)
-            // counts as a crash for backoff purposes.
             state.lsp_crashes.record_crash(crash_key).await;
             return err.into_response();
         }
     };
 
     let ws = ws.protocols([selected_proto]);
-    let display_name = server_spec.display_name.clone();
+    let display_name = spec.server.display_name.clone();
     let crash_tracker = state.lsp_crashes.clone();
     ws.on_upgrade(move |socket| async move {
         run_proxy(socket, child, &display_name, crash_tracker, crash_key).await;
@@ -192,18 +190,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_returns_session_id_for_known_language() {
+    async fn open_returns_session_id_or_404_for_known_language() {
         let body = r#"{"workspace_root":"/tmp","language_id":"typescript"}"#;
         let resp = app().await.oneshot(post_open(body)).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
+        // Either 200 (tsserver on PATH in CI) or 404 (not installed).
+        // Both are correct end-states — what matters is that POST emits
+        // a structured response the renderer can toast, not a silent WS
+        // failure on a later upgrade.
+        let status = resp.status();
+        assert!(
+            status == StatusCode::OK || status == StatusCode::NOT_FOUND,
+            "unexpected status {status}"
+        );
         let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
             .await
             .unwrap();
-        // Parse into untyped JSON to avoid forcing a `Deserialize` impl on
-        // the response type, which orval doesn't need.
         let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        let id = parsed["session_id"].as_str().expect("session_id string");
-        assert!(!id.is_empty());
+        if status == StatusCode::OK {
+            let id = parsed["session_id"].as_str().expect("session_id string");
+            assert!(!id.is_empty());
+        } else {
+            let msg = parsed["error"].as_str().expect("error string");
+            assert!(
+                msg.contains("typescript-language-server"),
+                "404 body should name the missing binary, got {msg}"
+            );
+        }
     }
 
     // Note: there's no unit test here for "GET /connect with unknown session

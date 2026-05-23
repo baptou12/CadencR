@@ -18,6 +18,8 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+use super::spawn::ServerSpec;
+
 /// How long a reserved-but-unconnected session sticks around before being
 /// garbage-collected. The renderer should upgrade within a few hundred
 /// milliseconds of the POST; 30s is generous and bounds the leak from a
@@ -32,6 +34,10 @@ const PENDING_TTL: Duration = Duration::from_secs(30);
 pub struct SessionSpec {
     pub workspace_root: PathBuf,
     pub language_id: String,
+    /// Binary resolved at POST time (discovery + optional download).
+    /// Stashed here so the WS upgrade never has to re-resolve and can't
+    /// drift from what the renderer was told the session would talk to.
+    pub server: ServerSpec,
 }
 
 #[derive(Debug)]
@@ -97,6 +103,11 @@ mod tests {
         SessionSpec {
             workspace_root: PathBuf::from("/tmp/example"),
             language_id: lang.to_string(),
+            server: ServerSpec {
+                command: PathBuf::from("/usr/bin/true"),
+                args: vec![],
+                display_name: "stub".into(),
+            },
         }
     }
 
