@@ -85,6 +85,24 @@ describe("BashBlock collapsed-header UX", () => {
     expect(pre?.className).not.toContain("truncate");
   });
 
+  it("renders the command text in the high-contrast bash fg on success", () => {
+    const { container } = render(<BashBlock command="echo hi" content="ok" />);
+    const pre = container.querySelector("pre");
+    expect(pre?.className).toContain("text-[var(--block-bash-fg)]");
+    expect(pre?.className).not.toContain("text-destructive");
+  });
+
+  it("renders the command text in destructive color when the call errored", () => {
+    // The whole header (icon, Bash label, command) must read as one red row
+    // on failure — otherwise the command pre looks like normal output next
+    // to a red header and label.
+    const { container } = render(<BashBlock command="false" content="" isError />);
+    const pre = container.querySelector("pre");
+    expect(pre?.className).toContain("text-destructive");
+    expect(pre?.className).not.toContain("text-[var(--block-bash-fg)]");
+    expect(screen.getByText("Bash").className).toContain("text-destructive");
+  });
+
   it("notifies onExpandedChange when the chevron toggle is clicked", async () => {
     const onExpandedChange = vi.fn();
     const user = userEvent.setup();

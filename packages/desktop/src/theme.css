@@ -246,10 +246,12 @@
   --block-thinking-accent: oklch(0.45 0.2 295);
   --block-plan-bg: oklch(0.96 0.04 245);
   --block-plan-accent: oklch(0.45 0.18 245);
-  --block-bash-header-bg: #202024;
-  --block-bash-body-bg: #09090b;
-  --block-bash-fg: #d4d4d8;
-  --block-bash-muted-fg: #9f9fa9;
+  /* Bash block follows the theme on Aurora — see DESIGN.md "Bash variant".
+   * Live xterm/TerminalPanel still stays dark (rule 10). */
+  --block-bash-header-bg: var(--accent);
+  --block-bash-body-bg: var(--code-bg);
+  --block-bash-fg: var(--foreground);
+  --block-bash-muted-fg: var(--muted-foreground);
   --block-task-bg: oklch(0.94 0.012 290);
 
   /* App-level semantic accents — tuned for contrast on light surfaces. */
