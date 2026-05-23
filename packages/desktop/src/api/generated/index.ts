@@ -824,9 +824,22 @@ export const MergeMode = {
   squash: "squash",
 } as const;
 
+/**
+ * Set when the merge failed because of a content conflict. Lists the
+files git reported as conflicted so the UI can show them verbatim
+instead of an opaque "merge failed" string. `None` when the failure
+was something else (dirty target worktree, fast-forward refused, …).
+ */
+export type MergeResultConflictFiles = string[] | null;
+
 export type MergeResultError = string | null;
 
 export interface MergeResult {
+  /** Set when the merge failed because of a content conflict. Lists the
+files git reported as conflicted so the UI can show them verbatim
+instead of an opaque "merge failed" string. `None` when the failure
+was something else (dirty target worktree, fast-forward refused, …). */
+  conflict_files?: MergeResultConflictFiles;
   error?: MergeResultError;
   success: boolean;
 }

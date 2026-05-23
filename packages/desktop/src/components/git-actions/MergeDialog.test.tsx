@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, within } from "@testing-library/react";
 import { render, screen } from "@/test-utils";
 
 const mocks = vi.hoisted(() => {
@@ -59,6 +59,67 @@ describe("MergeDialog errors", () => {
       "Cannot merge because the target branch worktree has uncommitted changes. Commit, stash, or discard those changes, then try again.";
     expect(await screen.findByText(message)).toBeInTheDocument();
     expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it("renders the conflict files returned by the backend as a structured list", async () => {
+    // Regression: the old UI rendered an empty "git merge … failed:" tail
+    // because the backend dropped stdout (where conflict detail lives).
+    // The backend now returns `conflict_files` + a sentence that names the
+    // file; the dialog must surface both so the user knows exactly which
+    // files need resolution.
+    mocks.mergeMutateAsync.mockResolvedValueOnce({
+      success: false,
+      error:
+        "Merge conflict in src/foo.ts, src/bar.ts. Resolve the conflicts in 'main', commit the result, then try merging 'feature/x' again.",
+      conflict_files: ["src/foo.ts", "src/bar.ts"],
+    });
+
+    const { user } = render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    // Sentence is surfaced verbatim (no doubled "Merge failed:" prefix).
+    expect(
+      await screen.findByText(/Merge conflict in src\/foo\.ts, src\/bar\.ts/),
+    ).toBeInTheDocument();
+    // Each file is rendered as a list item beneath the message.
+    const items = within(screen.getByRole("list")).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual(["src/foo.ts", "src/bar.ts"]);
+  });
+
+  it("caps the rendered conflict list and shows an overflow hint", async () => {
+    // Per `frontend-performance.md` we never render unbounded lists. A
+    // pathological merge can flag hundreds of files; the dialog must cap
+    // the visible rows and tell the user how many were elided.
+    const files = Array.from({ length: 60 }, (_, i) => `src/file-${i}.ts`);
+    mocks.mergeMutateAsync.mockResolvedValueOnce({
+      success: false,
+      error: `Merge conflict in ${files.join(", ")}. Resolve them.`,
+      conflict_files: files,
+    });
+
+    const { user } = render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    const list = await screen.findByRole("list");
+    expect(within(list).getAllByRole("listitem")).toHaveLength(50);
+    expect(screen.getByText(/\+ 10 more files/)).toBeInTheDocument();
+  });
+
+  it("never renders an empty `failed:` tail when git produced no output", async () => {
+    // Regression for the original bug: empty git output used to render
+    // `git merge … failed:` with nothing after the colon. The backend
+    // now always returns a non-empty message; surface it as-is.
+    mocks.mergeMutateAsync.mockResolvedValueOnce({
+      success: false,
+      error: "git merge feature/x failed with no output — run it manually to see why.",
+    });
+
+    const { user } = render(<MergeDialog featureId={1076} open={true} onOpenChange={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent?.trim().endsWith(":")).toBe(false);
+    expect(alert).toHaveTextContent(/with no output/);
   });
 
   it("shows explicit source-worktree errors from non-throwing merge results", async () => {

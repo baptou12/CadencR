@@ -15,6 +15,7 @@ use crate::domain::workspace;
 use crate::error::AppError;
 use crate::shared::git_cli::{run_git, run_git_safe_refs};
 
+use super::merge_runner::{build_failure_result, invoke_merge, MergeOutcome};
 use super::{
     broadcast_after_write, local_branch_exists, remote_branch_exists, resolve_target_branch,
 };
@@ -31,7 +32,9 @@ pub enum MergeMode {
 }
 
 impl MergeMode {
-    fn flags(self) -> &'static [&'static str] {
+    /// Visible to sibling modules in `workflow_service` so the merge runner
+    /// can reuse the same flag mapping.
+    pub(super) fn flags(self) -> &'static [&'static str] {
         match self {
             Self::Default => &["--no-edit"],
             Self::NoFf => &["--no-ff", "--no-edit"],
@@ -168,19 +171,28 @@ async fn run_merge(
         run_git_safe_refs(&["checkout"], &[], &[target_branch], repo).await?;
     }
 
-    let merge = run_git_safe_refs(&["merge"], mode.flags(), &[source_branch], repo).await;
-    let result = match merge {
-        Ok(_) => MergeResult {
+    let result = match invoke_merge(repo, source_branch, mode).await {
+        Ok(MergeOutcome::Succeeded) => MergeResult {
             success: true,
             error: None,
+            conflict_files: None,
         },
-        Err(err) => {
-            let _ = run_git(&["merge", "--abort"], repo).await;
-            MergeResult {
-                success: false,
-                error: Some(err.to_string()),
+        Ok(MergeOutcome::Failed { stdout, stderr }) => {
+            let failure = build_failure_result(&stdout, &stderr, source_branch, target_branch);
+            // Only conflicts leave a half-applied merge that needs aborting.
+            // Other failures (unknown branch, unrelated histories, ff-only
+            // refused) never started the merge, so `--abort` would just
+            // spawn a no-op git process.
+            if failure.conflict_files.is_some() {
+                let _ = run_git(&["merge", "--abort"], repo).await;
             }
+            failure
         }
+        Err(err) => MergeResult {
+            success: false,
+            error: Some(err.to_string()),
+            conflict_files: None,
+        },
     };
 
     if let Some(original) = original_branch {
