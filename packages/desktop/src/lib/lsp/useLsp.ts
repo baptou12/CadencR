@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { keymap, type EditorView } from "@codemirror/view";
 import { type Extension } from "@codemirror/state";
-import { jumpToDefinitionKeymap, type LSPClient } from "@codemirror/lsp-client";
+import { type LSPClient } from "@codemirror/lsp-client";
 import { toast } from "sonner";
 import { useEditorStore } from "@/stores/editor-store";
 import { getLspLanguageId } from "./language-id";
@@ -25,6 +25,7 @@ import { pathToFileUri } from "./file-uri";
 import { acquireLspClient, releaseLspClient } from "./client-manager";
 import { lspModClickExtension } from "./mod-click";
 import { lspModHoverExtension } from "./mod-hover";
+import { jumpToDefinitionKeymap } from "./definition";
 import { type CadencrWorkspace } from "./cadencr-workspace";
 
 interface UseLspArgs {
