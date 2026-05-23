@@ -90,7 +90,7 @@ export default function EditorPane({
             />
           </Suspense>
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+          <div className="flex items-center justify-center h-full px-4 text-muted-foreground text-sm text-center text-balance">
             Open a file from the sidebar or use CMD+P
           </div>
         )}
