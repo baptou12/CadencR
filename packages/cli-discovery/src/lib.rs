@@ -37,6 +37,18 @@ pub struct DiscoverySpec {
     pub well_known_absolute: Vec<&'static str>,
     /// Args to pass when querying the binary's version (typically `["--version"]`).
     pub version_args: &'static [&'static str],
+    /// When `Some(needle)`, a candidate's `--version` output must contain
+    /// `needle` (case-insensitive) or the candidate is excluded.
+    ///
+    /// Defends against version-multiplexer shims that masquerade as the real
+    /// binary. For example, `rust-analyzer` installed via `rustup` is just a
+    /// hardlink to the `rustup` proxy; if the `rust-analyzer` component
+    /// isn't installed, invoking the shim prints rustup's own help and parses
+    /// as version `1.28.x` (rustup's version). LSP spawn would then exec a
+    /// process that never speaks JSON-RPC. Setting
+    /// `version_must_contain: Some("rust-analyzer")` filters those shims out
+    /// so resolution falls through to the managed-install path.
+    pub version_must_contain: Option<&'static str>,
 }
 
 /// A semver triple captured from `--version` output.
@@ -84,13 +96,23 @@ pub struct Candidate {
 pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) -> Vec<Candidate> {
     if let Some(path) = override_path {
         if let Some(canonical) = canonicalize_executable(path) {
-            let version = query_version(path, spec.version_args).await;
-            return vec![Candidate {
-                path: path.to_path_buf(),
-                canonical,
-                version,
-                source: CandidateSource::Override,
-            }];
+            // Probe the override. Apply the substring filter too — a shim
+            // dressed as the requested binary still wouldn't speak the
+            // expected protocol, so silently dropping it is safer than
+            // honoring an override that will only fail downstream.
+            let probe = probe_version(path, spec.version_args).await;
+            let accept = match (&probe, spec.version_must_contain) {
+                (Some((_, raw)), Some(needle)) => contains_ci(raw, needle),
+                _ => true, // no filter, or subprocess failed entirely
+            };
+            if accept {
+                return vec![Candidate {
+                    path: path.to_path_buf(),
+                    canonical,
+                    version: probe.and_then(|(v, _)| v),
+                    source: CandidateSource::Override,
+                }];
+            }
         }
     }
 
@@ -130,17 +152,34 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
     // Probe versions in parallel — each probe is an independent subprocess
     // with its own 5s timeout, so serial waits would compound badly when
     // multiple installs are present.
-    let versions = futures::future::join_all(
+    let probes = futures::future::join_all(
         candidates
             .iter()
-            .map(|candidate| query_version(&candidate.path, spec.version_args)),
+            .map(|candidate| probe_version(&candidate.path, spec.version_args)),
     )
     .await;
-    for (candidate, version) in candidates.iter_mut().zip(versions) {
-        candidate.version = version;
-    }
 
     candidates
+        .into_iter()
+        .zip(probes)
+        .filter_map(|(mut candidate, probe)| {
+            if let Some(needle) = spec.version_must_contain {
+                // Subprocess failed entirely (timeout, missing exec bits we
+                // somehow accepted earlier, etc.) → reject. We can't tell
+                // a real binary from a shim without the output, and the
+                // filter exists specifically to weed out shims.
+                let raw = match &probe {
+                    Some((_, raw)) => raw,
+                    None => return None,
+                };
+                if !contains_ci(raw, needle) {
+                    return None;
+                }
+            }
+            candidate.version = probe.and_then(|(v, _)| v);
+            Some(candidate)
+        })
+        .collect()
 }
 
 /// Enumerate every directory `discover_all` would probe for the given spec.
@@ -294,6 +333,16 @@ fn push_if_executable(
 }
 
 pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
+    probe_version(command, args).await.and_then(|(v, _)| v)
+}
+
+/// Probe `command --args[..]` and return `(parsed_version, raw_output)`.
+///
+/// Returns `None` only when the subprocess itself fails (timeout, spawn
+/// error). A successful run with un-parseable output returns
+/// `Some((None, "..."))` so callers can still inspect the text for filters
+/// (e.g. the `version_must_contain` shim guard).
+async fn probe_version(command: &Path, args: &[&str]) -> Option<(Option<VersionKey>, String)> {
     let output = tokio::time::timeout(
         Duration::from_secs(5),
         Command::new(command).args(args).kill_on_drop(true).output(),
@@ -302,8 +351,19 @@ pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> 
     .ok()?
     .ok()?;
 
-    parse_version_string(&String::from_utf8_lossy(&output.stdout))
-        .or_else(|| parse_version_string(&String::from_utf8_lossy(&output.stderr)))
+    // Combine streams so a single regex pass + single substring check
+    // covers tools that print to either (rustup prints to stderr).
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let version = parse_version_string(&combined);
+    Some((version, combined))
+}
+
+fn contains_ci(haystack: &str, needle: &str) -> bool {
+    haystack.to_lowercase().contains(&needle.to_lowercase())
 }
 
 #[cfg(unix)]
@@ -367,6 +427,7 @@ mod tests {
             well_known_relative_to_home: vec![".thing/local"],
             well_known_absolute: vec![],
             version_args: &["--version"],
+            version_must_contain: None,
         }
     }
 
@@ -549,5 +610,97 @@ mod tests {
             make_executable_with_body(dir.path(), "thing", "#!/bin/sh\necho '2.7.1 build'\n");
         let version = query_version(&path, &["--version"]).await;
         assert_eq!(version, Some(VersionKey(2, 7, 1)));
+    }
+
+    #[tokio::test]
+    async fn version_must_contain_excludes_shim_candidates() {
+        // Simulate the rust-analyzer/rustup shim case: the binary prints
+        // rustup's help (which parses as a valid semver but is the wrong
+        // tool). With `version_must_contain` set, the shim must be dropped.
+        let dir = TempDir::new().unwrap();
+        let shim = make_executable_with_body(
+            dir.path(),
+            "thing",
+            "#!/bin/sh\necho 'rustup 1.28.2 (e4f3ad6f8 2025-04-28)' 1>&2\n",
+        );
+        // Real binary in its own dir — keep the TempDir bound or it'll be
+        // dropped (and `real` deleted) before `discover_all` even runs.
+        let real_dir = TempDir::new().unwrap();
+        let real = make_executable_with_body(
+            real_dir.path(),
+            "thing",
+            "#!/bin/sh\necho 'thing 0.3.2050-standalone'\n",
+        );
+        // Place the shim in an override slot; it must be rejected and we
+        // fall through to standard discovery (which here finds nothing).
+        let mut spec = dummy_spec();
+        spec.version_must_contain = Some("thing");
+        let via_override = discover_all(&spec, Some(&shim)).await;
+        assert!(
+            via_override.iter().all(|c| c.path != shim),
+            "shim must not be selected via override path"
+        );
+
+        // The real binary's --version output contains "thing", so the
+        // filter accepts it.
+        let via_override_real = discover_all(&spec, Some(&real)).await;
+        assert!(
+            via_override_real.iter().any(|c| c.path == real),
+            "real binary must pass the filter"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_must_contain_keeps_real_binary_in_path_walk() {
+        let path_dir = TempDir::new().unwrap();
+        let shim_dir = TempDir::new().unwrap();
+        // Real binary first on PATH.
+        let _real = make_executable_with_body(
+            path_dir.path(),
+            "thing",
+            "#!/bin/sh\necho 'thing 1.0.0'\n",
+        );
+        // Shim later on PATH that pretends to be `thing` but prints rustup help.
+        let _shim = make_executable_with_body(
+            shim_dir.path(),
+            "thing",
+            "#!/bin/sh\necho 'rustup 1.28.2' 1>&2\n",
+        );
+
+        // Restrict $PATH for the duration of this test so we only see our
+        // two synthetic dirs. The login-shell PATH cache may still pull in
+        // others; we just assert that the real one is present and the shim
+        // is absent.
+        let original_path = std::env::var_os("PATH");
+        let combined = format!("{}:{}", path_dir.path().display(), shim_dir.path().display());
+        // SAFETY: tests run single-threaded under `tokio::test` runtime; we
+        // restore the var before returning.
+        // NOTE: env mutation is process-global and racy across parallel
+        // tests; mark with cfg(any()) if flakes show up. For now it's
+        // self-contained.
+        unsafe {
+            std::env::set_var("PATH", &combined);
+        }
+
+        let mut spec = dummy_spec();
+        spec.version_must_contain = Some("thing");
+        let found = discover_all(&spec, None).await;
+
+        unsafe {
+            match original_path {
+                Some(p) => std::env::set_var("PATH", p),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+
+        // Real binary survived the filter; the shim did not.
+        assert!(
+            found.iter().any(|c| c.path.starts_with(path_dir.path())),
+            "real binary must be present"
+        );
+        assert!(
+            found.iter().all(|c| !c.path.starts_with(shim_dir.path())),
+            "shim must be filtered out"
+        );
     }
 }

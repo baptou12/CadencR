@@ -33,6 +33,14 @@ pub struct CatalogEntry {
     /// Args used to query the binary's version. `cli-discovery` parses
     /// the first semver triple out of the output.
     pub version_args: &'static [&'static str],
+    /// When `Some(needle)`, candidates whose `--version` output doesn't
+    /// contain `needle` (case-insensitive) are filtered out.
+    ///
+    /// Defends against version-multiplexer shims that masquerade as the
+    /// requested binary — most notably `rust-analyzer` installed via
+    /// `rustup`, where the proxy prints rustup's own help when the
+    /// component isn't actually installed.
+    pub version_must_contain: Option<&'static str>,
     /// Optional on-demand downloader recipe; `None` means "user must
     /// install this themselves".
     pub download: Option<DownloadRecipe>,
@@ -79,6 +87,9 @@ pub const CATALOG: &[CatalogEntry] = &[
         ],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
+        // tsserver's --version prints just `4.3.3` with no bin-name. The
+        // shim guard would reject every install, so opt out.
+        version_must_contain: None,
         // TS server is an npm package; downloader for it would need Node at
         // runtime, which we don't want to assume. Leave as `None` until we
         // ship a bundled Node sidecar.
@@ -92,6 +103,13 @@ pub const CATALOG: &[CatalogEntry] = &[
         well_known_relative_to_home: &[".cargo/bin"],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
+        // `~/.cargo/bin/rust-analyzer` is often a rustup proxy hardlink. If
+        // the `rust-analyzer` rustup component isn't installed, the proxy
+        // prints rustup's help (and its own `1.28.x` version parses as a
+        // valid semver), so we'd happily spawn rustup as an LSP. Require
+        // the real binary's signature in the output instead — real
+        // rust-analyzer prints e.g. `rust-analyzer 0.3.2050-standalone`.
+        version_must_contain: Some("rust-analyzer"),
         download: Some(DownloadRecipe::GithubReleaseGz {
             // Pinned. Bump deliberately — surprise upgrades silently change
             // semantic analysis between Cadencr launches.
@@ -108,6 +126,10 @@ pub const CATALOG: &[CatalogEntry] = &[
         well_known_relative_to_home: &["go/bin"],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["version"],
+        // `gopls version` prints `golang.org/x/tools/gopls v0.x.y` — bin
+        // name appears, but we leave the guard off because gopls isn't
+        // shimmed by another tool that masquerades as it.
+        version_must_contain: None,
         download: None,
     },
     CatalogEntry {
@@ -118,6 +140,7 @@ pub const CATALOG: &[CatalogEntry] = &[
         well_known_relative_to_home: &[".bun/bin", ".npm-global/bin"],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
+        version_must_contain: None,
         download: None,
     },
 ];
@@ -137,6 +160,7 @@ impl CatalogEntry {
             well_known_relative_to_home: self.well_known_relative_to_home.to_vec(),
             well_known_absolute: self.well_known_absolute.to_vec(),
             version_args: self.version_args,
+            version_must_contain: self.version_must_contain,
         }
     }
 }
@@ -175,6 +199,15 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn rust_analyzer_has_rustup_shim_guard() {
+        // Regression: without this filter, a rustup-proxied
+        // `~/.cargo/bin/rust-analyzer` whose component isn't installed
+        // shadows the managed install and every LSP request hangs.
+        let entry = lookup("rust").expect("rust");
+        assert_eq!(entry.version_must_contain, Some("rust-analyzer"));
     }
 
     #[test]
