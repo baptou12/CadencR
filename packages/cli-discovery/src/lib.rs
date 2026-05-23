@@ -37,17 +37,21 @@ pub struct DiscoverySpec {
     pub well_known_absolute: Vec<&'static str>,
     /// Args to pass when querying the binary's version (typically `["--version"]`).
     pub version_args: &'static [&'static str],
-    /// When `Some(needle)`, a candidate's `--version` output must contain
-    /// `needle` (case-insensitive) or the candidate is excluded.
+    /// When `Some(needle)`, a candidate must satisfy both:
+    /// 1. its `--version` output contains `needle` (case-insensitive), and
+    /// 2. the output parses as a valid semver triple.
+    /// Otherwise the candidate is excluded.
     ///
     /// Defends against version-multiplexer shims that masquerade as the real
-    /// binary. For example, `rust-analyzer` installed via `rustup` is just a
-    /// hardlink to the `rustup` proxy; if the `rust-analyzer` component
-    /// isn't installed, invoking the shim prints rustup's own help and parses
-    /// as version `1.28.x` (rustup's version). LSP spawn would then exec a
-    /// process that never speaks JSON-RPC. Setting
-    /// `version_must_contain: Some("rust-analyzer")` filters those shims out
-    /// so resolution falls through to the managed-install path.
+    /// binary. `rust-analyzer` installed via `rustup` is a symlink to the
+    /// `rustup` proxy; depending on whether the rust-analyzer component is
+    /// registered, the shim either prints rustup's own help (parses as
+    /// rustup's `1.28.x` but doesn't mention "rust-analyzer") or prints
+    /// `error: Unknown binary 'rust-analyzer' in official toolchain ...`
+    /// (mentions the name in quotes but has no semver). Either way the
+    /// process never speaks JSON-RPC, so we need both checks: the real
+    /// rust-analyzer prints `rust-analyzer 0.3.x-standalone (commit)` which
+    /// satisfies both.
     pub version_must_contain: Option<&'static str>,
 }
 
@@ -102,8 +106,16 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
             // honoring an override that will only fail downstream.
             let probe = probe_version(path, spec.version_args).await;
             let accept = match (&probe, spec.version_must_contain) {
-                (Some((_, raw)), Some(needle)) => contains_ci(raw, needle),
-                _ => true, // no filter, or subprocess failed entirely
+                // Filter set: require both the substring and a parsed semver.
+                // The substring alone is too lax — the rustup shim's
+                // "Unknown binary 'rust-analyzer'" error mentions the name
+                // and would pass a contains-only check.
+                (Some((version, raw)), Some(needle)) => {
+                    contains_ci(raw, needle) && version.is_some()
+                }
+                // No filter, or subprocess failed entirely: keep behavior
+                // unchanged (returns a possibly versionless candidate).
+                _ => true,
             };
             if accept {
                 return vec![Candidate {
@@ -164,15 +176,18 @@ pub async fn discover_all(spec: &DiscoverySpec, override_path: Option<&Path>) ->
         .zip(probes)
         .filter_map(|(mut candidate, probe)| {
             if let Some(needle) = spec.version_must_contain {
-                // Subprocess failed entirely (timeout, missing exec bits we
-                // somehow accepted earlier, etc.) → reject. We can't tell
-                // a real binary from a shim without the output, and the
-                // filter exists specifically to weed out shims.
-                let raw = match &probe {
-                    Some((_, raw)) => raw,
+                // Subprocess failed (timeout, missing exec bits we somehow
+                // accepted earlier, etc.) → reject. The filter exists
+                // specifically to weed out shims and we can't validate one
+                // without its output.
+                let (version, raw) = match &probe {
+                    Some(parts) => parts,
                     None => return None,
                 };
-                if !contains_ci(raw, needle) {
+                // Require both substring AND parsed semver — see the doc
+                // comment on `version_must_contain`. A shim's error message
+                // can mention the binary name without producing a version.
+                if !contains_ci(raw, needle) || version.is_none() {
                     return None;
                 }
             }
@@ -610,6 +625,30 @@ mod tests {
             make_executable_with_body(dir.path(), "thing", "#!/bin/sh\necho '2.7.1 build'\n");
         let version = query_version(&path, &["--version"]).await;
         assert_eq!(version, Some(VersionKey(2, 7, 1)));
+    }
+
+    #[tokio::test]
+    async fn version_must_contain_rejects_shim_error_that_mentions_bin_name() {
+        // Real-world: `~/.cargo/bin/rust-analyzer` is a rustup shim. When
+        // the rust-analyzer component isn't registered as a proxy, rustup
+        // prints `error: Unknown binary 'rust-analyzer' in official
+        // toolchain ...` to stderr and exits 0. The error literally
+        // contains the bin name, so a contains-only filter would accept it.
+        // The semver requirement is what saves us.
+        let dir = TempDir::new().unwrap();
+        let shim = make_executable_with_body(
+            dir.path(),
+            "rust-analyzer",
+            "#!/bin/sh\necho \"error: Unknown binary 'rust-analyzer' in official toolchain 'stable-aarch64-apple-darwin'.\" 1>&2\nexit 0\n",
+        );
+        let mut spec = dummy_spec();
+        spec.bin_name = "rust-analyzer";
+        spec.version_must_contain = Some("rust-analyzer");
+        let via_override = discover_all(&spec, Some(&shim)).await;
+        assert!(
+            via_override.is_empty(),
+            "rustup 'Unknown binary' shim must be rejected; got {via_override:?}"
+        );
     }
 
     #[tokio::test]

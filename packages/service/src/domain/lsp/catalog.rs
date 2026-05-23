@@ -103,12 +103,14 @@ pub const CATALOG: &[CatalogEntry] = &[
         well_known_relative_to_home: &[".cargo/bin"],
         well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
-        // `~/.cargo/bin/rust-analyzer` is often a rustup proxy hardlink. If
-        // the `rust-analyzer` rustup component isn't installed, the proxy
-        // prints rustup's help (and its own `1.28.x` version parses as a
-        // valid semver), so we'd happily spawn rustup as an LSP. Require
-        // the real binary's signature in the output instead — real
-        // rust-analyzer prints e.g. `rust-analyzer 0.3.2050-standalone`.
+        // `~/.cargo/bin/rust-analyzer` is often a rustup proxy symlink.
+        // Depending on rustup's proxy registration the shim either prints
+        // its own help (substring miss) or prints `error: Unknown binary
+        // 'rust-analyzer' in official toolchain ...` (substring hit but
+        // no semver). cli-discovery's filter requires BOTH the substring
+        // AND a parsed semver, so both shapes are rejected. The real
+        // rust-analyzer prints `rust-analyzer 0.3.x-standalone (commit)`,
+        // which passes both checks.
         version_must_contain: Some("rust-analyzer"),
         download: Some(DownloadRecipe::GithubReleaseGz {
             // Pinned. Bump deliberately — surprise upgrades silently change

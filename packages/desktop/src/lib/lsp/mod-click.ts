@@ -9,7 +9,14 @@
  * `@codemirror/lsp-client` paints by default.
  */
 import { EditorView } from "@codemirror/view";
+import { LSPPlugin } from "@codemirror/lsp-client";
+import { toast } from "sonner";
 import { jumpToDefinitionCommand } from "./definition";
+
+// Tracks whether we've already nudged the user about the server still
+// initializing — once per editor session is enough; spamming the toast
+// stack while rust-analyzer indexes a large workspace would be noisy.
+const startingHintShown = new WeakSet<EditorView>();
 
 /** @public */
 export function lspModClickExtension(): ReturnType<typeof EditorView.domEventHandlers> {
@@ -25,7 +32,17 @@ export function lspModClickExtension(): ReturnType<typeof EditorView.domEventHan
       // doesn't also start a text selection or open a context menu.
       view.dispatch({ selection: { anchor: pos }, userEvent: "select.pointer" });
       event.preventDefault();
-      jumpToDefinitionCommand(view);
+      if (jumpToDefinitionCommand(view)) return true;
+
+      // Silent no-op = unsupported file (no LSP plugin) OR server not
+      // ready. For unsupported files the status-bar indicator already
+      // makes that obvious, but if the plugin is mounted the user just
+      // tried to use a feature that the server hasn't initialized yet —
+      // give them a one-shot toast so they know to wait, not retry.
+      if (LSPPlugin.get(view) && !startingHintShown.has(view)) {
+        startingHintShown.add(view);
+        toast.info("Language server is still starting — try again in a moment.");
+      }
       return true;
     },
   });
