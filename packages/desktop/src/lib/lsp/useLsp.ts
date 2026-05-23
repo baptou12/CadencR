@@ -7,13 +7,12 @@
  * 2. Lazily ensures an `LSPClient` exists for `(workspaceRoot, languageId)`.
  * 3. Registers a `displayFile` handler so cross-file LSP navigation lands
  *    in the same `(featureId, paneId)` the user clicked from.
- * 4. Returns the CodeMirror extensions the editor should mount: the LSP
- *    plugin (for `didOpen` / `didChange`), the F12 keymap, and the
- *    cmd-click handler.
+ * 4. Returns the CodeMirror extensions the editor should mount + an
+ *    observable `status` for the status-bar indicator.
  *
- * Returns an empty array while the client is still being created, then a
- * stable array once ready. The caller is expected to feed the result into a
- * `Compartment` so the editor can pick up the LSP wiring without remount.
+ * The extension array is `[]` while the client is being created, then a
+ * stable array once ready, so callers can feed the result into a
+ * `Compartment` and reconfigure without remount.
  */
 import { useEffect, useMemo, useState } from "react";
 import { keymap, type EditorView } from "@codemirror/view";
@@ -35,11 +34,35 @@ interface UseLspArgs {
   paneId: string;
 }
 
+/**
+ * Coarse LSP state for the editor status bar.
+ *
+ * - `unsupported`: no language server is registered for this file's
+ *   extension — cmd-click and hover are no-ops.
+ * - `starting`: session reserved / WebSocket negotiating / server booting.
+ * - `ready`: client + workspace are live; LSP requests succeed.
+ * - `error`: session-open or transport failure; `errorMessage` carries the
+ *   backend-supplied install hint or transport error verbatim.
+ */
+export type LspStatus = "unsupported" | "starting" | "ready" | "error";
+
+export interface UseLspResult {
+  /** CodeMirror extension to mount inside a Compartment. `[]` until ready. */
+  extension: Extension;
+  /** Coarse state for status-bar / popover display. */
+  status: LspStatus;
+  /** Present iff `status === "error"`. */
+  errorMessage?: string;
+  /** Resolved LSP language id (e.g. `"typescript"`), or `null` if unsupported. */
+  languageId: string | null;
+}
+
 /** @public */
-export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArgs): Extension {
+export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArgs): UseLspResult {
   const [ready, setReady] = useState<{ client: LSPClient; workspace: CadencrWorkspace } | null>(
     null,
   );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const languageId = useMemo(() => getLspLanguageId(filePath), [filePath]);
 
   // Step 1: acquire a refcounted client. Re-run when the workspace root or
@@ -48,6 +71,7 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
   // so the refcount stays balanced — the client-manager's grace timer
   // keeps the WS warm if the user re-mounts quickly.
   useEffect(() => {
+    setErrorMessage(null);
     if (!workspaceRoot || !languageId) {
       setReady(null);
       return;
@@ -68,7 +92,11 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
       .catch((err: unknown) => {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to start language server";
+        // Toast for one-shot feedback; status-bar indicator keeps the error
+        // visible until the next acquire attempt so the user can retry by
+        // closing & reopening the file.
         toast.error(msg);
+        setErrorMessage(msg);
       });
     return () => {
       cancelled = true;
@@ -99,9 +127,18 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
     };
   }, [ready, featureId, paneId]);
 
-  // Step 3: build the extension list. Returns a stable reference for the
-  // "not ready" case so React.memo'd parents don't re-render every tick.
-  return useMemo<Extension>(() => {
+  // Step 3: derive status from the inputs + acquire state.
+  const status: LspStatus = !languageId
+    ? "unsupported"
+    : errorMessage
+      ? "error"
+      : ready
+        ? "ready"
+        : "starting";
+
+  // Step 4: build the extension list. Stable reference for the "not ready"
+  // case so React.memo'd parents don't re-render every tick.
+  const extension = useMemo<Extension>(() => {
     if (!ready || !workspaceRoot || !languageId) return [];
     const absPath = filePath.startsWith("/")
       ? filePath
@@ -114,4 +151,14 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
       lspModHoverExtension(),
     ];
   }, [ready, workspaceRoot, languageId, filePath]);
+
+  return useMemo<UseLspResult>(
+    () => ({
+      extension,
+      status,
+      errorMessage: errorMessage ?? undefined,
+      languageId,
+    }),
+    [extension, status, errorMessage, languageId],
+  );
 }

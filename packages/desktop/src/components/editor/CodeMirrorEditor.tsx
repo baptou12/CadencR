@@ -4,11 +4,12 @@ import { Compartment } from "@codemirror/state";
 import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useLsp } from "@/lib/lsp/useLsp";
+import { useLsp, type LspStatus } from "@/lib/lsp/useLsp";
 import { getLanguageExtension } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
+import { LspStatusIndicator } from "./LspStatusIndicator";
 import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
@@ -85,7 +86,7 @@ export default function CodeMirrorEditor({
     { query: { enabled: Boolean(featureId && projectId), refetchOnWindowFocus: false } },
   );
   const workspaceRoot = cwdQuery.data?.path ?? undefined;
-  const lspExtension = useLsp({ workspaceRoot, filePath, featureId, paneId });
+  const lsp = useLsp({ workspaceRoot, filePath, featureId, paneId });
 
   const { data: blameData } = useGetBlame(
     { project_id: projectId, feature_id: featureId, file_path: filePath },
@@ -200,14 +201,14 @@ export default function CodeMirrorEditor({
   }, [isBlameEnabled, blameData]);
 
   // Hot-swap LSP extensions once the client for this file's language is ready.
-  // `lspExtension` is `[]` until the session and WebSocket are open; we
+  // `lsp.extension` is `[]` until the session and WebSocket are open; we
   // reconfigure the compartment then so the editor picks up cmd-click + F12
   // without remounting.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({ effects: lspCompartment.current.reconfigure(lspExtension) });
-  }, [lspExtension]);
+    view.dispatch({ effects: lspCompartment.current.reconfigure(lsp.extension) });
+  }, [lsp.extension]);
 
   const cursorExtension = useMemo(() => {
     return EditorView.updateListener.of((update) => {
@@ -302,6 +303,9 @@ export default function CodeMirrorEditor({
         col={cursorPosition.col}
         language={getLanguageName(filePath)}
         autoSavedVisible={autoSavedVisible}
+        lspStatus={lsp.status}
+        lspLanguageId={lsp.languageId}
+        lspError={lsp.errorMessage}
       />
     </div>
   );
@@ -312,9 +316,20 @@ interface StatusBarProps {
   col: number;
   language: string;
   autoSavedVisible: boolean;
+  lspStatus: LspStatus;
+  lspLanguageId: string | null;
+  lspError?: string;
 }
 
-function StatusBar({ line, col, language, autoSavedVisible }: StatusBarProps) {
+function StatusBar({
+  line,
+  col,
+  language,
+  autoSavedVisible,
+  lspStatus,
+  lspLanguageId,
+  lspError,
+}: StatusBarProps) {
   return (
     <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
       <span>
@@ -322,7 +337,14 @@ function StatusBar({ line, col, language, autoSavedVisible }: StatusBarProps) {
       </span>
       <div className="flex items-center gap-3">
         {autoSavedVisible && <span>Auto-saved</span>}
-        <span>{language}</span>
+        <span className="inline-flex items-center gap-1">
+          <LspStatusIndicator
+            status={lspStatus}
+            languageId={lspLanguageId}
+            errorMessage={lspError}
+          />
+          {language}
+        </span>
         <span>UTF-8</span>
       </div>
     </div>

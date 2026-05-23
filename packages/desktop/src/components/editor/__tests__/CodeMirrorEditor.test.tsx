@@ -74,7 +74,12 @@ vi.mock("@/api/generated", () => ({
 }));
 
 vi.mock("@/lib/lsp/useLsp", () => ({
-  useLsp: vi.fn(() => []),
+  useLsp: vi.fn(() => ({
+    extension: [],
+    status: "unsupported",
+    languageId: null,
+    errorMessage: undefined,
+  })),
 }));
 
 vi.mock("@/stores/editor-store", () => ({
