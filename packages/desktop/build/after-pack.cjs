@@ -42,6 +42,10 @@ function assertBinaryArch(binary, arch, { universal }) {
 }
 
 function makeLinuxSidecarExecutable(context) {
+  // afterPack runs once per Electron pack, before any target packager
+  // (AppImage, deb, rpm) consumes `appOutDir`. The mode bits we set here
+  // are preserved through all three Linux targets, so this single chmod
+  // covers .AppImage, .deb, and .rpm builds.
   const sidecar = join(context.appOutDir, "resources", "cadencr-service");
   try {
     chmodSync(sidecar, 0o755);
