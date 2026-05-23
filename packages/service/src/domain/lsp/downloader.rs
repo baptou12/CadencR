@@ -12,7 +12,9 @@
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
+use futures::StreamExt;
 use tracing::{info, warn};
 
 use crate::error::AppError;
@@ -73,7 +75,24 @@ pub async fn download_and_install(
         target = %bin_path.display(),
         "downloading LSP binary"
     );
-    let response = reqwest::get(&url)
+
+    // Build a dedicated client per download — we want explicit timeouts so a
+    // stalled connection doesn't hang the LSP-session POST indefinitely, and
+    // a real User-Agent because GitHub serves throttled / rate-limited
+    // responses to clients that don't identify themselves.
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("cadencr/", env!("CARGO_PKG_VERSION")))
+        // Generous read timeout: rust-analyzer is ~30 MB and users on a
+        // mobile hotspot are still legitimate. But cap it so a frozen
+        // socket eventually errors instead of looking like a hung process.
+        .timeout(Duration::from_secs(300))
+        .connect_timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| AppError::Internal(format!("LSP download client build failed: {e}")))?;
+
+    let response = client
+        .get(&url)
+        .send()
         .await
         .map_err(|e| AppError::Internal(format!("LSP download request failed: {e}")))?;
     if !response.status().is_success() {
@@ -83,45 +102,10 @@ pub async fn download_and_install(
             url
         )));
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| AppError::Internal(format!("LSP download body failed: {e}")))?;
-
-    // Decompress in a blocking task so we don't stall the runtime on a large
-    // binary (rust-analyzer is ~30MB).
-    let bin_path_clone = bin_path.clone();
-    let lsp_id = entry.lsp_id.to_string();
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let mut decoder = flate2::read::GzDecoder::new(bytes.as_ref());
-        let tmp_path = bin_path_clone.with_extension("download");
-        let mut file = fs::File::create(&tmp_path)
-            .map_err(|e| AppError::Internal(format!("create {}: {e}", tmp_path.display())))?;
-        std::io::copy(&mut decoder, &mut file)
-            .map_err(|e| AppError::Internal(format!("decompress {lsp_id}: {e}")))?;
-        file.flush()
-            .map_err(|e| AppError::Internal(format!("flush {}: {e}", tmp_path.display())))?;
-        drop(file);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o700))
-                .map_err(|e| AppError::Internal(format!("chmod {}: {e}", tmp_path.display())))?;
-        }
-        // Atomic rename so a partial download never appears at the canonical
-        // path. Cleanup races (concurrent installs) accept whichever rename
-        // wins.
-        fs::rename(&tmp_path, &bin_path_clone).map_err(|e| {
-            AppError::Internal(format!(
-                "rename {} -> {}: {e}",
-                tmp_path.display(),
-                bin_path_clone.display()
-            ))
-        })?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Internal(format!("LSP install join error: {e}")))??;
+    let total_size = response.content_length();
+    let tmp_path = bin_path.with_extension("download");
+    stream_to_disk(response, &tmp_path, total_size, entry.lsp_id).await?;
+    finalize_install(&tmp_path, &bin_path, entry.lsp_id)?;
 
     // GC sibling version dirs. After bumping a pinned version, the previous
     // install would otherwise sit ~30 MB on disk forever — and worse, if a
@@ -130,6 +114,130 @@ pub async fn download_and_install(
     if let Some(parent) = dir.parent() {
         gc_old_versions(parent, version);
     }
+    Ok(())
+}
+
+/// Stream the response body to a temp file, decompressing as we go. We log a
+/// progress line at most every 5 s so a slow download is visible in the
+/// terminal without flooding it. Compressing on the fly (vs. buffering the
+/// whole response in memory) keeps peak RSS well below the compressed size
+/// and lets `tokio::time` cancel a stuck read.
+async fn stream_to_disk(
+    response: reqwest::Response,
+    tmp_path: &std::path::Path,
+    total_size: Option<u64>,
+    lsp_id: &str,
+) -> Result<(), AppError> {
+    // We decompress in a blocking decoder fed from a channel. The async side
+    // (this fn) pushes raw chunks; the blocking side gunzips and writes.
+    // Keeping the channel small bounds memory to ~one chunk per side.
+    let tmp_path_owned = tmp_path.to_path_buf();
+    let lsp_id_owned = lsp_id.to_string();
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(4);
+    let writer = tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let mut file = fs::File::create(&tmp_path_owned)
+            .map_err(|e| AppError::Internal(format!("create {}: {e}", tmp_path_owned.display())))?;
+        let reader = ChannelReader::new(rx);
+        let mut decoder = flate2::read::GzDecoder::new(reader);
+        std::io::copy(&mut decoder, &mut file)
+            .map_err(|e| AppError::Internal(format!("decompress {lsp_id_owned}: {e}")))?;
+        file.flush()
+            .map_err(|e| AppError::Internal(format!("flush {}: {e}", tmp_path_owned.display())))?;
+        Ok(())
+    });
+
+    let mut stream = response.bytes_stream();
+    let mut received: u64 = 0;
+    let mut last_log = Instant::now();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk
+            .map_err(|e| AppError::Internal(format!("LSP download body chunk failed: {e}")))?;
+        received += bytes.len() as u64;
+        if last_log.elapsed() >= Duration::from_secs(5) {
+            match total_size {
+                Some(total) => info!(
+                    lsp_id = %lsp_id,
+                    progress = format!("{} / {} bytes", received, total),
+                    "downloading LSP binary"
+                ),
+                None => {
+                    info!(lsp_id = %lsp_id, received_bytes = received, "downloading LSP binary")
+                }
+            }
+            last_log = Instant::now();
+        }
+        // `send` blocks if the writer is behind — backpressure, exactly
+        // what we want. An error here means the writer task died.
+        if tx.send(bytes.to_vec()).is_err() {
+            break;
+        }
+    }
+    // Drop the sender so the writer sees EOF and finishes.
+    drop(tx);
+    writer
+        .await
+        .map_err(|e| AppError::Internal(format!("LSP install join error: {e}")))??;
+    Ok(())
+}
+
+/// Bridge from the async chunk channel to the sync `GzDecoder`. Owns the
+/// receiver and a residual buffer for partial-chunk reads.
+struct ChannelReader {
+    rx: std::sync::mpsc::Receiver<Vec<u8>>,
+    leftover: Vec<u8>,
+    leftover_pos: usize,
+}
+
+impl ChannelReader {
+    fn new(rx: std::sync::mpsc::Receiver<Vec<u8>>) -> Self {
+        Self {
+            rx,
+            leftover: Vec::new(),
+            leftover_pos: 0,
+        }
+    }
+}
+
+impl std::io::Read for ChannelReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.leftover_pos >= self.leftover.len() {
+            match self.rx.recv() {
+                Ok(chunk) => {
+                    self.leftover = chunk;
+                    self.leftover_pos = 0;
+                }
+                Err(_) => return Ok(0), // EOF
+            }
+        }
+        let available = &self.leftover[self.leftover_pos..];
+        let n = available.len().min(buf.len());
+        buf[..n].copy_from_slice(&available[..n]);
+        self.leftover_pos += n;
+        Ok(n)
+    }
+}
+
+/// chmod the temp file and atomically rename into place. Atomic so a
+/// crashed download never leaves a partial binary at the canonical path —
+/// the next launch retries cleanly.
+fn finalize_install(
+    tmp_path: &std::path::Path,
+    bin_path: &std::path::Path,
+    _lsp_id: &str,
+) -> Result<(), AppError> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(tmp_path, fs::Permissions::from_mode(0o700))
+            .map_err(|e| AppError::Internal(format!("chmod {}: {e}", tmp_path.display())))?;
+    }
+    fs::rename(tmp_path, bin_path).map_err(|e| {
+        AppError::Internal(format!(
+            "rename {} -> {}: {e}",
+            tmp_path.display(),
+            bin_path.display()
+        ))
+    })?;
     Ok(())
 }
 
