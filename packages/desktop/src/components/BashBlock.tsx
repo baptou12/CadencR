@@ -93,10 +93,22 @@ export const BashBlock = memo(function BashBlock({
             header={
               <>
                 <TerminalIcon className="size-3 shrink-0" />
-                <span className="font-medium text-[var(--block-bash-fg)]">Bash</span>
+                <span
+                  className={cn(
+                    "font-medium",
+                    isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
+                  )}
+                >
+                  Bash
+                </span>
                 <pre
                   className={cn(
+                    // Pin the command (and Bash label above) to the
+                    // high-contrast fg so it stays readable on every theme,
+                    // but stay in `text-destructive` on error so the whole
+                    // header reads as one red row.
                     "min-w-0 flex-1 font-mono",
+                    isError ? "text-destructive" : "text-[var(--block-bash-fg)]",
                     // Collapsed: single-line ellipsis with the full command on
                     // hover. Expanded: wrap with line breaks before shell
                     // operators (inserted by `formatShellCommand`).

@@ -268,7 +268,7 @@ A collapsible card with a violet-tinted background distinct from the surrounding
 
 #### MCP tool call
 
-Same chrome as a regular tool call (`.cds-tool`) but the `.tag` element gets a colored prefix indicating provider. Body is monospace, file paths in cyan (`--ic-file-fg`), counts in `--acc-green`/`--acc-red`. Bash variant gets terminal-style chrome (`.cds-tool.open.bash` — dark code surface even in Aurora).
+Same chrome as a regular tool call (`.cds-tool`) but the `.tag` element gets a colored prefix indicating provider. Body is monospace, file paths in cyan (`--ic-file-fg`), counts in `--acc-green`/`--acc-red`. Bash variant gets terminal-style chrome (`.cds-tool.open.bash`) via its own `--block-bash-header-bg` / `--block-bash-body-bg` / `--block-bash-fg` / `--block-bash-muted-fg` tokens, which follow the theme (dark on Dracula, light on Aurora). The live xterm still stays dark in every theme — see rule 10.
 
 ### TerminalPanel (`<window.Panels.TerminalPanel/>`)
 
@@ -359,8 +359,8 @@ The dot's color is the meaning. Do not introduce a fourth color without register
 6. **No CSS-in-JS.** All styling lives in `kit.css` and `themes.css`. JSX may reference CSS variables inline (`style={{ background: "var(--acc-green)" }}` is fine for a one-off swatch), but no `styled-components`-style libraries, no inline rule sets larger than ~3 declarations, and no class-name generators.
 7. **No new layout without registering it in all three places** — `config` useMemo, `kit.css` `cds-split` rules, and the `TweakRadio` options. A layout that exists in two of the three is a bug.
 8. **Status colors never used for branding.** Green is "ready". Red is "retry". Orange is "in progress". The brand color is `--primary`. Do not put the logo in green to imply "we're alive."
-9. **Code surfaces stay dark even in Aurora.** `--code-bg` and `--code-fg` are intentionally Dracula-like in the light theme. A white code block looks washed-out and breaks the dev-tool convention; the theme switcher does not invert this.
-10. **Terminal panel never inverts.** Same rule as code surfaces. The terminal always uses `--code-bg`. Future theme JSONs MUST keep `terminal.bg` dark.
+9. **The `--code-bg` / `--code-fg` surface stays dark even in Aurora.** Markdown code blocks and editor-adjacent code surfaces are intentionally Dracula-like in the light theme — a white code block looks washed-out and breaks the dev-tool convention. The bash tool-call block is the one carve-out: it follows the theme via `--block-bash-*` (see "Bash variant").
+10. **Live terminal (xterm/PTY) never inverts.** Always uses `--code-bg` and stays dark regardless of theme. Future theme JSONs MUST keep `terminal.bg` dark.
 11. **No new screen-level routes without a `data-screen-label`.** Every full-pane screen must set `data-screen-label="NN Title"` (1-indexed) on the `.cds-app` so review comments can pin to it.
 12. **No prompt bar outside the root pane.** It lives once, in the non-floating root pane. Floating panes never own input.
 13. **No untranslated tweak.** Every value in `TWEAK_DEFAULTS` must round-trip through the Tweaks panel — i.e. there is a `Tweak*` control bound to it. No "secret" tweaks.
