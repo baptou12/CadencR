@@ -25,6 +25,7 @@ import { getLspLanguageId } from "./language-id";
 import { pathToFileUri } from "./file-uri";
 import { acquireLspClient, releaseLspClient } from "./client-manager";
 import { lspModClickExtension } from "./mod-click";
+import { lspModHoverExtension } from "./mod-hover";
 import { type CadencrWorkspace } from "./cadencr-workspace";
 
 interface UseLspArgs {
@@ -110,6 +111,7 @@ export function useLsp({ workspaceRoot, filePath, featureId, paneId }: UseLspArg
       ready.client.plugin(uri, languageId),
       keymap.of(jumpToDefinitionKeymap),
       lspModClickExtension(),
+      lspModHoverExtension(),
     ];
   }, [ready, workspaceRoot, languageId, filePath]);
 }
