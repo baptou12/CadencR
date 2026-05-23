@@ -93,8 +93,12 @@ const cadencrChromeTheme = EditorView.theme(
       color: "var(--editor-comment)",
     },
     ".cm-tooltip": {
+      // `color` matters on light themes (Aurora): without it, the base
+      // `createTheme({ theme: "dark" })` setting leaks a white text color
+      // into descendants, leaving lint diagnostic tooltips white-on-white.
       border: "1px solid var(--editor-border)",
       backgroundColor: "var(--editor-bg)",
+      color: "var(--editor-fg)",
     },
     ".cm-tooltip .cm-tooltip-arrow:before": { borderTopColor: "var(--editor-border)" },
     ".cm-tooltip .cm-tooltip-arrow:after": { borderTopColor: "var(--editor-bg)" },
