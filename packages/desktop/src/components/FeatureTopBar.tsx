@@ -305,34 +305,24 @@ function FeatureTitleMenu({
   onAutoRename,
 }: FeatureTitleMenuProps): ReactElement {
   const [renameOpen, setRenameOpen] = useState(false);
-  // Track whether the popover was just opened via the context menu so we can
-  // suppress the stale pointer event that Radix fires during menu teardown.
-  const suppressNextOutsideRef = useRef(false);
+  // Opening the popover synchronously from `onSelect` races with the menu's
+  // own dismissal (focus + pointer events dispatched during teardown dismiss
+  // the freshly-mounted popover). Defer to `onCloseAutoFocus`, which fires
+  // after the menu has fully unmounted.
+  const openRenameOnMenuCloseRef = useRef(false);
 
   const handleCopy = (): void => {
     void copyToClipboard(title, "Copied feature name");
   };
 
-  // Radix DismissableLayer race: defer popover mount past menu teardown, then
-  // suppress the first onInteractOutside because the menu close sequence
-  // dispatches a synthetic pointerup that arrives even after the timeout.
-  const handleRenameSelect = (): void => {
-    setTimeout(() => {
-      suppressNextOutsideRef.current = true;
-      setRenameOpen(true);
-    }, 0);
+  const handleMenuCloseAutoFocus = (event: Event): void => {
+    if (!openRenameOnMenuCloseRef.current) return;
+    openRenameOnMenuCloseRef.current = false;
+    // Keep focus out of the h1 so the popover's FocusScope can claim the input.
+    event.preventDefault();
+    setRenameOpen(true);
   };
 
-  const handleInteractOutside = (e: Event): void => {
-    if (suppressNextOutsideRef.current) {
-      suppressNextOutsideRef.current = false;
-      e.preventDefault();
-    }
-  };
-
-  // Compose ContextMenuTrigger + PopoverAnchor on the same heading so the
-  // popover appears in-place. Double-click is a power-user shortcut; the
-  // context menu is the discoverable affordance.
   return (
     <Popover open={renameOpen} onOpenChange={setRenameOpen}>
       <ContextMenu>
@@ -346,9 +336,15 @@ function FeatureTitleMenu({
             </h1>
           </PopoverAnchor>
         </ContextMenuTrigger>
-        <ContextMenuContent>
+        <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
           <ContextMenuItem onSelect={handleCopy}>Copy</ContextMenuItem>
-          <ContextMenuItem onSelect={handleRenameSelect}>Rename…</ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => {
+              openRenameOnMenuCloseRef.current = true;
+            }}
+          >
+            Rename…
+          </ContextMenuItem>
           {canAutoRename && (
             <ContextMenuItem disabled={isAutoRenamePending} onSelect={onAutoRename}>
               Auto-rename
@@ -356,7 +352,7 @@ function FeatureTitleMenu({
           )}
         </ContextMenuContent>
       </ContextMenu>
-      <PopoverContent align="start" className="w-80" onInteractOutside={handleInteractOutside}>
+      <PopoverContent align="start" className="w-80">
         <FeatureRenameForm
           featureId={featureId}
           currentTitle={title}
