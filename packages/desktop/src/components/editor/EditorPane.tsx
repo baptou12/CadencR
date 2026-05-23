@@ -1,8 +1,9 @@
 import type { EditorView } from "@codemirror/view";
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import EditorSubTabs from "./EditorSubTabs";
+import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
 
@@ -50,6 +51,10 @@ export default function EditorPane({
     "editor",
     { enabled: isFocusedPane && Boolean(activeFilePath) },
   );
+
+  useEffect(() => {
+    return () => clearPaneSearch(featureId, paneId);
+  }, [featureId, paneId]);
 
   function handleFocus() {
     if (!isActive) {

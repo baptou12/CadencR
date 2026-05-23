@@ -1,4 +1,10 @@
-import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import {
+  StateEffect,
+  StateField,
+  type EditorState,
+  type Extension,
+  type Transaction,
+} from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView } from "@codemirror/view";
 import { SearchCursor, RegExpCursor } from "@codemirror/search";
 
@@ -42,25 +48,47 @@ const activeMatchMark = Decoration.mark({
   class: "cm-buffer-search-match cm-buffer-search-match-active",
 });
 
+interface CursorLike {
+  next(): { done: boolean };
+  value: { from: number; to: number };
+}
+
 interface ScanResult {
   matches: BufferMatch[];
   truncated: boolean;
   error: string | null;
 }
 
-function scanLiteralMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
+/**
+ * Drain a CodeMirror SearchCursor / RegExpCursor into a match list, capped at
+ * MAX_BUFFER_MATCHES. Zero-width matches (e.g. regex like `\b`, `^`) are kept;
+ * if the cursor ever stalls on the same zero-width position twice in a row we
+ * break to avoid an infinite loop.
+ */
+function drainCursor(cursor: CursorLike): { matches: BufferMatch[]; truncated: boolean } {
   const matches: BufferMatch[] = [];
-  const normalize = q.caseSensitive ? undefined : (s: string) => s.toLowerCase();
-  const cursor = new SearchCursor(state.doc, q.query, 0, state.doc.length, normalize);
+  let lastZeroWidthEnd = -1;
   while (!cursor.next().done) {
     const { from, to } = cursor.value;
-    if (from === to) break;
+    if (from === to) {
+      if (to === lastZeroWidthEnd) break;
+      lastZeroWidthEnd = to;
+    } else {
+      lastZeroWidthEnd = -1;
+    }
     matches.push({ from, to });
     if (matches.length >= MAX_BUFFER_MATCHES) {
-      return { matches, truncated: true, error: null };
+      return { matches, truncated: true };
     }
   }
-  return { matches, truncated: false, error: null };
+  return { matches, truncated: false };
+}
+
+function scanLiteralMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
+  const normalize = q.caseSensitive ? undefined : (s: string) => s.toLowerCase();
+  const cursor = new SearchCursor(state.doc, q.query, 0, state.doc.length, normalize);
+  const { matches, truncated } = drainCursor(cursor);
+  return { matches, truncated, error: null };
 }
 
 function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
@@ -73,7 +101,6 @@ function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult 
       error: err instanceof Error ? err.message : "Invalid regex",
     };
   }
-  const matches: BufferMatch[] = [];
   const cursor = new RegExpCursor(
     state.doc,
     q.query,
@@ -81,15 +108,8 @@ function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult 
     0,
     state.doc.length,
   );
-  while (!cursor.next().done) {
-    const { from, to } = cursor.value;
-    if (from === to) break;
-    matches.push({ from, to });
-    if (matches.length >= MAX_BUFFER_MATCHES) {
-      return { matches, truncated: true, error: null };
-    }
-  }
-  return { matches, truncated: false, error: null };
+  const { matches, truncated } = drainCursor(cursor);
+  return { matches, truncated, error: null };
 }
 
 function scanMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
@@ -129,6 +149,24 @@ function applyQueryEffect(state: EditorState, query: BufferSearchQuery): BufferS
   };
 }
 
+function reapplyOnDocChange(prev: BufferSearchState, tr: Transaction): BufferSearchState {
+  const scan = scanMatches(tr.state, prev.query);
+  if (scan.matches.length === 0) {
+    return { ...prev, matches: [], activeIndex: -1, truncated: false, error: scan.error };
+  }
+  const prevActiveMatch = prev.activeIndex >= 0 ? prev.matches[prev.activeIndex] : null;
+  const anchor = prevActiveMatch
+    ? tr.changes.mapPos(prevActiveMatch.from)
+    : tr.state.selection.main.head;
+  return {
+    ...prev,
+    matches: scan.matches,
+    activeIndex: pickInitialActive(scan.matches, anchor),
+    truncated: scan.truncated,
+    error: scan.error,
+  };
+}
+
 export const bufferSearchField = StateField.define<BufferSearchState>({
   create: () => INITIAL_STATE,
   update(value, tr) {
@@ -147,36 +185,63 @@ export const bufferSearchField = StateField.define<BufferSearchState>({
       }
     }
     if (tr.docChanged && !queryChanged && !closed && next.query.query) {
-      const scan = scanMatches(tr.state, next.query);
-      const newActive =
-        scan.matches.length === 0
-          ? -1
-          : Math.min(Math.max(0, next.activeIndex), scan.matches.length - 1);
-      next = {
-        ...next,
-        matches: scan.matches,
-        activeIndex:
-          newActive < 0 ? pickInitialActive(scan.matches, tr.state.selection.main.head) : newActive,
-        truncated: scan.truncated,
-        error: scan.error,
-      };
+      next = reapplyOnDocChange(next, tr);
     }
     return next;
   },
   provide: (f) => EditorView.decorations.from(f, buildDecorations),
 });
 
+type Listener = (state: BufferSearchState) => void;
+const listenersByView = new WeakMap<EditorView, Set<Listener>>();
+
+function notifyListeners(view: EditorView, state: BufferSearchState): void {
+  const set = listenersByView.get(view);
+  if (!set) return;
+  set.forEach((cb) => cb(state));
+}
+
+export function subscribeBufferSearch(view: EditorView, cb: Listener): () => void {
+  let set = listenersByView.get(view);
+  if (!set) {
+    set = new Set();
+    listenersByView.set(view, set);
+  }
+  set.add(cb);
+  return () => {
+    set?.delete(cb);
+  };
+}
+
 export function bufferSearchExtension(): Extension {
-  return [bufferSearchField];
+  return [
+    bufferSearchField,
+    EditorView.updateListener.of((update) => {
+      const prev = update.startState.field(bufferSearchField, false);
+      const next = update.state.field(bufferSearchField, false);
+      if (next === undefined || prev === next) return;
+      notifyListeners(update.view, next);
+    }),
+  ];
 }
 
 export function getBufferSearchState(view: EditorView): BufferSearchState {
   return view.state.field(bufferSearchField);
 }
 
+/**
+ * Apply a new query / regex / case-sensitivity setting and scroll the active
+ * match into view without disturbing the editor selection. The selection is
+ * only moved by explicit navigation (`findNextMatch`, `findPrevMatch`,
+ * `selectActiveMatch`) so that typing in the search input does not bump the
+ * user's cursor inside the buffer.
+ */
 export function setBufferSearchQuery(view: EditorView, query: BufferSearchQuery): void {
   view.dispatch({ effects: setBufferSearchQueryEffect.of(query) });
-  revealActiveMatch(view);
+  const s = view.state.field(bufferSearchField);
+  if (s.activeIndex < 0) return;
+  const m = s.matches[s.activeIndex];
+  view.dispatch({ effects: EditorView.scrollIntoView(m.from, { y: "center" }) });
 }
 
 export function findNextMatch(view: EditorView): void {
@@ -195,6 +260,17 @@ export function closeBufferSearch(view: EditorView): void {
   view.dispatch({ effects: closeBufferSearchEffect.of() });
 }
 
+/** Move the editor selection to the currently-active match without changing it. */
+export function selectActiveMatch(view: EditorView): void {
+  const s = view.state.field(bufferSearchField);
+  if (s.activeIndex < 0) return;
+  const m = s.matches[s.activeIndex];
+  view.dispatch({
+    selection: { anchor: m.from, head: m.to },
+    effects: EditorView.scrollIntoView(m.from, { y: "center" }),
+  });
+}
+
 function activateMatch(view: EditorView, rawIndex: number): void {
   const s = view.state.field(bufferSearchField);
   if (s.matches.length === 0) return;
@@ -205,16 +281,6 @@ function activateMatch(view: EditorView, rawIndex: number): void {
       setBufferActiveIndexEffect.of(idx),
       EditorView.scrollIntoView(m.from, { y: "center" }),
     ],
-    selection: { anchor: m.from, head: m.to },
-  });
-}
-
-function revealActiveMatch(view: EditorView): void {
-  const s = view.state.field(bufferSearchField);
-  if (s.activeIndex < 0 || s.activeIndex >= s.matches.length) return;
-  const m = s.matches[s.activeIndex];
-  view.dispatch({
-    effects: EditorView.scrollIntoView(m.from, { y: "center" }),
     selection: { anchor: m.from, head: m.to },
   });
 }

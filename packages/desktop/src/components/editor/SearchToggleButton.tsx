@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface SearchToggleButtonProps {
   active: boolean;
@@ -21,11 +22,12 @@ export default function SearchToggleButton({
       title={title}
       aria-pressed={active}
       onClick={() => onToggle(!active)}
-      className={`flex items-center gap-1 rounded px-1.5 py-1 text-xs transition-colors ${
+      className={cn(
+        "flex items-center gap-1 rounded px-1.5 py-1 text-xs transition-colors",
         active
           ? "bg-primary text-primary-foreground"
-          : "bg-muted text-foreground/70 hover:bg-accent hover:text-foreground"
-      }`}
+          : "bg-muted text-foreground/70 hover:bg-accent hover:text-foreground",
+      )}
     >
       {icon}
       {label && <span>{label}</span>}
