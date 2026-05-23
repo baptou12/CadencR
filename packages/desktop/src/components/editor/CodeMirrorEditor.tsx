@@ -252,6 +252,13 @@ export default function CodeMirrorEditor({
     };
   }, []);
 
+  // Clear any stale `isDirty` carried over from a previous mount of this tab
+  // (its unsaved edits were thrown away on unmount). EditorPane keys this
+  // component by file path, so this fires exactly once per file open.
+  useEffect(() => {
+    setDirty(featureId, paneId, filePath, false);
+  }, [featureId, paneId, filePath, setDirty]);
+
   // Scroll to pending go-to line after content is loaded
   useEffect(() => {
     const view = viewRef.current;

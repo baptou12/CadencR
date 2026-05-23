@@ -82,7 +82,13 @@ let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null
   error: null,
 };
 
-let mockBlameReturn: { data: unknown } = { data: undefined };
+interface BlameLine {
+  line: number;
+  sha: string;
+  author: string;
+  date: string;
+}
+let mockBlameReturn: { data: { lines: BlameLine[] } | undefined } = { data: undefined };
 
 vi.mock("@/api/generated", () => ({
   useReadFile: vi.fn(() => mockReadFileReturn),
@@ -100,10 +106,12 @@ vi.mock("@/lib/lsp/useLsp", () => ({
   })),
 }));
 
+const mockSetDirty = vi.fn();
+
 vi.mock("@/stores/editor-store", () => ({
   useEditorStore: vi.fn((selector: (s: Record<string, unknown>) => unknown) =>
     selector({
-      setDirty: vi.fn(),
+      setDirty: mockSetDirty,
       setCursorPosition: vi.fn(),
       features: {
         1: {
@@ -118,7 +126,7 @@ vi.mock("@/stores/editor-store", () => ({
   ),
 }));
 
-const mockDebouncedSettings: Record<string, string> = {};
+let mockDebouncedSettings: Record<string, string> = {};
 
 vi.mock("@/hooks/useDebouncedSetting", () => ({
   useDebouncedSetting: vi.fn((key: string) => ({
@@ -139,8 +147,9 @@ const defaultProps = {
 beforeEach(() => {
   mockReadFileReturn = { data: undefined, isLoading: true, error: null };
   mockBlameReturn = { data: undefined };
-  for (const k of Object.keys(mockDebouncedSettings)) delete mockDebouncedSettings[k];
+  mockDebouncedSettings = {};
   baseEditorProps.mockClear();
+  mockSetDirty.mockClear();
   vi.mocked(gitBlameExtension).mockClear();
 });
 
@@ -201,10 +210,27 @@ describe("CodeMirrorEditor", () => {
     rerender(<CodeMirrorEditor {...defaultProps} />);
 
     expect(screen.getByTestId("base-editor")).toBeInTheDocument();
-    expect(gitBlameExtension).toHaveBeenCalledWith(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (mockBlameReturn.data as any).lines,
-    );
+    expect(gitBlameExtension).toHaveBeenCalledWith(mockBlameReturn.data?.lines);
+  });
+
+  it("clears stale isDirty exactly once per mount, not on later data updates", () => {
+    mockReadFileReturn = { data: undefined, isLoading: true, error: null };
+    const { rerender } = render(<CodeMirrorEditor {...defaultProps} />);
+
+    // Mount fires the reset once — stale `isDirty` from a prior open is cleared
+    // before the user can see it, regardless of whether disk content has arrived.
+    expect(mockSetDirty).toHaveBeenCalledTimes(1);
+    expect(mockSetDirty).toHaveBeenCalledWith(1, "pane-1", "/test.ts", false);
+
+    // Disk content arriving (a `data` identity change) must NOT re-clear dirty,
+    // otherwise a later refetch would wipe genuine in-editor edits.
+    mockReadFileReturn = { data: { content: "hello" }, isLoading: false, error: null };
+    rerender(<CodeMirrorEditor {...defaultProps} />);
+    expect(mockSetDirty).toHaveBeenCalledTimes(1);
+
+    mockReadFileReturn = { data: { content: "hello updated" }, isLoading: false, error: null };
+    rerender(<CodeMirrorEditor {...defaultProps} />);
+    expect(mockSetDirty).toHaveBeenCalledTimes(1);
   });
 
   it("clamps invalid pending go-to lines to the document range", () => {
