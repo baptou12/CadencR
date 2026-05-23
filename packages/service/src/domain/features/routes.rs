@@ -11,7 +11,9 @@ use crate::domain::features::worktree_settings::{
 };
 use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
-use crate::domain::workflow::ws_sender::send_feature_updated_envelope;
+use crate::domain::workflow::ws_sender::{
+    send_feature_renamed_envelope, send_feature_updated_envelope,
+};
 use crate::error::AppError;
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -101,7 +103,17 @@ pub async fn update_feature_title_handler(
     Json(body): Json<UpdateTitleRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::update_title(&state.write_pool, id, &body.title).await?;
+    broadcast_title_update(&state, id, &body.title).await;
     Ok(Json(SuccessResponse { success: true }))
+}
+
+/// Mirror the envelopes that `auto_name` emits so the frontend treats manual
+/// and auto-naming the same way.
+async fn broadcast_title_update(state: &AppState, feature_id: i64, title: &str) {
+    for sender in state.ws_feature_senders.get_senders(feature_id).await {
+        send_feature_renamed_envelope(&sender, feature_id, title);
+        send_feature_updated_envelope(&sender, feature_id, &["title"]);
+    }
 }
 
 #[utoipa::path(put, path = "/api/features/{id}/status",

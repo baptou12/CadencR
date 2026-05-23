@@ -1,13 +1,8 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from "react";
 import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  getGetFeatureQueryKey,
-  getListFeaturesQueryKey,
-  useUpdateFeatureTitle,
-} from "@/api/generated";
+import { useUpdateFeatureTitle } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 
 interface FeatureRenameFormProps {
@@ -20,15 +15,11 @@ interface FeatureRenameFormProps {
 }
 
 /**
- * Form body for the manual feature-rename popover. Kept in its own file so
- * `FeatureTopBar.tsx` stays under the 400-line cap and the mutation/query
- * invalidation stay co-located with the rename UI.
- *
- * The backend `PUT /api/features/{id}/title` route doesn't broadcast a
- * `feature.renamed` WS envelope (unlike auto-naming), so we explicitly
- * invalidate the feature queries on success — the React Query cache is the
- * single source of truth for the displayed title and we follow the project's
- * no-optimistic-updates rule.
+ * Form body for the manual feature-rename popover. The mutation does not
+ * touch React Query directly — the backend broadcasts `feature.updated` and
+ * `session.feature.renamed` envelopes on success, and the ws-envelope handler
+ * is the single source of truth for cache invalidation + the per-session
+ * `featureTitle` slot (see no-optimistic-updates.md).
  */
 export function FeatureRenameForm({
   featureId,
@@ -37,7 +28,6 @@ export function FeatureRenameForm({
   open,
 }: FeatureRenameFormProps): ReactElement {
   const [value, setValue] = useState(currentTitle);
-  const queryClient = useQueryClient();
 
   // Reset the input every time the popover opens so reopening after a cancel
   // shows the current title rather than a stale draft.
@@ -47,11 +37,7 @@ export function FeatureRenameForm({
 
   const mutation = useUpdateFeatureTitle({
     mutation: {
-      onSuccess: async () => {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetFeatureQueryKey(featureId) }),
-          queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey() }),
-        ]);
+      onSuccess: () => {
         toast.success("Feature renamed");
         onClose();
       },
