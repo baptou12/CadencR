@@ -1,4 +1,4 @@
-const { existsSync } = require("node:fs");
+const { chmodSync, existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { Arch } = require("electron-builder");
@@ -7,6 +7,11 @@ const { Arch } = require("electron-builder");
 const LIPO_ARCH = { arm64: "arm64", x64: "x86_64" };
 
 exports.default = async function afterPack(context) {
+  if (context.electronPlatformName === "linux") {
+    makeLinuxSidecarExecutable(context);
+    return;
+  }
+
   if (context.electronPlatformName !== "darwin") return;
 
   const appPath = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
@@ -33,6 +38,16 @@ function assertBinaryArch(binary, arch, { universal }) {
   const matches = universal ? actual.split(" ").includes(expected) : actual === expected;
   if (!matches) {
     throw new Error(`${binary} is ${actual}, but the ${arch} package needs ${expected}`);
+  }
+}
+
+function makeLinuxSidecarExecutable(context) {
+  const sidecar = join(context.appOutDir, "resources", "cadencr-service");
+  try {
+    chmodSync(sidecar, 0o755);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to mark cadencr-service executable at ${sidecar}: ${message}`);
   }
 }
 

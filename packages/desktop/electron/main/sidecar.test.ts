@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   describeStartupFailure,
+  ensureLinuxSidecarExecutable,
   parsePhaseLine,
   rethrowAfterCleanup,
   serviceArgs,
@@ -202,5 +203,19 @@ describe("failed startup cleanup", () => {
         throw new Error("kill failed");
       }),
     ).rejects.toThrow(/health timeout[\s\S]*kill failed/);
+  });
+});
+
+describe("ensureLinuxSidecarExecutable", () => {
+  it("surfaces chmod failures on Linux", () => {
+    expect(() =>
+      ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "linux"),
+    ).toThrow(/Failed to mark cadencr-service executable/);
+  });
+
+  it("does nothing on non-Linux platforms", () => {
+    expect(() =>
+      ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "darwin"),
+    ).not.toThrow();
   });
 });

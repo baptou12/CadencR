@@ -287,6 +287,10 @@ if (!app.isPackaged) {
 // every privileged scheme belongs in this single call.
 protocol.registerSchemesAsPrivileged([PLUGIN_TAB_PRIVILEGED_SCHEME]);
 
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("ozone-platform-hint", "auto");
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
   throw new Error("second instance — exiting");
