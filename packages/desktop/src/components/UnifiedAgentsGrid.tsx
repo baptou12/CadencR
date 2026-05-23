@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactElement,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -20,6 +21,9 @@ import { popResize, pushResize } from "@/lib/resize-coordinator";
 const ROW_HEIGHT = 640;
 const MIN_ROW_HEIGHT = 420;
 const MAX_ROW_HEIGHT = 1200;
+// Override react-resizable-panels' inline `overflow: hidden`/`auto` so the
+// active card's drop shadow isn't clipped at the panel bounds.
+const SHADOW_FRIENDLY_OVERFLOW: CSSProperties = { overflow: "visible" };
 // v3: rekey rows by *row index* instead of session IDs. Previously the key
 // embedded the row's session IDs (`columns:3|sessions:42,17,89`), so any
 // agent churn — creation, archive, pin, sort, filter — produced a brand-new
@@ -117,6 +121,7 @@ function UnifiedAgentsRow({
           orientation="horizontal"
           className="h-full"
           onLayoutChanged={onLayoutChanged}
+          style={SHADOW_FRIENDLY_OVERFLOW}
         >
           {rowAgents.map((entry, offset) => {
             const index = rowStartIndex + offset;
@@ -235,6 +240,7 @@ function RowPanel({
         defaultSize={defaultSize}
         minSize={12}
         className="min-w-0 px-1.5"
+        style={SHADOW_FRIENDLY_OVERFLOW}
       >
         <UnifiedAgentCard entry={entry} index={index} isActive={isActive} onActivate={onActivate} />
       </ResizablePanel>
