@@ -290,3 +290,36 @@ function activateMatch(view: EditorView, rawIndex: number): void {
     selection: { anchor: m.from, head: m.to },
   });
 }
+
+/**
+ * Replace the currently-active match with `replacement` and advance to the
+ * next match. No-ops when there is no match. The replacement is inserted
+ * verbatim — regex backreferences (`$1`, `\1`) are not interpreted, matching
+ * the literal-replace behavior most users expect from Find & Replace UIs.
+ */
+export function replaceActiveMatch(view: EditorView, replacement: string): void {
+  const s = view.state.field(bufferSearchField);
+  if (s.activeIndex < 0) return;
+  const m = s.matches[s.activeIndex];
+  view.dispatch({
+    changes: { from: m.from, to: m.to, insert: replacement },
+    // After replacement, the matches list is re-scanned in `update()` via
+    // `reapplyOnDocChange`; the active index is re-derived from the cursor.
+    // Move the cursor to the end of the inserted text so the *next* match
+    // is the natural one to highlight.
+    selection: { anchor: m.from + replacement.length },
+    scrollIntoView: true,
+  });
+}
+
+/**
+ * Replace every match with `replacement` in a single transaction.
+ * Returns the number of replacements performed.
+ */
+export function replaceAllMatches(view: EditorView, replacement: string): number {
+  const s = view.state.field(bufferSearchField);
+  if (s.matches.length === 0) return 0;
+  const changes = s.matches.map((m) => ({ from: m.from, to: m.to, insert: replacement }));
+  view.dispatch({ changes });
+  return s.matches.length;
+}

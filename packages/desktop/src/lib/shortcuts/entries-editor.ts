@@ -1,0 +1,159 @@
+/**
+ * Editor + editor-buffer shortcut entries. Extracted from `entries.ts` to
+ * keep the canonical file under the 400-line limit; merged back in the
+ * combined `SHORTCUTS` array exported from `entries.ts`.
+ */
+import type { Shortcut } from "./types";
+
+export const EDITOR_SHORTCUTS = [
+  // ─── Editor ──────────────────────────────────────────────────────────
+  { id: "editor-fuzzy", keys: ["mod", "p"], description: "Fuzzy file search", scope: "editor" },
+  {
+    id: "editor-buffer-search",
+    keys: ["mod", "f"],
+    description: "Find in current file",
+    scope: "editor",
+  },
+  {
+    // ⌘⌥F is "Replace…" — VS Code uses the same chord. ⌘F stays plain find;
+    // ⌘G is taken globally by the Git actions popover so we cannot use it
+    // for "find next" the way some IDEs do.
+    id: "editor-replace",
+    keys: ["mod", "alt", "f"],
+    description: "Replace in current file",
+    scope: "editor",
+  },
+  {
+    // ⌃G mirrors classic IDE "Go to line" (Sublime / Vim-ish). ⌘L is taken
+    // elsewhere; we keep ⌘⌥G as a discoverable alias.
+    id: "editor-go-to-line",
+    keys: ["ctrl", "g"],
+    altKeys: ["mod", "alt", "g"],
+    description: "Go to line",
+    scope: "editor",
+  },
+  {
+    id: "editor-toggle-sidebar",
+    keys: ["mod", "e"],
+    description: "Toggle explorer",
+    scope: "editor",
+  },
+  { id: "editor-close", keys: ["mod", "w"], description: "Close buffer", scope: "editor" },
+  {
+    id: "editor-next-tab",
+    keys: ["mod", "shift", "rbracket"],
+    description: "Next file tab",
+    scope: "editor",
+  },
+  {
+    id: "editor-prev-tab",
+    keys: ["mod", "shift", "lbracket"],
+    description: "Previous file tab",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-left",
+    keys: ["mod", "alt", "left"],
+    description: "Focus pane left",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-right",
+    keys: ["mod", "alt", "right"],
+    description: "Focus pane right",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-up",
+    keys: ["mod", "alt", "up"],
+    description: "Focus pane up",
+    scope: "editor",
+  },
+  {
+    id: "editor-nav-pane-down",
+    keys: ["mod", "alt", "down"],
+    description: "Focus pane down",
+    scope: "editor",
+  },
+
+  // ─── Editor buffer (CodeMirror file buffer focus) ────────────────────
+  // These chords fire only when keyboard focus is inside `.cm-editor`.
+  // They appear in the cheatsheet for discoverability but are routed
+  // through CodeMirror's keymap rather than a global hotkey listener.
+  {
+    id: "editor-trigger-completion",
+    keys: ["ctrl", "space"],
+    description: "Trigger completion",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-toggle-line-comment",
+    keys: ["mod", "slash"],
+    description: "Toggle line comment",
+    scope: "editor-buffer",
+  },
+  {
+    // ⌘K — the global command palette moved to ⌘⇧P, freeing this chord
+    // for the VS Code / Sublime "Delete line" convention.
+    id: "editor-delete-line",
+    keys: ["mod", "k"],
+    description: "Delete line",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-select-next-occurrence",
+    keys: ["mod", "d"],
+    description: "Add selection to next occurrence",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-select-all-occurrences",
+    keys: ["mod", "shift", "l"],
+    description: "Select all occurrences",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-add-cursor-above",
+    keys: ["mod", "alt", "up"],
+    description: "Add cursor above",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-add-cursor-below",
+    keys: ["mod", "alt", "down"],
+    description: "Add cursor below",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-fold-region",
+    keys: ["mod", "alt", "lbracket"],
+    altKeys: ["ctrl", "shift", "lbracket"],
+    description: "Fold region",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-unfold-region",
+    keys: ["mod", "alt", "rbracket"],
+    altKeys: ["ctrl", "shift", "rbracket"],
+    description: "Unfold region",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-indent",
+    keys: ["tab"],
+    description: "Indent selection",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-outdent",
+    keys: ["shift", "tab"],
+    description: "Outdent selection",
+    scope: "editor-buffer",
+  },
+  {
+    id: "editor-rename-symbol",
+    keys: ["f2"],
+    description: "Rename symbol",
+    scope: "editor-buffer",
+  },
+] as const satisfies readonly Shortcut[];

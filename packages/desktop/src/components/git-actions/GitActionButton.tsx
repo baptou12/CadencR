@@ -22,6 +22,7 @@ import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
+import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useGitAction, type GitAction } from "./useGitAction";
 import { GitActionPopover, ICONS } from "./GitActionPopover";
@@ -97,6 +98,9 @@ export const GitActionButton = memo(function GitActionButton({
 
   // Keyboard shortcuts for header actions.
   useShortcut("git-commit", (e) => {
+    // Mod+Shift+K is also "Delete line" inside the editor buffer. Let the
+    // buffer keymap win when focus is in CodeMirror.
+    if (isInCodeMirrorEditor(e.target)) return;
     if (state.disabled.commit !== null) return;
     e.preventDefault();
     setCommitOpen(true);

@@ -49,6 +49,11 @@ const TOKEN_TO_ENGINE: Record<string, string> = {
   backtick: "`",
   lbracket: "[",
   rbracket: "]",
+  // Project-level token: the binding layer expands this to the
+  // layout-specific key(s) that emit "?" and gates the callback on
+  // `event.key === "?"`. On QWERTY that's Shift+/.
+  question: "?",
+  f2: "F2",
 };
 
 function tokenToEngine(token: ShortcutKey): string {

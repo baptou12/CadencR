@@ -8,6 +8,10 @@ vi.mock("@codemirror/state", () => ({
     of = vi.fn(() => []);
     reconfigure = vi.fn(() => ({}));
   },
+  // `editor-buffer-keymap` uses Prec.highest to ensure its bindings win over
+  // the default CodeMirror keymap. Tests don't exercise key dispatch, so a
+  // pass-through stub is sufficient.
+  Prec: { highest: <T,>(extension: T): T => extension },
 }));
 
 // Mock CodeMirror view — only EditorView is imported directly by CodeMirrorEditor now

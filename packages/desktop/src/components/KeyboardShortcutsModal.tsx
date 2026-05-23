@@ -11,7 +11,7 @@ interface KeyboardShortcutsModalProps {
 }
 
 /**
- * Live `⌘/` reference. Renders straight from `lib/shortcuts/registry` so
+ * Live `⌘⇧?` reference. Renders straight from `lib/shortcuts/registry` so
  * adding or removing a real shortcut keeps this view in sync. Includes a
  * fuzzy search across description + alias + visible combo so a user looking
  * for "zoom" or "⌘ 0" finds the right row regardless of how they think

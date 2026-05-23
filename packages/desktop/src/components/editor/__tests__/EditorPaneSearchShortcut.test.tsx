@@ -2,13 +2,15 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render } from "@/test-utils";
 import EditorPane from "../EditorPane";
 
-// Capture the scoped Cmd+F handler and the props passed to CodeMirrorEditor so
-// we can inspect open/reopen behavior without booting the real editor.
+// Capture every scoped global shortcut handler registered by EditorPane,
+// keyed by id, so individual tests can fire just the chord they're checking.
+// EditorPane now registers `editor-buffer-search`, `editor-replace`, and
+// `editor-go-to-line` — keeping them addressable separately is essential.
 interface CapturedShortcut {
   callback: ((e: KeyboardEvent) => void) | null;
   enabled: boolean;
 }
-const captured: CapturedShortcut = { callback: null, enabled: true };
+const captured: Record<string, CapturedShortcut> = {};
 
 interface CapturedEditor {
   searchOpen: boolean;
@@ -19,13 +21,12 @@ const editor: CapturedEditor = { searchOpen: false, searchReopenSignal: 0, rende
 
 vi.mock("@/hooks/useShortcut", () => ({
   useScopedGlobalShortcutById: (
-    _id: string,
+    id: string,
     callback: (e: KeyboardEvent) => void,
     _scope: string,
     options?: { enabled?: boolean },
   ) => {
-    captured.callback = callback;
-    captured.enabled = options?.enabled ?? true;
+    captured[id] = { callback, enabled: options?.enabled ?? true };
   },
 }));
 
@@ -70,8 +71,7 @@ vi.mock("../editor-search/search-cache", () => ({
 }));
 
 beforeEach(() => {
-  captured.callback = null;
-  captured.enabled = true;
+  for (const key of Object.keys(captured)) delete captured[key];
   editor.searchOpen = false;
   editor.searchReopenSignal = 0;
   editor.renders = 0;
@@ -82,17 +82,17 @@ beforeEach(() => {
   };
 });
 
-function press(): void {
+function press(id: string = "editor-buffer-search"): void {
   const event = new KeyboardEvent("keydown");
   Object.defineProperty(event, "preventDefault", { value: vi.fn() });
   Object.defineProperty(event, "stopPropagation", { value: vi.fn() });
-  act(() => captured.callback?.(event));
+  act(() => captured[id]?.callback?.(event));
 }
 
 describe("EditorPane Cmd+F shortcut", () => {
   it("registers the editor-buffer-search shortcut as enabled when this pane is focused and has a file", () => {
     render(<EditorPane featureId={7} paneId="main" projectId={1} isActive />);
-    expect(captured.enabled).toBe(true);
+    expect(captured["editor-buffer-search"]?.enabled).toBe(true);
   });
 
   it("opens the search panel on first press", () => {
@@ -117,7 +117,7 @@ describe("EditorPane Cmd+F shortcut", () => {
       panes: { main: { tabs: [], activeFilePath: null } },
     };
     render(<EditorPane featureId={7} paneId="main" projectId={1} isActive />);
-    expect(captured.enabled).toBe(false);
+    expect(captured["editor-buffer-search"]?.enabled).toBe(false);
   });
 
   it("disables the shortcut when this pane is not the focused pane", () => {
@@ -126,7 +126,7 @@ describe("EditorPane Cmd+F shortcut", () => {
       panes: { main: { tabs: [], activeFilePath: "/file.ts" } },
     };
     render(<EditorPane featureId={7} paneId="main" projectId={1} isActive />);
-    expect(captured.enabled).toBe(false);
+    expect(captured["editor-buffer-search"]?.enabled).toBe(false);
   });
 
   it("clears the per-pane search cache on unmount", () => {

@@ -3,7 +3,7 @@
  * discover Cadencr's features. Combines two independent dimensions:
  *
  *  1. A real keyboard shortcut, pulled at random from the canonical
- *     `lib/shortcuts/registry` (single source of truth — the in-app ⌘/ modal
+ *     `lib/shortcuts/registry` (single source of truth — the in-app ⌘⇧? modal
  *     reads from the same list, so additions there flow through here for
  *     free).
  *  2. A behavior tip, pulled at random from `session-hint-behaviors`.

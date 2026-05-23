@@ -107,6 +107,14 @@ export default function BaseCodeMirrorEditor({
 
     const extensions: Extension[] = [
       history(),
+      // `allowMultipleSelections` is the state-level switch for multi-cursor.
+      // Without it, every transaction that tries to install multiple ranges
+      // (e.g. `selectNextOccurrence`, `selectSelectionMatches`,
+      // `addCursorAbove`, `addCursorBelow`) gets silently filtered down to a
+      // single range — the visual extension alone (`drawSelection`) is not
+      // sufficient, the facet has to be flipped to `true`.
+      //   https://codemirror.net/docs/ref/#state.EditorState^allowMultipleSelections
+      EditorState.allowMultipleSelections.of(true),
       drawSelection(),
       lineNumbers(),
       highlightActiveLine(),

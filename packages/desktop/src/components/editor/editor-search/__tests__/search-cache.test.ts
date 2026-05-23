@@ -14,6 +14,7 @@ describe("search-cache", () => {
       query: "",
       caseSensitive: false,
       regex: false,
+      replacement: "",
     });
   });
 
