@@ -17,6 +17,10 @@ pub enum AppError {
     Internal(String),
     #[allow(dead_code)]
     Conflict(String),
+    /// 503 — a downstream resource is temporarily unhealthy. Used by the
+    /// LSP host's crash-backoff to signal "retry later", matching the
+    /// semantics web clients already understand.
+    ServiceUnavailable(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -28,6 +32,7 @@ impl std::fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "Bad request: {msg}"),
             AppError::Internal(msg) => write!(f, "Internal error: {msg}"),
             AppError::Conflict(msg) => write!(f, "Conflict: {msg}"),
+            AppError::ServiceUnavailable(msg) => write!(f, "Service unavailable: {msg}"),
         }
     }
 }
@@ -45,6 +50,9 @@ impl IntoResponse for AppError {
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, "BAD_REQUEST"),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR"),
             AppError::Conflict(_) => (StatusCode::CONFLICT, "CONFLICT"),
+            AppError::ServiceUnavailable(_) => {
+                (StatusCode::SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE")
+            }
         };
 
         if status.is_server_error() {

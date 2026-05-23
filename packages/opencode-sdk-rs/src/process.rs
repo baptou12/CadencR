@@ -24,6 +24,7 @@ pub fn opencode_discovery_spec() -> DiscoverySpec {
         well_known_relative_to_home: vec![".opencode/bin"],
         well_known_absolute: vec!["/opt/homebrew/bin", "/usr/local/bin"],
         version_args: &["--version"],
+        version_must_contain: None,
     }
 }
 

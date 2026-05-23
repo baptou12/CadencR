@@ -89,13 +89,17 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 /**
- * Endpoints that drive long-running git processes (commit fires
- * pre-commit hooks; push waits on the network). The 30 s default is way
- * too tight — a hook that runs the full test suite easily takes minutes.
- * For these calls we disable the timeout entirely; the server streams
- * progress over WebSocket while the HTTP request stays open.
+ * Endpoints that drive long-running processes. The 30 s default is way too
+ * tight for these:
+ * - `/api/git/commit` fires pre-commit hooks (full test suite easily ≥ minutes).
+ * - `/api/git/push` waits on remote network.
+ * - `/api/lsp/sessions` may trigger a 30 MB+ rust-analyzer download on the
+ *   first open in a Rust workspace. The backend has its own 5-min download
+ *   timeout; the renderer just needs to not give up on the POST first.
+ *
+ * For these calls we disable the timeout entirely.
  */
-const NO_TIMEOUT_PATHS = ["/api/git/commit", "/api/git/push"];
+const NO_TIMEOUT_PATHS = ["/api/git/commit", "/api/git/push", "/api/lsp/sessions"];
 const STRICT_MODE_STABLE_GET_PATHS = ["/api/git/", "/api/feature-layouts"];
 const STRICT_MODE_STABLE_RESULT_TTL_MS = 250;
 const stableReadRequests = new Map<string, Promise<unknown>>();

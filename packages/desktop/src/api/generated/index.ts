@@ -788,6 +788,10 @@ export interface LastRunSummary {
   exit_code?: LastRunSummaryExitCode;
 }
 
+export interface ListServersResponse {
+  servers: ServerProbe[];
+}
+
 export interface MarkViewedRequest {
   blob_sha: string;
   feature_id: number;
@@ -872,6 +876,21 @@ move the entry to the project root. */
 
 export interface MovePathResponse {
   new_path: string;
+}
+
+export interface OpenLspSessionRequest {
+  /** LSP `TextDocumentItem` language id (e.g. `"typescript"`, `"rust"`,
+`"python"`). The renderer derives this from the same catalog the
+service uses; see `domain/lsp/spawn.rs::resolve_server`. */
+  language_id: string;
+  /** Absolute path to the workspace root the language server should index. */
+  workspace_root: string;
+}
+
+export interface OpenLspSessionResponse {
+  /** Opaque single-use id. Connect within 30 s by upgrading
+`GET /api/lsp/sessions/{session_id}/connect` to WebSocket. */
+  session_id: string;
 }
 
 export interface OriginalBranchResponse {
@@ -1059,6 +1078,48 @@ export type Scope = (typeof Scope)[keyof typeof Scope];
 export const Scope = {
   global: "global",
   project: "project",
+} as const;
+
+/**
+ * Absolute path on disk when found. `None` otherwise.
+ */
+export type ServerProbePath = string | null;
+
+/**
+ * Version string when reported by the binary itself (or pinned by the
+downloader recipe for managed installs). `None` if unknown.
+ */
+export type ServerProbeVersion = string | null;
+
+/**
+ * One catalog row's installation state.
+ */
+export interface ServerProbe {
+  /** Bare binary name searched on `$PATH`. */
+  bin_name: string;
+  /** `true` iff the catalog has a downloader recipe — i.e. opening a file
+in this language would trigger an automatic install. */
+  downloadable: boolean;
+  /** All LSP `languageId`s served by this entry. */
+  language_ids: string[];
+  /** Stable id (`typescript-language-server`, `rust-analyzer`, …). */
+  lsp_id: string;
+  /** Absolute path on disk when found. `None` otherwise. */
+  path?: ServerProbePath;
+  /** Where the binary was found, or `missing` if not installed. */
+  status: ServerProbeStatus;
+  /** Version string when reported by the binary itself (or pinned by the
+downloader recipe for managed installs). `None` if unknown. */
+  version?: ServerProbeVersion;
+}
+
+export type ServerProbeStatus = (typeof ServerProbeStatus)[keyof typeof ServerProbeStatus];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ServerProbeStatus = {
+  on_path: "on_path",
+  managed: "managed",
+  missing: "missing",
 } as const;
 
 export type SessionStateContextWindow = number | null;
@@ -1495,7 +1556,7 @@ export type GetFeatureAgentStateParams = {
    */
   after?: string | null;
   /**
-   * Max number of messages per session for initial load (default: all)
+   * Max number of messages per session for full loads (default: 100, max: 200)
    */
   limit?: number | null;
   /**
@@ -7882,6 +7943,128 @@ export function useHealth<
 
   return query;
 }
+
+/**
+ * @summary Inspect the LSP catalog and report each entry's installation state.
+Used by Settings → Editor; never triggers a download.
+ */
+export const listLspServers = (signal?: AbortSignal) => {
+  return customInstance<ListServersResponse>({ url: `/api/lsp/servers`, method: "GET", signal });
+};
+
+export const getListLspServersQueryKey = () => {
+  return [`/api/lsp/servers`] as const;
+};
+
+export const getListLspServersQueryOptions = <
+  TData = Awaited<ReturnType<typeof listLspServers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listLspServers>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListLspServersQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listLspServers>>> = ({ signal }) =>
+    listLspServers(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listLspServers>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListLspServersQueryResult = NonNullable<Awaited<ReturnType<typeof listLspServers>>>;
+export type ListLspServersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Inspect the LSP catalog and report each entry's installation state.
+Used by Settings → Editor; never triggers a download.
+ */
+
+export function useListLspServers<
+  TData = Awaited<ReturnType<typeof listLspServers>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof listLspServers>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListLspServersQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const openSession = (openLspSessionRequest: OpenLspSessionRequest, signal?: AbortSignal) => {
+  return customInstance<OpenLspSessionResponse>({
+    url: `/api/lsp/sessions`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: openLspSessionRequest,
+    signal,
+  });
+};
+
+export const getOpenSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openSession>>,
+    TError,
+    { data: OpenLspSessionRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof openSession>>,
+  TError,
+  { data: OpenLspSessionRequest },
+  TContext
+> => {
+  const mutationKey = ["openSession"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof openSession>>,
+    { data: OpenLspSessionRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return openSession(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type OpenSessionMutationResult = NonNullable<Awaited<ReturnType<typeof openSession>>>;
+export type OpenSessionMutationBody = OpenLspSessionRequest;
+export type OpenSessionMutationError = ErrorType<void>;
+
+export const useOpenSession = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof openSession>>,
+    TError,
+    { data: OpenLspSessionRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof openSession>>,
+  TError,
+  { data: OpenLspSessionRequest },
+  TContext
+> => {
+  const mutationOptions = getOpenSessionMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const openapiSpec = (signal?: AbortSignal) => {
   return customInstance<void>({ url: `/api/openapi.json`, method: "GET", signal });
