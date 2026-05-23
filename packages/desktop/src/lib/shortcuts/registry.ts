@@ -415,6 +415,12 @@ export const SHORTCUTS = [
   // ─── Editor ──────────────────────────────────────────────────────────
   { id: "editor-fuzzy", keys: ["mod", "p"], description: "Fuzzy file search", scope: "editor" },
   {
+    id: "editor-buffer-search",
+    keys: ["mod", "f"],
+    description: "Find in current file",
+    scope: "editor",
+  },
+  {
     id: "editor-toggle-sidebar",
     keys: ["mod", "e"],
     description: "Toggle explorer",

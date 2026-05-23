@@ -1,7 +1,9 @@
 import type { EditorView } from "@codemirror/view";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useEditorStore } from "@/stores/editor-store";
+import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import EditorSubTabs from "./EditorSubTabs";
+import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
 
@@ -23,7 +25,36 @@ export default function EditorPane({
   const activeFilePath = useEditorStore(
     (s) => s.features[featureId]?.panes[paneId]?.activeFilePath ?? null,
   );
+  const activePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId);
   const setActivePane = useEditorStore((s) => s.setActivePane);
+
+  const isFocusedPane = activePaneId === paneId;
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchReopenSignal, setSearchReopenSignal] = useState(0);
+
+  const openSearch = useCallback((): void => {
+    setSearchOpen((wasOpen) => {
+      if (wasOpen) setSearchReopenSignal((n) => n + 1);
+      return true;
+    });
+  }, []);
+  const closeSearch = useCallback((): void => setSearchOpen(false), []);
+
+  useScopedGlobalShortcutById(
+    "editor-buffer-search",
+    (event) => {
+      if (!isFocusedPane || !activeFilePath) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openSearch();
+    },
+    "editor",
+    { enabled: isFocusedPane && Boolean(activeFilePath) },
+  );
+
+  useEffect(() => {
+    return () => clearPaneSearch(featureId, paneId);
+  }, [featureId, paneId]);
 
   function handleFocus() {
     if (!isActive) {
@@ -52,6 +83,9 @@ export default function EditorPane({
               projectId={projectId}
               paneId={paneId}
               featureId={featureId}
+              searchOpen={searchOpen}
+              searchReopenSignal={searchReopenSignal}
+              onCloseSearch={closeSearch}
               onEditorViewChange={onEditorViewChange}
             />
           </Suspense>
