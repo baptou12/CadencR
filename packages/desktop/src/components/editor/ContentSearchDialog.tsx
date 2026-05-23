@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CaseSensitive, WholeWord, Regex, Loader2 } from "lucide-react";
+import SearchToggleButton from "./SearchToggleButton";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useContentSearch, type ContentMatch, type ContentSearchParams } from "@/api/generated";
@@ -164,25 +165,25 @@ export default function ContentSearchDialog({
             className="flex-1"
           />
           <div className="flex items-center gap-1 shrink-0">
-            <ToggleButton
+            <SearchToggleButton
               active={caseSensitive}
               onToggle={setCaseSensitive}
               title="Case Sensitive"
               icon={<CaseSensitive className="w-4 h-4" />}
             />
-            <ToggleButton
+            <SearchToggleButton
               active={wholeWord}
               onToggle={setWholeWord}
               title="Whole Word"
               icon={<WholeWord className="w-4 h-4" />}
             />
-            <ToggleButton
+            <SearchToggleButton
               active={isRegex}
               onToggle={setIsRegex}
               title="Regex"
               icon={<Regex className="w-4 h-4" />}
             />
-            <ToggleButton
+            <SearchToggleButton
               active={respectGitignore}
               onToggle={setRespectGitignore}
               title="Only search git-tracked files"
@@ -231,44 +232,6 @@ export default function ContentSearchDialog({
     </Dialog>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function ToggleButton({
-  active,
-  onToggle,
-  title,
-  icon,
-  label,
-}: {
-  active: boolean;
-  onToggle: (v: boolean) => void;
-  title: string;
-  icon?: ReactNode;
-  label?: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={() => onToggle(!active)}
-      className={`flex items-center gap-1 rounded px-1.5 py-1 text-xs transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-muted text-foreground/70 hover:bg-accent hover:text-foreground"
-      }`}
-    >
-      {icon}
-      {label && <span>{label}</span>}
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Results rendering
-// ---------------------------------------------------------------------------
 
 interface FileGroupData {
   path: string;

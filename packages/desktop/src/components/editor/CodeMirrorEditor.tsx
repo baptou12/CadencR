@@ -10,6 +10,9 @@ import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { LspStatusIndicator } from "./LspStatusIndicator";
+import EditorSearchPanel from "./editor-search/EditorSearchPanel";
+import { bufferSearchExtension } from "./editor-search/search-extension";
+import { getPaneSearch, setPaneSearch, type PaneSearchState } from "./editor-search/search-cache";
 import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
@@ -17,6 +20,9 @@ interface CodeMirrorEditorProps {
   projectId: number;
   paneId: string;
   featureId: number;
+  searchOpen: boolean;
+  searchReopenSignal: number;
+  onCloseSearch: () => void;
   onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
 }
 
@@ -57,9 +63,13 @@ export default function CodeMirrorEditor({
   projectId,
   paneId,
   featureId,
+  searchOpen,
+  searchReopenSignal,
+  onCloseSearch,
   onEditorViewChange,
 }: CodeMirrorEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -185,10 +195,25 @@ export default function CodeMirrorEditor({
 
   const handleEditorViewChange = useCallback(
     (view: EditorView | null): void => {
+      setEditorView(view);
       onEditorViewChange?.(paneId, view);
     },
     [onEditorViewChange, paneId],
   );
+
+  const initialSearchState = useMemo<PaneSearchState>(
+    () => getPaneSearch(featureId, paneId),
+    [featureId, paneId],
+  );
+
+  const handleSearchChange = useCallback(
+    (next: PaneSearchState): void => {
+      setPaneSearch(featureId, paneId, next);
+    },
+    [featureId, paneId],
+  );
+
+  const bufferSearch = useMemo(() => bufferSearchExtension(), []);
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
@@ -293,11 +318,21 @@ export default function CodeMirrorEditor({
           cursorExtension,
           blameCompartment.current.of([]),
           lspCompartment.current.of([]),
+          bufferSearch,
         ]}
         editorViewRef={viewRef}
         onEditorViewChange={handleEditorViewChange}
         className="flex-1 overflow-auto"
       />
+      {searchOpen && editorView && (
+        <EditorSearchPanel
+          view={editorView}
+          initialState={initialSearchState}
+          reopenSignal={searchReopenSignal}
+          onChange={handleSearchChange}
+          onClose={onCloseSearch}
+        />
+      )}
       <StatusBar
         line={cursorPosition.line}
         col={cursorPosition.col}

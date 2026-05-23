@@ -110,6 +110,17 @@ const cadencrChromeTheme = EditorView.theme(
     },
     ".cm-matchingBracket": { color: "var(--editor-green)", fontWeight: "bold" },
     ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 4px" },
+    ".cm-buffer-search-match": {
+      backgroundColor:
+        "var(--editor-search-match-bg, color-mix(in srgb, var(--editor-yellow) 28%, transparent))",
+      borderRadius: "2px",
+      boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--editor-yellow) 55%, transparent)",
+    },
+    ".cm-buffer-search-match-active": {
+      backgroundColor:
+        "var(--editor-search-match-active-bg, color-mix(in srgb, var(--editor-orange) 60%, transparent))",
+      boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--editor-orange) 100%, transparent)",
+    },
   },
   { dark: true },
 );

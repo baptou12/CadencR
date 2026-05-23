@@ -60,6 +60,19 @@ vi.mock("../git-blame-extension", () => ({
   gitBlameExtension: vi.fn(() => []),
 }));
 
+vi.mock("../editor-search/search-extension", () => ({
+  bufferSearchExtension: vi.fn(() => []),
+}));
+
+vi.mock("../editor-search/search-cache", () => ({
+  getPaneSearch: vi.fn(() => ({ query: "", caseSensitive: false, regex: false })),
+  setPaneSearch: vi.fn(),
+}));
+
+vi.mock("../editor-search/EditorSearchPanel", () => ({
+  default: () => null,
+}));
+
 let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = {
   data: undefined,
   isLoading: true,
@@ -109,6 +122,9 @@ const defaultProps = {
   projectId: 42,
   paneId: "pane-1",
   featureId: 1,
+  searchOpen: false,
+  searchReopenSignal: 0,
+  onCloseSearch: () => {},
 };
 
 beforeEach(() => {
