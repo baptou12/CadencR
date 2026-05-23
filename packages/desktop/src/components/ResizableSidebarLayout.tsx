@@ -10,6 +10,7 @@ import {
 } from "react";
 import { PanelLeft } from "lucide-react";
 import { popResize, pushResize } from "@/lib/resize-coordinator";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 
 interface ResizableSidebarLayoutProps {
   collapsed: boolean;
@@ -24,6 +25,9 @@ interface ResizableSidebarLayoutProps {
   showCollapsedRail?: boolean;
   expandButtonLabel: string;
   expandButtonTitle: string;
+  /** When set, the collapsed-rail expand button shows a `ShortcutTooltip`
+   *  rendering this combo (e.g. `["cmd", "E"]`) under the label. */
+  expandShortcutKeys?: string[];
   separatorLabel: string;
   className?: string;
 }
@@ -115,25 +119,40 @@ function CollapsedRail({
   disabled,
   expandButtonLabel,
   expandButtonTitle,
+  expandShortcutKeys,
   onExpand,
 }: {
   disabled: boolean;
   expandButtonLabel: string;
   expandButtonTitle: string;
+  expandShortcutKeys?: string[];
   onExpand: () => void;
 }): ReactElement {
+  const button = (
+    <button
+      type="button"
+      title={expandShortcutKeys ? undefined : expandButtonTitle}
+      aria-label={expandButtonLabel}
+      className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      disabled={disabled}
+      onClick={onExpand}
+    >
+      <PanelLeft className="h-4 w-4" />
+    </button>
+  );
   return (
     <div className="flex h-full w-full justify-center pt-2">
-      <button
-        type="button"
-        title={expandButtonTitle}
-        aria-label={expandButtonLabel}
-        className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        disabled={disabled}
-        onClick={onExpand}
-      >
-        <PanelLeft className="h-4 w-4" />
-      </button>
+      {expandShortcutKeys ? (
+        // Side-positioned: the rail is narrow (~36px), so rendering the
+        // bubble below the trigger overlaps the editor pane to the right;
+        // `toRight` puts the bubble in the empty editor area where nothing
+        // competes for stacking.
+        <ShortcutTooltip label={expandButtonTitle} keys={expandShortcutKeys} toRight>
+          {button}
+        </ShortcutTooltip>
+      ) : (
+        button
+      )}
     </div>
   );
 }
@@ -172,6 +191,7 @@ function ResizableSidebarLayoutImpl({
   showCollapsedRail = true,
   expandButtonLabel,
   expandButtonTitle,
+  expandShortcutKeys,
   separatorLabel,
   className = "h-full w-full",
 }: ResizableSidebarLayoutProps): ReactElement {
@@ -206,6 +226,7 @@ function ResizableSidebarLayoutImpl({
             disabled={disabled}
             expandButtonLabel={expandButtonLabel}
             expandButtonTitle={expandButtonTitle}
+            expandShortcutKeys={expandShortcutKeys}
             onExpand={() => onCollapsedChange(false)}
           />
         )}

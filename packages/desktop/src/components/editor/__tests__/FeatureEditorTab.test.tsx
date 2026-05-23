@@ -34,6 +34,10 @@ vi.mock("@/hooks/useFileWatcher", () => ({
   useFileWatcher: (projectPath: string) => mockUseFileWatcher(projectPath),
 }));
 
+vi.mock("@/hooks/useFeatureWorktreePath", () => ({
+  useFeatureWorktreePath: () => null,
+}));
+
 vi.mock("@/stores/feature-layout-store", () => ({
   // Test always considers the editor focused — exercises hotkeys and focus restore.
   useFeatureLayoutStore: vi.fn(() => true),
@@ -161,8 +165,21 @@ describe("FeatureEditorTab", () => {
     render(<FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />);
 
     const expandButton = screen.getByRole("button", { name: "Show file tree sidebar" });
-    expect(expandButton.parentElement).toHaveClass("w-full");
+    // The rail wraps the (tooltip-wrapped) expand button; find it by class
+    // since the tooltip adds an intermediate `relative inline-flex` wrapper.
+    expect(expandButton.closest(".w-full")).not.toBeNull();
     expect(screen.getByTestId("editor-split-tree")).toBeInTheDocument();
+  });
+
+  it("shows a shortcut tooltip on hover over the collapsed-rail expand button", async () => {
+    const { user } = render(
+      <FeatureEditorTab featureId={1} projectId={1} projectPath="/project" />,
+    );
+
+    const expandButton = screen.getByRole("button", { name: "Show file tree sidebar" });
+    await user.hover(expandButton);
+
+    expect(await screen.findByText("Show sidebar")).toBeInTheDocument();
   });
 
   it("persists the collapsed state when expanding from the rail", async () => {

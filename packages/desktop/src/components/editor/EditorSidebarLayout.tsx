@@ -37,6 +37,7 @@ function EditorSidebarLayoutImpl({
       maxWidth={MAX_WIDTH}
       expandButtonLabel="Show file tree sidebar"
       expandButtonTitle="Show sidebar"
+      expandShortcutKeys={["cmd", "E"]}
       separatorLabel="Resize file tree sidebar"
     />
   );

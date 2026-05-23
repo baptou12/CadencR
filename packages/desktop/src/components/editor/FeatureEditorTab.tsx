@@ -18,7 +18,8 @@ import {
   selectFeatureLayout,
   useFeatureLayoutStore,
 } from "@/stores/feature-layout-store";
-import { PanelLeft } from "lucide-react";
+import { GitBranch, PanelLeft } from "lucide-react";
+import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   Dialog,
@@ -29,6 +30,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { EditorSidebarLayout } from "./EditorSidebarLayout";
 import EditorSplitTree from "./EditorSplitTree";
 import FileTree from "./FileTree";
@@ -238,16 +240,23 @@ const FeatureEditorTab = memo(
 
     const dirtyCount = getDirtyTabs().length;
 
+    const projectName = useMemo(() => basenameOfPath(projectPath), [projectPath]);
+    const isWorktree = useFeatureWorktreePath(featureId) !== null;
+
     const sidebar = useMemo(
       () => (
         <div className="flex h-full flex-col bg-card">
-          <SidebarHeader onToggle={handleToggleSidebar} />
+          <SidebarHeader
+            projectName={projectName}
+            isWorktree={isWorktree}
+            onToggle={handleToggleSidebar}
+          />
           <div className="flex-1 overflow-hidden">
             <FileTree projectId={projectId} featureId={featureId} />
           </div>
         </div>
       ),
-      [featureId, handleToggleSidebar, projectId],
+      [featureId, handleToggleSidebar, isWorktree, projectId, projectName],
     );
 
     const editorPane = useMemo(
@@ -305,21 +314,52 @@ const FeatureEditorTab = memo(
 
 export default FeatureEditorTab;
 
-function SidebarHeader({ onToggle }: { onToggle: () => void }) {
+/** Last path segment of `projectPath`, handling both POSIX (`/`) and
+ *  Windows (`\`) separators and stripping any trailing slashes. */
+function basenameOfPath(projectPath: string): string {
+  const trimmed = projectPath.replace(/[\\/]+$/, "");
+  const sep = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const name = sep === -1 ? trimmed : trimmed.slice(sep + 1);
+  return name || projectPath;
+}
+
+function SidebarHeader({
+  projectName,
+  isWorktree,
+  onToggle,
+}: {
+  projectName: string;
+  isWorktree: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-        Explorer
-      </span>
-      <button
-        type="button"
-        title="Collapse sidebar"
-        aria-label="Collapse file tree sidebar"
-        className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        onClick={onToggle}
-      >
-        <PanelLeft className="w-3.5 h-3.5" />
-      </button>
+    <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
+      <div className="flex min-w-0 items-center gap-1.5">
+        {isWorktree && (
+          <ShortcutTooltip label="On a worktree branch" alignLeft>
+            <GitBranch
+              aria-label="On a worktree branch"
+              className="h-3.5 w-3.5 shrink-0 text-primary"
+            />
+          </ShortcutTooltip>
+        )}
+        <span
+          className="min-w-0 truncate text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          title={projectName}
+        >
+          {projectName}
+        </span>
+      </div>
+      <ShortcutTooltip label="Collapse sidebar" keys={["cmd", "E"]} alignRight>
+        <button
+          type="button"
+          aria-label="Collapse file tree sidebar"
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={onToggle}
+        >
+          <PanelLeft className="h-3.5 w-3.5" />
+        </button>
+      </ShortcutTooltip>
     </div>
   );
 }

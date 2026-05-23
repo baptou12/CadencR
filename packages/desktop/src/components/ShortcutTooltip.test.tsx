@@ -86,6 +86,22 @@ describe("ShortcutTooltip", () => {
     expect(bubble.style.transform).toContain(", 0");
   });
 
+  it("positions the bubble vertically centered when toRight is set", () => {
+    render(
+      <ShortcutTooltip label="Side" keys={["cmd", "B"]} toRight>
+        <button>Btn</button>
+      </ShortcutTooltip>,
+    );
+    fireEvent.mouseEnter(screen.getByText("Btn").parentElement!);
+
+    const bubble = screen.getByText("Side").parentElement!;
+    expect(bubble.style.position).toBe("fixed");
+    // toRight uses translateY(-50%) so the bubble vertically centers on the
+    // trigger; translateX stays at 0 (no horizontal alignment shift).
+    expect(bubble.style.transform).toContain("-50%");
+    expect(bubble.style.transform).toContain("0");
+  });
+
   it("portals the bubble outside the wrapper so ancestor overflow can't clip it", () => {
     render(
       <ShortcutTooltip label="Portaled">

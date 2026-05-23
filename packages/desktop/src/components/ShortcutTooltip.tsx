@@ -14,6 +14,13 @@ interface ShortcutTooltipProps {
   alignLeft?: boolean;
   /** Show tooltip above the trigger instead of below */
   above?: boolean;
+  /**
+   * Render the bubble to the right of the trigger instead of below — used
+   * for narrow vertical rails where the below-the-trigger area is too
+   * cramped or overlaps neighboring panes. Mutually exclusive with
+   * `above`/`alignLeft`/`alignRight`.
+   */
+  toRight?: boolean;
   /** Additional class name for the wrapper div */
   className?: string;
   /**
@@ -50,6 +57,7 @@ export function ShortcutTooltip({
   alignRight,
   alignLeft,
   above,
+  toRight,
   className,
   disabled,
 }: ShortcutTooltipProps) {
@@ -77,10 +85,29 @@ export function ShortcutTooltip({
       const trigger = wrapperRef.current;
       if (!trigger) return;
       const rect = trigger.getBoundingClientRect();
-      const top = above ? rect.top - GAP_PX : rect.bottom + GAP_PX;
-      if (alignRight) setPosition({ top, left: rect.right, translateX: "-100%" });
-      else if (alignLeft) setPosition({ top, left: rect.left, translateX: "0" });
-      else setPosition({ top, left: rect.left + rect.width / 2, translateX: "-50%" });
+      let next: TooltipPosition;
+      if (toRight) {
+        // Side-positioned: bubble to the right of the trigger, vertically
+        // centered. `translateY(-50%)` on the bubble's own height.
+        next = {
+          top: rect.top + rect.height / 2,
+          left: rect.right + GAP_PX,
+          translateX: "0",
+        };
+      } else {
+        const top = above ? rect.top - GAP_PX : rect.bottom + GAP_PX;
+        if (alignRight) next = { top, left: rect.right, translateX: "-100%" };
+        else if (alignLeft) next = { top, left: rect.left, translateX: "0" };
+        else next = { top, left: rect.left + rect.width / 2, translateX: "-50%" };
+      }
+      setPosition((prev) =>
+        prev != null &&
+        prev.top === next.top &&
+        prev.left === next.left &&
+        prev.translateX === next.translateX
+          ? prev
+          : next,
+      );
     };
     sync();
     window.addEventListener("scroll", sync, true);
@@ -89,7 +116,7 @@ export function ShortcutTooltip({
       window.removeEventListener("scroll", sync, true);
       window.removeEventListener("resize", sync);
     };
-  }, [visible, above, alignLeft, alignRight]);
+  }, [visible, above, alignLeft, alignRight, toRight]);
 
   function handleMouseEnter(): void {
     if (disabled || suppressUntilLeaveRef.current) return;
@@ -116,7 +143,9 @@ export function ShortcutTooltip({
                 position: "fixed",
                 top: position.top,
                 left: position.left,
-                transform: `translate(${position.translateX}, ${above ? "-100%" : "0"})`,
+                transform: `translate(${position.translateX}, ${
+                  toRight ? "-50%" : above ? "-100%" : "0"
+                })`,
               }}
               className="pointer-events-none z-50 whitespace-nowrap rounded border border-border bg-popover px-2 py-1 text-xs text-muted-foreground shadow-lg"
             >
