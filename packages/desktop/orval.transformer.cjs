@@ -42,6 +42,8 @@ const RENAMES = {
   list_runs: "get_custom_action_runs",
   get_schedule: "get_custom_action_schedule",
   set_schedule: "set_custom_action_schedule",
+  // LSP: disambiguate the catalog probe from the generic "list servers" name.
+  list_servers: "list_lsp_servers",
 };
 
 module.exports = (spec) => {

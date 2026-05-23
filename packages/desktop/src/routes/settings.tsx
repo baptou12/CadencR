@@ -37,6 +37,7 @@ import { NotificationsSection } from "@/components/settings/NotificationsSection
 import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
+import { LspServerList } from "@/components/settings/LspServerList";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
@@ -265,6 +266,9 @@ function EditorSection(): React.JSX.Element {
     <SettingsSection id="editor" title="Editor" subtitle="CodeMirror · File tree">
       <SettingsCard padded>
         <FileTreeIconSetSelector />
+      </SettingsCard>
+      <SettingsCard padded>
+        <LspServerList />
       </SettingsCard>
       <SettingsCard>
         <SettingsSwitchRow

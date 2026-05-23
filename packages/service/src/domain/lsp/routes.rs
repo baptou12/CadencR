@@ -22,6 +22,7 @@ use crate::app_state::AppState;
 use crate::error::AppError;
 
 use super::lifecycle::CrashKey;
+use super::probe::{probe_servers, ServerProbe};
 use super::proxy::run_proxy;
 use super::registry::SessionSpec;
 use super::spawn::{resolve_server, spawn_server};
@@ -33,6 +34,27 @@ pub fn lsp_router() -> Router<AppState> {
             "/api/lsp/sessions/{session_id}/connect",
             get(connect_handler),
         )
+        .route("/api/lsp/servers", get(list_servers_handler))
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ListServersResponse {
+    pub servers: Vec<ServerProbe>,
+}
+
+/// Inspect the LSP catalog and report each entry's installation state.
+/// Used by Settings → Editor; never triggers a download.
+#[utoipa::path(
+    get,
+    path = "/api/lsp/servers",
+    responses(
+        (status = 200, body = ListServersResponse),
+    )
+)]
+pub async fn list_servers_handler() -> Json<ListServersResponse> {
+    Json(ListServersResponse {
+        servers: probe_servers().await,
+    })
 }
 
 #[derive(Debug, Deserialize, ToSchema)]

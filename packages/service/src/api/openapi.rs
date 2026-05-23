@@ -153,6 +153,7 @@ use crate::domain::workspace::routes as workspace_routes;
         claude_code_routes::upsert_custom_model_handler,
         claude_code_routes::delete_custom_model_handler,
         lsp_routes::open_session_handler,
+        lsp_routes::list_servers_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -301,6 +302,9 @@ use crate::domain::workspace::routes as workspace_routes;
         claude_code_routes::SuccessResponse,
         lsp_routes::OpenLspSessionRequest,
         lsp_routes::OpenLspSessionResponse,
+        lsp_routes::ListServersResponse,
+        crate::domain::lsp::probe::ServerProbe,
+        crate::domain::lsp::probe::ServerProbeStatus,
     ))
 )]
 struct ApiDoc;
