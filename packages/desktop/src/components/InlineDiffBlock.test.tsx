@@ -192,6 +192,44 @@ describe("InlineDiffBlock controlled expand API", () => {
     expect(onExpandedChange).toHaveBeenCalledWith(false);
   });
 
+  it("toggles when the user clicks anywhere on the collapsed header row", async () => {
+    // Click-the-whole-row is the affordance we ship for the collapsed
+    // verbosity modes — without it, only the tiny chevron is hit-testable.
+    const onExpandedChange = vi.fn();
+    const { user } = render(
+      <InlineDiffBlock
+        filePath="test.ts"
+        oldContent={"one\n"}
+        newContent={"two\n"}
+        expanded={false}
+        onExpandedChange={onExpandedChange}
+      />,
+    );
+    await user.click(screen.getByTestId("inline-diff-header"));
+    expect(onExpandedChange).toHaveBeenCalledWith(true);
+  });
+
+  it("does not toggle when the inner 'Edit in editor' button is clicked", async () => {
+    // The Edit button lives inside the clickable header row; if it didn't
+    // stopPropagation we would collapse the diff every time the user
+    // tried to jump to the editor.
+    const onExpandedChange = vi.fn();
+    const onOpenFileInEditor = vi.fn();
+    const { user } = render(
+      <InlineDiffBlock
+        filePath="src/foo.ts"
+        oldContent={"one\n"}
+        newContent={"two\n"}
+        expanded={true}
+        onExpandedChange={onExpandedChange}
+        onOpenFileInEditor={onOpenFileInEditor}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Edit src/foo.ts in editor" }));
+    expect(onOpenFileInEditor).toHaveBeenCalled();
+    expect(onExpandedChange).not.toHaveBeenCalled();
+  });
+
   it("stays expanded when no `expanded` prop is provided (legacy callers)", () => {
     render(<InlineDiffBlock filePath="test.ts" oldContent={"one\n"} newContent={"two\n"} />);
     expect(screen.getByTestId("diff-view")).toBeInTheDocument();
