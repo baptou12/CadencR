@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   selectActiveMatch: vi.fn(),
   subscribeBufferSearch: vi.fn(),
   getBufferSearchState: vi.fn(),
+  getPaneSearch: vi.fn(),
+  setPaneSearch: vi.fn(),
 }));
 
 vi.mock("../search-extension", async () => {
@@ -25,6 +27,13 @@ vi.mock("../search-extension", async () => {
     selectActiveMatch: mocks.selectActiveMatch,
     subscribeBufferSearch: mocks.subscribeBufferSearch,
     getBufferSearchState: mocks.getBufferSearchState,
+  };
+});
+
+vi.mock("../search-cache", async () => {
+  return {
+    getPaneSearch: mocks.getPaneSearch,
+    setPaneSearch: mocks.setPaneSearch,
   };
 });
 
@@ -45,6 +54,8 @@ function emptyState(): BufferSearchState {
 }
 
 const defaultInitial: PaneSearchState = { query: "", caseSensitive: false, regex: false };
+const FEATURE_ID = 7;
+const PANE_ID = "main";
 
 beforeEach(() => {
   mocks.setBufferSearchQuery.mockClear();
@@ -55,27 +66,31 @@ beforeEach(() => {
   mocks.subscribeBufferSearch.mockClear();
   mocks.subscribeBufferSearch.mockImplementation(() => () => {});
   mocks.getBufferSearchState.mockReturnValue(emptyState());
+  mocks.getPaneSearch.mockReset();
+  mocks.getPaneSearch.mockReturnValue(defaultInitial);
+  mocks.setPaneSearch.mockClear();
 });
 
 function renderPanel(overrides?: {
   initialState?: PaneSearchState;
   reopenSignal?: number;
   onClose?: () => void;
-  onChange?: (s: PaneSearchState) => void;
 }) {
+  if (overrides?.initialState) {
+    mocks.getPaneSearch.mockReturnValue(overrides.initialState);
+  }
   const view = makeMockView();
   const onClose = overrides?.onClose ?? vi.fn();
-  const onChange = overrides?.onChange ?? vi.fn();
   const utils = render(
     <EditorSearchPanel
       view={view}
-      initialState={overrides?.initialState ?? defaultInitial}
+      featureId={FEATURE_ID}
+      paneId={PANE_ID}
       reopenSignal={overrides?.reopenSignal ?? 0}
-      onChange={onChange}
       onClose={onClose}
     />,
   );
-  return { view, onClose, onChange, ...utils };
+  return { view, onClose, ...utils };
 }
 
 function pushState(state: Partial<BufferSearchState>): void {
@@ -94,13 +109,22 @@ describe("EditorSearchPanel", () => {
     expect(screen.queryByText(/of/)).not.toBeInTheDocument();
   });
 
-  it("hydrates from initialState", () => {
+  it("hydrates from the persisted pane state on mount", () => {
     renderPanel({
       initialState: { query: "hello", caseSensitive: true, regex: false },
     });
     expect((screen.getByPlaceholderText("Find") as HTMLInputElement).value).toBe("hello");
     const caseToggle = screen.getByTitle("Match case");
     expect(caseToggle).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not write back to the cache on mount", () => {
+    renderPanel({
+      initialState: { query: "hello", caseSensitive: true, regex: false },
+    });
+    // The panel should NOT call setPaneSearch just for mounting — only when
+    // the user actually edits the query or toggles a flag.
+    expect(mocks.setPaneSearch).not.toHaveBeenCalled();
   });
 
   it("shows 'No results' when the live state reports zero matches", () => {
@@ -123,6 +147,16 @@ describe("EditorSearchPanel", () => {
       activeIndex: 1,
     });
     expect(screen.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("renders an em-dash for the active index when no match is highlighted", () => {
+    renderPanel({ initialState: { query: "foo", caseSensitive: false, regex: false } });
+    pushState({
+      query: { query: "foo", caseSensitive: false, regex: false },
+      matches: [{ from: 0, to: 3 }],
+      activeIndex: -1,
+    });
+    expect(screen.getByText("– of 1")).toBeInTheDocument();
   });
 
   it("renders the truncated suffix when MAX_BUFFER_MATCHES is hit", () => {
@@ -209,28 +243,46 @@ describe("EditorSearchPanel", () => {
     expect(btn).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("persists state to onChange whenever query, case, or regex change", () => {
-    const onChange = vi.fn();
-    renderPanel({ onChange });
-    onChange.mockClear();
+  it("persists state to the cache when the query changes", () => {
+    renderPanel();
     fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "abc" } });
-    expect(onChange).toHaveBeenLastCalledWith({
+    expect(mocks.setPaneSearch).toHaveBeenLastCalledWith(FEATURE_ID, PANE_ID, {
       query: "abc",
       caseSensitive: false,
       regex: false,
     });
   });
 
+  it("persists state to the cache when case-sensitive is toggled", () => {
+    renderPanel({ initialState: { query: "foo", caseSensitive: false, regex: false } });
+    fireEvent.click(screen.getByTitle("Match case"));
+    expect(mocks.setPaneSearch).toHaveBeenLastCalledWith(FEATURE_ID, PANE_ID, {
+      query: "foo",
+      caseSensitive: true,
+      regex: false,
+    });
+  });
+
+  it("persists state to the cache when regex is toggled", () => {
+    renderPanel({ initialState: { query: "foo", caseSensitive: false, regex: false } });
+    fireEvent.click(screen.getByTitle("Use regular expression"));
+    expect(mocks.setPaneSearch).toHaveBeenLastCalledWith(FEATURE_ID, PANE_ID, {
+      query: "foo",
+      caseSensitive: false,
+      regex: true,
+    });
+  });
+
   it("re-focuses and selects the input when reopenSignal increments", () => {
-    const { rerender, view, onClose, onChange } = renderPanel({ reopenSignal: 0 });
+    const { rerender, view, onClose } = renderPanel({ reopenSignal: 0 });
     const input = screen.getByPlaceholderText("Find") as HTMLInputElement;
     input.blur();
     rerender(
       <EditorSearchPanel
         view={view}
-        initialState={defaultInitial}
+        featureId={FEATURE_ID}
+        paneId={PANE_ID}
         reopenSignal={1}
-        onChange={onChange}
         onClose={onClose}
       />,
     );

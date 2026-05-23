@@ -24,14 +24,19 @@ import {
   setBufferSearchQuery,
   subscribeBufferSearch,
 } from "./search-extension";
-import type { PaneSearchState } from "./search-cache";
+import { getPaneSearch, setPaneSearch } from "./search-cache";
 
 interface EditorSearchPanelProps {
   view: EditorView;
-  initialState: PaneSearchState;
+  /**
+   * Identifies which pane's persisted search state to hydrate from and write
+   * back to. The panel reads the cache lazily on every mount, so reopening
+   * Cmd+F after closing restores the user's last query.
+   */
+  featureId: number;
+  paneId: string;
   /** Bumped by the parent every time Cmd+F is pressed while the panel is already open. */
   reopenSignal: number;
-  onChange: (state: PaneSearchState) => void;
   onClose: () => void;
 }
 
@@ -46,14 +51,18 @@ interface MatchInfo {
 
 function EditorSearchPanel({
   view,
-  initialState,
+  featureId,
+  paneId,
   reopenSignal,
-  onChange,
   onClose,
 }: EditorSearchPanelProps) {
-  const [query, setQuery] = useState<string>(initialState.query);
-  const [caseSensitive, setCaseSensitive] = useState<boolean>(initialState.caseSensitive);
-  const [regex, setRegex] = useState<boolean>(initialState.regex);
+  // Lazy initializers re-read the cache on every mount, so closing and
+  // reopening Cmd+F within the same pane restores the previous query.
+  const [query, setQueryState] = useState<string>(() => getPaneSearch(featureId, paneId).query);
+  const [caseSensitive, setCaseSensitiveState] = useState<boolean>(
+    () => getPaneSearch(featureId, paneId).caseSensitive,
+  );
+  const [regex, setRegexState] = useState<boolean>(() => getPaneSearch(featureId, paneId).regex);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const debouncedQuery = useDebouncedValue(query, QUERY_DEBOUNCE_MS);
@@ -62,9 +71,33 @@ function EditorSearchPanel({
     setBufferSearchQuery(view, { query: debouncedQuery, caseSensitive, regex });
   }, [view, debouncedQuery, caseSensitive, regex]);
 
-  useEffect(() => {
-    onChange({ query, caseSensitive, regex });
-  }, [query, caseSensitive, regex, onChange]);
+  // Persist directly from the setters rather than from a mount-time effect, so
+  // we never clobber the cache with the panel's initial values on remount.
+  const setQuery = useCallback(
+    (next: string): void => {
+      setQueryState(next);
+      setPaneSearch(featureId, paneId, {
+        query: next,
+        caseSensitive,
+        regex,
+      });
+    },
+    [featureId, paneId, caseSensitive, regex],
+  );
+  const setCaseSensitive = useCallback(
+    (next: boolean): void => {
+      setCaseSensitiveState(next);
+      setPaneSearch(featureId, paneId, { query, caseSensitive: next, regex });
+    },
+    [featureId, paneId, query, regex],
+  );
+  const setRegex = useCallback(
+    (next: boolean): void => {
+      setRegexState(next);
+      setPaneSearch(featureId, paneId, { query, caseSensitive, regex: next });
+    },
+    [featureId, paneId, query, caseSensitive],
+  );
 
   useEffect(() => {
     const el = inputRef.current;
@@ -291,7 +324,9 @@ function buildCounterLabel(query: string, info: MatchInfo): string {
   if (!query) return "";
   if (info.total === 0) return "No results";
   const totalLabel = info.truncated ? `${MAX_BUFFER_MATCHES}+` : `${info.total}`;
-  const activeLabel = info.active >= 0 ? info.active + 1 : 1;
+  // When matches exist but no active match is highlighted (transient states
+  // between dispatches), render an em-dash rather than a misleading "1 of N".
+  const activeLabel = info.active >= 0 ? String(info.active + 1) : "–";
   return `${activeLabel} of ${totalLabel}`;
 }
 

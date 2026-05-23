@@ -12,7 +12,6 @@ import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { LspStatusIndicator } from "./LspStatusIndicator";
 import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
-import { getPaneSearch, setPaneSearch, type PaneSearchState } from "./editor-search/search-cache";
 import { toast } from "sonner";
 
 interface CodeMirrorEditorProps {
@@ -201,18 +200,6 @@ export default function CodeMirrorEditor({
     [onEditorViewChange, paneId],
   );
 
-  const initialSearchState = useMemo<PaneSearchState>(
-    () => getPaneSearch(featureId, paneId),
-    [featureId, paneId],
-  );
-
-  const handleSearchChange = useCallback(
-    (next: PaneSearchState): void => {
-      setPaneSearch(featureId, paneId, next);
-    },
-    [featureId, paneId],
-  );
-
   const bufferSearch = useMemo(() => bufferSearchExtension(), []);
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
@@ -327,9 +314,9 @@ export default function CodeMirrorEditor({
       {searchOpen && editorView && (
         <EditorSearchPanel
           view={editorView}
-          initialState={initialSearchState}
+          featureId={featureId}
+          paneId={paneId}
           reopenSignal={searchReopenSignal}
-          onChange={handleSearchChange}
           onClose={onCloseSearch}
         />
       )}

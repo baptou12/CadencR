@@ -64,11 +64,6 @@ vi.mock("../editor-search/search-extension", () => ({
   bufferSearchExtension: vi.fn(() => []),
 }));
 
-vi.mock("../editor-search/search-cache", () => ({
-  getPaneSearch: vi.fn(() => ({ query: "", caseSensitive: false, regex: false })),
-  setPaneSearch: vi.fn(),
-}));
-
 vi.mock("../editor-search/EditorSearchPanel", () => ({
   default: () => null,
 }));

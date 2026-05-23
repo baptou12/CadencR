@@ -92,8 +92,22 @@ function scanLiteralMatches(state: EditorState, q: BufferSearchQuery): ScanResul
 }
 
 function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
+  // Wrap both the cursor construction AND the drain in the same try/catch:
+  // RegExpCursor compiles its own internal regex (with the `i` flag when
+  // `ignoreCase` is set) and can throw at construction time for patterns that
+  // `new RegExp(q.query)` would have accepted as-is. Iteration can also throw
+  // for some edge patterns. A leaked exception here would crash the editor
+  // transaction; surfacing it as an error keeps the UI alive.
   try {
-    new RegExp(q.query);
+    const cursor = new RegExpCursor(
+      state.doc,
+      q.query,
+      { ignoreCase: !q.caseSensitive },
+      0,
+      state.doc.length,
+    );
+    const { matches, truncated } = drainCursor(cursor);
+    return { matches, truncated, error: null };
   } catch (err) {
     return {
       matches: [],
@@ -101,15 +115,6 @@ function scanRegexMatches(state: EditorState, q: BufferSearchQuery): ScanResult 
       error: err instanceof Error ? err.message : "Invalid regex",
     };
   }
-  const cursor = new RegExpCursor(
-    state.doc,
-    q.query,
-    { ignoreCase: !q.caseSensitive },
-    0,
-    state.doc.length,
-  );
-  const { matches, truncated } = drainCursor(cursor);
-  return { matches, truncated, error: null };
 }
 
 function scanMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
@@ -119,8 +124,13 @@ function scanMatches(state: EditorState, q: BufferSearchQuery): ScanResult {
 
 function pickInitialActive(matches: BufferMatch[], cursorPos: number): number {
   if (matches.length === 0) return -1;
+  // Prefer the match the cursor is currently inside, otherwise the next match
+  // after the cursor. `match.to > cursorPos` covers both: it is true when the
+  // cursor sits inside the match (from <= cursorPos < to) and when the match
+  // starts after the cursor. Falls back to the first match if the cursor is
+  // past every match.
   for (let i = 0; i < matches.length; i++) {
-    if (matches[i].from >= cursorPos) return i;
+    if (matches[i].to > cursorPos) return i;
   }
   return 0;
 }
@@ -230,18 +240,14 @@ export function getBufferSearchState(view: EditorView): BufferSearchState {
 }
 
 /**
- * Apply a new query / regex / case-sensitivity setting and scroll the active
- * match into view without disturbing the editor selection. The selection is
- * only moved by explicit navigation (`findNextMatch`, `findPrevMatch`,
- * `selectActiveMatch`) so that typing in the search input does not bump the
- * user's cursor inside the buffer.
+ * Apply a new query / regex / case-sensitivity setting. Neither the editor
+ * selection nor the viewport is moved — typing in the search input should not
+ * yank the buffer around on every keystroke. Scrolling and selection only
+ * happen on explicit navigation (`findNextMatch`, `findPrevMatch`,
+ * `selectActiveMatch`).
  */
 export function setBufferSearchQuery(view: EditorView, query: BufferSearchQuery): void {
   view.dispatch({ effects: setBufferSearchQueryEffect.of(query) });
-  const s = view.state.field(bufferSearchField);
-  if (s.activeIndex < 0) return;
-  const m = s.matches[s.activeIndex];
-  view.dispatch({ effects: EditorView.scrollIntoView(m.from, { y: "center" }) });
 }
 
 export function findNextMatch(view: EditorView): void {

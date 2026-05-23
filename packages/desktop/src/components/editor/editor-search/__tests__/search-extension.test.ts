@@ -153,6 +153,15 @@ describe("bufferSearchField", () => {
       setBufferSearchQuery(view, { query: "a", caseSensitive: false, regex: false });
       expect(view.state.field(bufferSearchField).activeIndex).toBe(0);
     });
+
+    it("selects the match containing the cursor instead of the next one", () => {
+      // doc "foobar more foobar"; matches at [0,6] and [12,18]. Cursor at 3
+      // sits INSIDE the first match — selecting the second would surprise
+      // the user. The first match should win.
+      const view = makeView("foobar more foobar", 3);
+      setBufferSearchQuery(view, { query: "foobar", caseSensitive: false, regex: false });
+      expect(view.state.field(bufferSearchField).activeIndex).toBe(0);
+    });
   });
 
   describe("document edits while search is open", () => {
