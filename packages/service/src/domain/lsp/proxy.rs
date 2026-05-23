@@ -2,8 +2,10 @@
 //!
 //! - WS text frames → `Content-Length`-prefixed bytes on child stdin
 //! - `Content-Length`-prefixed bytes from child stdout → WS text frames
-//! - child stderr → `tracing::warn!` (LSP servers chatter; we keep it visible
-//!   for diagnostics without polluting the JSON-RPC channel)
+//! - child stderr → tracing (severity inferred from the line: ERROR-level
+//!   gets `warn!`, everything else is `debug!` so chatty servers like
+//!   rust-analyzer don't flood the terminal with their own WARN-level
+//!   internal logs)
 //!
 //! Lifetime: the pump returns once any direction terminates. We then issue
 //! `child.kill()` so the server cannot outlive the renderer. Crash-restart
@@ -201,12 +203,62 @@ where
 }
 
 /// Pipes stderr lines into the tracing subscriber. LSP servers (rust-analyzer
-/// especially) log voluminously to stderr; surfacing it via `warn!` makes
-/// crashes diagnosable without scattering println across the proxy.
+/// especially) log voluminously to stderr — their own INFO/WARN bookkeeping
+/// (config file watchers, indexing progress, etc.) isn't actionable for us,
+/// so we route everything to `debug!` by default. Lines that look like real
+/// errors get bumped to `warn!` so a crash or misconfiguration still stands
+/// out in the dev terminal without `RUST_LOG=debug`.
 async fn drain_stderr(stderr: ChildStderr, display_name: String) {
     use tokio::io::AsyncBufReadExt;
     let mut reader = BufReader::new(stderr).lines();
     while let Ok(Some(line)) = reader.next_line().await {
-        warn!(server = %display_name, "lsp stderr: {line}");
+        if looks_like_error(&line) {
+            warn!(server = %display_name, "lsp stderr: {line}");
+        } else {
+            debug!(server = %display_name, "lsp stderr: {line}");
+        }
+    }
+}
+
+/// Heuristic for "this stderr line is something the operator should see."
+/// Covers the formats the LSP servers we ship use:
+/// - rust-analyzer / gopls (`tracing`-style): ` ERROR ` mid-line.
+/// - typescript-language-server / pyright / cargo / clang: `error:` prefix.
+/// - generic panic / fatal markers from any tool.
+fn looks_like_error(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains(" error ")
+        || lower.starts_with("error:")
+        || lower.contains("fatal:")
+        || lower.contains("panic")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::looks_like_error;
+
+    #[test]
+    fn classifies_real_errors_as_errors() {
+        // rust-analyzer / gopls / tracing-style.
+        assert!(looks_like_error(
+            "2026-05-23T09:59:24+02:00 ERROR rust_analyzer::diagnostics: bad ast"
+        ));
+        // typescript-language-server / cargo / clang.
+        assert!(looks_like_error("error: failed to read tsconfig.json"));
+        // Generic markers.
+        assert!(looks_like_error("fatal: not a git repository"));
+        assert!(looks_like_error("thread 'main' panicked at ..."));
+    }
+
+    #[test]
+    fn classifies_benign_chatter_as_debug() {
+        // The exact rust-analyzer notify-watcher warning the user saw —
+        // not an error from our POV, must not bubble up as WARN.
+        assert!(!looks_like_error(
+            "2026-05-23T09:59:23+02:00  WARN notify error: No path was found. about [\"/x/rust-analyzer.toml\"]"
+        ));
+        // Routine progress lines.
+        assert!(!looks_like_error("INFO indexing 23% complete"));
+        assert!(!looks_like_error(""));
     }
 }
