@@ -142,9 +142,12 @@ export default function EditorSubTabs({ featureId, paneId, projectId }: EditorSu
                 <button
                   type="button"
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-border whitespace-nowrap shrink-0 hover:bg-accent transition-colors",
+                    // `border-b-2 border-b-transparent` reserves the 2px
+                    // baseline so the active-tab indicator doesn't shift the
+                    // row height.
+                    "flex items-center gap-1.5 px-3 py-1.5 text-sm border-r border-border border-b-2 border-b-transparent whitespace-nowrap shrink-0 hover:bg-accent transition-colors",
                     isActive
-                      ? "bg-background text-foreground border-t-2 border-t-primary"
+                      ? "bg-background text-foreground border-b-primary"
                       : "text-muted-foreground",
                   )}
                   onClick={() => setActiveFile(featureId, paneId, tab.filePath)}

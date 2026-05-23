@@ -10,7 +10,8 @@ import {
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
-import { useGetFeatureSettings, useListProjects } from "@/api/generated";
+import { useListProjects } from "@/api/generated";
+import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import {
   getFocusedTab,
   isTabVisible,
@@ -50,14 +51,8 @@ export const FeatureTerminalTab = memo(
 
     // Compute the cwd a freshly-spawned terminal *would* end up in, given the
     // current feature settings: the worktree if one was created, otherwise the
-    // project root. The `feature.updated` WS event invalidates feature
-    // settings after a worktree is created, so this stays reactive without
-    // any extra wiring.
-    const { data: featureSettingsData } = useGetFeatureSettings(featureId);
-    const worktreePath = useMemo(
-      () => featureSettingsData?.find((s) => s.key === "worktree_path")?.value ?? null,
-      [featureSettingsData],
-    );
+    // project root.
+    const worktreePath = useFeatureWorktreePath(featureId);
     const projectsQuery = useListProjects();
     const projectPath = useMemo(
       () => projectsQuery.data?.find((p) => p.id === projectId)?.path ?? null,

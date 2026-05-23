@@ -20,19 +20,14 @@ export default function EditorSplitTree({
   const activePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId);
 
   if (node.type === "leaf") {
-    const isActive = node.id === activePaneId;
     return (
-      <div
-        className={`h-full flex flex-col ${isActive ? "ring-1 ring-primary/30 ring-inset" : ""}`}
-      >
-        <EditorPane
-          featureId={featureId}
-          paneId={node.id}
-          projectId={projectId}
-          isActive={isActive}
-          onEditorViewChange={onEditorViewChange}
-        />
-      </div>
+      <LeafPane
+        nodeId={node.id}
+        featureId={featureId}
+        projectId={projectId}
+        isActive={node.id === activePaneId}
+        onEditorViewChange={onEditorViewChange}
+      />
     );
   }
 
@@ -58,5 +53,31 @@ export default function EditorSplitTree({
         />
       </ResizablePanel>
     </ResizablePanelGroup>
+  );
+}
+
+interface LeafPaneProps {
+  nodeId: string;
+  featureId: number;
+  projectId: number;
+  isActive: boolean;
+  onEditorViewChange?: (paneId: string, view: EditorView | null) => void;
+}
+
+function LeafPane({ nodeId, featureId, projectId, isActive, onEditorViewChange }: LeafPaneProps) {
+  const hasActiveFile = useEditorStore((s) =>
+    Boolean(s.features[featureId]?.panes[nodeId]?.activeFilePath),
+  );
+  const showRing = isActive && hasActiveFile;
+  return (
+    <div className={`h-full flex flex-col ${showRing ? "ring-1 ring-primary/30 ring-inset" : ""}`}>
+      <EditorPane
+        featureId={featureId}
+        paneId={nodeId}
+        projectId={projectId}
+        isActive={isActive}
+        onEditorViewChange={onEditorViewChange}
+      />
+    </div>
   );
 }
