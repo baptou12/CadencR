@@ -109,22 +109,8 @@ html {
   -webkit-app-region: no-drag;
 }
 
-/*
- * The active unified-agent card "floats" above the grid. The shadow is a
- * tight contact layer plus a soft ambient drop — tuned for dark surfaces
- * (`rgb(0 0 0 / α)` reads as elevation on dark, light-tinted shadows wash
- * out). No vertical lift: lifting the card by translateY caused the top
- * edge to be clipped by the Virtuoso row wrapper.
- *
- * On focus we play a single short border flash (200ms) so navigating
- * between agents feels acknowledged without an ongoing animation. The
- * keyframe runs once because the class is applied at the moment a card
- * becomes active; re-focusing the same card doesn't retrigger it.
- *
- * Both the flash and the elevation transition are gated by the global
- * `html[data-animations="off"]` kill-switch in `theme.css`, which
- * collapses animation/transition durations to ~0ms.
- */
+/* Active unified-agent card. The shadow needs `overflow: visible` on the
+ * surrounding ResizablePanelGroup/Panel — see UnifiedAgentsGrid.tsx. */
 @keyframes unified-agent-focus-flash {
   0% {
     border-color: var(--primary);
@@ -135,11 +121,18 @@ html {
 }
 
 @utility unified-agent-active {
+  --unified-agent-drop: 0 1px 2px rgb(0 0 0 / 0.18), 0 8px 24px -6px rgb(0 0 0 / 0.35);
+  z-index: 1;
   border-color: color-mix(in oklab, var(--primary) 40%, transparent);
   box-shadow:
-    0 2px 4px rgb(0 0 0 / 0.25),
-    0 12px 28px -8px rgb(0 0 0 / 0.45);
+    0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent),
+    var(--unified-agent-drop);
   animation: unified-agent-focus-flash 200ms ease-out 1;
+}
+
+/* Aurora's light surface makes black drops read heavy — soften the drop. */
+:root[data-theme="aurora"] .unified-agent-active {
+  --unified-agent-drop: 0 1px 2px rgb(0 0 0 / 0.06), 0 6px 16px -8px rgb(0 0 0 / 0.12);
 }
 
 .titlebar-drag button,
