@@ -122,7 +122,38 @@ pub async fn download_and_install(
     })
     .await
     .map_err(|e| AppError::Internal(format!("LSP install join error: {e}")))??;
+
+    // GC sibling version dirs. After bumping a pinned version, the previous
+    // install would otherwise sit ~30 MB on disk forever — and worse, if a
+    // user happened to symlink it into PATH or run it directly, they'd get
+    // the proc-macro protocol mismatch we were trying to avoid by bumping.
+    if let Some(parent) = dir.parent() {
+        gc_old_versions(parent, version);
+    }
     Ok(())
+}
+
+/// Remove every sibling directory of `<lsp_id>/<keep>/` so an upgrade frees
+/// the old install's bytes. Best-effort: failure to remove (busy file, FS
+/// permission glitch) is logged and ignored — the new install still works.
+fn gc_old_versions(lsp_root: &std::path::Path, keep: &str) {
+    let Ok(entries) = fs::read_dir(lsp_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name == keep || !path.is_dir() {
+            continue;
+        }
+        if let Err(e) = fs::remove_dir_all(&path) {
+            warn!(path = %path.display(), error = %e, "failed to gc old LSP install");
+        } else {
+            info!(path = %path.display(), "gc'd previous LSP install");
+        }
+    }
 }
 
 /// Substitute `{version}` / `{arch}` / `{os}` into a URL template. Returns
@@ -183,5 +214,29 @@ mod tests {
         // arch/os depend on host platform — just assert the placeholders
         // were consumed.
         assert!(!url.contains("{"));
+    }
+
+    #[test]
+    fn gc_old_versions_removes_siblings_but_keeps_current() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        // Two old versions + the current one.
+        for v in ["2024-01-01", "2025-05-19", "2026-05-18"] {
+            let d = root.join(v);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("rust-analyzer"), b"#!/bin/sh\nexit 0\n").unwrap();
+        }
+        gc_old_versions(root, "2026-05-18");
+        assert!(root.join("2026-05-18").is_dir(), "current must survive gc");
+        assert!(!root.join("2024-01-01").exists(), "old must be removed");
+        assert!(!root.join("2025-05-19").exists(), "old must be removed");
+    }
+
+    #[test]
+    fn gc_old_versions_is_safe_when_root_missing() {
+        // Don't panic when the lsp_root doesn't exist yet (first-ever install).
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("never-created");
+        gc_old_versions(&missing, "anything");
     }
 }

@@ -114,8 +114,12 @@ pub const CATALOG: &[CatalogEntry] = &[
         version_must_contain: Some("rust-analyzer"),
         download: Some(DownloadRecipe::GithubReleaseGz {
             // Pinned. Bump deliberately — surprise upgrades silently change
-            // semantic analysis between Cadencr launches.
-            version: "2025-05-19",
+            // semantic analysis between Cadencr launches. The pin must
+            // also stay in sync with the proc-macro server protocol the
+            // current Rust toolchain emits; if you don't bump for a long
+            // time, users on a recent toolchain hit "proc-macro server (N)
+            // is newer than rust-analyzer (N-1)" and lose macro expansion.
+            version: "2026-05-18",
             url_template:
                 "https://github.com/rust-lang/rust-analyzer/releases/download/{version}/rust-analyzer-{arch}-{os}.gz",
         }),

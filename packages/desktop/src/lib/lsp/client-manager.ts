@@ -20,6 +20,7 @@ import { openSession } from "@/api/generated";
 import { connectLspWs, type WebSocketLspTransport } from "./transport";
 import { CadencrWorkspace, type DisplayFileHandler } from "./cadencr-workspace";
 import { pathToFileUri } from "./file-uri";
+import { buildLspNotificationHandlers } from "./notifications";
 
 interface ClientEntry {
   client: LSPClient;
@@ -126,6 +127,9 @@ async function createEntry(workspaceRoot: string, languageId: string): Promise<C
       workspaceRef = new CadencrWorkspace(c);
       return workspaceRef;
     },
+    // Route `window/showMessage` and `window/logMessage` to sonner
+    // toasts instead of the library's default in-buffer banner.
+    notificationHandlers: buildLspNotificationHandlers(),
   });
   client.connect(transport);
   if (!workspaceRef) {
