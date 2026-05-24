@@ -6,6 +6,7 @@ import { KeyboardShortcutsModal } from "@/components/KeyboardShortcutsModal";
 import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
+import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
 import { useListFeatures, useListFeatureWorktrees } from "@/api/generated";
 
 type ConfirmAction = "archive" | "delete" | null;
@@ -71,6 +72,7 @@ export function RootOverlays({
       <KeyboardShortcutsModal open={shortcutsHelpOpen} onOpenChange={setShortcutsHelpOpen} />
       <Toaster position="top-center" />
       <PostUpdateChangelogDialog />
+      <ThemeDrawer />
       <ArchiveFeatureDialog
         open={confirmAction === "archive"}
         feature={activeFeature}
