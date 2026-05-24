@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import CodeMirrorEditor, { clampEditorLineNumber } from "../CodeMirrorEditor";
 import { gitBlameExtension } from "../git-blame-extension";
+import { isMarkdownFile } from "../language-extensions";
 
 vi.mock("@codemirror/state", () => ({
   Compartment: class {
@@ -31,6 +32,8 @@ vi.mock("@codemirror/view", () => {
 const baseEditorProps = vi.fn();
 
 // Mock BaseCodeMirrorEditor to render a simple div with the className
+let mockViewDoc = "";
+
 vi.mock("../BaseCodeMirrorEditor", () => ({
   default: ({
     className,
@@ -44,7 +47,7 @@ vi.mock("../BaseCodeMirrorEditor", () => ({
     baseEditorProps({ className, initialContent });
     if (editorViewRef) {
       editorViewRef.current = {
-        state: { doc: { toString: () => "", length: 0 } },
+        state: { doc: { toString: () => mockViewDoc, length: mockViewDoc.length } },
         dispatch: vi.fn(),
         destroy: vi.fn(),
       };
@@ -56,6 +59,8 @@ vi.mock("../BaseCodeMirrorEditor", () => ({
 }));
 
 vi.mock("../language-extensions", () => ({
+  // Real impl — `getLanguageName` (inside CodeMirrorEditor) depends on it.
+  getFileExtension: (p: string) => p.split(".").at(-1)?.toLowerCase() ?? "",
   getLanguageExtension: vi.fn(() => null),
   isMarkdownFile: vi.fn(() => false),
 }));
@@ -75,6 +80,16 @@ vi.mock("../editor-search/search-extension", () => ({
 
 vi.mock("../editor-search/EditorSearchPanel", () => ({
   default: () => null,
+}));
+
+vi.mock("@/components/Markdown", () => ({
+  Markdown: ({ content }: { content: string }) => (
+    <div data-testid="markdown-preview">{content}</div>
+  ),
+}));
+
+vi.mock("@/hooks/useShortcut", () => ({
+  useScopedShortcut: vi.fn(),
 }));
 
 let mockReadFileReturn: { data: unknown; isLoading: boolean; error: Error | null } = {
@@ -149,9 +164,11 @@ beforeEach(() => {
   mockReadFileReturn = { data: undefined, isLoading: true, error: null };
   mockBlameReturn = { data: undefined };
   mockDebouncedSettings = {};
+  mockViewDoc = "";
   baseEditorProps.mockClear();
   mockSetDirty.mockClear();
   vi.mocked(gitBlameExtension).mockClear();
+  vi.mocked(isMarkdownFile).mockReset().mockReturnValue(false);
 });
 
 describe("CodeMirrorEditor", () => {
@@ -239,5 +256,78 @@ describe("CodeMirrorEditor", () => {
     expect(clampEditorLineNumber(-5, 213)).toBe(1);
     expect(clampEditorLineNumber(999, 213)).toBe(213);
     expect(clampEditorLineNumber(10, 213)).toBe(10);
+  });
+
+  describe("markdown preview", () => {
+    it("does not render the preview toggle for non-markdown files", () => {
+      vi.mocked(isMarkdownFile).mockReturnValue(false);
+      mockReadFileReturn = { data: { content: "x" }, isLoading: false, error: null };
+      render(<CodeMirrorEditor {...defaultProps} />);
+
+      expect(screen.queryByRole("button", { name: /preview/i })).not.toBeInTheDocument();
+    });
+
+    it("toggles between editor and preview when the status-bar button is clicked", async () => {
+      vi.mocked(isMarkdownFile).mockReturnValue(true);
+      mockReadFileReturn = {
+        data: { content: "# hello" },
+        isLoading: false,
+        error: null,
+      };
+      // Simulate an in-progress edit so the snapshot is the live doc, not
+      // the originally-loaded content.
+      mockViewDoc = "# live edit";
+      render(<CodeMirrorEditor {...defaultProps} filePath="/notes.md" onCloseSearch={vi.fn()} />);
+
+      // Editor visible, preview hidden.
+      expect(screen.getByTestId("base-editor")).not.toHaveClass("hidden");
+      expect(screen.queryByTestId("markdown-preview")).not.toBeInTheDocument();
+
+      // Click Preview → editor hidden, snapshot of the live doc rendered.
+      fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+      expect(screen.getByTestId("base-editor")).toHaveClass("hidden");
+      const preview = await screen.findByTestId("markdown-preview");
+      expect(preview).toHaveTextContent("# live edit");
+
+      // Click Edit → editor visible again, preview gone.
+      fireEvent.click(screen.getByRole("button", { name: /edit/i }));
+      expect(screen.getByTestId("base-editor")).not.toHaveClass("hidden");
+      expect(screen.queryByTestId("markdown-preview")).not.toBeInTheDocument();
+    });
+
+    it("closes the search panel when entering preview", () => {
+      vi.mocked(isMarkdownFile).mockReturnValue(true);
+      mockReadFileReturn = {
+        data: { content: "# hi" },
+        isLoading: false,
+        error: null,
+      };
+      const onCloseSearch = vi.fn();
+      render(
+        <CodeMirrorEditor
+          {...defaultProps}
+          filePath="/notes.md"
+          searchOpen
+          onCloseSearch={onCloseSearch}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+      expect(onCloseSearch).toHaveBeenCalled();
+    });
+
+    it("hides Ln/Col in the status bar while previewing", () => {
+      vi.mocked(isMarkdownFile).mockReturnValue(true);
+      mockReadFileReturn = {
+        data: { content: "# hi" },
+        isLoading: false,
+        error: null,
+      };
+      render(<CodeMirrorEditor {...defaultProps} filePath="/notes.md" onCloseSearch={vi.fn()} />);
+
+      expect(screen.getByText("Ln 1, Col 1")).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: /preview/i }));
+      expect(screen.queryByText(/Ln 1, Col 1/)).not.toBeInTheDocument();
+    });
   });
 });
