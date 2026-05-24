@@ -1,19 +1,18 @@
-import type { ReactElement } from "react";
+import { memo, useCallback, useState, type ReactElement } from "react";
 import { InlineDiffBlock } from "@/components/InlineDiffBlock";
-import { extractInlineDiffPreviews, normalizeToolName } from "@/lib/tool-adapter";
-
-interface InlineDiffPreview {
-  filePath: string;
-  oldContent: string;
-  newContent: string;
-}
+import {
+  extractInlineDiffPreviews,
+  normalizeToolName,
+  type InlineDiffPreview,
+} from "@/lib/tool-adapter";
 
 /**
  * Renders the inline diff(s) produced by a file-change tool call (Edit,
  * Write, NotebookEdit, ApplyPatch). Extracted from `AgentBlock` to keep that
- * file under the 400-line budget. `expanded` / `onExpandedChange` are
- * forwarded to every emitted `InlineDiffBlock` so a single verbosity-driven
- * fold state covers all diffs of one tool call.
+ * file under the 400-line budget. Single-diff tool calls use the parent
+ * verbosity fold directly. Multi-diff tool calls treat that fold as a default
+ * and keep per-diff user overrides, so expanding one file does not expand its
+ * siblings.
  */
 export function renderFileChangeBlocks(
   toolName: string | undefined,
@@ -36,18 +35,13 @@ export function renderFileChangeBlocks(
     );
   }
   return (
-    <div className="space-y-2">
-      {diffs.map((diff, index) =>
-        renderInlineDiffBlock(
-          diff,
-          basePath,
-          normalizedToolName,
-          index,
-          expanded,
-          onExpandedChange,
-        ),
-      )}
-    </div>
+    <FileChangeBlockGroup
+      diffs={diffs}
+      basePath={basePath}
+      toolName={normalizedToolName}
+      policyExpanded={expanded}
+      onPolicyExpandedChange={onExpandedChange}
+    />
   );
 }
 
@@ -59,13 +53,13 @@ function renderInlineDiffBlock(
   diff: InlineDiffPreview,
   basePath: string | undefined,
   toolName: string,
-  index: number | undefined,
+  reactKey: string | undefined,
   expanded: boolean | undefined,
   onExpandedChange: ((next: boolean) => void) | undefined,
 ): ReactElement {
   return (
     <InlineDiffBlock
-      key={index === undefined ? undefined : `${diff.filePath}:${index}`}
+      key={reactKey}
       filePath={diff.filePath}
       oldContent={diff.oldContent}
       newContent={diff.newContent}
@@ -75,4 +69,73 @@ function renderInlineDiffBlock(
       onExpandedChange={onExpandedChange}
     />
   );
+}
+
+interface FileChangeBlockGroupProps {
+  diffs: InlineDiffPreview[];
+  basePath: string | undefined;
+  toolName: string;
+  policyExpanded: boolean | undefined;
+  onPolicyExpandedChange: ((next: boolean) => void) | undefined;
+}
+
+function FileChangeBlockGroup({
+  diffs,
+  basePath,
+  toolName,
+  policyExpanded,
+  onPolicyExpandedChange,
+}: FileChangeBlockGroupProps): ReactElement {
+  return (
+    <div className="space-y-2">
+      {diffs.map((diff, index) => {
+        const key = inlineDiffKey(diff, index);
+        return (
+          <InlineDiffGroupItem
+            key={key}
+            diff={diff}
+            basePath={basePath}
+            toolName={toolName}
+            defaultExpanded={policyExpanded}
+            onUncontrolledExpandedChange={onPolicyExpandedChange}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+interface InlineDiffGroupItemProps {
+  diff: InlineDiffPreview;
+  basePath: string | undefined;
+  toolName: string;
+  defaultExpanded: boolean | undefined;
+  onUncontrolledExpandedChange: ((next: boolean) => void) | undefined;
+}
+
+const InlineDiffGroupItem = memo(function InlineDiffGroupItem({
+  diff,
+  basePath,
+  toolName,
+  defaultExpanded,
+  onUncontrolledExpandedChange,
+}: InlineDiffGroupItemProps): ReactElement {
+  const [expandedOverride, setExpandedOverride] = useState<boolean | undefined>();
+  const handleControlledExpandedChange = useCallback((next: boolean): void => {
+    setExpandedOverride(next);
+  }, []);
+  const expanded =
+    defaultExpanded === undefined ? undefined : (expandedOverride ?? defaultExpanded);
+  return renderInlineDiffBlock(
+    diff,
+    basePath,
+    toolName,
+    undefined,
+    expanded,
+    defaultExpanded === undefined ? onUncontrolledExpandedChange : handleControlledExpandedChange,
+  );
+});
+
+function inlineDiffKey(diff: InlineDiffPreview, index: number): string {
+  return `${index}:${diff.filePath}`;
 }
