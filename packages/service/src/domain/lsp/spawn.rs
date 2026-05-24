@@ -19,7 +19,8 @@ use tokio::process::{Child, Command};
 
 use crate::error::AppError;
 
-use super::catalog::{self, CatalogEntry};
+use super::catalog::{self, CatalogEntry, DownloadRecipe};
+use super::checksum;
 use super::downloader;
 
 /// What we need to actually invoke a server. Produced by [`resolve_server`].
@@ -93,7 +94,19 @@ async fn ensure_managed_binary(entry: &CatalogEntry) -> Result<Option<PathBuf>, 
     };
     let bin_path = downloader::managed_bin_path(entry, recipe)?;
     if bin_path.exists() {
-        return Ok(Some(bin_path));
+        if let DownloadRecipe::GithubReleaseGz {
+            sha256_by_platform, ..
+        } = recipe
+        {
+            let expected_sha256 = checksum::current_platform_sha256(sha256_by_platform)?;
+            if checksum::verify_sha256(&bin_path, expected_sha256).is_err() {
+                let _ = std::fs::remove_file(&bin_path);
+            } else {
+                return Ok(Some(bin_path));
+            }
+        } else {
+            return Ok(Some(bin_path));
+        }
     }
     downloader::download_and_install(entry, recipe).await?;
     Ok(Some(bin_path))

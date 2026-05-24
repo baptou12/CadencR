@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.3.0 - 2026-05-24
+
+Previous release: v0.2.2 - 2026-05-20
+
+### ✨ Added
+
+- Added an LSP-powered editor workflow with Cmd-click go-to-definition, clickable symbol hints, diagnostics, server status, and an editor settings list for supported language servers.
+- Added automatic language-server discovery, managed downloads, crash backoff, idle shutdown, and lifecycle controls so editor intelligence starts and stops with the active workspace.
+- Added in-buffer search and replace, go-to-line, editor-scoped shortcuts, Markdown preview, and a free-buffer flow for starting a scratch file and saving it later.
+- Added a fully reworked file tree with a new tree engine, better folder interactions, lazy ignored-directory loading, and configurable file icons.
+- Added global agent verbosity modes so users can choose how much session detail Cadencr shows while agents work.
+- Added One Dark and One Light themes, a global theme drawer, and theme-aware diff rendering.
+
+### 🔧 Changed
+
+- Improved agent session readability with clearer compact tool rows, expandable collapsed work, better stream hints, and more stable scrolling during long runs.
+- Made large sessions open faster by deferring non-agent hydration, paginating persisted agent state, and adding database indexes for agent message history.
+- Made large workspaces easier to browse by reducing file-tree jank and avoiding eager rendering of ignored directory contents.
+- Improved editor polish around active tabs, selection highlights, status indicators, prompt-panel height, and sidebar resizing.
+- Made LSP downloads and discovery more reliable by filtering proxy shims, streaming downloads with a User-Agent, and routing server messages to user-visible toasts.
+
+### 🐛 Fixed
+
+- Fixed prompt drafts leaking across conversation switches and cleared stale prompt text when switching away from an uninitialized conversation.
+- Fixed inline diff expansion so one file's expanded state no longer affects another file.
+- Fixed archive confirmation double-submit behavior so the modal cannot accidentally target the next feature.
+- Fixed file-tree folder actions, manual feature rename visibility, active-agent card shadows, and collapsed edit/write rows.
+- Fixed editor issues around Cmd+Z immediately after opening a file, stale dirty state when reopening files, active-line selection visibility, and blame refresh after editor mount.
+- Fixed merge conflict handling so the merge dialog surfaces conflicts explicitly instead of failing silently.
+- Fixed shortcuts-help opening across QWERTY and AZERTY keyboard layouts.
+
+### 🔒 Security
+
+- Added SHA-256 verification for managed LSP downloads before Cadencr runs the downloaded binary.
+
 ## v0.2.2 - 2026-05-20
 
 Previous release: v0.2.1 - 2026-05-20

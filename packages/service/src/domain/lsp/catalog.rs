@@ -36,6 +36,8 @@ pub enum DownloadRecipe {
         version: &'static str,
         /// URL template with `{version}`, `{arch}`, and `{os}` placeholders.
         url_template: &'static str,
+        /// SHA-256 of the decompressed executable for each supported asset.
+        sha256_by_platform: &'static [PlatformSha256],
     },
     /// npm packages installed into a managed local prefix.
     NpmPackage {
@@ -83,6 +85,13 @@ const fn npm_catalog_entry(
         version_must_contain: None,
         download: Some(DownloadRecipe::NpmPackage { version, packages }),
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PlatformSha256 {
+    pub arch: &'static str,
+    pub os: &'static str,
+    pub sha256: &'static str,
 }
 
 /// The static catalog. Order doesn't matter — lookup is by `language_id`.
@@ -186,6 +195,28 @@ pub const CATALOG: &[CatalogEntry] = &[
             version: "2026-05-18",
             url_template:
                 "https://github.com/rust-lang/rust-analyzer/releases/download/{version}/rust-analyzer-{arch}-{os}.gz",
+            sha256_by_platform: &[
+                PlatformSha256 {
+                    arch: "x86_64",
+                    os: "apple-darwin",
+                    sha256: "7a302096e2d1a925172eae4bd948b4023d8add006f87bd8603afefd7703a9e41",
+                },
+                PlatformSha256 {
+                    arch: "aarch64",
+                    os: "apple-darwin",
+                    sha256: "bdc9dea86392a14aa752de040e6e1b7b128d1021e6fdf688ded49164173985c6",
+                },
+                PlatformSha256 {
+                    arch: "x86_64",
+                    os: "unknown-linux-gnu",
+                    sha256: "249f9b2b901cad51a0f62227eafbc02570a4230755fdb87a75b21dc8b0eaeafa",
+                },
+                PlatformSha256 {
+                    arch: "aarch64",
+                    os: "unknown-linux-gnu",
+                    sha256: "e14f06cdb53678d245d714e92e749a9260482178738c7fb40f6aa6184f6220d0",
+                },
+            ],
         }),
     },
     CatalogEntry {

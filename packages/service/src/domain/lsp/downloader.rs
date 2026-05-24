@@ -18,7 +18,9 @@ use tracing::{info, warn};
 use crate::error::AppError;
 
 use super::catalog::{CatalogEntry, DownloadRecipe};
+use super::checksum::{current_platform_sha256, verify_sha256};
 use super::npm_installer;
+use super::platform::current_platform_tag;
 
 /// Directory under `~/.cadencr/lsp/<lsp_id>/<version>/` for a given recipe.
 /// Creates parent dirs if missing (mode `0700` on unix).
@@ -64,7 +66,8 @@ pub async fn download_and_install(
         DownloadRecipe::GithubReleaseGz {
             version,
             url_template,
-        } => download_github_release_gz(entry, version, url_template).await,
+            sha256_by_platform,
+        } => download_github_release_gz(entry, version, url_template, sha256_by_platform).await,
         DownloadRecipe::NpmPackage { version, packages } => {
             npm_installer::install(entry, version, packages).await
         }
@@ -87,8 +90,10 @@ async fn download_github_release_gz(
     entry: &CatalogEntry,
     version: &str,
     url_template: &str,
+    sha256_by_platform: &[super::catalog::PlatformSha256],
 ) -> Result<(), AppError> {
     let url = render_url(url_template, version)?;
+    let expected_sha256 = current_platform_sha256(sha256_by_platform)?;
     let dir = install_dir(entry.lsp_id, version)?;
     let bin_path = dir.join(entry.bin_name);
     info!(
@@ -129,6 +134,10 @@ async fn download_github_release_gz(
     let tmp_path = bin_path.with_extension("download");
     stream_to_disk(response, &tmp_path, total_size, entry.lsp_id).await?;
     finalize_install(&tmp_path, &bin_path, entry.lsp_id)?;
+    if let Err(err) = verify_sha256(&bin_path, expected_sha256) {
+        let _ = fs::remove_file(&bin_path);
+        return Err(err);
+    }
 
     // GC sibling version dirs. After bumping a pinned version, the previous
     // install would otherwise sit ~30 MB on disk forever — and worse, if a
@@ -297,30 +306,6 @@ fn render_url(template: &str, version: &str) -> Result<String, AppError> {
         .replace("{version}", version)
         .replace("{arch}", arch)
         .replace("{os}", os))
-}
-
-/// Map the host `target_arch`/`target_os` to the strings rust-analyzer (and
-/// similar) use in their release asset names. New platforms = new arm here.
-fn current_platform_tag() -> Result<(&'static str, &'static str), AppError> {
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x86_64",
-        "aarch64" => "aarch64",
-        other => {
-            return Err(AppError::Internal(format!(
-                "no LSP release asset available for arch {other:?}"
-            )))
-        }
-    };
-    let os = match std::env::consts::OS {
-        "macos" => "apple-darwin",
-        "linux" => "unknown-linux-gnu",
-        other => {
-            return Err(AppError::Internal(format!(
-                "no LSP release asset available for os {other:?}"
-            )))
-        }
-    };
-    Ok((arch, os))
 }
 
 #[cfg(test)]

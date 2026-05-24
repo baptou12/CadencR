@@ -16,10 +16,12 @@
 //! [LSP 3.17]: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/
 
 pub mod catalog;
+pub mod checksum;
 pub mod downloader;
 pub mod framing;
 pub mod lifecycle;
 pub mod npm_installer;
+pub mod platform;
 pub mod probe;
 pub mod proxy;
 pub mod registry;

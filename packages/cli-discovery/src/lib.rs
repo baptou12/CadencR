@@ -694,11 +694,8 @@ mod tests {
         let path_dir = TempDir::new().unwrap();
         let shim_dir = TempDir::new().unwrap();
         // Real binary first on PATH.
-        let _real = make_executable_with_body(
-            path_dir.path(),
-            "thing",
-            "#!/bin/sh\necho 'thing 1.0.0'\n",
-        );
+        let _real =
+            make_executable_with_body(path_dir.path(), "thing", "#!/bin/sh\necho 'thing 1.0.0'\n");
         // Shim later on PATH that pretends to be `thing` but prints rustup help.
         let _shim = make_executable_with_body(
             shim_dir.path(),
@@ -711,7 +708,11 @@ mod tests {
         // others; we just assert that the real one is present and the shim
         // is absent.
         let original_path = std::env::var_os("PATH");
-        let combined = format!("{}:{}", path_dir.path().display(), shim_dir.path().display());
+        let combined = format!(
+            "{}:{}",
+            path_dir.path().display(),
+            shim_dir.path().display()
+        );
         // SAFETY: tests run single-threaded under `tokio::test` runtime; we
         // restore the var before returning.
         // NOTE: env mutation is process-global and racy across parallel
