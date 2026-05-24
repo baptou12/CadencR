@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   ContextMenuItem as FileTreeContextMenuItem,
@@ -9,6 +9,7 @@ import { useGetUncommittedFiles, useTreeAll, type FileTreeEntry } from "@/api/ge
 import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
+import { useFileTreeAgentShortcut } from "./useFileTreeAgentShortcut";
 import {
   buildPierreInputs,
   CadencrFileTree,
@@ -353,8 +354,19 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
     [isDraftPath, model, trashPath],
   );
 
+  // Pierre's shadow-root keydown swallows ⌘⇧A (its select-all matcher
+  // ignores Shift), preventing the documented `pane-agent` shortcut from
+  // ever reaching the document-level listener. Reinstate it locally.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useFileTreeAgentShortcut(containerRef, featureId);
+
   return (
-    <div className="flex h-full flex-col" onKeyDown={handleTreeKeyDown} onClick={handleTreeClick}>
+    <div
+      ref={containerRef}
+      className="flex h-full flex-col"
+      onKeyDown={handleTreeKeyDown}
+      onClick={handleTreeClick}
+    >
       <CadencrFileTree
         model={model}
         // Only block on the fast (`tracked`) query — the slow (`all`)
