@@ -23,10 +23,10 @@ pub fn codex_discovery_spec() -> DiscoverySpec {
             ".local/bin",
             ".bun/bin",
             ".npm-global/bin",
-            ".cargo/bin",
             ".volta/bin",
             ".fnm/aliases/default/bin",
             ".asdf/shims",
+            ".cargo/bin",
         ]
         .into_iter()
         .map(str::to_string)
