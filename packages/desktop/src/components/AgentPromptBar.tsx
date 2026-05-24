@@ -15,6 +15,7 @@ import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
+import { draftScope } from "@/lib/draft-scope";
 import { usePromptEditorRestore } from "@/hooks/usePromptEditorRestore";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
@@ -78,6 +79,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     usePromptEditorRestore({
       restoredDraft,
       dbSessionId: draft.dbSessionId,
+      conversationKey: draftScope(sessionId, wsSessionId),
       textRef,
       editorRef,
       setText,

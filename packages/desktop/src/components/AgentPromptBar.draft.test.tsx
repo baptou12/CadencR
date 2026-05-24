@@ -132,12 +132,54 @@ describe("AgentPromptBar conversation isolation", () => {
       initialDraft: null,
       dbSessionId: null,
     });
-    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-A" />,
+    );
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "typed before init" } });
 
     usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 42 });
-    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-A" />);
 
     expect(screen.getByRole("textbox")).toHaveValue("typed before init");
+  });
+
+  it("clears typed text when switching conversations before the source was initialized", () => {
+    // Regression: typed in a brand-new conversation (no agent session yet,
+    // `dbSessionId: null`) then navigated to an existing conversation. The
+    // editor instance is reused across the prop change — without the
+    // conversation-key gate the source's text leaked into the destination.
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      dbSessionId: null,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-new" />,
+    );
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "draft for the new conversation" },
+    });
+
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      dbSessionId: 42,
+    });
+    rerender(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-existing" />,
+    );
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+
+    // And the destination's own saved draft restores once the fetch lands.
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "real draft for ws-existing",
+      dbSessionId: 42,
+    });
+    rerender(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-existing" />,
+    );
+    expect(screen.getByRole("textbox")).toHaveValue("real draft for ws-existing");
   });
 });
