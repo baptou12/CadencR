@@ -13,6 +13,11 @@ import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import type { Extension } from "@codemirror/state";
 
+export function isMarkdownFile(filePath: string): boolean {
+  const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
+  return ext === "md" || ext === "mdx";
+}
+
 export function getLanguageExtension(filePath: string): Extension | null {
   const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
 

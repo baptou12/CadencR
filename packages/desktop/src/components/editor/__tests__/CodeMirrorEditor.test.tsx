@@ -57,6 +57,7 @@ vi.mock("../BaseCodeMirrorEditor", () => ({
 
 vi.mock("../language-extensions", () => ({
   getLanguageExtension: vi.fn(() => null),
+  isMarkdownFile: vi.fn(() => false),
 }));
 
 vi.mock("../editorSaveRegistry", () => ({

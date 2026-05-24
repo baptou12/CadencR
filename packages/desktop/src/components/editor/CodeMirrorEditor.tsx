@@ -5,12 +5,15 @@ import { Loader2Icon } from "lucide-react";
 import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { useLsp, type LspStatus } from "@/lib/lsp/useLsp";
-import { getLanguageExtension } from "./language-extensions";
+import { useLsp } from "@/lib/lsp/useLsp";
+import { useScopedShortcut } from "@/hooks/useShortcut";
+import { cn } from "@/lib/utils";
+import { Markdown } from "@/components/Markdown";
+import { getLanguageExtension, isMarkdownFile } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
-import { LspStatusIndicator } from "./LspStatusIndicator";
+import { EditorStatusBar } from "./EditorStatusBar";
 import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
 import { toast } from "sonner";
@@ -74,6 +77,8 @@ export default function CodeMirrorEditor({
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutateAsyncRef = useRef<ReturnType<typeof useWriteFile>["mutateAsync"] | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const isMarkdown = useMemo(() => isMarkdownFile(filePath), [filePath]);
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
@@ -201,6 +206,30 @@ export default function CodeMirrorEditor({
     [onEditorViewChange, paneId],
   );
 
+  const togglePreview = useCallback(() => {
+    if (!isMarkdown) return;
+    setPreviewContent((prev) => {
+      if (prev !== null) return null;
+      const view = viewRef.current;
+      return view ? view.state.doc.toString() : (data?.content ?? "");
+    });
+  }, [isMarkdown, data]);
+
+  useScopedShortcut(
+    "editor-toggle-markdown-preview",
+    (e) => {
+      e.preventDefault();
+      togglePreview();
+    },
+    "editor",
+    { enabled: isMarkdown },
+  );
+
+  // Reset preview when switching files within the same pane.
+  useEffect(() => {
+    setPreviewContent(null);
+  }, [filePath]);
+
   const bufferSearch = useMemo(() => bufferSearchExtension(), []);
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
@@ -292,6 +321,8 @@ export default function CodeMirrorEditor({
     );
   }
 
+  const isPreviewing = previewContent !== null;
+
   return (
     <div className="h-full flex flex-col">
       <BaseCodeMirrorEditor
@@ -308,9 +339,16 @@ export default function CodeMirrorEditor({
         ]}
         editorViewRef={viewRef}
         onEditorViewChange={handleEditorViewChange}
-        className="flex-1 overflow-auto"
+        className={cn("flex-1 overflow-auto", isPreviewing && "hidden")}
       />
-      {searchOpen && editorView && (
+      {isPreviewing && (
+        <div className="flex-1 overflow-auto bg-background">
+          <div className="max-w-3xl mx-auto px-6 py-4">
+            <Markdown content={previewContent ?? ""} />
+          </div>
+        </div>
+      )}
+      {searchOpen && editorView && !isPreviewing && (
         <EditorSearchPanel
           view={editorView}
           featureId={featureId}
@@ -319,7 +357,7 @@ export default function CodeMirrorEditor({
           onClose={onCloseSearch}
         />
       )}
-      <StatusBar
+      <EditorStatusBar
         line={cursorPosition.line}
         col={cursorPosition.col}
         language={getLanguageName(filePath)}
@@ -327,47 +365,10 @@ export default function CodeMirrorEditor({
         lspStatus={lsp.status}
         lspLanguageId={lsp.languageId}
         lspError={lsp.errorMessage}
+        isMarkdown={isMarkdown}
+        isPreview={isPreviewing}
+        onTogglePreview={togglePreview}
       />
-    </div>
-  );
-}
-
-interface StatusBarProps {
-  line: number;
-  col: number;
-  language: string;
-  autoSavedVisible: boolean;
-  lspStatus: LspStatus;
-  lspLanguageId: string | null;
-  lspError?: string;
-}
-
-function StatusBar({
-  line,
-  col,
-  language,
-  autoSavedVisible,
-  lspStatus,
-  lspLanguageId,
-  lspError,
-}: StatusBarProps) {
-  return (
-    <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
-      <span>
-        Ln {line}, Col {col}
-      </span>
-      <div className="flex items-center gap-3">
-        {autoSavedVisible && <span>Auto-saved</span>}
-        <span className="inline-flex items-center gap-1">
-          <LspStatusIndicator
-            status={lspStatus}
-            languageId={lspLanguageId}
-            errorMessage={lspError}
-          />
-          {language}
-        </span>
-        <span>UTF-8</span>
-      </div>
     </div>
   );
 }
