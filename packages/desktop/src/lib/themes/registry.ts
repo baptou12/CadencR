@@ -1,14 +1,23 @@
 import { AURORA_THEME } from "./aurora";
 import { DRACULA_THEME } from "./dracula";
+import { ONE_DARK_THEME } from "./one-dark";
+import { ONE_LIGHT_THEME } from "./one-light";
 import { THEME_IDS, type ThemeDefinition, type ThemeId } from "./types";
 
 /** Display order in the settings picker. */
-export const THEME_LIST: ThemeDefinition[] = [DRACULA_THEME, AURORA_THEME];
+export const THEME_LIST: ThemeDefinition[] = [
+  DRACULA_THEME,
+  AURORA_THEME,
+  ONE_DARK_THEME,
+  ONE_LIGHT_THEME,
+];
 
 /** All themes shipped with Cadencr, keyed by id. */
 export const THEMES: Record<ThemeId, ThemeDefinition> = {
   dracula: DRACULA_THEME,
   aurora: AURORA_THEME,
+  "one-dark": ONE_DARK_THEME,
+  "one-light": ONE_LIGHT_THEME,
 };
 
 export const DEFAULT_THEME_ID: ThemeId = "dracula";

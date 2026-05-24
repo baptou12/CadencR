@@ -324,6 +324,281 @@
   --terminal-warning-button-bg-hover: oklch(0.88 0.02 290);
 }
 
+/* One Dark — Atom's One Dark Pro palette: a calmer, cooler dark theme
+ * for long coding sessions. Same UI treatment as Dracula (block / chip /
+ * terminal patterns) — only the color identity changes (blue primary,
+ * One Dark syntax accents, slightly lifted blue-gray background). */
+:root[data-theme="one-dark"] {
+  color-scheme: dark;
+  /* Tailwind semantic tokens — One Dark blue-gray palette. */
+  --background: oklch(0.27 0.014 257);
+  --foreground: oklch(0.82 0.014 257);
+  --card: oklch(0.27 0.014 257);
+  --card-foreground: oklch(0.82 0.014 257);
+  --popover: oklch(0.3 0.014 257);
+  --popover-foreground: oklch(0.82 0.014 257);
+  --primary: oklch(0.72 0.13 240);
+  --primary-foreground: oklch(0.18 0.012 257);
+  --secondary: oklch(0.36 0.014 257);
+  --secondary-foreground: oklch(0.82 0.014 257);
+  --muted: oklch(0.36 0.014 257);
+  --muted-foreground: oklch(0.72 0.022 257);
+  --accent: oklch(0.34 0.014 257);
+  --accent-foreground: oklch(0.82 0.014 257);
+  --destructive: oklch(0.62 0.2 25);
+  --destructive-foreground: oklch(0.97 0.008 257);
+  --border: oklch(0.34 0.014 257);
+  --input: oklch(0.36 0.014 257);
+  --ring: oklch(0.62 0.13 240);
+  --chart-1: oklch(0.72 0.13 240);
+  --chart-2: oklch(0.66 0.18 305);
+  --chart-3: oklch(0.78 0.16 145);
+  --chart-4: oklch(0.82 0.14 80);
+  --chart-5: oklch(0.74 0.14 35);
+  --sidebar: oklch(0.25 0.012 257);
+  --sidebar-foreground: oklch(0.82 0.014 257);
+  --sidebar-primary: oklch(0.72 0.13 240);
+  --sidebar-primary-foreground: oklch(0.18 0.012 257);
+  --sidebar-accent: oklch(0.34 0.014 257);
+  --sidebar-accent-foreground: oklch(0.82 0.014 257);
+  --sidebar-border: oklch(0.36 0.014 257);
+  --sidebar-ring: oklch(0.62 0.13 240);
+
+  /* Vibrant accent palette — One Dark syntax colors. */
+  --acc-cyan: #56b6c2;
+  --acc-green: #98c379;
+  --acc-orange: #d19a66;
+  --acc-pink: #c678dd;
+  --acc-purple: #c678dd;
+  --acc-red: #e06c75;
+  --acc-yellow: #e5c07b;
+  --acc-comment: #5c6370;
+
+  /* Code surface — slightly darker than the chat background for separation. */
+  --code-bg: #21252b;
+  --code-fg: #abb2bf;
+
+  /* Agent-stream block surfaces — Dracula treatment, recolored for One Dark.
+   * Tool/Plan use the One Dark blue identity; Thinking keeps its dedicated
+   * violet slot (One Dark magenta). Bash chrome mirrors Dracula's pattern. */
+  --block-tool-bg: #1f2733;
+  --block-tool-accent: #61afef;
+  --block-thinking-bg: #2a2218;
+  --block-thinking-accent: #d19a66;
+  --block-plan-bg: #1f2733;
+  --block-plan-accent: #61afef;
+  --block-bash-header-bg: #1b1f24;
+  --block-bash-body-bg: #0f1116;
+  --block-bash-fg: #d7dae0;
+  --block-bash-muted-fg: #828791;
+  --block-task-bg: #1c1f25;
+
+  /* App-level semantic accents. */
+  --numstat-add-fg: #98c379;
+  --numstat-del-fg: #e06c75;
+  --chip-worktree-bg: rgba(86, 182, 194, 0.18);
+  --chip-worktree-bg-hover: rgba(86, 182, 194, 0.28);
+  --chip-worktree-fg: #56b6c2;
+  --chip-shared-worktree-bg: rgba(209, 154, 102, 0.18);
+  --chip-shared-worktree-fg: #d19a66;
+
+  /* Prompt chip palette — Tailwind violet/fuchsia/blue identities (same as
+   * Dracula). These chips are UI-conventional identities (model picker,
+   * Auto-Accept, Build/Default modes), not theme-specific syntax. */
+  --chip-violet-bg: #8b5cf6;
+  --chip-violet-fg: #a78bfa;
+  --chip-violet-soft: #c4b5fd;
+  --chip-fuchsia-bg: #d946ef;
+  --chip-fuchsia-fg: #e879f9;
+  --chip-blue-bg: #3b82f6;
+  --chip-blue-fg: #60a5fa;
+
+  /* CodeMirror editor — One Dark syntax. */
+  --editor-bg: #282c34;
+  --editor-fg: #abb2bf;
+  --editor-comment: #5c6370;
+  --editor-cyan: #56b6c2;
+  --editor-green: #98c379;
+  --editor-orange: #d19a66;
+  --editor-pink: #c678dd;
+  --editor-purple: #c678dd;
+  --editor-red: #e06c75;
+  --editor-yellow: #e5c07b;
+  --editor-border: #3e4451;
+  --editor-cursor: #528bff;
+  --editor-line-highlight: rgba(255, 255, 255, 0.05);
+  --editor-gutter-bg: #282c34;
+  --editor-gutter-fg: #4b5263;
+  --editor-selection-bg: #3e4451;
+  --editor-selection-bg-soft: #2c313a;
+  --editor-search-match-bg: rgba(82, 139, 255, 0.25);
+
+  /* Diff decorations. */
+  --diff-add-bg: rgba(152, 195, 121, 0.1);
+  --diff-add-bg-strong: rgba(152, 195, 121, 0.22);
+  --diff-del-bg: rgba(224, 108, 117, 0.1);
+  --diff-del-bg-strong: rgba(224, 108, 117, 0.22);
+
+  /* Terminal chrome — match xterm.background in `lib/themes/one-dark.ts`
+   * exactly so the panel reads as a single surface around the canvas. */
+  --terminal-bg: #282c34;
+  --terminal-panel-icon: #5c6370;
+  --terminal-panel-icon-hover: #abb2bf;
+  --terminal-panel-icon-bg-hover: #2c313a;
+  --terminal-panel-handle-bg: #2c313a;
+  --terminal-panel-handle-bg-hover: #3e4451;
+  --terminal-warning-bg: #2c313a;
+  --terminal-warning-border: #3e4451;
+  --terminal-warning-fg: #abb2bf;
+  --terminal-warning-fg-secondary: #9aa0ad;
+  --terminal-warning-accent: #e5c07b;
+  --terminal-warning-link: #61afef;
+  --terminal-warning-button-bg: #3e4451;
+  --terminal-warning-button-bg-hover: #4b5263;
+}
+
+/* One Light — Atom's One Light Pro palette, the light counterpart to
+ * One Dark. Same UI treatment as Aurora (block / chip / terminal
+ * patterns) — only the color identity changes: blue primary, deepened
+ * One Light syntax accents. Violet thinking and violet model chips
+ * stay (UI-conventional identities, not theme-specific). */
+:root[data-theme="one-light"] {
+  color-scheme: light;
+  /* Tailwind semantic tokens — near-white paper with a barely perceptible
+   * warm tint (hue 80, chroma 0.002–0.005). Reads as light/airy and
+   * neutral rather than cream. */
+  --background: oklch(0.99 0.003 80);
+  --foreground: oklch(0.33 0.012 80);
+  --card: oklch(0.995 0.002 80);
+  --card-foreground: oklch(0.33 0.012 80);
+  --popover: oklch(0.995 0.002 80);
+  --popover-foreground: oklch(0.33 0.012 80);
+  --primary: oklch(0.55 0.18 260);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.97 0.004 80);
+  --secondary-foreground: oklch(0.33 0.012 80);
+  --muted: oklch(0.97 0.004 80);
+  --muted-foreground: oklch(0.46 0.008 80);
+  --accent: oklch(0.95 0.005 80);
+  --accent-foreground: oklch(0.33 0.012 80);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.93 0.004 80);
+  --input: oklch(0.98 0.004 80);
+  --ring: oklch(0.62 0.18 260);
+  --chart-1: oklch(0.55 0.18 260);
+  --chart-2: oklch(0.55 0.18 320);
+  --chart-3: oklch(0.58 0.16 145);
+  --chart-4: oklch(0.66 0.14 75);
+  --chart-5: oklch(0.6 0.21 25);
+  --sidebar: oklch(0.98 0.004 80);
+  --sidebar-foreground: oklch(0.33 0.012 80);
+  --sidebar-primary: oklch(0.55 0.18 260);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.95 0.005 80);
+  --sidebar-accent-foreground: oklch(0.33 0.012 80);
+  --sidebar-border: oklch(0.93 0.004 80);
+  --sidebar-ring: oklch(0.62 0.18 260);
+
+  /* Vibrant accents — One Light syntax, deepened for white-bg legibility. */
+  --acc-cyan: #0184bc;
+  --acc-green: #50a14f;
+  --acc-orange: #986801;
+  --acc-pink: #a626a4;
+  --acc-purple: #a626a4;
+  --acc-red: #e45649;
+  --acc-yellow: #c18401;
+  --acc-comment: #a0a1a7;
+
+  /* Code surface — slightly deeper neutral tone so code blocks separate from
+   * the panel surface. */
+  --code-bg: oklch(0.97 0.004 80);
+  --code-fg: oklch(0.33 0.012 80);
+
+  /* Agent-stream block surfaces — Aurora treatment (light tints + saturated
+   * accent text), recolored for One Light. Thinking keeps its dedicated
+   * violet slot per the design contract (never use --primary). */
+  --block-tool-bg: oklch(0.96 0.04 245);
+  --block-tool-accent: oklch(0.45 0.18 260);
+  --block-thinking-bg: oklch(0.96 0.05 70);
+  --block-thinking-accent: oklch(0.45 0.16 55);
+  --block-plan-bg: oklch(0.96 0.04 245);
+  --block-plan-accent: oklch(0.45 0.18 260);
+  /* Bash variant — follow Aurora: header takes the accent gray, body is
+   * the soft code surface. Live xterm still stays dark. */
+  --block-bash-header-bg: var(--accent);
+  --block-bash-body-bg: var(--code-bg);
+  --block-bash-fg: var(--foreground);
+  --block-bash-muted-fg: var(--muted-foreground);
+  --block-task-bg: oklch(0.96 0.005 80);
+
+  /* App-level semantic accents — tuned for contrast on white. */
+  --numstat-add-fg: oklch(0.42 0.16 145);
+  --numstat-del-fg: oklch(0.48 0.2 25);
+  --chip-worktree-bg: oklch(0.9 0.06 220);
+  --chip-worktree-bg-hover: oklch(0.86 0.07 220);
+  --chip-worktree-fg: oklch(0.36 0.12 220);
+  --chip-shared-worktree-bg: oklch(0.9 0.07 70);
+  --chip-shared-worktree-fg: oklch(0.42 0.13 60);
+
+  /* Prompt chip palette — Aurora pattern: bg/fg pull the saturated identity,
+   * `*-soft` flips to the DARKEST shade for high-contrast text on the
+   * tinted chip bg. Violet/fuchsia hues are kept (UI-conventional model
+   * picker / mode chips), only retuned to read on white. */
+  --chip-violet-bg: oklch(0.55 0.22 295);
+  --chip-violet-fg: oklch(0.45 0.2 295);
+  --chip-violet-soft: oklch(0.35 0.18 295);
+  --chip-fuchsia-bg: oklch(0.55 0.22 325);
+  --chip-fuchsia-fg: oklch(0.45 0.2 325);
+  --chip-blue-bg: oklch(0.55 0.2 245);
+  --chip-blue-fg: oklch(0.45 0.18 245);
+
+  /* CodeMirror editor — One Light syntax, near-white surface. */
+  --editor-bg: oklch(0.99 0.003 80);
+  --editor-fg: oklch(0.33 0.012 80);
+  --editor-comment: oklch(0.7 0.006 80);
+  --editor-cyan: #0184bc;
+  --editor-green: #50a14f;
+  --editor-orange: #986801;
+  --editor-pink: #a626a4;
+  --editor-purple: #a626a4;
+  --editor-red: #e45649;
+  --editor-yellow: #c18401;
+  --editor-border: oklch(0.93 0.004 80);
+  --editor-cursor: #526fff;
+  /* Translucent overlay so CodeMirror's selection layer shows through. */
+  --editor-line-highlight: rgba(0, 0, 0, 0.04);
+  --editor-gutter-bg: oklch(0.99 0.003 80);
+  --editor-gutter-fg: oklch(0.66 0.006 80);
+  --editor-selection-bg: oklch(0.92 0.006 80);
+  --editor-selection-bg-soft: oklch(0.95 0.005 80);
+  --editor-search-match-bg: rgba(64, 120, 242, 0.18);
+
+  /* Diff decorations. */
+  --diff-add-bg: rgba(80, 161, 79, 0.12);
+  --diff-add-bg-strong: rgba(80, 161, 79, 0.22);
+  --diff-del-bg: rgba(228, 86, 73, 0.12);
+  --diff-del-bg-strong: rgba(228, 86, 73, 0.22);
+
+  /* Terminal chrome — match xterm.background in `lib/themes/one-light.ts`
+   * exactly (hex literal) so the panel reads as a single surface around
+   * the canvas. */
+  --terminal-bg: #fbfaf8;
+  --terminal-panel-icon: oklch(0.55 0.008 80);
+  --terminal-panel-icon-hover: oklch(0.33 0.012 80);
+  --terminal-panel-icon-bg-hover: oklch(0.95 0.005 80);
+  --terminal-panel-handle-bg: oklch(0.95 0.005 80);
+  --terminal-panel-handle-bg-hover: oklch(0.92 0.006 80);
+  --terminal-warning-bg: oklch(0.98 0.004 80);
+  --terminal-warning-border: oklch(0.93 0.004 80);
+  --terminal-warning-fg: oklch(0.33 0.012 80);
+  --terminal-warning-fg-secondary: oklch(0.46 0.008 80);
+  --terminal-warning-accent: #c18401;
+  --terminal-warning-link: #4078f2;
+  --terminal-warning-button-bg: oklch(0.95 0.005 80);
+  --terminal-warning-button-bg-hover: oklch(0.92 0.006 80);
+}
+
 @layer base {
   * {
     @apply border-border;

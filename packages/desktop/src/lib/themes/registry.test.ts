@@ -7,15 +7,19 @@ vi.mock("../../../assets/cadencr-logo3-light.svg", () => ({
 }));
 
 describe("theme registry", () => {
-  it("ships at least dracula and aurora", () => {
+  it("ships dracula, aurora, one-dark, and one-light", () => {
     const ids = THEME_LIST.map((t) => t.id);
     expect(ids).toContain("dracula");
     expect(ids).toContain("aurora");
+    expect(ids).toContain("one-dark");
+    expect(ids).toContain("one-light");
   });
 
   it("isThemeId narrows to known ids", () => {
     expect(isThemeId("dracula")).toBe(true);
     expect(isThemeId("aurora")).toBe(true);
+    expect(isThemeId("one-dark")).toBe(true);
+    expect(isThemeId("one-light")).toBe(true);
     expect(isThemeId("solarized")).toBe(false);
     expect(isThemeId(null)).toBe(false);
     expect(isThemeId(undefined)).toBe(false);
@@ -24,6 +28,7 @@ describe("theme registry", () => {
 
   it("parseThemeId falls back to default for unknown values", () => {
     expect(parseThemeId("aurora")).toBe("aurora");
+    expect(parseThemeId("one-dark")).toBe("one-dark");
     expect(parseThemeId("nope")).toBe(DEFAULT_THEME_ID);
     expect(parseThemeId(null)).toBe(DEFAULT_THEME_ID);
   });
@@ -33,11 +38,18 @@ describe("theme registry", () => {
     expect(aurora.label).toBe("Aurora");
     expect(aurora.appearance).toBe("light");
     expect(aurora.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+    const oneLight = getTheme("one-light");
+    expect(oneLight.label).toBe("One Light");
+    expect(oneLight.appearance).toBe("light");
+    expect(oneLight.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 
   it("declares appearance and logo choices per theme", () => {
     const dracula = getTheme("dracula");
     const aurora = getTheme("aurora");
+    const oneDark = getTheme("one-dark");
+    const oneLight = getTheme("one-light");
 
     expect(dracula.appearance).toBe("dark");
     expect(dracula.logo.variant).toBe("dark");
@@ -48,5 +60,10 @@ describe("theme registry", () => {
     expect(aurora.logo.variant).toBe("light");
     expect(aurora.logo.src).toContain("cadencr-logo3-light.svg");
     expect(aurora.logo.displayScale).toBe(dracula.logo.displayScale);
+
+    expect(oneDark.appearance).toBe("dark");
+    expect(oneDark.logo.variant).toBe("dark");
+    expect(oneLight.appearance).toBe("light");
+    expect(oneLight.logo.variant).toBe("light");
   });
 });
