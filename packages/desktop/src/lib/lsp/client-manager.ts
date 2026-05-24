@@ -15,12 +15,13 @@
  * (so flipping between tabs doesn't tear the server down) and only then
  * disconnect. A re-acquire inside the grace period cancels the shutdown.
  */
-import { LSPClient, serverDiagnostics } from "@codemirror/lsp-client";
+import { LSPClient } from "@codemirror/lsp-client";
 import { openSession } from "@/api/generated";
 import { connectLspWs, type WebSocketLspTransport } from "./transport";
 import { CadencrWorkspace, type DisplayFileHandler } from "./cadencr-workspace";
 import { pathToFileUri } from "./file-uri";
 import { buildLspNotificationHandlers } from "./notifications";
+import { cadencrServerDiagnostics } from "./diagnostics";
 
 interface ClientEntry {
   client: LSPClient;
@@ -133,7 +134,7 @@ async function createEntry(workspaceRoot: string, languageId: string): Promise<C
     // Wires `publishDiagnostics` into `@codemirror/lint` underlines + hover
     // tooltips, and also installs the doc-change autoSync — without it the
     // server would only ever see the file's initial contents.
-    extensions: [serverDiagnostics()],
+    extensions: [cadencrServerDiagnostics()],
   });
   client.connect(transport);
   if (!workspaceRef) {
