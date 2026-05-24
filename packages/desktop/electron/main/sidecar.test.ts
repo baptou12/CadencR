@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   describeStartupFailure,
@@ -207,7 +210,7 @@ describe("failed startup cleanup", () => {
 });
 
 describe("ensureLinuxSidecarExecutable", () => {
-  it("surfaces chmod failures on Linux", () => {
+  it("surfaces chmod failures on Linux when the binary is missing", () => {
     expect(() =>
       ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "linux"),
     ).toThrow(/Failed to mark cadencr-service executable/);
@@ -217,5 +220,19 @@ describe("ensureLinuxSidecarExecutable", () => {
     expect(() =>
       ensureLinuxSidecarExecutable("/definitely/missing/cadencr-service", "darwin"),
     ).not.toThrow();
+  });
+
+  it("is a no-op when the binary is already executable (e.g. deb/rpm installs)", () => {
+    // dpkg/rpm install the sidecar into a root-owned /opt/Cadencr/...
+    // directory where Cadencr (running as a normal user) can't chmod. The
+    // helper must not throw when the bit is already set.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cadencr-sidecar-"));
+    const binary = path.join(dir, "cadencr-service");
+    try {
+      fs.writeFileSync(binary, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+      expect(() => ensureLinuxSidecarExecutable(binary, "linux")).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
