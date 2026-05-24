@@ -17,6 +17,7 @@ function makeElectronBridge(): CadencrDesktopBridge {
     revealInFinder: vi.fn(() => Promise.resolve()),
     openExternal: vi.fn(() => Promise.resolve()),
     pickDirectory: vi.fn(() => Promise.resolve("/picked")),
+    showSaveDialog: vi.fn(() => Promise.resolve("/picked/file.md")),
     notifyPermission: vi.fn(() => Promise.resolve(true)),
     notify: vi.fn(() => Promise.resolve()),
     notifyTest: vi.fn(() => Promise.resolve()),

@@ -50,6 +50,8 @@ const storeState = {
 
 vi.mock("@/stores/editor-store", () => ({
   useEditorStore: (selector: (s: typeof storeState) => unknown) => selector(storeState),
+  isUntitledPath: (path: string | null | undefined) =>
+    typeof path === "string" && path.startsWith("untitled://"),
 }));
 
 vi.mock("../EditorSubTabs", () => ({

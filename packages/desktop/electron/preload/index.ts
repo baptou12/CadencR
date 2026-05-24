@@ -134,6 +134,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   revealInFinder: (path: string): Promise<void> => ipcRenderer.invoke("shell:reveal", path),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke("shell:open-external", url),
   pickDirectory: (): Promise<string | null> => ipcRenderer.invoke("dialog:pick-directory"),
+  showSaveDialog: (opts: { defaultPath: string; title?: string }): Promise<string | null> =>
+    ipcRenderer.invoke("dialog:save-file", opts),
   notifyPermission: (): Promise<boolean> => ipcRenderer.invoke("notify:permission"),
   notify: (opts: NotifyOptions): Promise<void> => ipcRenderer.invoke("notify:send", opts),
   notifyTest: (): Promise<void> => ipcRenderer.invoke("notify:test"),
