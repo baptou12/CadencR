@@ -36,7 +36,7 @@ import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
 import { useThemeSync } from "@/hooks/useTheme";
 import UniversalContextMenu from "@/components/UniversalContextMenu";
-import { RootOverlays } from "@/components/RootOverlays";
+import { RootOverlays, type ConfirmFeatureAction } from "@/components/RootOverlays";
 import { RootErrorBoundary } from "@/components/RootErrorBoundary";
 import { isMeaningfulScreenPath, useLastScreenStore } from "@/stores/last-screen-store";
 import { THEME_SELECTOR_SEARCH_KEY } from "@/components/theme/ThemeDrawer";
@@ -185,7 +185,7 @@ function RootLayout() {
     },
   });
 
-  const [confirmAction, setConfirmAction] = useState<"archive" | "delete" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmFeatureAction | null>(null);
   const archiveFeatureMutation = useUpdateFeatureStatus({
     mutation: {
       onError: () => {
@@ -210,17 +210,22 @@ function RootLayout() {
       },
     },
   });
-  const handleConfirmFeatureAction = useCallback((): void => {
-    if (activeFeatureId == null) return;
-    if (confirmAction === "archive") {
+  const handleArchiveFeature = useCallback(
+    (featureId: number): void => {
       archiveFeatureMutation.mutate({
-        id: activeFeatureId,
+        id: featureId,
         data: { status: "archived" },
       });
-      return;
-    }
-    deleteFeatureMutation.mutate({ id: activeFeatureId });
-  }, [activeFeatureId, archiveFeatureMutation, confirmAction, deleteFeatureMutation]);
+    },
+    [archiveFeatureMutation],
+  );
+
+  const handleDeleteFeature = useCallback(
+    (featureId: number): void => {
+      deleteFeatureMutation.mutate({ id: featureId });
+    },
+    [deleteFeatureMutation],
+  );
 
   useZoomHotkeys();
 
@@ -282,7 +287,10 @@ function RootLayout() {
       const remaining = activeFeatures.filter((f) => f.id !== activeFeatureId);
       const target = idx > 0 ? activeFeatures[idx - 1] : (remaining[0] ?? null);
       deleteNavTargetRef.current = target?.id ?? null;
-      setConfirmAction(feature.status === "archived" ? "delete" : "archive");
+      setConfirmAction({
+        action: feature.status === "archived" ? "delete" : "archive",
+        feature,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load features");
     }
@@ -377,7 +385,8 @@ function RootLayout() {
             setShortcutsHelpOpen={setShortcutsHelpOpen}
             confirmAction={confirmAction}
             setConfirmAction={setConfirmAction}
-            onConfirmFeatureAction={handleConfirmFeatureAction}
+            onArchiveFeature={handleArchiveFeature}
+            onDeleteFeature={handleDeleteFeature}
             appClose={appClose}
           />
         </div>
