@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { useState, type ReactElement } from "react";
 import userEvent from "@testing-library/user-event";
 import { render, screen } from "@/test-utils";
 import { ArchiveFeatureDialog } from "./ArchiveFeatureDialog";
@@ -32,6 +33,13 @@ const feature: Feature = {
   type: "ws-session",
   project_id: 1,
   created_at: "2026-01-01T00:00:00Z",
+};
+
+const nextFeature: Feature = {
+  ...feature,
+  id: 2,
+  title: "Feature Two",
+  created_at: "2026-01-02T00:00:00Z",
 };
 
 function dirtyStatus(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnapshot {
@@ -91,6 +99,37 @@ describe("ArchiveFeatureDialog", () => {
 
     await user.keyboard("{Meta>}{Enter}{/Meta}");
 
+    expect(onArchive).toHaveBeenCalledWith(1);
+  });
+
+  it("ignores repeated confirm keys while the archive dialog is closing", async () => {
+    const user = userEvent.setup();
+    const onArchive = vi.fn();
+
+    function DelayedCloseHarness(): ReactElement {
+      const [dialogFeature, setDialogFeature] = useState(feature);
+      return (
+        <ArchiveFeatureDialog
+          open
+          feature={dialogFeature}
+          projectId={1}
+          hasLiveWorktree={false}
+          onOpenChange={vi.fn()}
+          onArchive={(featureId) => {
+            onArchive(featureId);
+            setDialogFeature(nextFeature);
+          }}
+        />
+      );
+    }
+
+    render(<DelayedCloseHarness />);
+
+    screen.getByRole("button", { name: /archive/i }).focus();
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+    await user.keyboard("{Enter}");
+
+    expect(onArchive).toHaveBeenCalledTimes(1);
     expect(onArchive).toHaveBeenCalledWith(1);
   });
 

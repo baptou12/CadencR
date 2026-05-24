@@ -7,9 +7,12 @@ import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
 import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
-import { useListFeatures, useListFeatureWorktrees } from "@/api/generated";
+import { useListFeatureWorktrees, type Feature } from "@/api/generated";
 
-type ConfirmAction = "archive" | "delete" | null;
+export interface ConfirmFeatureAction {
+  action: "archive" | "delete";
+  feature: Feature;
+}
 
 interface AppCloseOverlayState {
   showConfirm: boolean;
@@ -25,9 +28,10 @@ interface RootOverlaysProps {
   activeFeatureId: number | null;
   shortcutsHelpOpen: boolean;
   setShortcutsHelpOpen: Dispatch<SetStateAction<boolean>>;
-  confirmAction: ConfirmAction;
-  setConfirmAction: Dispatch<SetStateAction<ConfirmAction>>;
-  onConfirmFeatureAction: () => void;
+  confirmAction: ConfirmFeatureAction | null;
+  setConfirmAction: Dispatch<SetStateAction<ConfirmFeatureAction | null>>;
+  onArchiveFeature: (featureId: number) => void;
+  onDeleteFeature: (featureId: number) => void;
   appClose: AppCloseOverlayState;
 }
 
@@ -40,24 +44,19 @@ export function RootOverlays({
   setShortcutsHelpOpen,
   confirmAction,
   setConfirmAction,
-  onConfirmFeatureAction,
+  onArchiveFeature,
+  onDeleteFeature,
   appClose,
 }: RootOverlaysProps): ReactElement {
-  const { data: features = [] } = useListFeatures(
-    { project_id: activeProjectId ?? 0, include_archived: true },
-    {
-      query: {
-        enabled: activeProjectId != null && activeFeatureId != null && confirmAction === "archive",
-      },
-    },
-  );
+  const archiveConfirmAction = confirmAction?.action === "archive" ? confirmAction : null;
+  const deleteConfirmAction = confirmAction?.action === "delete" ? confirmAction : null;
+  const archiveFeatureId = archiveConfirmAction?.feature.id ?? null;
   const { data: featureWorktrees = [] } = useListFeatureWorktrees(
     { project_id: activeProjectId ?? 0 },
-    { query: { enabled: activeProjectId != null && confirmAction === "archive" } },
+    { query: { enabled: activeProjectId != null && archiveFeatureId != null } },
   );
-  const activeFeature = features.find((feature) => feature.id === activeFeatureId);
-  const activeFeatureHasLiveWorktree = featureWorktrees.some(
-    (worktree) => worktree.feature_id === activeFeatureId && worktree.live,
+  const confirmFeatureHasLiveWorktree = featureWorktrees.some(
+    (worktree) => worktree.feature_id === archiveFeatureId && worktree.live,
   );
 
   return (
@@ -74,26 +73,28 @@ export function RootOverlays({
       <PostUpdateChangelogDialog />
       <ThemeDrawer />
       <ArchiveFeatureDialog
-        open={confirmAction === "archive"}
-        feature={activeFeature}
+        open={archiveConfirmAction != null}
+        feature={archiveConfirmAction?.feature}
         projectId={activeProjectId ?? 0}
-        hasLiveWorktree={activeFeatureHasLiveWorktree}
+        hasLiveWorktree={confirmFeatureHasLiveWorktree}
         onOpenChange={(open) => {
           if (!open) setConfirmAction(null);
         }}
-        onArchive={onConfirmFeatureAction}
+        onArchive={onArchiveFeature}
       />
-      <ConfirmDialog
-        open={confirmAction === "delete"}
-        onOpenChange={(open) => {
-          if (!open) setConfirmAction(null);
-        }}
-        title="Delete archived session?"
-        description="This cannot be undone."
-        confirmText="Delete"
-        variant="destructive"
-        onConfirm={onConfirmFeatureAction}
-      />
+      {deleteConfirmAction && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setConfirmAction(null);
+          }}
+          title="Delete archived session?"
+          description="This cannot be undone."
+          confirmText="Delete"
+          variant="destructive"
+          onConfirm={() => onDeleteFeature(deleteConfirmAction.feature.id)}
+        />
+      )}
       <ConfirmDialog
         open={appClose.showConfirm}
         onOpenChange={appClose.setShowConfirm}

@@ -1,4 +1,12 @@
-import { useEffect, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { AlertTriangleIcon, GitBranchIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useDialogSubmitShortcut } from "@/components/git-actions/useDialogSubmitShortcut";
 
 const SUBMIT_KEYS: string[] = ["cmd", "enter"];
 
@@ -43,6 +52,7 @@ export function ArchiveFeatureDialog({
 }: ArchiveFeatureDialogProps): ReactElement {
   const [removeWorktree, setRemoveWorktree] = useState(false);
   const [removeBranch, setRemoveBranch] = useState(false);
+  const { isConfirming, lockConfirm } = useConfirmSubmissionLock(open);
   const deleteWorktree = useDeleteWorktree();
   const deleteBranch = useDeleteFeatureBranch();
   const branchCheck = useCheckBranchDelete(
@@ -82,12 +92,14 @@ export function ArchiveFeatureDialog({
 
   const confirm = (): void => {
     if (!feature) return;
-    onArchive(feature.id);
+    if (!lockConfirm()) return;
+    const featureId = feature.id;
+    onArchive(featureId);
     onOpenChange(false);
     if (!removeWorktree && !removeBranch) return;
     const cleanup = cleanupFeature({
       projectId,
-      featureId: feature.id,
+      featureId,
       removeWorktree,
       removeBranch,
       hasLiveWorktree,
@@ -102,6 +114,11 @@ export function ArchiveFeatureDialog({
       error: (err) => apiErrorMessage(err, "Session archived, but Git cleanup failed"),
     });
   };
+  useDialogSubmitShortcut({
+    open,
+    enabled: !isCheckingBranch && !isCheckingWorktree && !isConfirming,
+    onSubmit: confirm,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -115,14 +132,6 @@ export function ArchiveFeatureDialog({
           } else if (event.key.toLowerCase() === "b") {
             event.preventDefault();
             toggleBranch();
-          } else if (
-            event.key === "Enter" &&
-            event.metaKey &&
-            !isCheckingBranch &&
-            !isCheckingWorktree
-          ) {
-            event.preventDefault();
-            confirm();
           }
         }}
       >
@@ -197,7 +206,7 @@ export function ArchiveFeatureDialog({
           </Button>
           <Button
             variant={forceBranchDelete || forceWorktreeDelete ? "destructive" : "default"}
-            disabled={isCheckingBranch || isCheckingWorktree}
+            disabled={isCheckingBranch || isCheckingWorktree || isConfirming}
             onClick={confirm}
           >
             <span>
@@ -284,4 +293,27 @@ function isDirtyGitStatus(status: GitStatusSnapshot | undefined): boolean {
     status.unstaged_count > 0 ||
     status.untracked_count > 0
   );
+}
+
+function useConfirmSubmissionLock(open: boolean): {
+  isConfirming: boolean;
+  lockConfirm: () => boolean;
+} {
+  const [isConfirming, setIsConfirming] = useState(false);
+  const isConfirmingRef = useRef(false);
+
+  useEffect(() => {
+    if (open) return;
+    isConfirmingRef.current = false;
+    setIsConfirming(false);
+  }, [open]);
+
+  const lockConfirm = useCallback((): boolean => {
+    if (isConfirmingRef.current) return false;
+    isConfirmingRef.current = true;
+    setIsConfirming(true);
+    return true;
+  }, []);
+
+  return useMemo(() => ({ isConfirming, lockConfirm }), [isConfirming, lockConfirm]);
 }
