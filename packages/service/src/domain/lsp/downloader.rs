@@ -1,13 +1,11 @@
-//! On-demand download + extraction of catalog-managed LSP binaries.
+//! On-demand install of catalog-managed LSP binaries.
 //!
-//! Storage layout: `~/.cadencr/lsp/<lsp_id>/<version>/<bin_name>`. The
-//! directory is created with `0700` so a multi-user host can't read another
-//! user's downloaded binaries.
+//! Storage layout is recipe-specific under
+//! `~/.cadencr/lsp/<lsp_id>/<version>/`. The directory is created with
+//! `0700` so a multi-user host can't read another user's installed binaries.
 //!
-//! Step 3 ships only [`install_dir`], which computes the path. Step 4 fills
-//! in [`download_and_install`], the actual HTTP fetch + gzip extraction.
-//! Both helpers live in this module so callers don't have to track which
-//! step landed which behaviour.
+//! Both native GitHub assets and npm package recipes are handled here so
+//! callers don't have to branch on install mechanism.
 
 use std::fs;
 use std::io::Write;
@@ -20,6 +18,7 @@ use tracing::{info, warn};
 use crate::error::AppError;
 
 use super::catalog::{CatalogEntry, DownloadRecipe};
+use super::npm_installer;
 
 /// Directory under `~/.cadencr/lsp/<lsp_id>/<version>/` for a given recipe.
 /// Creates parent dirs if missing (mode `0700` on unix).
@@ -61,10 +60,34 @@ pub async fn download_and_install(
     entry: &CatalogEntry,
     recipe: &DownloadRecipe,
 ) -> Result<(), AppError> {
-    let DownloadRecipe::GithubReleaseGz {
-        version,
-        url_template,
-    } = recipe;
+    match recipe {
+        DownloadRecipe::GithubReleaseGz {
+            version,
+            url_template,
+        } => download_github_release_gz(entry, version, url_template).await,
+        DownloadRecipe::NpmPackage { version, packages } => {
+            npm_installer::install(entry, version, packages).await
+        }
+    }
+}
+
+pub fn managed_bin_path(
+    entry: &CatalogEntry,
+    recipe: &DownloadRecipe,
+) -> Result<PathBuf, AppError> {
+    let dir = install_dir(entry.lsp_id, recipe.version())?;
+    let path = match recipe {
+        DownloadRecipe::GithubReleaseGz { .. } => dir.join(entry.bin_name),
+        DownloadRecipe::NpmPackage { .. } => npm_installer::bin_path_for_dir(&dir, entry.bin_name),
+    };
+    Ok(path)
+}
+
+async fn download_github_release_gz(
+    entry: &CatalogEntry,
+    version: &str,
+    url_template: &str,
+) -> Result<(), AppError> {
     let url = render_url(url_template, version)?;
     let dir = install_dir(entry.lsp_id, version)?;
     let bin_path = dir.join(entry.bin_name);
@@ -244,7 +267,7 @@ fn finalize_install(
 /// Remove every sibling directory of `<lsp_id>/<keep>/` so an upgrade frees
 /// the old install's bytes. Best-effort: failure to remove (busy file, FS
 /// permission glitch) is logged and ignored — the new install still works.
-fn gc_old_versions(lsp_root: &std::path::Path, keep: &str) {
+pub(super) fn gc_old_versions(lsp_root: &std::path::Path, keep: &str) {
     let Ok(entries) = fs::read_dir(lsp_root) else {
         return;
     };

@@ -11,7 +11,7 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use super::catalog::{self, CatalogEntry, DownloadRecipe};
+use super::catalog::{self, CatalogEntry};
 use super::downloader;
 
 /// One catalog row's installation state.
@@ -84,14 +84,13 @@ async fn probe_entry(entry: &CatalogEntry) -> ServerProbe {
     // downloader here — the settings page should never trigger a network
     // fetch by being opened. If the user wants the binary installed, opening
     // a file in that language hits `resolve_server` which downloads.
-    if let Some(DownloadRecipe::GithubReleaseGz { version, .. }) = &entry.download {
-        if let Ok(install_dir) = downloader::install_dir(entry.lsp_id, version) {
-            let bin = install_dir.join(entry.bin_name);
+    if let Some(recipe) = &entry.download {
+        if let Ok(bin) = downloader::managed_bin_path(entry, recipe) {
             if bin.exists() {
                 return ServerProbe {
                     status: ServerProbeStatus::Managed,
                     path: Some(bin.to_string_lossy().into_owned()),
-                    version: Some((*version).to_string()),
+                    version: Some(recipe.version().to_string()),
                     ..base
                 };
             }
@@ -141,9 +140,9 @@ mod tests {
             .iter()
             .find(|p| p.lsp_id == "typescript-language-server")
             .expect("ts entry");
-        // tsserver intentionally has no downloader; the catalog comments
-        // explain why.
-        assert!(!ts.downloadable);
+        // TypeScript is an npm-managed recipe, so opening a TS/TSX file
+        // should trigger the same auto-install flow as native binaries.
+        assert!(ts.downloadable);
     }
 
     #[test]

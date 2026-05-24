@@ -6,10 +6,10 @@
 //!    "no server for this language" message instead of a 500.
 //! 2. Walk `cli-discovery` for a `bin_name` on `$PATH` / login-shell PATH /
 //!    well-known directories. Pick the highest semver.
-//! 3. If discovery finds nothing, fall back to the on-demand-download path
-//!    (`~/.cadencr/lsp/<lsp_id>/<version>/<bin_name>`). Step 4 implements
-//!    the actual download; step 3 just looks for an already-present binary
-//!    so a user who installed manually still works without `$PATH`.
+//! 3. If discovery finds nothing, fall back to the recipe-specific managed
+//!    install path under `~/.cadencr/lsp/<lsp_id>/<version>/`. Step 4
+//!    implements the actual install; step 3 just looks for an already-present
+//!    binary so a user who installed manually still works without `$PATH`.
 //! 4. Spawn the chosen binary with stdio piped.
 
 use std::path::{Path, PathBuf};
@@ -19,7 +19,7 @@ use tokio::process::{Child, Command};
 
 use crate::error::AppError;
 
-use super::catalog::{self, CatalogEntry, DownloadRecipe};
+use super::catalog::{self, CatalogEntry};
 use super::downloader;
 
 /// What we need to actually invoke a server. Produced by [`resolve_server`].
@@ -91,8 +91,7 @@ async fn ensure_managed_binary(entry: &CatalogEntry) -> Result<Option<PathBuf>, 
         Some(r) => r,
         None => return Ok(None),
     };
-    let DownloadRecipe::GithubReleaseGz { version, .. } = recipe;
-    let bin_path = downloader::install_dir(entry.lsp_id, version)?.join(entry.bin_name);
+    let bin_path = downloader::managed_bin_path(entry, recipe)?;
     if bin_path.exists() {
         return Ok(Some(bin_path));
     }

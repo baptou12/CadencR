@@ -19,6 +19,7 @@ pub mod catalog;
 pub mod downloader;
 pub mod framing;
 pub mod lifecycle;
+pub mod npm_installer;
 pub mod probe;
 pub mod proxy;
 pub mod registry;

@@ -1,124 +1,188 @@
-//! Data-driven LSP server catalog.
-//!
-//! Each `CatalogEntry` declares everything needed to find and invoke a
-//! server: which LSP `languageId`s it serves, the binary name, the args,
-//! the directories `cli-discovery` should walk, and (optionally) a GitHub
-//! release template for the on-demand downloader (step 4).
-//!
-//! Adding a new language is a single static-table row — see
-//! `.claude/rules/provider-boundaries.md`: no generic call site should
-//! ever `match language_id { "rust" => …, "typescript" => … }`.
+//! Data-driven LSP server catalog. Generic call sites should look up rows
+//! here rather than branch on provider or language identity.
 
 use cli_discovery::DiscoverySpec;
 
 /// What a single LSP server looks like from the host's perspective.
 #[derive(Debug)]
 pub struct CatalogEntry {
-    /// Stable, machine-friendly id used in `~/.cadencr/lsp/<lsp_id>/<version>/`
-    /// and tracing. Independent of the binary name (the same id can stay
-    /// stable even if upstream renames the binary).
+    /// Stable id used in `~/.cadencr/lsp/<lsp_id>/<version>/` and tracing.
     pub lsp_id: &'static str,
     /// LSP `TextDocumentItem` language ids served by this entry.
     pub language_ids: &'static [&'static str],
-    /// Bare binary name on `$PATH`. Also doubles as the executable name
-    /// inside the on-demand-download directory.
+    /// Bare binary name on `$PATH` or in a managed recipe.
     pub bin_name: &'static str,
     /// Args appended to every invocation.
     pub args: &'static [&'static str],
-    /// Directories relative to `$HOME` worth probing before falling back
-    /// to the downloader (e.g. `.cargo/bin` for rust-analyzer).
+    /// Directories relative to `$HOME` worth probing.
     pub well_known_relative_to_home: &'static [&'static str],
     /// Absolute directories worth probing.
     pub well_known_absolute: &'static [&'static str],
-    /// Args used to query the binary's version. `cli-discovery` parses
-    /// the first semver triple out of the output.
+    /// Args used to query the binary's version.
     pub version_args: &'static [&'static str],
-    /// When `Some(needle)`, candidates whose `--version` output doesn't
-    /// contain `needle` (case-insensitive) are filtered out.
-    ///
-    /// Defends against version-multiplexer shims that masquerade as the
-    /// requested binary — most notably `rust-analyzer` installed via
-    /// `rustup`, where the proxy prints rustup's own help when the
-    /// component isn't actually installed.
+    /// Optional case-insensitive substring required in `--version` output.
     pub version_must_contain: Option<&'static str>,
     /// Optional on-demand downloader recipe; `None` means "user must
     /// install this themselves".
     pub download: Option<DownloadRecipe>,
 }
 
-/// Recipe for downloading the server into
-/// `~/.cadencr/lsp/<lsp_id>/<version>/`. Kept intentionally minimal — only
-/// formats we actually need today. New shapes get a new variant rather
-/// than a free-form scripting language.
+/// Recipe for installing the server into `~/.cadencr/lsp/<lsp_id>/<version>/`.
 #[derive(Debug, Clone)]
 pub enum DownloadRecipe {
-    /// Single executable hosted as a `.gz`-compressed GitHub release asset.
-    /// `{arch}` / `{os}` / `{version}` are substituted into the URL template.
+    /// Single executable hosted as a `.gz` GitHub release asset.
     GithubReleaseGz {
-        /// Pinned version string used both as URL substitution and as the
-        /// `<version>` directory under `~/.cadencr/lsp/<lsp_id>/`.
+        /// Pinned version string used for URL substitution and install dir.
         version: &'static str,
-        /// e.g. `https://github.com/rust-lang/rust-analyzer/releases/download/{version}/rust-analyzer-{arch}-{os}.gz`.
+        /// URL template with `{version}`, `{arch}`, and `{os}` placeholders.
         url_template: &'static str,
     },
+    /// npm packages installed into a managed local prefix.
+    NpmPackage {
+        /// Pinned recipe version used as the `<version>` install directory.
+        version: &'static str,
+        /// Exact package specs passed to `npm install`.
+        packages: &'static [&'static str],
+    },
+}
+
+impl DownloadRecipe {
+    pub fn version(&self) -> &'static str {
+        match self {
+            DownloadRecipe::GithubReleaseGz { version, .. } => version,
+            DownloadRecipe::NpmPackage { version, .. } => version,
+        }
+    }
+}
+
+pub(super) const NPM_WELL_KNOWN_RELATIVE_TO_HOME: &[&str] = &[
+    ".bun/bin",
+    ".npm-global/bin",
+    ".volta/bin",
+    "Library/pnpm",
+    ".cadencr-tools/node_modules/.bin",
+];
+pub(super) const HOMEBREW_WELL_KNOWN_ABSOLUTE: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+const fn npm_catalog_entry(
+    lsp_id: &'static str,
+    language_ids: &'static [&'static str],
+    bin_name: &'static str,
+    args: &'static [&'static str],
+    version: &'static str,
+    packages: &'static [&'static str],
+) -> CatalogEntry {
+    CatalogEntry {
+        lsp_id,
+        language_ids,
+        bin_name,
+        args,
+        well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
+        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
+        version_args: &["--version"],
+        version_must_contain: None,
+        download: Some(DownloadRecipe::NpmPackage { version, packages }),
+    }
 }
 
 /// The static catalog. Order doesn't matter — lookup is by `language_id`.
 pub const CATALOG: &[CatalogEntry] = &[
-    CatalogEntry {
-        lsp_id: "typescript-language-server",
-        language_ids: &[
+    npm_catalog_entry(
+        "typescript-language-server",
+        &[
             "typescript",
             "typescriptreact",
             "javascript",
             "javascriptreact",
         ],
-        bin_name: "typescript-language-server",
-        args: &["--stdio"],
-        // Cover every reasonable place an npm-style global install ends up.
-        // `Library/pnpm` is pnpm's `--global` target on macOS; `.cadencr-tools`
-        // is where Cadencr writes its bundled install (see installer docs).
-        well_known_relative_to_home: &[
-            ".bun/bin",
-            ".npm-global/bin",
-            ".volta/bin",
-            "Library/pnpm",
-            ".cadencr-tools/node_modules/.bin",
-        ],
-        well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
-        version_args: &["--version"],
-        // tsserver's --version prints just `4.3.3` with no bin-name. The
-        // shim guard would reject every install, so opt out.
-        version_must_contain: None,
-        // TS server is an npm package; downloader for it would need Node at
-        // runtime, which we don't want to assume. Leave as `None` until we
-        // ship a bundled Node sidecar.
-        download: None,
-    },
+        "typescript-language-server",
+        &["--stdio"],
+        "5.3.0",
+        &["typescript-language-server@5.3.0", "typescript@6.0.3"],
+    ),
+    npm_catalog_entry(
+        "json-language-server",
+        &["json", "jsonc"],
+        "vscode-json-language-server",
+        &["--stdio"],
+        "4.10.0",
+        &["vscode-langservers-extracted@4.10.0"],
+    ),
+    npm_catalog_entry(
+        "yaml-language-server",
+        &["yaml"],
+        "yaml-language-server",
+        &["--stdio"],
+        "1.23.0",
+        &["yaml-language-server@1.23.0"],
+    ),
+    npm_catalog_entry(
+        "html-language-server",
+        &["html"],
+        "vscode-html-language-server",
+        &["--stdio"],
+        "4.10.0",
+        &["vscode-langservers-extracted@4.10.0"],
+    ),
+    npm_catalog_entry(
+        "css-language-server",
+        &["css", "scss", "less"],
+        "vscode-css-language-server",
+        &["--stdio"],
+        "4.10.0",
+        &["vscode-langservers-extracted@4.10.0"],
+    ),
+    npm_catalog_entry(
+        "svelte-language-server",
+        &["svelte"],
+        "svelteserver",
+        &["--stdio"],
+        "0.18.0",
+        &["svelte-language-server@0.18.0", "typescript@6.0.3"],
+    ),
+    npm_catalog_entry(
+        "vue-language-server",
+        &["vue"],
+        "vue-language-server",
+        &["--stdio"],
+        "3.3.1",
+        &["@vue/language-server@3.3.1", "typescript@6.0.3"],
+    ),
+    npm_catalog_entry(
+        "astro-ls",
+        &["astro"],
+        "astro-ls",
+        &["--stdio"],
+        "2.16.9",
+        &["@astrojs/language-server@2.16.9"],
+    ),
+    npm_catalog_entry(
+        "bash-language-server",
+        &["shellscript"],
+        "bash-language-server",
+        &["start"],
+        "5.6.0",
+        &["bash-language-server@5.6.0"],
+    ),
+    npm_catalog_entry(
+        "docker-langserver",
+        &["dockerfile"],
+        "docker-langserver",
+        &["--stdio"],
+        "0.15.0",
+        &["dockerfile-language-server-nodejs@0.15.0"],
+    ),
     CatalogEntry {
         lsp_id: "rust-analyzer",
         language_ids: &["rust"],
         bin_name: "rust-analyzer",
         args: &[],
         well_known_relative_to_home: &[".cargo/bin"],
-        well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
+        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
         version_args: &["--version"],
-        // `~/.cargo/bin/rust-analyzer` is often a rustup proxy symlink.
-        // Depending on rustup's proxy registration the shim either prints
-        // its own help (substring miss) or prints `error: Unknown binary
-        // 'rust-analyzer' in official toolchain ...` (substring hit but
-        // no semver). cli-discovery's filter requires BOTH the substring
-        // AND a parsed semver, so both shapes are rejected. The real
-        // rust-analyzer prints `rust-analyzer 0.3.x-standalone (commit)`,
-        // which passes both checks.
+        // Reject rustup shims that don't have the component installed.
         version_must_contain: Some("rust-analyzer"),
         download: Some(DownloadRecipe::GithubReleaseGz {
-            // Pinned. Bump deliberately — surprise upgrades silently change
-            // semantic analysis between Cadencr launches. The pin must
-            // also stay in sync with the proc-macro server protocol the
-            // current Rust toolchain emits; if you don't bump for a long
-            // time, users on a recent toolchain hit "proc-macro server (N)
-            // is newer than rust-analyzer (N-1)" and lose macro expansion.
             version: "2026-05-18",
             url_template:
                 "https://github.com/rust-lang/rust-analyzer/releases/download/{version}/rust-analyzer-{arch}-{os}.gz",
@@ -130,11 +194,8 @@ pub const CATALOG: &[CatalogEntry] = &[
         bin_name: "gopls",
         args: &[],
         well_known_relative_to_home: &["go/bin"],
-        well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
+        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
         version_args: &["version"],
-        // `gopls version` prints `golang.org/x/tools/gopls v0.x.y` — bin
-        // name appears, but we leave the guard off because gopls isn't
-        // shimmed by another tool that masquerades as it.
         version_must_contain: None,
         download: None,
     },
@@ -143,8 +204,8 @@ pub const CATALOG: &[CatalogEntry] = &[
         language_ids: &["python"],
         bin_name: "pyright-langserver",
         args: &["--stdio"],
-        well_known_relative_to_home: &[".bun/bin", ".npm-global/bin"],
-        well_known_absolute: &["/opt/homebrew/bin", "/usr/local/bin"],
+        well_known_relative_to_home: NPM_WELL_KNOWN_RELATIVE_TO_HOME,
+        well_known_absolute: HOMEBREW_WELL_KNOWN_ABSOLUTE,
         version_args: &["--version"],
         version_must_contain: None,
         download: None,
@@ -180,6 +241,64 @@ mod tests {
         let entry = lookup("typescript").expect("typescript");
         assert_eq!(entry.lsp_id, "typescript-language-server");
         assert!(entry.language_ids.contains(&"typescriptreact"));
+    }
+
+    #[test]
+    fn typescript_language_server_has_managed_npm_recipe() {
+        let entry = lookup("typescriptreact").expect("typescriptreact");
+        let recipe = entry.download.as_ref().expect("managed installer");
+        let DownloadRecipe::NpmPackage { version, packages } = recipe else {
+            panic!("typescript-language-server should install through npm");
+        };
+        assert_eq!(*version, "5.3.0");
+        assert_eq!(
+            *packages,
+            &["typescript-language-server@5.3.0", "typescript@6.0.3",]
+        );
+    }
+
+    #[test]
+    fn npm_managed_language_servers_are_registered() {
+        let cases = [
+            (
+                "json",
+                "json-language-server",
+                "vscode-json-language-server",
+            ),
+            (
+                "jsonc",
+                "json-language-server",
+                "vscode-json-language-server",
+            ),
+            ("yaml", "yaml-language-server", "yaml-language-server"),
+            (
+                "html",
+                "html-language-server",
+                "vscode-html-language-server",
+            ),
+            ("css", "css-language-server", "vscode-css-language-server"),
+            ("scss", "css-language-server", "vscode-css-language-server"),
+            ("less", "css-language-server", "vscode-css-language-server"),
+            ("svelte", "svelte-language-server", "svelteserver"),
+            ("vue", "vue-language-server", "vue-language-server"),
+            ("astro", "astro-ls", "astro-ls"),
+            (
+                "shellscript",
+                "bash-language-server",
+                "bash-language-server",
+            ),
+            ("dockerfile", "docker-langserver", "docker-langserver"),
+        ];
+
+        for (language_id, lsp_id, bin_name) in cases {
+            let entry = lookup(language_id).expect(language_id);
+            assert_eq!(entry.lsp_id, lsp_id);
+            assert_eq!(entry.bin_name, bin_name);
+            assert!(
+                matches!(entry.download, Some(DownloadRecipe::NpmPackage { .. })),
+                "{lsp_id} should install through npm"
+            );
+        }
     }
 
     #[test]
