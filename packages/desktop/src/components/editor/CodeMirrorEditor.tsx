@@ -2,13 +2,21 @@ import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } fro
 import { EditorView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
 import { Loader2Icon } from "lucide-react";
-import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from "@/api/generated";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getReadFileQueryKey,
+  type ReadFileResponse,
+  useReadFile,
+  useWriteFile,
+  useGetBlame,
+  useGetFeatureWorkingDir,
+} from "@/api/generated";
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useLsp } from "@/lib/lsp/useLsp";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { cn } from "@/lib/utils";
-import { getFileExtension, getLanguageExtension, isMarkdownFile } from "./language-extensions";
+import { getLanguageExtension, getLanguageName, isMarkdownFile } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
@@ -18,9 +26,8 @@ import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
 import { toast } from "sonner";
+import { useFreshFileContentSync } from "./useFreshFileContentSync";
 
-// Markdown pulls in react-markdown + lowlight (~35 grammars) — only loaded
-// when the user actually previews a markdown file.
 const Markdown = lazy(() => import("@/components/Markdown").then((m) => ({ default: m.Markdown })));
 
 interface CodeMirrorEditorProps {
@@ -47,7 +54,6 @@ export function clampEditorLineNumber(lineNumber: number, lineCount: number): nu
   return Math.min(Math.max(1, lineNumber), Math.max(1, lineCount));
 }
 
-/** Move the caret to (and scroll into view) the given 1-based line, clamped. */
 export function scrollToEditorLine(view: EditorView, lineNumber: number): void {
   const target = clampEditorLineNumber(lineNumber, view.state.doc.lines);
   const line = view.state.doc.line(target);
@@ -57,37 +63,13 @@ export function scrollToEditorLine(view: EditorView, lineNumber: number): void {
   });
 }
 
-// Module-level singletons. Both extensions are stateless descriptors — the
-// per-EditorView state lives on the view itself, so reusing the same value
-// across editor mounts avoids re-allocating the keymap / decoration set on
-// every tab open.
 const BUFFER_KEYMAP_EXT = editorBufferKeymap();
 const BUFFER_SEARCH_EXT = bufferSearchExtension();
 
-function getLanguageName(filePath: string): string {
-  const ext = getFileExtension(filePath);
-  const MAP: Record<string, string> = {
-    ts: "TypeScript",
-    tsx: "TSX",
-    js: "JavaScript",
-    jsx: "JSX",
-    json: "JSON",
-    html: "HTML",
-    css: "CSS",
-    rs: "Rust",
-    md: "Markdown",
-    mdx: "MDX",
-    yaml: "YAML",
-    yml: "YAML",
-    toml: "TOML",
-    py: "Python",
-    go: "Go",
-    sql: "SQL",
-    sh: "Shell",
-    bash: "Shell",
-    zsh: "Shell",
-  };
-  return MAP[ext] ?? "Plain Text";
+function readFileResponseFromContent(content: string): ReadFileResponse {
+  const lines = content.split(/\r\n|\r|\n/);
+  if (lines.at(-1) === "") lines.pop();
+  return { content, line_count: lines.length };
 }
 
 export default function CodeMirrorEditor({
@@ -113,6 +95,7 @@ export default function CodeMirrorEditor({
   const mutateAsyncRef = useRef<ReturnType<typeof useWriteFile>["mutateAsync"] | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const isMarkdown = isMarkdownFile(filePath);
+  const queryClient = useQueryClient();
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
@@ -126,9 +109,6 @@ export default function CodeMirrorEditor({
   const blameCompartment = useRef(new Compartment());
   const lspCompartment = useRef(new Compartment());
 
-  // Workspace root for LSP. The working-dir query is also fired by other
-  // components (file watcher, project tree) — React Query dedupes by key, so
-  // this is effectively free.
   const cwdQuery = useGetFeatureWorkingDir(
     featureId,
     { project_id: projectId },
@@ -174,6 +154,20 @@ export default function CodeMirrorEditor({
 
   const writeFile = useWriteFile();
   mutateAsyncRef.current = writeFile.mutateAsync;
+  const markLoadedContent = useFreshFileContentSync({ content: data?.content, viewRef });
+  const readFileQueryKey = useMemo(
+    () =>
+      getReadFileQueryKey({ project_id: projectId, feature_id: featureId, file_path: filePath }),
+    [projectId, featureId, filePath],
+  );
+  const markSavedContent = useCallback(
+    (content: string): void => {
+      markLoadedContent(content);
+      queryClient.setQueryData(readFileQueryKey, readFileResponseFromContent(content));
+      setDirty(featureId, paneId, filePath, false);
+    },
+    [featureId, filePath, markLoadedContent, paneId, queryClient, readFileQueryKey, setDirty],
+  );
 
   const saveQuiet = useCallback(async () => {
     const view = viewRef.current;
@@ -188,7 +182,7 @@ export default function CodeMirrorEditor({
           content,
         },
       });
-      setDirty(featureId, paneId, filePath, false);
+      markSavedContent(content);
       setAutoSavedVisible(true);
       if (autoSavedTimerRef.current) clearTimeout(autoSavedTimerRef.current);
       autoSavedTimerRef.current = setTimeout(() => setAutoSavedVisible(false), 1500);
@@ -196,7 +190,7 @@ export default function CodeMirrorEditor({
       const msg = err instanceof Error ? err.message : "Failed to auto-save file";
       toast.error(msg);
     }
-  }, [projectId, filePath, featureId, paneId, setDirty]);
+  }, [projectId, filePath, featureId, markSavedContent]);
 
   const save = useCallback(async () => {
     const view = viewRef.current;
@@ -211,12 +205,12 @@ export default function CodeMirrorEditor({
           content,
         },
       });
-      setDirty(featureId, paneId, filePath, false);
+      markSavedContent(content);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save file";
       toast.error(msg);
     }
-  }, [projectId, filePath, featureId, paneId, setDirty]);
+  }, [projectId, filePath, featureId, markSavedContent]);
 
   const handleSave = useCallback(() => {
     void save();
@@ -263,9 +257,6 @@ export default function CodeMirrorEditor({
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
-  // Hot-swap blame extension when data or setting changes.
-  // `data` is in deps so the effect re-runs once the editor mounts after the file loads;
-  // otherwise an early-arriving blameData would be lost when viewRef is still null.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -273,10 +264,6 @@ export default function CodeMirrorEditor({
     view.dispatch({ effects: blameCompartment.current.reconfigure(ext) });
   }, [isBlameEnabled, blameData, data]);
 
-  // Hot-swap LSP extensions once the client for this file's language is ready.
-  // `lsp.extension` is `[]` until the session and WebSocket are open; we
-  // reconfigure the compartment then so the editor picks up cmd-click + F12
-  // without remounting.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
@@ -296,13 +283,11 @@ export default function CodeMirrorEditor({
     });
   }, [featureId, paneId, filePath, setCursorPosition]);
 
-  // Register save callback for external callers
   useEffect(() => {
     registerSave(paneId, filePath, save);
     return () => unregisterSave(paneId, filePath);
   }, [paneId, filePath, save]);
 
-  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -310,14 +295,10 @@ export default function CodeMirrorEditor({
     };
   }, []);
 
-  // Clear any stale `isDirty` carried over from a previous mount of this tab
-  // (its unsaved edits were thrown away on unmount). EditorPane keys this
-  // component by file path, so this fires exactly once per file open.
   useEffect(() => {
     setDirty(featureId, paneId, filePath, false);
   }, [featureId, paneId, filePath, setDirty]);
 
-  // Scroll to pending go-to line after content is loaded
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !data || pendingGoToLine == null) return;
