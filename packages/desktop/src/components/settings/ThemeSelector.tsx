@@ -1,165 +1,58 @@
-import { cn } from "@/lib/utils";
+import { useNavigate } from "@tanstack/react-router";
+import { Paintbrush } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/useTheme";
-import { THEME_LIST, type ThemeDefinition, type ThemeId } from "@/lib/themes";
-import { Switch } from "@/components/ui/switch";
+import { getTheme } from "@/lib/themes";
+import { useLastScreenStore } from "@/stores/last-screen-store";
+import { THEME_SELECTOR_SEARCH_KEY } from "@/components/theme/ThemeDrawer";
 
 /**
- * Theme picker rendered as a radio-group of cards for the General tab.
+ * Settings entry-point for the theme picker.
  *
- * Each card shows a small swatch built from the theme's exported colors;
- * switching themes only flips `<html data-theme="…">` so no remount of
- * CodeMirror or xterm is needed.
+ * The picker UI itself lives in the global `ThemeDrawer` (rendered from
+ * `RootOverlays`) so the user can preview themes against the live UI of the
+ * screen they were just on (unified agent / feature / session). Drawer open
+ * state is encoded as `?theme-selector=true` in the URL — keeping it in URL
+ * state means no extra store, and the drawer can be opened from anywhere.
  */
 export function ThemeSelector(): React.JSX.Element {
-  const {
-    manualThemeId,
-    systemLightThemeId,
-    systemDarkThemeId,
-    followSystemTheme,
-    setTheme,
-    setFollowSystemTheme,
-    setSystemLightTheme,
-    setSystemDarkTheme,
-    isLoading,
-  } = useTheme();
-  const followSystemId = "follow-system-theme";
+  const navigate = useNavigate();
+  const { themeId, isLoading } = useTheme();
+  const activeTheme = getTheme(themeId);
+
+  const handleClick = (): void => {
+    const lastScreen = useLastScreenStore.getState().lastScreen;
+    // Replay the exact pathname + search we captured so routes that require
+    // params (e.g. `/ws-session/$sessionId` needs `cwd`/`featureId`/`projectId`)
+    // don't throw. Then add `theme-selector=true` to open the drawer.
+    const pathname = lastScreen?.pathname ?? "/";
+    const search = {
+      ...lastScreen?.search,
+      [THEME_SELECTOR_SEARCH_KEY]: true as const,
+    };
+    void navigate({ to: pathname, search });
+  };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-background px-4 py-3">
-        <span className="space-y-1">
-          <label htmlFor={followSystemId} className="block text-sm font-medium">
-            Follow system theme
-          </label>
-          <span className="block text-xs text-muted-foreground">
-            Switch automatically when your OS changes between light and dark mode.
-          </span>
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-border bg-background px-4 py-3">
+      <span className="min-w-0 space-y-1">
+        <span className="block text-sm font-medium">Theme</span>
+        <span className="block text-xs text-muted-foreground">
+          {isLoading
+            ? "Loading current theme…"
+            : `Currently ${activeTheme.label} (${activeTheme.appearance}). Opens a live preview on your last screen.`}
         </span>
-        <Switch
-          id={followSystemId}
-          checked={followSystemTheme}
-          disabled={isLoading}
-          onCheckedChange={setFollowSystemTheme}
-        />
-      </div>
-
-      {followSystemTheme ? (
-        <div className="space-y-5">
-          <ThemePicker
-            title="Light system theme"
-            selectedThemeId={systemLightThemeId}
-            onSelect={setSystemLightTheme}
-            disabled={isLoading}
-          />
-          <ThemePicker
-            title="Dark system theme"
-            selectedThemeId={systemDarkThemeId}
-            onSelect={setSystemDarkTheme}
-            disabled={isLoading}
-          />
-        </div>
-      ) : (
-        <ThemePicker
-          title="All UI theme"
-          selectedThemeId={manualThemeId}
-          onSelect={setTheme}
-          disabled={isLoading}
-        />
-      )}
-    </div>
-  );
-}
-
-interface ThemePickerProps {
-  title: string;
-  selectedThemeId: ThemeId;
-  onSelect: (id: ThemeId) => void;
-  disabled: boolean;
-}
-
-function ThemePicker({
-  title,
-  selectedThemeId,
-  onSelect,
-  disabled,
-}: ThemePickerProps): React.JSX.Element {
-  return (
-    <section className="space-y-2" aria-label={title}>
-      <h3 className="text-sm font-medium">{title}</h3>
-      <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label={title}>
-        {THEME_LIST.map((theme) => (
-          <ThemeCard
-            key={theme.id}
-            theme={theme}
-            selected={theme.id === selectedThemeId}
-            onSelect={onSelect}
-            disabled={disabled}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-interface ThemeCardProps {
-  theme: ThemeDefinition;
-  selected: boolean;
-  onSelect: (id: ThemeId) => void;
-  disabled: boolean;
-}
-
-function ThemeCard({ theme, selected, onSelect, disabled }: ThemeCardProps): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      disabled={disabled}
-      onClick={() => onSelect(theme.id)}
-      className={cn(
-        "flex w-full items-center gap-4 rounded-lg border px-4 py-3 text-left transition-colors",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        selected
-          ? "border-primary/60 bg-primary/8"
-          : "border-border bg-background hover:bg-muted/40",
-      )}
-    >
-      <ThemeSwatch theme={theme} />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="text-sm font-medium">{theme.label}</div>
-        <div className="text-xs text-muted-foreground capitalize">{theme.appearance}</div>
-      </div>
-      <div
-        className={cn(
-          "size-3 shrink-0 rounded-full border transition-colors",
-          selected ? "border-primary bg-primary" : "border-muted-foreground/40 bg-transparent",
-        )}
-      />
-    </button>
-  );
-}
-
-/** Swatch tile: half background (with sample text in foreground), half a
- *  primary/accent split. Mirrors the design HTML's preview style. */
-function ThemeSwatch({ theme }: { theme: ThemeDefinition }): React.JSX.Element {
-  const { background, foreground, primary, accent } = theme.swatch;
-  return (
-    <div
-      className="flex size-10 shrink-0 flex-col overflow-hidden rounded-md border border-border"
-      aria-hidden="true"
-    >
-      <div
-        className="flex h-1/2 items-center justify-center"
-        style={{ backgroundColor: background }}
+      </span>
+      <Button
+        variant="outline"
+        size="xs"
+        className="shrink-0 gap-1"
+        onClick={handleClick}
+        disabled={isLoading}
       >
-        <span className="text-[8px] font-bold" style={{ color: foreground }}>
-          Aa
-        </span>
-      </div>
-      <div className="flex h-1/2">
-        <div className="flex-1" style={{ backgroundColor: primary }} />
-        <div className="flex-1" style={{ backgroundColor: accent }} />
-      </div>
+        <Paintbrush />
+        Change theme
+      </Button>
     </div>
   );
 }

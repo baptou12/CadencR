@@ -1,83 +1,86 @@
-import { render, screen, within } from "@/test-utils";
+import { render, screen } from "@/test-utils";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeSelector } from "./ThemeSelector";
-import { DEFAULT_SYSTEM_DARK_THEME_ID, DEFAULT_SYSTEM_LIGHT_THEME_ID } from "@/lib/themes";
+import { useLastScreenStore } from "@/stores/last-screen-store";
 
-const mockSetTheme = vi.fn();
-const mockSetFollowSystemTheme = vi.fn();
-const mockSetSystemLightTheme = vi.fn();
-const mockSetSystemDarkTheme = vi.fn();
+const mockNavigate = vi.fn();
 
-const mockThemeState = vi.hoisted(() => ({
-  followSystemTheme: false,
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: () => ({
-    themeId: mockThemeState.followSystemTheme ? DEFAULT_SYSTEM_LIGHT_THEME_ID : "dracula",
-    manualThemeId: "dracula",
-    systemLightThemeId: DEFAULT_SYSTEM_LIGHT_THEME_ID,
-    systemDarkThemeId: DEFAULT_SYSTEM_DARK_THEME_ID,
-    followSystemTheme: mockThemeState.followSystemTheme,
-    setTheme: mockSetTheme,
-    setFollowSystemTheme: mockSetFollowSystemTheme,
-    setSystemLightTheme: mockSetSystemLightTheme,
-    setSystemDarkTheme: mockSetSystemDarkTheme,
+    themeId: "dracula",
     isLoading: false,
   }),
 }));
 
 describe("ThemeSelector", () => {
   beforeEach(() => {
-    mockThemeState.followSystemTheme = false;
-    mockSetTheme.mockClear();
-    mockSetFollowSystemTheme.mockClear();
-    mockSetSystemLightTheme.mockClear();
-    mockSetSystemDarkTheme.mockClear();
+    mockNavigate.mockClear();
+    useLastScreenStore.setState({ lastScreen: null });
   });
 
-  it("shows one all-UI theme picker when follow-system is off", () => {
+  afterEach(() => {
+    useLastScreenStore.setState({ lastScreen: null });
+  });
+
+  it("renders a Change theme trigger with the active theme name", () => {
     render(<ThemeSelector />);
 
-    expect(screen.getByRole("switch", { name: /follow system theme/i })).not.toBeChecked();
-    expect(screen.getByText("All UI theme")).toBeInTheDocument();
-    expect(screen.queryByText("Light system theme")).not.toBeInTheDocument();
-    expect(screen.queryByText("Dark system theme")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /change theme/i })).toBeInTheDocument();
+    expect(screen.getByText(/dracula/i)).toBeInTheDocument();
   });
 
-  it("shows separate light and dark pickers when follow-system is on", () => {
-    mockThemeState.followSystemTheme = true;
+  it("navigates to the last screen with theme-selector=true on click", async () => {
+    const user = userEvent.setup();
+    useLastScreenStore.setState({
+      lastScreen: { pathname: "/agents", search: {} },
+    });
 
     render(<ThemeSelector />);
+    await user.click(screen.getByRole("button", { name: /change theme/i }));
 
-    expect(screen.getByRole("switch", { name: /follow system theme/i })).toBeChecked();
-    expect(screen.getByText("Light system theme")).toBeInTheDocument();
-    expect(screen.getByText("Dark system theme")).toBeInTheDocument();
-    expect(screen.queryByText("All UI theme")).not.toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/agents",
+      search: { "theme-selector": true },
+    });
   });
 
-  it("allows any theme to be selected for either system appearance", () => {
-    mockThemeState.followSystemTheme = true;
+  it("preserves the last screen's search params so strict routes don't throw", async () => {
+    const user = userEvent.setup();
+    useLastScreenStore.setState({
+      lastScreen: {
+        pathname: "/ws-session/ws-feature-7",
+        search: { cwd: "/Users/foo/proj", featureId: 7, projectId: 1 },
+      },
+    });
 
     render(<ThemeSelector />);
+    await user.click(screen.getByRole("button", { name: /change theme/i }));
 
-    const lightPicker = screen.getByRole("radiogroup", { name: "Light system theme" });
-    const darkPicker = screen.getByRole("radiogroup", { name: "Dark system theme" });
-
-    expect(within(lightPicker).getByRole("radio", { name: /dracula/i })).toBeInTheDocument();
-    expect(within(lightPicker).getByRole("radio", { name: /aurora/i })).toBeInTheDocument();
-    expect(within(darkPicker).getByRole("radio", { name: /dracula/i })).toBeInTheDocument();
-    expect(within(darkPicker).getByRole("radio", { name: /aurora/i })).toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/ws-session/ws-feature-7",
+      search: {
+        cwd: "/Users/foo/proj",
+        featureId: 7,
+        projectId: 1,
+        "theme-selector": true,
+      },
+    });
   });
 
-  it("persists the follow-system toggle through the theme hook", async () => {
+  it("falls back to the home route when no meaningful screen is recorded", async () => {
     const user = userEvent.setup();
 
     render(<ThemeSelector />);
+    await user.click(screen.getByRole("button", { name: /change theme/i }));
 
-    await user.click(screen.getByRole("switch", { name: /follow system theme/i }));
-
-    expect(mockSetFollowSystemTheme).toHaveBeenCalledWith(true);
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: "/",
+      search: { "theme-selector": true },
+    });
   });
 });

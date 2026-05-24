@@ -38,9 +38,26 @@ import { useThemeSync } from "@/hooks/useTheme";
 import UniversalContextMenu from "@/components/UniversalContextMenu";
 import { RootOverlays } from "@/components/RootOverlays";
 import { RootErrorBoundary } from "@/components/RootErrorBoundary";
+import { isMeaningfulScreenPath, useLastScreenStore } from "@/stores/last-screen-store";
+import { THEME_SELECTOR_SEARCH_KEY } from "@/components/theme/ThemeDrawer";
+
+/**
+ * Root-level search validator. The global theme drawer's open state lives in
+ * the URL as `?theme-selector=true`, and TanStack Router merges parent
+ * search into every child route — so validating it here means it survives
+ * navigation across any route, including strict ones like
+ * `/ws-session/$sessionId` whose own validator would otherwise drop it.
+ */
+interface RootSearch {
+  [THEME_SELECTOR_SEARCH_KEY]?: true;
+}
 
 export const Route = createRootRoute({
   component: RootLayout,
+  validateSearch: (search: Record<string, unknown>): RootSearch => {
+    const raw = search[THEME_SELECTOR_SEARCH_KEY];
+    return raw === true || raw === "true" ? { [THEME_SELECTOR_SEARCH_KEY]: true } : {};
+  },
 });
 
 function RootLayout() {
@@ -101,6 +118,22 @@ function RootLayout() {
     : routerState.location.search?.featureId
       ? Number(routerState.location.search.featureId)
       : null;
+
+  // Record the last "meaningful" screen so the settings → theme drawer flow
+  // can send the user back to where they were working. We deliberately skip
+  // settings/home so the **Change theme** button never bounces back to itself.
+  // The full `search` object is captured because routes like
+  // `/ws-session/$sessionId` throw without `cwd` / `featureId` / `projectId`.
+  const pathname = routerState.location.pathname;
+  const search = routerState.location.search as Record<string, unknown> | undefined;
+  useEffect(() => {
+    if (isMeaningfulScreenPath(pathname)) {
+      useLastScreenStore.getState().setLastScreen({
+        pathname,
+        search: search ?? {},
+      });
+    }
+  }, [pathname, search]);
 
   const invalidateFeatures = useCallback(() => {
     // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
