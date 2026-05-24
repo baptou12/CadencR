@@ -379,13 +379,32 @@
   --code-fg: #abb2bf;
 
   /* Agent-stream block surfaces — Dracula treatment, recolored for One Dark.
-   * Tool/Plan use the One Dark blue identity; Thinking keeps its dedicated
-   * violet slot (One Dark magenta). Bash chrome mirrors Dracula's pattern. */
-  --block-tool-bg: #1f2733;
+   * Tool/Plan use the One Dark blue identity; Thinking uses One Dark cyan
+   * (`hue-1`) to keep the dark themes visually distinct: Dracula already
+   * owns the violet thinking slot (`#dbb1ff`), so One Dark deliberately
+   * diverges. Cyan is the natural non-primary, non-status One Dark hue —
+   * not blue (claimed by `--primary`), not purple (Dracula), not
+   * green/yellow/red (coded as success/warning/error). Bash chrome
+   * mirrors Dracula's pattern.
+   *
+   * Accents come straight from `one-dark-syntax/colors.less`:
+   *   tool/plan = `hue-2` (blue,  `#61afef`)
+   *   thinking  = `hue-1` (cyan,  `#56b6c2`)
+   *
+   * Backgrounds derive from One Dark's `syntax-bg` (`#282c34`,
+   * `hsl(220, 13%, 18%)`) with a low-chroma wash toward each accent so
+   * the surface hints at the identity without competing with the accent
+   * label itself.
+   *
+   * NOTE: DESIGN.md §358 currently states "thinking always uses
+   * accent_violet" with One Dark's slot = `#c678dd`. This block
+   * intentionally diverges so dark themes stay distinguishable; update
+   * DESIGN.md's `one_dark.accent_violet` slot when this lands. */
+  --block-tool-bg: #252b36;
   --block-tool-accent: #61afef;
-  --block-thinking-bg: #2a2218;
-  --block-thinking-accent: #d19a66;
-  --block-plan-bg: #1f2733;
+  --block-thinking-bg: #232f33;
+  --block-thinking-accent: #56b6c2;
+  --block-plan-bg: #252b36;
   --block-plan-accent: #61afef;
   --block-bash-header-bg: #1b1f24;
   --block-bash-body-bg: #0f1116;
@@ -516,14 +535,32 @@
   --code-fg: oklch(0.33 0.012 80);
 
   /* Agent-stream block surfaces — Aurora treatment (light tints + saturated
-   * accent text), recolored for One Light. Thinking keeps its dedicated
-   * violet slot per the design contract (never use --primary). */
-  --block-tool-bg: oklch(0.96 0.04 245);
-  --block-tool-accent: oklch(0.45 0.18 260);
-  --block-thinking-bg: oklch(0.96 0.05 70);
-  --block-thinking-accent: oklch(0.45 0.16 55);
-  --block-plan-bg: oklch(0.96 0.04 245);
-  --block-plan-accent: oklch(0.45 0.18 260);
+   * accent text), recolored for One Light. Mirrors One Dark's identity
+   * pairing: tool/plan = blue, thinking = cyan. Aurora already owns the
+   * violet thinking slot, so One Light deliberately diverges to keep the
+   * light themes visually distinct (same logic as One Dark vs Dracula).
+   *
+   * Accents pull from canonical Atom One Light (`one-light-syntax/colors.less`):
+   *   hue-2 (blue) = hsl(221, 87%, 60%) ≈ #4078f2  → oklch(~0.62 0.22 264)
+   *   hue-1 (cyan) = hsl(198, 99%, 37%) ≈ #0184bc  → oklch(~0.55 0.13 230)
+   *
+   * The canonical hue-2 at L≈0.62 only clears ~4:1 against white — fine
+   * for non-text UI but borderline for the small label text we render in
+   * it. We deepen blue to L≈0.45 to clear AA (4.5:1) on the tinted bg,
+   * and match cyan to the same lightness for consistent visual weight.
+   * Backgrounds stay near white (L=0.96, very low chroma) so the accent —
+   * not the surface — carries the identity.
+   *
+   * NOTE: DESIGN.md §358 currently states "thinking always uses
+   * accent_violet" with One Light's slot derived from `--acc-purple`.
+   * This block intentionally diverges; update DESIGN.md alongside the
+   * One Dark divergence above. */
+  --block-tool-bg: oklch(0.96 0.04 264);
+  --block-tool-accent: oklch(0.45 0.2 264);
+  --block-thinking-bg: oklch(0.96 0.02 215);
+  --block-thinking-accent: oklch(0.43 0.11 220);
+  --block-plan-bg: oklch(0.96 0.04 264);
+  --block-plan-accent: oklch(0.45 0.2 264);
   /* Bash variant — follow Aurora: header takes the accent gray, body is
    * the soft code surface. Live xterm still stays dark. */
   --block-bash-header-bg: var(--accent);
