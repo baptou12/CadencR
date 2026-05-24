@@ -9,6 +9,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useSaveSessionDraft, useGetSessionDraft } from "@/api/generated";
 import { createDraftGet, createDraftSave } from "@/lib/ws-envelope";
+import { draftScope } from "@/lib/draft-scope";
 
 interface UsePromptDraftOptions {
   /** DB session ID when known; ws-session can also derive it from serverSessionId. */
@@ -28,11 +29,6 @@ const dirtyDraftScopes = new Set<string>();
 export function resetPromptDraftMemoryForTest(): void {
   localDrafts.clear();
   dirtyDraftScopes.clear();
-}
-
-function draftScope(sessionId: number | undefined, wsSessionId: string | undefined): string | null {
-  if (wsSessionId) return `ws:${wsSessionId}`;
-  return sessionId != null ? `http:${sessionId}` : null;
 }
 
 function draftForScope(scope: string | null, fallback: string | null): string | null {
