@@ -1,11 +1,11 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type {
   ContextMenuItem as FileTreeContextMenuItem,
   ContextMenuOpenContext as FileTreeContextMenuOpenContext,
   FileTreeRenameEvent,
 } from "@pierre/trees";
-import { useGetUncommittedFiles, useTreeAll } from "@/api/generated";
+import { useGetUncommittedFiles, useTreeAll, type FileTreeEntry } from "@/api/generated";
 import { useEditorState } from "@/hooks/useEditorState";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
@@ -17,7 +17,7 @@ import {
   useCadencrFileTree,
 } from "@/components/file-tree/CadencrFileTree";
 import { FileTreeContextMenu } from "./FileTreeContextMenu";
-import { useDeferredFullTreeLoad } from "./useDeferredFullTreeLoad";
+import { mergeFileTreeEntries, useLazyIgnoredFileTreeEntries } from "./lazyIgnoredFileTreeEntries";
 import { useFileTreeDraft, type DraftKind } from "./useFileTreeDraft";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { validateSimpleName } from "@/lib/validate-name";
@@ -53,29 +53,19 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
 
   const mutations = useFileTreeMutations(projectId, featureId);
 
-  // Two-pass fetch: tracked first (fast — walker skips gitignored dirs
-  // wholesale), then all entries (slow — walks node_modules etc.). The
-  // pane unblocks as soon as `tracked` lands; `all` upgrades the model
-  // in place once it resolves.
+  // Fast recursive fetch for tracked files. Gitignored directories are loaded
+  // lazily one level at a time by `useLazyIgnoredFileTreeEntries` so common
+  // mutations don't trigger a huge `node_modules`/`target` walk.
   const tracked = useTreeAll({
     project_id: projectId,
     feature_id: featureId,
     exclude_gitignored: true,
   });
-  const fullTreeEnabled = useDeferredFullTreeLoad({
-    featureId,
-    trackedReady: tracked.data != null,
-  });
-  const all = useTreeAll(
-    {
-      project_id: projectId,
-      feature_id: featureId,
-      exclude_gitignored: false,
-    },
-    { query: { enabled: fullTreeEnabled } },
+  const [lazyIgnoredEntries, setLazyIgnoredEntries] = useState<readonly FileTreeEntry[]>([]);
+  const entries = useMemo(
+    () => mergeFileTreeEntries(tracked.data, lazyIgnoredEntries),
+    [tracked.data, lazyIgnoredEntries],
   );
-
-  const entries = all.data ?? tracked.data;
   // One pass to produce both the pierre `paths` array and the minimal set
   // of gitignored "roots" feeding `useGitignoredDimming`.
   const { paths, ignoredPathPrefixes } = useMemo(() => {
@@ -128,6 +118,14 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
       }) => handleDropComplete(event.draggedPaths, event.target.directoryPath),
       onDropError: (message: string) => toast.error(message),
     },
+  });
+
+  useLazyIgnoredFileTreeEntries({
+    model,
+    projectId,
+    featureId,
+    trackedEntries: tracked.data,
+    onEntriesChange: setLazyIgnoredEntries,
   });
 
   // ── Inline-create draft state (Pierre placeholder + rename) ────────────
