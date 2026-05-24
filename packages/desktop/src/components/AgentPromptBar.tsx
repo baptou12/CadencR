@@ -15,6 +15,7 @@ import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import { useImageAttachments } from "@/hooks/useImageAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
+import { usePromptEditorRestore } from "@/hooks/usePromptEditorRestore";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import { useAgentPromptSend } from "./agent-prompt-send";
@@ -72,17 +73,15 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const navigatingHistoryRef = useRef(false);
     const hadSpecialStateRef = useRef(false);
     const shouldRestoreFocusRef = useRef(false);
-    const { initialDraft: restoredDraft, saveDraft } = usePromptDraft({
-      sessionId,
-      wsSessionId,
-      initialDraft: initialDraft ?? null,
+    const draft = usePromptDraft({ sessionId, wsSessionId, initialDraft: initialDraft ?? null });
+    const { initialDraft: restoredDraft, saveDraft } = draft;
+    usePromptEditorRestore({
+      restoredDraft,
+      dbSessionId: draft.dbSessionId,
+      textRef,
+      editorRef,
+      setText,
     });
-    useEffect(() => {
-      if (restoredDraft && !textRef.current) {
-        setText(restoredDraft);
-        editorRef.current?.setText(restoredDraft);
-      }
-    }, [restoredDraft]);
     const {
       visiblePermission,
       visiblePlanApproval,

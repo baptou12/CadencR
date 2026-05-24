@@ -159,5 +159,7 @@ export function usePromptDraft({ sessionId, wsSessionId, initialDraft }: UseProm
     [flushSave, restoreScope],
   );
 
-  return { initialDraft: restoredDraft, saveDraft };
+  // Exposed so consumers can detect conversation switches (e.g. /clear rolls a
+  // new agent_sessions row inside the same feature). Null before init.
+  return { initialDraft: restoredDraft, saveDraft, dbSessionId: dbSessionId ?? null };
 }

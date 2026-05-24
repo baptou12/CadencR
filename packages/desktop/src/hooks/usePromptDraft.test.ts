@@ -287,4 +287,23 @@ describe("usePromptDraft", () => {
     expect(firstAgain.result.current.initialDraft).toBe("Hello");
     expect(secondAgain.result.current.initialDraft).toBe("World");
   });
+
+  it("exposes the resolved DB session id so callers can detect /clear", () => {
+    const { result, rerender } = renderHook(
+      ({ wsSessionId }: { wsSessionId: string }) =>
+        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
+      { initialProps: { wsSessionId: "ws-test-1" } },
+    );
+    expect(result.current.dbSessionId).toBe(42);
+
+    rerender({ wsSessionId: "ws-test-2" });
+    expect(result.current.dbSessionId).toBe(43);
+  });
+
+  it("returns null dbSessionId before the WS session is initialized", () => {
+    const { result } = renderHook(() =>
+      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-pending", initialDraft: null }),
+    );
+    expect(result.current.dbSessionId).toBeNull();
+  });
 });
