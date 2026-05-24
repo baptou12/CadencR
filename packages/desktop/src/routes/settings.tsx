@@ -17,9 +17,9 @@ import {
   Plug,
   Save,
   Settings2,
-  Sparkles,
   ZoomIn,
 } from "lucide-react";
+import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ModelSelector } from "@/components/ModelSelector";
@@ -597,8 +597,8 @@ function AboutSection(): React.JSX.Element {
     <SettingsSection id="about" title="About" subtitle="Build · Diagnostics">
       <SettingsCard padded>
         <div className="flex items-center gap-4">
-          <div className="grid size-12 place-items-center rounded-xl bg-primary text-[var(--primary-foreground)]">
-            <Sparkles className="size-6" />
+          <div className="grid size-12 shrink-0 place-items-center">
+            <CadencrLogo className="size-12" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold">Cadencr Desktop</div>
