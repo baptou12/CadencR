@@ -48,6 +48,7 @@ function bridge(): CadencrDesktopBridge {
     revealInFinder: vi.fn(),
     openExternal: vi.fn(),
     pickDirectory: vi.fn(),
+    showSaveDialog: vi.fn(),
     notifyPermission: mockNotifyPermission,
     notify: mockNotify,
     notifyTest: vi.fn(),

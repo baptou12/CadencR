@@ -67,6 +67,11 @@ export interface CadencrDesktopBridge {
   revealInFinder: (path: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   pickDirectory: () => Promise<string | null>;
+  /**
+   * Prompt the user with the native "Save As" dialog. Resolves to the chosen
+   * absolute path or `null` if the dialog was canceled.
+   */
+  showSaveDialog: (opts: { defaultPath: string; title?: string }) => Promise<string | null>;
   notifyPermission: () => Promise<boolean>;
   notify: (opts: NotifyBridgeOptions) => Promise<void>;
   notifyTest: () => Promise<void>;
@@ -128,6 +133,7 @@ const browserBridge: CadencrDesktopBridge = {
   revealInFinder: () => unavailable("revealInFinder"),
   openExternal: () => unavailable("openExternal"),
   pickDirectory: () => unavailable("pickDirectory"),
+  showSaveDialog: () => unavailable("showSaveDialog"),
   notifyPermission: () => Promise.resolve(false),
   notify: () => Promise.resolve(),
   notifyTest: () => unavailable("notifyTest"),

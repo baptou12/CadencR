@@ -49,6 +49,17 @@ interface EditorFeatureState {
 // Default max tabs — can be overridden via settings in the component layer
 export const DEFAULT_MAX_TABS = 10;
 
+// Sentinel URI scheme for never-saved scratch buffers. Mirrors the trick
+// `artifact://` uses: keeps a single `filePath`-keyed identity and lets all
+// the disambiguation / save-registry / dirty plumbing stay untouched. The
+// scheme matches the path *prefix*, the UUID after it makes each untitled
+// buffer unique per pane.
+export const UNTITLED_PATH_PREFIX = "untitled://";
+
+export function isUntitledPath(path: string | null | undefined): boolean {
+  return typeof path === "string" && path.startsWith(UNTITLED_PATH_PREFIX);
+}
+
 // ---------------------------------------------------------------------------
 // Split tree helpers
 // ---------------------------------------------------------------------------
@@ -219,6 +230,26 @@ interface EditorStore {
     maxTabs?: number,
     goToLine?: number,
   ) => void;
+  /**
+   * Open a new empty "untitled" scratch tab. Used by CMD+N before the
+   * buffer is ever saved to disk. Returns the synthetic `untitled://…`
+   * path so the caller can find the tab again — see
+   * `convertUntitledToFile` for the save-as transition.
+   */
+  openUntitledBuffer: (featureId: number, paneId: string, maxTabs?: number) => string;
+  /**
+   * Replace an untitled tab with a real on-disk file tab in place — same
+   * position, same paneId — after the user picks a path in the native
+   * save dialog and the backend confirms the write. If a tab for
+   * `newFilePath` already exists in this pane, drop the untitled and
+   * activate the existing one instead.
+   */
+  convertUntitledToFile: (
+    featureId: number,
+    paneId: string,
+    untitledPath: string,
+    newFilePath: string,
+  ) => void;
   closeTab: (featureId: number, paneId: string, filePath: string) => void;
   /**
    * Update every tab across every pane whose path equals `oldPath` or
@@ -321,6 +352,84 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         if (activeFilePath === filePath) {
           activeFilePath = tabs[Math.max(0, idx - 1)]?.filePath ?? tabs[0]?.filePath ?? null;
         }
+        return { tabs, activeFilePath };
+      });
+      return updateFeature(state, featureId, next);
+    }),
+
+  openUntitledBuffer: (featureId, paneId, maxTabs = DEFAULT_MAX_TABS) => {
+    const newPath = `${UNTITLED_PATH_PREFIX}${crypto.randomUUID()}`;
+    set((state) => {
+      const feature = state.features[featureId] ?? { ...defaultFeatureState };
+      const next = updatePane(feature, paneId, (pane) => {
+        // Pick the next `Untitled-N` label by scanning the existing
+        // untitled tabs in this pane. The numbering is per-pane, not
+        // per-feature — keeps the implementation simple and matches
+        // VS Code's behavior (Untitled-1 in pane A and pane B can
+        // coexist; users see them in separate columns anyway).
+        const used = new Set<number>();
+        for (const t of pane.tabs) {
+          const match = /^Untitled-(\d+)$/.exec(t.fileName);
+          if (match) used.add(Number.parseInt(match[1], 10));
+        }
+        let n = 1;
+        while (used.has(n)) n += 1;
+        const fileName = `Untitled-${n}`;
+
+        const newTab: EditorTab = {
+          filePath: newPath,
+          fileName,
+          disambiguatedName: fileName,
+          // Untitled buffers are born "dirty" — they have content (even if
+          // empty) that doesn't exist on disk yet. The close-tab confirm
+          // dialog then kicks in naturally and routes through the same
+          // Save As flow via `editorSaveRegistry`.
+          isDirty: true,
+          cursorPosition: { line: 1, col: 1 },
+        };
+
+        let tabs = [...pane.tabs, newTab];
+        if (tabs.length > maxTabs) {
+          const oldestNonDirtyIdx = tabs.findIndex((t) => !t.isDirty);
+          if (oldestNonDirtyIdx !== -1) {
+            tabs = tabs.filter((_, i) => i !== oldestNonDirtyIdx);
+          }
+        }
+        return { tabs: disambiguateTabNames(tabs), activeFilePath: newPath };
+      });
+      return updateFeature(state, featureId, next);
+    });
+    return newPath;
+  },
+
+  convertUntitledToFile: (featureId, paneId, untitledPath, newFilePath) =>
+    set((state) => {
+      const feature = state.features[featureId];
+      if (!feature) return state;
+      const next = updatePane(feature, paneId, (pane) => {
+        const idx = pane.tabs.findIndex((t) => t.filePath === untitledPath);
+        if (idx === -1) return pane;
+
+        // Destination already open in this pane: drop the untitled and
+        // activate the existing tab. Avoids two tabs pointing at the same
+        // file after a save-as collision.
+        const existingIdx = pane.tabs.findIndex((t, i) => i !== idx && t.filePath === newFilePath);
+        if (existingIdx !== -1) {
+          const tabs = disambiguateTabNames(pane.tabs.filter((_, i) => i !== idx));
+          return { tabs, activeFilePath: newFilePath };
+        }
+
+        const fileName = getFileName(newFilePath);
+        const updated: EditorTab = {
+          ...pane.tabs[idx],
+          filePath: newFilePath,
+          fileName,
+          disambiguatedName: fileName,
+          isDirty: false,
+        };
+        const tabs = disambiguateTabNames(pane.tabs.map((t, i) => (i === idx ? updated : t)));
+        const activeFilePath =
+          pane.activeFilePath === untitledPath ? newFilePath : pane.activeFilePath;
         return { tabs, activeFilePath };
       });
       return updateFeature(state, featureId, next);

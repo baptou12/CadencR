@@ -8,6 +8,17 @@ import type { Shortcut } from "./types";
 export const EDITOR_SHORTCUTS = [
   // ─── Editor ──────────────────────────────────────────────────────────
   { id: "editor-fuzzy", keys: ["mod", "p"], description: "Fuzzy file search", scope: "editor" },
+  { id: "editor-new", keys: ["mod", "n"], description: "New buffer", scope: "editor" },
+  {
+    // ⌘S is also bound inside CodeMirror's keymap (see
+    // `BaseCodeMirrorEditor.tsx`) so the in-editor binding stays
+    // self-contained. The registry entry makes the chord discoverable
+    // in the cheatsheet and respects user remapping.
+    id: "editor-save",
+    keys: ["mod", "s"],
+    description: "Save",
+    scope: "editor",
+  },
   {
     id: "editor-buffer-search",
     keys: ["mod", "f"],

@@ -30,6 +30,7 @@ function bridge(isElectron: boolean): CadencrDesktopBridge {
     revealInFinder: vi.fn(() => Promise.resolve()),
     openExternal: vi.fn(() => Promise.resolve()),
     pickDirectory: vi.fn(() => Promise.resolve(null)),
+    showSaveDialog: vi.fn(() => Promise.resolve(null)),
     notifyPermission: vi.fn(() => Promise.resolve(false)),
     notify: vi.fn(() => Promise.resolve()),
     notifyTest: vi.fn(() => Promise.resolve()),

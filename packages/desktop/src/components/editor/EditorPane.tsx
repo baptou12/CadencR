@@ -1,11 +1,12 @@
 import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { useEditorStore } from "@/stores/editor-store";
+import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
 import EditorSubTabs from "./EditorSubTabs";
 import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
+const UntitledCodeMirrorEditor = lazy(() => import("./UntitledCodeMirrorEditor"));
 
 interface EditorPaneProps {
   featureId: number;
@@ -27,6 +28,7 @@ export default function EditorPane({
   );
   const activePaneId = useEditorStore((s) => s.features[featureId]?.activePaneId);
   const setActivePane = useEditorStore((s) => s.setActivePane);
+  const openUntitledBuffer = useEditorStore((s) => s.openUntitledBuffer);
 
   const isFocusedPane = activePaneId === paneId;
   const [searchOpen, setSearchOpen] = useState(false);
@@ -100,6 +102,22 @@ export default function EditorPane({
     { enabled: isFocusedPane && Boolean(activeFilePath) },
   );
 
+  // CMD+N: spawn a fresh untitled buffer in the currently focused pane.
+  // Scoped to the editor tab so it doesn't fire while the agent/terminal
+  // is in front. We only handle this on the focused pane — every pane
+  // mounts this hook, but only one of them owns the chord at a time.
+  useScopedGlobalShortcutById(
+    "editor-new",
+    (event) => {
+      if (!isFocusedPane) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openUntitledBuffer(featureId, paneId);
+    },
+    "editor",
+    { enabled: isFocusedPane },
+  );
+
   useEffect(() => {
     return () => clearPaneSearch(featureId, paneId);
   }, [featureId, paneId]);
@@ -125,26 +143,37 @@ export default function EditorPane({
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (
           <Suspense fallback={suspenseFallback}>
-            <CodeMirrorEditor
-              key={activeFilePath}
-              filePath={activeFilePath}
-              projectId={projectId}
-              paneId={paneId}
-              featureId={featureId}
-              searchOpen={searchOpen}
-              searchReopenSignal={searchReopenSignal}
-              searchReplaceMode={replaceMode}
-              searchReplaceFocusSignal={replaceFocusSignal}
-              goToLineOpen={goToLineOpen}
-              goToLineReopenSignal={goToLineReopenSignal}
-              onCloseSearch={closeSearch}
-              onCloseGoToLine={closeGoToLine}
-              onEditorViewChange={onEditorViewChange}
-            />
+            {isUntitledPath(activeFilePath) ? (
+              <UntitledCodeMirrorEditor
+                key={activeFilePath}
+                filePath={activeFilePath}
+                projectId={projectId}
+                paneId={paneId}
+                featureId={featureId}
+                onEditorViewChange={onEditorViewChange}
+              />
+            ) : (
+              <CodeMirrorEditor
+                key={activeFilePath}
+                filePath={activeFilePath}
+                projectId={projectId}
+                paneId={paneId}
+                featureId={featureId}
+                searchOpen={searchOpen}
+                searchReopenSignal={searchReopenSignal}
+                searchReplaceMode={replaceMode}
+                searchReplaceFocusSignal={replaceFocusSignal}
+                goToLineOpen={goToLineOpen}
+                goToLineReopenSignal={goToLineReopenSignal}
+                onCloseSearch={closeSearch}
+                onCloseGoToLine={closeGoToLine}
+                onEditorViewChange={onEditorViewChange}
+              />
+            )}
           </Suspense>
         ) : (
           <div className="flex items-center justify-center h-full px-4 text-muted-foreground text-sm text-center text-balance">
-            Open a file from the sidebar or use CMD+P
+            Open a file from the sidebar, press CMD+N for a new buffer, or use CMD+P
           </div>
         )}
       </div>

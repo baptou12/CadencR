@@ -54,6 +54,10 @@ export function registerIpc({ getMainWindow, confirmClose, requestQuit }: IpcOpt
     assertTrustedSender(event, getMainWindow);
     return pickDirectory();
   });
+  ipcMain.handle("dialog:save-file", (event, opts: unknown) => {
+    assertTrustedSender(event, getMainWindow);
+    return saveFileDialog(requireMainWindow(getMainWindow), parseSaveDialogOptions(opts));
+  });
   ipcMain.handle("notify:permission", (event) => {
     assertTrustedSender(event, getMainWindow);
     return notificationPermission();
@@ -205,6 +209,39 @@ export async function openExternal(rawUrl: unknown): Promise<void> {
 async function pickDirectory(): Promise<string | null> {
   const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   return result.canceled ? null : (result.filePaths[0] ?? null);
+}
+
+interface SaveDialogOptions {
+  defaultPath: string;
+  title?: string;
+}
+
+export function parseSaveDialogOptions(rawOpts: unknown): SaveDialogOptions {
+  if (!rawOpts || typeof rawOpts !== "object") {
+    throw new Error("Expected save-dialog options.");
+  }
+  const opts = rawOpts as Record<string, unknown>;
+  const defaultPath = opts.defaultPath;
+  if (typeof defaultPath !== "string" || defaultPath.length === 0 || defaultPath.length > 4096) {
+    throw new Error("Invalid save-dialog defaultPath.");
+  }
+  const title = opts.title;
+  if (title !== undefined && (typeof title !== "string" || title.length > 120)) {
+    throw new Error("Invalid save-dialog title.");
+  }
+  return { defaultPath, title: typeof title === "string" ? title : undefined };
+}
+
+async function saveFileDialog(
+  parent: BrowserWindow,
+  { defaultPath, title }: SaveDialogOptions,
+): Promise<string | null> {
+  const result = await dialog.showSaveDialog(parent, {
+    defaultPath,
+    title,
+    properties: ["createDirectory", "showOverwriteConfirmation"],
+  });
+  return result.canceled ? null : (result.filePath ?? null);
 }
 
 export function parseZoomFactor(rawFactor: unknown): number {

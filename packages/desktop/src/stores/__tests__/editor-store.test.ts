@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useEditorStore, DEFAULT_MAX_TABS } from "../editor-store";
+import {
+  useEditorStore,
+  DEFAULT_MAX_TABS,
+  isUntitledPath,
+  UNTITLED_PATH_PREFIX,
+} from "../editor-store";
 
 const FEATURE_ID = 1;
 const PANE_ID = "main";
@@ -185,6 +190,77 @@ describe("removeEditorPane", () => {
     getStore().initFeature(FEATURE_ID);
     getStore().removeEditorPane(FEATURE_ID, PANE_ID);
     expect(feature().splitTree).toEqual({ type: "leaf", id: PANE_ID });
+  });
+});
+
+describe("openUntitledBuffer", () => {
+  beforeEach(() => {
+    getStore().initFeature(FEATURE_ID);
+  });
+
+  it("opens an empty dirty Untitled-1 tab and returns its synthetic path", () => {
+    const path = getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    expect(isUntitledPath(path)).toBe(true);
+    expect(path.startsWith(UNTITLED_PATH_PREFIX)).toBe(true);
+    const p = pane();
+    expect(p.tabs).toHaveLength(1);
+    expect(p.tabs[0].fileName).toBe("Untitled-1");
+    expect(p.tabs[0].isDirty).toBe(true);
+    expect(p.activeFilePath).toBe(path);
+  });
+
+  it("increments the Untitled-N counter per pane", () => {
+    getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    const names = pane().tabs.map((t) => t.fileName);
+    expect(names).toEqual(["Untitled-1", "Untitled-2"]);
+  });
+
+  it("re-uses freed Untitled numbers after one is closed", () => {
+    const p1 = getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().closeTab(FEATURE_ID, PANE_ID, p1);
+    getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    const names = pane()
+      .tabs.map((t) => t.fileName)
+      .sort();
+    expect(names).toEqual(["Untitled-1", "Untitled-2"]);
+  });
+});
+
+describe("convertUntitledToFile", () => {
+  beforeEach(() => {
+    getStore().initFeature(FEATURE_ID);
+  });
+
+  it("renames the untitled tab in place and clears the dirty flag", () => {
+    const untitled = getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().convertUntitledToFile(FEATURE_ID, PANE_ID, untitled, "notes.md");
+    const p = pane();
+    expect(p.tabs).toHaveLength(1);
+    expect(p.tabs[0].filePath).toBe("notes.md");
+    expect(p.tabs[0].fileName).toBe("notes.md");
+    expect(p.tabs[0].isDirty).toBe(false);
+    expect(p.activeFilePath).toBe("notes.md");
+  });
+
+  it("preserves tab position when there are other tabs around it", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "/before.ts");
+    const untitled = getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().openFile(FEATURE_ID, PANE_ID, "/after.ts");
+    getStore().convertUntitledToFile(FEATURE_ID, PANE_ID, untitled, "src/notes.md");
+    const paths = pane().tabs.map((t) => t.filePath);
+    expect(paths).toEqual(["/before.ts", "src/notes.md", "/after.ts"]);
+  });
+
+  it("drops the untitled tab when the destination is already open", () => {
+    getStore().openFile(FEATURE_ID, PANE_ID, "existing.ts");
+    const untitled = getStore().openUntitledBuffer(FEATURE_ID, PANE_ID);
+    getStore().convertUntitledToFile(FEATURE_ID, PANE_ID, untitled, "existing.ts");
+    const p = pane();
+    expect(p.tabs).toHaveLength(1);
+    expect(p.tabs[0].filePath).toBe("existing.ts");
+    expect(p.activeFilePath).toBe("existing.ts");
   });
 });
 
