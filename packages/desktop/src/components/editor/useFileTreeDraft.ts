@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import type { FileTree as FileTreeModel, FileTreeRenameEvent } from "@pierre/trees";
-import type { useFileTreeMutations } from "@/hooks/useFileTreeMutations";
-import { fromPierrePath } from "@/components/file-tree/CadencrFileTree";
+import type { FileTreeMutations } from "@/hooks/useFileTreeMutations";
+import { fromPierrePath, toPierrePath } from "@/components/file-tree/CadencrFileTree";
 import { validateSimpleName } from "@/lib/validate-name";
 
 export type DraftKind = "file" | "folder";
@@ -34,11 +34,28 @@ function makeDraftPath(parentDir: string, kind: DraftKind): string {
   return parentDir ? `${parentDir}/${DRAFT_LEAF}${trailing}` : `${DRAFT_LEAF}${trailing}`;
 }
 
+function pierrePathForKind(path: string, kind: DraftKind): string {
+  return toPierrePath({ path: fromPierrePath(path), is_dir: kind === "folder" });
+}
+
+function removeDraftFromModel(model: FileTreeModel, path: string, kind: DraftKind): void {
+  const recursive = kind === "folder";
+  const candidate = pierrePathForKind(path, kind);
+  if (model.getItem(candidate) != null) {
+    model.remove(candidate, recursive ? { recursive: true } : undefined);
+  }
+}
+
+function addConfirmedCreateToModel(model: FileTreeModel, path: string, kind: DraftKind): void {
+  const pierrePath = pierrePathForKind(path, kind);
+  if (model.getItem(pierrePath) == null) model.add(pierrePath);
+}
+
 interface UseFileTreeDraftOptions {
   model: FileTreeModel;
   projectId: number;
   featureId: number;
-  mutations: ReturnType<typeof useFileTreeMutations>;
+  mutations: FileTreeMutations;
   /** Called after the backend confirms a file create so the editor can open it. */
   onFileCreated: (fsPath: string) => void;
   /** Reset on feature change so a stale draft doesn't leak into a new feature. */
@@ -139,7 +156,9 @@ export function useFileTreeDraft({
   const tryHandleAsCreate = useCallback(
     (event: FileTreeRenameEvent): boolean => {
       const draft = draftRef.current;
-      if (draft == null || event.sourcePath !== draft.pierrePath) return false;
+      if (draft == null || fromPierrePath(event.sourcePath) !== fromPierrePath(draft.pierrePath)) {
+        return false;
+      }
 
       const fsDest = fromPierrePath(event.destinationPath);
       const newName = fsDest.slice(fsDest.lastIndexOf("/") + 1);
@@ -150,21 +169,13 @@ export function useFileTreeDraft({
       if (validationError) {
         toast.error(validationError);
         draftRef.current = null;
-        if (model.getItem(event.destinationPath) != null) {
-          model.remove(
-            event.destinationPath,
-            draft.kind === "folder" ? { recursive: true } : undefined,
-          );
-        }
+        removeDraftFromModel(model, event.destinationPath, draft.kind);
         return true;
       }
 
       draftRef.current = null;
-      const recursive = draft.kind === "folder";
       const onCreateError = () => {
-        if (model.getItem(event.destinationPath) != null) {
-          model.remove(event.destinationPath, recursive ? { recursive: true } : undefined);
-        }
+        removeDraftFromModel(model, event.destinationPath, draft.kind);
       };
       const childPath = draft.parentDir ? `${draft.parentDir}/${newName}` : newName;
       const requestBase = { project_id: projectId, feature_id: featureId } as const;
@@ -172,16 +183,23 @@ export function useFileTreeDraft({
         mutations.createFile.mutate(
           { data: { ...requestBase, file_path: childPath } },
           {
-            onSuccess: () => onFileCreated(childPath),
+            onSuccess: (response) => {
+              addConfirmedCreateToModel(model, response.path, draft.kind);
+              onFileCreated(response.path);
+            },
             onError: onCreateError,
           },
         );
       } else {
         mutations.createFolder.mutate(
           { data: { ...requestBase, dir_path: childPath } },
-          { onError: onCreateError },
+          {
+            onSuccess: (response) => addConfirmedCreateToModel(model, response.path, draft.kind),
+            onError: onCreateError,
+          },
         );
       }
+      queueMicrotask(() => removeDraftFromModel(model, event.destinationPath, draft.kind));
       return true;
     },
     [featureId, model, mutations.createFile, mutations.createFolder, onFileCreated, projectId],
