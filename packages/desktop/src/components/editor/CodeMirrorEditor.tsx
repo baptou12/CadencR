@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo, lazy, Suspense } from "react";
 import { EditorView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
 import { Loader2Icon } from "lucide-react";
@@ -6,7 +6,9 @@ import { useReadFile, useWriteFile, useGetBlame, useGetFeatureWorkingDir } from 
 import { useEditorStore } from "@/stores/editor-store";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useLsp } from "@/lib/lsp/useLsp";
-import { getLanguageExtension } from "./language-extensions";
+import { useScopedShortcut } from "@/hooks/useShortcut";
+import { cn } from "@/lib/utils";
+import { getFileExtension, getLanguageExtension, isMarkdownFile } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
@@ -16,6 +18,10 @@ import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
 import { toast } from "sonner";
+
+// Markdown pulls in react-markdown + lowlight (~35 grammars) — only loaded
+// when the user actually previews a markdown file.
+const Markdown = lazy(() => import("@/components/Markdown").then((m) => ({ default: m.Markdown })));
 
 interface CodeMirrorEditorProps {
   filePath: string;
@@ -59,7 +65,7 @@ const BUFFER_KEYMAP_EXT = editorBufferKeymap();
 const BUFFER_SEARCH_EXT = bufferSearchExtension();
 
 function getLanguageName(filePath: string): string {
-  const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
+  const ext = getFileExtension(filePath);
   const MAP: Record<string, string> = {
     ts: "TypeScript",
     tsx: "TSX",
@@ -105,6 +111,8 @@ export default function CodeMirrorEditor({
   const [autoSavedVisible, setAutoSavedVisible] = useState(false);
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutateAsyncRef = useRef<ReturnType<typeof useWriteFile>["mutateAsync"] | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const isMarkdown = isMarkdownFile(filePath);
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
   const { value: autoSaveSetting } = useDebouncedSetting("editor_auto_save");
@@ -232,6 +240,27 @@ export default function CodeMirrorEditor({
     [onEditorViewChange, paneId],
   );
 
+  const togglePreview = useCallback(() => {
+    if (!isMarkdown) return;
+    // Editor is guaranteed mounted past the loader guard below.
+    setPreviewContent((prev) =>
+      prev !== null ? null : (viewRef.current?.state.doc.toString() ?? ""),
+    );
+    // Force-close the search panel so its `searchOpen` flag doesn't go stale
+    // while the panel is hidden during preview.
+    onCloseSearch();
+  }, [isMarkdown, onCloseSearch]);
+
+  useScopedShortcut(
+    "editor-toggle-markdown-preview",
+    (e) => {
+      e.preventDefault();
+      togglePreview();
+    },
+    "editor",
+    { enabled: isMarkdown },
+  );
+
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
 
   // Hot-swap blame extension when data or setting changes.
@@ -296,6 +325,13 @@ export default function CodeMirrorEditor({
     clearPendingGoToLine(featureId, paneId, filePath);
   }, [data, pendingGoToLine, featureId, paneId, filePath, clearPendingGoToLine]);
 
+  const isPreviewing = previewContent !== null;
+
+  const previewToggle = useMemo(
+    () => (isMarkdown ? { active: isPreviewing, onToggle: togglePreview } : undefined),
+    [isMarkdown, isPreviewing, togglePreview],
+  );
+
   if (error) {
     return (
       <div className="h-full flex items-center justify-center bg-background text-destructive text-sm px-6 text-center">
@@ -329,9 +365,18 @@ export default function CodeMirrorEditor({
         ]}
         editorViewRef={viewRef}
         onEditorViewChange={handleEditorViewChange}
-        className="flex-1 overflow-auto"
+        className={cn("flex-1 overflow-auto", isPreviewing && "hidden")}
       />
-      {searchOpen && editorView && (
+      {isPreviewing && (
+        <div className="flex-1 overflow-auto bg-background">
+          <div className="max-w-3xl mx-auto px-6 py-4">
+            <Suspense fallback={null}>
+              <Markdown content={previewContent ?? ""} cacheKey={filePath} />
+            </Suspense>
+          </div>
+        </div>
+      )}
+      {searchOpen && editorView && !isPreviewing && (
         <EditorSearchPanel
           view={editorView}
           featureId={featureId}
@@ -361,6 +406,7 @@ export default function CodeMirrorEditor({
         lspStatus={lsp.status}
         lspLanguageId={lsp.languageId}
         lspError={lsp.errorMessage}
+        preview={previewToggle}
       />
     </div>
   );

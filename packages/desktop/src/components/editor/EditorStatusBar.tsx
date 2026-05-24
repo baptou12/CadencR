@@ -1,11 +1,18 @@
 /**
  * Bottom status bar for a single CodeMirror editor buffer. Renders cursor
- * position, autosave indicator, LSP status, language label, and encoding.
- * Extracted from `CodeMirrorEditor.tsx` to keep that file under the
- * 400-line limit.
+ * position, autosave indicator, LSP status, language label, encoding, and
+ * — for files that support it — a markdown preview toggle. Extracted from
+ * `CodeMirrorEditor.tsx` to keep that file under the 400-line limit.
  */
+import { memo } from "react";
+import { EyeIcon, PencilIcon } from "lucide-react";
 import { LspStatusIndicator } from "./LspStatusIndicator";
 import type { LspStatus } from "@/lib/lsp/useLsp";
+
+interface PreviewToggle {
+  active: boolean;
+  onToggle: () => void;
+}
 
 export interface EditorStatusBarProps {
   line: number;
@@ -15,9 +22,11 @@ export interface EditorStatusBarProps {
   lspStatus: LspStatus;
   lspLanguageId: string | null;
   lspError?: string;
+  /** Present only for files that support a markdown preview. */
+  preview?: PreviewToggle;
 }
 
-export function EditorStatusBar({
+export const EditorStatusBar = memo(function EditorStatusBar({
   line,
   col,
   language,
@@ -25,14 +34,25 @@ export function EditorStatusBar({
   lspStatus,
   lspLanguageId,
   lspError,
+  preview,
 }: EditorStatusBarProps) {
+  const isPreview = preview?.active ?? false;
   return (
     <div className="flex items-center justify-between px-3 py-0.5 border-t border-border bg-card text-xs text-muted-foreground shrink-0">
-      <span>
-        Ln {line}, Col {col}
-      </span>
+      <span>{isPreview ? "Preview" : `Ln ${line}, Col ${col}`}</span>
       <div className="flex items-center gap-3">
         {autoSavedVisible && <span>Auto-saved</span>}
+        {preview && (
+          <button
+            type="button"
+            onClick={preview.onToggle}
+            className="inline-flex items-center gap-1 rounded px-1 text-muted-foreground hover:text-foreground hover:bg-muted"
+            aria-pressed={isPreview}
+          >
+            {isPreview ? <PencilIcon className="size-3" /> : <EyeIcon className="size-3" />}
+            {isPreview ? "Edit" : "Preview"}
+          </button>
+        )}
         <span className="inline-flex items-center gap-1">
           <LspStatusIndicator
             status={lspStatus}
@@ -45,4 +65,4 @@ export function EditorStatusBar({
       </div>
     </div>
   );
-}
+});

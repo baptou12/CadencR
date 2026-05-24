@@ -51,6 +51,12 @@ export const EDITOR_SHORTCUTS = [
   },
   { id: "editor-close", keys: ["mod", "w"], description: "Close buffer", scope: "editor" },
   {
+    id: "editor-toggle-markdown-preview",
+    keys: ["mod", "m"],
+    description: "Toggle markdown preview",
+    scope: "editor",
+  },
+  {
     id: "editor-next-tab",
     keys: ["mod", "shift", "rbracket"],
     description: "Next file tab",
