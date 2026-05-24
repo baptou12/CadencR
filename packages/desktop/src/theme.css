@@ -146,7 +146,9 @@
   --editor-yellow: var(--acc-yellow);
   --editor-border: #383a59;
   --editor-cursor: var(--acc-purple);
-  --editor-line-highlight: #2a2c3e;
+  /* Overlay — must be translucent so CodeMirror's selection layer (z-index -2)
+   * shows through on the cursor's line. */
+  --editor-line-highlight: rgba(255, 255, 255, 0.05);
   --editor-gutter-bg: #1e2030;
   --editor-gutter-fg: var(--acc-comment);
   --editor-selection-bg: #44475a;
@@ -290,7 +292,8 @@
   --editor-yellow: oklch(0.62 0.16 85);
   --editor-border: oklch(0.905 0.015 290);
   --editor-cursor: oklch(0.55 0.245 295);
-  --editor-line-highlight: oklch(0.965 0.012 290);
+  /* Translucent overlay — see Dracula block. */
+  --editor-line-highlight: rgba(0, 0, 0, 0.04);
   --editor-gutter-bg: oklch(0.985 0.004 290);
   --editor-gutter-fg: oklch(0.55 0.06 270);
   --editor-selection-bg: oklch(0.86 0.05 295);
