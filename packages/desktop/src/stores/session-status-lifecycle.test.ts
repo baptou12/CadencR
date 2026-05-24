@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { createSessionEntry } from "@/stores/ws-session-types";
+import { queryClient } from "@/lib/queryClient";
+import { handleAppEnvelope } from "@/stores/session-status-handlers";
 import { transitionTurn } from "@/stores/ws-turn-lifecycle";
 import { startTurnTiming } from "@/stores/ws-turn-timing";
 
@@ -89,4 +91,32 @@ describe("session status lifecycle sync", () => {
     expect(updated.turnTiming.startedAt).toBe(1_000);
     expect(updated.turnTiming.segmentStartedAt).toBe(1_000);
   });
+
+  it("invalidates editor read caches when file watcher events arrive", () => {
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    const handled = handleAppEnvelope("editor", "file_tree.changed", {
+      project_path: "/workspace",
+    });
+
+    expect(handled).toBe(true);
+    const predicate = getInvalidatePredicate(invalidateSpy.mock.calls[0]?.[0]);
+    expect(predicate({ queryKey: ["/api/editor/read", { file_path: "a.ts" }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/editor/tree-all", { project_id: 1 }] })).toBe(true);
+    expect(predicate({ queryKey: ["/api/sessions"] })).toBe(false);
+    invalidateSpy.mockRestore();
+  });
 });
+
+type QueryPredicate = (query: { queryKey: readonly unknown[] }) => boolean;
+
+function getInvalidatePredicate(options: unknown): QueryPredicate {
+  if (typeof options !== "object" || options === null || !("predicate" in options)) {
+    throw new Error("Expected invalidateQueries to receive a predicate");
+  }
+  const predicate = (options as { predicate?: unknown }).predicate;
+  if (typeof predicate !== "function") {
+    throw new Error("Expected invalidateQueries predicate to be a function");
+  }
+  return predicate as QueryPredicate;
+}

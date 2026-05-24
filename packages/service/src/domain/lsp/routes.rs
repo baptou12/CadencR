@@ -213,9 +213,9 @@ mod tests {
 
     #[tokio::test]
     async fn open_returns_session_id_or_404_for_known_language() {
-        let body = r#"{"workspace_root":"/tmp","language_id":"typescript"}"#;
+        let body = r#"{"workspace_root":"/tmp","language_id":"go"}"#;
         let resp = app().await.oneshot(post_open(body)).await.unwrap();
-        // Either 200 (tsserver on PATH in CI) or 404 (not installed).
+        // Either 200 (gopls on PATH in CI) or 404 (not installed).
         // Both are correct end-states — what matters is that POST emits
         // a structured response the renderer can toast, not a silent WS
         // failure on a later upgrade.
@@ -234,7 +234,7 @@ mod tests {
         } else {
             let msg = parsed["error"].as_str().expect("error string");
             assert!(
-                msg.contains("typescript-language-server"),
+                msg.contains("gopls"),
                 "404 body should name the missing binary, got {msg}"
             );
         }

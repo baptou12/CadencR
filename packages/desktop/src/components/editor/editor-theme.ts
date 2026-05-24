@@ -1,6 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 import type { Extension } from "@codemirror/state";
+import type { TagStyle } from "@codemirror/language";
 import { createTheme } from "@uiw/codemirror-themes";
 
 const collapsedLinesIconMask =
@@ -18,6 +19,48 @@ const collapsedLinesIconMask =
  * hook + compartment.
  */
 
+export const editorHighlightStyles: TagStyle[] = [
+  { tag: t.keyword, color: "var(--editor-pink)" },
+  {
+    tag: [t.name, t.deleted, t.character, t.macroName],
+    color: "var(--editor-fg)",
+  },
+  { tag: t.propertyName, color: "var(--editor-cyan)" },
+  { tag: [t.function(t.variableName), t.labelName], color: "var(--editor-green)" },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--editor-purple)" },
+  { tag: [t.definition(t.name), t.separator], color: "var(--editor-fg)" },
+  {
+    tag: [
+      t.typeName,
+      t.className,
+      t.number,
+      t.changed,
+      t.annotation,
+      t.modifier,
+      t.self,
+      t.namespace,
+    ],
+    color: "var(--editor-cyan)",
+  },
+  {
+    tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
+    color: "var(--editor-pink)",
+  },
+  {
+    tag: [t.meta, t.comment],
+    color: "var(--editor-comment)",
+    fontStyle: "italic",
+  },
+  { tag: t.strong, fontWeight: "bold" },
+  { tag: t.emphasis, fontStyle: "italic" },
+  { tag: t.strikethrough, textDecoration: "line-through" },
+  { tag: t.link, color: "var(--editor-cyan)", textDecoration: "underline" },
+  { tag: t.heading, fontWeight: "bold", color: "var(--editor-purple)" },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: "var(--editor-orange)" },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: "var(--editor-yellow)" },
+  { tag: t.invalid, color: "var(--editor-red)" },
+];
+
 const cadencrTheme = createTheme({
   theme: "dark",
   settings: {
@@ -34,46 +77,7 @@ const cadencrTheme = createTheme({
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
     fontSize: "13px",
   },
-  styles: [
-    { tag: t.keyword, color: "var(--editor-pink)" },
-    {
-      tag: [t.name, t.deleted, t.character, t.propertyName, t.macroName],
-      color: "var(--editor-fg)",
-    },
-    { tag: [t.function(t.variableName), t.labelName], color: "var(--editor-green)" },
-    { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: "var(--editor-purple)" },
-    { tag: [t.definition(t.name), t.separator], color: "var(--editor-fg)" },
-    {
-      tag: [
-        t.typeName,
-        t.className,
-        t.number,
-        t.changed,
-        t.annotation,
-        t.modifier,
-        t.self,
-        t.namespace,
-      ],
-      color: "var(--editor-cyan)",
-    },
-    {
-      tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)],
-      color: "var(--editor-pink)",
-    },
-    {
-      tag: [t.meta, t.comment],
-      color: "var(--editor-comment)",
-      fontStyle: "italic",
-    },
-    { tag: t.strong, fontWeight: "bold" },
-    { tag: t.emphasis, fontStyle: "italic" },
-    { tag: t.strikethrough, textDecoration: "line-through" },
-    { tag: t.link, color: "var(--editor-cyan)", textDecoration: "underline" },
-    { tag: t.heading, fontWeight: "bold", color: "var(--editor-purple)" },
-    { tag: [t.atom, t.bool, t.special(t.variableName)], color: "var(--editor-orange)" },
-    { tag: [t.processingInstruction, t.string, t.inserted], color: "var(--editor-yellow)" },
-    { tag: t.invalid, color: "var(--editor-red)" },
-  ],
+  styles: editorHighlightStyles,
 });
 
 /** Editor chrome that createTheme doesn't cover — height, panels, tooltip,

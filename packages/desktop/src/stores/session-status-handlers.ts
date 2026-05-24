@@ -201,6 +201,7 @@ export function handleAppEnvelope(
 ): boolean {
   if (domain === "editor" && action === "file_tree.changed") {
     void invalidateByUrlPrefix(queryClient, [
+      "/api/editor/read",
       "/api/editor/tree",
       "/api/editor/search",
       "/api/git/stats",

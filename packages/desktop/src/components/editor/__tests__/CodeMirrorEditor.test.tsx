@@ -37,6 +37,15 @@ const baseEditorProps = vi.fn();
 
 // Mock BaseCodeMirrorEditor to render a simple div with the className
 let mockViewDoc = "";
+const mockEditorDispatch = vi.fn(
+  (transaction: { changes?: { from: number; to: number; insert: string } }) => {
+    const changes = transaction.changes;
+    if (!changes) return;
+    mockViewDoc = `${mockViewDoc.slice(0, changes.from)}${changes.insert}${mockViewDoc.slice(
+      changes.to,
+    )}`;
+  },
+);
 
 vi.mock("../BaseCodeMirrorEditor", () => ({
   default: ({
@@ -49,10 +58,11 @@ vi.mock("../BaseCodeMirrorEditor", () => ({
     editorViewRef?: React.MutableRefObject<unknown>;
   }) => {
     baseEditorProps({ className, initialContent });
+    if (mockViewDoc.length === 0) mockViewDoc = initialContent ?? "";
     if (editorViewRef) {
       editorViewRef.current = {
         state: { doc: { toString: () => mockViewDoc, length: mockViewDoc.length } },
-        dispatch: vi.fn(),
+        dispatch: mockEditorDispatch,
         destroy: vi.fn(),
       };
     }
@@ -66,6 +76,7 @@ vi.mock("../language-extensions", () => ({
   // Real impl — `getLanguageName` (inside CodeMirrorEditor) depends on it.
   getFileExtension: (p: string) => p.split(".").at(-1)?.toLowerCase() ?? "",
   getLanguageExtension: vi.fn(() => null),
+  getLanguageName: vi.fn(() => "TypeScript"),
   isMarkdownFile: vi.fn(() => false),
 }));
 
@@ -111,6 +122,7 @@ interface BlameLine {
 let mockBlameReturn: { data: { lines: BlameLine[] } | undefined } = { data: undefined };
 
 vi.mock("@/api/generated", () => ({
+  getReadFileQueryKey: (params?: unknown) => ["/api/editor/read", params] as const,
   useReadFile: vi.fn(() => mockReadFileReturn),
   useWriteFile: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useGetBlame: vi.fn(() => mockBlameReturn),
@@ -169,6 +181,7 @@ beforeEach(() => {
   mockBlameReturn = { data: undefined };
   mockDebouncedSettings = {};
   mockViewDoc = "";
+  mockEditorDispatch.mockClear();
   baseEditorProps.mockClear();
   mockSetDirty.mockClear();
   vi.mocked(gitBlameExtension).mockClear();
@@ -253,6 +266,35 @@ describe("CodeMirrorEditor", () => {
     mockReadFileReturn = { data: { content: "hello updated" }, isLoading: false, error: null };
     rerender(<CodeMirrorEditor {...defaultProps} />);
     expect(mockSetDirty).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies refetched disk content when the clean editor was mounted from stale cache", () => {
+    mockReadFileReturn = { data: { content: "old disk" }, isLoading: false, error: null };
+    const { rerender } = render(<CodeMirrorEditor {...defaultProps} />);
+
+    expect(mockViewDoc).toBe("old disk");
+
+    mockReadFileReturn = { data: { content: "new disk" }, isLoading: false, error: null };
+    rerender(<CodeMirrorEditor {...defaultProps} />);
+
+    expect(mockEditorDispatch).toHaveBeenCalledWith({
+      changes: { from: 0, to: "old disk".length, insert: "new disk" },
+    });
+    expect(mockViewDoc).toBe("new disk");
+  });
+
+  it("does not overwrite unsaved editor changes when disk content refetches", () => {
+    mockReadFileReturn = { data: { content: "old disk" }, isLoading: false, error: null };
+    const { rerender } = render(<CodeMirrorEditor {...defaultProps} />);
+    mockViewDoc = "local edit";
+
+    mockReadFileReturn = { data: { content: "new disk" }, isLoading: false, error: null };
+    rerender(<CodeMirrorEditor {...defaultProps} />);
+
+    expect(mockEditorDispatch).not.toHaveBeenCalledWith({
+      changes: { from: 0, to: "old disk".length, insert: "new disk" },
+    });
+    expect(mockViewDoc).toBe("local edit");
   });
 
   it("clamps invalid pending go-to lines to the document range", () => {

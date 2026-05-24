@@ -9,6 +9,8 @@
  * on language identity in shared code; consult this table instead.
  */
 
+import { getFileExtension, isDockerfilePath } from "@/lib/file-language";
+
 /** @public */
 export const LSP_LANGUAGE_IDS = {
   ts: "typescript",
@@ -22,6 +24,22 @@ export const LSP_LANGUAGE_IDS = {
   rs: "rust",
   py: "python",
   go: "go",
+  json: "json",
+  jsonc: "jsonc",
+  yaml: "yaml",
+  yml: "yaml",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  less: "less",
+  svelte: "svelte",
+  vue: "vue",
+  astro: "astro",
+  sh: "shellscript",
+  bash: "shellscript",
+  zsh: "shellscript",
+  dockerfile: "dockerfile",
 } as const;
 
 /** @public */
@@ -36,7 +54,8 @@ export type SupportedExtension = keyof typeof LSP_LANGUAGE_IDS;
  * @public
  */
 export function getLspLanguageId(filePath: string): string | null {
-  const ext = filePath.split(".").at(-1)?.toLowerCase() ?? "";
+  if (isDockerfilePath(filePath)) return "dockerfile";
+  const ext = getFileExtension(filePath);
   if (!isSupportedExtension(ext)) return null;
   return LSP_LANGUAGE_IDS[ext];
 }

@@ -70,6 +70,11 @@ export class WebSocketLspTransport implements Transport {
       // The Rust proxy only emits text frames; binary would mean a bug.
       return;
     }
+    const response = buildClientRequestResponse(event.data);
+    if (response) {
+      this.send(response);
+      return;
+    }
     for (const handler of this.handlers) {
       handler(event.data);
     }
@@ -78,6 +83,89 @@ export class WebSocketLspTransport implements Transport {
   private handleClose = (): void => {
     this.closed = true;
   };
+}
+
+type JsonRpcId = string | number | null;
+
+interface JsonRpcClientRequest {
+  id: JsonRpcId;
+  method: string;
+  params?: unknown;
+}
+
+interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id: JsonRpcId;
+  result: unknown;
+}
+
+function buildClientRequestResponse(raw: string): string | null {
+  const request = parseClientRequest(raw);
+  if (!request) return null;
+  const result = handledClientRequestResult(request.method, request.params);
+  if (result === undefined) return null;
+  const response: JsonRpcResponse = {
+    jsonrpc: "2.0",
+    id: request.id,
+    result,
+  };
+  return JSON.stringify(response);
+}
+
+function parseClientRequest(raw: string): JsonRpcClientRequest | null {
+  if (!raw.includes('"id"') || !raw.includes('"method"')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  if (!("id" in parsed) || !("method" in parsed)) return null;
+  if (!isJsonRpcId(parsed.id) || typeof parsed.method !== "string") return null;
+  return {
+    id: parsed.id,
+    method: parsed.method,
+    params: parsed.params,
+  };
+}
+
+function handledClientRequestResult(method: string, params: unknown): unknown | undefined {
+  switch (method) {
+    case "workspace/configuration":
+      return workspaceConfigurationResult(params);
+    case "workspace/workspaceFolders":
+    case "window/showMessageRequest":
+    case "window/workDoneProgress/create":
+    case "client/registerCapability":
+    case "client/unregisterCapability":
+    case "workspace/codeLens/refresh":
+    case "workspace/diagnostic/refresh":
+    case "workspace/inlayHint/refresh":
+    case "workspace/inlineValue/refresh":
+    case "workspace/semanticTokens/refresh":
+      return null;
+    case "workspace/applyEdit":
+      return {
+        applied: false,
+        failureReason: "Cadencr does not apply LSP workspace edits yet.",
+      };
+    default:
+      return undefined;
+  }
+}
+
+function workspaceConfigurationResult(params: unknown): unknown[] {
+  if (!isRecord(params) || !Array.isArray(params.items)) return [];
+  return params.items.map(() => ({}));
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isJsonRpcId(value: unknown): value is JsonRpcId {
+  return typeof value === "string" || typeof value === "number" || value === null;
 }
 
 /**
