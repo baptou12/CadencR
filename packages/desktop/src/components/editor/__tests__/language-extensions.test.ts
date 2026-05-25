@@ -34,6 +34,12 @@ describe("getLanguageExtension", () => {
     "file.toml",
     "Dockerfile",
     "services/api.Dockerfile",
+    ".env",
+    ".env.local",
+    ".env.production.local",
+    "local.env",
+    "development.env",
+    "API.ENV",
   ];
 
   for (const file of supported) {
@@ -49,6 +55,15 @@ describe("getLanguageExtension", () => {
 
   it("handles unsupported files with no extension", () => {
     expect(getLanguageExtension("Makefile")).toBeNull();
+  });
+
+  it("does not treat unrelated files as env", () => {
+    // `env` (no extension) and `env.txt` shouldn't trigger env-file
+    // detection — only filenames with `.env` as a real segment.
+    expect(getLanguageExtension("env")).toBeNull();
+    expect(getLanguageExtension("env.txt")).toBeNull();
+    // `environment.json` is a JSON file, not an env file.
+    expect(getLanguageName("environment.json")).toBe("JSON");
   });
 });
 
@@ -98,5 +113,15 @@ describe("getLanguageName", () => {
     expect(getLanguageName("file.astro")).toBe("Astro");
     expect(getLanguageName("services/api.Dockerfile")).toBe("Dockerfile");
     expect(getLanguageName("Dockerfile.prod")).toBe("Dockerfile");
+  });
+
+  it("labels env files", () => {
+    expect(getLanguageName(".env")).toBe("Env");
+    expect(getLanguageName(".env.local")).toBe("Env");
+    expect(getLanguageName(".env.production.local")).toBe("Env");
+    expect(getLanguageName("local.env")).toBe("Env");
+    expect(getLanguageName("development.env")).toBe("Env");
+    expect(getLanguageName("API.ENV")).toBe("Env");
+    expect(getLanguageName("env.txt")).toBe("Plain Text");
   });
 });

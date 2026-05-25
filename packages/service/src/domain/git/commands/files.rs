@@ -95,12 +95,93 @@ pub async fn get_file_content_batch(
     Ok(items)
 }
 
-/// List all git-tracked files.
+/// List files in the worktree the user might want to open from Cmd+P:
+/// every git-tracked file, plus any env files (`.env`, `.env.local`,
+/// `local.env`, ...) that are usually gitignored. Agents do most of the
+/// editing inside Cadencr, but humans still need to reach env files by
+/// hand, so this endpoint deliberately steps around `.gitignore` for the
+/// env-file allowlist while leaving every other untracked path alone.
 pub async fn list_files(worktree_path: &Path) -> Result<Vec<String>, AppError> {
     let stdout = run_git_quiet(&["ls-files"], worktree_path).await;
-    Ok(stdout
+    let mut files: Vec<String> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .map(|s| s.to_string())
-        .collect())
+        .collect();
+
+    // The env-file scan touches the filesystem; do it off the runtime
+    // thread to keep the handler non-blocking.
+    let wt = worktree_path.to_path_buf();
+    let env_files: Vec<String> =
+        tokio::task::spawn_blocking(move || crate::shared::env_file::find_env_files(&wt))
+            .await
+            .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))?;
+
+    let mut seen: std::collections::HashSet<String> = files.iter().cloned().collect();
+    for rel in env_files {
+        if seen.insert(rel.clone()) {
+            files.push(rel);
+        }
+    }
+    // Re-sort so the union is stable; `git ls-files` output is already
+    // sorted, but appending env files preserves order only when none are
+    // new, so we sort defensively.
+    files.sort();
+    Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    fn git(args: &[&str], cwd: &Path) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .status()
+            .expect("git available");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    #[tokio::test]
+    async fn list_files_includes_gitignored_env_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        git(&["init", "-q", "-b", "main"], root);
+        git(&["config", "user.email", "test@example.com"], root);
+        git(&["config", "user.name", "Test"], root);
+        std::fs::write(root.join(".gitignore"), ".env*\n").unwrap();
+        std::fs::write(root.join("README.md"), "# hi").unwrap();
+        std::fs::write(root.join("src.rs"), "fn main() {}").unwrap();
+        std::fs::write(root.join(".env"), "FOO=bar").unwrap();
+        std::fs::write(root.join(".env.local"), "FOO=local").unwrap();
+        std::fs::write(root.join("local.env"), "FOO=user").unwrap();
+        std::fs::write(root.join("development.env"), "FOO=dev").unwrap();
+        std::fs::write(root.join("untracked.txt"), "ignored junk").unwrap();
+        git(&["add", ".gitignore", "README.md", "src.rs"], root);
+        git(&["commit", "-q", "-m", "init"], root);
+
+        let listed = list_files(root).await.expect("list_files");
+
+        // Tracked files still appear.
+        assert!(listed.iter().any(|p| p == "README.md"));
+        assert!(listed.iter().any(|p| p == "src.rs"));
+        assert!(listed.iter().any(|p| p == ".gitignore"));
+        // Env files appear even though gitignored.
+        assert!(
+            listed.iter().any(|p| p == ".env"),
+            "missing .env: {listed:?}"
+        );
+        assert!(listed.iter().any(|p| p == ".env.local"));
+        // Plain-suffix env files appear too (these typically aren't gitignored,
+        // but git ls-files wouldn't list them if untracked).
+        assert!(listed.iter().any(|p| p == "local.env"));
+        assert!(listed.iter().any(|p| p == "development.env"));
+        // We must not start listing every untracked file — only env files.
+        assert!(
+            !listed.iter().any(|p| p == "untracked.txt"),
+            "untracked non-env file leaked through: {listed:?}",
+        );
+    }
 }

@@ -14,7 +14,7 @@ import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import type { Extension } from "@codemirror/state";
-import { getFileExtension, isDockerfilePath } from "@/lib/file-language";
+import { getFileExtension, isDockerfilePath, isEnvFilePath } from "@/lib/file-language";
 import { astroSyntax } from "./astro-syntax";
 
 export { getFileExtension };
@@ -26,6 +26,9 @@ export function isMarkdownFile(filePath: string): boolean {
 
 export function getLanguageName(filePath: string): string {
   if (isDockerfilePath(filePath)) return "Dockerfile";
+  // Env files are highlighted as shell; surface them with their own
+  // label so the status bar makes the file type obvious.
+  if (isEnvFilePath(filePath)) return "Env";
   const ext = getFileExtension(filePath);
   return LANGUAGE_NAMES[ext] ?? "Plain Text";
 }
@@ -61,6 +64,10 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 export function getLanguageExtension(filePath: string): Extension | null {
   if (isDockerfilePath(filePath)) return StreamLanguage.define(dockerFile);
+  // `.env`, `.env.local`, `local.env`, etc. are shell-like KEY=value
+  // files. Shell highlighting handles comments, quoted strings, and
+  // export statements correctly.
+  if (isEnvFilePath(filePath)) return StreamLanguage.define(shell);
   const ext = getFileExtension(filePath);
 
   switch (ext) {
