@@ -16,19 +16,23 @@ import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useLsp } from "@/lib/lsp/useLsp";
 import { useScopedShortcut } from "@/hooks/useShortcut";
 import { cn } from "@/lib/utils";
-import { getLanguageExtension, getLanguageName, isMarkdownFile } from "./language-extensions";
+import { getPreviewKind } from "@/lib/file-language";
+import { getLanguageExtension, getLanguageName } from "./language-extensions";
 import { gitBlameExtension } from "./git-blame-extension";
 import { registerSave, unregisterSave } from "./editorSaveRegistry";
 import BaseCodeMirrorEditor from "./BaseCodeMirrorEditor";
 import { EditorStatusBar } from "./EditorStatusBar";
+
+// Lazy so the Markdown bundle only loads once the user toggles a preview.
+const EditorPreviewSurface = lazy(() =>
+  import("./EditorPreviewSurface").then((m) => ({ default: m.EditorPreviewSurface })),
+);
 import EditorSearchPanel from "./editor-search/EditorSearchPanel";
 import { bufferSearchExtension } from "./editor-search/search-extension";
 import { editorBufferKeymap } from "./editor-buffer-keymap";
 import { EditorGoToLinePanel } from "./EditorGoToLinePanel";
 import { toast } from "sonner";
 import { useFreshFileContentSync } from "./useFreshFileContentSync";
-
-const Markdown = lazy(() => import("@/components/Markdown").then((m) => ({ default: m.Markdown })));
 
 interface CodeMirrorEditorProps {
   filePath: string;
@@ -94,7 +98,8 @@ export default function CodeMirrorEditor({
   const autoSavedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutateAsyncRef = useRef<ReturnType<typeof useWriteFile>["mutateAsync"] | null>(null);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
-  const isMarkdown = isMarkdownFile(filePath);
+  const previewKind = getPreviewKind(filePath);
+  const previewSupported = previewKind !== null;
   const queryClient = useQueryClient();
 
   const { value: vimModeSetting } = useDebouncedSetting("editor_vim_mode");
@@ -235,7 +240,7 @@ export default function CodeMirrorEditor({
   );
 
   const togglePreview = useCallback(() => {
-    if (!isMarkdown) return;
+    if (!previewSupported) return;
     // Editor is guaranteed mounted past the loader guard below.
     setPreviewContent((prev) =>
       prev !== null ? null : (viewRef.current?.state.doc.toString() ?? ""),
@@ -243,16 +248,16 @@ export default function CodeMirrorEditor({
     // Force-close the search panel so its `searchOpen` flag doesn't go stale
     // while the panel is hidden during preview.
     onCloseSearch();
-  }, [isMarkdown, onCloseSearch]);
+  }, [previewSupported, onCloseSearch]);
 
   useScopedShortcut(
-    "editor-toggle-markdown-preview",
+    "editor-toggle-preview",
     (e) => {
       e.preventDefault();
       togglePreview();
     },
     "editor",
-    { enabled: isMarkdown },
+    { enabled: previewSupported },
   );
 
   const langExt = useMemo(() => getLanguageExtension(filePath), [filePath]);
@@ -309,8 +314,8 @@ export default function CodeMirrorEditor({
   const isPreviewing = previewContent !== null;
 
   const previewToggle = useMemo(
-    () => (isMarkdown ? { active: isPreviewing, onToggle: togglePreview } : undefined),
-    [isMarkdown, isPreviewing, togglePreview],
+    () => (previewSupported ? { active: isPreviewing, onToggle: togglePreview } : undefined),
+    [previewSupported, isPreviewing, togglePreview],
   );
 
   if (error) {
@@ -348,14 +353,14 @@ export default function CodeMirrorEditor({
         onEditorViewChange={handleEditorViewChange}
         className={cn("flex-1 overflow-auto", isPreviewing && "hidden")}
       />
-      {isPreviewing && (
-        <div className="flex-1 overflow-auto bg-background">
-          <div className="max-w-3xl mx-auto px-6 py-4">
-            <Suspense fallback={null}>
-              <Markdown content={previewContent ?? ""} cacheKey={filePath} />
-            </Suspense>
-          </div>
-        </div>
+      {isPreviewing && previewKind && (
+        <Suspense fallback={null}>
+          <EditorPreviewSurface
+            kind={previewKind}
+            content={previewContent ?? ""}
+            filePath={filePath}
+          />
+        </Suspense>
       )}
       {searchOpen && editorView && !isPreviewing && (
         <EditorSearchPanel

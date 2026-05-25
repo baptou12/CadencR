@@ -68,6 +68,10 @@ use crate::domain::workspace::routes as workspace_routes;
         routes::push_input_handler,
         routes::get_uncommitted_files_handler,
         editor_routes::read_file_handler,
+        // `read-image` is intentionally NOT exposed to orval: the response
+        // is a binary blob that the OpenAPI spec can't usefully describe,
+        // so the generated react-query hook would just take a `customInstance<unknown>`
+        // round-trip. The frontend calls the endpoint directly via Axios instead.
         editor_routes::write_file_handler,
         editor_routes::tree_handler,
         editor_routes::tree_all_handler,
