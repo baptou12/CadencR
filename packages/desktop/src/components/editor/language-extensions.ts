@@ -14,15 +14,17 @@ import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { dockerFile } from "@codemirror/legacy-modes/mode/dockerfile";
 import type { Extension } from "@codemirror/state";
-import { getFileExtension, isDockerfilePath, isEnvFilePath } from "@/lib/file-language";
+import {
+  getFileExtension,
+  isDockerfilePath,
+  isEnvFilePath,
+  isMarkdownFile,
+} from "@/lib/file-language";
 import { astroSyntax } from "./astro-syntax";
 
-export { getFileExtension };
-
-export function isMarkdownFile(filePath: string): boolean {
-  const ext = getFileExtension(filePath);
-  return ext === "md" || ext === "mdx";
-}
+// Re-exported so existing editor imports keep working — the canonical
+// home for these helpers is `@/lib/file-language`.
+export { getFileExtension, isMarkdownFile };
 
 export function getLanguageName(filePath: string): string {
   if (isDockerfilePath(filePath)) return "Dockerfile";

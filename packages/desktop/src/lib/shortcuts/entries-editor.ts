@@ -51,9 +51,12 @@ export const EDITOR_SHORTCUTS = [
   },
   { id: "editor-close", keys: ["mod", "w"], description: "Close buffer", scope: "editor" },
   {
-    id: "editor-toggle-markdown-preview",
+    // Generic preview toggle — fires for markdown, HTML, and SVG files.
+    // The editor decides per-file whether the chord is enabled and what
+    // the preview surface renders (see `getPreviewKind`).
+    id: "editor-toggle-preview",
     keys: ["mod", "m"],
-    description: "Toggle markdown preview",
+    description: "Toggle preview",
     scope: "editor",
   },
   {

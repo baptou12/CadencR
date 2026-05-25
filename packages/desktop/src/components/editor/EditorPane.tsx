@@ -2,11 +2,13 @@ import type { EditorView } from "@codemirror/view";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useEditorStore, isUntitledPath } from "@/stores/editor-store";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { isImageFile } from "@/lib/file-language";
 import EditorSubTabs from "./EditorSubTabs";
 import { clearPaneSearch } from "./editor-search/search-cache";
 
 const CodeMirrorEditor = lazy(() => import("./CodeMirrorEditor"));
 const UntitledCodeMirrorEditor = lazy(() => import("./UntitledCodeMirrorEditor"));
+const ImageFileViewer = lazy(() => import("./ImageFileViewer"));
 
 interface EditorPaneProps {
   featureId: number;
@@ -143,7 +145,14 @@ export default function EditorPane({
       <div className="flex-1 overflow-hidden">
         {activeFilePath ? (
           <Suspense fallback={suspenseFallback}>
-            {isUntitledPath(activeFilePath) ? (
+            {isImageFile(activeFilePath) ? (
+              <ImageFileViewer
+                key={activeFilePath}
+                filePath={activeFilePath}
+                projectId={projectId}
+                featureId={featureId}
+              />
+            ) : isUntitledPath(activeFilePath) ? (
               <UntitledCodeMirrorEditor
                 key={activeFilePath}
                 filePath={activeFilePath}
