@@ -14,6 +14,7 @@ import type {
   FileTreeSearchMode,
 } from "@pierre/trees";
 import { useFileTreeIconSet, type FileTreeIconSet } from "@/hooks/useFileTreeIconSet";
+import { useFileTreeShadowStylesheet } from "@/components/file-tree/useFileTreeShadowStylesheet";
 import type { FileTreeEntry } from "@/api/generated";
 import { cn } from "@/lib/utils";
 
@@ -226,12 +227,12 @@ export function useCadencrFileTree({
 }
 
 /**
- * Injects a `<style>` element into pierre's shadow root so paths in
- * `prefixes` (and their descendants) render with the muted "ignored"
- * color. We do this directly instead of through pierre's `gitStatus`
- * because pierre's git pipeline unconditionally adds every entry's
- * ancestors to `directoriesWithChanges`, which would dot the project
- * root for every `node_modules/` we mark.
+ * Dim every row whose `data-item-path` starts with one of the given
+ * (pierre-form) prefixes — used for `.gitignore`d sub-trees. We do this
+ * via shadow-root CSS rather than pierre's `gitStatus`/`ignored` channel
+ * because pierre's git pipeline unconditionally adds every ignored
+ * entry's ancestors to `directoriesWithChanges`, which would dot the
+ * project root for every `node_modules/` we mark.
  *
  * Pierre stamps `data-item-path` on every visible row inside its open
  * shadow root, so a single prefix selector per ignored sub-tree dims
@@ -240,45 +241,7 @@ export function useCadencrFileTree({
  */
 function useGitignoredDimming(model: FileTreeModel, prefixes: readonly string[] | undefined): void {
   const css = useMemo(() => buildGitignoredCSS(prefixes), [prefixes]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let rafId = 0;
-    let attempts = 0;
-    let styleEl: HTMLStyleElement | null = null;
-
-    // `getFileTreeContainer()` returns the `<file-tree>` custom-element
-    // HOST (see pierre's `render/FileTree.js`); the shadow root sits on
-    // the host itself, so read `host.shadowRoot` directly. Pierre's React
-    // binding attaches both inside a layout effect, so on the first tick
-    // the host or shadow root may be missing — retry up to a budget
-    // before giving up to avoid spinning indefinitely if the model is
-    // never mounted (e.g. parent unmounts between schedule and apply).
-    const MAX_ATTEMPTS = 60;
-    const apply = () => {
-      if (cancelled) return;
-      const shadowRoot = model.getFileTreeContainer()?.shadowRoot;
-      if (!shadowRoot) {
-        if (++attempts >= MAX_ATTEMPTS) return;
-        rafId = requestAnimationFrame(apply);
-        return;
-      }
-      styleEl = shadowRoot.querySelector<HTMLStyleElement>("style[data-cadencr-gitignored]");
-      if (styleEl == null) {
-        styleEl = document.createElement("style");
-        styleEl.setAttribute("data-cadencr-gitignored", "");
-        shadowRoot.appendChild(styleEl);
-      }
-      styleEl.textContent = css;
-    };
-
-    rafId = requestAnimationFrame(apply);
-    return () => {
-      cancelled = true;
-      if (rafId !== 0) cancelAnimationFrame(rafId);
-      styleEl?.remove();
-    };
-  }, [model, css]);
+  useFileTreeShadowStylesheet(model, "data-cadencr-gitignored", css);
 }
 
 function buildGitignoredCSS(prefixes: readonly string[] | undefined): string {
@@ -289,7 +252,7 @@ function buildGitignoredCSS(prefixes: readonly string[] | undefined): string {
   const rowSelectors: string[] = [];
   const iconSelectors: string[] = [];
   for (const prefix of prefixes) {
-    const escaped = escapeCSSString(prefix);
+    const escaped = CSS.escape(prefix);
     const rowSel = prefix.endsWith("/")
       ? `[data-item-path^="${escaped}"]`
       : `[data-item-path="${escaped}"]`;
@@ -304,10 +267,6 @@ function buildGitignoredCSS(prefixes: readonly string[] | undefined): string {
     `${rowSelectors.join(",\n")} {\n  color: var(--trees-status-ignored);\n}`,
     `${iconSelectors.join(",\n")} {\n  opacity: 0.5;\n}`,
   ].join("\n");
-}
-
-function escapeCSSString(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 export interface CadencrFileTreeProps extends Omit<PierreFileTreeProps, "model"> {
