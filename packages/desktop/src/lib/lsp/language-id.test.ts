@@ -47,4 +47,23 @@ describe("getLspLanguageId", () => {
     expect(getLspLanguageId("README.md")).toBeNull();
     expect(getLspLanguageId("noext")).toBeNull();
   });
+
+  it("returns null for env files so we don't try to spawn an LSP", () => {
+    // Env files get shell syntax highlighting (see language-extensions),
+    // but they're not shell programs — LSPs reject or fail on them, and
+    // spawning a server just to tear it down surfaces a "Language server
+    // failed" error to the user. The right answer is no LSP at all.
+    expect(getLspLanguageId(".env")).toBeNull();
+    expect(getLspLanguageId(".env.local")).toBeNull();
+    expect(getLspLanguageId(".env.production.local")).toBeNull();
+    expect(getLspLanguageId("local.env")).toBeNull();
+    expect(getLspLanguageId("development.env")).toBeNull();
+    expect(getLspLanguageId("API.ENV")).toBeNull();
+  });
+
+  it("does not match env-looking but unrelated files", () => {
+    expect(getLspLanguageId("env")).toBeNull();
+    expect(getLspLanguageId("env.txt")).toBeNull();
+    expect(getLspLanguageId("envvars.json")).toBe("json");
+  });
 });

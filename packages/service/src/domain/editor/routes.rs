@@ -8,6 +8,7 @@ use super::service;
 use crate::app_state::AppState;
 use crate::domain::projects::service::resolve_feature_editor_root;
 use crate::error::AppError;
+use crate::shared::env_file;
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -252,10 +253,18 @@ pub async fn tree_all_handler(
         // what makes the tree feasible on projects with `node_modules` /
         // `target` / `dist` etc. When false we walk everything and mark
         // ignored entries so the UI can dim them.
-        let gitignore = if exclude_gitignored {
+        //
+        // We always build the gitignore matcher so we can correctly mark
+        // env files (added in a second pass below) as `is_gitignored` —
+        // they're almost always gitignored, but humans still need to see
+        // and edit them.
+        let gitignore_matcher = service::build_gitignore(&project_root);
+        // For the main-walk loop we only need a matcher when we're walking
+        // gitignored entries too; otherwise the helper short-circuits.
+        let gitignore_for_walk = if exclude_gitignored {
             None
         } else {
-            service::build_gitignore(&project_root)
+            gitignore_matcher.as_ref()
         };
 
         let mut walker = ignore::WalkBuilder::new(&project_root);
@@ -291,9 +300,9 @@ pub async fn tree_all_handler(
                 .to_string();
 
             // When excluding gitignored entries, the walker has already
-            // filtered them out; `gitignore` is `None` and the helper
-            // short-circuits to `false`.
-            let is_gitignored = service::is_gitignored(gitignore.as_ref(), path, is_dir);
+            // filtered them out; `gitignore_for_walk` is `None` and the
+            // helper short-circuits to `false`.
+            let is_gitignored = service::is_gitignored(gitignore_for_walk, path, is_dir);
 
             entries.push(FileTreeEntry {
                 name,
@@ -301,6 +310,33 @@ pub async fn tree_all_handler(
                 is_dir,
                 is_gitignored,
             });
+        }
+
+        // Second pass: env files (`.env`, `.env.local`, `local.env`, …)
+        // are almost always gitignored and would otherwise be invisible
+        // on the fast pass. Humans need to edit them by hand even when
+        // agents are doing the rest of the work, so we always surface
+        // them. The slow pass already walks everything; the dedupe below
+        // keeps it from double-listing entries.
+        let mut seen: std::collections::HashSet<String> =
+            entries.iter().map(|e| e.path.clone()).collect();
+        for rel in env_file::find_env_files(&project_root) {
+            if seen.contains(&rel) {
+                continue;
+            }
+            let full = project_root.join(&rel);
+            let name = full
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel.clone());
+            let is_gitignored = service::is_gitignored(gitignore_matcher.as_ref(), &full, false);
+            entries.push(FileTreeEntry {
+                name,
+                path: rel.clone(),
+                is_dir: false,
+                is_gitignored,
+            });
+            seen.insert(rel);
         }
 
         // Directories first, then case-insensitive name. Pierre re-sorts

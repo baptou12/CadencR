@@ -1,6 +1,7 @@
 #![allow(clippy::single_match)]
 
 pub mod db;
+pub mod env_file;
 pub mod git_cli;
 pub mod login_env;
 pub mod migrate;

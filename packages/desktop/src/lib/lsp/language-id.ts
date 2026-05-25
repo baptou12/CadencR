@@ -9,7 +9,7 @@
  * on language identity in shared code; consult this table instead.
  */
 
-import { getFileExtension, isDockerfilePath } from "@/lib/file-language";
+import { getFileExtension, isDockerfilePath, isEnvFilePath } from "@/lib/file-language";
 
 /** @public */
 export const LSP_LANGUAGE_IDS = {
@@ -55,6 +55,12 @@ export type SupportedExtension = keyof typeof LSP_LANGUAGE_IDS;
  */
 export function getLspLanguageId(filePath: string): string | null {
   if (isDockerfilePath(filePath)) return "dockerfile";
+  // Env files get shell *syntax highlighting* via `getLanguageExtension`,
+  // but they're plain KEY=value data, not shell code: no LSP server has
+  // anything useful to say about them. Returning null tells `useLsp` to
+  // skip client acquisition entirely (otherwise we'd spawn — and fail —
+  // the shellscript LSP every time the user opens `.env`).
+  if (isEnvFilePath(filePath)) return null;
   const ext = getFileExtension(filePath);
   if (!isSupportedExtension(ext)) return null;
   return LSP_LANGUAGE_IDS[ext];
