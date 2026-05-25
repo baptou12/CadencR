@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type {
   ContextMenuItem as FileTreeContextMenuItem,
@@ -17,6 +17,8 @@ import {
   gitStatusFromUncommittedFiles,
   useCadencrFileTree,
 } from "@/components/file-tree/CadencrFileTree";
+import { revealInFileTree } from "@/components/file-tree/revealInFileTree";
+import { useActiveFileHighlight } from "@/components/file-tree/useActiveFileHighlight";
 import { FileTreeContextMenu } from "./FileTreeContextMenu";
 import { mergeFileTreeEntries, useLazyIgnoredFileTreeEntries } from "./lazyIgnoredFileTreeEntries";
 import { useFileTreeDraft, type DraftKind } from "./useFileTreeDraft";
@@ -87,14 +89,6 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
     [uncommitted.data],
   );
 
-  // ── Open-file & focus bridge ───────────────────────────────────────────
-  const initialSelectedPaths = useMemo(
-    () => (activeFilePath ? [activeFilePath] : undefined),
-    // Only set the initial selection once when the model is constructed.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
   const { model } = useCadencrFileTree({
     paths,
     gitStatus,
@@ -103,7 +97,6 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
     // the global CMD+P file-picker (see `EditorFuzzyShortcut`).
     search: false,
     fileTreeSearchMode: "expand-matches",
-    initialSelectedPaths,
     renaming: {
       canRename: (item: { path: string }) => item.path !== "",
       onError: (message: string) => toast.error(message),
@@ -128,6 +121,31 @@ export default function FileTree({ projectId, featureId }: FileTreeProps) {
     trackedEntries: tracked.data,
     onEntriesChange: setLazyIgnoredEntries,
   });
+
+  // Sticky `--primary` 28%-mix background on the editor-active file row
+  // (DESIGN.md → EditorPanel "Explorer item active"). Separate from the
+  // reveal effect below: reveal only fires when the active file CHANGES,
+  // but the highlight has to stay applied as the user navigates around
+  // the tree with the keyboard, and survive tree refetches.
+  useActiveFileHighlight(model, activeFilePath);
+
+  // Auto-reveal the active file in the tree: expand its ancestor folders,
+  // scroll it into view, focus the row. Re-runs when `activeFilePath`
+  // changes (tab switch / open) and when `paths` updates (so a newly
+  // created file is revealed once the refetch lands). The ref guard means
+  // a tree refetch does NOT re-expand folders the user manually collapsed
+  // after the initial reveal.
+  const lastRevealedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFilePath) {
+      lastRevealedRef.current = null;
+      return;
+    }
+    if (lastRevealedRef.current === activeFilePath) return;
+    if (revealInFileTree(model, activeFilePath)) {
+      lastRevealedRef.current = activeFilePath;
+    }
+  }, [model, activeFilePath, paths]);
 
   // ── Inline-create draft state (Pierre placeholder + rename) ────────────
   const onFileCreated = useCallback(
