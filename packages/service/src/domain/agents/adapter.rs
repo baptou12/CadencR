@@ -99,6 +99,10 @@ pub enum RuntimeError {
     /// transition) can branch on this to apply a fallback. `message` is
     /// the CLI's verbatim error text.
     ControlRequestRejected { subtype: String, message: String },
+    /// A manual compaction turn failed after the compact request had already
+    /// been accepted by Cadencr. The host can clear compact-specific UI state
+    /// without treating unrelated steering failures as compact failures.
+    CompactFailed(String),
 }
 
 impl Display for RuntimeError {
@@ -115,6 +119,7 @@ impl Display for RuntimeError {
             Self::ControlRequestRejected { subtype, message } => {
                 write!(f, "CLI rejected control request `{subtype}`: {message}")
             }
+            Self::CompactFailed(message) => f.write_str(message),
         }
     }
 }
@@ -124,6 +129,10 @@ impl std::error::Error for RuntimeError {}
 impl RuntimeError {
     pub fn new(message: impl Into<String>) -> Self {
         Self::Generic(message.into())
+    }
+
+    pub fn compact_failed(message: impl Into<String>) -> Self {
+        Self::CompactFailed(message.into())
     }
 
     /// Build a structured "CLI not found" error so the host can surface an
@@ -324,6 +333,12 @@ pub enum RuntimeEventKind {
     CompactBoundary {
         metadata: Option<RuntimeCompactMetadata>,
     },
+    /// Provider-derived signal that a turn has started but should not render
+    /// as a transcript block. Used for work that has no initial assistant
+    /// message, such as compact-only turns.
+    TurnStarted {
+        source: RuntimeTurnStartedSource,
+    },
     /// Provider-neutral signal that the underlying transport is degraded
     /// (reconnecting, stalled, reconcile-failed) or recovered. Mapped to
     /// the `session.stream_status` WS envelope so the UI can show a
@@ -342,6 +357,21 @@ pub enum RuntimeEventKind {
         client_message_id: String,
     },
     Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeTurnStartedSource {
+    ContextCompaction,
+    ManualCompact,
+}
+
+impl RuntimeTurnStartedSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ContextCompaction => "context_compaction",
+            Self::ManualCompact => "manual_compact",
+        }
+    }
 }
 
 /// Lifecycle of the agent's underlying transport, surfaced provider-neutral
@@ -548,9 +578,41 @@ impl RuntimeEvent {
         matches!(self.kind, RuntimeEventKind::CompactBoundary { .. })
     }
 
+    pub fn turn_started_signal(
+        session_id: Option<String>,
+        source: RuntimeTurnStartedSource,
+        context_window: Option<u64>,
+    ) -> Self {
+        let raw = serde_json::json!({
+            "type": "turn_started",
+            "session_id": session_id,
+            "source": source.as_str(),
+        });
+        Self::new(
+            RuntimeEventMetadata {
+                session_id,
+                usage: None,
+                context_window,
+                raw,
+            },
+            RuntimeEventKind::TurnStarted { source },
+        )
+    }
+
     pub fn compact_metadata(&self) -> Option<&RuntimeCompactMetadata> {
         match &self.kind {
             RuntimeEventKind::CompactBoundary { metadata } => metadata.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn is_turn_started_signal(&self) -> bool {
+        self.turn_started_source().is_some()
+    }
+
+    pub fn turn_started_source(&self) -> Option<RuntimeTurnStartedSource> {
+        match &self.kind {
+            RuntimeEventKind::TurnStarted { source } => Some(*source),
             _ => None,
         }
     }

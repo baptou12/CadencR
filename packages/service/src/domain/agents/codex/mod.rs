@@ -319,7 +319,9 @@ impl AgentRuntimeAdapter for CodexAdapter {
             None,
         );
         session.send_init_event().await;
-        session.start_initial_turn(content).await?;
+        if !content.is_null() {
+            session.start_initial_turn(content).await?;
+        }
         Ok(Box::new(session))
     }
 }

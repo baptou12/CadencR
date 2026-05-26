@@ -18,7 +18,7 @@ use super::event_subagents::{
 };
 use crate::domain::agents::adapter::{
     RuntimeContentBlock, RuntimeEvent, RuntimeEventKind, RuntimeStreamEvent,
-    RuntimeUserContentBlock, RuntimeUserMessage,
+    RuntimeTurnStartedSource, RuntimeUserContentBlock, RuntimeUserMessage,
 };
 
 fn item(params: &Value) -> Option<&Value> {
@@ -93,11 +93,16 @@ pub(super) fn item_events(
             if completed {
                 vec![compact_event(params)]
             } else {
-                Vec::new()
+                vec![context_compaction_started_event(params)]
             }
         }
         _ => Vec::new(),
     }
+}
+
+fn context_compaction_started_event(params: Value) -> RuntimeEvent {
+    let sid = thread_id(&params).to_string();
+    RuntimeEvent::turn_started_signal(Some(sid), RuntimeTurnStartedSource::ContextCompaction, None)
 }
 
 pub(super) fn tool_json_delta_event(

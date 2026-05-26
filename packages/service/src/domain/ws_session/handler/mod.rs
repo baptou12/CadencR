@@ -23,6 +23,7 @@ mod dispatch;
 pub(crate) mod helpers;
 pub(crate) mod post_plan_mode;
 mod session_compact;
+mod session_compact_pending;
 mod session_control;
 mod session_data;
 mod session_gate;
@@ -1475,6 +1476,7 @@ mod tests {
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1505,6 +1507,7 @@ mod tests {
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
         }
     }
 

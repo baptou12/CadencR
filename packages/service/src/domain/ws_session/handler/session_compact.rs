@@ -1,7 +1,8 @@
 use axum::extract::ws::Message;
 
 use super::super::protocol::*;
-use super::{parse_session_id, send_error, QueryState, SdkSessions, WsSender};
+use super::session_compact_pending::spawn_pending_runtime_for_compact;
+use super::{parse_session_id, send_error, QueryState, SdkHandle, SdkSessions, WsSender};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeCompactionStrategy;
 use crate::domain::agents::runtime_adapter;
@@ -31,9 +32,16 @@ pub(super) async fn handle_compact(
 
     match compaction_strategy(sdk_sessions, db_session_id).await {
         Ok(RuntimeCompactionStrategy::LiveRuntime) => {
-            handle_active_runtime_compact(&envelope.id, sender, sdk_sessions, db_session_id).await;
+            handle_active_runtime_compact(
+                &envelope.id,
+                sender,
+                sdk_sessions,
+                db_session_id,
+                Some(_app_state),
+            )
+            .await;
         }
-        Err(message) => send_error(sender, &envelope.id, "INVALID_STATE", &message),
+        Err(message) => send_error(sender, &envelope.id, "COMPACT_REJECTED", &message),
     }
 }
 
@@ -65,6 +73,7 @@ async fn handle_active_runtime_compact(
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
     db_session_id: i64,
+    app_state: Option<&AppState>,
 ) {
     let query = {
         let sessions = sdk_sessions.lock().await;
@@ -77,20 +86,37 @@ async fn handle_active_runtime_compact(
             );
             return;
         };
-        let QueryState::Active { query, .. } = &handle.state else {
-            send_error(
-                sender,
-                envelope_id,
-                "INVALID_STATE",
-                "Start the session before using /compact",
-            );
-            return;
-        };
-        query.clone()
+        match compact_target(handle) {
+            CompactTarget::Active => {
+                let QueryState::Active { query, .. } = &handle.state else {
+                    unreachable!("compact_target returned active for non-active state");
+                };
+                query.clone()
+            }
+            CompactTarget::PendingSpawn => {
+                let Some(app_state) = app_state else {
+                    send_error(sender, envelope_id, "INVALID_STATE", "Session not active");
+                    return;
+                };
+                drop(sessions);
+                match spawn_pending_runtime_for_compact(
+                    envelope_id,
+                    sender,
+                    sdk_sessions,
+                    db_session_id,
+                    app_state,
+                )
+                .await
+                {
+                    Some(spawned) => spawned,
+                    None => return,
+                }
+            }
+        }
     };
 
     if let Err(error) = query.read().await.compact().await {
-        send_error(sender, envelope_id, "SDK_ERROR", &error.to_string());
+        send_error(sender, envelope_id, "COMPACT_REJECTED", &error.to_string());
         return;
     }
 
@@ -101,6 +127,25 @@ async fn handle_active_runtime_compact(
         serde_json::Value::Null,
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+enum CompactTarget {
+    Active,
+    PendingSpawn,
+}
+
+impl CompactTarget {
+    #[cfg(test)]
+    fn is_pending_spawn(&self) -> bool {
+        matches!(self, Self::PendingSpawn)
+    }
+}
+
+fn compact_target(handle: &SdkHandle) -> CompactTarget {
+    match handle.state {
+        QueryState::Active { .. } => CompactTarget::Active,
+        QueryState::Pending(_) => CompactTarget::PendingSpawn,
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +160,7 @@ mod tests {
     use serde_json::Value;
     use tokio::sync::{mpsc, Mutex};
 
-    use super::{compaction_strategy, handle_active_runtime_compact};
+    use super::{compact_target, compaction_strategy, handle_active_runtime_compact};
     use crate::domain::agents::adapter::{
         AgentRuntimeSession, RuntimeCompactionStrategy, RuntimeError, RuntimeEvent,
         RuntimePermissionMode, RuntimeSpawnConfig,
@@ -185,6 +230,7 @@ mod tests {
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -220,6 +266,19 @@ mod tests {
         );
     }
 
+    #[test]
+    fn pending_runtime_sessions_are_spawnable_for_compact() {
+        let handle = handle_for_provider(
+            crate::domain::agents::codex::PROVIDER_ID,
+            QueryState::Pending(RuntimeSpawnConfig {
+                resume_session_id: Some("thread-1".to_string()),
+                ..RuntimeSpawnConfig::default()
+            }),
+        );
+
+        assert!(compact_target(&handle).is_pending_spawn());
+    }
+
     fn active_sessions(fail: bool) -> SdkSessions {
         let (permission_tx, _permission_rx) = mpsc::channel(1);
         let runtime = Box::new(CompactRuntime { fail }) as Box<dyn AgentRuntimeSession>;
@@ -238,7 +297,7 @@ mod tests {
     #[tokio::test]
     async fn active_runtime_compact_sends_started_reply() {
         let (sender, mut rx) = mpsc::unbounded_channel();
-        handle_active_runtime_compact("req-1", &sender, &active_sessions(false), 1).await;
+        handle_active_runtime_compact("req-1", &sender, &active_sessions(false), 1, None).await;
         let message = rx.recv().await.unwrap();
         let Message::Text(text) = message else {
             panic!("expected text reply");
@@ -249,7 +308,7 @@ mod tests {
     #[tokio::test]
     async fn active_runtime_compact_sends_error_reply() {
         let (sender, mut rx) = mpsc::unbounded_channel();
-        handle_active_runtime_compact("req-2", &sender, &active_sessions(true), 1).await;
+        handle_active_runtime_compact("req-2", &sender, &active_sessions(true), 1, None).await;
         let message = rx.recv().await.unwrap();
         let Message::Text(text) = message else {
             panic!("expected text reply");

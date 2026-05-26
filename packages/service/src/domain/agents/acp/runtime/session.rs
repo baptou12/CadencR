@@ -1,4 +1,5 @@
 mod compact;
+mod compact_turn;
 mod implementation;
 
 pub use implementation::{AcpRuntimeSession, MESSAGE_CHANNEL_CAPACITY};

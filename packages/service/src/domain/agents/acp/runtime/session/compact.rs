@@ -3,23 +3,12 @@
 //! Runs OpenCode ACP `/compact` in the background so Stop can still interrupt
 //! the in-flight `session/prompt` turn.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use serde_json::Value;
-use tokio::sync::{mpsc, RwLock};
+use crate::domain::agents::adapter::RuntimeError;
 
-use crate::domain::agents::acp::AcpClient;
-use crate::domain::agents::adapter::{
-    RuntimeCompactMetadata, RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata,
-};
-
-use super::super::events_stream_blocks::EventIndexer;
-use super::super::prompt_turn::{acp_prompt_blocks_from_content, build_prompt_params};
-use super::super::provider_hooks::AcpProviderHooks;
-use super::super::turn_lifecycle::{
-    finalize_turn, request_prompt_with_cancel, PromptCancel, PromptTurnLock,
-};
+use super::compact_turn::CompactTurn;
 use super::implementation::AcpRuntimeSession;
 
 pub(super) async fn spawn_compact_turn(session: &AcpRuntimeSession) -> Result<(), RuntimeError> {
@@ -46,6 +35,7 @@ pub(super) async fn spawn_compact_turn(session: &AcpRuntimeSession) -> Result<()
         prompt_cancel: session.prompt_cancel.clone(),
         closing: Arc::clone(&session.closing),
         running: Arc::clone(&session.manual_compact_running),
+        replay_suppression: Arc::clone(&session.replay_suppression),
         initial_session_id: session_id,
         compact_prompt: session.hooks.compact_prompt(),
         hooks: Arc::clone(&session.hooks),
@@ -54,149 +44,33 @@ pub(super) async fn spawn_compact_turn(session: &AcpRuntimeSession) -> Result<()
     tokio::spawn(async move {
         let result = turn.run().await;
         if let Err(error) = result {
-            let _ = local_tx.send(Err(error)).await;
+            let _ = local_tx
+                .send(Err(RuntimeError::compact_failed(error.to_string())))
+                .await;
         }
     });
     Ok(())
 }
 
-struct CompactTurn {
-    client: AcpClient,
-    session_id_lock: Arc<RwLock<Option<String>>>,
-    current_model: Arc<RwLock<Option<String>>>,
-    current_effort: Arc<RwLock<Option<String>>>,
-    supports_set_config_option: Arc<AtomicBool>,
-    local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-    indexer: Arc<StdMutex<EventIndexer>>,
-    context_window: Option<u64>,
-    prompt_turn_lock: PromptTurnLock,
-    prompt_cancel: PromptCancel,
-    closing: Arc<AtomicBool>,
-    running: Arc<AtomicBool>,
-    initial_session_id: String,
-    compact_prompt: Option<&'static str>,
-    hooks: Arc<dyn AcpProviderHooks>,
-}
-
-impl CompactTurn {
-    async fn run(self) -> Result<(), RuntimeError> {
-        let _running_guard = CompactRunningGuard(Arc::clone(&self.running));
-        let _turn_guard = self.prompt_turn_lock.lock().await;
-        if self.closing.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-
-        self.indexer
-            .lock()
-            .expect("EventIndexer poisoned")
-            .take_compact_boundary_emitted();
-        let session_id = self
-            .session_id_lock
-            .read()
-            .await
-            .clone()
-            .unwrap_or(self.initial_session_id);
-        let compact_prompt = self
-            .compact_prompt
-            .ok_or_else(|| RuntimeError::new("ACP provider does not support manual compaction"))?;
-        let prompt = acp_prompt_blocks_from_content(Value::String(compact_prompt.to_string()));
-        let supports = self.supports_set_config_option.load(Ordering::SeqCst);
-        let model = self.current_model.read().await.clone();
-        let effort = self.current_effort.read().await.clone();
-        let params = build_prompt_params(
-            &session_id,
-            prompt,
-            model.as_deref(),
-            effort.as_deref(),
-            supports,
-        );
-        let response =
-            request_prompt_with_cancel(&self.client, params, &self.prompt_cancel).await?;
-        if let Some(reason) = response.get("stopReason").and_then(Value::as_str) {
-            finalize_turn(
-                &self.local_tx,
-                &self.indexer,
-                self.session_id_lock.read().await.clone(),
-                self.context_window,
-                self.hooks.prompt_response_usage(&response),
-                reason,
-                &response,
-            )
-            .await;
-        }
-        let provider_boundary_emitted = self
-            .indexer
-            .lock()
-            .expect("EventIndexer poisoned")
-            .take_compact_boundary_emitted();
-        if !provider_boundary_emitted {
-            emit_manual_compact_boundary(
-                &self.local_tx,
-                self.session_id_lock.read().await.clone(),
-                self.context_window,
-            )
-            .await;
-        }
-        Ok(())
-    }
-}
-
-struct CompactRunningGuard(Arc<AtomicBool>);
-
-impl Drop for CompactRunningGuard {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
-    }
-}
-
-async fn emit_manual_compact_boundary(
-    tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
-    session_id: Option<String>,
-    context_window: Option<u64>,
-) {
-    let compact_metadata = RuntimeCompactMetadata {
-        trigger: Some("manual".to_string()),
-        pre_tokens: None,
-    };
-    let raw = serde_json::json!({
-        "type": "system",
-        "subtype": "compact_boundary",
-        "session_id": session_id,
-        "compact_metadata": {
-            "trigger": compact_metadata.trigger.clone(),
-            "pre_tokens": compact_metadata.pre_tokens,
-        },
-    });
-    let event = RuntimeEvent::new(
-        RuntimeEventMetadata {
-            session_id,
-            usage: None,
-            context_window,
-            raw,
-        },
-        RuntimeEventKind::CompactBoundary {
-            metadata: Some(compact_metadata),
-        },
-    );
-    let _ = tx.send(Ok(event)).await;
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex as StdMutex};
 
     use async_trait::async_trait;
     use serde_json::{json, Value};
     use tokio::io::{duplex, AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
+    use tokio::sync::{mpsc, RwLock};
 
     use super::*;
+    use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::lifecycle::NegotiatedSession;
     use crate::domain::agents::acp::runtime::prompt_receipts::PendingPromptReceipts;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::acp::runtime::server_requests::{spawn_event_loop, EventLoopConfig};
     use crate::domain::agents::acp::runtime::terminal_registry::TerminalRegistry;
-    use crate::domain::agents::acp::AcpClientInfo;
+    use crate::domain::agents::acp::{AcpClient, AcpClientInfo};
     use crate::domain::agents::adapter::{AgentRuntimeSession, RuntimePermissionMode};
 
     struct PlainHooks;
@@ -286,6 +160,44 @@ mod tests {
         .expect("compact should still send session/prompt");
         assert_eq!(request["method"], "session/prompt");
         assert_eq!(request["params"]["prompt"][0]["text"], "/compact");
+    }
+
+    #[tokio::test]
+    async fn compact_clears_resume_replay_suppression_and_emits_turn_started() {
+        let (client, _agent_stdout, mut agent_stdin) = build_in_memory_client().await;
+        let (tx, rx) = mpsc::channel(8);
+        let mut session = AcpRuntimeSession::assemble(
+            &client,
+            &negotiated("s-compact-resume"),
+            None,
+            rx,
+            tx,
+            Arc::new(PlainHooks),
+            Arc::new(StdMutex::new(EventIndexer::default())),
+        );
+        session.replay_suppression.store(true, Ordering::SeqCst);
+        let mut runtime_rx = session.take_message_rx();
+
+        session.compact().await.unwrap();
+        let event = tokio::time::timeout(std::time::Duration::from_millis(250), runtime_rx.recv())
+            .await
+            .expect("compact should emit a turn-start signal")
+            .expect("runtime channel closed")
+            .expect("runtime error");
+        let request = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            read_one_request(&mut agent_stdin),
+        )
+        .await
+        .expect("compact should still send session/prompt");
+
+        assert_eq!(request["method"], "session/prompt");
+        assert!(!session.replay_suppression.load(Ordering::SeqCst));
+        assert_eq!(
+            crate::domain::session_status::provider_signal_for_event(&event),
+            Some(crate::domain::session_status::ProviderSignal::TurnStarted)
+        );
+        assert!(event.stream_event().is_none());
     }
 
     #[tokio::test]

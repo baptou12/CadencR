@@ -75,6 +75,7 @@ pub struct SdkHandle {
     /// Config for respawning with --resume after model/mode change.
     pub(super) config: SessionConfig,
     pub(super) manual_compact_cancel: Arc<AtomicBool>,
+    pub(super) manual_compact_spawn_pending: Arc<AtomicBool>,
 }
 
 pub(super) type SdkSessions = Arc<Mutex<HashMap<i64, SdkHandle>>>;

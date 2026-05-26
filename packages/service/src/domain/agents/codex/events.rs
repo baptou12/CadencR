@@ -410,7 +410,31 @@ mod tests {
             }),
         );
 
-        assert!(events.is_empty());
+        assert_eq!(events.len(), 1);
+        assert!(!events[0].is_compact_boundary());
+    }
+
+    #[test]
+    fn context_compaction_start_emits_provider_turn_started_signal() {
+        let events = map_events(
+            "item/started",
+            json!({
+                "threadId": "thread",
+                "turnId": "turn_compact",
+                "item": {
+                    "type": "contextCompaction",
+                    "id": "compact_1"
+                }
+            }),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            crate::domain::session_status::provider_signal_for_event(&events[0]),
+            Some(crate::domain::session_status::ProviderSignal::TurnStarted)
+        );
+        assert!(events[0].stream_event().is_none());
+        assert!(!events[0].is_compact_boundary());
     }
 
     #[test]

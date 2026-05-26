@@ -88,14 +88,14 @@ pub struct PermissionResponse {
     pub(crate) is_approval_gate: bool,
 }
 
-pub(super) struct WsBridgeCanUseTool {
-    pub(super) sender: WsSender,
-    pub(super) response_rx: Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
-    pub(super) feature_id: i64,
-    pub(super) db_session_id: i64,
-    pub(super) write_pool: sqlx::SqlitePool,
-    pub(super) session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
-    pub(super) sdk_sessions: SdkSessions,
+pub(crate) struct WsBridgeCanUseTool {
+    pub(crate) sender: WsSender,
+    pub(crate) response_rx: Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
+    pub(crate) feature_id: i64,
+    pub(crate) db_session_id: i64,
+    pub(crate) write_pool: sqlx::SqlitePool,
+    pub(crate) session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
+    pub(crate) sdk_sessions: SdkSessions,
 }
 
 #[async_trait]

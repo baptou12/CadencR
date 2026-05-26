@@ -397,6 +397,9 @@ pub(crate) async fn handle_prompt_send(
                             manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(
                                 false,
                             )),
+                            manual_compact_spawn_pending: Arc::new(
+                                std::sync::atomic::AtomicBool::new(false),
+                            ),
                         },
                     );
                 }

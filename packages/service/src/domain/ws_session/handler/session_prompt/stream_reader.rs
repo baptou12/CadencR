@@ -286,6 +286,15 @@ pub(crate) fn spawn_stream_reader(
                             {
                                 let next = signal.status();
                                 if last_signal_status != Some(next) {
+                                    if runtime_event.is_turn_started_signal()
+                                        && next == crate::domain::session_status::AgentStatus::Agent
+                                    {
+                                        WsSessionPersistence::mark_running_static(
+                                            &write_pool,
+                                            db_session_id,
+                                        )
+                                        .await;
+                                    }
                                     WsSessionPersistence::broadcast_session_signal(
                                         &session_status_tx,
                                         db_session_id,
@@ -295,6 +304,9 @@ pub(crate) fn spawn_stream_reader(
                                     last_signal_status = Some(next);
                                 }
                             }
+                        }
+                        if runtime_event.is_turn_started_signal() {
+                            continue;
                         }
                     }
 
@@ -387,6 +399,12 @@ pub(crate) fn spawn_stream_reader(
                     }
                 }
                 Some(Err(e)) => {
+                    let code = match &e {
+                        crate::domain::agents::adapter::RuntimeError::CompactFailed(_) => {
+                            "COMPACT_ERROR"
+                        }
+                        _ => "SDK_ERROR",
+                    };
                     let message = e.to_string();
                     error!(db_session_id, error = %message, "SDK stream error");
                     WsSessionPersistence::persist_error_message_static(
@@ -408,7 +426,7 @@ pub(crate) fn spawn_stream_reader(
                         "session",
                         "error",
                         serde_json::to_value(SessionErrorPayload {
-                            code: "SDK_ERROR".into(),
+                            code: code.into(),
                             message,
                             ..Default::default()
                         })

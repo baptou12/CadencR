@@ -236,6 +236,7 @@ pub fn provider_signal_for_event(event: &RuntimeEvent) -> Option<ProviderSignal>
     }
     match event.stream_event() {
         Some(stream_event) => provider_signal_for_stream_event(stream_event),
+        None if event.is_turn_started_signal() => Some(ProviderSignal::TurnStarted),
         None => match event_kind_implies_turn_started(event) {
             true => Some(ProviderSignal::TurnStarted),
             false => None,
@@ -266,10 +267,11 @@ fn event_kind_implies_turn_started(event: &RuntimeEvent) -> bool {
 /// stream open). See `stream_reader.rs` for the call site that uses this
 /// to gate post-turn status broadcasts.
 pub fn event_starts_fresh_turn(event: &RuntimeEvent) -> bool {
-    matches!(
-        event.stream_event(),
-        Some(RuntimeStreamEvent::MessageStart { .. })
-    )
+    event.is_turn_started_signal()
+        || matches!(
+            event.stream_event(),
+            Some(RuntimeStreamEvent::MessageStart { .. })
+        )
 }
 
 #[cfg(test)]

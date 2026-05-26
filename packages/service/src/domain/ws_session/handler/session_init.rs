@@ -329,6 +329,7 @@ pub(super) async fn handle_init(
         resume_session_id: resume_session_id.clone(),
         config,
         manual_compact_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        manual_compact_spawn_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
 
     sdk_sessions.lock().await.insert(db_session_id, handle);
