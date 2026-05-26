@@ -572,7 +572,7 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.sendPrompt("hello");
     });
-    expect(result.current.status).toBe("agent");
+    expect(result.current.status).toBe("idle");
 
     act(() => {
       getWs().simulateMessage({
@@ -710,7 +710,7 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.sendPrompt("hello");
     });
-    expect(result.current.status).toBe("agent");
+    expect(result.current.status).toBe("idle");
     // User message block added locally
     expect(result.current.blocks).toHaveLength(1);
     expect(result.current.blocks[0].type).toBe("user_message");
@@ -777,7 +777,7 @@ describe("useWebSocketSession", () => {
     act(() => {
       result.current.sendPrompt("thanks");
     });
-    expect(result.current.status).toBe("agent");
+    expect(result.current.status).toBe("idle");
     // Now: user_message + text + turn_summary + user_message = 4
     expect(result.current.blocks).toHaveLength(4);
     expect(result.current.blocks[2].type).toBe("turn_summary");

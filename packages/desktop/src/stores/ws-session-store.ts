@@ -536,12 +536,12 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
 
     compactSession(sessionId: string) {
       const session = getSession(sessionId);
-      if (session.pendingManualCompact) return;
+      if (session.compactRequestPending || session.pendingManualCompact) return;
       sendRaw(sessionId, createSessionCompact(session.serverSessionId));
       set(
         updateSession(get(), sessionId, {
           ...appendLocalUserMessage(session, "/compact"),
-          pendingManualCompact: true,
+          compactRequestPending: true,
         }),
       );
     },

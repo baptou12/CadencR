@@ -258,6 +258,16 @@ function handleSessionAction(
     case "error":
       handleError(ctx, sessionId, envelope.payload);
       break;
+    case "compact.started":
+      if (ctx.getSession(sessionId).compactRequestPending) {
+        ctx.set(
+          updateSession(ctx.get(), sessionId, {
+            compactRequestPending: false,
+            pendingManualCompact: true,
+          }),
+        );
+      }
+      break;
     case "compact.ok":
       ctx.set(
         updateSession(ctx.get(), sessionId, {
@@ -265,6 +275,7 @@ function handleSessionAction(
             type: "turn_ended",
             reason: "completed",
           }),
+          compactRequestPending: false,
           pendingManualCompact: false,
         }),
       );
@@ -503,6 +514,11 @@ function handlePermissionRequest(ctx: StoreAccessors, sessionId: string, payload
  * instead, and don't transition the turn lifecycle since no turn was active.
  */
 const TOAST_ERROR_CODES = new Set(["MODE_NOT_SUPPORTED"]);
+const COMPACT_PRE_START_ERROR_CODES = new Set([
+  "COMPACT_REJECTED",
+  "SDK_SPAWN_ERROR",
+  "UNSUPPORTED_PROVIDER",
+]);
 
 function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
   const p = parseErrorPayload(payload);
@@ -522,21 +538,36 @@ function handleError(ctx: StoreAccessors, sessionId: string, payload: unknown): 
 
   const session = ctx.getSession(sessionId);
   const gatePatch = isGateClosingErrorCode(p?.code) ? buildClearedGatePatch(session) : null;
+  const compactWasRejectedBeforeStart =
+    session.compactRequestPending &&
+    !session.pendingManualCompact &&
+    p?.code !== undefined &&
+    COMPACT_PRE_START_ERROR_CODES.has(p.code);
+  const compactFailedAfterStart = session.pendingManualCompact && p?.code === "COMPACT_ERROR";
+  const turnErroredPatch: Partial<SessionEntry> = {
+    lifecycle: transitionTurn(session.lifecycle, {
+      type: "turn_errored" as const,
+      ...(p?.message ? { message: p.message } : {}),
+    }),
+    compactRequestPending: false,
+    pendingManualCompact: false,
+  };
   // A manual compaction holds the prompt turn — a follow-up `prompt.send` while
   // compacting fails the steering RPC and the backend emits `session.error`,
   // but the underlying compaction is still running. Surface the error inline
   // (so the user sees what happened) without flipping the turn to `error` or
   // clearing the compaction flag — both of those would lie about the agent
   // having stopped.
-  const lifecyclePatch: Partial<SessionEntry> = session.pendingManualCompact
-    ? {}
-    : {
-        lifecycle: transitionTurn(session.lifecycle, {
-          type: "turn_errored" as const,
-          ...(p?.message ? { message: p.message } : {}),
-        }),
-        pendingManualCompact: false,
-      };
+  let lifecyclePatch: Partial<SessionEntry>;
+  if (compactWasRejectedBeforeStart) {
+    lifecyclePatch = { compactRequestPending: false, pendingManualCompact: false };
+  } else if (compactFailedAfterStart) {
+    lifecyclePatch = turnErroredPatch;
+  } else if (session.pendingManualCompact) {
+    lifecyclePatch = {};
+  } else {
+    lifecyclePatch = turnErroredPatch;
+  }
   if (!p?.message) {
     const patch = { ...lifecyclePatch, ...gatePatch };
     if (Object.keys(patch).length === 0) return;

@@ -196,7 +196,7 @@ describe("ws-session-store", () => {
     });
   });
 
-  it("sendPrompt appends user message block and sets running", async () => {
+  it("sendPrompt appends user message block without marking the agent running", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
     await tick();
@@ -208,7 +208,7 @@ describe("ws-session-store", () => {
     });
     store.sendPrompt("s1", "hello");
     const session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.lifecycle).toEqual({ phase: "active" });
+    expect(session.lifecycle).toEqual({ phase: "idle" });
     expect(session.blocks.length).toBe(1);
     expect(session.blocks[0].type).toBe("user_message");
     expect(session.blocks[0].content).toBe("hello");
@@ -421,7 +421,7 @@ describe("ws-session-store", () => {
     expect(ws.sent).toHaveLength(0);
     let session = useWsSessionStore.getState().sessions["s1"];
     expect(session.queuedPrompts).toHaveLength(1);
-    expect(session.lifecycle).toEqual({ phase: "active" });
+    expect(session.lifecycle).toEqual({ phase: "idle" });
 
     ws.simulateMessage({
       domain: "session",
@@ -444,7 +444,7 @@ describe("ws-session-store", () => {
 
     session = useWsSessionStore.getState().sessions["s1"];
     expect(session.queuedPrompts).toHaveLength(0);
-    expect(session.lifecycle).toEqual({ phase: "active" });
+    expect(session.lifecycle).toEqual({ phase: "idle" });
   });
 
   it("setPermissionMode before initialized defers mode.set until initialized", async () => {
@@ -2354,13 +2354,13 @@ describe("ws-session-store", () => {
 
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.turnTiming.completed).toEqual({
-        totalMs: 10_000,
-        activeMs: 5_000,
+        totalMs: 7_000,
+        activeMs: 2_000,
         userPendingMs: 5_000,
       });
       expect(session.blocks.at(-1)).toMatchObject({
         type: "turn_summary",
-        content: "Worked - 10s · Agent 5s · Waiting 5s",
+        content: "Worked - 7s · Agent 2s · Waiting 5s",
       });
       vi.useRealTimers();
     });
@@ -2370,7 +2370,7 @@ describe("ws-session-store", () => {
       vi.useFakeTimers();
       vi.setSystemTime(1_000);
 
-      useWsSessionStore.getState().sendPrompt("s1", "quiet turn");
+      streamTextMessage(ws, "");
       vi.setSystemTime(4_000);
       ws.simulateMessage({
         domain: "session",
@@ -2548,8 +2548,9 @@ describe("ws-session-store", () => {
       const session = useWsSessionStore.getState().sessions["s1"];
       expect(session.blocks.at(-1)?.type).toBe("user_message");
       expect(session.blocks.at(-1)?.content).toBe("/compact");
-      expect(session.lifecycle).toEqual({ phase: "active" });
-      expect(session.pendingManualCompact).toBe(true);
+      expect(session.lifecycle).toEqual({ phase: "idle" });
+      expect(session.compactRequestPending).toBe(true);
+      expect(session.pendingManualCompact).toBe(false);
     });
 
     it("compactSession ignores duplicate manual compact while one is pending", async () => {
@@ -2591,9 +2592,25 @@ describe("ws-session-store", () => {
         action: "compact.started",
         payload: null,
       });
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
 
       const session = useWsSessionStore.getState().sessions["s1"];
-      expect(session.lifecycle).toEqual({ phase: "active" });
+      expect(session.lifecycle).toEqual({ phase: "idle" });
+      expect(session.compactRequestPending).toBe(false);
       expect(session.pendingManualCompact).toBe(true);
     });
 
@@ -2609,6 +2626,11 @@ describe("ws-session-store", () => {
       });
 
       store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
       ws.simulateMessage({
         domain: "session",
         action: "compact.ok",
@@ -2671,6 +2693,11 @@ describe("ws-session-store", () => {
       store.compactSession("s1");
       ws.simulateMessage({
         domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
+      ws.simulateMessage({
+        domain: "session",
         action: "message",
         payload: {
           blocks: [
@@ -2705,6 +2732,11 @@ describe("ws-session-store", () => {
       });
 
       store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
       ws.simulateMessage({
         domain: "session",
         action: "message",
@@ -2742,6 +2774,11 @@ describe("ws-session-store", () => {
       store.compactSession("s1");
       ws.simulateMessage({
         domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
+      ws.simulateMessage({
+        domain: "session",
         action: "message",
         payload: {
           blocks: [
@@ -2777,6 +2814,11 @@ describe("ws-session-store", () => {
       });
 
       store.compactSession("s1");
+      ws.simulateMessage({
+        domain: "session",
+        action: "compact.started",
+        payload: null,
+      });
       ws.simulateMessage({
         domain: "session",
         action: "error",
