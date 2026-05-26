@@ -52,6 +52,14 @@ impl SubagentWindow {
     /// closes. We intentionally do NOT require `parent_tool_use_id` to be
     /// absent because some provider transcripts attach it to the root close
     /// event; if we skip that event, the fallback window can get stuck open.
+    ///
+    /// Asymmetry with `record_starts` (which DOES skip nested events) is
+    /// safe because `active` only ever holds root-level Task/Agent ids
+    /// (record_starts enforces that) and tool_use ids are unique per API
+    /// call. A sub-agent's own inner tool_result therefore cannot collide
+    /// with a root id — the `active.remove` call is a guaranteed no-op for
+    /// any non-root id. See `record_starts_ignores_subagent_messages` and
+    /// `subagent_inner_tool_result_does_not_close_root_window`.
     pub(super) fn record_ends(&mut self, runtime_event: &RuntimeEvent) {
         if self.active.is_empty() {
             return;
@@ -233,6 +241,42 @@ mod tests {
 
         win.record_ends(&event);
         assert!(!win.is_active());
+    }
+
+    #[test]
+    fn subagent_inner_tool_result_does_not_close_root_window() {
+        // A sub-agent emits its own user message with a tool_result for an
+        // inner tool (e.g. Read) whose id is unrelated to the root Task.
+        // The asymmetry between record_starts (skips nested) and record_ends
+        // (does not) relies on this id never colliding with the root id.
+        let mut win = SubagentWindow::new();
+        win.record_starts(&assistant_with_tool_use("toolu_root_task", "Task", None));
+        assert!(win.is_active());
+
+        let inner_close = RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some("root-1".into()),
+                usage: None,
+                context_window: None,
+                raw: json!({ "type": "user" }),
+            },
+            RuntimeEventKind::UserMessage {
+                message: RuntimeUserMessage {
+                    content: vec![RuntimeUserContentBlock::ToolResult {
+                        tool_use_id: Some("toolu_subagent_inner_read".into()),
+                        is_error: false,
+                        content: json!("file contents"),
+                    }],
+                },
+                parent_tool_use_id: Some("toolu_root_task".into()),
+            },
+        );
+
+        win.record_ends(&inner_close);
+        assert!(
+            win.is_active(),
+            "sub-agent inner tool_result must not close the root window"
+        );
     }
 
     #[test]

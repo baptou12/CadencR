@@ -136,6 +136,14 @@ impl RuntimeUsageState {
         // snapshot. The carrier message that opens the window is a root
         // event — recording its tool_use here means the very next sub-agent
         // frame is correctly suppressed.
+        //
+        // NOTE: `record_ends` is also called inside the `is_subagent_event`
+        // early-return branch above. Do NOT "deduplicate" by moving it to a
+        // single call at the top of this function — `is_subagent_event`
+        // consults `subagent_window.carries_lifecycle_block`, which depends
+        // on the closing id still being present in `active` at classify
+        // time. The two call sites are mutually exclusive via the early
+        // return.
         self.subagent_window.record_starts(runtime_event);
         self.subagent_window.record_ends(runtime_event);
 
