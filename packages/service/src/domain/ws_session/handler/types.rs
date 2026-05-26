@@ -11,7 +11,7 @@ use axum::extract::ws::Message;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::domain::agents::adapter::{
-    RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
+    RuntimeAccessMode, RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
 };
 
 use super::session_prompt;
@@ -34,6 +34,7 @@ pub(super) struct SessionConfig {
     /// Pre-canonicalized worktree path for permission checks (avoids repeated syscalls).
     pub(super) canonical_cwd: PathBuf,
     pub(super) permission_mode: Option<RuntimePermissionMode>,
+    pub(super) access_mode: Option<RuntimeAccessMode>,
     pub(super) thinking_effort: Option<String>,
     pub(super) system_prompt: Option<String>,
     /// Extra env vars to inject when respawning the CLI (e.g. an active
@@ -59,6 +60,8 @@ pub struct SdkHandle {
     pub(super) desired_permission_mode: Option<RuntimePermissionMode>,
     /// The permission mode the CLI was actually spawned with.
     pub(super) spawned_permission_mode: Option<RuntimePermissionMode>,
+    pub(super) desired_access_mode: Option<RuntimeAccessMode>,
+    pub(super) spawned_access_mode: Option<RuntimeAccessMode>,
     /// Thinking effort to apply on the next turn when supported by the model.
     pub(super) desired_thinking_effort: Option<String>,
     /// Thinking effort the runtime was last spawned with.

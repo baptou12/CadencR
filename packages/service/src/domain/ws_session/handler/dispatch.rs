@@ -77,6 +77,15 @@ async fn handle_session_action(
         "mode.set" => {
             session_control::handle_mode_set(envelope, sender, sdk_sessions, app_state).await
         }
+        "codex_permission_mode.set" => {
+            session_control::handle_codex_permission_mode_set(
+                envelope,
+                sender,
+                sdk_sessions,
+                app_state,
+            )
+            .await
+        }
         "effort.set" => {
             session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
         }

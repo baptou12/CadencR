@@ -1,54 +1,27 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type Dispatch,
-  type RefObject,
-  type SetStateAction,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from "react";
 import type { AgentSessionHandle } from "@/components/agent-session";
 import type { FeatureTerminalTabHandle } from "@/components/FeatureTerminalTab";
-import { useAgentCatalog, type RuntimeProviderModeOption } from "@/api/agentRuntime";
 import {
   useGetBranch,
   useGetFeatureSettings,
-  useGetProjectSettings,
-  useListProjects,
   useGetGitStatus,
-  useSetProjectSetting,
+  useListProjects,
 } from "@/api/generated";
-import { toast } from "sonner";
-import { apiErrorMessage } from "@/lib/api-errors";
 import { useGitStatusSubscription } from "@/hooks/useGitStatusSubscription";
 import { useAgentLetterFocus } from "@/hooks/useAgentLetterFocus";
-import { useResolvedModelContext } from "@/contexts/ResolvedModelContext";
-import type { useResolvedModel } from "@/hooks/useResolvedModel";
 import { useScopedShortcut } from "@/hooks/useShortcut";
-import { useWebSocketSession } from "@/hooks/useWebSocketSession";
-import { useEnabledOptInModes } from "@/hooks/useEnabledOptInModes";
-import {
-  DEFAULT_WORKTREE_MODE_KEY,
-  defaultWorktreeModeFromSettings,
-} from "@/lib/default-worktree-mode";
-import { nextThinkingEffort, supportedThinkingEffortLevels } from "@/shared/thinking-effort";
+import { nextThinkingEffort } from "@/shared/thinking-effort";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useGitStatusStore } from "@/stores/useGitStatusStore";
-import type { PermissionMode } from "@/types/permission-mode";
 import type { FeatureEditorTabHandle } from "@/components/editor/FeatureEditorTab";
 import type { WorktreeStatus } from "@/types/workflow";
-import {
-  EMPTY_PROVIDER_MODES,
-  usePermissionModeToggle,
-} from "@/components/WebSocketSessionPermissionMode";
-
+import type { SessionControls } from "@/components/WebSocketSessionControls";
+export { useSessionControls } from "@/components/WebSocketSessionControls";
 interface SessionRefs {
   agent: RefObject<AgentSessionHandle | null>;
   terminal: RefObject<FeatureTerminalTabHandle | null>;
   editor: RefObject<FeatureEditorTabHandle | null>;
 }
-
 interface SessionFeatureData {
   projectPath: string;
   gitBranch: string | undefined;
@@ -60,27 +33,6 @@ interface SessionFeatureData {
   worktreeBranch: string | null;
   requestSlashCommands: ReturnType<typeof useWsSessionStore.getState>["requestSlashCommands"];
   handleRetryWorktreeSetup: () => void;
-}
-
-interface SessionControls {
-  ws: ReturnType<typeof useWebSocketSession>;
-  useWorktree: boolean;
-  setUseWorktree: Dispatch<SetStateAction<boolean>>;
-  toggleWorktree: () => void;
-  selectedBranch: string | null;
-  setSelectedBranch: Dispatch<SetStateAction<string | null>>;
-  initializedRef: RefObject<string | null>;
-  resolveModelThinkingEffort: ReturnType<typeof useResolvedModel>["resolveModelThinkingEffort"];
-  agentCatalog: ReturnType<typeof useAgentCatalog>;
-  resolvedProviderId: string;
-  resolvedModelId: string;
-  resolvedThinkingEffort: string | undefined;
-  activeProviderId: string;
-  supportedThinkingEfforts: ReturnType<typeof supportedThinkingEffortLevels>;
-  enabledOptInModes: PermissionMode[];
-  providerModes: readonly RuntimeProviderModeOption[];
-  handlePermissionModeToggle: () => void;
-  initialCwd: string;
 }
 
 export function useSessionRefs(): SessionRefs {
@@ -99,7 +51,9 @@ export function useSessionFeatureData(
 ): SessionFeatureData {
   const gitMetadataEnabled = options?.gitMetadataEnabled ?? true;
   const projectLookupEnabled = options?.projectLookupEnabled ?? true;
-  const projectsQuery = useListProjects({ query: { enabled: projectLookupEnabled } });
+  const projectsQuery = useListProjects({
+    query: { enabled: projectLookupEnabled },
+  });
   const projectPath = projectsQuery.data?.find((p) => p.id === projectId)?.path;
   useGitStatusSubscription(gitMetadataEnabled ? featureId : null);
   const { data: initialGitStatus } = useGetGitStatus(
@@ -112,13 +66,18 @@ export function useSessionFeatureData(
   );
   const { data: featureSettingsData } = useGetFeatureSettings(featureId);
   const featureSettings = useMemo(
-    () => Object.fromEntries((featureSettingsData ?? []).map((s) => [s.key, s.value])),
+    () =>
+      Object.fromEntries(
+        (featureSettingsData ?? []).map((setting) => [setting.key, setting.value]),
+      ),
     [featureSettingsData],
   );
-  const session = useWsSessionStore((s) => s.sessions[sessionId]);
-  const liveWorktreeBranch = useWsSessionStore((s) => s.sessions[sessionId]?.worktreeBranch);
-  const requestSlashCommands = useWsSessionStore((s) => s.requestSlashCommands);
-  const retryWorktreeSetup = useWsSessionStore((s) => s.retryWorktreeSetup);
+  const session = useWsSessionStore((state) => state.sessions[sessionId]);
+  const liveWorktreeBranch = useWsSessionStore(
+    (state) => state.sessions[sessionId]?.worktreeBranch,
+  );
+  const requestSlashCommands = useWsSessionStore((state) => state.requestSlashCommands);
+  const retryWorktreeSetup = useWsSessionStore((state) => state.retryWorktreeSetup);
   const gitBranch =
     liveWorktreeBranch ?? featureSettings.worktree_branch ?? branchData?.branch ?? undefined;
   const defaultBranch = branchData?.branch ?? undefined;
@@ -172,112 +131,10 @@ function statusFromFeatureSettings(settings: Record<string, string>): WorktreeSt
   if (raw === "setup_running" || raw === "setup") return "setup_running";
   if (raw === "setup_error" || raw === "error") return "setup_error";
   if (raw === "created") return "created";
-  if (raw === "creating" || raw === "naming" || raw === "named") return "creating";
+  if (raw === "creating" || raw === "naming" || raw === "named") {
+    return "creating";
+  }
   return settings.worktree_path || settings.worktree_branch ? "ready" : "idle";
-}
-
-export function useSessionControls(
-  sessionId: string,
-  featureId: number,
-  projectId: number,
-  effectiveCwd: string,
-  options?: { agentCatalogEnabled?: boolean; loadPersistedState?: boolean },
-): SessionControls {
-  const ws = useWebSocketSession(sessionId, featureId, {
-    loadPersisted: options?.loadPersistedState ?? true,
-  });
-  const [useWorktree, setUseWorktree] = useState(false);
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const worktreeDefaultProjectRef = useRef<number | null>(null);
-  const initializedRef = useRef<string | null>(null);
-  const { data: projectSettingsData } = useGetProjectSettings(projectId);
-  const setProjectSetting = useSetProjectSetting();
-  const defaultWorktreeMode = defaultWorktreeModeFromSettings(projectSettingsData, "skip");
-  const { resolveModel, resolveProvider, resolveModelThinkingEffort } = useResolvedModelContext();
-  const agentCatalog = useAgentCatalog({
-    cwd: effectiveCwd,
-    enabled: options?.agentCatalogEnabled ?? true,
-    staleTime: 30_000,
-  });
-  const resolvedProviderId = resolveProvider("session");
-  const resolvedModelId = resolveModel("session");
-  const resolvedThinkingEffort = resolveModelThinkingEffort(resolvedProviderId, resolvedModelId);
-  const activeProviderId = ws.runtimeProvider || ws.currentProviderId || resolvedProviderId;
-  const activeSessionModel = agentCatalog.data?.providers
-    .find((provider) => provider.id === (ws.currentProviderId || resolvedProviderId))
-    ?.models.find((model) => model.id === (ws.currentModelId || resolvedModelId));
-  const supportedThinkingEfforts = supportedThinkingEffortLevels(activeSessionModel);
-  const enabledOptInModes = useEnabledOptInModes(activeProviderId);
-  const providerModes =
-    agentCatalog.data?.providers.find((provider) => provider.id === activeProviderId)?.modes ??
-    EMPTY_PROVIDER_MODES;
-  const handlePermissionModeToggle = usePermissionModeToggle(
-    sessionId,
-    activeProviderId,
-    enabledOptInModes,
-    providerModes,
-  );
-  useEffect(() => {
-    if (projectSettingsData == null || worktreeDefaultProjectRef.current === projectId) return;
-    worktreeDefaultProjectRef.current = projectId;
-    setUseWorktree(defaultWorktreeMode === "new");
-  }, [defaultWorktreeMode, projectId, projectSettingsData]);
-  const toggleWorktree = useCallback((): void => {
-    const next = !useWorktree;
-    setUseWorktree(next);
-    setProjectSetting.mutate(
-      {
-        id: projectId,
-        data: { key: DEFAULT_WORKTREE_MODE_KEY, value: next ? "new" : "skip" },
-      },
-      {
-        onError: (err) => {
-          setUseWorktree(!next);
-          toast.error(apiErrorMessage(err, "Failed to save worktree preference"));
-        },
-      },
-    );
-  }, [projectId, setProjectSetting, useWorktree]);
-  return useMemo<SessionControls>(
-    () => ({
-      ws,
-      useWorktree,
-      setUseWorktree,
-      toggleWorktree,
-      selectedBranch,
-      setSelectedBranch,
-      initializedRef,
-      resolveModelThinkingEffort,
-      agentCatalog,
-      resolvedProviderId,
-      resolvedModelId,
-      resolvedThinkingEffort,
-      activeProviderId,
-      supportedThinkingEfforts,
-      enabledOptInModes,
-      providerModes,
-      handlePermissionModeToggle,
-      initialCwd: effectiveCwd,
-    }),
-    [
-      activeProviderId,
-      agentCatalog,
-      effectiveCwd,
-      enabledOptInModes,
-      handlePermissionModeToggle,
-      initializedRef,
-      resolveModelThinkingEffort,
-      resolvedModelId,
-      resolvedProviderId,
-      resolvedThinkingEffort,
-      selectedBranch,
-      providerModes,
-      supportedThinkingEfforts,
-      toggleWorktree,
-      useWorktree,
-      ws,
-    ],
-  );
 }
 
 export function useWsSessionEffects(args: {
@@ -285,7 +142,7 @@ export function useWsSessionEffects(args: {
   cwd: string;
   featureId: number;
   data: ReturnType<typeof useSessionFeatureData>;
-  controls: ReturnType<typeof useSessionControls>;
+  controls: SessionControls;
   refs: ReturnType<typeof useSessionRefs>;
   focusedTabId: string;
   hotkeysEnabled: boolean;
@@ -365,7 +222,7 @@ export function useWsSessionEffects(args: {
 }
 
 export function useWsSessionShortcuts(args: {
-  controls: ReturnType<typeof useSessionControls>;
+  controls: SessionControls;
   hotkeysEnabled: boolean;
 }): void {
   const { controls, hotkeysEnabled } = args;

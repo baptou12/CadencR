@@ -54,13 +54,12 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "claude_cli_path",
     "opencode_cli_path",
     "codex_cli_path",
-    // Per-provider opt-in for the dangerous "skip every check" mode. Mirrored
-    // by CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY / CODEX_FULL_ACCESS_SETTING_KEY
-    // in packages/desktop/src/shared/permission-mode-settings.ts. Stored as
-    // "true" / "false"; when "true" the matching mode joins the Shift+Tab
-    // cycle for that provider's chip.
+    // Per-provider opt-in for the dangerous "skip every check" mode. The
+    // Codex boolean remains writable for old clients; current clients use
+    // `codex_permission_mode` instead.
     "claude_bypass_permissions_enabled",
     "codex_full_access_enabled",
+    "codex_permission_mode",
     // Last-session restoration
     "lastOpenedFeature",
     // UI chrome
@@ -334,6 +333,7 @@ mod tests {
             "claude_bypass_permissions_enabled"
         ));
         assert!(is_workspace_key_allowed("codex_full_access_enabled"));
+        assert!(is_workspace_key_allowed("codex_permission_mode"));
     }
 
     #[test]

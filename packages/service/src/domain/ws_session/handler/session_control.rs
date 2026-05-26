@@ -20,6 +20,9 @@ use crate::domain::agents::adapter::{
     RuntimeError, RuntimePermissionResponse, RuntimePermissionResponseKind, RuntimeSessionHandle,
     RuntimeSpawnConfig,
 };
+use crate::domain::agents::codex::{
+    access_mode_wire, parse_access_mode, parse_access_mode_wire, PROVIDER_ID as CODEX_PROVIDER_ID,
+};
 use crate::domain::agents::permission_modes::permission_mode_wire;
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{adapter_for_model, runtime_adapter};
@@ -36,6 +39,36 @@ async fn session_has_messages(
         .fetch_one(pool)
         .await
         .map(|exists| exists != 0)
+}
+
+async fn persist_provider_selection(
+    pool: &sqlx::SqlitePool,
+    session_id: i64,
+    provider: &str,
+    codex_permission_mode: Option<&str>,
+    permission_mode: &str,
+) -> Result<(), sqlx::Error> {
+    if let Some(codex_mode) = codex_permission_mode {
+        sqlx::query(
+            "UPDATE agent_sessions SET runtime_provider = ?, codex_permission_mode = ?, permission_mode = ? WHERE id = ?",
+        )
+        .bind(provider)
+        .bind(codex_mode)
+        .bind(permission_mode)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "UPDATE agent_sessions SET runtime_provider = ?, permission_mode = ? WHERE id = ?",
+        )
+        .bind(provider)
+        .bind(permission_mode)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
 }
 
 fn provider_for_model(current_provider: &str, model: &str) -> String {
@@ -79,16 +112,16 @@ fn send_provider_set_ok(
     envelope_id: &str,
     provider: &str,
     supports_prompt_receipts: bool,
+    codex_permission_mode: Option<&str>,
 ) {
-    let reply = WsEnvelope::reply(
-        envelope_id,
-        "session",
-        "provider.set.ok",
-        serde_json::json!({
-            "provider": provider,
-            "supports_prompt_receipts": supports_prompt_receipts,
-        }),
-    );
+    let mut payload = serde_json::json!({
+        "provider": provider,
+        "supports_prompt_receipts": supports_prompt_receipts,
+    });
+    if let Some(mode) = codex_permission_mode {
+        payload["codex_permission_mode"] = serde_json::Value::String(mode.to_string());
+    }
+    let reply = WsEnvelope::reply(envelope_id, "session", "provider.set.ok", payload);
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
 
@@ -382,20 +415,6 @@ pub(super) async fn handle_provider_set(
         }
     };
 
-    let mut sessions = sdk_sessions.lock().await;
-    let handle = match sessions.get_mut(&db_session_id) {
-        Some(h) => h,
-        None => {
-            send_error(
-                sender,
-                &envelope.id,
-                "SESSION_NOT_FOUND",
-                "Session not found",
-            );
-            return;
-        }
-    };
-
     if has_messages {
         send_error(
             sender,
@@ -406,74 +425,127 @@ pub(super) async fn handle_provider_set(
         return;
     }
 
-    match &mut handle.state {
-        QueryState::Pending(options) => {
-            let provider_changed = handle.runtime_provider != payload.provider;
-            if provider_changed {
-                handle.runtime_provider = payload.provider.clone();
-                // Resume IDs are provider-specific; drop any stale value when switching providers.
-                handle.resume_session_id = None;
-                options.resume_session_id = None;
-
-                // Permission modes are also provider-specific (Claude's `auto`
-                // doesn't exist on Codex, Codex's `default` doesn't exist on
-                // Claude, etc.). Reset the desired/spawned/options modes so
-                // the next spawn picks the new provider's adapter default
-                // rather than carrying stale Claude-flavored state into a
-                // Codex session.
-                handle.desired_permission_mode = None;
-                handle.config.permission_mode = None;
-                options.permission_mode = None;
-
-                let new_mode_wire = default_permission_mode_wire(&payload.provider);
-                let _ = sqlx::query("UPDATE agent_sessions SET runtime_provider = ? WHERE id = ?")
-                    .bind(&payload.provider)
-                    .bind(db_session_id)
-                    .execute(&app_state.write_pool)
-                    .await;
-                WsSessionPersistence::update_permission_mode_static(
-                    &app_state.write_pool,
-                    db_session_id,
-                    new_mode_wire,
-                )
-                .await;
-
-                send_provider_set_ok(
+    let provider_changed = {
+        let mut sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get_mut(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
                     sender,
                     &envelope.id,
-                    &payload.provider,
-                    supports_prompt_receipts,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
                 );
-
-                // Broadcast the new chip state via the standard `mode.changed`
-                // envelope so the FE updates through the same path as a
-                // user-initiated mode change (no optimistic update).
-                let mode_changed = WsEnvelope::reply(
-                    &envelope.id,
-                    "session",
-                    "mode.changed",
-                    serde_json::json!({ "mode": new_mode_wire }),
-                );
-                let _ = sender.send(Message::Text(String::from(mode_changed).into()));
-            } else {
-                // Same-provider re-set: idempotent ack, no DB writes / mode reset.
-                send_provider_set_ok(
+                return;
+            }
+        };
+        match &handle.state {
+            QueryState::Pending(_) => handle.runtime_provider != payload.provider,
+            QueryState::Active { .. } => {
+                send_error(
                     sender,
                     &envelope.id,
-                    &payload.provider,
-                    supports_prompt_receipts,
+                    "PROVIDER_LOCKED",
+                    "Provider cannot be changed after the conversation starts",
                 );
+                return;
             }
         }
-        QueryState::Active { .. } => {
+    };
+
+    if !provider_changed {
+        send_provider_set_ok(
+            sender,
+            &envelope.id,
+            &payload.provider,
+            supports_prompt_receipts,
+            None,
+        );
+        return;
+    }
+
+    let configured_codex_access_mode = if payload.provider == CODEX_PROVIDER_ID {
+        Some(super::codex_access::configured_access_mode(&app_state.read_pool).await)
+    } else {
+        None
+    };
+    let new_mode_wire = default_permission_mode_wire(&payload.provider);
+    if let Err(error) = persist_provider_selection(
+        &app_state.write_pool,
+        db_session_id,
+        &payload.provider,
+        configured_codex_access_mode.as_deref(),
+        new_mode_wire,
+    )
+    .await
+    {
+        error!(
+            db_session_id,
+            runtime_provider = %payload.provider,
+            %error,
+            "failed to persist runtime provider selection"
+        );
+        send_error(
+            sender,
+            &envelope.id,
+            "DB_ERROR",
+            "Failed to persist runtime provider selection",
+        );
+        return;
+    }
+
+    let next_access_mode = configured_codex_access_mode
+        .as_deref()
+        .map(|mode| parse_access_mode(Some(mode)));
+    {
+        let mut sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get_mut(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
+                );
+                return;
+            }
+        };
+        let QueryState::Pending(options) = &mut handle.state else {
             send_error(
                 sender,
                 &envelope.id,
                 "PROVIDER_LOCKED",
                 "Provider cannot be changed after the conversation starts",
             );
-        }
+            return;
+        };
+        handle.runtime_provider = payload.provider.clone();
+        handle.resume_session_id = None;
+        options.resume_session_id = None;
+        handle.desired_permission_mode = None;
+        handle.config.permission_mode = None;
+        options.permission_mode = None;
+        handle.desired_access_mode = next_access_mode.clone();
+        handle.config.access_mode = next_access_mode.clone();
+        options.access_mode = next_access_mode;
     }
+
+    send_provider_set_ok(
+        sender,
+        &envelope.id,
+        &payload.provider,
+        supports_prompt_receipts,
+        configured_codex_access_mode.as_deref(),
+    );
+
+    let mode_changed = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "mode.changed",
+        serde_json::json!({ "mode": new_mode_wire }),
+    );
+    let _ = sender.send(Message::Text(String::from(mode_changed).into()));
 }
 
 /// Handle session.model.set: change the model and persist to DB.
@@ -741,6 +813,125 @@ pub(super) async fn handle_mode_set(
         "session",
         "mode.changed",
         serde_json::to_value(serde_json::json!({ "mode": payload.mode })).unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+/// Handle session.codex_permission_mode.set: change Codex access mode for this conversation.
+pub(super) async fn handle_codex_permission_mode_set(
+    envelope: WsEnvelope,
+    sender: &WsSender,
+    sdk_sessions: &SdkSessions,
+    app_state: &AppState,
+) {
+    let payload: CodexPermissionModeSetPayload =
+        match serde_json::from_value(envelope.payload.clone()) {
+            Ok(p) => p,
+            Err(e) => {
+                send_error(sender, &envelope.id, "INVALID_PAYLOAD", &e.to_string());
+                return;
+            }
+        };
+
+    let db_session_id = match parse_session_id(&payload.session_id) {
+        Some(id) => id,
+        None => {
+            send_error(
+                sender,
+                &envelope.id,
+                "INVALID_SESSION_ID",
+                "Invalid session_id",
+            );
+            return;
+        }
+    };
+
+    {
+        let sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
+                );
+                return;
+            }
+        };
+
+        if handle.runtime_provider != CODEX_PROVIDER_ID {
+            send_error(
+                sender,
+                &envelope.id,
+                "MODE_NOT_SUPPORTED",
+                "Codex access mode can only be changed on Codex sessions",
+            );
+            return;
+        }
+    }
+
+    let Some(access_mode) = parse_access_mode_wire(&payload.mode) else {
+        send_error(
+            sender,
+            &envelope.id,
+            "INVALID_PAYLOAD",
+            "Invalid Codex access mode",
+        );
+        return;
+    };
+    let mode_wire = access_mode_wire(&access_mode);
+    if let Err(error) = WsSessionPersistence::update_codex_permission_mode_static(
+        &app_state.write_pool,
+        db_session_id,
+        mode_wire,
+    )
+    .await
+    {
+        error!(
+            db_session_id,
+            %error,
+            "failed to persist Codex permission mode"
+        );
+        send_error(
+            sender,
+            &envelope.id,
+            "DB_ERROR",
+            "Failed to persist Codex permission mode",
+        );
+        return;
+    }
+
+    {
+        let mut sessions = sdk_sessions.lock().await;
+        let handle = match sessions.get_mut(&db_session_id) {
+            Some(h) => h,
+            None => {
+                send_error(
+                    sender,
+                    &envelope.id,
+                    "SESSION_NOT_FOUND",
+                    "Session not found",
+                );
+                return;
+            }
+        };
+        handle.desired_access_mode = Some(access_mode.clone());
+        handle.config.access_mode = Some(access_mode.clone());
+        match &mut handle.state {
+            QueryState::Pending(options) => {
+                options.access_mode = Some(access_mode);
+            }
+            QueryState::Active { .. } => {}
+        }
+    }
+
+    let reply = WsEnvelope::reply(
+        &envelope.id,
+        "session",
+        "codex_permission_mode.changed",
+        serde_json::json!({ "mode": mode_wire }),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
 }
@@ -1146,6 +1337,7 @@ pub(super) async fn handle_clear(
     let fresh_options = RuntimeSpawnConfig {
         cwd: handle.config.cwd.clone(),
         permission_mode: handle.desired_permission_mode.clone(),
+        access_mode: handle.desired_access_mode.clone(),
         model: handle.desired_model.clone(),
         thinking_effort: handle.desired_thinking_effort.clone(),
         system_prompt: handle.config.system_prompt.clone(),

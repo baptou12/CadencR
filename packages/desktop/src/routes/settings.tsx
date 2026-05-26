@@ -24,13 +24,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ModelSelector } from "@/components/ModelSelector";
 import { ProviderPicker, type ProviderPickerOption } from "@/components/settings/ProviderPicker";
-import {
-  CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
-  CODEX_FULL_ACCESS_SETTING_KEY,
-} from "@/shared/permission-mode-settings";
+import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-settings";
 import { BinaryDiscoverySection } from "@/components/settings/BinaryDiscoverySection";
 import { CustomModelsSection } from "@/components/settings/CustomModelsSection";
 import { DangerousModeToggle } from "@/components/settings/DangerousModeToggle";
+import { CodexPermissionModeSetting } from "@/components/settings/CodexPermissionModeSetting";
 import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
@@ -551,32 +549,7 @@ function CodexProviderPanel(): React.JSX.Element {
           }
         />
       </SettingsCard>
-      <DangerousModeToggle
-        settingKey={CODEX_FULL_ACCESS_SETTING_KEY}
-        title="Allow Full Access"
-        description={
-          <>
-            Adds <strong>Full Access</strong> to the permission-mode cycle in the agent prompt for
-            Codex sessions. Maps to Codex's <strong>danger-full-access</strong> sandbox plus{" "}
-            <strong>--ask-for-approval never</strong>: Codex runs every command, can write anywhere,
-            and can make network requests without prompting.
-          </>
-        }
-        warningTitle="Enable Full Access for Codex?"
-        warningBody={
-          <>
-            <p>
-              Full Access removes the workspace-write sandbox and disables every approval prompt.
-              Codex can modify files outside the project, reach the network freely, and execute
-              arbitrary commands.
-            </p>
-            <p>
-              Only enable this in isolated environments (containers, VMs, throwaway branches). You
-              can always toggle it off later.
-            </p>
-          </>
-        }
-      />
+      <CodexPermissionModeSetting />
     </>
   );
 }

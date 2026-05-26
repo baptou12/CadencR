@@ -30,6 +30,7 @@ import { createTurnTiming, type TurnTimingState } from "@/stores/ws-turn-timing"
 import { useSessionStatus } from "@/stores/session-status-selectors";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
 import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
+import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -47,6 +48,7 @@ export interface UseWebSocketSessionReturn {
   status: LiveAgentStatus;
   isConnected: boolean;
   sessionId: string;
+  sessionDbId: number | null;
   pendingPermission: PendingPermission | null;
   pendingRequestId: string;
   /**
@@ -62,7 +64,9 @@ export interface UseWebSocketSessionReturn {
   loadOlderMessages: () => Promise<number>;
 
   permissionMode: PermissionMode;
+  codexPermissionMode: CodexPermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
+  setCodexPermissionMode: (mode: CodexPermissionMode) => void;
   pendingPlanApproval: PendingPlanApproval | null;
   approvePlan: () => void;
   requestPlanChanges: (feedback: string) => void;
@@ -130,7 +134,10 @@ export function useWebSocketSession(
   const persistedLoaded = session?.persistedLoaded ?? false;
   const persistedStateParams = useMemo(() => ({ limit: AGENT_STATE_INITIAL_MESSAGE_LIMIT }), []);
   const agentStateQuery = useGetFeatureAgentState(featureId ?? 0, persistedStateParams, {
-    query: { enabled: loadPersisted && !!featureId && !persistedLoaded, cacheTime: 0 },
+    query: {
+      enabled: loadPersisted && !!featureId && !persistedLoaded,
+      cacheTime: 0,
+    },
   });
 
   useEffect(() => {
@@ -167,6 +174,7 @@ export function useWebSocketSession(
       sessionDbId: lastSession.sessionDbId,
       currentProviderId: lastSession.runtimeProvider ?? undefined,
       currentModelId: lastSession.model ?? undefined,
+      codexPermissionMode: parseCodexPermissionMode(lastSession.codexPermissionMode),
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
       pendingPermission: lastSession.pendingPermission,
@@ -205,6 +213,8 @@ export function useWebSocketSession(
       setThinkingEffort: (thinkingEffort?: string): void =>
         s.setThinkingEffort(sessionId, thinkingEffort),
       setPermissionMode: (mode: PermissionMode): void => s.setPermissionMode(sessionId, mode),
+      setCodexPermissionMode: (mode: CodexPermissionMode): void =>
+        s.setCodexPermissionMode(sessionId, mode),
       approvePlan: (): void => s.approvePlan(sessionId),
       requestPlanChanges: (feedback: string): void => s.requestPlanChanges(sessionId, feedback),
       closeGate: (reason: GateCloseReason): void => s.closeGate(sessionId, reason),
@@ -231,6 +241,7 @@ export function useWebSocketSession(
       status,
       isConnected: session?.isConnected ?? false,
       sessionId,
+      sessionDbId: session?.sessionDbId ?? null,
       hasMore: session?.hasMore ?? false,
       pendingPermission: session?.pendingPermission ?? null,
       pendingRequestId: session?.pendingRequestId ?? "",
@@ -242,6 +253,7 @@ export function useWebSocketSession(
           (session.pendingPermission?.requestId ?? session.pendingRequestId),
       pendingQuestions: session?.pendingQuestions ?? [],
       permissionMode: session?.permissionMode ?? "acceptEdits",
+      codexPermissionMode: session?.codexPermissionMode ?? "default",
       pendingPlanApproval: session?.pendingPlanApproval ?? null,
       contextUsage: session?.contextUsage ?? null,
       currentProviderId: session?.currentProviderId ?? DEFAULT_PROVIDER,

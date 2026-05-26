@@ -3,10 +3,9 @@
  *
  * Stored as `"true" | "false"` strings via the standard workspace settings
  * API (`useGetWorkspaceSetting`/`useSetWorkspaceSetting`). When the value
- * parses as `"true"`, the corresponding mode (`bypassPermissions` for Claude,
- * `bypassPermissions` for Codex — mapped to `danger-full-access` server-side)
- * becomes part of the Shift+Tab cycle for that provider.
+ * parses as `"true"`, Claude's `bypassPermissions` mode becomes part of the
+ * Shift+Tab cycle.
  */
 export const CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY = "claude_bypass_permissions_enabled";
 
-export const CODEX_FULL_ACCESS_SETTING_KEY = "codex_full_access_enabled";
+export const CODEX_PERMISSION_MODE_SETTING_KEY = "codex_permission_mode";

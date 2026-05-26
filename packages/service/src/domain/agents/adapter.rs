@@ -34,6 +34,13 @@ pub enum RuntimePermissionMode {
     OpenCodeAgent(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeAccessMode {
+    Default,
+    FullAccess,
+    AutoReview,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum RuntimeMcpServerConfig {
@@ -53,6 +60,7 @@ pub struct RuntimeMcpServerStatus {
 pub struct RuntimeSpawnConfig {
     pub cwd: PathBuf,
     pub permission_mode: Option<RuntimePermissionMode>,
+    pub access_mode: Option<RuntimeAccessMode>,
     pub model: Option<String>,
     pub thinking_effort: Option<String>,
     pub system_prompt: Option<String>,
@@ -70,6 +78,7 @@ impl Default for RuntimeSpawnConfig {
         Self {
             cwd: PathBuf::new(),
             permission_mode: None,
+            access_mode: None,
             model: None,
             thinking_effort: None,
             system_prompt: None,

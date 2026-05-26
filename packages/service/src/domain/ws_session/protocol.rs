@@ -181,6 +181,12 @@ pub struct ModeSetPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexPermissionModeSetPayload {
+    pub session_id: String,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EffortSetPayload {
     pub session_id: String,
     pub thinking_effort: Option<String>,
@@ -207,6 +213,8 @@ pub struct SessionInitializedPayload {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codex_permission_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -565,6 +573,7 @@ mod tests {
             provider: None,
             model: None,
             thinking_effort: None,
+            codex_permission_mode: None,
             input_tokens: None,
             output_tokens: None,
             context_window: None,

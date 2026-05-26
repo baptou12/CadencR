@@ -1,10 +1,11 @@
-use std::path::Path;
-
 use sqlx::SqlitePool;
+use std::path::Path;
 use tracing::{info, warn};
 
 mod checksum_repair;
 mod checksum_repair_data;
+#[cfg(test)]
+mod codex_permission_mode_migration_tests;
 mod seed;
 mod support;
 #[cfg(test)]

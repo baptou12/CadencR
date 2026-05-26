@@ -1,7 +1,3 @@
-use std::sync::Arc;
-
-use tracing::{debug, info};
-
 use super::super::permissions;
 use super::super::persistence::WsSessionPersistence;
 use super::super::protocol::*;
@@ -15,24 +11,14 @@ use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
 use crate::domain::workflow::worktree;
-
+use std::sync::Arc;
+use tracing::{debug, info};
 #[path = "session_init_feature.rs"]
 mod session_init_feature;
 #[path = "session_init_restore.rs"]
 mod session_init_restore;
-
-fn resume_session_id_for_provider(
-    provider_id: &str,
-    row_runtime_provider: Option<&str>,
-    runtime_session_id: Option<&str>,
-) -> Option<String> {
-    // Only resume when the stored provider matches (or is unset).
-    if row_runtime_provider.is_some() && row_runtime_provider != Some(provider_id) {
-        return None;
-    }
-    let adapter = runtime_adapter(provider_id)?;
-    adapter.resolve_resume_session_id(runtime_session_id)
-}
+#[path = "session_init_resume.rs"]
+mod session_init_resume;
 
 /// Handle session.init: DB-driven session creation.
 pub(super) async fn handle_init(
@@ -48,7 +34,6 @@ pub(super) async fn handle_init(
             return;
         }
     };
-
     // feature_id is required for DB-first sessions
     let feature_id = match payload.feature_id {
         Some(fid) => fid,
@@ -100,10 +85,16 @@ pub(super) async fn handle_init(
         feature_id,
         "handle_init: looking up session in DB for feature_id"
     );
+    let configured_codex_access_mode =
+        super::codex_access::configured_access_mode(&app_state.read_pool).await;
     let mut persistence = WsSessionPersistence::new(app_state.write_pool.clone(), feature_id);
     let pm_str = payload.permission_mode.as_deref();
     let db_session_id = match persistence
-        .find_or_create_session(payload.model.as_deref(), pm_str)
+        .find_or_create_session_with_codex_permission_mode(
+            payload.model.as_deref(),
+            pm_str,
+            Some(&configured_codex_access_mode),
+        )
         .await
     {
         Some(id) => {
@@ -202,7 +193,7 @@ pub(super) async fn handle_init(
         }
     }
     let resume_session_id = row.as_ref().and_then(|r| {
-        resume_session_id_for_provider(
+        session_init_resume::resume_session_id_for_provider(
             &effective_provider,
             r.runtime_provider.as_deref(),
             r.runtime_session_id.as_deref(),
@@ -288,6 +279,15 @@ pub(super) async fn handle_init(
             .map(parse_permission_mode)
             .unwrap_or_else(|| default_permission_mode(&effective_provider)),
     );
+    let effective_codex_permission_mode = row
+        .as_ref()
+        .and_then(|session| session.codex_permission_mode.clone())
+        .unwrap_or_else(|| configured_codex_access_mode.clone());
+    runtime_config.access_mode = super::codex_access::runtime_access_mode(
+        &effective_provider,
+        Some(&effective_codex_permission_mode),
+        &configured_codex_access_mode,
+    );
     runtime_config.system_prompt = payload.system_prompt.clone();
     if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
         let (_, profile_env) =
@@ -305,12 +305,14 @@ pub(super) async fn handle_init(
 
     let desired_model = runtime_config.model.clone();
     let desired_permission_mode = runtime_config.permission_mode.clone();
+    let desired_access_mode = runtime_config.access_mode.clone();
     let desired_thinking_effort = runtime_config.thinking_effort.clone();
     let canonical_cwd = permissions::canonicalize_worktree(&runtime_config.cwd);
     let config = SessionConfig {
         cwd: runtime_config.cwd.clone(),
         canonical_cwd,
         permission_mode: runtime_config.permission_mode.clone(),
+        access_mode: runtime_config.access_mode.clone(),
         thinking_effort: runtime_config.thinking_effort.clone(),
         system_prompt: runtime_config.system_prompt.clone(),
         env: runtime_config.env.clone(),
@@ -323,6 +325,8 @@ pub(super) async fn handle_init(
         spawned_model: None,
         desired_permission_mode,
         spawned_permission_mode: None,
+        desired_access_mode,
+        spawned_access_mode: None,
         desired_thinking_effort,
         spawned_thinking_effort: None,
         runtime_control_endpoint: None,
@@ -344,6 +348,13 @@ pub(super) async fn handle_init(
             provider: Some(effective_provider.clone()),
             model: effective_model,
             thinking_effort: effective_thinking_effort,
+            codex_permission_mode: if effective_provider
+                == crate::domain::agents::codex::PROVIDER_ID
+            {
+                Some(effective_codex_permission_mode)
+            } else {
+                None
+            },
             input_tokens: init_input_tokens.map(|v| v as u64),
             output_tokens: init_output_tokens.map(|v| v as u64),
             context_window: init_context_window.map(|v| v as u64),
@@ -360,40 +371,4 @@ pub(super) async fn handle_init(
 
     session_init_restore::restore_pending_or_idle(app_state, sender, db_session_id, feature_id)
         .await;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::resume_session_id_for_provider;
-    use crate::domain::agents::runtime::DEFAULT_PROVIDER;
-
-    #[test]
-    fn resume_session_for_claude_rejects_non_uuid() {
-        let resume = resume_session_id_for_provider(
-            DEFAULT_PROVIDER,
-            Some(DEFAULT_PROVIDER),
-            Some("ses_27f586910ffeUNaKL2l5UARerl"),
-        );
-        assert_eq!(resume, None);
-    }
-
-    #[test]
-    fn resume_session_for_claude_accepts_uuid() {
-        let sid = "11111111-1111-4111-8111-111111111111";
-        let resume =
-            resume_session_id_for_provider(DEFAULT_PROVIDER, Some(DEFAULT_PROVIDER), Some(sid));
-        assert_eq!(resume, Some(sid.to_string()));
-    }
-
-    #[test]
-    fn resume_session_for_opencode_acp_accepts_matching_runtime_id() {
-        let opencode_sid = "ses_27f586910ffeUNaKL2l5UARerl";
-        let matching =
-            resume_session_id_for_provider("opencode", Some("opencode"), Some(opencode_sid));
-        assert_eq!(matching, Some(opencode_sid.to_string()));
-
-        let mismatched =
-            resume_session_id_for_provider("claude_code", Some("opencode"), Some(opencode_sid));
-        assert_eq!(mismatched, None);
-    }
 }

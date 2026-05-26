@@ -63,9 +63,10 @@ pub(crate) async fn handle_prompt_send(
     // Check if we need to respawn due to model, permission mode, or effort change.
     let model_changed = handle.desired_model != handle.spawned_model;
     let mode_changed = handle.desired_permission_mode != handle.spawned_permission_mode;
+    let access_changed = handle.desired_access_mode != handle.spawned_access_mode;
     let effort_changed = handle.desired_thinking_effort != handle.spawned_thinking_effort;
     let needs_respawn = matches!(&handle.state, QueryState::Active { .. })
-        && (model_changed || mode_changed || effort_changed);
+        && (model_changed || mode_changed || access_changed || effort_changed);
 
     if needs_respawn {
         info!(
@@ -74,6 +75,8 @@ pub(crate) async fn handle_prompt_send(
             new_model = ?handle.desired_model,
             old_mode = ?handle.spawned_permission_mode,
             new_mode = ?handle.desired_permission_mode,
+            old_access_mode = ?handle.spawned_access_mode,
+            new_access_mode = ?handle.desired_access_mode,
             old_effort = ?handle.spawned_thinking_effort,
             new_effort = ?handle.desired_thinking_effort,
             "runtime config changed, respawning runtime with --resume"
@@ -101,6 +104,7 @@ pub(crate) async fn handle_prompt_send(
         let options = RuntimeSpawnConfig {
             cwd: handle.config.cwd.clone(),
             permission_mode: handle.desired_permission_mode.clone(),
+            access_mode: handle.desired_access_mode.clone(),
             model: handle.desired_model.clone(),
             thinking_effort: handle.desired_thinking_effort.clone(),
             system_prompt: handle.config.system_prompt.clone(),
@@ -112,8 +116,10 @@ pub(crate) async fn handle_prompt_send(
         // Reset to pending so the spawn logic below handles it.
         handle.spawned_model = handle.desired_model.clone();
         handle.spawned_permission_mode = handle.desired_permission_mode.clone();
+        handle.spawned_access_mode = handle.desired_access_mode.clone();
         handle.spawned_thinking_effort = handle.desired_thinking_effort.clone();
         handle.config.permission_mode = handle.desired_permission_mode.clone();
+        handle.config.access_mode = handle.desired_access_mode.clone();
         handle.config.thinking_effort = handle.desired_thinking_effort.clone();
         handle.state = QueryState::Pending(options);
     }
@@ -165,9 +171,6 @@ pub(crate) async fn handle_prompt_send(
                     );
                 }
             }
-
-            // Drop lock before spawn (async).
-            drop(sessions);
 
             // Persist user message (session row already exists from handle_init).
             let write_pool = app_state.write_pool.clone();
@@ -374,6 +377,7 @@ pub(crate) async fn handle_prompt_send(
                     }
 
                     let spawned_pm = config.permission_mode.clone();
+                    let spawned_access_mode = config.access_mode.clone();
                     let spawned_effort = spawned_thinking_effort.clone();
                     let mut sessions = sdk_sessions.lock().await;
                     sessions.insert(
@@ -389,6 +393,8 @@ pub(crate) async fn handle_prompt_send(
                             spawned_model,
                             desired_permission_mode: spawned_pm.clone(),
                             spawned_permission_mode: spawned_pm,
+                            desired_access_mode: spawned_access_mode.clone(),
+                            spawned_access_mode,
                             desired_thinking_effort: spawned_effort.clone(),
                             spawned_thinking_effort: spawned_effort,
                             runtime_control_endpoint,

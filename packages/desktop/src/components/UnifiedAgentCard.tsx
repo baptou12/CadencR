@@ -15,6 +15,7 @@ import { persistedSessionToLifecycle, type TurnLifecycle } from "@/stores/ws-tur
 import { normalizeContextWindow } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
 import { parsePermissionMode } from "@/types/permission-mode";
+import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 
@@ -191,6 +192,7 @@ function buildPersistedSnapshot(entry: UnifiedAgentEntry): PersistedSnapshot {
     currentModelId: entry.session.model ?? undefined,
     runtimeProvider: entry.session.runtimeProvider,
     runtimeSessionId: entry.session.runtimeSessionId,
+    codexPermissionMode: parseCodexPermissionMode(entry.session.codexPermissionMode),
     contextUsage: buildContextUsage(entry),
     hasFileChanges: entry.session.hasFileChanges,
   };
@@ -221,6 +223,7 @@ function buildUnifiedSessionPatch(
     featureId: entry.feature.id,
     sessionDbId: entry.session.sessionDbId,
     ...(permissionMode ? { permissionMode } : {}),
+    codexPermissionMode: parseCodexPermissionMode(entry.session.codexPermissionMode),
     ...(entry.session.runtimeProvider ? { currentProviderId: entry.session.runtimeProvider } : {}),
     ...(entry.session.model ? { currentModelId: entry.session.model } : {}),
     ...(entry.session.runtimeProvider ? { runtimeProvider: entry.session.runtimeProvider } : {}),

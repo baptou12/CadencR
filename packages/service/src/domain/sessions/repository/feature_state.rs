@@ -24,7 +24,7 @@ pub async fn get_feature_agent_state(
     let sessions = sqlx::query_as::<_, AgentSessionRow>(
         r#"SELECT id, feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at,
            subprocess_id, model, pending_questions, has_file_changes,
-           permission_mode, pending_permission,
+           permission_mode, codex_permission_mode, pending_permission,
            input_tokens, output_tokens, context_window, was_compacted, draft_prompt
            FROM agent_sessions WHERE feature_id = ? ORDER BY id ASC"#,
     )
@@ -190,6 +190,9 @@ fn build_session_state(
         permission_mode: s
             .permission_mode
             .unwrap_or_else(|| "acceptEdits".to_string()),
+        codex_permission_mode: s
+            .codex_permission_mode
+            .unwrap_or_else(|| "default".to_string()),
         pending_permission,
         input_tokens: s.input_tokens.unwrap_or(0),
         output_tokens: s.output_tokens.unwrap_or(0),

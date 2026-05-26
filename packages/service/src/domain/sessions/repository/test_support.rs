@@ -53,6 +53,7 @@ pub(super) async fn setup_test_db() -> SqlitePool {
             pending_questions TEXT,
             has_file_changes INTEGER NOT NULL DEFAULT 0,
             permission_mode TEXT,
+                codex_permission_mode TEXT DEFAULT 'default',
             pending_permission TEXT,
             input_tokens INTEGER,
             output_tokens INTEGER,

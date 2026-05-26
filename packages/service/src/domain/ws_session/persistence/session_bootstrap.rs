@@ -22,10 +22,21 @@ impl WsSessionPersistence {
     }
 
     /// Ensure an agent_sessions row exists for this feature.
+    #[cfg(test)]
     pub async fn find_or_create_session(
         &mut self,
         model: Option<&str>,
         permission_mode: Option<&str>,
+    ) -> Option<i64> {
+        self.find_or_create_session_with_codex_permission_mode(model, permission_mode, None)
+            .await
+    }
+
+    pub async fn find_or_create_session_with_codex_permission_mode(
+        &mut self,
+        model: Option<&str>,
+        permission_mode: Option<&str>,
+        codex_permission_mode: Option<&str>,
     ) -> Option<i64> {
         let existing: Option<(i64,)> = sqlx::query_as(
             "SELECT id FROM agent_sessions WHERE feature_id = ? AND agent_type = 'session' ORDER BY id DESC LIMIT 1",
@@ -54,11 +65,12 @@ impl WsSessionPersistence {
 
         let now = chrono::Utc::now().to_rfc3339();
         let result = sqlx::query(
-            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, ?)",
+            "INSERT INTO agent_sessions (feature_id, agent_type, status, model, permission_mode, codex_permission_mode, started_at) VALUES (?, 'session', 'paused', ?, ?, COALESCE(?, 'default'), ?)",
         )
         .bind(self.feature_id)
         .bind(model)
         .bind(permission_mode)
+        .bind(codex_permission_mode)
         .bind(&now)
         .execute(&self.write_pool)
         .await;
@@ -136,6 +148,7 @@ mod session_bootstrap_tests {
 
                 model TEXT,
                 permission_mode TEXT,
+                codex_permission_mode TEXT DEFAULT 'default',
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,

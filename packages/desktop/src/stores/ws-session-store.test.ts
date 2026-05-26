@@ -94,9 +94,10 @@ function tick(): Promise<void> {
 
 const activeTimerIds = new Set<ReturnType<typeof setTimeout>>();
 
-async function connectInitializedSession(
-  sessionId = "s1",
-): Promise<{ store: ReturnType<typeof useWsSessionStore.getState>; ws: MockWebSocket }> {
+async function connectInitializedSession(sessionId = "s1"): Promise<{
+  store: ReturnType<typeof useWsSessionStore.getState>;
+  ws: MockWebSocket;
+}> {
   const store = useWsSessionStore.getState();
   store.connect(sessionId);
   await tick();
@@ -393,7 +394,9 @@ describe("ws-session-store", () => {
         blocks: [
           {
             type: "assistant",
-            message: { content: [{ type: "text", text: "processing queued prompt" }] },
+            message: {
+              content: [{ type: "text", text: "processing queued prompt" }],
+            },
           },
         ],
       },
@@ -405,7 +408,10 @@ describe("ws-session-store", () => {
     });
 
     session = useWsSessionStore.getState().sessions["s1"];
-    expect(session.lifecycle).toEqual({ phase: "terminal", reason: "completed" });
+    expect(session.lifecycle).toEqual({
+      phase: "terminal",
+      reason: "completed",
+    });
     expect(session.blocks.filter((block) => block.type === "user_message")).toHaveLength(1);
   });
 
@@ -445,6 +451,34 @@ describe("ws-session-store", () => {
     session = useWsSessionStore.getState().sessions["s1"];
     expect(session.queuedPrompts).toHaveLength(0);
     expect(session.lifecycle).toEqual({ phase: "idle" });
+  });
+
+  it("setCodexPermissionMode sends codex access mode to backend and waits for change event", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1", provider: "codex_cli" },
+    });
+
+    store.setCodexPermissionMode("s1", "autoReview");
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    expect(sent.at(-1)).toMatchObject({
+      action: "codex_permission_mode.set",
+      payload: { session_id: "srv-1", mode: "autoReview" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].codexPermissionMode).toBe("default");
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "codex_permission_mode.changed",
+      payload: { mode: "autoReview" },
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].codexPermissionMode).toBe("autoReview");
   });
 
   it("setPermissionMode before initialized defers mode.set until initialized", async () => {
@@ -885,6 +919,42 @@ describe("ws-session-store", () => {
       payload: { session_id: "42" },
     });
     expect(useWsSessionStore.getState().sessions["s1"].currentModelId).toBe("opus[1m]");
+  });
+
+  it("session.initialized with codex permission mode updates the stored access chip", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: {
+        session_id: "42",
+        provider: "codex_cli",
+        codex_permission_mode: "fullAccess",
+      },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.codexPermissionMode).toBe("fullAccess");
+  });
+
+  it("session.codex_permission_mode.changed updates the stored access chip", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "codex_permission_mode.changed",
+      payload: { mode: "autoReview" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.codexPermissionMode).toBe("autoReview");
   });
 
   it("session.initialized with provider updates current and runtime provider", async () => {

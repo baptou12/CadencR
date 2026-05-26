@@ -27,6 +27,7 @@ import { blocksPatchWithDerived } from "./ws-block-mutations";
 import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import { defaultEditModeFor } from "../lib/provider-modes";
 import type { PermissionMode } from "../types/permission-mode";
+import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 
 export type { PermissionMode };
 
@@ -46,6 +47,7 @@ export interface PersistedStatePayload {
   currentProviderId?: string;
   currentModelId?: string;
   currentThinkingEffort?: string;
+  codexPermissionMode?: CodexPermissionMode;
   runtimeProvider?: string | null;
   runtimeSessionId?: string | null;
   pendingPlanApproval?: PendingPlanApproval | null;
@@ -131,6 +133,7 @@ export interface SessionEntry {
   pendingQuestions: AgentQuestion[];
   pendingQuestionToolInput: Record<string, unknown>;
   permissionMode: PermissionMode;
+  codexPermissionMode: CodexPermissionMode;
   currentThinkingEffort?: string;
   pendingPlanApproval: PendingPlanApproval | null;
   compactRequestPending: boolean;
@@ -189,6 +192,7 @@ export function createSessionEntry(): SessionEntry {
     pendingQuestions: [],
     pendingQuestionToolInput: {},
     permissionMode: defaultEditModeFor(DEFAULT_PROVIDER),
+    codexPermissionMode: "default",
     currentThinkingEffort: undefined,
     pendingPlanApproval: null,
     compactRequestPending: false,
@@ -259,6 +263,7 @@ export interface WsSessionStore {
   setModel: (sessionId: string, modelId: string) => void;
   setThinkingEffort: (sessionId: string, thinkingEffort?: string) => void;
   setPermissionMode: (sessionId: string, mode: PermissionMode) => void;
+  setCodexPermissionMode: (sessionId: string, mode: CodexPermissionMode) => void;
   approvePlan: (sessionId: string) => void;
   requestPlanChanges: (sessionId: string, feedback: string) => void;
   closeGate: (sessionId: string, reason: GateCloseReason) => void;

@@ -27,6 +27,7 @@ import { parseAskUserQuestions } from "@/components/AgentQuestionDrawer";
 import type { AgentQuestion } from "@/components/AgentQuestionDrawer";
 import type { PendingPermission } from "@/components/ToolPermissionPrompt";
 import { parsePermissionMode, type PermissionMode } from "@/types/permission-mode";
+import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
 import {
   AGENT_STATE_INITIAL_MESSAGE_LIMIT,
   AGENT_STATE_OLDER_MESSAGE_LIMIT,
@@ -55,6 +56,7 @@ export interface FeatureSession {
   runtimeSessionId: string | null;
   todos: TodoItem[] | null;
   permissionMode: PermissionMode;
+  codexPermissionMode: CodexPermissionMode;
   pendingPermission: PendingPermission | null;
   inputTokens: number;
   outputTokens: number;
@@ -218,6 +220,7 @@ export function useFeatureAgentState(featureId: number) {
         runtimeSessionId: s.runtimeSessionId ?? null,
         todos: (s.todos as TodoItem[] | null) ?? acc?.todos ?? null,
         permissionMode: parsePermissionMode(s.permissionMode) ?? "acceptEdits",
+        codexPermissionMode: parseCodexPermissionMode(s.codexPermissionMode),
         pendingPermission: (s.pendingPermission as PendingPermission | null) ?? null,
         inputTokens: s.inputTokens ?? 0,
         outputTokens: s.outputTokens ?? 0,

@@ -26,6 +26,7 @@ pub struct SessionRow {
     pub runtime_session_id: Option<String>,
     pub model: Option<String>,
     pub permission_mode: Option<String>,
+    pub codex_permission_mode: Option<String>,
     pub status: String,
     pub pending_permission: Option<String>,
     pub pending_questions: Option<String>,

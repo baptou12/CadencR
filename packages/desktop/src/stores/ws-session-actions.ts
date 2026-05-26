@@ -21,6 +21,7 @@ import {
   updateSession,
 } from "./ws-session-types";
 import { transitionTurn } from "./ws-turn-lifecycle";
+import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
 
 export type { PersistedStatePayload };
 
@@ -201,6 +202,7 @@ export function applyPersistedState(
     currentModelId,
     runtimeProvider,
     runtimeSessionId,
+    codexPermissionMode,
     pendingPlanApproval,
     pendingPermission: pendingPermissionSnapshot,
     pendingQuestions: pendingQuestionsSnapshot,
@@ -266,6 +268,9 @@ export function applyPersistedState(
       shouldPreservePromptLifecycle && existing ? existing.lifecycle : lifecycleWithPendingGate,
     ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
     ...(currentModelId ? { currentModelId } : {}),
+    ...(codexPermissionMode
+      ? { codexPermissionMode: parseCodexPermissionMode(codexPermissionMode) }
+      : {}),
     ...(resolvedRuntimeProvider ? { runtimeProvider: resolvedRuntimeProvider } : {}),
     ...(resolvedRuntimeSessionId ? { runtimeSessionId: resolvedRuntimeSessionId } : {}),
     ...(contextUsage !== undefined ? { contextUsage } : {}),
