@@ -10,9 +10,12 @@ import type { TodoItem } from "@/types/agent";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
 import type { PermissionMode } from "@/types/permission-mode";
+import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
 import { META_BAR_CHIP, WORKTREE_ACTIVE_CHIP } from "./meta-bar-chip-styles";
+import { CodexAccessModePopover } from "./CodexAccessModePopover";
+import { getDisplayMode } from "./meta-bar-codex-modes";
 
 export interface MetaBarProps {
   showAutoScrollChip: boolean;
@@ -29,6 +32,10 @@ export interface MetaBarProps {
    */
   enabledOptInModes?: PermissionMode[];
   providerModes?: readonly RuntimeProviderModeOption[];
+  codexPermissionMode?: CodexPermissionMode;
+  codexPermissionDefaultMode?: CodexPermissionMode;
+  isCodexPermissionModePending?: boolean;
+  onCodexPermissionModeChange?: (mode: CodexPermissionMode) => void;
   showWorktreeChip: boolean;
   useWorktree?: boolean;
   onToggleWorktree?: () => void;
@@ -97,6 +104,10 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     onPermissionModeToggle,
     enabledOptInModes,
     providerModes = [],
+    codexPermissionMode,
+    codexPermissionDefaultMode,
+    isCodexPermissionModePending = false,
+    onCodexPermissionModeChange,
     showWorktreeChip,
     useWorktree,
     onToggleWorktree,
@@ -167,8 +178,10 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
     return findProviderMode(displayProviderId, permissionMode, providerModes) ?? visibleModes[0];
   }, [displayProviderId, enabledOptInModes, onPermissionModeToggle, permissionMode, providerModes]);
 
+  const displayMode = getDisplayMode(activeMode, displayProviderId, permissionMode);
   const isStandalone = variant === "standalone";
   const shouldShowModel = !!onModelChange || showReadOnlyModel;
+  const hasCodexAccessMode = !!codexPermissionMode && !!onCodexPermissionModeChange;
 
   return (
     <div
@@ -190,17 +203,17 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
       )}
 
       {/* Mode chip — labels/colors driven by the per-provider catalog. */}
-      {activeMode && (
-        <ShortcutTooltip label={`${activeMode.label} mode`} keys={["shift", "Tab"]}>
+      {displayMode && (
+        <ShortcutTooltip label={`${displayMode.label} mode`} keys={["shift", "Tab"]}>
           <button
             type="button"
             onClick={onPermissionModeToggle}
-            title={`${activeMode.description} (Shift+Tab to cycle)`}
-            aria-label={`Permission mode: ${activeMode.label}. ${activeMode.description}`}
-            className={cn(META_BAR_CHIP, activeMode.chipClass)}
+            title={`${displayMode.description} (Shift+Tab to cycle)`}
+            aria-label={displayMode.ariaLabel}
+            className={cn(META_BAR_CHIP, displayMode.chipClass)}
           >
-            <activeMode.icon className="size-3" />
-            {activeMode.label}
+            <displayMode.icon className="size-3" />
+            {displayMode.label}
           </button>
         </ShortcutTooltip>
       )}
@@ -259,17 +272,29 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />
       )}
 
-      {/* Session info */}
-      {!secondaryBelow && runtimeSessionId && onPause && (
-        <div className="ml-auto">
-          <SessionInfoChip
-            runtimeProvider={runtimeProvider}
-            runtimeSessionId={runtimeSessionId}
-            projectPath={projectPath}
-            isRunning={isRunning}
-            onPause={onPause}
-            chipClass={META_BAR_CHIP}
-          />
+      {(hasCodexAccessMode || (!secondaryBelow && runtimeSessionId && onPause)) && (
+        <div className="ml-auto flex items-center gap-1.5">
+          {/* Codex access chip — separate from collaboration mode; no keyboard shortcut. */}
+          {codexPermissionMode && onCodexPermissionModeChange && (
+            <CodexAccessModePopover
+              mode={codexPermissionMode}
+              selectedMode={codexPermissionDefaultMode}
+              isPending={isCodexPermissionModePending}
+              onChange={onCodexPermissionModeChange}
+            />
+          )}
+
+          {/* Session info */}
+          {!secondaryBelow && runtimeSessionId && onPause && (
+            <SessionInfoChip
+              runtimeProvider={runtimeProvider}
+              runtimeSessionId={runtimeSessionId}
+              projectPath={projectPath}
+              isRunning={isRunning}
+              onPause={onPause}
+              chipClass={META_BAR_CHIP}
+            />
+          )}
         </div>
       )}
     </div>

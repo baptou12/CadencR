@@ -4,10 +4,15 @@ import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
-import type { CadencrDesktopBridge } from "@/lib/desktop-bridge";
+import type { CadencrDesktopBridge, FileDropPayload } from "@/lib/desktop-bridge";
 import { useImageAttachments } from "./useImageAttachments";
+import { toast } from "sonner";
 
-const mockOnFileDrop = vi.fn(() => () => undefined);
+const dropSubscribers: Array<(payload: FileDropPayload) => void> = [];
+const mockOnFileDrop = vi.fn((cb: (payload: FileDropPayload) => void) => {
+  dropSubscribers.push(cb);
+  return () => undefined;
+});
 
 function bridge(): CadencrDesktopBridge {
   return {
@@ -48,9 +53,15 @@ function createMockFile(name: string, type: string, size = 100): File {
 }
 
 describe("useImageAttachments", () => {
+  const readFileBase64 = vi.fn(async () => "abc123");
   beforeEach(() => {
     mockOnFileDrop.mockClear();
-    setDesktopBridgeOverrideForTests(bridge());
+    dropSubscribers.length = 0;
+    readFileBase64.mockReset();
+    readFileBase64.mockResolvedValue("abc123");
+    setDesktopBridgeOverrideForTests({ ...bridge(), readFileBase64 });
+    vi.mocked(toast.error).mockReset?.();
+    vi.spyOn(toast, "error").mockImplementation(() => "" as never);
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-url");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
@@ -149,6 +160,71 @@ describe("useImageAttachments", () => {
   it("registers desktop file-drop listener on mount", () => {
     renderHook(() => useImageAttachments());
     expect(mockOnFileDrop).toHaveBeenCalled();
+  });
+
+  it("routes a desktop drop to only the matching prompt id", async () => {
+    const { result: first } = renderHook(() => useImageAttachments("ws:first"));
+    const { result: second } = renderHook(() => useImageAttachments("ws:second"));
+
+    const firstCallback = dropSubscribers[0];
+    const secondCallback = dropSubscribers[1];
+
+    const payload = {
+      type: "drop" as const,
+      files: [{ handle: "h-1", name: "one.png" }],
+      targetPromptId: "ws:first",
+    };
+
+    act(() => {
+      firstCallback(payload);
+      secondCallback(payload);
+    });
+
+    await waitFor(() => {
+      expect(first.current.attachments).toHaveLength(1);
+    });
+
+    expect(second.current.attachments).toHaveLength(0);
+  });
+
+  it("ignores ambiguous desktop drops without a prompt target", async () => {
+    const { result } = renderHook(() => useImageAttachments("ws:first"));
+    const callback = dropSubscribers[0];
+
+    act(() => {
+      callback({ type: "drop", files: [{ handle: "h-1", name: "one.png" }] });
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    expect(result.current.attachments).toHaveLength(0);
+  });
+
+  it("dedupes the missing-target toast across mounted hooks", () => {
+    renderHook(() => useImageAttachments("ws:first"));
+    renderHook(() => useImageAttachments("ws:second"));
+
+    const payload = { type: "drop" as const, files: [{ handle: "h-1", name: "one.png" }] };
+    act(() => {
+      dropSubscribers[0](payload);
+      dropSubscribers[1](payload);
+    });
+
+    // Each subscriber still calls toast.error, but it must share a stable id so
+    // sonner collapses them to a single visible toast — assert the id is set.
+    expect(toast.error).toHaveBeenCalledWith(
+      "Drop the image on an agent to attach it.",
+      expect.objectContaining({ id: "image-drop-missing-target" }),
+    );
+  });
+
+  it("does not toast for empty drops (e.g. text drags)", () => {
+    renderHook(() => useImageAttachments("ws:first"));
+
+    act(() => {
+      dropSubscribers[0]({ type: "drop", files: [] });
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   afterEach(() => clearDesktopBridgeOverrideForTests());

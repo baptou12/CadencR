@@ -12,6 +12,7 @@ import type { LiveAgentStatus as AgentStatus } from "@/types/agent";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import type { PermissionMode } from "@/types/permission-mode";
+import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import type { AgentCatalog } from "@/api/agentRuntime";
 import type { TurnLifecycle } from "@/stores/ws-turn-lifecycle";
@@ -92,11 +93,14 @@ export interface AgentSessionProps {
   onPermissionModeToggle?: () => void;
   /**
    * Per-provider opt-in modes the user has unlocked via provider settings.
-   * Driven by `claude_bypass_permissions_enabled` and
-   * `codex_full_access_enabled` workspace settings.
+   * Driven by provider-level opt-in workspace settings.
    */
   enabledOptInModes?: PermissionMode[];
   providerModes?: readonly RuntimeProviderModeOption[];
+  codexPermissionMode?: CodexPermissionMode;
+  codexPermissionDefaultMode?: CodexPermissionMode;
+  isCodexPermissionModePending?: boolean;
+  onCodexPermissionModeChange?: (mode: CodexPermissionMode) => void;
   /** Optional catalog query supplied by parents that already fetched it. */
   agentCatalog?: { data?: AgentCatalog };
   /** Pending plan approval from ExitPlanMode tool call */

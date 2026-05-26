@@ -49,6 +49,7 @@ use tokio::sync::{Mutex, RwLock};
 use self::instructions::codex_developer_instructions;
 use self::mcp::{mcp_server_names, thread_config};
 use self::mcp_status::mcp_server_statuses;
+pub(crate) use self::model::{access_mode_wire, parse_access_mode, parse_access_mode_wire};
 use self::session::CodexSession;
 use self::thread_params::{thread_resume_params, thread_start_params};
 use super::adapter::{
@@ -313,6 +314,7 @@ impl AgentRuntimeAdapter for CodexAdapter {
             config.model,
             config.thinking_effort,
             config.permission_mode,
+            config.access_mode,
             config.cwd,
             event_rx,
             mcp_servers,

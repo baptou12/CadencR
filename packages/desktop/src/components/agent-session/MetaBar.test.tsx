@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@/test-utils";
 import { PROVIDER_IDS } from "@/lib/providers";
@@ -34,44 +35,159 @@ describe("MetaBar mode chip", () => {
   // ones that match Dracula directly stay on `--acc-*`. These assertions
   // check the var name rather than a Tailwind named color.
   it("renders 'Auto-Accept Edits' with violet styling for Claude Code's primary mode", () => {
-    renderChip({ currentProviderId: PROVIDER_IDS.CLAUDE_CODE, permissionMode: "acceptEdits" });
-    const chip = screen.getByRole("button", { name: /Permission mode: Auto-Accept Edits/i });
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+      permissionMode: "acceptEdits",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Auto-Accept Edits/i,
+    });
     expect(chip).toBeInTheDocument();
     expect(chip.className).toMatch(/--chip-violet/);
   });
 
   it("renders 'Plan' with green styling when Claude is in plan mode", () => {
-    renderChip({ currentProviderId: PROVIDER_IDS.CLAUDE_CODE, permissionMode: "plan" });
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+      permissionMode: "plan",
+    });
     const chip = screen.getByRole("button", { name: /Permission mode: Plan/i });
     expect(chip.className).toMatch(/--acc-green/);
   });
 
   it("renders 'Auto' with yellow styling for Claude's classifier-backed mode", () => {
-    renderChip({ currentProviderId: PROVIDER_IDS.CLAUDE_CODE, permissionMode: "auto" });
-    const chip = screen.getByRole("button", { name: /Permission mode: Auto\b/i });
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+      permissionMode: "auto",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Auto\b/i,
+    });
     expect(chip.className).toMatch(/--acc-yellow/);
   });
 
   it("renders 'Build' with fuchsia styling for OpenCode's primary mode", () => {
-    renderChip({ currentProviderId: PROVIDER_IDS.OPENCODE, permissionMode: "acceptEdits" });
-    const chip = screen.getByRole("button", { name: /Permission mode: Build/i });
+    renderChip({
+      currentProviderId: PROVIDER_IDS.OPENCODE,
+      permissionMode: "acceptEdits",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Build/i,
+    });
     expect(chip.className).toMatch(/--chip-fuchsia/);
   });
 
-  it("renders 'Default' with blue styling for Codex's primary mode", () => {
-    renderChip({ currentProviderId: PROVIDER_IDS.CODEX_CLI, permissionMode: "default" });
-    const chip = screen.getByRole("button", { name: /Permission mode: Default/i });
-    expect(chip.className).toMatch(/--chip-blue/);
+  it("renders Codex default collaboration state as a grey Default chip", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      permissionMode: "default",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Default/i,
+    });
+    expect(chip).toHaveTextContent("Default");
+    expect(chip.className).toMatch(/text-muted-foreground/);
   });
 
-  it("renders 'Full Access' with red styling for Codex when the opt-in toggle is on", () => {
+  it("renders Codex plan state as a colored Plan chip", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      permissionMode: "plan",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Plan/i,
+    });
+    expect(chip).toHaveTextContent("Plan");
+    expect(chip.className).toMatch(/--chip-fuchsia/);
+  });
+
+  it("does not render Full Access as Codex's collaboration mode chip", () => {
     renderChip({
       currentProviderId: PROVIDER_IDS.CODEX_CLI,
       permissionMode: "bypassPermissions",
       enabledOptInModes: ["bypassPermissions"],
     });
-    const chip = screen.getByRole("button", { name: /Permission mode: Full Access/i });
-    expect(chip.className).toMatch(/--acc-red/);
+    expect(screen.queryByRole("button", { name: /Permission mode: Full Access/i })).toBeNull();
+  });
+
+  it("renders Codex access mode as a separate chip without a shortcut", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      codexPermissionMode: "autoReview",
+      onCodexPermissionModeChange: vi.fn(),
+      runtimeProvider: PROVIDER_IDS.CODEX_CLI,
+      runtimeSessionId: "thread-123",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Codex access mode: Auto Review/i,
+    });
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveAttribute("title", expect.not.stringMatching(/Shift\\+Tab/i));
+  });
+
+  it("opens a Codex access mode popover and selects a mode", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      codexPermissionMode: "default",
+      onCodexPermissionModeChange: onChange,
+      runtimeProvider: PROVIDER_IDS.CODEX_CLI,
+      runtimeSessionId: "thread-123",
+    });
+
+    await user.click(screen.getByRole("button", { name: /Codex access mode: Default/i }));
+
+    expect(screen.getByText("Codex access mode")).toBeInTheDocument();
+    expect(screen.getByText(/Runs in the workspace-write sandbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Disables sandboxing and approval prompts/i)).toBeInTheDocument();
+    expect(screen.getByText(/automatically review approval requests/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Full Access/i }));
+    expect(onChange).toHaveBeenCalledWith("fullAccess");
+    expect(screen.queryByText("Codex access mode")).not.toBeInTheDocument();
+  });
+
+  it("shows the current conversation mode on the chip but selects the new-conversation default in the popover", async () => {
+    const user = userEvent.setup();
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      codexPermissionMode: "default",
+      codexPermissionDefaultMode: "fullAccess",
+      onCodexPermissionModeChange: vi.fn(),
+      runtimeProvider: PROVIDER_IDS.CODEX_CLI,
+      runtimeSessionId: "thread-123",
+    });
+
+    await user.click(screen.getByRole("button", { name: /Codex access mode: Default/i }));
+
+    expect(screen.getByText(/This conversation is using Default/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Full Access/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("keeps collaboration mode in the left group and places access mode before session info", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CODEX_CLI,
+      permissionMode: "default",
+      codexPermissionMode: "default",
+      onCodexPermissionModeChange: vi.fn(),
+      runtimeProvider: PROVIDER_IDS.CODEX_CLI,
+      runtimeSessionId: "thread-123",
+      onPause: vi.fn(),
+    });
+    const modeChip = screen.getByRole("button", {
+      name: /Permission mode: Default/i,
+    });
+    const accessChip = screen.getByRole("button", {
+      name: /Codex access mode: Default/i,
+    });
+    const infoChip = screen.getByRole("button", { name: /Session info/i });
+
+    expect(modeChip.compareDocumentPosition(accessChip)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(accessChip.compareDocumentPosition(infoChip)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("hides the chip entirely when no toggle handler is wired (kickoff scenarios)", () => {
@@ -90,7 +206,9 @@ describe("MetaBar mode chip", () => {
       providers: [],
     });
 
-    const loader = screen.getByRole("button", { name: "Loading model catalog" });
+    const loader = screen.getByRole("button", {
+      name: "Loading model catalog",
+    });
     expect(loader).toBeDisabled();
     expect(screen.getByText(MODEL_CATALOG_LOADING_LABEL)).toBeInTheDocument();
     expect(screen.queryByText("default/default")).toBeNull();

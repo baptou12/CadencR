@@ -28,6 +28,7 @@ import {
   createModelSet,
   createEffortSet,
   createModeSet,
+  createCodexPermissionModeSet,
   createSessionClear,
   createSessionCompact,
   createSessionDelete,
@@ -65,6 +66,7 @@ import { buildAskUserQuestionUpdatedInput } from "@/lib/build-ask-user-question-
 import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt";
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
+import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 
 import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -495,7 +497,9 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
           pendingQuestions: [],
           pendingQuestionToolInput: {},
           pendingRequestId: "",
-          lifecycle: transitionTurn(session.lifecycle, { type: "question_answered" }),
+          lifecycle: transitionTurn(session.lifecycle, {
+            type: "question_answered",
+          }),
         }),
       );
     },
@@ -564,7 +568,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     setThinkingEffort(sessionId: string, thinkingEffort?: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createEffortSet(session.serverSessionId, thinkingEffort));
-      set(updateSession(get(), sessionId, { currentThinkingEffort: thinkingEffort }));
+      set(
+        updateSession(get(), sessionId, {
+          currentThinkingEffort: thinkingEffort,
+        }),
+      );
     },
 
     setPermissionMode(sessionId: string, mode: PermissionMode) {
@@ -582,6 +590,15 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       // selection locally so `buildQueuedInitEnvelopes` can replay it as
       // a `mode.set` once the backend session comes up.
       set(updateSession(get(), sessionId, { permissionMode: mode }));
+    },
+
+    setCodexPermissionMode(sessionId: string, mode: CodexPermissionMode) {
+      const session = getSession(sessionId);
+      if (session.serverSessionId) {
+        sendRaw(sessionId, createCodexPermissionModeSet(session.serverSessionId, mode));
+        return;
+      }
+      set(updateSession(get(), sessionId, { codexPermissionMode: mode }));
     },
 
     approvePlan(sessionId: string) {

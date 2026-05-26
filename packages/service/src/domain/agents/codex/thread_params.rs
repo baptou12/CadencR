@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 
 use super::instructions::codex_system_prompt;
-use super::model::{approval_policy, sandbox_mode};
+use super::model::{approval_policy, approvals_reviewer, sandbox_mode};
 use super::turn_start::collaboration_mode;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
 
@@ -31,10 +31,11 @@ pub(super) fn thread_resume_params(
 fn base_thread_params(config: &RuntimeSpawnConfig) -> Value {
     let mut params = json!({
         "cwd": config.cwd.to_string_lossy(),
-        "approvalPolicy": approval_policy(config.permission_mode.as_ref()),
+        "approvalPolicy": approval_policy(config.permission_mode.as_ref(), config.access_mode.as_ref()),
+        "approvalsReviewer": approvals_reviewer(config.access_mode.as_ref()),
         // `thread/start` takes the shorthand sandbox mode, while per-turn
         // overrides use `sandboxPolicy`.
-        "sandbox": sandbox_mode(config.permission_mode.as_ref()),
+        "sandbox": sandbox_mode(config.permission_mode.as_ref(), config.access_mode.as_ref()),
     });
     if let Some(model) = config.model.as_ref() {
         params["model"] = Value::String(model.clone());

@@ -13,7 +13,7 @@ import { SplitSendActions } from "./SplitSendActions";
 import { PromptEditor } from "./prompt-editor/PromptEditor";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
-import { useImageAttachments } from "@/hooks/useImageAttachments";
+import { usePromptAttachments } from "@/hooks/usePromptAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
 import { draftScope } from "@/lib/draft-scope";
 import { usePromptEditorRestore } from "@/hooks/usePromptEditorRestore";
@@ -121,8 +121,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       clearAttachments,
       restoreAttachments,
       dragHandlers,
-      isDragging,
-    } = useImageAttachments();
+    } = usePromptAttachments({ wsSessionId, sessionId, featureId });
     const filesQuery = useListFiles(
       { feature_id: featureId! },
       { query: { enabled: !!featureId && agentTabActive && !disabled } },
@@ -329,7 +328,11 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           className={cn(
             "flex flex-col px-3 pb-4",
             noTopPadding ? "pt-0" : "pt-3",
-            isDragging && "ring-2 ring-primary/50 ring-inset",
+            // The drop zone is the agent `<section>` above; it toggles
+            // `data-agent-dragover` while a file is dragged over this card,
+            // and that drives the primary ring here without needing React
+            // state to cross component boundaries.
+            "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
           )}
           {...dragHandlers}
         >

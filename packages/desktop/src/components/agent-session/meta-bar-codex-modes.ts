@@ -1,0 +1,102 @@
+import { ClipboardList, ShieldOff, Sparkles, Zap, type LucideIcon } from "lucide-react";
+import { PROVIDER_IDS } from "@/lib/providers";
+import { findProviderMode, type ProviderMode } from "@/lib/provider-modes";
+import type { PermissionMode } from "@/types/permission-mode";
+import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+
+export interface DisplayModeDefinition {
+  label: string;
+  description: string;
+  ariaLabel: string;
+  chipClass: string;
+  icon: LucideIcon;
+}
+
+export function getDisplayMode(
+  activeMode: ProviderMode | null,
+  providerId: string | undefined,
+  permissionMode: PermissionMode | undefined,
+): DisplayModeDefinition | null {
+  if (!activeMode) return null;
+  if (providerId !== PROVIDER_IDS.CODEX_CLI) return providerDisplayMode(activeMode);
+  return codexPlanDisplayMode(activeMode, permissionMode);
+}
+
+function providerDisplayMode(activeMode: ProviderMode): DisplayModeDefinition {
+  return {
+    label: activeMode.label,
+    description: activeMode.description,
+    ariaLabel: `Permission mode: ${activeMode.label}. ${activeMode.description}`,
+    chipClass: activeMode.chipClass,
+    icon: activeMode.icon,
+  };
+}
+
+function codexPlanDisplayMode(
+  fallbackMode: ProviderMode,
+  permissionMode: PermissionMode | undefined,
+): DisplayModeDefinition {
+  const planMode = findProviderMode(PROVIDER_IDS.CODEX_CLI, "plan") ?? fallbackMode;
+  const isPlan = permissionMode === "plan";
+  const description = isPlan
+    ? planMode.description
+    : "Default Codex collaboration mode. Click or press Shift+Tab to enable Plan.";
+  return {
+    label: isPlan ? "Plan" : "Default",
+    description,
+    ariaLabel: `Permission mode: ${isPlan ? "Plan" : "Default"}. ${description}`,
+    chipClass: isPlan ? planMode.chipClass : "bg-muted/40 text-muted-foreground hover:bg-muted/60",
+    icon: ClipboardList,
+  };
+}
+
+export interface CodexAccessModeDefinition {
+  id: CodexPermissionMode;
+  label: string;
+  description: string;
+  longDescription: string;
+  chipClass: string;
+  textClass: string;
+  icon: LucideIcon;
+}
+
+export const CODEX_ACCESS_MODES: CodexAccessModeDefinition[] = [
+  {
+    id: "default",
+    label: "Default",
+    description: "Workspace-write sandbox with user-reviewed approvals.",
+    longDescription:
+      "Runs in the workspace-write sandbox. Codex asks you to review command, network, or file access when approval is needed.",
+    chipClass:
+      "bg-[var(--chip-blue-bg)]/15 text-[var(--chip-blue-fg)] hover:bg-[var(--chip-blue-bg)]/25",
+    textClass: "text-[var(--chip-blue-fg)]",
+    icon: Zap,
+  },
+  {
+    id: "fullAccess",
+    label: "Full Access",
+    description: "DANGEROUS: full filesystem and network access, no approvals.",
+    longDescription:
+      "Disables sandboxing and approval prompts. Codex can run commands and access files/network without asking first.",
+    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
+    textClass: "text-[var(--acc-red)]",
+    icon: ShieldOff,
+  },
+  {
+    id: "autoReview",
+    label: "Auto Review",
+    description: "Workspace-write sandbox with Codex auto-reviewing approval requests.",
+    longDescription:
+      "Keeps the workspace-write sandbox, but lets Codex automatically review approval requests instead of routing each one to you.",
+    chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
+    textClass: "text-[var(--acc-yellow)]",
+    icon: Sparkles,
+  },
+];
+
+export function getCodexAccessMode(
+  mode: CodexPermissionMode | undefined,
+): CodexAccessModeDefinition | null {
+  if (!mode) return null;
+  return CODEX_ACCESS_MODES.find((candidate) => candidate.id === mode) ?? CODEX_ACCESS_MODES[0];
+}

@@ -40,6 +40,7 @@ import {
   buildMessagePatch,
 } from "./ws-message-processing";
 import { normalizeContextWindow } from "@/types/agent";
+import { parseCodexPermissionMode } from "@/types/codex-permission-mode";
 import type { SessionEntry, WsSessionStore } from "./ws-session-types";
 import { updateSession } from "./ws-session-types";
 import { transitionTurn, type TurnTerminalReason } from "./ws-turn-lifecycle";
@@ -175,6 +176,17 @@ function handleSessionAction(
     case "permission.request":
       handlePermissionRequest(ctx, sessionId, envelope.payload);
       break;
+    case "codex_permission_mode.changed": {
+      const p = parseModePayload(envelope.payload);
+      if (p?.mode) {
+        ctx.set(
+          updateSession(ctx.get(), sessionId, {
+            codexPermissionMode: parseCodexPermissionMode(p.mode),
+          }),
+        );
+      }
+      break;
+    }
     case "mode.changed": {
       const p = parseModePayload(envelope.payload);
       // Accept any mode the active provider's catalog defines. Unknown values
@@ -211,6 +223,11 @@ function handleSessionAction(
             currentProviderId: p.provider,
             runtimeProvider: p.provider,
             supportsPromptReceipts: p.supports_prompt_receipts ?? false,
+            ...(p.codex_permission_mode
+              ? {
+                  codexPermissionMode: parseCodexPermissionMode(p.codex_permission_mode),
+                }
+              : {}),
           }),
         );
       }
@@ -245,13 +262,19 @@ function handleSessionAction(
     case "effort.set.ok": {
       const p = parseEffortPayload(envelope.payload);
       const previous = ctx.get().sessions[sessionId]?.currentThinkingEffort;
-      ctx.set(updateSession(ctx.get(), sessionId, { currentThinkingEffort: p?.thinking_effort }));
+      ctx.set(
+        updateSession(ctx.get(), sessionId, {
+          currentThinkingEffort: p?.thinking_effort,
+        }),
+      );
       // The backend writes the per-model workspace default
       // (`thinking_effort_model_<provider>_<model>`) only when the effort
       // actually changed, so we mirror that condition to avoid a redundant
       // workspace-settings refetch on no-op confirmations.
       if (p?.thinking_effort !== previous) {
-        void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+        void queryClient.invalidateQueries({
+          queryKey: getWorkspaceSettingsQueryKey(),
+        });
       }
       break;
     }
@@ -367,6 +390,9 @@ function handleInitialized(ctx: StoreAccessors, sessionId: string, payload: unkn
     updates.runtimeProvider = ctx.getSession(sessionId).currentProviderId;
   }
   if (p.model) updates.currentModelId = p.model;
+  if (p.codex_permission_mode) {
+    updates.codexPermissionMode = parseCodexPermissionMode(p.codex_permission_mode);
+  }
   updates.currentThinkingEffort = p.thinking_effort;
   if (p.input_tokens != null || p.output_tokens != null) {
     const contextWindow =
@@ -434,7 +460,10 @@ function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown)
 
   patch.lifecycle =
     manualCompactBoundaryObserved && currentSession.pendingManualCompact
-      ? transitionTurn(currentSession.lifecycle, { type: "turn_ended", reason: "completed" })
+      ? transitionTurn(currentSession.lifecycle, {
+          type: "turn_ended",
+          reason: "completed",
+        })
       : transitionTurn(currentSession.lifecycle, { type: "stream_activity" });
   if (manualCompactBoundaryObserved && currentSession.pendingManualCompact) {
     patch.pendingManualCompact = false;
@@ -622,7 +651,11 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
   const previousSessionId = parseClearedPayload(payload)?.previous_session_id ?? "";
   const clearedBlocks = [
     ...existingBlocks,
-    { id: `clear-${Date.now()}`, type: "clear_divider" as const, content: previousSessionId },
+    {
+      id: `clear-${Date.now()}`,
+      type: "clear_divider" as const,
+      content: previousSessionId,
+    },
   ];
   // Reset streamingState (clear divider drops all in-flight streams) and
   // re-prime the derived rootBlocks/toolResultMap from the new blocks list.
@@ -630,7 +663,9 @@ function handleCleared(ctx: StoreAccessors, sessionId: string, payload: unknown)
   ctx.set(
     updateSession(ctx.get(), sessionId, {
       ...blocksPatchWithDerived(freshState, clearedBlocks),
-      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, { type: "turn_cleared" }),
+      lifecycle: transitionTurn(session?.lifecycle ?? { phase: "idle" }, {
+        type: "turn_cleared",
+      }),
       streamingState: freshState,
       historyPrependDisplayOffset: 0,
       pendingPermission: null,
@@ -662,7 +697,9 @@ function handleStreamStatus(ctx: StoreAccessors, sessionId: string, payload: unk
     // Surface malformed envelopes — see error-handling.md. Keeping this
     // a console warning (not a toast) since users can't act on it; the
     // backend is misbehaving.
-    console.warn("[ws-session] dropped malformed stream_status envelope", { payload });
+    console.warn("[ws-session] dropped malformed stream_status envelope", {
+      payload,
+    });
     return;
   }
   const next: SessionEntry["streamHealth"] =

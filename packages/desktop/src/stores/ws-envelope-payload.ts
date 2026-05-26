@@ -38,22 +38,35 @@ export function parseCommandsListPayload(payload: unknown): CommandsListPayload 
   const commands = optionalArray(record, "commands");
   if (!commands) return { commands: [] };
   const parsed = commands
-    .map((entry): { name: string; description?: string; kind: "command" | "skill" } | null => {
-      const item = asRecord(entry);
-      if (!item) return null;
-      const name = optionalString(item, "name");
-      if (!name) return null;
-      const description = optionalString(item, "description");
-      const kind = optionalCommandKind(item, "kind");
-      return {
-        name,
-        ...(description ? { description } : {}),
-        kind: kind ?? "command",
-      };
-    })
+    .map(
+      (
+        entry,
+      ): {
+        name: string;
+        description?: string;
+        kind: "command" | "skill";
+      } | null => {
+        const item = asRecord(entry);
+        if (!item) return null;
+        const name = optionalString(item, "name");
+        if (!name) return null;
+        const description = optionalString(item, "description");
+        const kind = optionalCommandKind(item, "kind");
+        return {
+          name,
+          ...(description ? { description } : {}),
+          kind: kind ?? "command",
+        };
+      },
+    )
     .filter(
-      (entry): entry is { name: string; description?: string; kind: "command" | "skill" } =>
-        entry !== null,
+      (
+        entry,
+      ): entry is {
+        name: string;
+        description?: string;
+        kind: "command" | "skill";
+      } => entry !== null,
     );
   return {
     commands: parsed,
@@ -81,6 +94,7 @@ export function parseInitializedPayload(payload: unknown): {
   provider?: string;
   model?: string;
   thinking_effort?: string;
+  codex_permission_mode?: string;
   input_tokens?: number;
   output_tokens?: number;
   context_window?: number;
@@ -93,6 +107,7 @@ export function parseInitializedPayload(payload: unknown): {
     provider: optionalString(record, "provider"),
     model: optionalString(record, "model"),
     thinking_effort: optionalString(record, "thinking_effort"),
+    codex_permission_mode: optionalString(record, "codex_permission_mode"),
     input_tokens: optionalNumber(record, "input_tokens"),
     output_tokens: optionalNumber(record, "output_tokens"),
     context_window: optionalNumber(record, "context_window"),
@@ -116,12 +131,14 @@ export function parseModelPayload(payload: unknown): {
 export function parseProviderPayload(payload: unknown): {
   provider?: string;
   supports_prompt_receipts?: boolean;
+  codex_permission_mode?: string;
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
   return {
     provider: optionalString(record, "provider"),
     supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
+    codex_permission_mode: optionalString(record, "codex_permission_mode"),
   };
 }
 
@@ -261,9 +278,11 @@ export function parseLifecyclePayload(
   return { kind };
 }
 
-export function parseGateClosedPayload(
-  payload: unknown,
-): { session_id?: string; request_id?: string; reason: "sleep" | "escape" } | null {
+export function parseGateClosedPayload(payload: unknown): {
+  session_id?: string;
+  request_id?: string;
+  reason: "sleep" | "escape";
+} | null {
   const record = asRecord(payload);
   if (!record) return null;
   const reason = optionalString(record, "reason");

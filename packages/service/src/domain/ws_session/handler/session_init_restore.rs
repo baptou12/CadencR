@@ -138,6 +138,7 @@ mod tests {
                 runtime_session_id TEXT,
                 model TEXT,
                 permission_mode TEXT,
+                codex_permission_mode TEXT DEFAULT 'default',
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
                 context_window INTEGER NOT NULL DEFAULT 200000,

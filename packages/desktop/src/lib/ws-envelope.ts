@@ -122,15 +122,28 @@ export function createGateClose(
 }
 
 export function createModelSet(sessionId: string, model: string): WsEnvelope {
-  return createEnvelope("session", "model.set", { session_id: sessionId, model });
+  return createEnvelope("session", "model.set", {
+    session_id: sessionId,
+    model,
+  });
 }
 
 export function createProviderSet(sessionId: string, provider: string): WsEnvelope {
-  return createEnvelope("session", "provider.set", { session_id: sessionId, provider });
+  return createEnvelope("session", "provider.set", {
+    session_id: sessionId,
+    provider,
+  });
 }
 
 export function createModeSet(sessionId: string, mode: string): WsEnvelope {
   return createEnvelope("session", "mode.set", { session_id: sessionId, mode });
+}
+
+export function createCodexPermissionModeSet(sessionId: string, mode: string): WsEnvelope {
+  return createEnvelope("session", "codex_permission_mode.set", {
+    session_id: sessionId,
+    mode,
+  });
 }
 
 export function createEffortSet(sessionId: string, thinkingEffort?: string): WsEnvelope {
@@ -161,7 +174,11 @@ export function createCommandsGet(cwd: string, provider: string): WsEnvelope {
 }
 
 export interface CommandsListPayload {
-  commands: Array<{ name: string; description?: string; kind?: "command" | "skill" }>;
+  commands: Array<{
+    name: string;
+    description?: string;
+    kind?: "command" | "skill";
+  }>;
 }
 
 export function createHistoryGet(projectId: number): WsEnvelope {
@@ -169,7 +186,10 @@ export function createHistoryGet(projectId: number): WsEnvelope {
 }
 
 export function createHistoryAdd(projectId: number, content: string): WsEnvelope {
-  return createEnvelope("session", "history.add", { project_id: projectId, content });
+  return createEnvelope("session", "history.add", {
+    project_id: projectId,
+    content,
+  });
 }
 
 export function createDraftGet(sessionId: number): WsEnvelope {
@@ -177,5 +197,8 @@ export function createDraftGet(sessionId: number): WsEnvelope {
 }
 
 export function createDraftSave(sessionId: number, draft: string | null): WsEnvelope {
-  return createEnvelope("session", "draft.save", { session_id: sessionId, draft });
+  return createEnvelope("session", "draft.save", {
+    session_id: sessionId,
+    draft,
+  });
 }

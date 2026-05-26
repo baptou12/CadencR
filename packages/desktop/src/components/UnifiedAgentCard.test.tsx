@@ -82,6 +82,7 @@ function makeEntry(overrides: Partial<UnifiedAgentEntry["session"]> = {}): Unifi
       pendingPermission: null,
       pendingQuestions: null,
       permissionMode: "default",
+      codexPermissionMode: "default",
       resumable: false,
       runtimeProvider: null,
       runtimeSessionId: null,

@@ -125,6 +125,7 @@ struct PendingCompactSpawn {
     permission_tx: mpsc::Sender<PermissionResponse>,
     spawned_model: Option<String>,
     spawned_permission_mode: Option<RuntimePermissionMode>,
+    spawned_access_mode: Option<crate::domain::agents::adapter::RuntimeAccessMode>,
     spawned_thinking_effort: Option<String>,
     options: RuntimeSpawnConfig,
 }
@@ -161,6 +162,7 @@ async fn pending_spawn_config(
         .clone()
         .or_else(|| handle.resume_session_id.clone());
     let spawned_permission_mode = handle.desired_permission_mode.clone();
+    let spawned_access_mode = handle.desired_access_mode.clone();
     let spawned_thinking_effort = handle.desired_thinking_effort.clone();
     let spawned_model = handle.desired_model.clone();
     let bridge = WsBridgeCanUseTool {
@@ -178,10 +180,12 @@ async fn pending_spawn_config(
         permission_tx,
         spawned_model: spawned_model.clone(),
         spawned_permission_mode: spawned_permission_mode.clone(),
+        spawned_access_mode: spawned_access_mode.clone(),
         spawned_thinking_effort: spawned_thinking_effort.clone(),
         options: RuntimeSpawnConfig {
             cwd: handle.config.cwd.clone(),
             permission_mode: spawned_permission_mode,
+            access_mode: spawned_access_mode,
             model: spawned_model,
             thinking_effort: spawned_thinking_effort,
             system_prompt: handle.config.system_prompt.clone(),
@@ -219,6 +223,7 @@ async fn activate_spawned_runtime(
     };
     handle.spawned_model = spawn.spawned_model.clone();
     handle.spawned_permission_mode = spawn.spawned_permission_mode.clone();
+    handle.spawned_access_mode = spawn.spawned_access_mode.clone();
     handle.spawned_thinking_effort = spawn.spawned_thinking_effort.clone();
     handle.runtime_control_endpoint = runtime_control_endpoint;
     handle.resume_session_id = None;

@@ -2,14 +2,15 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 
-use super::model::{approval_policy, sandbox_policy};
-use crate::domain::agents::adapter::RuntimePermissionMode;
+use super::model::{approval_policy, approvals_reviewer, sandbox_policy};
+use crate::domain::agents::adapter::{RuntimeAccessMode, RuntimePermissionMode};
 
 pub(super) fn turn_start_params(
     thread_id: &str,
     input: Vec<Value>,
     cwd: &Path,
     permission_mode: Option<&RuntimePermissionMode>,
+    access_mode: Option<&RuntimeAccessMode>,
     model: Option<String>,
     effort: Option<String>,
 ) -> Value {
@@ -19,8 +20,9 @@ pub(super) fn turn_start_params(
         "threadId": thread_id,
         "input": input,
         "cwd": cwd.to_string_lossy(),
-        "approvalPolicy": approval_policy(permission_mode),
-        "sandboxPolicy": sandbox_policy(permission_mode, cwd),
+        "approvalPolicy": approval_policy(permission_mode, access_mode),
+        "approvalsReviewer": approvals_reviewer(access_mode),
+        "sandboxPolicy": sandbox_policy(permission_mode, access_mode, cwd),
         "summary": "auto",
     });
     if let Some(model) = model {
@@ -76,6 +78,7 @@ mod tests {
             vec![serde_json::json!({ "type": "text", "text": "hello" })],
             Path::new("/tmp/app"),
             None,
+            None,
             Some("gpt-5.5".to_string()),
             Some("xhigh".to_string()),
         );
@@ -92,6 +95,7 @@ mod tests {
             vec![serde_json::json!({ "type": "text", "text": "plan" })],
             Path::new("/tmp/app"),
             Some(&crate::domain::agents::adapter::RuntimePermissionMode::Plan),
+            None,
             Some("gpt-5.5".to_string()),
             Some("high".to_string()),
         );
@@ -118,6 +122,7 @@ mod tests {
             Path::new("/tmp/app"),
             Some(&crate::domain::agents::adapter::RuntimePermissionMode::Plan),
             None,
+            None,
             Some("high".to_string()),
         );
 
@@ -131,6 +136,7 @@ mod tests {
             vec![serde_json::json!({ "type": "text", "text": "approved" })],
             Path::new("/tmp/app"),
             Some(&crate::domain::agents::adapter::RuntimePermissionMode::AcceptEdits),
+            None,
             Some("gpt-5.5".to_string()),
             Some("high".to_string()),
         );

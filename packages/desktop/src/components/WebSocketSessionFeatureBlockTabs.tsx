@@ -18,6 +18,7 @@ import {
   useSetFeatureSetting,
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { PROVIDER_IDS } from "@/lib/providers";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -88,6 +89,10 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           turnTiming={controls.ws.turnTiming}
           onSend={onSend}
           onStop={controls.ws.interrupt}
+          disabled={
+            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI &&
+            controls.isCodexPermissionModePending
+          }
           pendingPermission={controls.ws.pendingPermission}
           onPermissionDecision={(decision, feedback, optionId) => {
             controls.ws.respondToPermission(
@@ -105,6 +110,26 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           permissionMode={controls.ws.permissionMode}
           enabledOptInModes={controls.enabledOptInModes}
           providerModes={controls.providerModes}
+          codexPermissionMode={
+            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
+              ? controls.codexPermissionMode
+              : undefined
+          }
+          codexPermissionDefaultMode={
+            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
+              ? controls.codexPermissionDefaultMode
+              : undefined
+          }
+          isCodexPermissionModePending={
+            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
+              ? controls.isCodexPermissionModePending
+              : false
+          }
+          onCodexPermissionModeChange={
+            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
+              ? controls.handleCodexPermissionModeChange
+              : undefined
+          }
           agentCatalog={controls.agentCatalog}
           onPermissionModeToggle={controls.handlePermissionModeToggle}
           pendingPlanApproval={controls.ws.pendingPlanApproval}

@@ -293,6 +293,7 @@ async fn build_spawn_config(
     RuntimeSpawnConfig {
         cwd: PathBuf::from(cwd),
         permission_mode: Some(RuntimePermissionMode::Plan),
+        access_mode: None,
         model: Some(model_id.to_string()),
         thinking_effort: None,
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),

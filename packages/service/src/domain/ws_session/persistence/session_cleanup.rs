@@ -85,6 +85,7 @@ mod session_cleanup_tests {
 
                 model TEXT,
                 permission_mode TEXT,
+                codex_permission_mode TEXT DEFAULT 'default',
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,

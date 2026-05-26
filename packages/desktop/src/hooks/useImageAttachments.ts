@@ -10,6 +10,27 @@ export interface ImageAttachment {
   previewUrl: string;
 }
 
+export interface ImageAttachmentDragHandlers {
+  onDragOver: (event: React.DragEvent) => void;
+  onDrop: (event: React.DragEvent) => void;
+}
+
+export interface UseImageAttachmentsResult {
+  attachments: ImageAttachment[];
+  addFiles: (files: FileList | File[]) => void;
+  removeAttachment: (id: string) => void;
+  clearAttachments: (options?: { revokeObjectUrls?: boolean }) => void;
+  restoreAttachments: (next: ImageAttachment[]) => void;
+  dragHandlers: ImageAttachmentDragHandlers;
+  /**
+   * Always `false`. The visual drag highlight is now owned by the agent
+   * `<section>` in `WebSocketSessionFeatureBlock` (via `data-agent-dragover`);
+   * the hook keeps this field for back-compat with consumer mocks but no
+   * longer drives any UI.
+   */
+  isDragging: boolean;
+}
+
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const EXTENSION_TO_MIME: Record<string, string> = {
   png: "image/png",
@@ -26,11 +47,18 @@ function getMimeFromExtension(fileName: string): string | undefined {
   return EXTENSION_TO_MIME[ext];
 }
 
-export function useImageAttachments() {
+export function useImageAttachments(promptId?: string): UseImageAttachmentsResult {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([]);
-  const [isDragging, setIsDragging] = useState(false);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  // `isDragging` used to be driven from the preload's document-level
+  // `enter`/`leave` events, which fired for every mounted prompt bar at once
+  // — so a drag anywhere in the window lit up every card in the unified grid.
+  // The drag highlight now lives on the agent `<section>` (via React drag
+  // handlers + a `data-agent-dragover` attribute) so only the card under the
+  // cursor highlights. We keep this field for back-compat with existing
+  // mocks; new consumers should read drag state from the section.
+  const isDragging = false;
 
   const addAttachment = useCallback((attachment: ImageAttachment) => {
     setAttachments((prev) => {
@@ -105,24 +133,38 @@ export function useImageAttachments() {
   const addDroppedFilesRef = useRef(addDroppedFiles);
   addDroppedFilesRef.current = addDroppedFiles;
 
-  // Listen for OS-level file drops (e.g. from Finder).
+  // Listen for OS-level file drops (e.g. from Finder). The agent `<section>`
+  // owns the visual drop-zone state; this effect only routes the file payload
+  // to the prompt under the cursor.
   useEffect(() => {
     return desktopBridge.onFileDrop((event) => {
-      if (event.type === "enter") {
-        setIsDragging(true);
-      } else if (event.type === "leave") {
-        setIsDragging(false);
-      } else if (event.type === "drop") {
-        setIsDragging(false);
+      if (event.type === "drop") {
+        // Non-file drags (text, links) still produce a drop event with no
+        // files — bail so we don't surface any user-facing noise for inert
+        // drops.
+        if (event.files.length === 0) return;
+        // No matching prompt under the cursor (e.g. the drop landed on the
+        // sidebar or empty grid space). Surface one toast — sonner's `id`
+        // collapses concurrent calls from every mounted subscriber into a
+        // single visible toast.
+        if (!event.targetPromptId) {
+          toast.error("Drop the image on an agent to attach it.", {
+            id: "image-drop-missing-target",
+          });
+          return;
+        }
+        if (promptId && event.targetPromptId !== promptId) return;
         void addDroppedFilesRef.current(event.files);
       } else if (event.type === "error") {
-        setIsDragging(false);
         toast.error("Couldn't read dropped files.", {
+          id: "image-drop-read-error",
           description: event.message ?? "The desktop shell rejected the dropped file paths.",
         });
       }
+      // `enter` / `leave` are intentionally ignored — the per-section React
+      // drag handlers in `WebSocketSessionFeatureBlock` own the highlight.
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [promptId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
@@ -145,16 +187,17 @@ export function useImageAttachments() {
     setAttachments(next);
   }, []);
 
-  // React-level handlers — still needed for visual drag feedback.
-  // Note: Desktop shell intercepts OS file drops, so onDrop won't receive files
-  // from Finder. But we preventDefault to avoid browser default behavior.
+  // React-level handlers — kept for back-compat. The Electron preload now
+  // calls `preventDefault()` on dragover at the document level, and the
+  // section owns the visual feedback; these are no-ops left in the API so
+  // callers spreading `dragHandlers` onto the prompt-bar wrapper keep
+  // working.
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
   }, []);
 
   const dragHandlers = useMemo(() => ({ onDragOver, onDrop }), [onDragOver, onDrop]);

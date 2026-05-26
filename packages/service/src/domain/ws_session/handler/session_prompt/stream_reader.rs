@@ -462,6 +462,7 @@ pub(crate) fn spawn_stream_reader(
                 let options = RuntimeSpawnConfig {
                     cwd: handle.config.cwd.clone(),
                     permission_mode: handle.desired_permission_mode.clone(),
+                    access_mode: handle.desired_access_mode.clone(),
                     model: handle.desired_model.clone(),
                     thinking_effort: handle.desired_thinking_effort.clone(),
                     system_prompt: handle.config.system_prompt.clone(),

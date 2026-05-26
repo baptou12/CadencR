@@ -23,8 +23,9 @@ use super::session_permissions::{
 use super::turn_start::turn_start_params;
 use super::{with_timeout, with_timeout_sdk};
 use crate::domain::agents::adapter::{
-    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimePermissionResponseKind,
+    AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus,
+    RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimePermissionResponseKind,
 };
 
 pub(super) struct CodexSession {
@@ -36,6 +37,7 @@ pub(super) struct CodexSession {
     model: Arc<RwLock<Option<String>>>,
     effort: Arc<RwLock<Option<String>>>,
     permission_mode: Arc<RwLock<Option<RuntimePermissionMode>>>,
+    access_mode: Arc<RwLock<Option<RuntimeAccessMode>>>,
     cwd: PathBuf,
     event_rx: Option<broadcast::Receiver<AppServerEvent>>,
     local_rx: Option<mpsc::UnboundedReceiver<Result<RuntimeEvent, RuntimeError>>>,
@@ -55,6 +57,7 @@ impl CodexSession {
         model: Option<String>,
         effort: Option<String>,
         permission_mode: Option<RuntimePermissionMode>,
+        access_mode: Option<RuntimeAccessMode>,
         cwd: PathBuf,
         event_rx: broadcast::Receiver<AppServerEvent>,
         mcp_servers: Vec<RuntimeMcpServerStatus>,
@@ -69,6 +72,7 @@ impl CodexSession {
             model: Arc::new(RwLock::new(model)),
             effort: Arc::new(RwLock::new(effort)),
             permission_mode: Arc::new(RwLock::new(permission_mode)),
+            access_mode: Arc::new(RwLock::new(access_mode)),
             cwd,
             event_rx: Some(event_rx),
             local_rx: Some(local_rx),
@@ -101,11 +105,13 @@ impl CodexSession {
         let model = self.model.read().await.clone();
         let effort = self.effort.read().await.clone();
         let permission_mode = self.permission_mode.read().await.clone();
+        let access_mode = self.access_mode.read().await.clone();
         let params = turn_start_params(
             &self.thread_id,
             input,
             &self.cwd,
             permission_mode.as_ref(),
+            access_mode.as_ref(),
             model,
             effort,
         );

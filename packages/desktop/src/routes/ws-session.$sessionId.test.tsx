@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
   const mockFocusPromptBar = vi.fn();
   const mockFocusActiveInput = vi.fn();
   const mockSetFeatureSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
+  const mockSetWorkspaceSettingMutateAsync = vi.fn().mockResolvedValue(undefined);
   const mockSendPrompt = vi.fn();
   const mockToastError = vi.fn();
   const mockListBranches = vi.fn().mockResolvedValue([]);
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => {
     mockFocusPromptBar,
     mockFocusActiveInput,
     mockSetFeatureSettingMutateAsync,
+    mockSetWorkspaceSettingMutateAsync,
     mockSendPrompt,
     mockToastError,
     mockListBranches,
@@ -257,6 +259,10 @@ vi.mock("@/api/generated", () => ({
   useGetGitStatus: vi.fn(() => ({ data: undefined })),
   useListProjects: vi.fn(() => ({ data: [{ id: 1, name: "Test Project", path: "/test/path" }] })),
   useGetWorkspaceSetting: vi.fn(() => ({ data: { value: "false" } })),
+  useSetWorkspaceSetting: vi.fn(() => ({
+    mutateAsync: mocks.mockSetWorkspaceSettingMutateAsync,
+    isPending: false,
+  })),
   useSetProjectSetting: vi.fn(() => ({ mutate: vi.fn() })),
   useSetFeatureSetting: vi.fn(() => ({ mutateAsync: mocks.mockSetFeatureSettingMutateAsync })),
   useCheckoutBranch: vi.fn(() => ({ mutateAsync: mocks.mockCheckoutBranchMutateAsync })),
@@ -273,6 +279,7 @@ vi.mock("@/api/generated", () => ({
     "getGitStatus",
     params.feature_id,
   ]),
+  getGetWorkspaceSettingQueryKey: vi.fn((key: string) => ["getWorkspaceSetting", key]),
   listBranches: mocks.mockListBranches,
   useListBranches: vi.fn(() => ({ data: undefined, isLoading: false, isError: false })),
 }));
@@ -323,6 +330,8 @@ describe("WsSessionPage route", () => {
     mocks.mockListBranches.mockResolvedValue([]);
     mocks.mockSetFeatureSettingMutateAsync.mockReset();
     mocks.mockSetFeatureSettingMutateAsync.mockResolvedValue(undefined);
+    mocks.mockSetWorkspaceSettingMutateAsync.mockReset();
+    mocks.mockSetWorkspaceSettingMutateAsync.mockResolvedValue(undefined);
     mocks.mockUseParams.mockReturnValue({ sessionId: "ws-feature-35" });
     mocks.mockUseSearch.mockReturnValue({ cwd: "/test/path", featureId: 35, projectId: 1 });
     mocks.mockAgentVisible.mockReturnValue(true);

@@ -116,14 +116,6 @@ const CODEX_MODES: ProviderMode[] = [
       "bg-[var(--chip-fuchsia-bg)]/15 text-[var(--chip-fuchsia-fg)] hover:bg-[var(--chip-fuchsia-bg)]/25",
     description: "Plan first; sandbox/approvals match Default.",
   },
-  {
-    id: "bypassPermissions",
-    label: "Full Access",
-    icon: ShieldOff,
-    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
-    description: "DANGEROUS: full filesystem and network access, no approvals.",
-    optIn: true,
-  },
 ];
 
 export const PROVIDER_MODES: Record<ProviderId, ProviderMode[]> = {

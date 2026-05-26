@@ -18,17 +18,13 @@ describe("provider-modes catalog", () => {
       "bypassPermissions",
     ]);
     expect(PROVIDER_MODES[PROVIDER_IDS.OPENCODE].map((m) => m.id)).toEqual(["acceptEdits", "plan"]);
-    expect(PROVIDER_MODES[PROVIDER_IDS.CODEX_CLI].map((m) => m.id)).toEqual([
-      "default",
-      "plan",
-      "bypassPermissions",
-    ]);
+    expect(PROVIDER_MODES[PROVIDER_IDS.CODEX_CLI].map((m) => m.id)).toEqual(["default", "plan"]);
   });
 
-  it("flags only the dangerous modes as opt-in", () => {
+  it("flags only Claude bypass as opt-in", () => {
     expect(findProviderMode(PROVIDER_IDS.CLAUDE_CODE, "bypassPermissions")?.optIn).toBe(true);
     expect(findProviderMode(PROVIDER_IDS.CLAUDE_CODE, "auto")?.optIn).toBeFalsy();
-    expect(findProviderMode(PROVIDER_IDS.CODEX_CLI, "bypassPermissions")?.optIn).toBe(true);
+    expect(findProviderMode(PROVIDER_IDS.CODEX_CLI, "bypassPermissions")).toBeNull();
     expect(findProviderMode(PROVIDER_IDS.CODEX_CLI, "default")?.optIn).toBeFalsy();
   });
 
@@ -61,7 +57,10 @@ describe("getVisibleModes", () => {
   it("adds project OpenCode agents to visible modes", () => {
     const catalogModes = [
       { id: "opencodeAgent:documentor" as const, label: "documentor" },
-      { id: "opencodeAgent:scenario-builder" as const, label: "scenario-builder" },
+      {
+        id: "opencodeAgent:scenario-builder" as const,
+        label: "scenario-builder",
+      },
     ];
     const visible = getVisibleModes(PROVIDER_IDS.OPENCODE, [], catalogModes);
     expect(visible.map((m) => m.id)).toEqual([
@@ -107,12 +106,10 @@ describe("nextProviderMode (cycle)", () => {
     ).toBe("acceptEdits");
   });
 
-  it("Codex cycle: default → plan → [full access] → wrap", () => {
+  it("Codex cycle: default → plan → wrap", () => {
     expect(nextProviderMode(PROVIDER_IDS.CODEX_CLI, "default", [])).toBe("plan");
     expect(nextProviderMode(PROVIDER_IDS.CODEX_CLI, "plan", [])).toBe("default");
-    expect(nextProviderMode(PROVIDER_IDS.CODEX_CLI, "plan", ["bypassPermissions"])).toBe(
-      "bypassPermissions",
-    );
+    expect(nextProviderMode(PROVIDER_IDS.CODEX_CLI, "plan", ["bypassPermissions"])).toBe("default");
   });
 
   it("jumps to the head of the cycle when the current mode isn't in the provider's catalog", () => {

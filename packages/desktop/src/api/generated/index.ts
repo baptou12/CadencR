@@ -79,6 +79,8 @@ export interface AgentPinResponse {
   success: boolean;
 }
 
+export type AgentSessionRowCodexPermissionMode = string | null;
+
 export type AgentSessionRowContextWindow = number | null;
 
 export type AgentSessionRowDraftPrompt = string | null;
@@ -107,6 +109,7 @@ export type AgentSessionRowSubprocessId = string | null;
 
 export interface AgentSessionRow {
   agent_type: string;
+  codex_permission_mode?: AgentSessionRowCodexPermissionMode;
   context_window?: AgentSessionRowContextWindow;
   draft_prompt?: AgentSessionRowDraftPrompt;
   ended_at?: AgentSessionRowEndedAt;
@@ -1158,6 +1161,7 @@ export type SessionStateToolCallUpdates = SessionStateToolCallUpdatesAnyOf | nul
 export interface SessionState {
   agentType: string;
   blocks: AgentBlock[];
+  codexPermissionMode: string;
   contextWindow?: SessionStateContextWindow;
   draftPrompt?: SessionStateDraftPrompt;
   hasFileChanges: boolean;

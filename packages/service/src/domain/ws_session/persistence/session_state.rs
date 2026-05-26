@@ -74,6 +74,19 @@ impl WsSessionPersistence {
         }
     }
 
+    pub async fn update_codex_permission_mode_static(
+        pool: &SqlitePool,
+        session_id: i64,
+        mode: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE agent_sessions SET codex_permission_mode = ? WHERE id = ?")
+            .bind(mode)
+            .bind(session_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Persist (or clear) the conversation-level thinking effort. The per-model
     /// workspace default is updated separately by the caller — this function
     /// only owns the row column. Pass `None` to set NULL (the default cascades
@@ -184,6 +197,7 @@ mod session_state_tests {
 
                 model TEXT,
                 permission_mode TEXT,
+                codex_permission_mode TEXT DEFAULT 'default',
                 has_file_changes INTEGER NOT NULL DEFAULT 0,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,

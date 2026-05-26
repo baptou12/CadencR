@@ -17,6 +17,7 @@ pub struct AgentSessionRow {
     pub pending_questions: Option<String>,
     pub has_file_changes: i64,
     pub permission_mode: Option<String>,
+    pub codex_permission_mode: Option<String>,
     pub pending_permission: Option<String>,
     pub input_tokens: Option<i64>,
     pub output_tokens: Option<i64>,
@@ -101,6 +102,8 @@ pub struct SessionState {
     pub todos: Option<Vec<serde_json::Value>>,
     #[serde(rename = "permissionMode")]
     pub permission_mode: String,
+    #[serde(rename = "codexPermissionMode")]
+    pub codex_permission_mode: String,
     #[serde(rename = "pendingPermission")]
     pub pending_permission: Option<serde_json::Value>,
     #[serde(rename = "inputTokens")]

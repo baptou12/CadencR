@@ -72,6 +72,7 @@ mod session_tool_reconciliation_tests {
                 has_file_changes INTEGER DEFAULT 0,
                 model TEXT DEFAULT NULL,
                 permission_mode TEXT DEFAULT 'bypassPermissions',
+                codex_permission_mode TEXT DEFAULT 'default',
                 input_tokens INTEGER DEFAULT 0,
                 output_tokens INTEGER DEFAULT 0,
                 context_window INTEGER DEFAULT 200000,

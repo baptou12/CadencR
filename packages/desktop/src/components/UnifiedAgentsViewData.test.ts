@@ -58,6 +58,7 @@ function buildAgent(overrides: AgentOverrides = {}): UnifiedAgentEntry {
       pendingPermission: overrides.pendingPermission,
       pendingQuestions: overrides.pendingQuestions,
       permissionMode: "default",
+      codexPermissionMode: "default",
       resumable: false,
       sessionDbId: id,
       status: overrides.sessionStatus ?? "completed",

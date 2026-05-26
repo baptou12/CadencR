@@ -2,24 +2,14 @@ import { useMemo } from "react";
 import { getGetWorkspaceSettingQueryKey, useGetWorkspaceSetting } from "@/api/generated";
 import { queryClient } from "@/lib/queryClient";
 import { PROVIDER_IDS } from "@/lib/providers";
-import {
-  CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY,
-  CODEX_FULL_ACCESS_SETTING_KEY,
-} from "@/shared/permission-mode-settings";
+import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-settings";
 import type { PermissionMode } from "@/types/permission-mode";
 
 const NO_OPT_IN_MODES: PermissionMode[] = [];
 const BYPASS_PERMISSION_MODES: PermissionMode[] = ["bypassPermissions"];
 
-function modesForProvider(
-  providerId: string,
-  claudeBypassEnabled: boolean,
-  codexFullAccessEnabled: boolean,
-): PermissionMode[] {
+function modesForProvider(providerId: string, claudeBypassEnabled: boolean): PermissionMode[] {
   if (providerId === PROVIDER_IDS.CLAUDE_CODE && claudeBypassEnabled) {
-    return BYPASS_PERMISSION_MODES;
-  }
-  if (providerId === PROVIDER_IDS.CODEX_CLI && codexFullAccessEnabled) {
     return BYPASS_PERMISSION_MODES;
   }
   return NO_OPT_IN_MODES;
@@ -27,13 +17,11 @@ function modesForProvider(
 
 export function useEnabledOptInModes(activeProviderId: string): PermissionMode[] {
   const claudeBypassSetting = useGetWorkspaceSetting(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY);
-  const codexFullAccessSetting = useGetWorkspaceSetting(CODEX_FULL_ACCESS_SETTING_KEY);
   const claudeBypassEnabled = claudeBypassSetting.data?.value === "true";
-  const codexFullAccessEnabled = codexFullAccessSetting.data?.value === "true";
 
   return useMemo(
-    () => modesForProvider(activeProviderId, claudeBypassEnabled, codexFullAccessEnabled),
-    [activeProviderId, claudeBypassEnabled, codexFullAccessEnabled],
+    () => modesForProvider(activeProviderId, claudeBypassEnabled),
+    [activeProviderId, claudeBypassEnabled],
   );
 }
 
@@ -48,23 +36,17 @@ export function getEnabledOptInModesFromCache(providerId: string): PermissionMod
     queryClient.getQueryData<{ value?: string }>(
       getGetWorkspaceSettingQueryKey(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY),
     )?.value === "true";
-  const codexFullAccessEnabled =
-    queryClient.getQueryData<{ value?: string }>(
-      getGetWorkspaceSettingQueryKey(CODEX_FULL_ACCESS_SETTING_KEY),
-    )?.value === "true";
-  return modesForProvider(providerId, claudeBypassEnabled, codexFullAccessEnabled);
+  return modesForProvider(providerId, claudeBypassEnabled);
 }
 
 export function useEnabledOptInModesByProvider(): (providerId: string) => PermissionMode[] {
   const claudeBypassSetting = useGetWorkspaceSetting(CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY);
-  const codexFullAccessSetting = useGetWorkspaceSetting(CODEX_FULL_ACCESS_SETTING_KEY);
   const claudeBypassEnabled = claudeBypassSetting.data?.value === "true";
-  const codexFullAccessEnabled = codexFullAccessSetting.data?.value === "true";
 
   return useMemo(
     () =>
       (providerId: string): PermissionMode[] =>
-        modesForProvider(providerId, claudeBypassEnabled, codexFullAccessEnabled),
-    [claudeBypassEnabled, codexFullAccessEnabled],
+        modesForProvider(providerId, claudeBypassEnabled),
+    [claudeBypassEnabled],
   );
 }

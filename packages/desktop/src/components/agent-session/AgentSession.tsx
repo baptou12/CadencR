@@ -86,6 +86,10 @@ export const AgentSession = memo(
       onPermissionModeToggle,
       enabledOptInModes,
       providerModes,
+      codexPermissionMode,
+      codexPermissionDefaultMode,
+      isCodexPermissionModePending,
+      onCodexPermissionModeChange,
       agentCatalog: providedAgentCatalog,
       pendingPlanApproval,
       planApproveLabel,
@@ -133,7 +137,9 @@ export const AgentSession = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const headerRef = useRef<HTMLDivElement>(null);
 
-    const fallbackAgentCatalog = useAgentCatalog({ enabled: providedAgentCatalog == null });
+    const fallbackAgentCatalog = useAgentCatalog({
+      enabled: providedAgentCatalog == null,
+    });
     const agentCatalog = providedAgentCatalog ?? fallbackAgentCatalog;
     const cwdQuery = useGetFeatureWorkingDir(
       featureId ?? 0,
@@ -290,7 +296,11 @@ export const AgentSession = memo(
     // When narrow, secondary chips render below the prompt — so they don't
     // count toward whether the inline `MetaBar` should appear above it.
     const hasInlineMeta =
-      !!onPermissionModeToggle || !!onModelChange || !!showReadOnlyModel || showWorktreeChip;
+      !!onPermissionModeToggle ||
+      !!onCodexPermissionModeChange ||
+      !!onModelChange ||
+      !!showReadOnlyModel ||
+      showWorktreeChip;
     const hasSecondaryMeta =
       showAutoScrollChip || (todos && todos.length > 0) || !!(runtimeSessionId && onStop);
     const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
@@ -307,6 +317,10 @@ export const AgentSession = memo(
         onPermissionModeToggle={onPermissionModeToggle}
         enabledOptInModes={enabledOptInModes}
         providerModes={providerModes}
+        codexPermissionMode={codexPermissionMode}
+        codexPermissionDefaultMode={codexPermissionDefaultMode}
+        isCodexPermissionModePending={isCodexPermissionModePending}
+        onCodexPermissionModeChange={onCodexPermissionModeChange}
         showWorktreeChip={showWorktreeChip}
         useWorktree={useWorktree}
         onToggleWorktree={onToggleWorktree}
