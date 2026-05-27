@@ -143,12 +143,13 @@ pub async fn hydrate_from_login_shell() -> usize {
         Ok(s) => s,
         Err(e) => {
             tracing::warn!("login-shell env hydration failed: {e}; continuing with launchd env");
-            return 0;
+            return crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await;
         }
     };
 
     let parsed = parse_env_null_separated(&raw);
-    apply_env(parsed)
+    let written = apply_env(parsed);
+    written + crate::shared::ssh_env::hydrate_macos_ssh_auth_sock().await
 }
 
 /// Spawn `$SHELL -ilc 'env -0'` and capture stdout. The `-0` makes `env`

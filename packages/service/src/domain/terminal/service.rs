@@ -82,8 +82,7 @@ impl PtyManager {
             pixel_height: 0,
         })?;
 
-        let shell = detect_shell();
-        let mut cmd = CommandBuilder::new(&shell);
+        let mut cmd = CommandBuilder::new_default_prog();
         cmd.cwd(cwd);
         // Ensure the shell knows it's running inside an xterm-compatible terminal.
         // Without this, programs (e.g. zsh-autosuggestions) emit wrong escape
@@ -238,10 +237,6 @@ impl PtyManager {
     }
 }
 
-fn detect_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +267,69 @@ mod tests {
     async fn get_cwd_returns_none_for_unknown_pty() {
         let manager = PtyManager::new();
         assert_eq!(manager.get_cwd("does-not-exist"), None);
+    }
+
+    #[tokio::test]
+    async fn create_pty_inherits_process_environment() {
+        let _guard = crate::shared::test_env::env_lock().lock().unwrap();
+        let _shell = crate::shared::test_env::EnvVarGuard::set("SHELL", "/bin/sh");
+        let _marker =
+            crate::shared::test_env::EnvVarGuard::set("CADENCR_TEST_PTY_ENV", "visible-to-pty");
+
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (pty_id, _) = manager
+            .create_pty(&cwd, 80, 24)
+            .expect("PTY should spawn in temp dir");
+        manager
+            .write_pty(
+                &pty_id,
+                b"printf 'CADENCR_TEST_PTY_ENV=%s\\n' \"$CADENCR_TEST_PTY_ENV\"\nexit\n",
+            )
+            .expect("write command to PTY");
+
+        let saw_expected =
+            wait_for_scrollback(&manager, &pty_id, "CADENCR_TEST_PTY_ENV=visible-to-pty").await;
+        let _ = manager.kill_pty(&pty_id);
+
+        assert!(saw_expected, "PTY shell should inherit process environment");
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn create_pty_starts_login_shell() {
+        let _guard = crate::shared::test_env::env_lock().lock().unwrap();
+        let _shell = crate::shared::test_env::EnvVarGuard::set("SHELL", "/bin/sh");
+
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (pty_id, _) = manager
+            .create_pty(&cwd, 80, 24)
+            .expect("PTY should spawn in temp dir");
+        manager
+            .write_pty(&pty_id, b"printf 'CADENCR_SHELL_ARG0=%s\\n' \"$0\"\nexit\n")
+            .expect("write command to PTY");
+
+        let saw_login_shell =
+            wait_for_scrollback(&manager, &pty_id, "CADENCR_SHELL_ARG0=-sh").await;
+        let _ = manager.kill_pty(&pty_id);
+
+        assert!(
+            saw_login_shell,
+            "PTY shell should be started as a login shell"
+        );
+    }
+
+    async fn wait_for_scrollback(manager: &PtyManager, pty_id: &str, needle: &str) -> bool {
+        for _ in 0..50 {
+            if manager
+                .get_scrollback(pty_id)
+                .is_some_and(|(_, output)| output.contains(needle))
+            {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        false
     }
 }

@@ -84,7 +84,7 @@ pub fn sandbox_policy(
         }
         _ => serde_json::json!({
             "type": "workspaceWrite",
-            "writableRoots": [cwd.to_string_lossy().to_string()],
+            "writableRoots": workspace_writable_roots(cwd),
             "readOnlyAccess": { "type": "fullAccess" },
             "networkAccess": false,
             "excludeTmpdirEnvVar": false,
@@ -93,12 +93,34 @@ pub fn sandbox_policy(
     }
 }
 
+fn workspace_writable_roots(cwd: &std::path::Path) -> Vec<String> {
+    workspace_writable_roots_with_ssh_parent(
+        cwd,
+        crate::shared::ssh_env::current_ssh_auth_sock_parent(),
+    )
+}
+
+fn workspace_writable_roots_with_ssh_parent(
+    cwd: &std::path::Path,
+    ssh_auth_sock_parent: Option<std::path::PathBuf>,
+) -> Vec<String> {
+    let cwd = cwd.to_string_lossy().to_string();
+    let mut roots = vec![cwd.clone()];
+    if let Some(root) = ssh_auth_sock_parent.map(|path| path.to_string_lossy().to_string()) {
+        if root != cwd {
+            roots.push(root);
+        }
+    }
+    roots
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        approval_policy, approvals_reviewer, sandbox_policy, CodexAccessMode, RuntimePermissionMode,
+        approval_policy, approvals_reviewer, sandbox_policy,
+        workspace_writable_roots_with_ssh_parent, CodexAccessMode, RuntimePermissionMode,
     };
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn approval_policy_uses_interactive_on_request_for_codex_escalations() {
@@ -150,6 +172,16 @@ mod tests {
             Path::new("/tmp/app"),
         );
         assert_eq!(policy["type"], "dangerFullAccess");
+    }
+
+    #[test]
+    fn workspace_write_policy_includes_ssh_auth_sock_parent() {
+        let roots = workspace_writable_roots_with_ssh_parent(
+            Path::new("/tmp/app"),
+            Some(PathBuf::from("/tmp/com.apple.launchd.test")),
+        );
+
+        assert_eq!(roots, vec!["/tmp/app", "/tmp/com.apple.launchd.test"]);
     }
 
     #[test]
