@@ -35,6 +35,9 @@ The helper script creates the local tag only. The agent must push the tag explic
    - Include the previous tag version and release date; do not include the previous tag commit hash.
    - Write the changelog around user impact: what changed for users, what got better, and what was fixed.
    - Use emoji-prefixed changelog section headings for standard groups, such as `### ✨ Added`, `### 🔧 Changed`, and `### 🐛 Fixed`.
+   - Inspect the relevant commit diffs, linked GitHub issues, and linked PRs before wording each changelog line; avoid vague summaries that hide the actual user-facing issue.
+   - Prefix every changelog bullet with one existing GitHub label scope in bold square-bracket form, for example `[**Desktop**]`, `[**Backend**]`, `[**provider:codex**]`, or `[**provider:claude**]`.
+   - Prefer the label scope from the linked issue or PR. If multiple labels apply, choose the most user-relevant area/provider label. If no issue or PR is linked, use `gh label list` and the affected files to choose an existing label; do not invent new scope names.
    - Avoid contributor/internal framing unless it directly affects users.
    - Keep the changelog factual and concise.
    - The GitHub release page is populated automatically from this exact changelog section by the release workflow, so write it as publish-ready release notes.

@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.2 - 2026-05-27
+
+Previous release: v0.3.1 - 2026-05-25
+
+### ✨ Added
+
+- [**provider:codex**] Added Codex access modes for new Codex conversations: Default, Full Access, and Auto Review, with the active access mode visible from the session meta bar and configurable in Settings.
+- [**provider:codex**] Added per-session Codex access-mode persistence so existing conversations keep the mode they started with while new conversations use the current default.
+
+### 🔧 Changed
+
+- [**Desktop**] Improved image prompt attachments by routing dropped images to the correct prompt and highlighting prompt cards while dragging.
+- [**Backend**] Improved compact and resume handling so agent sessions recover pending compact state more reliably across backend and frontend lifecycle transitions.
+- [**Backend**] Improved macOS SSH agent handling so terminals and Codex sessions preserve or recover `SSH_AUTH_SOCK` when Cadencr is launched from the GUI.
+
+### 🐛 Fixed
+
+- [**provider:codex**] Fixed Codex permission response timeouts so approvals and denials do not leave prompts stuck waiting.
+- [**provider:claude**] Fixed a Claude Code bypass-permission issue where a rejected `bypassPermissions` switch could be handled like an `auto` compatibility fallback, leaving future prompts aligned to a rejected mode.
+- [**provider:claude**] Fixed Claude sub-agent close detection so closed sub-agent windows are classified correctly.
+
 ## v0.3.1 - 2026-05-25
 
 Previous release: v0.3.0 - 2026-05-24
