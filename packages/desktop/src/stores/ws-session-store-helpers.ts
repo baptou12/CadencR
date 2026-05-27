@@ -67,9 +67,18 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
   if (!session.serverSessionId) return [];
 
   const envelopes: WsEnvelope[] = [];
-  if (session.permissionMode === "plan") {
-    envelopes.push(createModeSet(session.serverSessionId, "plan"));
-  }
+  // `session.init` already carries the FE-selected mode, so this `mode.set`
+  // is only needed for the narrow window where the user toggled the chip
+  // *after* `session.init` left the wire but *before* `session.initialized`
+  // came back (during which `setPermissionMode` writes locally because
+  // there is no `serverSessionId` yet). Sending the current local mode for
+  // every value — not just `"plan"` — closes that race for `acceptEdits`,
+  // `default`, `bypassPermissions`, and `auto` too. Idempotent on the
+  // backend: `handle_mode_set`'s Pending branch just overwrites
+  // `options.permission_mode` on the still-pending `SdkHandle`, and this
+  // envelope is emitted before any queued `prompt.send` so the spawn picks
+  // up the corrected mode.
+  envelopes.push(createModeSet(session.serverSessionId, session.permissionMode));
   for (const prompt of session.queuedPrompts) {
     envelopes.push(
       createPromptSend(session.serverSessionId, prompt.text, prompt.images, prompt.useWorktree),

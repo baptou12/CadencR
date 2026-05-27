@@ -506,6 +506,42 @@ describe("ws-session-store", () => {
     });
   });
 
+  // Regression test for the first-prompt permission-mode race: pre-init
+  // selections for *non-plan* modes (acceptEdits, default, bypassPermissions,
+  // auto) used to be silently dropped because `buildQueuedInitEnvelopes` only
+  // replayed `"plan"`. The first prompt would then spawn the CLI in the
+  // backend provider default, and the user saw a permission prompt for every
+  // edit even though the chip showed "Auto-Accept Edits". Cycling Shift+Tab
+  // recovered because `setPermissionMode` post-`serverSessionId` speaks
+  // directly to the live CLI.
+  it("queued prompts replay the current non-plan mode via mode.set", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+    const ws = getWs();
+
+    store.setPermissionMode("s1", "acceptEdits");
+    store.sendPrompt("s1", "hello");
+    expect(ws.sent).toHaveLength(0);
+
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "srv-1" },
+    });
+
+    const sent = ws.sent.map((raw) => JSON.parse(raw));
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatchObject({
+      action: "mode.set",
+      payload: { session_id: "srv-1", mode: "acceptEdits" },
+    });
+    expect(sent[1]).toMatchObject({
+      action: "prompt.send",
+      payload: { session_id: "srv-1", text: "hello" },
+    });
+  });
+
   it("setPersistedState sets blocks and lifecycle", () => {
     // Ensure session exists first
     useWsSessionStore.getState().connect("s1");
@@ -1971,6 +2007,10 @@ describe("ws-session-store", () => {
       sendPlanPermissionRequest(ws);
 
       const modeBeforeApproval = useWsSessionStore.getState().sessions["s1"].permissionMode;
+      // Snapshot the wire boundary before approval so the post-approval
+      // mode.set check ignores the init-time mode replay that
+      // `buildQueuedInitEnvelopes` emits for every mode.
+      const sentBeforeApproval = ws.sent.length;
 
       useWsSessionStore.getState().approvePlan("s1");
 
@@ -1987,7 +2027,10 @@ describe("ws-session-store", () => {
       // FE must NOT race-send `mode.set` itself — the backend bridge owns
       // the post-approval mode transition (atomic with returning Allow).
       const sent = ws.sent.map((s) => JSON.parse(s));
-      const modeSet = sent.find((m: Record<string, unknown>) => m.action === "mode.set");
+      const sentAfterApproval = sent.slice(sentBeforeApproval);
+      const modeSet = sentAfterApproval.find(
+        (m: Record<string, unknown>) => m.action === "mode.set",
+      );
       expect(modeSet).toBeUndefined();
 
       const permResp = sent.find((m: Record<string, unknown>) => m.action === "permission.respond");
@@ -2017,10 +2060,14 @@ describe("ws-session-store", () => {
       streamExitPlanMode(ws);
       sendPlanPermissionRequest(ws);
 
+      const sentBeforeApproval = ws.sent.length;
       useWsSessionStore.getState().approvePlan("s1");
 
       const sent = ws.sent.map((s) => JSON.parse(s));
-      expect(sent.find((m: Record<string, unknown>) => m.action === "mode.set")).toBeUndefined();
+      const sentAfterApproval = sent.slice(sentBeforeApproval);
+      expect(
+        sentAfterApproval.find((m: Record<string, unknown>) => m.action === "mode.set"),
+      ).toBeUndefined();
 
       ws.simulateMessage({
         domain: "session",

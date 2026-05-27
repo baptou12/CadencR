@@ -334,9 +334,12 @@ describe("useWebSocketSession", () => {
       result.current.sendPrompt("hello");
     });
     const ws = getWs();
-    const sent = JSON.parse(ws.sent[0]);
+    // `buildQueuedInitEnvelopes` emits an init-time `mode.set` for every
+    // mode (closes the first-prompt permission-mode race); scan by action
+    // rather than assuming sent[0].
+    const sent = ws.sent.map((raw) => JSON.parse(raw)).find((m) => m.action === "prompt.send");
+    expect(sent).toBeDefined();
     expect(sent.domain).toBe("session");
-    expect(sent.action).toBe("prompt.send");
     expect(sent.payload.text).toBe("hello");
   });
 
@@ -457,9 +460,11 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.pendingPermission?.requestId).toBe("r1");
     expect(result.current.pendingRequestId).toBe("r1");
-    const sent = JSON.parse(getWs().sent[0]);
+    const sent = getWs()
+      .sent.map((raw) => JSON.parse(raw))
+      .find((m) => m.action === "permission.respond");
+    expect(sent).toBeDefined();
     expect(sent.domain).toBe("session");
-    expect(sent.action).toBe("permission.respond");
     expect(sent.payload.request_id).toBe("r1");
     expect(sent.payload.decision).toBe("allow_once");
     await act(async () => {
@@ -505,7 +510,10 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.pendingPermission?.requestId).toBe("r2");
     expect(result.current.status).toBe("question");
-    const sent = JSON.parse(getWs().sent[0]);
+    const sent = getWs()
+      .sent.map((raw) => JSON.parse(raw))
+      .find((m) => m.action === "permission.respond");
+    expect(sent).toBeDefined();
     expect(sent.payload.decision).toBe("deny");
     await act(async () => {
       getWs().simulateMessage({
@@ -1008,7 +1016,10 @@ describe("useWebSocketSession", () => {
     });
     expect(result.current.pendingPlanApproval).toEqual({});
 
-    // Approve
+    // Approve — snapshot the wire boundary first so the post-approval
+    // `mode.set` check ignores the init-time mode replay that
+    // `buildQueuedInitEnvelopes` emits for every mode.
+    const sentBeforeApproval = ws.sent.length;
     act(() => {
       result.current.approvePlan();
     });
@@ -1025,7 +1036,8 @@ describe("useWebSocketSession", () => {
     // FE must NOT send `mode.set` — backend bridge does it atomically
     // with returning Allow on the can_use_tool callback.
     const sentMessages = ws.sent.map((s) => JSON.parse(s));
-    const modeSet = sentMessages.find((m) => m.action === "mode.set");
+    const sentAfterApproval = sentMessages.slice(sentBeforeApproval);
+    const modeSet = sentAfterApproval.find((m) => m.action === "mode.set");
     expect(modeSet).toBeUndefined();
 
     const permissionRespond = sentMessages.find((m) => m.action === "permission.respond");
@@ -1113,6 +1125,10 @@ describe("useWebSocketSession", () => {
     });
 
     const initialMode = result.current.permissionMode;
+    // Snapshot the wire boundary so the assertion targets the user-driven
+    // `mode.set` rather than the init-time mode replay that
+    // `buildQueuedInitEnvelopes` emits for every mode.
+    const sentBeforeToggle = ws.sent.length;
 
     act(() => {
       result.current.setPermissionMode("plan");
@@ -1121,7 +1137,7 @@ describe("useWebSocketSession", () => {
     // Chip does NOT flip immediately — backend may reject (e.g.
     // MODE_NOT_SUPPORTED) and we'd be lying about CLI state otherwise.
     expect(result.current.permissionMode).toBe(initialMode);
-    const sent = JSON.parse(ws.sent[0]);
+    const sent = JSON.parse(ws.sent[sentBeforeToggle]);
     expect(sent.action).toBe("mode.set");
     expect(sent.payload.mode).toBe("plan");
 

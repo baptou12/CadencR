@@ -179,6 +179,13 @@ export function useWsSessionEffects(args: {
       provider: controls.resolvedProviderId,
       model: controls.resolvedModelId,
       thinkingEffort: controls.resolvedThinkingEffort,
+      // Pass the user's currently-selected mode so the backend can apply it
+      // via `--permission-mode` (Claude Code) / `session/set_mode` (ACP) at
+      // spawn time. Without this the backend silently falls back to its
+      // provider default in `session_init.rs`, which only matches the FE's
+      // local selection by coincidence — that's the race that made the
+      // first prompt land in the wrong mode.
+      permissionMode: controls.ws.permissionMode,
     });
   }, [
     autoInitSession,
@@ -186,6 +193,7 @@ export function useWsSessionEffects(args: {
     controls.resolvedModelId,
     controls.resolvedProviderId,
     controls.resolvedThinkingEffort,
+    controls.ws.permissionMode,
     cwd,
     featureId,
     initSession,
