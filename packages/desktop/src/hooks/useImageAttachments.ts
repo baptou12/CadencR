@@ -31,7 +31,7 @@ export interface UseImageAttachmentsResult {
   isDragging: boolean;
 }
 
-const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const EXTENSION_TO_MIME: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -74,7 +74,7 @@ export function useImageAttachments(promptId?: string): UseImageAttachmentsResul
       if (remaining <= 0) return;
 
       fileArray.slice(0, remaining).forEach((file) => {
-        if (!ALLOWED_TYPES.includes(file.type)) return;
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) return;
         if (file.size > MAX_SIZE_BYTES) return;
 
         const reader = new FileReader();

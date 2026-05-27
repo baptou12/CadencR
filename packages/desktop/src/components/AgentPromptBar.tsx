@@ -365,6 +365,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
               initialText={initialDraft || undefined}
+              onPasteImages={addFiles}
             />
 
             <div className="flex shrink-0 items-center gap-1.5 self-end">

@@ -14,6 +14,7 @@ import { MentionPlugin } from "./plugins/MentionPlugin";
 import { SlashCommandNode } from "./nodes/SlashCommandNode";
 import { SlashCommandPlugin } from "./plugins/SlashCommandPlugin";
 import { KeyboardShortcutsPlugin } from "./plugins/KeyboardShortcutsPlugin";
+import { ImagePastePlugin } from "./plugins/ImagePastePlugin";
 import { getEditorText, initializeEditorText, setEditorText } from "./editor-utils";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 
@@ -40,6 +41,8 @@ interface PromptEditorProps {
   disabled?: boolean;
   /** Initial text to populate the editor with (e.g. restored draft) */
   initialText?: string;
+  /** Called when image files are pasted from the clipboard. */
+  onPasteImages?: (files: File[]) => void;
 }
 
 function EditorRefPlugin({
@@ -84,6 +87,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
       onArrowUp,
       onArrowDown,
       disabled,
+      onPasteImages,
     },
     ref,
   ) {
@@ -165,6 +169,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           onArrowUp={onArrowUp}
           onArrowDown={onArrowDown}
         />
+        <ImagePastePlugin onPasteImages={onPasteImages} />
       </>
     );
   },
