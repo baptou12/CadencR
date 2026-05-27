@@ -642,6 +642,22 @@ mod tests {
         }
     }
 
+    #[test]
+    fn first_prompt_spawn_path_releases_sdk_session_lock_before_awaits() {
+        let source = include_str!("session_prompt/prompt_send.rs");
+        let drop_index = source
+            .find("drop(sessions);")
+            .expect("pending spawn path should explicitly release sdk_sessions");
+        let persist_index = source
+            .find("// Persist user message")
+            .expect("pending spawn path should persist user message");
+
+        assert!(
+            drop_index < persist_index,
+            "sdk_sessions must be released before awaited first-prompt work"
+        );
+    }
+
     #[tokio::test]
     async fn test_first_prompt_broadcasts_agent_before_runtime_spawn() {
         let (tx, mut rx) = mpsc::unbounded_channel();

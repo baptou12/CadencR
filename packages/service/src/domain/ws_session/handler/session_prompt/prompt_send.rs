@@ -172,6 +172,8 @@ pub(crate) async fn handle_prompt_send(
                 }
             }
 
+            drop(sessions);
+
             // Persist user message (session row already exists from handle_init).
             let write_pool = app_state.write_pool.clone();
             let persist_content = build_persist_content(&payload.text, &payload.images);
