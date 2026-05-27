@@ -8,6 +8,7 @@ Previous release: v0.3.1 - 2026-05-25
 
 - [**provider:codex**] Added Codex access modes for new Codex conversations: Default, Full Access, and Auto Review, with the active access mode visible from the session meta bar and configurable in Settings.
 - [**provider:codex**] Added per-session Codex access-mode persistence so existing conversations keep the mode they started with while new conversations use the current default.
+- [**Desktop**] Added clipboard image paste support in the agent prompt so screenshots can be attached without drag-and-drop.
 
 ### 🔧 Changed
 
@@ -19,6 +20,8 @@ Previous release: v0.3.1 - 2026-05-25
 
 - [**provider:codex**] Fixed Codex permission response timeouts so approvals and denials do not leave prompts stuck waiting.
 - [**provider:claude**] Fixed a Claude Code bypass-permission issue where a rejected `bypassPermissions` switch could be handled like an `auto` compatibility fallback, leaving future prompts aligned to a rejected mode.
+- [**Desktop**] Fixed a first-prompt permission-mode race so the mode selected before sending the first prompt is applied when the agent starts.
+- [**Backend**] Fixed Git workflow operations so status, checkout, commit, and push actions avoid background lock conflicts.
 - [**provider:claude**] Fixed Claude sub-agent close detection so closed sub-agent windows are classified correctly.
 
 ## v0.3.1 - 2026-05-25
