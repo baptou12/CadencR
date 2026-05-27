@@ -12,6 +12,46 @@ pub async fn run_git(args: &[&str], cwd: &Path) -> Result<String, AppError> {
     run_raw(args, cwd).await
 }
 
+/// Run a **periodic / read-style** git command with `--no-optional-locks`
+/// so it can't race a concurrent user-initiated mutation (`git rebase`,
+/// `git commit`, etc.) for `.git/index.lock`.
+///
+/// Default-on `git status` (and `git diff`) refresh the index stat cache,
+/// briefly creating `.git/index.lock` to do so. When the watcher fires
+/// `git status` in response to fs events during a user-initiated
+/// `git rebase`, both processes race for the same lock file and rebase
+/// aborts with `Unable to create '...index.lock': File exists`.
+///
+/// **Use this for:** `status`, `diff`, `ls-files`, `show`, `rev-list`,
+/// `config --get`, and any other read issued from a polling / observational
+/// code path (the worktree watcher, UI cleanliness probes, post-commit
+/// snapshot refreshes).
+///
+/// **Do not use this for** state-changing commands (`commit`, `push`,
+/// `rebase`, `cherry-pick`, `reset`, `merge`, `fetch`, `stash`, …) — those
+/// keep default git semantics via [`run_git`] / [`run_git_capture`] so any
+/// required locks behave as users expect.
+///
+/// `--no-optional-locks` is the documented escape hatch (equivalent to
+/// setting `GIT_OPTIONAL_LOCKS=0` for that one invocation) — the same
+/// flag VS Code, JetBrains, GitHub Desktop, and lazygit use for this
+/// exact problem.
+pub async fn run_git_background(args: &[&str], cwd: &Path) -> Result<String, AppError> {
+    run_raw(&prepend_no_optional_locks(args), cwd).await
+}
+
+/// Build the arg list `["--no-optional-locks", ...args]`. Extracted from
+/// [`run_git_background`] so the prefix injection can be unit-tested
+/// without spinning up a `git` child — the integration race the wrapper
+/// guards against is multi-process and timing-dependent, so we test the
+/// thing we own (the args we hand to git) directly.
+fn prepend_no_optional_locks<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut prefixed: Vec<&'a str> = Vec::with_capacity(args.len() + 1);
+    prefixed.push("--no-optional-locks");
+    prefixed.extend_from_slice(args);
+    prefixed
+}
+
 /// Run a git command that operates on paths. Validates that no positional
 /// starts with `-` (which would be parsed as a flag) and inserts `--` between
 /// flags and positionals so the tokens cannot be reinterpreted as options.
@@ -75,6 +115,19 @@ pub fn guard_positionals(positionals: &[&str]) -> Result<(), AppError> {
     validate_positionals(positionals)
 }
 
+/// Spawn `git` with `args` in `cwd`. Returns stdout on success; on failure
+/// returns a `GitCommandError` with the (sanitized) stderr.
+///
+/// This is the default / mutating spawn path. Use it for any command that
+/// is part of a user-initiated flow — `commit`, `push`, `merge`, `rebase`,
+/// `cherry-pick`, `reset`, `stash`, `fetch`, etc. — so any required git
+/// locks behave with normal semantics.
+///
+/// For **periodic / read-style** commands issued from polling or
+/// observational code paths (the watcher, UI cleanliness probes, post-
+/// commit snapshot refreshes), use [`run_git_background`] instead so they
+/// pass `--no-optional-locks` and can't race a concurrent user-initiated
+/// mutation for `.git/index.lock`.
 async fn run_raw(args: &[&str], cwd: &Path) -> Result<String, AppError> {
     let output = Command::new("git")
         .args(args)
@@ -203,6 +256,44 @@ mod tests {
         assert!(out.starts_with("error in ~/"), "{out}");
         assert!(!out.contains(home_str.as_ref()), "{out}");
     }
+
+    /// Regression test for the `git rebase` vs. watcher `index.lock`
+    /// race: `run_git_background` must hand git `--no-optional-locks` as
+    /// the very first arg so the read skips the optional stat-cache
+    /// refresh (and the brief `.git/index.lock` create/delete that goes
+    /// with it).
+    ///
+    /// The actual race is a multi-process timing window between two
+    /// concurrent git invocations and isn't reliably reproducible in a
+    /// single-process unit test (modern git silently skips the optional
+    /// refresh if it can't get the lock, so a held-lock fixture won't
+    /// fail the way the real race does). We test the thing we own — the
+    /// arg list — directly. The integration behavior is covered by the
+    /// manual repro in PR #28.
+    #[test]
+    fn run_git_background_prepends_no_optional_locks() {
+        let prefixed = prepend_no_optional_locks(&["status", "--porcelain=v2", "-b"]);
+        assert_eq!(
+            prefixed,
+            vec!["--no-optional-locks", "status", "--porcelain=v2", "-b"],
+            "background-read wrapper must inject the top-level flag before the subcommand"
+        );
+    }
+
+    #[test]
+    fn prepend_no_optional_locks_preserves_empty_arg_list() {
+        // Defensive: nothing in the codebase calls `run_git_background`
+        // with an empty arg slice today, but if it ever does the result
+        // must still be a well-formed top-level git invocation.
+        let prefixed = prepend_no_optional_locks(&[]);
+        assert_eq!(prefixed, vec!["--no-optional-locks"]);
+    }
+
+    // End-to-end coverage (real git binary, real repo) for the
+    // background-read path is provided by existing `compute_status_*`
+    // tests in `domain::git::git_status::compute` — those exercise
+    // `run_git_background` transitively after this migration. Keeping a
+    // duplicate smoke test here just to spawn git would add no signal.
 
     #[tokio::test]
     async fn run_git_safe_accepts_benign_positional() {
