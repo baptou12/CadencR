@@ -7,7 +7,16 @@ import {
   type ReactNode,
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronRight, ChevronDown, Ellipsis, Plus, PlusIcon } from "lucide-react";
+import {
+  ChevronRight,
+  ChevronDown,
+  Download,
+  Ellipsis,
+  Plus,
+  PlusIcon,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListProjects,
@@ -39,6 +48,7 @@ import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ImportConversationsDialog } from "./import/ImportConversationsDialog";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { ShortcutHintsProvider, useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
@@ -109,6 +119,10 @@ export function ProjectTree({
 
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [settingsProject, setSettingsProject] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
+  const [importProject, setImportProject] = useState<{
     id: number;
     name: string;
   } | null>(null);
@@ -219,7 +233,18 @@ export function ProjectTree({
                                   });
                                 }}
                               >
-                                Project Settings
+                                <Settings className="size-4" /> Project Settings
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setImportProject({
+                                    id: project.id,
+                                    name: project.name,
+                                  });
+                                }}
+                              >
+                                <Download className="size-4" /> Import existing sessions
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
@@ -231,7 +256,7 @@ export function ProjectTree({
                                   });
                                 }}
                               >
-                                Delete Project
+                                <Trash2 className="size-4" /> Delete Project
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -255,6 +280,11 @@ export function ProjectTree({
                         onSelect={() => setSettingsProject({ id: project.id, name: project.name })}
                       >
                         Project Settings
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={() => setImportProject({ id: project.id, name: project.name })}
+                      >
+                        Import existing sessions
                       </ContextMenuItem>
                       <ContextMenuItem
                         variant="destructive"
@@ -291,6 +321,17 @@ export function ProjectTree({
             open={true}
             onOpenChange={(open) => {
               if (!open) setSettingsProject(null);
+            }}
+          />
+        )}
+
+        {importProject && (
+          <ImportConversationsDialog
+            projectId={importProject.id}
+            projectName={importProject.name}
+            open={true}
+            onOpenChange={(open) => {
+              if (!open) setImportProject(null);
             }}
           />
         )}

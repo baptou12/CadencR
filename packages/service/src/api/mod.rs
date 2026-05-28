@@ -15,6 +15,7 @@ use crate::domain::editor::routes::editor_router;
 use crate::domain::feature_layouts::routes::feature_layouts_router;
 use crate::domain::features::routes::features_router;
 use crate::domain::git::routes::git_router;
+use crate::domain::imports::routes::imports_router;
 use crate::domain::lsp::lsp_router;
 use crate::domain::projects::routes::projects_router;
 use crate::domain::sessions::routes::sessions_router;
@@ -73,6 +74,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(claude_code_router())
         .merge(custom_actions_router())
         .merge(discovery_router())
+        .merge(imports_router())
         .merge(lsp_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))

@@ -31,6 +31,7 @@ pub mod editor;
 pub mod feature_layouts;
 pub mod features;
 pub mod git;
+pub mod imports;
 pub mod lsp;
 pub mod mcp;
 pub mod permission_bridge;

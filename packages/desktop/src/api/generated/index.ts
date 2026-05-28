@@ -773,6 +773,52 @@ that grabbed our port before we could bind. */
   status: string;
 }
 
+export type ImportConversationSummaryModifiedAt = string | null;
+
+/**
+ * One row in the "select conversations to import" picker.
+ */
+export interface ImportConversationSummary {
+  /** True if Cadencr already has a feature for this `source_session_id`
+under this project. The frontend pre-checks + disables those rows
+and the backend re-checks at import time. */
+  already_imported: boolean;
+  /** @minimum 0 */
+  message_count: number;
+  modified_at?: ImportConversationSummaryModifiedAt;
+  source_session_id: string;
+  title: string;
+}
+
+export interface ImportJobState {
+  /** @minimum 0 */
+  completed: number;
+  imported: ImportedRecord[];
+  job_id: string;
+  skipped: SkippedRecord[];
+  status: ImportJobStatus;
+  /** @minimum 0 */
+  total: number;
+}
+
+/**
+ * Two-state lifecycle. Per-session failures are surfaced via `skipped` so a
+single bad file can't fail the whole job; a `Failed` job-level state can
+be added when there's a code path that actually emits it.
+ */
+export type ImportJobStatus = (typeof ImportJobStatus)[keyof typeof ImportJobStatus];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const ImportJobStatus = {
+  running: "running",
+  done: "done",
+} as const;
+
+export interface ImportedRecord {
+  feature_id: number;
+  source_session_id: string;
+}
+
 export type LastRunSummaryEndedAt = string | null;
 
 /**
@@ -789,6 +835,10 @@ export interface LastRunSummary {
   ended_at?: LastRunSummaryEndedAt;
   /** `None` while the run is still in flight. */
   exit_code?: LastRunSummaryExitCode;
+}
+
+export interface ListImportConversationsResponse {
+  conversations: ImportConversationSummary[];
 }
 
 export interface ListServersResponse {
@@ -1273,6 +1323,34 @@ affect the donor feature's view too.
 export interface SharedFeatureRef {
   feature_id: number;
   title: string;
+}
+
+/**
+ * Reason a single session wasn't imported. Typed so the frontend can switch
+on it and so typos can't drift between the importer and the docs.
+ */
+export type SkipReason = (typeof SkipReason)[keyof typeof SkipReason];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const SkipReason = {
+  already_imported: "already_imported",
+  empty: "empty",
+  not_found: "not_found",
+  parse_error: "parse_error",
+  db_error: "db_error",
+} as const;
+
+export interface SkippedRecord {
+  reason: SkipReason;
+  source_session_id: string;
+}
+
+export interface StartImportRequest {
+  session_ids: string[];
+}
+
+export interface StartImportResponse {
+  job_id: string;
 }
 
 export interface SuccessResponse {
@@ -7961,6 +8039,58 @@ export function useHealth<
   return query;
 }
 
+export const getImportJob = (jobId: string, signal?: AbortSignal) => {
+  return customInstance<ImportJobState>({
+    url: `/api/imports/jobs/${jobId}`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getGetImportJobQueryKey = (jobId?: string) => {
+  return [`/api/imports/jobs/${jobId}`] as const;
+};
+
+export const getGetImportJobQueryOptions = <
+  TData = Awaited<ReturnType<typeof getImportJob>>,
+  TError = ErrorType<void>,
+>(
+  jobId: string,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getImportJob>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetImportJobQueryKey(jobId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getImportJob>>> = ({ signal }) =>
+    getImportJob(jobId, signal);
+
+  return { queryKey, queryFn, enabled: !!jobId, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getImportJob>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetImportJobQueryResult = NonNullable<Awaited<ReturnType<typeof getImportJob>>>;
+export type GetImportJobQueryError = ErrorType<void>;
+
+export function useGetImportJob<
+  TData = Awaited<ReturnType<typeof getImportJob>>,
+  TError = ErrorType<void>,
+>(
+  jobId: string,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getImportJob>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetImportJobQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 /**
  * @summary Inspect the LSP catalog and report each entry's installation state.
 Used by Settings → Editor; never triggers a download.
@@ -8301,6 +8431,141 @@ export const useDeleteProject = <TError = ErrorType<unknown>, TContext = unknown
 
   return useMutation(mutationOptions);
 };
+
+export const startClaudeCodeImport = (
+  id: number,
+  startImportRequest: StartImportRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<StartImportResponse>({
+    url: `/api/projects/${id}/imports/claude-code`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: startImportRequest,
+    signal,
+  });
+};
+
+export const getStartClaudeCodeImportMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startClaudeCodeImport>>,
+    TError,
+    { id: number; data: StartImportRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startClaudeCodeImport>>,
+  TError,
+  { id: number; data: StartImportRequest },
+  TContext
+> => {
+  const mutationKey = ["startClaudeCodeImport"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startClaudeCodeImport>>,
+    { id: number; data: StartImportRequest }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return startClaudeCodeImport(id, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartClaudeCodeImportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startClaudeCodeImport>>
+>;
+export type StartClaudeCodeImportMutationBody = StartImportRequest;
+export type StartClaudeCodeImportMutationError = ErrorType<unknown>;
+
+export const useStartClaudeCodeImport = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startClaudeCodeImport>>,
+    TError,
+    { id: number; data: StartImportRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startClaudeCodeImport>>,
+  TError,
+  { id: number; data: StartImportRequest },
+  TContext
+> => {
+  const mutationOptions = getStartClaudeCodeImportMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const listClaudeCodeConversations = (id: number, signal?: AbortSignal) => {
+  return customInstance<ListImportConversationsResponse>({
+    url: `/api/projects/${id}/imports/claude-code/conversations`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListClaudeCodeConversationsQueryKey = (id?: number) => {
+  return [`/api/projects/${id}/imports/claude-code/conversations`] as const;
+};
+
+export const getListClaudeCodeConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listClaudeCodeConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listClaudeCodeConversations>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListClaudeCodeConversationsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listClaudeCodeConversations>>> = ({
+    signal,
+  }) => listClaudeCodeConversations(id, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listClaudeCodeConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListClaudeCodeConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listClaudeCodeConversations>>
+>;
+export type ListClaudeCodeConversationsQueryError = ErrorType<unknown>;
+
+export function useListClaudeCodeConversations<
+  TData = Awaited<ReturnType<typeof listClaudeCodeConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listClaudeCodeConversations>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListClaudeCodeConversationsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getProjectModelSettings = (id: number, signal?: AbortSignal) => {
   return customInstance<ProjectModelSettings>({
