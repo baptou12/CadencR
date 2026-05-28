@@ -19,6 +19,8 @@ use crate::domain::features::models as features_models;
 use crate::domain::features::routes as features_routes;
 use crate::domain::git::models;
 use crate::domain::git::routes;
+use crate::domain::imports::models as imports_models;
+use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
@@ -158,6 +160,9 @@ use crate::domain::workspace::routes as workspace_routes;
         claude_code_routes::delete_custom_model_handler,
         lsp_routes::open_session_handler,
         lsp_routes::list_servers_handler,
+        imports_routes::list_claude_code_conversations_handler,
+        imports_routes::start_claude_code_import_handler,
+        imports_routes::get_import_job_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -309,6 +314,15 @@ use crate::domain::workspace::routes as workspace_routes;
         lsp_routes::ListServersResponse,
         crate::domain::lsp::probe::ServerProbe,
         crate::domain::lsp::probe::ServerProbeStatus,
+        imports_models::ImportConversationSummary,
+        imports_models::ListImportConversationsResponse,
+        imports_models::StartImportRequest,
+        imports_models::StartImportResponse,
+        imports_models::ImportJobState,
+        imports_models::ImportJobStatus,
+        imports_models::ImportedRecord,
+        imports_models::SkippedRecord,
+        imports_models::SkipReason,
     ))
 )]
 struct ApiDoc;

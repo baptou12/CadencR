@@ -8,6 +8,7 @@ use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
+use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
@@ -74,6 +75,11 @@ pub struct AppState {
     /// language server from being relaunched on every WS reconnect. See
     /// `domain::lsp::lifecycle`.
     pub lsp_crashes: Arc<CrashTracker>,
+    /// In-flight import-conversation jobs (`POST /api/imports/...`).
+    /// Polled by the frontend via `GET /api/imports/jobs/{id}`. Not
+    /// persisted: a service restart drops jobs, which is fine because
+    /// already-imported sessions are skipped on re-run.
+    pub import_jobs: ImportJobRegistry,
 }
 
 impl AppState {
@@ -124,6 +130,7 @@ impl AppState {
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),
+            import_jobs: ImportJobRegistry::new(),
         }
     }
 }
