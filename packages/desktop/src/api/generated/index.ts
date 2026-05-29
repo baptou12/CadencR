@@ -8567,6 +8567,141 @@ export function useListClaudeCodeConversations<
   return query;
 }
 
+export const startProviderImport = (
+  id: number,
+  provider: string,
+  startImportRequest: StartImportRequest,
+  signal?: AbortSignal,
+) => {
+  return customInstance<StartImportResponse>({
+    url: `/api/projects/${id}/imports/${provider}`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: startImportRequest,
+    signal,
+  });
+};
+
+export const getStartProviderImportMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startProviderImport>>,
+    TError,
+    { id: number; provider: string; data: StartImportRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof startProviderImport>>,
+  TError,
+  { id: number; provider: string; data: StartImportRequest },
+  TContext
+> => {
+  const mutationKey = ["startProviderImport"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof startProviderImport>>,
+    { id: number; provider: string; data: StartImportRequest }
+  > = (props) => {
+    const { id, provider, data } = props ?? {};
+
+    return startProviderImport(id, provider, data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartProviderImportMutationResult = NonNullable<
+  Awaited<ReturnType<typeof startProviderImport>>
+>;
+export type StartProviderImportMutationBody = StartImportRequest;
+export type StartProviderImportMutationError = ErrorType<unknown>;
+
+export const useStartProviderImport = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof startProviderImport>>,
+    TError,
+    { id: number; provider: string; data: StartImportRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof startProviderImport>>,
+  TError,
+  { id: number; provider: string; data: StartImportRequest },
+  TContext
+> => {
+  const mutationOptions = getStartProviderImportMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const listProviderConversations = (id: number, provider: string, signal?: AbortSignal) => {
+  return customInstance<ListImportConversationsResponse>({
+    url: `/api/projects/${id}/imports/${provider}/conversations`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getListProviderConversationsQueryKey = (id?: number, provider?: string) => {
+  return [`/api/projects/${id}/imports/${provider}/conversations`] as const;
+};
+
+export const getListProviderConversationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProviderConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  provider: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listProviderConversations>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListProviderConversationsQueryKey(id, provider);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProviderConversations>>> = ({
+    signal,
+  }) => listProviderConversations(id, provider, signal);
+
+  return { queryKey, queryFn, enabled: !!(id && provider), ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProviderConversations>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProviderConversationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProviderConversations>>
+>;
+export type ListProviderConversationsQueryError = ErrorType<unknown>;
+
+export function useListProviderConversations<
+  TData = Awaited<ReturnType<typeof listProviderConversations>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  provider: string,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listProviderConversations>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProviderConversationsQueryOptions(id, provider, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 export const getProjectModelSettings = (id: number, signal?: AbortSignal) => {
   return customInstance<ProjectModelSettings>({
     url: `/api/projects/${id}/model-settings`,

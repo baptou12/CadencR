@@ -1,6 +1,6 @@
 //! Orchestration layer: list importable conversations and persist them as
 //! `features` + `agent_sessions` + `agent_messages`. Pure DB work goes
-//! through sqlx; provider parsing is delegated to `claude_code_jsonl`.
+//! through sqlx; provider parsing is delegated to provider modules.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -12,9 +12,11 @@ use crate::error::AppError;
 use super::claude_code_jsonl::{
     claude_projects_dir_for, list_session_files, parse_session_file, ImportedConversation,
 };
-use super::models::{
-    ImportConversationSummary, ImportedRecord, SkipReason, SkippedRecord, PROVIDER_CLAUDE_CODE,
-};
+use super::codex_rollout;
+use super::models::{ImportConversationSummary, ImportProvider, SkipReason, SkippedRecord};
+use super::opencode_sqlite;
+use super::persistence::persist_imported_conversation;
+pub use super::persistence::ImportOutcome;
 
 /// Look up a project's filesystem `path`. The caller uses it to derive the
 /// `~/.claude/projects/<encoded>/` directory.
@@ -33,7 +35,7 @@ pub async fn project_path(pool: &SqlitePool, project_id: i64) -> Result<String, 
 pub async fn already_imported_ids(
     pool: &SqlitePool,
     project_id: i64,
-    provider: &str,
+    provider: ImportProvider,
 ) -> Result<HashSet<String>, AppError> {
     let rows: Vec<(String,)> = sqlx::query_as(
         "SELECT DISTINCT s.runtime_session_id
@@ -44,33 +46,29 @@ pub async fn already_imported_ids(
            AND s.runtime_session_id IS NOT NULL",
     )
     .bind(project_id)
-    .bind(provider)
+    .bind(provider.as_str())
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|(s,)| s).collect())
 }
 
-/// List Claude Code conversations available for a project, with the
-/// `already_imported` flag derived from the DB. Missing on-disk directory
-/// yields an empty list — that's the expected "no history yet" state.
-/// The filesystem scan + per-file JSON parsing runs on a blocking worker so
-/// it doesn't stall the request executor.
-pub async fn list_claude_code_conversations(
+pub async fn list_provider_conversations(
     pool: &SqlitePool,
     project_id: i64,
+    provider: ImportProvider,
 ) -> Result<Vec<ImportConversationSummary>, AppError> {
-    let project_path_str = project_path(pool, project_id).await?;
-    let imported = already_imported_ids(pool, project_id, PROVIDER_CLAUDE_CODE).await?;
-    let parsed = tokio::task::spawn_blocking(move || scan_claude_code_dir(&project_path_str))
-        .await
-        .map_err(|e| AppError::Internal(format!("scan task panicked: {e}")))??;
+    let (project_path_str, imported) = tokio::try_join!(
+        project_path(pool, project_id),
+        already_imported_ids(pool, project_id, provider)
+    )?;
+    let parsed = list_provider_conversations_from_source(provider, &project_path_str).await?;
     let mut out: Vec<ImportConversationSummary> = parsed
         .into_iter()
         .map(|conv| ImportConversationSummary {
             already_imported: imported.contains(&conv.source_session_id),
             source_session_id: conv.source_session_id,
             title: conv.title,
-            message_count: conv.message_count,
+            message_count: conv.messages.len() as u32,
             modified_at: conv.modified_at,
         })
         .collect();
@@ -78,9 +76,37 @@ pub async fn list_claude_code_conversations(
     Ok(out)
 }
 
-/// Synchronous file-scan half of [`list_claude_code_conversations`]. Kept
-/// separate so it can be wrapped in `spawn_blocking` without contaminating
-/// the async signature.
+pub fn parse_import_provider(provider: &str) -> Result<ImportProvider, AppError> {
+    ImportProvider::from_id(provider)
+        .ok_or_else(|| AppError::BadRequest(format!("Unsupported import provider '{provider}'")))
+}
+
+async fn list_provider_conversations_from_source(
+    provider: ImportProvider,
+    project_path_str: &str,
+) -> Result<Vec<ImportedConversation>, AppError> {
+    match provider {
+        ImportProvider::ClaudeCode => {
+            let project_path = project_path_str.to_string();
+            tokio::task::spawn_blocking(move || scan_claude_code_dir(&project_path))
+                .await
+                .map_err(|e| AppError::Internal(format!("scan task panicked: {e}")))?
+        }
+        ImportProvider::CodexCli => {
+            let project_path = project_path_str.to_string();
+            tokio::task::spawn_blocking(move || {
+                codex_rollout::list_project_conversations(&project_path)
+            })
+            .await
+            .map_err(|e| AppError::Internal(format!("scan task panicked: {e}")))?
+            .map_err(|e| AppError::Internal(format!("scan Codex rollouts: {e}")))
+        }
+        ImportProvider::Opencode => {
+            opencode_sqlite::list_project_conversations(project_path_str).await
+        }
+    }
+}
+
 fn scan_claude_code_dir(project_path: &str) -> Result<Vec<ImportedConversation>, AppError> {
     let Some(dir) = claude_projects_dir_for(&PathBuf::from(project_path)) else {
         return Ok(Vec::new());
@@ -102,37 +128,54 @@ fn scan_claude_code_dir(project_path: &str) -> Result<Vec<ImportedConversation>,
     Ok(out)
 }
 
-/// Outcome of importing a single conversation.
-pub enum ImportOutcome {
-    Imported(ImportedRecord),
-    Skipped(SkippedRecord),
-}
-
-/// Result of loading a single Claude Code session off disk. Bundled so the
-/// importer can map "file gone" vs "file present but empty" to distinct
-/// skip reasons.
 enum LoadedSession {
     Found(ImportedConversation),
     NotFound,
     Empty,
 }
 
-/// Load + persist a single source session by id. Bundles disk read with the
-/// DB write so the route handler stays a thin shim and the layering matches
-/// "input is a session id, output is an outcome".
-pub async fn import_session_by_id(
+pub async fn import_provider_session_by_id(
     write_pool: &SqlitePool,
     project_id: i64,
+    provider: ImportProvider,
     project_path: &str,
     source_session_id: &str,
 ) -> Result<ImportOutcome, AppError> {
+    if provider == ImportProvider::Opencode {
+        let loaded =
+            opencode_sqlite::load_project_conversation_by_id(project_path, source_session_id)
+                .await?;
+        let loaded = loaded.map_or(LoadedSession::NotFound, LoadedSession::Found);
+        return import_loaded_session(write_pool, project_id, provider, source_session_id, loaded)
+            .await;
+    }
     let project_path = project_path.to_string();
     let session_id = source_session_id.to_string();
     let loaded = tokio::task::spawn_blocking(move || {
-        load_claude_code_conversation(&project_path, &session_id)
+        load_provider_conversation(provider, &project_path, &session_id)
     })
     .await
     .map_err(|e| AppError::Internal(format!("load task panicked: {e}")))?;
+    let loaded = match loaded {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            tracing::warn!(error = %err, provider = provider.as_str(), "failed to parse session for import");
+            return Ok(ImportOutcome::Skipped(SkippedRecord {
+                source_session_id: source_session_id.to_string(),
+                reason: SkipReason::ParseError,
+            }));
+        }
+    };
+    import_loaded_session(write_pool, project_id, provider, source_session_id, loaded).await
+}
+
+async fn import_loaded_session(
+    write_pool: &SqlitePool,
+    project_id: i64,
+    provider: ImportProvider,
+    source_session_id: &str,
+    loaded: LoadedSession,
+) -> Result<ImportOutcome, AppError> {
     let skip = |reason: SkipReason| {
         Ok(ImportOutcome::Skipped(SkippedRecord {
             source_session_id: source_session_id.to_string(),
@@ -140,94 +183,39 @@ pub async fn import_session_by_id(
         }))
     };
     match loaded {
-        Ok(LoadedSession::Found(c)) => import_one(write_pool, project_id, c).await,
-        Ok(LoadedSession::NotFound) => skip(SkipReason::NotFound),
-        Ok(LoadedSession::Empty) => skip(SkipReason::Empty),
-        Err(err) => {
-            tracing::warn!(error = %err, "failed to parse Claude Code session for import");
-            skip(SkipReason::ParseError)
+        LoadedSession::Found(c) => {
+            persist_imported_conversation(write_pool, project_id, provider, c).await
         }
+        LoadedSession::NotFound => skip(SkipReason::NotFound),
+        LoadedSession::Empty => skip(SkipReason::Empty),
     }
 }
 
-/// Persist a single parsed conversation. Wraps the inserts in one
-/// transaction so a partial failure leaves the DB clean. Re-import dedup is
-/// a pre-check inside the tx — provenance lives on the `agent_sessions`
-/// row, not on a redundant column on `features`.
+fn load_provider_conversation(
+    provider: ImportProvider,
+    project_path: &str,
+    source_session_id: &str,
+) -> std::io::Result<LoadedSession> {
+    match provider {
+        ImportProvider::ClaudeCode => {
+            load_claude_code_conversation(project_path, source_session_id)
+        }
+        ImportProvider::CodexCli => Ok(codex_rollout::load_project_conversation_by_id(
+            project_path,
+            source_session_id,
+        )?
+        .map_or(LoadedSession::NotFound, LoadedSession::Found)),
+        ImportProvider::Opencode => unreachable!("OpenCode conversations load asynchronously"),
+    }
+}
+
+#[cfg(test)]
 pub async fn import_one(
     write_pool: &SqlitePool,
     project_id: i64,
     conv: ImportedConversation,
 ) -> Result<ImportOutcome, AppError> {
-    let mut tx = write_pool.begin().await?;
-
-    let existing: Option<(i64,)> = sqlx::query_as(
-        "SELECT s.id
-         FROM features f
-         JOIN agent_sessions s ON s.feature_id = f.id
-         WHERE f.project_id = ?
-           AND s.runtime_provider = ?
-           AND s.runtime_session_id = ?
-         LIMIT 1",
-    )
-    .bind(project_id)
-    .bind(PROVIDER_CLAUDE_CODE)
-    .bind(&conv.source_session_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    if existing.is_some() {
-        return Ok(ImportOutcome::Skipped(SkippedRecord {
-            source_session_id: conv.source_session_id,
-            reason: SkipReason::AlreadyImported,
-        }));
-    }
-
-    let feature_result = sqlx::query(
-        "INSERT INTO features (project_id, title, status, type) VALUES (?, ?, 'active', 'ws-session')",
-    )
-    .bind(project_id)
-    .bind(&conv.title)
-    .execute(&mut *tx)
-    .await?;
-    let feature_id = feature_result.last_insert_rowid();
-
-    // Schema dropped `claude_session_id` in 20260413120000 in favor of the
-    // provider-neutral (runtime_provider, runtime_session_id) pair — this
-    // row is also the provenance record the dedup join reads.
-    let session_result = sqlx::query(
-        "INSERT INTO agent_sessions (feature_id, agent_type, runtime_provider, runtime_session_id, status, started_at, ended_at) VALUES (?, 'session', ?, ?, 'completed', ?, ?)",
-    )
-    .bind(feature_id)
-    .bind(PROVIDER_CLAUDE_CODE)
-    .bind(&conv.source_session_id)
-    .bind(conv.started_at.as_deref().or(conv.modified_at.as_deref()))
-    .bind(conv.modified_at.as_deref())
-    .execute(&mut *tx)
-    .await?;
-    let session_id = session_result.last_insert_rowid();
-
-    for msg in conv.messages.iter() {
-        sqlx::query(
-            "INSERT INTO agent_messages (session_id, role, content, message_type, tool_name, tool_use_id, parent_tool_use_id, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')))",
-        )
-        .bind(session_id)
-        .bind(&msg.role)
-        .bind(&msg.content)
-        .bind(&msg.message_type)
-        .bind(msg.tool_name.as_deref())
-        .bind(msg.tool_use_id.as_deref())
-        .bind(None::<&str>) // parent_tool_use_id: top-level imports have no parent.
-        .bind(msg.model.as_deref())
-        .bind(msg.created_at.as_deref())
-        .execute(&mut *tx)
-        .await?;
-    }
-
-    tx.commit().await?;
-    Ok(ImportOutcome::Imported(ImportedRecord {
-        source_session_id: conv.source_session_id,
-        feature_id,
-    }))
+    persist_imported_conversation(write_pool, project_id, ImportProvider::ClaudeCode, conv).await
 }
 
 /// Load a single conversation from disk by `(project_path, session_id)`.
@@ -275,7 +263,9 @@ mod tests {
                 project_id INTEGER NOT NULL,
                 title TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
-                type TEXT NOT NULL DEFAULT 'ws-session'
+                type TEXT NOT NULL DEFAULT 'ws-session',
+                model_session TEXT,
+                agent_runtime_session TEXT
             )",
         )
         .execute(&pool)
@@ -290,7 +280,8 @@ mod tests {
                 runtime_session_id TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
                 started_at TEXT,
-                ended_at TEXT
+                ended_at TEXT,
+                model TEXT
             )",
         )
         .execute(&pool)
@@ -324,7 +315,7 @@ mod tests {
         ImportedConversation {
             source_session_id: id.to_string(),
             title: "Hello".to_string(),
-            message_count: 2,
+            model: Some("claude".to_string()),
             started_at: Some("2026-05-26T00:00:00Z".to_string()),
             modified_at: Some("2026-05-27T00:00:00Z".to_string()),
             messages: vec![
@@ -390,7 +381,7 @@ mod tests {
     async fn already_imported_ids_returns_inserted_session() {
         let pool = setup_pool().await;
         import_one(&pool, 1, sample_conv("s1")).await.unwrap();
-        let ids = already_imported_ids(&pool, 1, PROVIDER_CLAUDE_CODE)
+        let ids = already_imported_ids(&pool, 1, ImportProvider::ClaudeCode)
             .await
             .unwrap();
         assert!(ids.contains("s1"));

@@ -1,8 +1,9 @@
 import { memo, useCallback, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ImportProviderStep } from "./ImportProviderStep";
-import { ImportClaudeCodeStep } from "./ImportClaudeCodeStep";
+import { ImportConversationPickerStep } from "./ImportConversationPickerStep";
 import { ImportProgressStep } from "./ImportProgressStep";
+import { PROVIDER_IDS, getProviderMetadata, type ProviderId } from "@/lib/providers";
 
 export type ImportStep = "provider" | "list" | "importing";
 
@@ -26,10 +27,12 @@ function ImportConversationsDialogInner({
 }: ImportConversationsDialogProps) {
   const [step, setStep] = useState<ImportStep>("provider");
   const [jobId, setJobId] = useState<string | null>(null);
+  const [providerId, setProviderId] = useState<ProviderId>(PROVIDER_IDS.CLAUDE_CODE);
 
   const reset = useCallback(() => {
     setStep("provider");
     setJobId(null);
+    setProviderId(PROVIDER_IDS.CLAUDE_CODE);
   }, []);
 
   const handleOpenChange = useCallback(
@@ -46,6 +49,11 @@ function ImportConversationsDialogInner({
   }, []);
 
   const handleClose = useCallback(() => handleOpenChange(false), [handleOpenChange]);
+  const handleProviderSelect = useCallback((nextProviderId: ProviderId) => {
+    setProviderId(nextProviderId);
+    setStep("list");
+  }, []);
+  const providerLabel = getProviderMetadata(providerId)?.label ?? providerId;
 
   // Only the conversation-picker step needs a definite tall height so its
   // long inner list can flex-scroll. Every other step (provider cards,
@@ -66,10 +74,12 @@ function ImportConversationsDialogInner({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col px-6 py-5">
-          {step === "provider" && <ImportProviderStep onSelect={() => setStep("list")} />}
+          {step === "provider" && <ImportProviderStep onSelect={handleProviderSelect} />}
           {step === "list" && (
-            <ImportClaudeCodeStep
+            <ImportConversationPickerStep
               projectId={projectId}
+              providerId={providerId}
+              providerLabel={providerLabel}
               onBack={() => setStep("provider")}
               onStarted={handleImportStarted}
             />

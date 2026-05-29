@@ -161,7 +161,9 @@ use crate::domain::workspace::routes as workspace_routes;
         lsp_routes::open_session_handler,
         lsp_routes::list_servers_handler,
         imports_routes::list_claude_code_conversations_handler,
+        imports_routes::list_provider_conversations_handler,
         imports_routes::start_claude_code_import_handler,
+        imports_routes::start_provider_import_handler,
         imports_routes::get_import_job_handler,
     ),
     components(schemas(

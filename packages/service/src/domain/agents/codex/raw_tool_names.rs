@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-pub(super) fn function_tool_name(item: &Value) -> String {
+pub(crate) fn function_tool_name(item: &Value) -> String {
     let raw_name = string_field(item, "name", "function_call");
     let canonical = canonical_tool_name(&raw_name);
     if canonical != raw_name || raw_name.starts_with("mcp__") {

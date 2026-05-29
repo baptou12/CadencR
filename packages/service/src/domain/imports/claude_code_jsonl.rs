@@ -13,13 +13,11 @@
 //! turns into Cadencr's `features` / `agent_sessions` / `agent_messages`
 //! rows.
 
-use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 use super::block_extract::{extract_assistant_messages, extract_user_messages};
-
-/// Maximum number of characters we keep in a derived (non-`ai-title`) title.
-const DERIVED_TITLE_MAX_CHARS: usize = 80;
+use super::types::truncate_title;
+pub use super::types::{ImportedConversation, ImportedMessage};
 
 /// Encode a filesystem path the way Claude Code does for its
 /// `~/.claude/projects/<encoded>/` directory: drop the leading `/` and
@@ -46,34 +44,6 @@ pub fn claude_projects_dir_for(project_path: &Path) -> Option<PathBuf> {
             .join("projects")
             .join(encode_project_path(project_path)),
     )
-}
-
-/// A neutralized message ready to be inserted into `agent_messages`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ImportedMessage {
-    pub role: String,
-    pub content: String,
-    pub message_type: String,
-    pub tool_name: Option<String>,
-    pub tool_use_id: Option<String>,
-    pub model: Option<String>,
-    pub created_at: Option<String>,
-}
-
-/// A whole imported conversation. Provider-neutral by design — when we add
-/// Codex/OpenCode their parsers produce the same shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImportedConversation {
-    pub source_session_id: String,
-    pub title: String,
-    pub message_count: u32,
-    /// First message timestamp; used for the imported `agent_sessions.started_at`.
-    pub started_at: Option<String>,
-    /// Last message timestamp; doubles as `ended_at` and the picker's
-    /// "most recent activity" sort key.
-    pub modified_at: Option<String>,
-    #[serde(skip)]
-    pub messages: Vec<ImportedMessage>,
 }
 
 /// Scan all `*.jsonl` files directly under the given dir. Subdirectories
@@ -174,28 +144,17 @@ pub fn parse_session_file(path: &Path) -> std::io::Result<Option<ImportedConvers
     Ok(Some(ImportedConversation {
         source_session_id,
         title,
-        message_count: messages.len() as u32,
+        model: messages.iter().find_map(|msg| msg.model.clone()),
         started_at: first_timestamp.clone(),
         modified_at: last_timestamp.or(first_timestamp),
         messages,
     }))
 }
 
-fn truncate_title(text: &str) -> String {
-    let single_line: String = text.lines().next().unwrap_or("").trim().chars().collect();
-    if single_line.chars().count() <= DERIVED_TITLE_MAX_CHARS {
-        return single_line;
-    }
-    let prefix: String = single_line
-        .chars()
-        .take(DERIVED_TITLE_MAX_CHARS - 1)
-        .collect();
-    format!("{prefix}…")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::imports::types::DERIVED_TITLE_MAX_CHARS;
     use std::io::Write;
 
     #[test]
@@ -258,7 +217,8 @@ mod tests {
         ]);
         let conv = parse_session_file(file.path()).unwrap().unwrap();
         assert_eq!(conv.title, "Real title");
-        assert_eq!(conv.message_count, 2);
+        assert_eq!(conv.model.as_deref(), Some("claude"));
+        assert_eq!(conv.messages.len(), 2);
         assert!(conv.modified_at.is_some());
     }
 
@@ -298,7 +258,7 @@ mod tests {
             r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"yo"}]}}"#,
         ]);
         let conv = parse_session_file(file.path()).unwrap().unwrap();
-        assert_eq!(conv.message_count, 2);
+        assert_eq!(conv.messages.len(), 2);
     }
 
     #[test]

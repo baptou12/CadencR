@@ -1,10 +1,37 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-/// Provider identifier. Stable wire value used in both the
-/// `features.source_provider` column and the runtime `agent_sessions`
-/// row written by the importer.
-pub const PROVIDER_CLAUDE_CODE: &str = "claude_code";
+/// Provider identifier. Stable wire value used by runtime provider settings
+/// and by imported `agent_sessions` provenance.
+pub const PROVIDER_CLAUDE_CODE: &str = crate::domain::agents::claude_code::PROVIDER_ID;
+pub const PROVIDER_CODEX_CLI: &str = crate::domain::agents::codex::PROVIDER_ID;
+pub const PROVIDER_OPENCODE: &str = crate::domain::agents::opencode::PROVIDER_ID;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportProvider {
+    ClaudeCode,
+    CodexCli,
+    Opencode,
+}
+
+impl ImportProvider {
+    pub fn from_id(provider: &str) -> Option<Self> {
+        match provider {
+            PROVIDER_CLAUDE_CODE => Some(Self::ClaudeCode),
+            PROVIDER_CODEX_CLI => Some(Self::CodexCli),
+            PROVIDER_OPENCODE => Some(Self::Opencode),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ClaudeCode => PROVIDER_CLAUDE_CODE,
+            Self::CodexCli => PROVIDER_CODEX_CLI,
+            Self::Opencode => PROVIDER_OPENCODE,
+        }
+    }
+}
 
 /// One row in the "select conversations to import" picker.
 #[derive(Debug, Serialize, ToSchema)]
