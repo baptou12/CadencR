@@ -1,0 +1,92 @@
+//! Default-branch resolution for destructive safety checks.
+//!
+//! GitHub stores a default branch server-side, but Git exposes the same
+//! practical signal through the remote `HEAD` symbolic ref. We resolve that
+//! local cache first, then fall back to common local branch names for offline
+//! and local-only repositories.
+
+use std::path::Path;
+
+use crate::error::AppError;
+use crate::shared::git_cli::run_git_safe_refs;
+
+use super::{local_branch_exists, remote_branch_exists};
+
+/// Resolve the protected default branch as a local branch identity.
+///
+/// `origin/HEAD` usually points at `refs/remotes/origin/main`; callers compare
+/// deletion candidates against the normalized short name (`main`) so a local
+/// branch cannot be deleted just because the default was discovered remotely.
+pub async fn resolve_default_branch(repo: &Path) -> Result<String, AppError> {
+    if let Some(branch) = resolve_origin_head(repo).await {
+        return Ok(branch);
+    }
+
+    for candidate in &["origin/main", "origin/master"] {
+        if remote_branch_exists(repo, candidate).await {
+            return Ok(normalize_branch_identity(candidate));
+        }
+    }
+
+    for candidate in &["main", "master"] {
+        if local_branch_exists(repo, candidate).await {
+            return Ok((*candidate).to_string());
+        }
+    }
+
+    Ok("main".to_string())
+}
+
+/// Return true when two branch labels identify the same local branch.
+pub fn same_branch_identity(left: &str, right: &str) -> bool {
+    normalize_branch_identity(left) == normalize_branch_identity(right)
+}
+
+/// Normalize common Git ref labels into a local branch identity.
+pub fn normalize_branch_identity(branch: &str) -> String {
+    let trimmed = branch.trim();
+    trimmed
+        .strip_prefix("refs/heads/")
+        .or_else(|| trimmed.strip_prefix("refs/remotes/origin/"))
+        .or_else(|| trimmed.strip_prefix("origin/"))
+        .unwrap_or(trimmed)
+        .to_string()
+}
+
+async fn resolve_origin_head(repo: &Path) -> Option<String> {
+    let stdout = run_git_safe_refs(&["symbolic-ref"], &[], &["refs/remotes/origin/HEAD"], repo)
+        .await
+        .ok()?;
+    let branch = normalize_branch_identity(stdout.trim());
+    if branch.is_empty() {
+        None
+    } else {
+        Some(branch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalizes_default_branch_refs_to_local_identity() {
+        assert_eq!(normalize_branch_identity("refs/heads/main"), "main");
+        assert_eq!(
+            normalize_branch_identity("refs/remotes/origin/main"),
+            "main"
+        );
+        assert_eq!(normalize_branch_identity("origin/main"), "main");
+        assert_eq!(normalize_branch_identity("feature/a"), "feature/a");
+    }
+
+    #[test]
+    fn matches_remote_and_local_default_branch_labels() {
+        assert!(same_branch_identity("origin/main", "main"));
+        assert!(same_branch_identity(
+            "refs/remotes/origin/main",
+            "refs/heads/main"
+        ));
+        assert!(!same_branch_identity("origin/main", "feature/main"));
+    }
+}

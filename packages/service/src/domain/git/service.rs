@@ -10,6 +10,7 @@ use crate::domain::git::models::*;
 use crate::domain::git::repository;
 use crate::domain::git::workflow_service;
 use crate::error::AppError;
+use crate::shared::git_cli::run_git_capture;
 
 // ---------------------------------------------------------------------------
 // Feature-setting key constants
@@ -74,6 +75,48 @@ async fn get_project_and_branch(
                 AppError::NotFound("No worktree branch found for this feature".into())
             })?;
     Ok((project_path, branch))
+}
+
+async fn feature_has_separate_worktree(
+    state: &AppState,
+    project_path: &str,
+    feature_id: i64,
+) -> Result<bool, AppError> {
+    let Some(worktree_path) =
+        repository::get_feature_setting(&state.read_pool, feature_id, SETTING_WORKTREE_PATH)
+            .await?
+    else {
+        return Ok(false);
+    };
+    Ok(normalize_git_path(&worktree_path) != normalize_git_path(project_path))
+}
+
+fn normalize_git_path(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+        .to_string_lossy()
+        .trim_end_matches(std::path::MAIN_SEPARATOR)
+        .to_string()
+}
+
+fn branch_delete_blocked(reason: &str, error: impl Into<String>) -> SuccessResponse {
+    SuccessResponse {
+        success: false,
+        error: Some(error.into()),
+        blocked_reason: Some(reason.to_string()),
+    }
+}
+
+fn default_worktree_blocked() -> SuccessResponse {
+    SuccessResponse {
+        success: false,
+        error: Some("Cannot remove the default worktree".to_string()),
+        blocked_reason: Some("default_worktree".to_string()),
+    }
+}
+
+fn is_default_worktree_path(project_path: &str, worktree_path: &str) -> bool {
+    normalize_git_path(project_path) == normalize_git_path(worktree_path)
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +472,10 @@ pub async fn remove_worktree(
             .await?
             .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
 
+    if is_default_worktree_path(&project_path, &wt_path) {
+        return Ok(default_worktree_blocked());
+    }
+
     commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path), true).await?;
     repository::delete_feature_settings(
         &state.write_pool,
@@ -453,6 +500,10 @@ pub async fn delete_worktree(
         repository::get_feature_setting(&state.read_pool, params.feature_id, SETTING_WORKTREE_PATH)
             .await?
             .ok_or_else(|| AppError::NotFound("No worktree found for this feature".into()))?;
+
+    if is_default_worktree_path(&project_path, &wt_path) {
+        return Ok(default_worktree_blocked());
+    }
 
     match commands::remove_worktree(Path::new(&project_path), Path::new(&wt_path), params.force)
         .await
@@ -588,6 +639,12 @@ pub async fn list_feature_worktrees(
 ) -> Result<Vec<FeatureWorktreeInfo>, AppError> {
     let rows =
         repository::list_feature_worktree_settings(&state.read_pool, params.project_id).await?;
+    let project_path = repository::get_project_path(&state.read_pool, params.project_id).await?;
+    let default_branch = if rows.iter().any(|row| row.worktree_branch.is_some()) {
+        Some(workflow_service::resolve_default_branch(Path::new(&project_path)).await?)
+    } else {
+        None
+    };
 
     // Probe disk presence concurrently — otherwise we'd serialize one syscall
     // per feature inside a hot async handler.
@@ -600,11 +657,22 @@ pub async fn list_feature_worktrees(
     Ok(rows
         .into_iter()
         .zip(liveness)
-        .map(|(r, live)| FeatureWorktreeInfo {
-            feature_id: r.feature_id,
-            worktree_path: r.worktree_path,
-            worktree_branch: r.worktree_branch,
-            live,
+        .map(|(r, live)| {
+            let is_main_worktree = is_default_worktree_path(&project_path, &r.worktree_path);
+            FeatureWorktreeInfo {
+                feature_id: r.feature_id,
+                worktree_path: r.worktree_path,
+                is_default_branch: r
+                    .worktree_branch
+                    .as_deref()
+                    .zip(default_branch.as_deref())
+                    .is_some_and(|(branch, default)| {
+                        workflow_service::same_branch_identity(branch, default)
+                    }),
+                is_main_worktree,
+                worktree_branch: r.worktree_branch,
+                live,
+            }
         })
         .collect())
 }
@@ -614,6 +682,9 @@ pub async fn remove_orphan_worktree(
     body: RemoveOrphanWorktreeBody,
 ) -> Result<SuccessResponse, AppError> {
     let project_path = repository::get_project_path(&state.read_pool, body.project_id).await?;
+    if is_default_worktree_path(&project_path, &body.worktree_path) {
+        return Ok(default_worktree_blocked());
+    }
     match commands::remove_worktree(
         Path::new(&project_path),
         Path::new(&body.worktree_path),
@@ -709,7 +780,70 @@ pub async fn delete_feature_branch(
 ) -> Result<SuccessResponse, AppError> {
     let (project_path, branch) =
         get_project_and_branch(state, params.project_id, params.feature_id).await?;
+    let has_separate_worktree =
+        feature_has_separate_worktree(state, &project_path, params.feature_id).await?;
+    if !has_separate_worktree {
+        return delete_no_worktree_feature_branch(
+            state,
+            &project_path,
+            &branch,
+            params.feature_id,
+            params.force,
+        )
+        .await;
+    }
+    let default_branch = workflow_service::resolve_default_branch(Path::new(&project_path)).await?;
+    if workflow_service::same_branch_identity(&branch, &default_branch) {
+        return Ok(branch_delete_blocked(
+            "default_branch",
+            "Cannot remove the default branch",
+        ));
+    }
     let result = commands::delete_branch(Path::new(&project_path), &branch, params.force).await?;
+    Ok(SuccessResponse {
+        success: result.success,
+        error: result.error,
+        blocked_reason: None,
+    })
+}
+
+async fn delete_no_worktree_feature_branch(
+    state: &AppState,
+    project_path: &str,
+    branch: &str,
+    feature_id: i64,
+    force: bool,
+) -> Result<SuccessResponse, AppError> {
+    let repo = Path::new(project_path);
+    let (_, target_branch) =
+        resolve_merge_conflict_repo_and_target(state, feature_id, project_path.to_string()).await?;
+    if branch == target_branch {
+        return Ok(branch_delete_blocked(
+            "target_branch",
+            "Cannot remove the target branch",
+        ));
+    }
+    let default_branch = workflow_service::resolve_default_branch(repo).await?;
+    if workflow_service::same_branch_identity(branch, &default_branch) {
+        return Ok(branch_delete_blocked(
+            "default_branch",
+            "Cannot remove the default branch",
+        ));
+    }
+
+    let current_branch = commands::get_current_branch(repo).await?;
+    if current_branch.as_deref() == Some(branch) {
+        let checkout_ref = match workflow_service::resolve_checkout_ref(repo, &target_branch).await
+        {
+            Ok(resolved) => resolved,
+            Err(err) => return Ok(branch_delete_blocked("checkout_failed", err.to_string())),
+        };
+        if let Err(err) = run_git_capture(&["checkout"], &[], &[&checkout_ref], repo).await {
+            return Ok(branch_delete_blocked("checkout_failed", err.to_string()));
+        }
+    }
+
+    let result = commands::delete_branch(repo, branch, force).await?;
     Ok(SuccessResponse {
         success: result.success,
         error: result.error,
@@ -725,10 +859,16 @@ pub async fn check_branch_delete(
         get_project_and_branch(state, params.project_id, params.feature_id).await?;
     let (repo_path, target_branch) =
         resolve_merge_conflict_repo_and_target(state, params.feature_id, project_path).await?;
+    let default_branch = workflow_service::resolve_default_branch(Path::new(&repo_path)).await?;
+    let is_default_branch = workflow_service::same_branch_identity(&branch, &default_branch);
     let merged = commands::is_branch_merged(Path::new(&repo_path), &branch, &target_branch).await?;
+    let current_branch = commands::get_current_branch(Path::new(&repo_path)).await?;
     Ok(BranchDeleteCheckResponse {
         branch,
+        current_branch,
         target_branch,
+        default_branch,
+        is_default_branch,
         merged,
     })
 }

@@ -8,6 +8,7 @@ import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
 import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
 import { useListFeatureWorktrees, type Feature } from "@/api/generated";
+import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
 
 export interface ConfirmFeatureAction {
   action: "archive" | "delete";
@@ -55,9 +56,9 @@ export function RootOverlays({
     { project_id: activeProjectId ?? 0 },
     { query: { enabled: activeProjectId != null && archiveFeatureId != null } },
   );
-  const confirmFeatureHasLiveWorktree = featureWorktrees.some(
-    (worktree) => worktree.feature_id === archiveFeatureId && worktree.live,
-  );
+  const confirmFeatureWorktree =
+    featureWorktrees.find((worktree) => worktree.feature_id === archiveFeatureId) ?? null;
+  const cleanupAvailability = getArchiveCleanupAvailability(confirmFeatureWorktree);
 
   return (
     <>
@@ -76,7 +77,9 @@ export function RootOverlays({
         open={archiveConfirmAction != null}
         feature={archiveConfirmAction?.feature}
         projectId={activeProjectId ?? 0}
-        hasLiveWorktree={confirmFeatureHasLiveWorktree}
+        hasLiveWorktree={cleanupAvailability.hasLiveWorktree}
+        showWorktreeRemoval={cleanupAvailability.showWorktreeRemoval}
+        showBranchRemoval={cleanupAvailability.showBranchRemoval}
         onOpenChange={(open) => {
           if (!open) setConfirmAction(null);
         }}

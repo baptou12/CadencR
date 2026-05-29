@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { render, screen } from "@/test-utils";
 import { RootOverlays, type ConfirmFeatureAction } from "@/components/RootOverlays";
-import type { Feature } from "@/api/generated";
+import type { Feature, FeatureWorktreeInfo } from "@/api/generated";
 
 const features: Feature[] = [
   {
@@ -23,8 +23,12 @@ const features: Feature[] = [
   },
 ];
 
+const { mockListFeatureWorktrees } = vi.hoisted(() => ({
+  mockListFeatureWorktrees: vi.fn(),
+}));
+
 vi.mock("@/api/generated", () => ({
-  useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
+  useListFeatureWorktrees: mockListFeatureWorktrees,
   useDeleteWorktree: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useDeleteFeatureBranch: vi.fn(() => ({ mutateAsync: vi.fn() })),
   useCheckBranchDelete: vi.fn(() => ({
@@ -86,6 +90,10 @@ function renderRootOverlays(confirmAction: ConfirmFeatureAction, onArchiveFeatur
 }
 
 describe("RootOverlays", () => {
+  beforeEach(() => {
+    mockListFeatureWorktrees.mockReturnValue({ data: [] });
+  });
+
   it("confirms the feature id that opened the archive dialog, not the active route", async () => {
     const user = userEvent.setup();
     const onArchiveFeature = renderRootOverlays({ action: "archive", feature: features[0] });
@@ -93,5 +101,34 @@ describe("RootOverlays", () => {
     await user.click(screen.getByRole("button", { name: /archive/i }));
 
     expect(onArchiveFeature).toHaveBeenCalledWith(1);
+  });
+
+  it("hides worktree removal when archiving a feature attached to the main worktree", () => {
+    mockListFeatureWorktrees.mockReturnValue({
+      data: [
+        {
+          feature_id: 1,
+          live: true,
+          worktree_path: "/repo",
+          worktree_branch: "main",
+          is_default_branch: true,
+          is_main_worktree: true,
+        } satisfies FeatureWorktreeInfo,
+      ],
+    });
+
+    renderRootOverlays({ action: "archive", feature: features[0] });
+
+    expect(screen.queryByText("Remove worktree")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove branch")).not.toBeInTheDocument();
+  });
+
+  it("hides worktree removal when archiving a feature without worktree metadata", () => {
+    mockListFeatureWorktrees.mockReturnValue({ data: [] });
+
+    renderRootOverlays({ action: "archive", feature: features[0] });
+
+    expect(screen.queryByText("Remove worktree")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove branch")).not.toBeInTheDocument();
   });
 });

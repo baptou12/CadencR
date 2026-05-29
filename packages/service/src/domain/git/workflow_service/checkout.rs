@@ -121,7 +121,7 @@ async fn prepare(
     Ok((project_path, resolved))
 }
 
-async fn resolve_ref(repo: &Path, branch: &str) -> Result<String, AppError> {
+pub(crate) async fn resolve_ref(repo: &Path, branch: &str) -> Result<String, AppError> {
     if local_branch_exists(repo, branch).await {
         return Ok(branch.to_string());
     }
