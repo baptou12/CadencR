@@ -1,36 +1,32 @@
 import { memo } from "react";
 import { cn } from "@/lib/utils";
-import { PROVIDER_IDS, getProviderMetadata } from "@/lib/providers";
+import { PROVIDER_IDS, getProviderMetadata, type ProviderId } from "@/lib/providers";
 import { ProviderIcon } from "@/lib/provider-icons";
 
 interface ProviderOption {
   /** Canonical provider ID used by the catalog + icon asset map. */
-  catalogId: string;
+  catalogId: ProviderId;
   description: string;
-  disabled: boolean;
 }
 
 const PROVIDERS: readonly ProviderOption[] = [
   {
     catalogId: PROVIDER_IDS.CLAUDE_CODE,
     description: "Sessions stored under ~/.claude/projects/",
-    disabled: false,
   },
   {
     catalogId: PROVIDER_IDS.CODEX_CLI,
-    description: "Coming soon",
-    disabled: true,
+    description: "Sessions stored under ~/.codex/sessions/",
   },
   {
     catalogId: PROVIDER_IDS.OPENCODE,
-    description: "Coming soon",
-    disabled: true,
+    description: "Sessions stored under ~/.local/share/opencode/",
   },
 ];
 
 interface ImportProviderStepProps {
-  /** Fired when the user picks the only enabled provider. */
-  onSelect: () => void;
+  /** Fired when the user picks a provider to import from. */
+  onSelect: (providerId: ProviderId) => void;
 }
 
 function ImportProviderStepInner({ onSelect }: ImportProviderStepProps) {
@@ -48,10 +44,7 @@ function ImportProviderStepInner({ onSelect }: ImportProviderStepProps) {
               catalogId={p.catalogId}
               label={meta?.label ?? p.catalogId}
               description={p.description}
-              disabled={p.disabled}
-              onClick={() => {
-                if (!p.disabled) onSelect();
-              }}
+              onClick={() => onSelect(p.catalogId)}
             />
           );
         })}
@@ -64,21 +57,17 @@ interface ProviderCardProps {
   catalogId: string;
   label: string;
   description: string;
-  disabled: boolean;
   onClick: () => void;
 }
 
-function ProviderCard({ catalogId, label, description, disabled, onClick }: ProviderCardProps) {
+function ProviderCard({ catalogId, label, description, onClick }: ProviderCardProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
       className={cn(
         "flex flex-col items-start gap-1.5 rounded-md border border-border p-3 text-left transition-colors",
-        disabled
-          ? "cursor-not-allowed opacity-50"
-          : "hover:border-primary hover:bg-accent/40 focus-visible:border-primary focus-visible:outline-none",
+        "hover:border-primary hover:bg-accent/40 focus-visible:border-primary focus-visible:outline-none",
       )}
     >
       <div className="flex items-center gap-2">

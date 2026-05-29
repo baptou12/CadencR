@@ -6,7 +6,11 @@
 
 mod block_extract;
 pub mod claude_code_jsonl;
+mod codex_rollout;
 pub mod jobs;
 pub mod models;
+mod opencode_sqlite;
+mod persistence;
 pub mod routes;
 pub mod service;
+pub mod types;
