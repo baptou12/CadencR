@@ -61,7 +61,13 @@ function dirtyStatus(overrides: Partial<GitStatusSnapshot> = {}): GitStatusSnaps
   };
 }
 
-function renderDialog(overrides: { hasLiveWorktree?: boolean } = {}) {
+function renderDialog(
+  overrides: {
+    hasLiveWorktree?: boolean;
+    showWorktreeRemoval?: boolean;
+    showBranchRemoval?: boolean;
+  } = {},
+) {
   const onArchive = vi.fn();
   const onOpenChange = vi.fn();
   render(
@@ -70,6 +76,8 @@ function renderDialog(overrides: { hasLiveWorktree?: boolean } = {}) {
       feature={feature}
       projectId={1}
       hasLiveWorktree={overrides.hasLiveWorktree ?? false}
+      showWorktreeRemoval={overrides.showWorktreeRemoval ?? true}
+      showBranchRemoval={overrides.showBranchRemoval ?? true}
       onOpenChange={onOpenChange}
       onArchive={onArchive}
     />,
@@ -83,7 +91,12 @@ describe("ArchiveFeatureDialog", () => {
     mockDeleteWorktree.mockResolvedValue({ success: true });
     mockDeleteBranch.mockResolvedValue({ success: true });
     mockBranchCheck.mockReturnValue({
-      data: { branch: "feature/one", target_branch: "main", merged: true },
+      data: {
+        branch: "feature/one",
+        current_branch: "feature/one",
+        target_branch: "main",
+        merged: true,
+      },
       isLoading: false,
     });
     mockGitStatus.mockReturnValue({ data: undefined, isLoading: false });
@@ -114,6 +127,8 @@ describe("ArchiveFeatureDialog", () => {
           feature={dialogFeature}
           projectId={1}
           hasLiveWorktree={false}
+          showWorktreeRemoval
+          showBranchRemoval
           onOpenChange={vi.fn()}
           onArchive={(featureId) => {
             onArchive(featureId);
@@ -147,5 +162,61 @@ describe("ArchiveFeatureDialog", () => {
     expect(mockDeleteWorktree).toHaveBeenCalledWith({
       params: { project_id: 1, feature_id: 1, force: true },
     });
+  });
+
+  it("does not allow branch removal when a no-worktree session is on the target branch", async () => {
+    mockBranchCheck.mockReturnValue({
+      data: { branch: "main", current_branch: "main", target_branch: "main", merged: true },
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    renderDialog({ showWorktreeRemoval: false });
+
+    await user.click(screen.getByText("Remove branch"));
+
+    expect(screen.getByRole("checkbox", { name: /remove branch/i })).not.toBeChecked();
+    expect(screen.getByText(/cannot remove the target branch/i)).toBeInTheDocument();
+  });
+
+  it("explains no-worktree branch removal checks out the target before deleting", async () => {
+    const user = userEvent.setup();
+    renderDialog({ showWorktreeRemoval: false });
+
+    await user.click(screen.getByText("Remove branch"));
+
+    expect(screen.getByRole("checkbox", { name: /remove branch/i })).toBeChecked();
+    expect(screen.getByText(/checkout main before deleting feature\/one/i)).toBeInTheDocument();
+  });
+
+  it("does not allow removing the default branch", async () => {
+    mockBranchCheck.mockReturnValue({
+      data: {
+        branch: "main",
+        current_branch: "feature/one",
+        target_branch: "develop",
+        default_branch: "main",
+        is_default_branch: true,
+        merged: true,
+      },
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    renderDialog({ showWorktreeRemoval: false });
+
+    await user.click(screen.getByText("Remove branch"));
+
+    expect(screen.getByRole("checkbox", { name: /remove branch/i })).not.toBeChecked();
+    expect(screen.getByText(/cannot remove the default branch/i)).toBeInTheDocument();
+  });
+
+  it("shows only archive confirmation when branch and worktree cleanup are unavailable", () => {
+    renderDialog({ showWorktreeRemoval: false, showBranchRemoval: false });
+
+    expect(screen.queryByText("Remove worktree")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove branch")).not.toBeInTheDocument();
+    expect(mockBranchCheck).toHaveBeenCalledWith(
+      { project_id: 1, feature_id: 1 },
+      { query: { enabled: false, retry: false } },
+    );
   });
 });

@@ -277,6 +277,8 @@ pub struct FeatureWorktreeInfo {
     pub feature_id: i64,
     pub worktree_path: String,
     pub worktree_branch: Option<String>,
+    pub is_default_branch: bool,
+    pub is_main_worktree: bool,
     pub live: bool,
 }
 
@@ -329,7 +331,10 @@ pub struct CreateWorktreeResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct BranchDeleteCheckResponse {
     pub branch: String,
+    pub current_branch: Option<String>,
     pub target_branch: String,
+    pub default_branch: String,
+    pub is_default_branch: bool,
     pub merged: bool,
 }
 

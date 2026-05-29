@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { render, screen } from "@/test-utils";
+import { fireEvent, render, screen } from "@/test-utils";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { resetMockIds } from "@/test-fixtures";
 import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
@@ -120,5 +120,18 @@ describe("ProjectFeatures archived section", () => {
     renderProjectFeatures(2);
 
     expect(screen.getByText("Archived Session")).toBeInTheDocument();
+  });
+
+  it("shows only archive confirmation when archiving a feature without worktree metadata", async () => {
+    const user = userEvent.setup();
+    renderProjectFeatures();
+
+    const featureRow = screen.getByText("Feature One").closest("[role=button]");
+    expect(featureRow).not.toBeNull();
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    await user.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(screen.queryByText("Remove worktree")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove branch")).not.toBeInTheDocument();
   });
 });

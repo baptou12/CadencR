@@ -28,6 +28,8 @@ interface MockFeatureWorktreeInfo {
   feature_id: number;
   worktree_path: string;
   worktree_branch: string | null;
+  is_default_branch: boolean;
+  is_main_worktree: boolean;
   live: boolean;
 }
 
@@ -376,12 +378,16 @@ describe("ProjectFeatures", () => {
           feature_id: 1,
           worktree_path: "/test/wt/shared",
           worktree_branch: "feature/shared",
+          is_default_branch: false,
+          is_main_worktree: false,
           live: true,
         },
         {
           feature_id: 2,
           worktree_path: "/test/wt/shared",
           worktree_branch: "feature/shared",
+          is_default_branch: false,
+          is_main_worktree: false,
           live: true,
         },
         // Singleton non-main worktree -> stays flat, no header.
@@ -389,6 +395,8 @@ describe("ProjectFeatures", () => {
           feature_id: 3,
           worktree_path: "/test/wt/solo",
           worktree_branch: "feature/solo",
+          is_default_branch: false,
+          is_main_worktree: false,
           live: true,
         },
       ],
@@ -411,8 +419,22 @@ describe("ProjectFeatures", () => {
     mockListFeatureWorktrees.mockReturnValue({
       data: [
         // Both features point at the project path (main worktree) -> no group.
-        { feature_id: 1, worktree_path: "/test/path", worktree_branch: "main", live: true },
-        { feature_id: 2, worktree_path: "/test/path", worktree_branch: "main", live: true },
+        {
+          feature_id: 1,
+          worktree_path: "/test/path",
+          worktree_branch: "main",
+          is_default_branch: true,
+          is_main_worktree: true,
+          live: true,
+        },
+        {
+          feature_id: 2,
+          worktree_path: "/test/path",
+          worktree_branch: "main",
+          is_default_branch: true,
+          is_main_worktree: true,
+          live: true,
+        },
       ],
     });
     render(
@@ -434,12 +456,16 @@ describe("ProjectFeatures", () => {
           feature_id: 1,
           worktree_path: "/test/wt/my-branch-dir",
           worktree_branch: null,
+          is_default_branch: false,
+          is_main_worktree: false,
           live: true,
         },
         {
           feature_id: 2,
           worktree_path: "/test/wt/my-branch-dir",
           worktree_branch: null,
+          is_default_branch: false,
+          is_main_worktree: false,
           live: true,
         },
       ],

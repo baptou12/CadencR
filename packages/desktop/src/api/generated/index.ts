@@ -152,8 +152,13 @@ export interface BlameResponse {
   lines: BlameLine[];
 }
 
+export type BranchDeleteCheckResponseCurrentBranch = string | null;
+
 export interface BranchDeleteCheckResponse {
   branch: string;
+  current_branch?: BranchDeleteCheckResponseCurrentBranch;
+  default_branch: string;
+  is_default_branch: boolean;
   merged: boolean;
   target_branch: string;
 }
@@ -593,6 +598,8 @@ check `live` to know whether the directory still exists on disk.
  */
 export interface FeatureWorktreeInfo {
   feature_id: number;
+  is_default_branch: boolean;
+  is_main_worktree: boolean;
   live: boolean;
   worktree_branch?: FeatureWorktreeInfoWorktreeBranch;
   worktree_path: string;

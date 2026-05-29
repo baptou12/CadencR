@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon, ChevronRightIcon, GitBranchIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
+import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFeatures,
@@ -266,6 +267,8 @@ export function ProjectFeatures({
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === ARCHIVED_FEATURE_STATUS;
+  const confirmFeatureWorktree = confirmFeature ? worktreeByFeatureId.get(confirmFeature.id) : null;
+  const cleanupAvailability = getArchiveCleanupAvailability(confirmFeatureWorktree);
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -283,7 +286,9 @@ export function ProjectFeatures({
         open={confirmFeatureId != null && !isConfirmDelete}
         feature={confirmFeature}
         projectId={projectId}
-        hasLiveWorktree={confirmFeature ? liveWorktreeFeatureIds.has(confirmFeature.id) : false}
+        hasLiveWorktree={cleanupAvailability.hasLiveWorktree}
+        showWorktreeRemoval={cleanupAvailability.showWorktreeRemoval}
+        showBranchRemoval={cleanupAvailability.showBranchRemoval}
         onOpenChange={(open) => {
           if (!open) setConfirmFeatureId(null);
         }}
