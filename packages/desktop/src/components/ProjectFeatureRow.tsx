@@ -1,4 +1,4 @@
-import { memo, type ReactElement } from "react";
+import { memo, useRef, type ReactElement } from "react";
 import {
   TrashIcon,
   ArchiveIcon,
@@ -82,6 +82,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   onCancelLabelEdit,
   onArchiveOrDelete,
 }: ProjectFeatureRowProps): ReactElement {
+  const startLabelEditOnMenuCloseRef = useRef(false);
   // Live status is the canonical 3-value enum: per-session entries pushed
   // by the backend, aggregated here per-feature. `useShallow` inside the
   // hook ensures this row only re-renders when its own feature's
@@ -108,8 +109,15 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   const showMetaLine = isEditingLabel || hasLabel || hasStats;
   const isArchived = feature.status === "archived";
   const archiveActionLabel = isArchived ? "Delete" : "Archive";
-  const startLabelEditAfterMenuClose = (): void => {
-    window.setTimeout(() => onStartLabelEdit(feature), 0);
+  const markStartLabelEditAfterMenuClose = (): void => {
+    startLabelEditOnMenuCloseRef.current = true;
+  };
+
+  const handleMenuCloseAutoFocus = (event: Event): void => {
+    if (!startLabelEditOnMenuCloseRef.current) return;
+    startLabelEditOnMenuCloseRef.current = false;
+    event.preventDefault();
+    onStartLabelEdit(feature);
   };
 
   return (
@@ -222,13 +230,12 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent
-        // "Set label" opens a popover that manages its own focus; letting
-        // Radix restore focus to the trigger row would race with that and
-        // can dismiss the editor immediately.
-        onCloseAutoFocus={(event) => event.preventDefault()}
+        // Open the label editor after the menu fully closes. Opening directly
+        // from onSelect races with Radix's context-menu focus/pointer teardown.
+        onCloseAutoFocus={handleMenuCloseAutoFocus}
       >
         <ContextMenuItem onSelect={() => onNavigate(feature)}>Open</ContextMenuItem>
-        <ContextMenuItem onSelect={startLabelEditAfterMenuClose}>Set label</ContextMenuItem>
+        <ContextMenuItem onSelect={markStartLabelEditAfterMenuClose}>Set label</ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onSelect={() => onArchiveOrDelete(feature.id)}>
           {archiveActionLabel}
