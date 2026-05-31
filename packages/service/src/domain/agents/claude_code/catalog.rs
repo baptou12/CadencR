@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
+
 use crate::domain::agents::adapter::{RuntimeSlashCommand, RuntimeSlashCommandKind};
 use crate::domain::agents::runtime::ModelCatalogEntry;
 
@@ -26,9 +29,32 @@ pub(super) fn sdk_model_to_catalog_entry(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ModelProbeCacheKey(u64);
+
+pub(super) fn model_probe_cache_key(env: Option<&HashMap<String, String>>) -> ModelProbeCacheKey {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let Some(env) = env.filter(|env| !env.is_empty()) else {
+        0u8.hash(&mut hasher);
+        return ModelProbeCacheKey(hasher.finish());
+    };
+
+    1u8.hash(&mut hasher);
+    let mut entries = env.iter().collect::<Vec<_>>();
+    entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (key, value) in entries {
+        key.hash(&mut hasher);
+        0xffu8.hash(&mut hasher);
+        value.hash(&mut hasher);
+        0xfeu8.hash(&mut hasher);
+    }
+    ModelProbeCacheKey(hasher.finish())
+}
+
 pub(super) fn apply_model_probe_result(
     cache: &std::sync::RwLock<Vec<ModelCatalogEntry>>,
     probe_state: &mut ProbeState,
+    cache_key: ModelProbeCacheKey,
     result: Result<Vec<ModelCatalogEntry>, String>,
 ) {
     match result {
@@ -37,6 +63,7 @@ pub(super) fn apply_model_probe_result(
                 *cached_models = models;
             }
             probe_state.live = true;
+            probe_state.live_key = Some(cache_key);
         }
         Ok(_) => {
             tracing::warn!(
@@ -66,10 +93,18 @@ impl ClaudeCodeAdapter {
     }
 
     pub(super) async fn load_models(&self) -> Vec<ModelCatalogEntry> {
+        self.load_models_with_env(None).await
+    }
+
+    pub(super) async fn load_models_with_env(
+        &self,
+        env: Option<HashMap<String, String>>,
+    ) -> Vec<ModelCatalogEntry> {
+        let cache_key = model_probe_cache_key(env.as_ref());
         let mut guard = self.probe_state.lock().await;
-        if !guard.live {
+        if guard.live_key != Some(cache_key) {
             let cwd = std::env::temp_dir().to_string_lossy().into_owned();
-            let probe_result = claude_agent_sdk_rs::supported_models(&cwd, None)
+            let probe_result = claude_agent_sdk_rs::supported_models_with_env(&cwd, None, env)
                 .await
                 .map(|models| {
                     models
@@ -78,13 +113,18 @@ impl ClaudeCodeAdapter {
                         .collect::<Vec<_>>()
                 })
                 .map_err(|error| error.to_string());
-            apply_model_probe_result(self.models_cell(), &mut guard, probe_result);
+            apply_model_probe_result(self.models_cell(), &mut guard, cache_key, probe_result);
         }
+        let cache_matches_request = guard.live_key == Some(cache_key);
         drop(guard);
-        self.models_cell()
-            .read()
-            .map(|models| models.clone())
-            .unwrap_or_else(|_| fallback_models())
+        if cache_matches_request {
+            self.models_cell()
+                .read()
+                .map(|models| models.clone())
+                .unwrap_or_else(|_| fallback_models())
+        } else {
+            fallback_models()
+        }
     }
 
     pub(super) fn slash_commands_cell(&self) -> &std::sync::RwLock<Vec<RuntimeSlashCommand>> {
@@ -140,10 +180,13 @@ fn sdk_slash_to_runtime(command: claude_agent_sdk_rs::SlashCommand) -> RuntimeSl
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::domain::agents::runtime::ModelCatalogEntry;
 
     use super::{
-        apply_model_probe_result, sdk_model_to_catalog_entry, ClaudeCodeAdapter, ProbeState,
+        apply_model_probe_result, model_probe_cache_key, sdk_model_to_catalog_entry,
+        ClaudeCodeAdapter, ProbeState,
     };
 
     fn new_test_adapter() -> ClaudeCodeAdapter {
@@ -207,15 +250,17 @@ mod tests {
     fn apply_model_probe_result_marks_cache_live_on_success() {
         let adapter = new_test_adapter();
         let mut probe_state = ProbeState::default();
+        let cache_key = model_probe_cache_key(None);
 
         apply_model_probe_result(
             adapter.models_cell(),
             &mut probe_state,
+            cache_key.clone(),
             Ok(vec![ModelCatalogEntry::alias("default", "Default")]),
         );
 
         let cached = adapter.models_cell().read().expect("cache lock");
-        assert!(probe_state.live);
+        assert_eq!(probe_state.live_key, Some(cache_key));
         assert_eq!(cached[0].id, "default");
     }
 
@@ -224,10 +269,15 @@ mod tests {
         let adapter = new_test_adapter();
         let mut probe_state = ProbeState::default();
 
-        apply_model_probe_result(adapter.models_cell(), &mut probe_state, Ok(vec![]));
+        apply_model_probe_result(
+            adapter.models_cell(),
+            &mut probe_state,
+            model_probe_cache_key(None),
+            Ok(vec![]),
+        );
 
         let cached = adapter.models_cell().read().expect("cache lock");
-        assert!(!probe_state.live);
+        assert!(probe_state.live_key.is_none());
         assert_eq!(cached[0].id, "opus");
     }
 
@@ -239,11 +289,52 @@ mod tests {
         apply_model_probe_result(
             adapter.models_cell(),
             &mut probe_state,
+            model_probe_cache_key(None),
             Err("boom".to_string()),
         );
 
         let cached = adapter.models_cell().read().expect("cache lock");
-        assert!(!probe_state.live);
+        assert!(probe_state.live_key.is_none());
         assert_eq!(cached[0].id, "opus");
+    }
+
+    #[test]
+    fn model_probe_cache_key_is_stable_for_env_ordering() {
+        let mut env_a = HashMap::new();
+        env_a.insert("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string());
+        env_a.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-6".to_string(),
+        );
+        let mut env_b = HashMap::new();
+        env_b.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-6".to_string(),
+        );
+        env_b.insert("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string());
+
+        assert_eq!(
+            model_probe_cache_key(Some(&env_a)),
+            model_probe_cache_key(Some(&env_b))
+        );
+    }
+
+    #[test]
+    fn model_probe_cache_key_changes_when_env_value_changes() {
+        let mut env_a = HashMap::new();
+        env_a.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-6".to_string(),
+        );
+        let mut env_b = HashMap::new();
+        env_b.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-7".to_string(),
+        );
+
+        assert_ne!(
+            model_probe_cache_key(Some(&env_a)),
+            model_probe_cache_key(Some(&env_b))
+        );
     }
 }

@@ -28,7 +28,9 @@ pub use permissions::{
     AllowAllTools, CanUseTool, PermissionMode, PermissionRequest, PermissionResult,
     PermissionUpdate,
 };
-pub use query::{query, supported_commands, supported_models, Query, TurnState};
+pub use query::{
+    query, supported_commands, supported_models, supported_models_with_env, Query, TurnState,
+};
 pub use transport::{claude_discovery_spec, set_binary_override};
 pub use types::{
     AccountInfo, AgentInfo, CompactMetadata, ContentBlock, ContentDelta, McpServerStatus,

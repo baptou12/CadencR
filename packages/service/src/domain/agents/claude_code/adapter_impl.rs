@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
+use sqlx::SqlitePool;
+use std::path::Path;
 
 use super::catalog::fallback_models;
 use super::custom_models;
@@ -135,16 +137,17 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
-        let default_model = Self::default_model_from(&models);
-        ProviderCatalogEntry {
-            id: "claude_code".to_string(),
-            label: "Claude".to_string(),
-            status: ProviderStatus::Available,
-            status_message: None,
-            models,
-            modes: Vec::new(),
-            default_model,
-        }
+        provider_catalog_entry_from_models(models)
+    }
+
+    async fn catalog_entry_live_for_settings(
+        &self,
+        read_pool: &SqlitePool,
+        _cwd: Option<&Path>,
+    ) -> ProviderCatalogEntry {
+        let (_, profile_env) = super::profiles::resolve_active_profile_env(read_pool).await;
+        let models = self.load_models_with_env(profile_env).await;
+        provider_catalog_entry_from_models(models)
     }
 
     async fn default_model_id(&self) -> Option<String> {
@@ -229,6 +232,19 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             query,
             prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
         }))
+    }
+}
+
+fn provider_catalog_entry_from_models(models: Vec<ModelCatalogEntry>) -> ProviderCatalogEntry {
+    let default_model = ClaudeCodeAdapter::default_model_from(&models);
+    ProviderCatalogEntry {
+        id: "claude_code".to_string(),
+        label: "Claude".to_string(),
+        status: ProviderStatus::Available,
+        status_message: None,
+        models,
+        modes: Vec::new(),
+        default_model,
     }
 }
 

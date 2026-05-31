@@ -40,13 +40,20 @@ pub struct ClaudeCodeAdapter {
 #[derive(Default)]
 struct ProbeState {
     live: bool,
+    live_key: Option<catalog::ModelProbeCacheKey>,
 }
 
 pub static CLAUDE_CODE_ADAPTER: ClaudeCodeAdapter = ClaudeCodeAdapter {
     cached_models: std::sync::OnceLock::new(),
-    probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
+    probe_state: tokio::sync::Mutex::const_new(ProbeState {
+        live: false,
+        live_key: None,
+    }),
     cached_slash_commands: std::sync::OnceLock::new(),
-    slash_commands_probe_state: tokio::sync::Mutex::const_new(ProbeState { live: false }),
+    slash_commands_probe_state: tokio::sync::Mutex::const_new(ProbeState {
+        live: false,
+        live_key: None,
+    }),
 };
 
 /// Seed the static `CLAUDE_CODE_ADAPTER`'s model catalog from a test.

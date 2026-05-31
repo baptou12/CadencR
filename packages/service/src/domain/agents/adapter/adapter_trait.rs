@@ -49,6 +49,18 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         self.catalog_entry_live().await
     }
 
+    /// Live catalog entry with access to persisted settings. Providers whose
+    /// discovery depends on app settings (for example Claude Code profiles
+    /// that inject Bedrock/Vertex env vars) can override this request-aware
+    /// hook while other providers keep the cwd-only default.
+    async fn catalog_entry_live_for_settings(
+        &self,
+        _read_pool: &sqlx::SqlitePool,
+        cwd: Option<&Path>,
+    ) -> super::super::runtime::ProviderCatalogEntry {
+        self.catalog_entry_live_for_cwd(cwd).await
+    }
+
     /// Extra models contributed by user configuration (e.g. custom Claude Code
     /// model aliases stored in SQLite). Returned entries are merged into the
     /// adapter's catalog; on id collision the user entry wins.
