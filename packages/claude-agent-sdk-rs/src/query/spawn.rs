@@ -65,13 +65,18 @@ pub async fn query(content: serde_json::Value, mut options: Options) -> Result<Q
 
     // Send the initialize control request so the CLI knows we support
     // the bidirectional control protocol (canUseTool, AskUserQuestion, etc.).
-    let (_init_request_id, init_msg) = build_control_request(
-        "init",
-        serde_json::json!({
-            "subtype": "initialize",
-            "systemPrompt": options.system_prompt.as_deref(),
-        }),
-    );
+    //
+    // Only include `systemPrompt` when the caller actually set one. Sending
+    // `"systemPrompt": null` makes the CLI drop its default Claude Code system
+    // prompt entirely — the `# Environment` block (model identity, cwd, git)
+    // and all the Claude Code agent instructions — leaving the session with an
+    // empty system prompt. Omitting the key makes the CLI use its full default
+    // preset (the same thing a bare `claude -p` and the metadata probe do).
+    let mut init_request = serde_json::json!({ "subtype": "initialize" });
+    if let Some(system_prompt) = options.system_prompt.as_deref() {
+        init_request["systemPrompt"] = system_prompt.into();
+    }
+    let (_init_request_id, init_msg) = build_control_request("init", init_request);
     debug!("sending initialize control_request to CLI stdin");
     write_to_stdin(&process_stdin, &init_msg).await?;
 
@@ -221,5 +226,62 @@ echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_image
         let captured: serde_json::Value =
             serde_json::from_str(captured_raw.trim()).expect("captured prompt JSON");
         assert_eq!(captured["message"]["content"], content);
+    }
+
+    /// Mock CLI that records the first stdin line (the `initialize`
+    /// control_request) to `captured`, then completes a trivial turn so
+    /// `query()` returns.
+    fn init_capture_script(captured: &std::path::Path) -> String {
+        format!(
+            r#"#!/bin/sh
+set -e
+CAP='{}'
+read -r INIT_REQ
+printf '%s' "$INIT_REQ" > "$CAP"
+INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{}}}}}}\n' "$INIT_ID"
+read -r USER_PROMPT
+echo '{{"type":"system","subtype":"init","uuid":"u1","session_id":"s","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"m","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}}'
+echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"s","duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},"permission_denials":[],"structured_output":null}}'
+"#,
+            captured.display()
+        )
+    }
+
+    async fn capture_initialize_request(system_prompt: Option<String>) -> serde_json::Value {
+        let dir = TempDir::new().unwrap();
+        let captured = dir.path().join("init.json");
+        let script_path = write_mock_cli(dir.path(), &init_capture_script(&captured));
+        let options = Options {
+            path_to_cli: Some(script_path),
+            system_prompt,
+            ..Options::default()
+        };
+        let mut q = query(serde_json::Value::String("hi".into()), options)
+            .await
+            .unwrap();
+        while q.next().await.is_some() {}
+        let raw = std::fs::read_to_string(&captured).expect("captured initialize request");
+        serde_json::from_str(raw.trim()).expect("initialize request JSON")
+    }
+
+    /// Regression: `systemPrompt: null` makes the CLI drop its default Claude
+    /// Code system prompt, so when no custom prompt is set the key must be
+    /// omitted entirely (CLI then uses its full default preset).
+    #[tokio::test]
+    async fn initialize_omits_system_prompt_when_unset() {
+        let req = capture_initialize_request(None).await;
+        assert_eq!(req["request"]["subtype"], "initialize");
+        assert!(
+            req["request"].get("systemPrompt").is_none(),
+            "systemPrompt must be omitted when unset, got: {req}"
+        );
+    }
+
+    #[tokio::test]
+    async fn initialize_includes_system_prompt_when_set() {
+        let req = capture_initialize_request(Some("custom prompt".to_string())).await;
+        assert_eq!(req["request"]["subtype"], "initialize");
+        assert_eq!(req["request"]["systemPrompt"], "custom prompt");
     }
 }
