@@ -18,6 +18,7 @@ pub struct DiscoverySpec {
     /// When `Some(needle)`, a candidate must satisfy both:
     /// 1. its `--version` output contains `needle` (case-insensitive), and
     /// 2. the output parses as a valid semver triple.
+    ///
     /// Otherwise the candidate is excluded.
     ///
     /// Defends against version-multiplexer shims that masquerade as the real
