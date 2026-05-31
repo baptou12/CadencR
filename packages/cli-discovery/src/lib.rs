@@ -10,83 +10,23 @@
 //! `--version`, and lets the caller pick the best (highest semver). It also
 //! exposes the full candidate list so the host app can render a picker UI.
 
+mod shell;
+mod types;
+mod version;
+mod walk;
+
+#[cfg(test)]
+mod tests_support;
+
+pub use shell::login_shell_path;
+pub use types::{Candidate, CandidateSource, DiscoverySpec, VersionKey};
+pub use version::{parse_version_string, query_version};
+
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use once_cell::sync::OnceCell;
-use regex_lite::Regex;
-use tokio::process::Command;
-use tokio::sync::OnceCell as AsyncOnceCell;
-use tracing::warn;
-
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/// Per-provider configuration describing what to discover.
-#[derive(Debug, Clone)]
-pub struct DiscoverySpec {
-    /// Bare binary name, e.g. `"claude"` or `"opencode"`.
-    pub bin_name: &'static str,
-    /// Directories relative to `$HOME` that often contain the binary
-    /// (e.g. `".claude/local"`, `".bun/bin"`).
-    pub well_known_relative_to_home: Vec<&'static str>,
-    /// Absolute directories that often contain the binary
-    /// (e.g. `"/opt/homebrew/bin"`, `"/usr/local/bin"`).
-    pub well_known_absolute: Vec<&'static str>,
-    /// Args to pass when querying the binary's version (typically `["--version"]`).
-    pub version_args: &'static [&'static str],
-    /// When `Some(needle)`, a candidate must satisfy both:
-    /// 1. its `--version` output contains `needle` (case-insensitive), and
-    /// 2. the output parses as a valid semver triple.
-    /// Otherwise the candidate is excluded.
-    ///
-    /// Defends against version-multiplexer shims that masquerade as the real
-    /// binary. `rust-analyzer` installed via `rustup` is a symlink to the
-    /// `rustup` proxy; depending on whether the rust-analyzer component is
-    /// registered, the shim either prints rustup's own help (parses as
-    /// rustup's `1.28.x` but doesn't mention "rust-analyzer") or prints
-    /// `error: Unknown binary 'rust-analyzer' in official toolchain ...`
-    /// (mentions the name in quotes but has no semver). Either way the
-    /// process never speaks JSON-RPC, so we need both checks: the real
-    /// rust-analyzer prints `rust-analyzer 0.3.x-standalone (commit)` which
-    /// satisfies both.
-    pub version_must_contain: Option<&'static str>,
-}
-
-/// A semver triple captured from `--version` output.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct VersionKey(pub u64, pub u64, pub u64);
-
-impl VersionKey {
-    pub fn to_string_dotted(&self) -> String {
-        format!("{}.{}.{}", self.0, self.1, self.2)
-    }
-}
-
-/// Where a candidate was found. Ordered so higher-priority sources beat lower
-/// ones during ties (override > login-shell PATH > env PATH > well-known dir).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum CandidateSource {
-    WellKnown,
-    EnvPath,
-    LoginShellPath,
-    Override,
-}
-
-/// One discovered binary on disk.
-#[derive(Clone, Debug)]
-pub struct Candidate {
-    /// Path as discovered (may be a symlink/shim).
-    pub path: PathBuf,
-    /// Resolved through symlinks. Used for dedupe.
-    pub canonical: PathBuf,
-    /// Parsed semver, if `--version` returned something we could parse.
-    pub version: Option<VersionKey>,
-    /// Where the candidate was discovered.
-    pub source: CandidateSource,
-}
+use crate::version::{contains_ci, probe_version};
+use crate::walk::{canonicalize_executable, walk_path_var, walk_well_known};
 
 /// Enumerate every candidate binary on disk, in source order.
 ///
@@ -231,246 +171,11 @@ pub fn select_best(candidates: &[Candidate]) -> Option<&Candidate> {
     })
 }
 
-/// Spawn the user's login shell once and return its PATH.
-///
-/// Cached for the process lifetime. Returns `None` on Windows or if the shell
-/// errors out — callers must treat absence as benign.
-pub async fn login_shell_path() -> Option<String> {
-    static CACHE: AsyncOnceCell<Option<String>> = AsyncOnceCell::const_new();
-    CACHE.get_or_init(resolve_login_shell_path).await.clone()
-}
-
-/// Parse a semver triple out of a free-form `--version` string. Returns the
-/// first match. Useful for both Claude (`1.2.3 (Claude Code)`) and OpenCode
-/// (`opencode 1.4.3`).
-pub fn parse_version_string(raw: &str) -> Option<VersionKey> {
-    static MATCHER: OnceCell<Regex> = OnceCell::new();
-    let regex = MATCHER.get_or_init(|| {
-        Regex::new(r"\b(\d+)\.(\d+)\.(\d+)\b").expect("static semver regex compiles")
-    });
-    let captures = regex.captures(raw)?;
-    Some(VersionKey(
-        captures.get(1)?.as_str().parse().ok()?,
-        captures.get(2)?.as_str().parse().ok()?,
-        captures.get(3)?.as_str().parse().ok()?,
-    ))
-}
-
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
-
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    match std::fs::metadata(path) {
-        Ok(meta) => meta.is_file() && (meta.permissions().mode() & 0o111 != 0),
-        Err(_) => false,
-    }
-}
-
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
-}
-
-fn canonicalize_executable(path: &Path) -> Option<PathBuf> {
-    if !is_executable(path) {
-        return None;
-    }
-    std::fs::canonicalize(path).ok()
-}
-
-fn walk_path_var(
-    path_var: Option<&std::ffi::OsStr>,
-    bin_name: &str,
-    source: CandidateSource,
-    seen_canonical: &mut HashSet<PathBuf>,
-    candidates: &mut Vec<Candidate>,
-) {
-    let Some(path_var) = path_var else { return };
-    let bin_with_suffix = format!("{}{}", bin_name, std::env::consts::EXE_SUFFIX);
-    for dir in std::env::split_paths(path_var) {
-        let candidate_path = dir.join(&bin_with_suffix);
-        push_if_executable(&candidate_path, source, seen_canonical, candidates);
-    }
-}
-
-fn walk_well_known(
-    spec: &DiscoverySpec,
-    home_dir: Option<&Path>,
-    seen_canonical: &mut HashSet<PathBuf>,
-    candidates: &mut Vec<Candidate>,
-) {
-    let bin_with_suffix = format!("{}{}", spec.bin_name, std::env::consts::EXE_SUFFIX);
-
-    if let Some(home) = home_dir {
-        for relative in &spec.well_known_relative_to_home {
-            let candidate_path = home.join(relative).join(&bin_with_suffix);
-            push_if_executable(
-                &candidate_path,
-                CandidateSource::WellKnown,
-                seen_canonical,
-                candidates,
-            );
-        }
-    }
-
-    for absolute in &spec.well_known_absolute {
-        let candidate_path = Path::new(absolute).join(&bin_with_suffix);
-        push_if_executable(
-            &candidate_path,
-            CandidateSource::WellKnown,
-            seen_canonical,
-            candidates,
-        );
-    }
-}
-
-fn push_if_executable(
-    path: &Path,
-    source: CandidateSource,
-    seen_canonical: &mut HashSet<PathBuf>,
-    candidates: &mut Vec<Candidate>,
-) {
-    let Some(canonical) = canonicalize_executable(path) else {
-        return;
-    };
-    if !seen_canonical.insert(canonical.clone()) {
-        return;
-    }
-    candidates.push(Candidate {
-        path: path.to_path_buf(),
-        canonical,
-        version: None,
-        source,
-    });
-}
-
-pub async fn query_version(command: &Path, args: &[&str]) -> Option<VersionKey> {
-    probe_version(command, args).await.and_then(|(v, _)| v)
-}
-
-/// Probe `command --args[..]` and return `(parsed_version, raw_output)`.
-///
-/// Returns `None` only when the subprocess itself fails (timeout, spawn
-/// error). A successful run with un-parseable output returns
-/// `Some((None, "..."))` so callers can still inspect the text for filters
-/// (e.g. the `version_must_contain` shim guard).
-async fn probe_version(command: &Path, args: &[&str]) -> Option<(Option<VersionKey>, String)> {
-    let output = tokio::time::timeout(
-        Duration::from_secs(5),
-        Command::new(command).args(args).kill_on_drop(true).output(),
-    )
-    .await
-    .ok()?
-    .ok()?;
-
-    // Combine streams so a single regex pass + single substring check
-    // covers tools that print to either (rustup prints to stderr).
-    let combined = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let version = parse_version_string(&combined);
-    Some((version, combined))
-}
-
-fn contains_ci(haystack: &str, needle: &str) -> bool {
-    haystack.to_lowercase().contains(&needle.to_lowercase())
-}
-
-#[cfg(unix)]
-async fn resolve_login_shell_path() -> Option<String> {
-    let shell = std::env::var("SHELL").ok().filter(|s| !s.is_empty())?;
-    let output = tokio::time::timeout(
-        Duration::from_secs(3),
-        Command::new(&shell)
-            .args(["-ilc", "echo $PATH"])
-            .env_remove("CLAUDECODE")
-            .output(),
-    )
-    .await
-    .ok()?
-    .ok()?;
-
-    if !output.status.success() {
-        warn!(
-            shell = %shell,
-            stderr = %String::from_utf8_lossy(&output.stderr),
-            "login shell exited non-zero while resolving PATH"
-        );
-        return None;
-    }
-
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
-    }
-}
-
-#[cfg(not(unix))]
-async fn resolve_login_shell_path() -> Option<String> {
-    None
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use crate::tests_support::{dummy_spec, make_executable_with_body};
     use tempfile::TempDir;
-
-    fn make_executable_with_body(dir: &Path, name: &str, body: &str) -> PathBuf {
-        let path = dir.join(name);
-        std::fs::write(&path, body).unwrap();
-        let mut perms = std::fs::metadata(&path).unwrap().permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&path, perms).unwrap();
-        path
-    }
-
-    fn dummy_spec() -> DiscoverySpec {
-        DiscoverySpec {
-            bin_name: "thing",
-            well_known_relative_to_home: vec![".thing/local"],
-            well_known_absolute: vec![],
-            version_args: &["--version"],
-            version_must_contain: None,
-        }
-    }
-
-    #[test]
-    fn parses_semver_anywhere_in_string() {
-        assert_eq!(
-            parse_version_string("opencode 1.4.3"),
-            Some(VersionKey(1, 4, 3))
-        );
-        assert_eq!(
-            parse_version_string("ERROR service=models.dev\n1.1.65\n"),
-            Some(VersionKey(1, 1, 65))
-        );
-        assert_eq!(parse_version_string("no version here"), None);
-    }
-
-    #[test]
-    fn version_key_orders_naturally() {
-        assert!(VersionKey(1, 4, 3) > VersionKey(1, 1, 65));
-        assert!(VersionKey(2, 0, 0) > VersionKey(1, 99, 99));
-    }
-
-    #[test]
-    fn source_priority_orders_override_highest() {
-        assert!(CandidateSource::Override > CandidateSource::LoginShellPath);
-        assert!(CandidateSource::LoginShellPath > CandidateSource::EnvPath);
-        assert!(CandidateSource::EnvPath > CandidateSource::WellKnown);
-    }
 
     #[test]
     fn select_best_picks_highest_version_then_highest_source() {
@@ -541,57 +246,6 @@ mod tests {
         assert!(select_best(&[]).is_none());
     }
 
-    #[test]
-    fn walk_path_var_skips_non_executable_and_dedupes() {
-        let dir = TempDir::new().unwrap();
-        let other_dir = TempDir::new().unwrap();
-        // Real binary in dir.
-        let real = make_executable_with_body(dir.path(), "thing", "#!/bin/sh\necho 1\n");
-        // Non-executable file: ignored.
-        std::fs::write(dir.path().join("notexec"), "").unwrap();
-        // Symlink in other_dir → same canonical: deduped.
-        let symlink = other_dir.path().join("thing");
-        std::os::unix::fs::symlink(&real, &symlink).unwrap();
-
-        let mut seen = HashSet::new();
-        let mut out = Vec::new();
-        let path_var = format!("{}:{}", dir.path().display(), other_dir.path().display());
-        walk_path_var(
-            Some(std::ffi::OsStr::new(&path_var)),
-            "thing",
-            CandidateSource::EnvPath,
-            &mut seen,
-            &mut out,
-        );
-
-        assert_eq!(out.len(), 1, "symlink should dedupe to canonical of real");
-        assert_eq!(out[0].canonical, std::fs::canonicalize(&real).unwrap());
-    }
-
-    #[test]
-    fn walk_well_known_combines_home_and_absolute() {
-        let home = TempDir::new().unwrap();
-        let abs = TempDir::new().unwrap();
-        std::fs::create_dir_all(home.path().join(".thing/local")).unwrap();
-        make_executable_with_body(
-            &home.path().join(".thing/local"),
-            "thing",
-            "#!/bin/sh\necho h\n",
-        );
-        make_executable_with_body(abs.path(), "thing", "#!/bin/sh\necho a\n");
-
-        // Build a spec with the temp absolute path leaked to a static. We can't
-        // do that easily, so we exercise just the home-relative arm here and
-        // rely on the unit test for `walk_path_var` to cover the absolute arm
-        // (mechanically identical).
-        let spec = dummy_spec();
-        let mut seen = HashSet::new();
-        let mut out = Vec::new();
-        walk_well_known(&spec, Some(home.path()), &mut seen, &mut out);
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].source, CandidateSource::WellKnown);
-    }
-
     #[tokio::test]
     async fn discover_all_with_override_returns_only_override() {
         let dir = TempDir::new().unwrap();
@@ -616,15 +270,6 @@ mod tests {
         assert!(candidates
             .iter()
             .all(|candidate| candidate.source != CandidateSource::Override));
-    }
-
-    #[tokio::test]
-    async fn query_version_extracts_semver() {
-        let dir = TempDir::new().unwrap();
-        let path =
-            make_executable_with_body(dir.path(), "thing", "#!/bin/sh\necho '2.7.1 build'\n");
-        let version = query_version(&path, &["--version"]).await;
-        assert_eq!(version, Some(VersionKey(2, 7, 1)));
     }
 
     #[tokio::test]
