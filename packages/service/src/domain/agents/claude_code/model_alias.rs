@@ -32,9 +32,10 @@ pub(super) fn resolve_model_alias(model: &str, catalog: &[ModelCatalogEntry]) ->
         return model.to_string();
     }
 
-    let (base, wants_1m) = match model.strip_suffix("[1m]") {
+    let normalized_model = model.to_ascii_lowercase();
+    let (base, wants_1m) = match normalized_model.strip_suffix("[1m]") {
         Some(base) => (base, true),
-        None => (model, false),
+        None => (normalized_model.as_str(), false),
     };
     let family = match base {
         "sonnet" => "Sonnet",
@@ -99,6 +100,18 @@ mod tests {
         assert_eq!(
             resolve_model_alias("opus", &bedrock_catalog()),
             "us.anthropic.claude-opus-4-8"
+        );
+    }
+
+    #[test]
+    fn maps_family_alias_case_insensitively() {
+        assert_eq!(
+            resolve_model_alias("Sonnet", &bedrock_catalog()),
+            "us.anthropic.claude-sonnet-4-6"
+        );
+        assert_eq!(
+            resolve_model_alias("SONNET[1M]", &bedrock_catalog()),
+            "us.anthropic.claude-sonnet-4-6[1m]"
         );
     }
 

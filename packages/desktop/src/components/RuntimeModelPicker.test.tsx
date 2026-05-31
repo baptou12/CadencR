@@ -2,17 +2,21 @@ import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@/test-utils";
-import { RuntimeModelPicker } from "./RuntimeModelPicker";
+import { RuntimeModelPicker, type RuntimeModelSelectionResolver } from "./RuntimeModelPicker";
 
 function Harness(props: {
   onSelect?: (providerId: string, modelId: string) => void;
   onAfterSelectClose?: () => void;
   models?: Array<{ id: string; label: string }>;
+  selectedModelId?: string;
+  resolveSelectedModelId?: RuntimeModelSelectionResolver;
 }) {
   const {
     models = [{ id: "opus", label: "Opus" }],
     onSelect = vi.fn(),
     onAfterSelectClose = vi.fn(),
+    selectedModelId = "opus",
+    resolveSelectedModelId,
   } = props;
   const [open, setOpen] = useState(false);
 
@@ -29,7 +33,8 @@ function Harness(props: {
         },
       ]}
       selectedProviderId="claude_code"
-      selectedModelId="opus"
+      selectedModelId={selectedModelId}
+      resolveSelectedModelId={resolveSelectedModelId}
       onSelect={onSelect}
       onAfterSelectClose={onAfterSelectClose}
       trigger={<button type="button">Open picker</button>}
@@ -98,5 +103,48 @@ describe("RuntimeModelPicker", () => {
     await user.type(screen.getByPlaceholderText("Search providers or models..."), "Op");
 
     await waitFor(() => expect(commandList.scrollTop).toBe(0));
+  });
+
+  it("does not resolve provider-specific model aliases unless a resolver is provided", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Harness
+        selectedModelId="sonnet"
+        models={[{ id: "us.anthropic.claude-sonnet-4-6", label: "Sonnet" }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Claude \/ Sonnet/i })).toHaveAttribute(
+        "data-selected",
+        "false",
+      ),
+    );
+  });
+
+  it("uses an injected resolver to highlight provider-specific aliases", async () => {
+    const user = userEvent.setup();
+    const resolveSelectedModelId: RuntimeModelSelectionResolver = () =>
+      "us.anthropic.claude-sonnet-4-6";
+
+    render(
+      <Harness
+        selectedModelId="sonnet"
+        resolveSelectedModelId={resolveSelectedModelId}
+        models={[{ id: "us.anthropic.claude-sonnet-4-6", label: "Sonnet" }]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /Claude \/ Sonnet/i })).toHaveAttribute(
+        "data-selected",
+        "true",
+      ),
+    );
   });
 });

@@ -303,7 +303,7 @@ mod tests {
         apply_model_probe_result(
             adapter.models_cell(),
             &mut probe_state,
-            cache_key.clone(),
+            cache_key,
             Ok(vec![ModelCatalogEntry::alias("default", "Default")]),
         );
 

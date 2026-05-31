@@ -1,5 +1,6 @@
 import { Button } from "./ui/button";
 import { ProviderIcon } from "@/lib/provider-icons";
+import { resolveProviderModelAlias } from "@/lib/provider-model-aliases";
 import { RuntimeModelPicker } from "@/components/RuntimeModelPicker";
 import type { RuntimeModelOption } from "@/api/agentRuntime";
 import { ChevronDownIcon } from "lucide-react";
@@ -75,6 +76,7 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
             providers={providers}
             selectedProviderId={selectedProviderId}
             selectedModelId={selectedModelId}
+            resolveSelectedModelId={resolveProviderModelAlias}
             onSelect={onSelect}
             action={inheritAction}
             trigger={
