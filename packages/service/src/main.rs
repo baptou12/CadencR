@@ -122,6 +122,9 @@ async fn main() -> anyhow::Result<()> {
                 port: config.port,
                 custom_action_scheduler:
                     domain::custom_actions::scheduler::CustomActionScheduler::new(),
+                custom_action_runs: std::sync::Arc::new(
+                    domain::custom_actions::run_registry::CustomActionRunRegistry::new(),
+                ),
                 git_watcher: std::sync::Arc::new(domain::git::watcher::GitWatcherRegistry::new()),
                 push_sessions: std::sync::Arc::new(
                     domain::git::push_sessions::PushSessionRegistry::new(),

@@ -1,57 +1,120 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
+import { Loader2, PencilIcon, PlayIcon, SquareIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import {
   getGetCustomActionVariablesQueryKey,
   getListCustomActionsQueryKey,
+  useCancelCustomActionRun,
   useDeleteCustomAction,
   useGetCustomActionRuns,
   useGetCustomActionVariables,
   useRunCustomAction,
   useSetCustomActionVariable,
   type CustomAction,
+  type CustomActionRun,
 } from "@/api/generated";
+import { invalidateCustomActionRunQueries } from "@/lib/custom-action-queries";
+import { BashBlock } from "./BashBlock";
 import { CustomActionScheduleControl } from "./CustomActionScheduleControl";
 
-interface CustomActionPopoverProps {
+/**
+ * Merge a run's captured streams into a single terminal-style body. We capture
+ * stdout/stderr separately but the shared bash block renders one stream (as a
+ * terminal would); stderr is appended after stdout.
+ */
+function runOutput(run: CustomActionRun): string {
+  return [run.stdout, run.stderr].filter(Boolean).join("\n");
+}
+
+interface CustomActionDetailsProps {
   action: CustomAction;
   featureId: number;
   projectId: number;
   /** Open the editor dialog in edit mode for this action. */
   onEdit: () => void;
-  /** Close the popover after an action that should dismiss it (e.g. delete). */
+  /** Close the surrounding surface after an action that should dismiss it (e.g. delete). */
   onAfterDelete: () => void;
 }
 
-export function CustomActionPopover({
+/**
+ * Unified run/output/details surface for a custom action, shown identically for
+ * inline and overflow actions. Polls the action's recent runs so live output
+ * (manual or scheduled) streams in without a manual refresh, and exposes the
+ * run button, per-feature variables and the schedule control.
+ */
+export function CustomActionDetails({
   action,
   featureId,
   projectId,
   onEdit,
   onAfterDelete,
-}: CustomActionPopoverProps) {
+}: CustomActionDetailsProps) {
   const queryClient = useQueryClient();
   const { data: storedVars } = useGetCustomActionVariables(action.id, { feature_id: featureId });
-  // Tight refetch so live runs (manual or scheduled) paint logs without a
-  // manual refresh. `runs[0]` doubles as the source of "is a run in flight?".
+  // Poll only while the latest run is in flight, so live logs paint without a
+  // manual refresh but a finished run stops generating no-op requests. `runs[0]`
+  // doubles as the source of "is a run in flight?".
   const runsQuery = useGetCustomActionRuns(
     action.id,
     { feature_id: featureId, limit: 5 },
-    { query: { refetchInterval: 2000 } },
+    {
+      query: {
+        refetchInterval: (data) => (data?.[0] != null && data[0].ended_at == null ? 2000 : false),
+      },
+    },
   );
   const latestRun = runsQuery.data?.[0];
   const isRunning = latestRun != null && latestRun.ended_at == null;
 
+  // Which run we've asked to stop. The cancel request returns immediately but
+  // the process takes a moment to die (Ctrl-C, then SIGKILL), so we keep the
+  // loader until the run actually finalizes rather than only during the POST.
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+
   const runMutation = useRunCustomAction({
     mutation: {
+      // Runs are asynchronous now — surface the new in-flight row immediately
+      // instead of waiting for the 2s poll.
+      onSuccess: () => {
+        invalidateCustomActionRunQueries({
+          queryClient,
+          projectId,
+          actionId: action.id,
+          featureId,
+        });
+      },
       onError: (err) => toast.error(`Run failed: ${err.message}`),
     },
   });
+
+  const cancelMutation = useCancelCustomActionRun({
+    mutation: {
+      // The backend interrupts the process (Ctrl-C) and finalizes the run;
+      // refresh so the stopped state shows without waiting for the 2s poll.
+      onSuccess: () => {
+        invalidateCustomActionRunQueries({
+          queryClient,
+          projectId,
+          actionId: action.id,
+          featureId,
+        });
+      },
+      // Re-enable the button so the user can retry if the request itself fails.
+      onError: (err) => {
+        setCancellingId(null);
+        toast.error(`Stop failed: ${err.message}`);
+      },
+    },
+  });
+
+  // Show the stopping loader from the click until the run leaves the running
+  // state. Gating on the run id means a stale `cancellingId` self-clears once
+  // that run finalizes (isRunning false) or a new run takes its place.
+  const isStopping = isRunning && latestRun != null && cancellingId === latestRun.id;
 
   const setVariableMutation = useSetCustomActionVariable({
     mutation: {
@@ -82,6 +145,14 @@ export function CustomActionPopover({
     for (const v of storedVars ?? []) map.set(v.var_name, v.value);
     return map;
   }, [storedVars]);
+
+  // Pre-merge each run's streams once per data change. react-query keeps
+  // unchanged runs referentially stable, so a finished run's `output` string
+  // stays identical across poll ticks and its memoized BashBlock won't re-render.
+  const runViews = useMemo(
+    () => (runsQuery.data ?? []).map((run) => ({ run, output: runOutput(run) })),
+    [runsQuery.data],
+  );
 
   // Local draft state so typing doesn't fire a request on each keystroke;
   // we persist on blur.
@@ -166,22 +237,46 @@ export function CustomActionPopover({
       )}
 
       <section>
-        <Button
-          size="sm"
-          onClick={() => runMutation.mutate({ id: action.id, params: { feature_id: featureId } })}
-          disabled={isRunning || runMutation.isPending}
-          className="w-full"
-        >
-          {isRunning || runMutation.isPending ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" /> Running…
-            </>
-          ) : (
-            <>
-              <PlayIcon className="size-3.5" /> Run now
-            </>
-          )}
-        </Button>
+        {isRunning && latestRun ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              setCancellingId(latestRun.id);
+              cancelMutation.mutate({ id: action.id, runId: latestRun.id });
+            }}
+            disabled={isStopping}
+            className="w-full"
+            title="Stop the running command (Ctrl-C)"
+          >
+            {isStopping ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Stopping…
+              </>
+            ) : (
+              <>
+                <SquareIcon className="size-3.5 fill-current" /> Stop
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => runMutation.mutate({ id: action.id, params: { feature_id: featureId } })}
+            disabled={runMutation.isPending}
+            className="w-full"
+          >
+            {runMutation.isPending ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Starting…
+              </>
+            ) : (
+              <>
+                <PlayIcon className="size-3.5" /> Run now
+              </>
+            )}
+          </Button>
+        )}
       </section>
 
       <section className="rounded border border-dashed p-2">
@@ -192,43 +287,23 @@ export function CustomActionPopover({
         <h4 className="text-xs font-semibold uppercase tracking-wide text-foreground/70">
           Recent runs
         </h4>
-        {(runsQuery.data ?? []).length === 0 ? (
+        {runViews.length === 0 ? (
           <p className="text-xs text-muted-foreground italic">No runs yet.</p>
         ) : (
-          <div className="max-h-56 overflow-y-auto space-y-2 rounded border bg-muted/30 p-2">
-            {(runsQuery.data ?? []).map((run) => (
-              <div key={run.id} className="text-xs">
-                <div className="flex items-center justify-between font-mono">
-                  <span
-                    className={cn(
-                      "font-semibold",
-                      run.exit_code === 0
-                        ? "text-emerald-500"
-                        : run.exit_code == null
-                          ? "text-amber-500"
-                          : "text-red-500",
-                    )}
-                  >
-                    {run.exit_code == null
-                      ? "running…"
-                      : run.exit_code === 0
-                        ? "exit 0"
-                        : `exit ${run.exit_code}`}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {run.started_at} · {run.triggered_by}
-                  </span>
+          <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+            {runViews.map(({ run, output }) => (
+              <div key={run.id} className="space-y-1 text-xs">
+                {/* Exit status is conveyed by the bash block colour (red on
+                    failure) rather than a redundant "exit N" label. */}
+                <div className="font-mono text-[11px] text-muted-foreground">
+                  {run.started_at} · {run.triggered_by}
                 </div>
-                {run.stdout && (
-                  <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px]">
-                    {run.stdout}
-                  </pre>
-                )}
-                {run.stderr && (
-                  <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] text-red-500">
-                    {run.stderr}
-                  </pre>
-                )}
+                <BashBlock
+                  command={action.command}
+                  content={output}
+                  running={run.ended_at == null}
+                  isError={run.exit_code != null && run.exit_code !== 0}
+                />
               </div>
             ))}
           </div>

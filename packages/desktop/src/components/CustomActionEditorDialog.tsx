@@ -28,6 +28,7 @@ import {
   type CustomAction,
   type Scope as CustomActionScope,
 } from "@/api/generated";
+import { BashFrame } from "./BashFrame";
 import { CustomActionIcon } from "./CustomActionIcon";
 
 const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/gif"];
@@ -201,12 +202,14 @@ export function CustomActionEditorDialog({
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Command</label>
-            <Textarea
-              value={form.command}
-              onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
-              placeholder="gh pr view ${PR_ID} --json comments"
-              className="font-mono text-xs min-h-[5rem]"
-            />
+            <BashFrame>
+              <Textarea
+                value={form.command}
+                onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))}
+                placeholder="gh pr view ${PR_ID} --json comments"
+                className="min-h-[5rem] resize-none rounded-none border-0 bg-transparent font-mono text-xs text-[var(--block-bash-fg)] shadow-none placeholder:text-[var(--block-bash-muted-fg)] focus-visible:border-0 focus-visible:ring-0"
+              />
+            </BashFrame>
             {detectedVars.length > 0 && (
               <p className="text-xs text-muted-foreground">
                 Variables detected:{" "}

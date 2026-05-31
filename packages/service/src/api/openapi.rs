@@ -124,6 +124,7 @@ use crate::domain::workspace::routes as workspace_routes;
         custom_actions_routes::set_variable_handler,
         custom_actions_routes::run_action_handler,
         custom_actions_routes::list_runs_handler,
+        custom_actions_routes::cancel_run_handler,
         custom_actions_routes::get_schedule_handler,
         custom_actions_routes::set_schedule_handler,
         feature_layouts_routes::list_layouts_handler,

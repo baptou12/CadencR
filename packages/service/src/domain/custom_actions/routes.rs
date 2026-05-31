@@ -169,14 +169,13 @@ pub async fn run_action_handler(
     Path(id): Path<i64>,
     Query(q): Query<FeatureIdQuery>,
 ) -> Result<Json<RunResponse>, AppError> {
-    let outcome = runner::execute(&state, id, q.feature_id, TriggeredBy::Manual).await?;
-    Ok(Json(RunResponse {
-        run_id: outcome.run_id,
-        exit_code: outcome.exit_code,
-        stdout: outcome.stdout,
-        stderr: outcome.stderr,
-        ended_at: Some(outcome.ended_at),
-    }))
+    // Start the run in the background and return its id immediately. Setup
+    // errors (missing worktree/variables) still surface synchronously; the
+    // command's output and exit code stream into `custom_action_runs` and are
+    // read back via `GET /runs`, so a long-running action stays visible after
+    // the triggering button/menu closes.
+    let run_id = runner::start(&state, id, q.feature_id, TriggeredBy::Manual).await?;
+    Ok(Json(RunResponse { run_id }))
 }
 
 #[utoipa::path(get, path = "/api/custom-actions/{id}/runs", params(("id" = i64, Path,), FeatureIdAndLimitQuery), responses((status = 200, body = Vec<CustomActionRun>)))]
@@ -189,6 +188,22 @@ pub async fn list_runs_handler(
     Ok(Json(
         repository::list_runs(&state.read_pool, id, q.feature_id, limit).await?,
     ))
+}
+
+#[utoipa::path(post, path = "/api/custom-actions/{id}/runs/{run_id}/cancel", params(("id" = i64, Path,), ("run_id" = i64, Path,)), responses((status = 200, body = SuccessResponse)))]
+pub async fn cancel_run_handler(
+    State(state): State<AppState>,
+    // `id` is part of the REST path for consistency; the run id alone is unique.
+    Path((_id, run_id)): Path<(i64, i64)>,
+) -> Result<Json<SuccessResponse>, AppError> {
+    // Interrupt the running command (Ctrl-C, escalating to SIGKILL). 404 when
+    // the run already finished between the UI seeing it and this request.
+    if !state.custom_action_runs.cancel(run_id).await {
+        return Err(AppError::NotFound(format!(
+            "Run {run_id} is not currently running"
+        )));
+    }
+    Ok(Json(SuccessResponse { success: true }))
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +262,10 @@ pub fn custom_actions_router() -> Router<AppState> {
         )
         .route("/api/custom-actions/{id}/run", post(run_action_handler))
         .route("/api/custom-actions/{id}/runs", get(list_runs_handler))
+        .route(
+            "/api/custom-actions/{id}/runs/{run_id}/cancel",
+            post(cancel_run_handler),
+        )
         .route(
             "/api/custom-actions/{id}/schedule",
             get(get_schedule_handler).put(set_schedule_handler),

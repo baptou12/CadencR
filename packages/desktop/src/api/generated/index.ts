@@ -1119,16 +1119,13 @@ export interface RetryWorktreeBody {
   project_id: number;
 }
 
-export type RunResponseEndedAt = string | null;
-
-export type RunResponseExitCode = number | null;
-
+/**
+ * Response for starting an asynchronous run. Output and exit code are streamed
+into `custom_action_runs` and read back via `GET /runs`, so the start call
+only returns the new run's id.
+ */
 export interface RunResponse {
-  ended_at?: RunResponseEndedAt;
-  exit_code?: RunResponseExitCode;
   run_id: number;
-  stderr: string;
-  stdout: string;
 }
 
 export type SaveDraftRequestDraft = string | null;
@@ -2914,6 +2911,76 @@ export function useGetCustomActionRuns<
 
   return query;
 }
+
+export const cancelCustomActionRun = (id: number, runId: number, signal?: AbortSignal) => {
+  return customInstance<SuccessResponse>({
+    url: `/api/custom-actions/${id}/runs/${runId}/cancel`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getCancelCustomActionRunMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelCustomActionRun>>,
+    TError,
+    { id: number; runId: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof cancelCustomActionRun>>,
+  TError,
+  { id: number; runId: number },
+  TContext
+> => {
+  const mutationKey = ["cancelCustomActionRun"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof cancelCustomActionRun>>,
+    { id: number; runId: number }
+  > = (props) => {
+    const { id, runId } = props ?? {};
+
+    return cancelCustomActionRun(id, runId);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CancelCustomActionRunMutationResult = NonNullable<
+  Awaited<ReturnType<typeof cancelCustomActionRun>>
+>;
+
+export type CancelCustomActionRunMutationError = ErrorType<unknown>;
+
+export const useCancelCustomActionRun = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof cancelCustomActionRun>>,
+    TError,
+    { id: number; runId: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof cancelCustomActionRun>>,
+  TError,
+  { id: number; runId: number },
+  TContext
+> => {
+  const mutationOptions = getCancelCustomActionRunMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
 
 export const getCustomActionSchedule = (
   id: number,
