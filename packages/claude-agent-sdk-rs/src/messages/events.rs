@@ -1,0 +1,163 @@
+use std::collections::HashMap;
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::types::{
+    CompactMetadata, ContentBlock, ContentDelta, McpServerStatus, PluginInfo, Usage,
+};
+
+// ── StreamEventData ──────────────────────────────────────────────────────────
+
+/// Body of a `message_start` streaming event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageStartBody {
+    pub id: String,
+    pub model: String,
+    #[serde(default)]
+    pub usage: Option<Usage>,
+    #[serde(rename = "type", default)]
+    pub msg_type: Option<String>,
+}
+
+/// Body of a `message_delta` streaming event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageDeltaBody {
+    pub stop_reason: Option<String>,
+}
+
+/// All streaming event subtypes. Tagged by the `type` field.
+///
+/// `ContentBlockDelta` is the **critical** one — it carries `TextDelta`,
+/// `ThinkingDelta`, and `InputJsonDelta` for real-time UI streaming.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum StreamEventData {
+    /// Marks the start of a message; carries initial usage info.
+    #[serde(rename = "message_start")]
+    MessageStart { message: MessageStartBody },
+
+    /// Marks the start of a content block (text, tool_use, thinking).
+    #[serde(rename = "content_block_start")]
+    ContentBlockStart {
+        index: u32,
+        content_block: ContentBlock,
+    },
+
+    /// **THE critical event.** Carries partial text / thinking / tool-input JSON.
+    #[serde(rename = "content_block_delta")]
+    ContentBlockDelta { index: u32, delta: ContentDelta },
+
+    /// Marks the end of a content block.
+    #[serde(rename = "content_block_stop")]
+    ContentBlockStop { index: u32 },
+
+    /// Carries stop_reason and optional updated usage at message end.
+    #[serde(rename = "message_delta")]
+    MessageDelta {
+        delta: MessageDeltaBody,
+        usage: Option<Usage>,
+    },
+
+    /// Marks the complete end of the streamed message.
+    #[serde(rename = "message_stop")]
+    MessageStop,
+}
+
+// ── SystemMessage ────────────────────────────────────────────────────────────
+
+/// Typed `system` message subtypes. Tagged by the `subtype` field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "subtype")]
+pub enum SystemMessage {
+    /// Session initialisation — carries session_id, model, tools, MCP servers.
+    ///
+    /// Cadencr captures `session_id` from this for resume workflows.
+    #[serde(rename = "init")]
+    Init {
+        uuid: String,
+        session_id: String,
+        claude_code_version: String,
+        cwd: String,
+        tools: Vec<String>,
+        mcp_servers: Vec<McpServerStatus>,
+        model: String,
+        permission_mode: String,
+        slash_commands: Vec<String>,
+        output_style: String,
+        #[serde(default)]
+        skills: Vec<String>,
+        #[serde(default)]
+        plugins: Vec<PluginInfo>,
+        #[serde(default)]
+        agents: Option<Vec<String>>,
+        #[serde(default)]
+        betas: Option<Vec<String>>,
+        #[serde(flatten)]
+        extra: HashMap<String, Value>,
+    },
+
+    /// Marks a context compaction boundary.
+    ///
+    /// Cadencr sets `was_compacted = true` when this is received.
+    #[serde(rename = "compact_boundary")]
+    CompactBoundary {
+        uuid: String,
+        session_id: String,
+        compact_metadata: CompactMetadata,
+    },
+}
+
+impl SystemMessage {
+    /// Returns the `session_id` regardless of subtype.
+    pub fn session_id(&self) -> &str {
+        match self {
+            SystemMessage::Init { session_id, .. } => session_id,
+            SystemMessage::CompactBoundary { session_id, .. } => session_id,
+        }
+    }
+}
+
+// ── ModelUsageInfo ───────────────────────────────────────────────────────────
+
+/// Per-model usage record from the CLI's `result` message `modelUsage` map.
+///
+/// The CLI emits a `modelUsage` object keyed by the fully-qualified model
+/// identifier (e.g. `"claude-opus-4-7[1m]"`), with per-turn token counts and
+/// — critically — the authoritative `contextWindow` for that model. This is
+/// the source of truth for Cadencr's context-window tracking: no parsing of
+/// description strings, no alias-prefix guessing.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelUsageInfo {
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    /// Authoritative context window reported by the CLI for this model.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+    #[serde(default)]
+    pub max_output_tokens: Option<u64>,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+}
+
+// ── AssistantMessageBody ─────────────────────────────────────────────────────
+
+/// Full assistant message body (emitted after a stream turn completes).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssistantMessageBody {
+    pub id: String,
+    pub content: Vec<ContentBlock>,
+    pub model: String,
+    pub stop_reason: Option<String>,
+    #[serde(default)]
+    pub usage: Option<Usage>,
+    #[serde(rename = "type", default)]
+    pub msg_type: Option<String>,
+}
