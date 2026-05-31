@@ -109,6 +109,7 @@ pub(crate) async fn handle_prompt_send(
             thinking_effort: handle.desired_thinking_effort.clone(),
             system_prompt: handle.config.system_prompt.clone(),
             resume_session_id: runtime_session_id,
+            allow_bypass_permissions: handle.config.allow_bypass_permissions,
             env: handle.config.env.clone(),
             ..RuntimeSpawnConfig::default()
         };

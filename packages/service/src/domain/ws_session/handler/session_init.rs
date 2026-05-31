@@ -290,12 +290,17 @@ pub(super) async fn handle_init(
     );
     runtime_config.system_prompt = payload.system_prompt.clone();
     if effective_provider == crate::domain::agents::claude_code::PROVIDER_ID {
-        let (_, profile_env) =
-            crate::domain::agents::claude_code::profiles::resolve_active_profile_env(
-                &app_state.read_pool,
-            )
-            .await;
+        let profile_env = crate::domain::agents::claude_code::profiles::resolve_active_profile_env(
+            &app_state.read_pool,
+        );
+        let allow_bypass = super::claude_access::bypass_permissions_enabled(
+            &app_state.read_pool,
+            Some(feature_id),
+            Some(project_id),
+        );
+        let ((_, profile_env), allow_bypass_permissions) = tokio::join!(profile_env, allow_bypass);
         runtime_config.env = profile_env;
+        runtime_config.allow_bypass_permissions = allow_bypass_permissions;
     }
 
     info!(
@@ -315,6 +320,7 @@ pub(super) async fn handle_init(
         access_mode: runtime_config.access_mode.clone(),
         thinking_effort: runtime_config.thinking_effort.clone(),
         system_prompt: runtime_config.system_prompt.clone(),
+        allow_bypass_permissions: runtime_config.allow_bypass_permissions,
         env: runtime_config.env.clone(),
     };
     let handle = SdkHandle {

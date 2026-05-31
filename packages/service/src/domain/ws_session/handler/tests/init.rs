@@ -154,6 +154,53 @@ async fn test_init_reuses_existing_session_row() {
 }
 
 #[tokio::test]
+async fn claude_init_allows_bypass_capability_without_activating_bypass_mode() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('claude_bypass_permissions_enabled', 'true')",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let session_id = init_session_with_payload(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: Some("claude_code".to_string()),
+            model: None,
+            thinking_effort: None,
+            permission_mode: Some("plan".to_string()),
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id.parse::<i64>().unwrap()).unwrap();
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session before first prompt");
+    };
+    assert!(options.allow_bypass_permissions);
+    assert_eq!(
+        options.permission_mode,
+        Some(RuntimePermissionMode::Plan),
+        "allowing Bypass capability must not activate bypassPermissions"
+    );
+}
+
+#[tokio::test]
 async fn test_different_features_get_different_sessions() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

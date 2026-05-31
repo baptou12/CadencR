@@ -229,6 +229,23 @@ fn to_cli_args_includes_permission_mode_when_set() {
 }
 
 #[test]
+fn to_cli_args_includes_allow_dangerously_skip_permissions_when_enabled() {
+    let opts = OptionsBuilder::new()
+        .allow_dangerously_skip_permissions(true)
+        .build();
+    let args = opts.to_cli_args();
+    assert!(
+        args.iter()
+            .any(|arg| arg == "--allow-dangerously-skip-permissions"),
+        "Expected --allow-dangerously-skip-permissions in args"
+    );
+    assert!(
+        !args.iter().any(|arg| arg == "--permission-mode"),
+        "Allowing Bypass capability must not activate bypassPermissions"
+    );
+}
+
+#[test]
 fn to_cli_args_omits_permission_mode_when_unset() {
     let opts = Options::default();
     let args = opts.to_cli_args();

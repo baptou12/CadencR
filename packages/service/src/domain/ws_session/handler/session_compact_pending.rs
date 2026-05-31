@@ -190,6 +190,7 @@ async fn pending_spawn_config(
             thinking_effort: spawned_thinking_effort,
             system_prompt: handle.config.system_prompt.clone(),
             resume_session_id,
+            allow_bypass_permissions: handle.config.allow_bypass_permissions,
             mcp_servers: pending.mcp_servers.clone(),
             permission_handler: Some(Arc::new(bridge)),
             env: handle.config.env.clone().or_else(|| pending.env.clone()),

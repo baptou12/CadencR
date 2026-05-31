@@ -16,6 +16,7 @@
 //! and exercise the public surface this module re-exports.
 
 mod app;
+mod claude_access;
 mod codex_access;
 mod commands;
 mod connection;

@@ -64,20 +64,20 @@ const CLAUDE_CODE_MODES: ProviderMode[] = [
     description: "Research and propose changes without editing source.",
   },
   {
+    id: "bypassPermissions",
+    label: "Bypass",
+    icon: ShieldOff,
+    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
+    description: "Dangerous: skip Claude Code permission prompts and checks.",
+    optIn: true,
+  },
+  {
     id: "auto",
     label: "Auto",
     icon: Sparkles,
     chipClass: "bg-[var(--acc-yellow)]/15 text-[var(--acc-yellow)] hover:bg-[var(--acc-yellow)]/25",
     description:
       "Classifier-backed: safe actions auto-run, risky ones blocked. Requires Sonnet 4.6 / Opus 4.6+.",
-  },
-  {
-    id: "bypassPermissions",
-    label: "Bypass",
-    icon: ShieldOff,
-    chipClass: "bg-[var(--acc-red)]/15 text-[var(--acc-red)] hover:bg-[var(--acc-red)]/25",
-    description: "DANGEROUS: skip every safety check. Only use in isolated containers / VMs.",
-    optIn: true,
   },
 ];
 

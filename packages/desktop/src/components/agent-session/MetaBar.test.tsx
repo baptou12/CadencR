@@ -66,6 +66,23 @@ describe("MetaBar mode chip", () => {
     expect(chip.className).toMatch(/--acc-yellow/);
   });
 
+  it("renders Claude bypass as the normal permission mode chip when enabled", () => {
+    renderChip({
+      currentProviderId: PROVIDER_IDS.CLAUDE_CODE,
+      permissionMode: "bypassPermissions",
+      enabledOptInModes: ["bypassPermissions"],
+      runtimeProvider: PROVIDER_IDS.CLAUDE_CODE,
+      runtimeSessionId: "claude-session-123",
+    });
+    const chip = screen.getByRole("button", {
+      name: /Permission mode: Bypass/i,
+    });
+    expect(chip).toBeInTheDocument();
+    expect(chip).toHaveAttribute("title", expect.stringMatching(/Shift\+Tab/i));
+    expect(chip.className).toMatch(/--acc-red/);
+    expect(screen.queryByRole("button", { name: /Claude access mode/i })).toBeNull();
+  });
+
   it("renders 'Build' with fuchsia styling for OpenCode's primary mode", () => {
     renderChip({
       currentProviderId: PROVIDER_IDS.OPENCODE,

@@ -14,14 +14,14 @@ describe("provider-modes catalog", () => {
     expect(PROVIDER_MODES[PROVIDER_IDS.CLAUDE_CODE].map((m) => m.id)).toEqual([
       "acceptEdits",
       "plan",
-      "auto",
       "bypassPermissions",
+      "auto",
     ]);
     expect(PROVIDER_MODES[PROVIDER_IDS.OPENCODE].map((m) => m.id)).toEqual(["acceptEdits", "plan"]);
     expect(PROVIDER_MODES[PROVIDER_IDS.CODEX_CLI].map((m) => m.id)).toEqual(["default", "plan"]);
   });
 
-  it("flags only Claude bypass as opt-in", () => {
+  it("exposes Claude bypass as an opt-in permission mode in the normal selector", () => {
     expect(findProviderMode(PROVIDER_IDS.CLAUDE_CODE, "bypassPermissions")?.optIn).toBe(true);
     expect(findProviderMode(PROVIDER_IDS.CLAUDE_CODE, "auto")?.optIn).toBeFalsy();
     expect(findProviderMode(PROVIDER_IDS.CODEX_CLI, "bypassPermissions")).toBeNull();
@@ -43,9 +43,9 @@ describe("getVisibleModes", () => {
     expect(visible.map((m) => m.id)).toEqual(["acceptEdits", "plan", "auto"]);
   });
 
-  it("includes opt-in modes when explicitly enabled", () => {
+  it("adds Claude bypass to normal modes when explicitly enabled", () => {
     const visible = getVisibleModes(PROVIDER_IDS.CLAUDE_CODE, ["bypassPermissions"]);
-    expect(visible.map((m) => m.id)).toEqual(["acceptEdits", "plan", "auto", "bypassPermissions"]);
+    expect(visible.map((m) => m.id)).toEqual(["acceptEdits", "plan", "bypassPermissions", "auto"]);
   });
 
   it("does not leak opt-in modes from the wrong provider", () => {
@@ -82,13 +82,16 @@ describe("nextProviderMode (cycle)", () => {
     expect(nextProviderMode(PROVIDER_IDS.CLAUDE_CODE, "auto", [])).toBe("acceptEdits");
   });
 
-  it("includes bypass in the Claude cycle when enabled", () => {
-    expect(nextProviderMode(PROVIDER_IDS.CLAUDE_CODE, "auto", ["bypassPermissions"])).toBe(
+  it("cycles Claude bypass after plan and before auto when explicitly enabled", () => {
+    expect(nextProviderMode(PROVIDER_IDS.CLAUDE_CODE, "plan", ["bypassPermissions"])).toBe(
       "bypassPermissions",
     );
     expect(
       nextProviderMode(PROVIDER_IDS.CLAUDE_CODE, "bypassPermissions", ["bypassPermissions"]),
-    ).toBe("acceptEdits");
+    ).toBe("auto");
+    expect(nextProviderMode(PROVIDER_IDS.CLAUDE_CODE, "auto", ["bypassPermissions"])).toBe(
+      "acceptEdits",
+    );
   });
 
   it("two-mode toggle for OpenCode", () => {

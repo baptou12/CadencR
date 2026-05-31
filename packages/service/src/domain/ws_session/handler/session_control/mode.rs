@@ -4,11 +4,14 @@ use tracing::{error, info};
 use super::super::super::persistence::WsSessionPersistence;
 use super::super::super::protocol::*;
 use super::super::helpers::{
-    parse_permission_mode, parse_session_id, provider_supports_mode, send_error,
+    parse_permission_mode, parse_session_id, persist_and_close_query, provider_supports_mode,
+    send_error,
 };
 use super::super::types::{QueryState, SdkSessions, WsSender};
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::RuntimeError;
+use crate::domain::agents::adapter::{
+    RuntimeError, RuntimePermissionMode, RuntimeSessionHandle, RuntimeSpawnConfig,
+};
 use crate::domain::agents::codex::{
     access_mode_wire, parse_access_mode_wire, PROVIDER_ID as CODEX_PROVIDER_ID,
 };
@@ -77,62 +80,19 @@ pub(crate) async fn handle_mode_set(
 
     info!(db_session_id, mode = %payload.mode, "updating permission mode");
 
-    match &mut handle.state {
-        QueryState::Pending(options) => {
-            // No live CLI yet; the queued mode will be passed via
-            // `Options.permission_mode` at spawn time.
-            handle.desired_permission_mode = Some(new_mode.clone());
-            handle.config.permission_mode = Some(new_mode.clone());
-            options.permission_mode = Some(new_mode);
+    let active_query = match &handle.state {
+        QueryState::Pending(_) => None,
+        QueryState::Active { query, .. } => Some(query.clone()),
+    };
+    if let Some(query) = active_query {
+        if let Err(payload) =
+            apply_active_permission_mode(handle, query, db_session_id, new_mode, app_state).await
+        {
+            send_mode_set_error(sender, &envelope.id, payload);
+            return;
         }
-        QueryState::Active { query, .. } => {
-            let q = query.read().await;
-            if let Err(e) = q.set_permission_mode(new_mode.clone()).await {
-                // The CLI rejected (or never acked) the mode change.
-                // Per `no-optimistic-updates.md` we leave the FE chip
-                // alone, and don't mutate desired/config state until the
-                // CLI accepts. Otherwise the next prompt sees desired !=
-                // spawned and respawns into the rejected mode invisibly.
-                error!(db_session_id, error = %e, "failed to set permission mode on active query");
-                // `ControlRequestRejected` for `set_permission_mode` is
-                // the recoverable case (CLI alive, refused this mode for
-                // this model — e.g. Claude Code `auto` on a non-auto
-                // model). Tag it with the rejected wire mode so the FE
-                // can skip past it in the Shift+Tab cycle rather than
-                // locking the chip.
-                let payload = match &e {
-                    RuntimeError::ControlRequestRejected { subtype, .. }
-                        if subtype == "set_permission_mode" =>
-                    {
-                        SessionErrorPayload {
-                            code: "MODE_REJECTED_BY_CLI".into(),
-                            message: e.to_string(),
-                            mode: Some(permission_mode_wire(&new_mode)),
-                        }
-                    }
-                    _ => SessionErrorPayload {
-                        code: "SDK_ERROR".into(),
-                        message: e.to_string(),
-                        ..Default::default()
-                    },
-                };
-                let err = WsEnvelope::reply(
-                    &envelope.id,
-                    "session",
-                    "error",
-                    serde_json::to_value(payload).unwrap(),
-                );
-                let _ = sender.send(Message::Text(String::from(err).into()));
-                return;
-            }
-            handle.desired_permission_mode = Some(new_mode.clone());
-            handle.config.permission_mode = Some(new_mode.clone());
-            // Track what the CLI actually accepted. Without this,
-            // `plan_post_plan_mode_transition`'s "already in target mode"
-            // short-circuit (post_plan_mode.rs) reads stale state and
-            // may skip the post-plan-approval transition.
-            handle.spawned_permission_mode = Some(new_mode);
-        }
+    } else {
+        queue_pending_permission_mode(handle, new_mode);
     }
 
     // Persist to DB
@@ -150,6 +110,128 @@ pub(crate) async fn handle_mode_set(
         serde_json::to_value(serde_json::json!({ "mode": payload.mode })).unwrap(),
     );
     let _ = sender.send(Message::Text(String::from(reply).into()));
+}
+
+fn queue_pending_permission_mode(
+    handle: &mut super::super::SdkHandle,
+    new_mode: RuntimePermissionMode,
+) {
+    // No live CLI yet; the queued mode will be passed via
+    // `Options.permission_mode` at spawn time.
+    handle.desired_permission_mode = Some(new_mode.clone());
+    handle.config.permission_mode = Some(new_mode.clone());
+    if let QueryState::Pending(options) = &mut handle.state {
+        options.permission_mode = Some(new_mode);
+    }
+}
+
+async fn apply_active_permission_mode(
+    handle: &mut super::super::SdkHandle,
+    query: RuntimeSessionHandle,
+    db_session_id: i64,
+    new_mode: RuntimePermissionMode,
+    app_state: &AppState,
+) -> Result<(), SessionErrorPayload> {
+    if should_rearm_claude_bypass(handle, &new_mode, &app_state.read_pool).await {
+        rearm_claude_bypass_session(handle, query, db_session_id, new_mode, app_state).await;
+        return Ok(());
+    }
+
+    let q = query.read().await;
+    if let Err(error) = q.set_permission_mode(new_mode.clone()).await {
+        return Err(mode_set_error_payload(db_session_id, &new_mode, error));
+    }
+    handle.desired_permission_mode = Some(new_mode.clone());
+    handle.config.permission_mode = Some(new_mode.clone());
+    // Track what the CLI actually accepted. Without this,
+    // `plan_post_plan_mode_transition`'s "already in target mode"
+    // short-circuit (post_plan_mode.rs) reads stale state and
+    // may skip the post-plan-approval transition.
+    handle.spawned_permission_mode = Some(new_mode);
+    Ok(())
+}
+
+async fn should_rearm_claude_bypass(
+    handle: &super::super::SdkHandle,
+    new_mode: &RuntimePermissionMode,
+    pool: &sqlx::SqlitePool,
+) -> bool {
+    *new_mode == RuntimePermissionMode::BypassPermissions
+        && handle.runtime_provider == crate::domain::agents::claude_code::PROVIDER_ID
+        && !handle.config.allow_bypass_permissions
+        && super::super::claude_access::bypass_permissions_enabled(
+            pool,
+            Some(handle.feature_id),
+            None,
+        )
+        .await
+}
+
+async fn rearm_claude_bypass_session(
+    handle: &mut super::super::SdkHandle,
+    query: RuntimeSessionHandle,
+    db_session_id: i64,
+    new_mode: RuntimePermissionMode,
+    app_state: &AppState,
+) {
+    let runtime_session_id = persist_and_close_query(
+        &query,
+        &app_state.write_pool,
+        db_session_id,
+        &handle.runtime_provider,
+    )
+    .await;
+    handle.config.allow_bypass_permissions = true;
+    handle.desired_permission_mode = Some(new_mode.clone());
+    handle.config.permission_mode = Some(new_mode.clone());
+    handle.state = QueryState::Pending(RuntimeSpawnConfig {
+        cwd: handle.config.cwd.clone(),
+        permission_mode: Some(new_mode.clone()),
+        access_mode: handle.desired_access_mode.clone(),
+        model: handle.desired_model.clone(),
+        thinking_effort: handle.desired_thinking_effort.clone(),
+        system_prompt: handle.config.system_prompt.clone(),
+        resume_session_id: runtime_session_id,
+        allow_bypass_permissions: true,
+        env: handle.config.env.clone(),
+        ..RuntimeSpawnConfig::default()
+    });
+}
+
+fn mode_set_error_payload(
+    db_session_id: i64,
+    new_mode: &RuntimePermissionMode,
+    error: RuntimeError,
+) -> SessionErrorPayload {
+    // Do not mutate desired/config state until the CLI accepts; otherwise the
+    // next prompt could respawn invisibly into a mode the live CLI rejected.
+    error!(db_session_id, error = %error, "failed to set permission mode on active query");
+    match &error {
+        RuntimeError::ControlRequestRejected { subtype, .. }
+            if subtype == "set_permission_mode" =>
+        {
+            SessionErrorPayload {
+                code: "MODE_REJECTED_BY_CLI".into(),
+                message: error.to_string(),
+                mode: Some(permission_mode_wire(new_mode)),
+            }
+        }
+        _ => SessionErrorPayload {
+            code: "SDK_ERROR".into(),
+            message: error.to_string(),
+            ..Default::default()
+        },
+    }
+}
+
+fn send_mode_set_error(sender: &WsSender, ref_id: &str, payload: SessionErrorPayload) {
+    let err = WsEnvelope::reply(
+        ref_id,
+        "session",
+        "error",
+        serde_json::to_value(payload).unwrap(),
+    );
+    let _ = sender.send(Message::Text(String::from(err).into()));
 }
 
 /// Handle session.codex_permission_mode.set: change Codex access mode for this conversation.

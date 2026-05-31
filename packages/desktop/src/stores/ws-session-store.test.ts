@@ -993,6 +993,27 @@ describe("ws-session-store", () => {
     expect(session.codexPermissionMode).toBe("autoReview");
   });
 
+  it("session.mode.changed accepts Claude bypass as a provider permission mode", async () => {
+    const store = useWsSessionStore.getState();
+    store.connect("s1");
+    await tick();
+
+    const ws = getWs();
+    ws.simulateMessage({
+      domain: "session",
+      action: "initialized",
+      payload: { session_id: "42", provider: "claude_code" },
+    });
+    ws.simulateMessage({
+      domain: "session",
+      action: "mode.changed",
+      payload: { mode: "bypassPermissions" },
+    });
+
+    const session = useWsSessionStore.getState().sessions["s1"];
+    expect(session.permissionMode).toBe("bypassPermissions");
+  });
+
   it("session.initialized with provider updates current and runtime provider", async () => {
     const store = useWsSessionStore.getState();
     store.connect("s1");
