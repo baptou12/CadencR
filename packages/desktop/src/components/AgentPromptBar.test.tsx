@@ -34,7 +34,7 @@ function callHotkey(key: string, e: Partial<KeyboardEvent> = { preventDefault: v
 
 // Mock all tRPC-using hooks directly to avoid cascading mock complexity
 vi.mock("@/hooks/usePromptDraft", () => ({
-  usePromptDraft: vi.fn(() => ({ saveDraft: vi.fn() })),
+  usePromptDraft: vi.fn(() => ({ saveDraft: vi.fn(), initialDraft: null, draftFeatureId: null })),
 }));
 
 vi.mock("@/hooks/usePromptHistory", () => ({
@@ -240,11 +240,9 @@ describe("AgentPromptBar", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("renders with initialDraft text", () => {
-    render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" initialDraft="Draft text" />,
-    );
-    expect(screen.getByRole("textbox")).toHaveTextContent("Draft text");
+  it("starts empty when the feature draft hook has no draft", () => {
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    expect(screen.getByRole("textbox")).toHaveTextContent("");
   });
 
   it("restores unsent text after a permission prompt closes", async () => {

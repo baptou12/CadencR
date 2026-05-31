@@ -1,8 +1,6 @@
 /**
- * Conversation-isolation tests for `AgentPromptBar`. Regression for the bug
- * where leftover text from one conversation visibly remained after /clear or
- * a feature switch. Split from `AgentPromptBar.test.tsx` to stay under the
- * 400-line file cap.
+ * Feature-isolation tests for `AgentPromptBar`. Prompt drafts are owned by
+ * features, not agent session rows.
  */
 import { forwardRef, useImperativeHandle, useRef, useState, type ForwardedRef } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -13,7 +11,7 @@ vi.mock("@tanstack/react-hotkeys", () => ({ useHotkeys: vi.fn() }));
 const usePromptDraftMock = vi.fn(() => ({
   saveDraft: vi.fn(),
   initialDraft: null as string | null,
-  dbSessionId: null as number | null,
+  draftFeatureId: null as number | null,
 }));
 vi.mock("@/hooks/usePromptDraft", () => ({
   usePromptDraft: (...args: unknown[]) => usePromptDraftMock(...(args as [])),
@@ -79,107 +77,163 @@ describe("AgentPromptBar conversation isolation", () => {
   beforeEach(() => {
     onSend.mockClear();
     onStop.mockClear();
+    usePromptDraftMock.mockClear();
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
       initialDraft: null,
-      dbSessionId: null,
+      draftFeatureId: null,
     });
   });
 
-  it("clears the editor when the DB session id changes (e.g. /clear, feature switch)", () => {
-    usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 10 });
-    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+  it("clears the editor when the feature changes", () => {
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />,
+    );
 
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "leftover from conv 10" } });
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "leftover from feature 10" },
+    });
 
-    usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 11 });
-    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={11} />);
 
     expect(screen.getByRole("textbox")).toHaveValue("");
   });
 
-  it("loads the new conversation's draft after the async fetch resolves", () => {
-    usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 10 });
-    const { rerender } = render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "typed in conv 10" } });
+  it("loads the destination feature's draft after the async fetch resolves", () => {
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />,
+    );
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "typed in feature 10" } });
 
-    usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 11 });
-    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={11} />);
     expect(screen.getByRole("textbox")).toHaveValue("");
 
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
-      initialDraft: "fresh draft for 11",
-      dbSessionId: 11,
+      initialDraft: "fresh draft for feature 11",
+      draftFeatureId: 11,
     });
-    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
-    expect(screen.getByRole("textbox")).toHaveValue("fresh draft for 11");
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={11} />);
+    expect(screen.getByRole("textbox")).toHaveValue("fresh draft for feature 11");
   });
 
-  it("does not clear on first mount when dbSessionId starts concrete", () => {
+  it("does not leak a stale restored draft into the destination feature", () => {
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "draft for feature 10",
+      draftFeatureId: 10,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />,
+    );
+    expect(screen.getByRole("textbox")).toHaveValue("draft for feature 10");
+
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "draft for feature 10",
+      draftFeatureId: 10,
+    });
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={11} />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+  });
+
+  it("clears source text when the destination feature has loaded with no draft", () => {
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "draft for feature 10",
+      draftFeatureId: 10,
+    });
+    const { rerender } = render(
+      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />,
+    );
+    expect(screen.getByRole("textbox")).toHaveValue("draft for feature 10");
+
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: 11,
+    });
+    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={11} />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("");
+  });
+
+  it("restores the feature draft on first mount", () => {
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
       initialDraft: "restored from server",
-      dbSessionId: 10,
+      draftFeatureId: 10,
     });
-    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" />);
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />);
     expect(screen.getByRole("textbox")).toHaveValue("restored from server");
   });
 
-  it("preserves in-flight typing across the null → concrete init transition", () => {
+  it("does not clear when the ws session changes inside the same feature", () => {
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
       initialDraft: null,
-      dbSessionId: null,
+      draftFeatureId: null,
     });
     const { rerender } = render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-A" />,
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        featureId={10}
+        wsSessionId="ws-A"
+      />,
     );
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "typed before init" } });
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "feature-owned draft" } });
 
-    usePromptDraftMock.mockReturnValue({ saveDraft: vi.fn(), initialDraft: null, dbSessionId: 42 });
-    rerender(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-A" />);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: null,
+      draftFeatureId: null,
+    });
+    rerender(
+      <AgentPromptBar
+        onSend={onSend}
+        onStop={onStop}
+        status="idle"
+        featureId={10}
+        wsSessionId="ws-B"
+      />,
+    );
 
-    expect(screen.getByRole("textbox")).toHaveValue("typed before init");
+    expect(screen.getByRole("textbox")).toHaveValue("feature-owned draft");
   });
 
-  it("clears typed text when switching conversations before the source was initialized", () => {
-    // Regression: typed in a brand-new conversation (no agent session yet,
-    // `dbSessionId: null`) then navigated to an existing conversation. The
-    // editor instance is reused across the prop change — without the
-    // conversation-key gate the source's text leaked into the destination.
+  it("threads featureId into usePromptDraft", () => {
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
       initialDraft: null,
-      dbSessionId: null,
+      draftFeatureId: null,
     });
-    const { rerender } = render(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-new" />,
-    );
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "draft for the new conversation" },
-    });
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={77} />);
 
-    usePromptDraftMock.mockReturnValue({
-      saveDraft: vi.fn(),
-      initialDraft: null,
-      dbSessionId: 42,
+    expect(usePromptDraftMock).toHaveBeenCalledWith({
+      featureId: 77,
     });
-    rerender(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-existing" />,
-    );
-
-    expect(screen.getByRole("textbox")).toHaveValue("");
-
-    // And the destination's own saved draft restores once the fetch lands.
-    usePromptDraftMock.mockReturnValue({
-      saveDraft: vi.fn(),
-      initialDraft: "real draft for ws-existing",
-      dbSessionId: 42,
-    });
-    rerender(
-      <AgentPromptBar onSend={onSend} onStop={onStop} status="idle" wsSessionId="ws-existing" />,
-    );
-    expect(screen.getByRole("textbox")).toHaveValue("real draft for ws-existing");
   });
 });

@@ -51,7 +51,6 @@ export interface AgentPromptBarProps {
   projectId?: number;
   sessionId?: number;
   wsSessionId?: string;
-  initialDraft?: string | null;
   onToggleMaximize?: () => void;
   noTopPadding?: boolean;
   slashCommandsOverride?: SlashCommand[];

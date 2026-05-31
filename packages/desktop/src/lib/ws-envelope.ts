@@ -191,14 +191,3 @@ export function createHistoryAdd(projectId: number, content: string): WsEnvelope
     content,
   });
 }
-
-export function createDraftGet(sessionId: number): WsEnvelope {
-  return createEnvelope("session", "draft.get", { session_id: sessionId });
-}
-
-export function createDraftSave(sessionId: number, draft: string | null): WsEnvelope {
-  return createEnvelope("session", "draft.save", {
-    session_id: sessionId,
-    draft,
-  });
-}
