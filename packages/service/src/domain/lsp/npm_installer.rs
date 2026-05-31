@@ -3,14 +3,18 @@
 //! This keeps npm-specific process execution outside the generic downloader
 //! while preserving the same managed install root used by native LSP binaries.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use tokio::process::Command;
 
 use crate::error::AppError;
 
 use super::catalog::{CatalogEntry, HOMEBREW_WELL_KNOWN_ABSOLUTE, NPM_WELL_KNOWN_RELATIVE_TO_HOME};
 use super::downloader;
+
+const NPM_MIN_RELEASE_AGE_DAYS: i64 = 14;
 
 pub async fn install(
     entry: &CatalogEntry,
@@ -67,18 +71,9 @@ fn npm_well_known_absolute() -> Vec<&'static str> {
 }
 
 async fn run_npm_install(npm: &Path, dir: &Path, packages: &[&str]) -> Result<(), AppError> {
+    let args = npm_install_args(dir, packages, Utc::now());
     let output = Command::new(npm)
-        .arg("install")
-        .arg("--prefix")
-        .arg(dir)
-        .args([
-            "--no-audit",
-            "--no-fund",
-            "--ignore-scripts",
-            "--no-save",
-            "--package-lock=false",
-        ])
-        .args(packages)
+        .args(args)
         .env("PATH", path_with_npm_dir(npm))
         .kill_on_drop(true)
         .output()
@@ -97,6 +92,26 @@ async fn run_npm_install(npm: &Path, dir: &Path, packages: &[&str]) -> Result<()
     )))
 }
 
+fn npm_install_args(dir: &Path, packages: &[&str], now: DateTime<Utc>) -> Vec<OsString> {
+    let mut args = vec![
+        OsString::from("install"),
+        OsString::from("--prefix"),
+        dir.as_os_str().to_os_string(),
+        OsString::from("--no-audit"),
+        OsString::from("--no-fund"),
+        OsString::from("--ignore-scripts"),
+        OsString::from("--no-save"),
+        OsString::from("--package-lock=false"),
+        OsString::from(format!("--before={}", npm_before_cutoff(now))),
+    ];
+    args.extend(packages.iter().map(OsString::from));
+    args
+}
+
+fn npm_before_cutoff(now: DateTime<Utc>) -> String {
+    (now - Duration::days(NPM_MIN_RELEASE_AGE_DAYS)).to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
 fn path_with_npm_dir(npm: &Path) -> String {
     let existing = std::env::var_os("PATH").unwrap_or_default();
     let Some(parent) = npm.parent() else {
@@ -113,6 +128,29 @@ fn path_with_npm_dir(npm: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npm_install_args_include_fourteen_day_release_age_cutoff() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-31T12:00:00Z")
+            .expect("fixed test timestamp should parse")
+            .with_timezone(&chrono::Utc);
+
+        let args = npm_install_args(Path::new("/tmp/lsp"), &["safe-package@1.2.3"], now);
+
+        assert!(args.contains(&OsString::from("--before=2026-05-17T12:00:00Z")));
+    }
+
+    #[test]
+    fn npm_install_args_keep_lifecycle_scripts_disabled() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-05-31T12:00:00Z")
+            .expect("fixed test timestamp should parse")
+            .with_timezone(&chrono::Utc);
+
+        let args = npm_install_args(Path::new("/tmp/lsp"), &["safe-package@1.2.3"], now);
+
+        assert!(args.contains(&OsString::from("--ignore-scripts")));
+        assert!(args.contains(&OsString::from("--package-lock=false")));
+    }
 
     #[test]
     fn npm_bin_path_uses_local_node_modules_bin() {

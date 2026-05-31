@@ -1,2 +1,31 @@
 packages:
   - "packages/*"
+
+nodeLinker: hoisted
+engineStrict: true
+nodeVersion: 22.18.0
+
+minimumReleaseAge: 20160
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeExclude:
+  # Existing reviewed direct dependency; keep exceptions version-pinned.
+  - "@pierre/trees@1.0.0-beta.4"
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# Older packages often predate registry trust evidence; keep downgrade checks
+# focused on packages published in the last year.
+trustPolicyIgnoreAfter: 525600
+
+overrides:
+  "@stoplight/spectral-functions": 1.10.2
+  "@stoplight/spectral-rulesets": 1.22.2
+  volar-service-yaml: 0.0.71
+
+allowBuilds:
+  # Keep dependency lifecycle scripts disabled by default. If a package truly
+  # needs install-time native setup, review it explicitly before flipping it.
+  electron-winstaller: false
+  esbuild: false
+  msw: false
+  sharp: false
