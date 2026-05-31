@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Command, CommandEmpty, CommandInput, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { resolveModelAlias } from "@/shared/models";
 import {
   ModelGroup,
   ProviderStateGroup,
@@ -106,8 +107,19 @@ export function RuntimeModelPicker({
   const [internalOpen, setInternalOpen] = useState(false);
   const [search, setSearch] = useState("");
   const resolvedOpen = open ?? internalOpen;
+  // A stored selection can be a coarse alias (e.g. "sonnet") while the active
+  // catalog only lists the concrete id ("us.anthropic.claude-sonnet-4-6") under
+  // a backend like Bedrock. Resolve the alias against the selected provider's
+  // models so the matching catalog row still highlights. No-op for exact ids.
+  const resolvedSelectedModelId = useMemo(() => {
+    if (!selectedProviderId || !selectedModelId) return selectedModelId;
+    const providerModels = providers.find((provider) => provider.id === selectedProviderId)?.models;
+    return providerModels ? resolveModelAlias(selectedModelId, providerModels) : selectedModelId;
+  }, [providers, selectedProviderId, selectedModelId]);
   const selectedModelValue =
-    selectedProviderId && selectedModelId ? `${selectedProviderId}:${selectedModelId}` : "";
+    selectedProviderId && resolvedSelectedModelId
+      ? `${selectedProviderId}:${resolvedSelectedModelId}`
+      : "";
   const selectedCommandValue = selectedModelValue || (action?.selected ? action.id : "");
 
   useEffect(() => {

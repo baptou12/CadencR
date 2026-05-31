@@ -83,7 +83,18 @@ impl ClaudeCodeAdapter {
     /// Return the CLI's preferred default model ID (`"default"` if present,
     /// else the first model in the list).
     pub(super) async fn default_model_id(&self) -> Option<String> {
-        let models = self.load_models().await;
+        self.default_model_id_with_env(None).await
+    }
+
+    /// Env-aware variant of [`default_model_id`]. Probes the catalog under the
+    /// active profile env so the default is resolved against the same model
+    /// list the picker shows — and crucially under the same cache key, so the
+    /// default-model probe and the catalog probe never thrash the shared cell.
+    pub(super) async fn default_model_id_with_env(
+        &self,
+        env: Option<HashMap<String, String>>,
+    ) -> Option<String> {
+        let models = self.load_models_with_env(env).await;
         Self::default_model_from(&models)
     }
 
@@ -196,6 +207,43 @@ mod tests {
             cached_slash_commands: std::sync::OnceLock::new(),
             slash_commands_probe_state: tokio::sync::Mutex::new(ProbeState::default()),
         }
+    }
+
+    /// Regression for the catalog-cache thrash: the env-aware default-model
+    /// resolution must read the catalog cached under the *same* profile env
+    /// key, not re-probe with a different key. Here the cell is pre-seeded and
+    /// marked live for the Bedrock env, so `default_model_id_with_env` must
+    /// hit that cache (returning the Bedrock model) and leave `live_key`
+    /// untouched — proving it can't clobber the picker's env-aware catalog.
+    #[tokio::test]
+    async fn default_model_id_with_env_reuses_catalog_cache_key() {
+        let adapter = new_test_adapter();
+        let mut env = HashMap::new();
+        env.insert("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string());
+        env.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-6".to_string(),
+        );
+        let env_key = model_probe_cache_key(Some(&env));
+
+        {
+            let mut cached = adapter.models_cell().write().expect("cache lock");
+            *cached = vec![ModelCatalogEntry::alias(
+                "us.anthropic.claude-sonnet-4-6",
+                "Sonnet",
+            )];
+        }
+        {
+            let mut guard = adapter.probe_state.lock().await;
+            guard.live_key = Some(env_key);
+        }
+
+        let default = adapter.default_model_id_with_env(Some(env)).await;
+        assert_eq!(default.as_deref(), Some("us.anthropic.claude-sonnet-4-6"));
+
+        // The cache stayed live for the Bedrock env key — no None-keyed re-probe.
+        let guard = adapter.probe_state.lock().await;
+        assert_eq!(guard.live_key, Some(env_key));
     }
 
     #[test]

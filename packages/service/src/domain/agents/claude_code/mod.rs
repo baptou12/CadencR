@@ -2,6 +2,7 @@ mod adapter_impl;
 mod catalog;
 pub mod custom_models;
 mod events;
+mod model_alias;
 mod post_plan_approval;
 pub mod profiles;
 mod prompt_receipts;

@@ -80,6 +80,18 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         self.catalog_entry().default_model
     }
 
+    /// Preferred default model id with access to persisted settings.
+    ///
+    /// Mirrors [`catalog_entry_live_for_settings`]: providers whose default
+    /// depends on app settings (Claude Code profiles injecting Bedrock/Vertex
+    /// env) must resolve the default against the *same* probe env the catalog
+    /// uses, otherwise the default-model probe runs with a different env key
+    /// and thrashes the shared catalog cache. Defaults to the settings-agnostic
+    /// [`default_model_id`].
+    async fn default_model_id_for_settings(&self, _read_pool: &sqlx::SqlitePool) -> Option<String> {
+        self.default_model_id().await
+    }
+
     /// Provider-known context window for a given model id, if the provider
     /// can answer synchronously (e.g. opencode exposes this via its server).
     /// Defaults to `None` — callers must fall back to another source

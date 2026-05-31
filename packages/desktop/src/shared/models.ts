@@ -44,6 +44,41 @@ export function defaultModelForProvider(
   );
 }
 
+export interface CatalogModelLike {
+  id: string;
+  label: string;
+}
+
+const MODEL_FAMILY_LABELS: Record<string, string> = {
+  sonnet: "Sonnet",
+  opus: "Opus",
+  haiku: "Haiku",
+};
+
+/**
+ * Mirror of the backend `resolve_model_alias` (Rust:
+ * packages/service/src/domain/agents/claude_code/model_alias.rs). Maps a coarse
+ * family alias (`sonnet`/`opus`/`haiku`, optionally with a `[1m]` suffix) to the
+ * concrete catalog id the active backend advertises — e.g. on Bedrock `"sonnet"`
+ * → `"us.anthropic.claude-sonnet-4-6"` (label "Sonnet"). It is a no-op when the
+ * id is already a catalog entry (Anthropic aliases, concrete ids, every other
+ * provider), so it only changes a stored alias that the active catalog exposes
+ * under a concrete id. Used purely so the picker can highlight a stored alias;
+ * the persisted value is left untouched.
+ */
+export function resolveModelAlias(modelId: string, models: readonly CatalogModelLike[]): string {
+  if (models.some((model) => model.id === modelId)) return modelId;
+
+  const wants1m = modelId.endsWith("[1m]");
+  const base = wants1m ? modelId.slice(0, -"[1m]".length) : modelId;
+  const family = MODEL_FAMILY_LABELS[base];
+  if (!family) return modelId;
+
+  const targetLabel = wants1m ? `${family} (1M context)` : family;
+  const match = models.find((model) => model.label.toLowerCase() === targetLabel.toLowerCase());
+  return match ? match.id : modelId;
+}
+
 function applySelectionOverride(
   base: RuntimeSelection,
   providerOverride: string | undefined,
