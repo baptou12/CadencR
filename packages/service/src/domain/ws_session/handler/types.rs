@@ -37,6 +37,7 @@ pub(super) struct SessionConfig {
     pub(super) access_mode: Option<RuntimeAccessMode>,
     pub(super) thinking_effort: Option<String>,
     pub(super) system_prompt: Option<String>,
+    pub(super) allow_bypass_permissions: bool,
     /// Extra env vars to inject when respawning the CLI (e.g. an active
     /// Claude Code profile). Carried through resume transitions so the
     /// process always sees the profile the user selected.

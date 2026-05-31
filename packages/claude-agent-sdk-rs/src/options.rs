@@ -25,6 +25,10 @@ pub struct Options {
     pub resume: Option<String>,
     /// Tool names that are auto-approved without prompting.
     pub allowed_tools: Option<Vec<String>>,
+    /// Allow entering `bypassPermissions` later without starting in that
+    /// mode. This maps to Claude Code's
+    /// `--allow-dangerously-skip-permissions` capability flag.
+    pub allow_dangerously_skip_permissions: bool,
     /// MCP server configurations, keyed by server name.
     pub mcp_servers: Option<HashMap<String, McpServerConfig>>,
     /// Settings sources (default: ["user", "project", "local"]).
@@ -68,6 +72,7 @@ impl Default for Options {
             system_prompt: None,
             resume: None,
             allowed_tools: None,
+            allow_dangerously_skip_permissions: false,
             mcp_servers: None,
             setting_sources: vec![
                 "user".to_string(),
@@ -155,6 +160,10 @@ impl Options {
             }
         }
 
+        if self.allow_dangerously_skip_permissions {
+            args.push("--allow-dangerously-skip-permissions".to_string());
+        }
+
         if let Some(lang) = &self.language {
             args.push("--language".to_string());
             args.push(lang.clone());
@@ -230,6 +239,11 @@ impl OptionsBuilder {
 
     pub fn allowed_tools(mut self, tools: Vec<String>) -> Self {
         self.inner.allowed_tools = Some(tools);
+        self
+    }
+
+    pub fn allow_dangerously_skip_permissions(mut self, enabled: bool) -> Self {
+        self.inner.allow_dangerously_skip_permissions = enabled;
         self
     }
 

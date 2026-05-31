@@ -220,6 +220,7 @@ async fn mode_set_rejection_keeps_accepted_mode_as_desired_mode() {
                 access_mode: None,
                 thinking_effort: None,
                 system_prompt: None,
+                allow_bypass_permissions: false,
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),
@@ -264,6 +265,100 @@ async fn mode_set_rejection_keeps_accepted_mode_as_desired_mode() {
             .await
             .unwrap();
     assert_eq!(persisted_mode.as_deref(), Some("plan"));
+}
+
+#[tokio::test]
+async fn claude_bypass_mode_set_rearms_existing_session_before_next_prompt() {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('claude_bypass_permissions_enabled', 'true')",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO agent_sessions (id, feature_id, agent_type, status, permission_mode) VALUES (78, 1, 'session', 'idle', 'plan')",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let (permission_tx, _permission_rx) = mpsc::channel(1);
+    let query: RuntimeSessionHandle = Arc::new(RwLock::new(Box::new(RejectingModeSession::new())));
+    sdk_sessions.lock().await.insert(
+        78,
+        SdkHandle {
+            state: QueryState::Active {
+                query,
+                permission_tx,
+            },
+            feature_id: 1,
+            runtime_provider: "claude_code".to_string(),
+            desired_model: Some("sonnet".to_string()),
+            spawned_model: Some("sonnet".to_string()),
+            desired_permission_mode: Some(RuntimePermissionMode::Plan),
+            spawned_permission_mode: Some(RuntimePermissionMode::Plan),
+            desired_access_mode: None,
+            spawned_access_mode: None,
+            desired_thinking_effort: None,
+            spawned_thinking_effort: None,
+            runtime_control_endpoint: None,
+            resume_session_id: None,
+            config: SessionConfig {
+                cwd: PathBuf::from("/tmp/test"),
+                canonical_cwd: PathBuf::from("/tmp/test"),
+                permission_mode: Some(RuntimePermissionMode::Plan),
+                access_mode: None,
+                thinking_effort: None,
+                system_prompt: None,
+                allow_bypass_permissions: false,
+                env: None,
+            },
+            manual_compact_cancel: Arc::new(AtomicBool::new(false)),
+            manual_compact_spawn_pending: Arc::new(AtomicBool::new(false)),
+        },
+    );
+
+    let envelope = make_envelope(
+        "session",
+        "mode.set",
+        serde_json::json!({ "session_id": "78", "mode": "bypassPermissions" }),
+    );
+    dispatch_envelope(envelope, &tx, &sdk_sessions, &app_state).await;
+
+    let msg = rx.recv().await.unwrap();
+    if let Message::Text(text) = msg {
+        let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+        assert_eq!(env.action, "mode.changed");
+        assert_eq!(
+            env.payload.get("mode").and_then(|v| v.as_str()),
+            Some("bypassPermissions")
+        );
+    } else {
+        panic!("expected text message");
+    }
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&78).unwrap();
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("existing Claude session should be rearmed as pending");
+    };
+    assert!(options.allow_bypass_permissions);
+    assert_eq!(
+        options.permission_mode,
+        Some(RuntimePermissionMode::BypassPermissions)
+    );
+    assert_eq!(
+        handle.desired_permission_mode,
+        Some(RuntimePermissionMode::BypassPermissions)
+    );
 }
 
 // ----- handle_provider_set: mode reset + mode.changed broadcast -----

@@ -298,6 +298,7 @@ async fn build_spawn_config(
         thinking_effort: None,
         system_prompt: Some(AUTO_NAME_SYSTEM_PROMPT.to_string()),
         resume_session_id: None,
+        allow_bypass_permissions: false,
         mcp_servers: None,
         permission_handler: None,
         env,

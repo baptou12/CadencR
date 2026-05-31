@@ -207,6 +207,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             effort: config.thinking_effort,
             system_prompt: config.system_prompt,
             resume: config.resume_session_id,
+            allow_dangerously_skip_permissions: config.allow_bypass_permissions,
             mcp_servers: config.mcp_servers.map(|servers| {
                 servers
                     .into_iter()

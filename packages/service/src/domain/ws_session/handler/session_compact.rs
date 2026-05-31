@@ -230,6 +230,7 @@ mod tests {
                 access_mode: None,
                 thinking_effort: None,
                 system_prompt: None,
+                allow_bypass_permissions: false,
                 env: None,
             },
             manual_compact_cancel: Arc::new(AtomicBool::new(false)),

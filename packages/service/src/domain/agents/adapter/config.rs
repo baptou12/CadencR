@@ -61,6 +61,10 @@ pub struct RuntimeSpawnConfig {
     pub thinking_effort: Option<String>,
     pub system_prompt: Option<String>,
     pub resume_session_id: Option<String>,
+    /// Allows a provider process to switch into its dangerous Bypass mode
+    /// later without starting in that mode. Providers that do not have a
+    /// separate launch-time capability flag can ignore this value.
+    pub allow_bypass_permissions: bool,
     pub mcp_servers: Option<HashMap<String, RuntimeMcpServerConfig>>,
     pub permission_handler: Option<Arc<dyn RuntimeToolPermissionHandler>>,
     /// Extra env vars injected into the spawned runtime. Adapters decide how
@@ -79,6 +83,7 @@ impl Default for RuntimeSpawnConfig {
             thinking_effort: None,
             system_prompt: None,
             resume_session_id: None,
+            allow_bypass_permissions: false,
             mcp_servers: None,
             permission_handler: None,
             env: None,
