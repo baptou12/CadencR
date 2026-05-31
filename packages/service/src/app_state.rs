@@ -3,6 +3,7 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
+use crate::domain::custom_actions::run_registry::CustomActionRunRegistry;
 use crate::domain::custom_actions::scheduler::CustomActionScheduler;
 use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
 use crate::domain::features::run_registry::FeatureRunRegistry;
@@ -52,6 +53,9 @@ pub struct AppState {
     /// Scheduler for periodic custom-action runs. Holds one tokio task per
     /// enabled `custom_action_schedules` row.
     pub custom_action_scheduler: CustomActionScheduler,
+    /// In-flight custom-action runs keyed by `run_id`, so a `cancel` request can
+    /// interrupt a running command (Ctrl-C) even after the triggering UI closes.
+    pub custom_action_runs: Arc<CustomActionRunRegistry>,
     /// Per-worktree filesystem watchers driving real-time `git.status`
     /// envelopes. Refcounted by WS subscriptions; see `domain::git::watcher`.
     pub git_watcher: Arc<GitWatcherRegistry>,
@@ -124,6 +128,7 @@ impl AppState {
             frontend_port: 1420,
             port: 0,
             custom_action_scheduler: CustomActionScheduler::new(),
+            custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),

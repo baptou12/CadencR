@@ -40,6 +40,7 @@ const RENAMES = {
   set_variable: "set_custom_action_variable",
   run_action: "run_custom_action",
   list_runs: "get_custom_action_runs",
+  cancel_run: "cancel_custom_action_run",
   get_schedule: "get_custom_action_schedule",
   set_schedule: "set_custom_action_schedule",
   // LSP: disambiguate the catalog probe from the generic "list servers" name.

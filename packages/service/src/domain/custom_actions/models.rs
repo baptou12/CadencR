@@ -112,13 +112,12 @@ pub struct SetCustomActionScheduleRequest {
     pub enabled: Option<bool>,
 }
 
+/// Response for starting an asynchronous run. Output and exit code are streamed
+/// into `custom_action_runs` and read back via `GET /runs`, so the start call
+/// only returns the new run's id.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct RunResponse {
     pub run_id: i64,
-    pub exit_code: Option<i64>,
-    pub stdout: String,
-    pub stderr: String,
-    pub ended_at: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]

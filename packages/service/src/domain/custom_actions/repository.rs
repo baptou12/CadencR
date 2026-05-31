@@ -235,6 +235,24 @@ pub async fn insert_run(
     Ok(result.last_insert_rowid())
 }
 
+/// Persist the captured streams for an in-flight run without finishing it
+/// (`exit_code`/`ended_at` stay NULL). Lets the UI stream long-running output
+/// as it arrives instead of waiting for the process to exit.
+pub async fn update_run_output(
+    pool: &SqlitePool,
+    run_id: i64,
+    stdout: &str,
+    stderr: &str,
+) -> Result<(), AppError> {
+    sqlx::query("UPDATE custom_action_runs SET stdout = ?, stderr = ? WHERE id = ?")
+        .bind(stdout)
+        .bind(stderr)
+        .bind(run_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Finalize a run with the captured exit code and streams. Returns the
 /// `ended_at` we just stamped so the caller doesn't need a follow-up SELECT.
 pub async fn finalize_run(
@@ -619,6 +637,36 @@ mod tests {
         assert_eq!(runs[0].stdout, "out");
         assert_eq!(runs[0].stderr, "err");
         assert_eq!(runs[0].ended_at.as_deref(), Some(ended.as_str()));
+    }
+
+    #[tokio::test]
+    async fn update_run_output_streams_without_finishing_the_run() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+            .await
+            .unwrap();
+        let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
+            .await
+            .unwrap();
+
+        update_run_output(&pool, run_id, "partial out", "partial err")
+            .await
+            .unwrap();
+
+        let runs = list_runs(&pool, action_id, feature_id, 10).await.unwrap();
+        assert_eq!(runs[0].stdout, "partial out");
+        assert_eq!(runs[0].stderr, "partial err");
+        assert!(runs[0].exit_code.is_none(), "still running");
+        assert!(runs[0].ended_at.is_none(), "not finalized yet");
+
+        // A later finalize overwrites the partial output with the full result.
+        finalize_run(&pool, run_id, Some(0), "final out", "")
+            .await
+            .unwrap();
+        let runs = list_runs(&pool, action_id, feature_id, 10).await.unwrap();
+        assert_eq!(runs[0].stdout, "final out");
+        assert_eq!(runs[0].exit_code, Some(0));
+        assert!(runs[0].ended_at.is_some());
     }
 
     #[tokio::test]

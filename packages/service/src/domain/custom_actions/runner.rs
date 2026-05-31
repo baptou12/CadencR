@@ -1,11 +1,17 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::io::{AsyncReadExt, BufReader};
-use tokio::process::Command;
+use sqlx::SqlitePool;
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, Command};
+use tokio::sync::{Mutex, Notify};
+use tokio::task::JoinHandle;
+use tracing::warn;
 
 use super::models::TriggeredBy;
 use super::repository;
+use super::run_registry::CustomActionRunRegistry;
 use super::service;
 use crate::app_state::AppState;
 use crate::error::AppError;
@@ -13,29 +19,36 @@ use crate::error::AppError;
 /// Hard upper bound per run. SIGKILLs the child if it overruns.
 pub const RUN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-/// Outcome of a single command run, persisted in `custom_action_runs`.
-pub struct RunOutcome {
-    pub run_id: i64,
-    pub exit_code: Option<i64>,
-    pub stdout: String,
-    pub stderr: String,
-    pub ended_at: String,
+/// How often a still-running command's captured output is persisted so the UI
+/// can show it incrementally instead of waiting for the process to exit.
+const FLUSH_INTERVAL: Duration = Duration::from_millis(750);
+
+/// Grace period after a Ctrl-C (SIGINT) before escalating to SIGKILL, so a
+/// well-behaved command can clean up but a stuck one still dies promptly.
+const CANCEL_GRACE: Duration = Duration::from_secs(3);
+
+/// How a run's wait ended, deciding how the child is torn down.
+enum WaitResult {
+    /// The command exited on its own with this code.
+    Exited(i64),
+    /// The run exceeded [`RUN_TIMEOUT`].
+    TimedOut,
+    /// The user requested cancellation (Ctrl-C).
+    Cancelled,
 }
 
-/// Execute `action_id` for `feature_id`, blocking until completion (or timeout).
+/// Resolved command + working directory for an `(action, feature)` pair.
+struct Prepared {
+    command: String,
+    cwd: String,
+}
+
+/// Resolve the action, its working directory and the interpolated command.
 ///
-/// - Resolves CWD via `git::service::resolve_feature_git_path` so the command
-///   runs in the feature's worktree (or project root fallback) — same path as
-///   the legacy Open in Zed/Terminal buttons.
-/// - Substitutes `${VAR}` placeholders from `custom_action_variables` for the
-///   `(action_id, feature_id)` pair.
-/// - Persists exit code + captured streams in `custom_action_runs`.
-pub async fn execute(
-    state: &AppState,
-    action_id: i64,
-    feature_id: i64,
-    triggered_by: TriggeredBy,
-) -> Result<RunOutcome, AppError> {
+/// Fails fast with a user-facing error (unknown action, missing worktree,
+/// missing `${VAR}` values) so callers can surface it before creating a run
+/// row — these are the errors the manual `run` endpoint returns synchronously.
+async fn prepare(state: &AppState, action_id: i64, feature_id: i64) -> Result<Prepared, AppError> {
     let action = repository::get(&state.read_pool, action_id)
         .await?
         .ok_or_else(|| AppError::NotFound(format!("Custom action {action_id} not found")))?;
@@ -51,99 +64,307 @@ pub async fn execute(
 
     let vars = repository::list_variables(&state.read_pool, action_id, feature_id).await?;
     let values: HashMap<String, String> = vars.into_iter().map(|v| (v.var_name, v.value)).collect();
-    let interpolated = service::interpolate(&action.command, &values)?;
+    let command = service::interpolate(&action.command, &values)?;
+    Ok(Prepared { command, cwd })
+}
 
+/// Execute `action_id` for `feature_id`, blocking until completion (or timeout).
+///
+/// Used by the scheduler, where serialising runs prevents a slow command from
+/// overlapping itself across ticks.
+pub async fn execute(
+    state: &AppState,
+    action_id: i64,
+    feature_id: i64,
+    triggered_by: TriggeredBy,
+) -> Result<(), AppError> {
+    let prepared = prepare(state, action_id, feature_id).await?;
     let run_id =
         repository::insert_run(&state.write_pool, action_id, feature_id, triggered_by).await?;
-
-    let raw = run_shell(&interpolated, &cwd).await;
-    let ended_at = repository::finalize_run(
-        &state.write_pool,
+    run_and_finalize(
+        state.write_pool.clone(),
+        state.custom_action_runs.clone(),
         run_id,
-        raw.exit_code,
-        &raw.stdout,
-        &raw.stderr,
+        prepared,
     )
-    .await?;
+    .await;
+    Ok(())
+}
 
-    Ok(RunOutcome {
+/// Start an asynchronous run: create the run row, kick the command off in the
+/// background and return `run_id` immediately.
+///
+/// Output and exit code are streamed into `custom_action_runs` as they arrive,
+/// so the request returns instantly and the run survives the triggering UI
+/// component unmounting. Setup errors (missing worktree/variables) still
+/// surface synchronously via [`prepare`].
+pub async fn start(
+    state: &AppState,
+    action_id: i64,
+    feature_id: i64,
+    triggered_by: TriggeredBy,
+) -> Result<i64, AppError> {
+    let prepared = prepare(state, action_id, feature_id).await?;
+    let run_id =
+        repository::insert_run(&state.write_pool, action_id, feature_id, triggered_by).await?;
+    let pool = state.write_pool.clone();
+    let runs = state.custom_action_runs.clone();
+    tokio::spawn(async move {
+        run_and_finalize(pool, runs, run_id, prepared).await;
+    });
+    Ok(run_id)
+}
+
+/// Spawn the shell, stream stdout/stderr into the run row while it runs, and
+/// finalize with the exit code once it exits, times out or is cancelled.
+async fn run_and_finalize(
+    pool: SqlitePool,
+    runs: Arc<CustomActionRunRegistry>,
+    run_id: i64,
+    prepared: Prepared,
+) {
+    let mut child = match spawn_shell(&prepared.command, &prepared.cwd) {
+        Ok(c) => c,
+        Err(e) => {
+            finalize(
+                &pool,
+                run_id,
+                Some(-1),
+                "",
+                &format!("Failed to start login shell: {e}"),
+            )
+            .await;
+            return;
+        }
+    };
+
+    let stdout_buf = Arc::new(Mutex::new(String::new()));
+    let stderr_buf = Arc::new(Mutex::new(String::new()));
+    let stdout_reader = child
+        .stdout
+        .take()
+        .map(|s| spawn_reader(s, stdout_buf.clone()));
+    let stderr_reader = child
+        .stderr
+        .take()
+        .map(|s| spawn_reader(s, stderr_buf.clone()));
+
+    let stop = Arc::new(Notify::new());
+    let flusher = spawn_flusher(
+        pool.clone(),
         run_id,
-        exit_code: raw.exit_code,
-        stdout: raw.stdout,
-        stderr: raw.stderr,
-        ended_at,
+        stdout_buf.clone(),
+        stderr_buf.clone(),
+        stop.clone(),
+    );
+
+    // Register a cancel signal so a `cancel` request can interrupt this run.
+    let cancel = runs.register(run_id).await;
+    let wait = tokio::select! {
+        res = tokio::time::timeout(RUN_TIMEOUT, child.wait()) => match res {
+            Ok(Ok(status)) => WaitResult::Exited(status.code().map(i64::from).unwrap_or(-1)),
+            Ok(Err(_)) => WaitResult::Exited(-1),
+            Err(_) => WaitResult::TimedOut,
+        },
+        _ = cancel.notified() => WaitResult::Cancelled,
+    };
+    runs.unregister(run_id).await;
+
+    // The select! futures are dropped above, so `child` is free to borrow again.
+    let (exit_code, note) = match wait {
+        WaitResult::Exited(code) => (code, None),
+        WaitResult::TimedOut => {
+            stop_child(&mut child, false).await;
+            (
+                -1,
+                Some(format!(
+                    "\n[cadencr] Command timed out after {} seconds and was killed.",
+                    RUN_TIMEOUT.as_secs()
+                )),
+            )
+        }
+        WaitResult::Cancelled => {
+            let code = stop_child(&mut child, true).await;
+            (
+                code,
+                Some("\n[cadencr] Command stopped (Ctrl-C).".to_string()),
+            )
+        }
+    };
+
+    // Stop the flusher and drain the readers so the final write is complete.
+    stop.notify_one();
+    let _ = flusher.await;
+    if let Some(h) = stdout_reader {
+        let _ = h.await;
+    }
+    if let Some(h) = stderr_reader {
+        let _ = h.await;
+    }
+
+    let stdout = stdout_buf.lock().await.clone();
+    let mut stderr = stderr_buf.lock().await.clone();
+    if let Some(note) = note {
+        stderr.push_str(&note);
+    }
+    finalize(&pool, run_id, Some(exit_code), &stdout, &stderr).await;
+}
+
+/// Tear down a running child and reap it. `graceful` sends a Ctrl-C (SIGINT)
+/// first and escalates to SIGKILL only if the command ignores it within
+/// [`CANCEL_GRACE`]; otherwise it goes straight to SIGKILL. Returns the exit
+/// code to record (130 = 128 + SIGINT for a user cancel, -1 for a hard kill).
+async fn stop_child(child: &mut Child, graceful: bool) -> i64 {
+    #[cfg(unix)]
+    {
+        if graceful {
+            signal_group(child, libc::SIGINT);
+            if tokio::time::timeout(CANCEL_GRACE, child.wait())
+                .await
+                .is_err()
+            {
+                signal_group(child, libc::SIGKILL);
+                let _ = child.wait().await;
+            }
+            return 130;
+        }
+        signal_group(child, libc::SIGKILL);
+        let _ = child.wait().await;
+        -1
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        if graceful {
+            130
+        } else {
+            -1
+        }
+    }
+}
+
+/// Send `sig` to the child's whole process group (negative pid). The child
+/// leads its own group (see `process_group(0)` in [`spawn_shell`]), so the
+/// signal reaches the login shell *and* every descendant it spawned — matching
+/// what Ctrl-C does to a terminal's foreground job. Best-effort: a dead group
+/// just yields `ESRCH`.
+#[cfg(unix)]
+fn signal_group(child: &Child, sig: i32) {
+    if let Some(pid) = child.id() {
+        // Safety: a bare `kill(2)` syscall with no shared-state requirements.
+        unsafe {
+            libc::kill(-(pid as i32), sig);
+        }
+    }
+}
+
+/// Spawn `$SHELL -l -c <command>` in `cwd`.
+///
+/// Runs through the user's **login** shell so the command inherits the same
+/// `PATH`/environment the user gets in their terminal. Electron spawns the
+/// service sidecar with a minimal environment that misses tools installed via
+/// login profiles (Homebrew, asdf, nvm, …); a login shell sources those
+/// profiles. Falls back to a plain `/bin/sh -c` only when `$SHELL` is unset.
+fn spawn_shell(command: &str, cwd: &str) -> std::io::Result<Child> {
+    let (shell, login) = match std::env::var("SHELL") {
+        Ok(s) if !s.trim().is_empty() => (s, true),
+        _ => ("/bin/sh".to_string(), false),
+    };
+    let mut cmd = Command::new(&shell);
+    if login {
+        cmd.arg("-l");
+    }
+    cmd.arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    // Run in its own process group so cancellation can signal the shell and
+    // every descendant at once (see `signal_group`).
+    #[cfg(unix)]
+    cmd.process_group(0);
+    cmd.spawn()
+}
+
+/// Drain an async reader into a shared buffer, appending chunks as they arrive.
+fn spawn_reader<R>(mut reader: R, buf: Arc<Mutex<String>>) -> JoinHandle<()>
+where
+    R: AsyncReadExt + Unpin + Send + 'static,
+{
+    tokio::spawn(async move {
+        let mut chunk = [0u8; 8 * 1024];
+        loop {
+            match reader.read(&mut chunk).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => buf
+                    .lock()
+                    .await
+                    .push_str(&String::from_utf8_lossy(&chunk[..n])),
+            }
+        }
     })
 }
 
-struct RawRunOutcome {
-    exit_code: Option<i64>,
-    stdout: String,
-    stderr: String,
+/// Periodically persist the captured streams until signalled to stop.
+fn spawn_flusher(
+    pool: SqlitePool,
+    run_id: i64,
+    stdout_buf: Arc<Mutex<String>>,
+    stderr_buf: Arc<Mutex<String>>,
+    stop: Arc<Notify>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(FLUSH_INTERVAL);
+        ticker.tick().await; // eat the immediate first tick
+        let mut last_len = 0usize;
+        loop {
+            tokio::select! {
+                _ = stop.notified() => break,
+                _ = ticker.tick() => {
+                    last_len = flush_partial(&pool, run_id, &stdout_buf, &stderr_buf, last_len).await;
+                }
+            }
+        }
+    })
 }
 
-/// Spawn `$SHELL -c <command>` in `cwd`, drain stdout/stderr concurrently to
-/// avoid pipe-buffer deadlocks, and enforce [`RUN_TIMEOUT`] with SIGKILL.
-async fn run_shell(command: &str, cwd: &str) -> RawRunOutcome {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-    let mut child = match Command::new(&shell)
-        .args(["-c", command])
-        .current_dir(cwd)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            return RawRunOutcome {
-                exit_code: Some(-1),
-                stdout: String::new(),
-                stderr: format!("Failed to spawn `{shell} -c <command>`: {e}"),
-            };
-        }
-    };
-
-    let stdout_handle = child.stdout.take().map(|s| {
-        tokio::spawn(async move {
-            let mut buf = String::new();
-            let _ = BufReader::new(s).read_to_string(&mut buf).await;
-            buf
-        })
-    });
-    let stderr_handle = child.stderr.take().map(|s| {
-        tokio::spawn(async move {
-            let mut buf = String::new();
-            let _ = BufReader::new(s).read_to_string(&mut buf).await;
-            buf
-        })
-    });
-
-    let (timed_out, exit_code) = match tokio::time::timeout(RUN_TIMEOUT, child.wait()).await {
-        Ok(Ok(status)) => (false, status.code().map(i64::from)),
-        Ok(Err(_)) => (false, Some(-1)),
-        Err(_) => {
-            let _ = child.kill().await;
-            (true, Some(-1))
-        }
-    };
-
-    let stdout = match stdout_handle {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    let mut stderr = match stderr_handle {
-        Some(h) => h.await.unwrap_or_default(),
-        None => String::new(),
-    };
-    if timed_out {
-        stderr.push_str(&format!(
-            "\n[cadencr] Command timed out after {} seconds and was killed.",
-            RUN_TIMEOUT.as_secs()
-        ));
+/// Snapshot the buffers and write them to the run row without marking it done.
+///
+/// Skips the write when nothing new arrived since `last_len` — the buffers only
+/// ever grow (readers append), so an unchanged combined length means an idle
+/// process and we avoid hammering the shared write pool every tick. Returns the
+/// combined length now persisted for the next tick's comparison.
+async fn flush_partial(
+    pool: &SqlitePool,
+    run_id: i64,
+    stdout_buf: &Arc<Mutex<String>>,
+    stderr_buf: &Arc<Mutex<String>>,
+    last_len: usize,
+) -> usize {
+    let stdout = stdout_buf.lock().await.clone();
+    let stderr = stderr_buf.lock().await.clone();
+    let len = stdout.len() + stderr.len();
+    if len == last_len {
+        return len;
     }
+    if let Err(e) = repository::update_run_output(pool, run_id, &stdout, &stderr).await {
+        warn!(error = %e, run_id, "failed to persist partial custom action output");
+    }
+    len
+}
 
-    RawRunOutcome {
-        exit_code,
-        stdout,
-        stderr,
+/// Mark the run finished. Logs (rather than propagates) failures because this
+/// runs in a detached background task with no caller to receive the error.
+async fn finalize(
+    pool: &SqlitePool,
+    run_id: i64,
+    exit_code: Option<i64>,
+    stdout: &str,
+    stderr: &str,
+) {
+    if let Err(e) = repository::finalize_run(pool, run_id, exit_code, stdout, stderr).await {
+        warn!(error = %e, run_id, "failed to finalize custom action run");
     }
 }

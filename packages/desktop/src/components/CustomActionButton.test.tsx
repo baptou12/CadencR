@@ -11,10 +11,6 @@ vi.mock("@/api/generated", () => ({
   useRunCustomAction: vi.fn(() => ({ mutate: mockRunCustomAction, isPending: false })),
 }));
 
-vi.mock("./CustomActionPopover", () => ({
-  CustomActionPopover: () => <div>Action details</div>,
-}));
-
 function makeAction(): CustomAction {
   return {
     id: 7,
@@ -38,7 +34,12 @@ describe("CustomActionButton", () => {
 
   it("runs the action from the main icon button", async (): Promise<void> => {
     const { user } = render(
-      <CustomActionButton action={makeAction()} featureId={42} projectId={1} onEdit={vi.fn()} />,
+      <CustomActionButton
+        action={makeAction()}
+        featureId={42}
+        projectId={1}
+        onOpenDetails={vi.fn()}
+      />,
     );
 
     await user.click(screen.getByTitle("Run Deploy"));
@@ -49,16 +50,23 @@ describe("CustomActionButton", () => {
     });
   });
 
-  it("opens details from the chevron instead of right click", async (): Promise<void> => {
+  it("opens the shared details surface from the chevron, not from right click", async (): Promise<void> => {
+    const onOpenDetails = vi.fn();
+    const action = makeAction();
     const { user } = render(
-      <CustomActionButton action={makeAction()} featureId={42} projectId={1} onEdit={vi.fn()} />,
+      <CustomActionButton
+        action={action}
+        featureId={42}
+        projectId={1}
+        onOpenDetails={onOpenDetails}
+      />,
     );
 
     fireEvent.contextMenu(screen.getByTitle("Run Deploy"));
-    expect(screen.queryByText("Action details")).not.toBeInTheDocument();
+    expect(onOpenDetails).not.toHaveBeenCalled();
 
     await user.click(screen.getByTitle("Open Deploy details"));
 
-    expect(screen.getByText("Action details")).toBeInTheDocument();
+    expect(onOpenDetails).toHaveBeenCalledWith(action);
   });
 });
