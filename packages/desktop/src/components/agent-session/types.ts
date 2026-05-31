@@ -148,7 +148,6 @@ export interface AgentSessionProps {
   /** WS store key for WS-based history and draft persistence */
   wsSessionId?: string;
   /** Initial draft text (restored from DB) */
-  initialDraft?: string | null;
   /** Active subprocess ID for slash command support in the prompt bar */
   subprocessId?: string;
   /** Pending tool permission request from canUseTool callback */

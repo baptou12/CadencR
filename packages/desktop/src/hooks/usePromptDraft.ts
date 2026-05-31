@@ -1,161 +1,132 @@
 /**
- * Hook for persisting per-agent-session draft prompt text.
- * Uses WebSocket when wsSessionId is provided, falls back to HTTP.
- * Fetches saved draft on mount to restore after navigation.
- * Debounces saves (500ms) and flushes on unmount.
+ * Feature-scoped prompt draft persistence.
+ *
+ * Draft ownership is intentionally simple: one draft belongs to one feature.
+ * The draft is stored in `feature_settings` under `draft_prompt`, so it can be
+ * restored before any agent session row exists and cannot leak through
+ * session-id transitions such as `/clear`.
  */
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import {
+  getGetFeatureSettingsQueryKey,
+  useGetFeatureSettings,
+  useSetFeatureSetting,
+  type FeatureSetting,
+} from "@/api/generated";
+import { settingsArrayToMap } from "@/api/settings";
+import { apiErrorMessage } from "@/lib/api-errors";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useWsSessionStore } from "@/stores/ws-session-store";
-import { useSaveSessionDraft, useGetSessionDraft } from "@/api/generated";
-import { createDraftGet, createDraftSave } from "@/lib/ws-envelope";
-import { draftScope } from "@/lib/draft-scope";
+const FEATURE_DRAFT_KEY = "draft_prompt";
 
 interface UsePromptDraftOptions {
-  /** DB session ID when known; ws-session can also derive it from serverSessionId. */
-  sessionId: number | undefined;
-  /** WS store key — when provided, derives DB session ID from serverSessionId. */
-  wsSessionId?: string | undefined;
+  featureId: number | undefined;
+}
+
+interface UsePromptDraftResult {
   initialDraft: string | null;
+  draftFeatureId: number | null;
+  saveDraft: (text: string | null) => void;
 }
 
-interface DraftResultPayload {
-  draft: string | null;
+export function resetPromptDraftMemoryForTest(): void {}
+
+function draftFromSettings(
+  settings: Array<{ key: string; value: string }> | undefined,
+): string | null {
+  const value = settingsArrayToMap(settings)[FEATURE_DRAFT_KEY];
+  return value ? value : null;
 }
 
-const localDrafts = new Map<string, string | null>();
-const dirtyDraftScopes = new Set<string>();
-
-export function resetPromptDraftMemoryForTest(): void {
-  localDrafts.clear();
-  dirtyDraftScopes.clear();
+function upsertDraftSetting(
+  settings: FeatureSetting[] | undefined,
+  value: string,
+): FeatureSetting[] {
+  const current = settings ?? [];
+  const index = current.findIndex((setting) => setting.key === FEATURE_DRAFT_KEY);
+  if (index < 0) return [...current, { key: FEATURE_DRAFT_KEY, value }];
+  if (current[index]?.value === value) return current;
+  return current.map((setting, i) => (i === index ? { ...setting, value } : setting));
 }
 
-function draftForScope(scope: string | null, fallback: string | null): string | null {
-  return scope && localDrafts.has(scope) ? (localDrafts.get(scope) ?? null) : fallback;
-}
-
-function cacheDraft(scope: string | null, draft: string | null, dirty: boolean): void {
-  if (!scope) return;
-  localDrafts.set(scope, draft);
-  if (dirty) dirtyDraftScopes.add(scope);
-}
-
-export function usePromptDraft({ sessionId, wsSessionId, initialDraft }: UsePromptDraftOptions) {
-  const sendRaw = useWsSessionStore((s) => s.send);
-  const sendRequest = useWsSessionStore((s) => s.sendRequest);
-  const isConnected = useWsSessionStore((s) =>
-    wsSessionId ? (s.sessions[wsSessionId]?.isConnected ?? false) : false,
-  );
-  const wsDbSessionId = useWsSessionStore((s) =>
-    wsSessionId ? (s.sessions[wsSessionId]?.sessionDbId ?? undefined) : undefined,
-  );
-  const saveDraftMutation = useSaveSessionDraft();
-
-  // Resolve the DB session ID from the WS store when available, or fall back to prop.
-  const dbSessionId = useMemo(() => wsDbSessionId ?? sessionId, [wsDbSessionId, sessionId]);
-
-  // For HTTP-path agents, fetch the draft from DB on mount
-  const httpDraftQuery = useGetSessionDraft(sessionId ?? 0, {
-    query: { enabled: !wsSessionId && !!sessionId },
+export function usePromptDraft({ featureId }: UsePromptDraftOptions): UsePromptDraftResult {
+  const queryClient = useQueryClient();
+  const featureSettingsQuery = useGetFeatureSettings(featureId ?? 0, {
+    query: { enabled: !!featureId },
+  });
+  const { mutate: saveFeatureSetting } = useSetFeatureSetting({
+    mutation: {
+      onSuccess: (_data, variables) => {
+        if (variables.data.key !== FEATURE_DRAFT_KEY) return;
+        queryClient.setQueryData(
+          getGetFeatureSettingsQueryKey(variables.id),
+          (settings: FeatureSetting[] | undefined) =>
+            upsertDraftSetting(settings, variables.data.value),
+        );
+      },
+      onError: (error: unknown) => {
+        toast.error(`Could not save draft: ${apiErrorMessage(error, "Unknown error")}`);
+      },
+    },
   });
 
-  const restoreScope = draftScope(sessionId, wsSessionId);
-  const [restoredDraft, setRestoredDraft] = useState<string | null>(() =>
-    draftForScope(restoreScope, initialDraft),
+  const restoredFromSettings = useMemo(
+    () => draftFromSettings(featureSettingsQuery.data),
+    [featureSettingsQuery.data],
+  );
+  const pendingRef = useRef<string | null | undefined>(undefined);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushSave = useCallback(
+    (targetFeatureId: number | undefined): void => {
+      if (pendingRef.current === undefined) return;
+      const draft = pendingRef.current;
+      pendingRef.current = undefined;
+      if (!targetFeatureId) return;
+      saveFeatureSetting({
+        id: targetFeatureId,
+        data: { key: FEATURE_DRAFT_KEY, value: draft ?? "" },
+      });
+    },
+    [saveFeatureSetting],
   );
 
   useEffect(() => {
-    setRestoredDraft(draftForScope(restoreScope, initialDraft));
-  }, [initialDraft, restoreScope]);
+    if (!featureSettingsQuery.isError) return;
+    toast.error(
+      `Could not load draft: ${apiErrorMessage(featureSettingsQuery.error, "Unknown error")}`,
+    );
+  }, [featureSettingsQuery.error, featureSettingsQuery.isError]);
 
-  // Sync HTTP draft query result
-  useEffect(() => {
-    if (!wsSessionId && httpDraftQuery.data) {
-      setRestoredDraft(draftForScope(restoreScope, httpDraftQuery.data.draftPrompt ?? null));
-    }
-  }, [restoreScope, wsSessionId, httpDraftQuery.data]);
-
-  const pendingRef = useRef<string | null | undefined>(undefined);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const dbSessionIdRef = useRef(dbSessionId);
-  dbSessionIdRef.current = dbSessionId;
-  const wsSessionIdRef = useRef(wsSessionId);
-  wsSessionIdRef.current = wsSessionId;
-  const restoreScopeRef = useRef(restoreScope);
-  restoreScopeRef.current = restoreScope;
-
-  // Fetch draft from DB via WS on mount when session is initialized
-  useEffect(() => {
-    if (initialDraft != null || !wsSessionId || !isConnected || !dbSessionId) return;
-    let cancelled = false;
-    void sendRequest(wsSessionId, createDraftGet(dbSessionId))
-      .then((payload) => {
-        if (cancelled) return;
-        const data = payload as DraftResultPayload;
-        if (!restoreScope || !dirtyDraftScopes.has(restoreScope)) {
-          setRestoredDraft(data.draft);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [initialDraft, restoreScope, wsSessionId, isConnected, dbSessionId, sendRequest]);
-
-  const flushSave = useCallback(() => {
-    if (pendingRef.current === undefined) return;
-    const sid = dbSessionIdRef.current;
-    if (!sid) {
-      return;
-    }
-    const draft = pendingRef.current;
-    pendingRef.current = undefined;
-    if (restoreScopeRef.current) {
-      dirtyDraftScopes.delete(restoreScopeRef.current);
-    }
-
-    const wsSid = wsSessionIdRef.current;
-    if (wsSid) {
-      sendRaw(wsSid, createDraftSave(sid, draft));
-    } else {
-      saveDraftMutation.mutate({ sessionId: sid, data: { draft } });
-    }
-  }, [sendRaw, saveDraftMutation]);
-
-  // Flush on unmount or dbSessionId change
   useEffect(() => {
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      flushSave();
+      flushSave(featureId);
     };
-  }, [dbSessionId, flushSave]);
-
-  useEffect(() => {
-    if (!dbSessionId || !restoreScope || !dirtyDraftScopes.has(restoreScope)) return;
-    if (pendingRef.current === undefined) {
-      pendingRef.current = localDrafts.get(restoreScope);
-    }
-    flushSave();
-  }, [dbSessionId, flushSave, restoreScope]);
+  }, [featureId, flushSave]);
 
   const saveDraft = useCallback(
-    (text: string | null) => {
-      cacheDraft(restoreScope, text, true);
+    (text: string | null): void => {
       pendingRef.current = text;
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        flushSave();
+        flushSave(featureId);
       }, 500);
     },
-    [flushSave, restoreScope],
+    [featureId, flushSave],
   );
 
-  // Exposed so consumers can detect conversation switches (e.g. /clear rolls a
-  // new agent_sessions row inside the same feature). Null before init.
-  return { initialDraft: restoredDraft, saveDraft, dbSessionId: dbSessionId ?? null };
+  return useMemo(
+    () => ({
+      initialDraft: restoredFromSettings,
+      draftFeatureId: featureSettingsQuery.data ? (featureId ?? null) : null,
+      saveDraft,
+    }),
+    [featureId, featureSettingsQuery.data, restoredFromSettings, saveDraft],
+  );
 }

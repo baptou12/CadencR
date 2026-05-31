@@ -19,6 +19,7 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "skip_worktree",
     "bypass_acknowledged",
     "layout_state",
+    "draft_prompt",
     // Git workflow (per-feature). `worktree_mode` selects how the worktree is
     // provisioned at feature creation: "new" (default), "reuse" (attach to an
     // existing branch / its worktree), or "skip". `worktree_reuse_branch`
@@ -180,6 +181,7 @@ mod tests {
         assert!(is_feature_key_allowed("skip_worktree"));
         assert!(is_feature_key_allowed("model_session"));
         assert!(is_feature_key_allowed("layout_state"));
+        assert!(is_feature_key_allowed("draft_prompt"));
     }
 
     #[test]

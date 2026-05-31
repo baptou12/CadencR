@@ -15,11 +15,10 @@ import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import { usePromptAttachments } from "@/hooks/usePromptAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
-import { draftScope } from "@/lib/draft-scope";
-import { usePromptEditorRestore } from "@/hooks/usePromptEditorRestore";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import { useAgentPromptSend } from "./agent-prompt-send";
+import { useFeaturePromptDraftRestore } from "./agent-prompt-draft-restore";
 import { useDeferredAgentPrompts } from "./useDeferredAgentPrompts";
 import type {
   AgentPromptBarHandle,
@@ -53,7 +52,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       projectId,
       sessionId,
       wsSessionId,
-      initialDraft,
       onToggleMaximize,
       noTopPadding,
       slashCommandsOverride,
@@ -66,22 +64,29 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   ) {
     const editorRef = useRef<PromptEditorHandle>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
-    const [text, setText] = useState(initialDraft ?? "");
+    const [text, setText] = useState("");
     const textRef = useRef(text);
     textRef.current = text;
     const disabledRef = useRef(disabled);
     disabledRef.current = disabled;
     const navigatingHistoryRef = useRef(false);
+    const restoringDraftRef = useRef(false);
     const hadSpecialStateRef = useRef(false);
     const shouldRestoreFocusRef = useRef(false);
-    const draft = usePromptDraft({ sessionId, wsSessionId, initialDraft: initialDraft ?? null });
-    const { initialDraft: restoredDraft, saveDraft } = draft;
-    usePromptEditorRestore({
+    const {
+      initialDraft: restoredDraft,
+      draftFeatureId,
+      saveDraft,
+    } = usePromptDraft({
+      featureId,
+    });
+    useFeaturePromptDraftRestore({
+      featureId,
       restoredDraft,
-      dbSessionId: draft.dbSessionId,
-      conversationKey: draftScope(sessionId, wsSessionId),
+      draftFeatureId,
       textRef,
       editorRef,
+      restoringDraftRef,
       setText,
     });
     const {
@@ -182,6 +187,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     const handleEditorChange = useCallback(
       (newText: string) => {
         setText(newText);
+        if (restoringDraftRef.current) return;
         if (navigatingHistoryRef.current) {
           navigatingHistoryRef.current = false;
           return;
@@ -197,14 +203,12 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       if (result !== null) navigatingHistoryRef.current = true;
       return result;
     }, [projectId, wsSessionId, history]);
-
     const handleArrowDown = useCallback(() => {
       if (!projectId || !wsSessionId || history.historyIndex < 0) return null;
       const result = history.navigateDown();
       if (result !== null) navigatingHistoryRef.current = true;
       return result;
     }, [projectId, wsSessionId, history]);
-
     const handlePromptSurfaceClick = useCallback(
       (event: React.MouseEvent<HTMLDivElement>): void => {
         if (!shouldFocusPromptFromSurfaceClick(event.target)) return;
@@ -212,7 +216,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       },
       [],
     );
-
     const hotkeyOpts = { enabled: agentTabActive };
     useScopedShortcut(
       "agent-model-picker",
@@ -224,7 +227,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       "agent",
       hotkeyOpts,
     );
-
     useScopedShortcut(
       "agent-maximize",
       (e) => {
@@ -235,7 +237,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       "agent",
       hotkeyOpts,
     );
-
     useScopedShortcut(
       "agent-permission-mode",
       (e) => {
@@ -246,7 +247,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       "agent",
       hotkeyOpts,
     );
-
     useScopedShortcut(
       "agent-collapse",
       (e) => {
@@ -257,10 +257,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       "agent",
       hotkeyOpts,
     );
-
-    // `agent-stop` (Esc) is bound globally and gated in-callback so it fires
-    // even while focus is inside another tab — we only swallow it when the
-    // user is actually pointed at this prompt bar with a turn in flight.
     useShortcut(
       "agent-stop",
       (e) => {
@@ -272,7 +268,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       { enableOnFormTags: true, enableOnContentEditable: true },
       [isRunning, onStop],
     );
-
     const specialPrompt =
       visiblePermission && onPermissionDecision ? (
         <ToolPermissionPrompt
@@ -289,7 +284,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       ) : visiblePlanApproval && onPlanApprove && onPlanRequestChanges ? (
         <PlanApprovalBar
           allowedPrompts={visiblePlanApproval.allowedPrompts}
-          // Mirror the prompt-bar text so the rejection box behaves predictably.
           initialFeedback={text}
           approveLabel={planApproveLabel}
           onApprove={onPlanApprove}
@@ -307,7 +301,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           disableShortcuts={disableShortcuts}
         />
       ) : null;
-
     return (
       <>
         {permissionDeferred && pendingPermission && (
@@ -328,10 +321,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
           className={cn(
             "flex flex-col px-3 pb-4",
             noTopPadding ? "pt-0" : "pt-3",
-            // The drop zone is the agent `<section>` above; it toggles
-            // `data-agent-dragover` while a file is dragged over this card,
-            // and that drives the primary ring here without needing React
-            // state to cross component boundaries.
             "group-data-[agent-dragover]/agent-section:ring-2 group-data-[agent-dragover]/agent-section:ring-inset group-data-[agent-dragover]/agent-section:ring-primary/50",
           )}
           {...dragHandlers}
@@ -343,7 +332,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               className="mb-2"
             />
           )}
-
           <div
             className="flex items-center gap-1.5 rounded-lg bg-muted/40 py-4 pl-4 pr-2.5 transition-colors focus-within:bg-muted/55"
             onClick={handlePromptSurfaceClick}
@@ -364,13 +352,11 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               mentionFiles={filesQuery.data}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
-              initialText={initialDraft || undefined}
+              initialText={undefined}
               onPasteImages={addFiles}
             />
-
             <div className="flex shrink-0 items-center gap-1.5 self-end">
               <ImageAttachmentButton onFilesSelected={addFiles} disabled={disabled || sending} />
-
               {isRunning ? (
                 <button
                   type="button"
@@ -398,7 +384,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               ) : null}
             </div>
           </div>
-
           {splitSendActions && !isRunning && (
             <SplitSendActions
               actions={splitSendActions}

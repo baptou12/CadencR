@@ -110,7 +110,6 @@ export const AgentSession = memo(
       projectId,
       sessionId,
       wsSessionId,
-      initialDraft,
       pendingPermission,
       onPermissionDecision,
       isSubmittingPermission,
@@ -403,7 +402,6 @@ export const AgentSession = memo(
         projectId={projectId}
         sessionId={sessionId}
         wsSessionId={wsSessionId}
-        initialDraft={initialDraft}
         onToggleMaximize={onToggleMaximize}
         noTopPadding={!!hasMeta}
         slashCommandsOverride={slashCommandsOverride}

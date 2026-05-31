@@ -1,309 +1,223 @@
 import { renderHook, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { toast } from "sonner";
 import { resetPromptDraftMemoryForTest, usePromptDraft } from "./usePromptDraft";
 
-const mockSaveDraftMutate = vi.fn();
-const mockSendRaw = vi.fn();
-const mockSendRequest = vi.fn(
-  (_sessionId?: string, _envelope?: unknown): Promise<{ draft: string | null }> =>
-    Promise.resolve({ draft: null }),
+const mockSetFeatureSettingMutate = vi.fn();
+const mockFeatureSettingsData = vi.fn(
+  (): Array<{ key: string; value: string }> | undefined => undefined,
 );
-const mockDraftQueryData = vi.fn((): { draftPrompt: string | null } | undefined => undefined);
+const mockFeatureSettingsIsError = vi.fn((): boolean => false);
+const mockFeatureSettingsError = vi.fn((): Error | null => null);
+const mockSetQueryData = vi.fn();
+let setFeatureSettingOptions: {
+  mutation?: {
+    onError?: (error: unknown) => void;
+    onSuccess?: (
+      data: unknown,
+      variables: { id: number; data: { key: string; value: string } },
+    ) => void;
+  };
+} | null = null;
 
-vi.mock("../api/generated", () => ({
-  useSaveSessionDraft: vi.fn(() => ({ mutate: mockSaveDraftMutate })),
-  useGetSessionDraft: vi.fn(() => ({ data: mockDraftQueryData() })),
+vi.mock("sonner", () => ({
+  toast: { error: vi.fn() },
 }));
 
-vi.mock("@/stores/ws-session-store", () => ({
-  useWsSessionStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      send: mockSendRaw,
-      sendRequest: mockSendRequest,
-      sessions: {
-        "ws-test-1": { isConnected: true, sessionDbId: 42 },
-        "ws-test-2": { isConnected: true, sessionDbId: 43 },
-        "ws-test-pending": { isConnected: true, sessionDbId: null },
-      },
-    }),
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ setQueryData: mockSetQueryData }),
+}));
+
+vi.mock("../api/generated", () => ({
+  getGetFeatureSettingsQueryKey: (id?: number) => [`/api/features/${id}/settings`],
+  useSetFeatureSetting: vi.fn((options) => {
+    setFeatureSettingOptions = options;
+    return { mutate: mockSetFeatureSettingMutate };
+  }),
+  useGetFeatureSettings: vi.fn(() => ({
+    data: mockFeatureSettingsData(),
+    isError: mockFeatureSettingsIsError(),
+    error: mockFeatureSettingsError(),
+  })),
 }));
 
 describe("usePromptDraft", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     resetPromptDraftMemoryForTest();
-    mockSaveDraftMutate.mockClear();
-    mockSendRaw.mockClear();
-    mockSendRequest.mockClear();
-    mockSendRequest.mockResolvedValue({ draft: null });
-    mockDraftQueryData.mockReturnValue(undefined);
+    mockSetFeatureSettingMutate.mockClear();
+    mockFeatureSettingsData.mockReturnValue(undefined);
+    mockFeatureSettingsIsError.mockReturnValue(false);
+    mockFeatureSettingsError.mockReturnValue(null);
+    mockSetQueryData.mockClear();
+    setFeatureSettingOptions = null;
+    vi.mocked(toast.error).mockClear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("returns the initialDraft unchanged", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: "hello world" }),
-    );
-    expect(result.current.initialDraft).toBe("hello world");
+  it("returns no draft while feature settings are unavailable", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    expect(result.current.initialDraft).toBeNull();
+    expect(result.current.draftFeatureId).toBeNull();
   });
 
-  it("returns null initialDraft when not provided", () => {
-    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
+  it("returns null when no draft exists", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
     expect(result.current.initialDraft).toBeNull();
   });
 
-  it("saves via HTTP when no wsSessionId", () => {
-    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
-    act(() => {
-      result.current.saveDraft("final text");
-    });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({
-      sessionId: 1,
-      data: { draft: "final text" },
-    });
-    expect(mockSendRaw).not.toHaveBeenCalled();
+  it("restores the draft from the owning feature settings", () => {
+    mockFeatureSettingsData.mockReturnValue([{ key: "draft_prompt", value: "feature draft" }]);
+
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    expect(result.current.initialDraft).toBe("feature draft");
+    expect(result.current.draftFeatureId).toBe(7);
   });
 
-  it("saves via WS when wsSessionId is provided", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
+  it("does not expose a previous feature draft while the next feature settings load", () => {
+    mockFeatureSettingsData.mockReturnValueOnce([
+      { key: "draft_prompt", value: "feature 7 draft" },
+    ]);
+    const { result, rerender } = renderHook(
+      ({ featureId }: { featureId: number }) => usePromptDraft({ featureId }),
+      { initialProps: { featureId: 7 } },
     );
-    act(() => {
-      result.current.saveDraft("ws draft");
-    });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(mockSendRaw).toHaveBeenCalledTimes(1);
-    expect(mockSaveDraftMutate).not.toHaveBeenCalled();
+    expect(result.current.initialDraft).toBe("feature 7 draft");
+
+    mockFeatureSettingsData.mockReturnValueOnce(undefined);
+    rerender({ featureId: 8 });
+
+    expect(result.current.initialDraft).toBeNull();
   });
 
-  it("fetches draft from DB via WS when no initialDraft", async () => {
-    mockSendRequest.mockResolvedValue({ draft: "restored text" });
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
+  it("treats an empty feature draft setting as no draft", () => {
+    mockFeatureSettingsData.mockReturnValue([{ key: "draft_prompt", value: "" }]);
+
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    expect(result.current.initialDraft).toBeNull();
+  });
+
+  it("saves the draft to the owning feature settings", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    act(() => result.current.saveDraft("feature-local draft"));
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
+      id: 7,
+      data: { key: "draft_prompt", value: "feature-local draft" },
+    });
+  });
+
+  it("patches the owning feature settings cache only after save succeeds", () => {
+    renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    expect(mockSetQueryData).not.toHaveBeenCalled();
+
+    setFeatureSettingOptions?.mutation?.onSuccess?.(undefined, {
+      id: 7,
+      data: { key: "draft_prompt", value: "saved after confirmation" },
+    });
+
+    expect(mockSetQueryData).toHaveBeenCalledWith(
+      ["/api/features/7/settings"],
+      expect.any(Function),
     );
-    await act(async () => {
-      await Promise.resolve();
+    const updater = mockSetQueryData.mock.calls[0]?.[1] as
+      | ((settings: Array<{ key: string; value: string }> | undefined) => Array<{
+          key: string;
+          value: string;
+        }>)
+      | undefined;
+    expect(updater?.([{ key: "layout_state", value: "{}" }])).toEqual([
+      { key: "layout_state", value: "{}" },
+      { key: "draft_prompt", value: "saved after confirmation" },
+    ]);
+  });
+
+  it("does not allocate a new settings cache value for unchanged drafts", () => {
+    renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    setFeatureSettingOptions?.mutation?.onSuccess?.(undefined, {
+      id: 7,
+      data: { key: "draft_prompt", value: "same draft" },
     });
-    expect(result.current.initialDraft).toBe("restored text");
+
+    const updater = mockSetQueryData.mock.calls[0]?.[1] as
+      | ((settings: Array<{ key: string; value: string }> | undefined) => Array<{
+          key: string;
+          value: string;
+        }>)
+      | undefined;
+    const settings = [{ key: "draft_prompt", value: "same draft" }];
+    expect(updater?.(settings)).toBe(settings);
   });
 
-  it("restores draft from HTTP query when a DB session ID is known", () => {
-    mockDraftQueryData.mockReturnValue({ draftPrompt: "saved draft" });
-    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
-    expect(result.current.initialDraft).toBe("saved draft");
-  });
+  it("debounces multiple saves and persists only the last draft", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
 
-  it("debounces multiple saves — only persists the last one", () => {
-    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: null }));
     act(() => {
       result.current.saveDraft("a");
       result.current.saveDraft("ab");
       result.current.saveDraft("abc");
     });
-    act(() => {
-      vi.advanceTimersByTime(500);
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledTimes(1);
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
+      id: 7,
+      data: { key: "draft_prompt", value: "abc" },
     });
-    expect(mockSaveDraftMutate).toHaveBeenCalledTimes(1);
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, data: { draft: "abc" } });
   });
 
-  it("does not save when no sessionId and no wsSessionId", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, initialDraft: null }),
-    );
-    act(() => {
-      result.current.saveDraft("some text");
-    });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(mockSaveDraftMutate).not.toHaveBeenCalled();
-  });
+  it("flushes a pending draft on unmount", () => {
+    const { result, unmount } = renderHook(() => usePromptDraft({ featureId: 7 }));
 
-  it("flushes pending draft on unmount", () => {
-    const { result, unmount } = renderHook(() =>
-      usePromptDraft({ sessionId: 1, initialDraft: null }),
-    );
-    act(() => {
-      result.current.saveDraft("pending on unmount");
-    });
+    act(() => result.current.saveDraft("pending on unmount"));
     unmount();
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({
-      sessionId: 1,
-      data: { draft: "pending on unmount" },
+
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
+      id: 7,
+      data: { key: "draft_prompt", value: "pending on unmount" },
     });
   });
 
-  it("saves null draft (clearing draft)", () => {
-    const { result } = renderHook(() => usePromptDraft({ sessionId: 1, initialDraft: "old" }));
-    act(() => {
-      result.current.saveDraft(null);
-    });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-    expect(mockSaveDraftMutate).toHaveBeenCalledWith({ sessionId: 1, data: { draft: null } });
+  it("does not save when no feature owns the prompt", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: undefined }));
+
+    act(() => result.current.saveDraft("orphan draft"));
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(mockSetFeatureSettingMutate).not.toHaveBeenCalled();
   });
 
-  it("resets restored draft while switching to another WS session", async () => {
-    mockSendRequest.mockResolvedValue({ draft: "first draft" });
-    const { result, rerender } = renderHook(
-      ({ wsSessionId }: { wsSessionId: string }) =>
-        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
-      { initialProps: { wsSessionId: "ws-test-1" } },
-    );
-    await act(async () => {
-      await Promise.resolve();
+  it("saves null as an empty feature draft setting", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    act(() => result.current.saveDraft(null));
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
+      id: 7,
+      data: { key: "draft_prompt", value: "" },
     });
-    expect(result.current.initialDraft).toBe("first draft");
-
-    rerender({ wsSessionId: "ws-test-2" });
-
-    expect(result.current.initialDraft).toBeNull();
   });
 
-  it("ignores late WS draft responses from a previous session", async () => {
-    let resolveFirst: (value: { draft: string | null }) => void = () => undefined;
-    mockSendRequest.mockImplementation((_: string | undefined, envelope: unknown) => {
-      const payload = (envelope as { payload?: { session_id?: number } }).payload;
-      if (payload?.session_id === 42) {
-        return new Promise<{ draft: string | null }>((resolve) => {
-          resolveFirst = resolve;
-        });
-      }
-      return Promise.resolve({ draft: null });
-    });
+  it("surfaces draft load and save failures to the user", () => {
+    mockFeatureSettingsIsError.mockReturnValue(true);
+    mockFeatureSettingsError.mockReturnValue(new Error("load failed"));
 
-    const { result, rerender } = renderHook(
-      ({ wsSessionId }: { wsSessionId: string }) =>
-        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
-      { initialProps: { wsSessionId: "ws-test-1" } },
-    );
+    renderHook(() => usePromptDraft({ featureId: 7 }));
+    setFeatureSettingOptions?.mutation?.onError?.(new Error("save failed"));
 
-    rerender({ wsSessionId: "ws-test-2" });
-
-    await act(async () => {
-      resolveFirst({ draft: "stale first draft" });
-      await Promise.resolve();
-    });
-
-    expect(result.current.initialDraft).toBeNull();
-  });
-
-  it("ignores late WS draft responses after switching to an uninitialized session", async () => {
-    let resolveFirst: (value: { draft: string | null }) => void = () => undefined;
-    mockSendRequest.mockImplementation((_: string | undefined, envelope: unknown) => {
-      const payload = (envelope as { payload?: { session_id?: number } }).payload;
-      if (payload?.session_id === 42) {
-        return new Promise<{ draft: string | null }>((resolve) => {
-          resolveFirst = resolve;
-        });
-      }
-      return Promise.resolve({ draft: null });
-    });
-
-    const { result, rerender } = renderHook(
-      ({ wsSessionId }: { wsSessionId: string }) =>
-        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
-      { initialProps: { wsSessionId: "ws-test-1" } },
-    );
-
-    rerender({ wsSessionId: "ws-test-pending" });
-
-    await act(async () => {
-      resolveFirst({ draft: "stale first draft" });
-      await Promise.resolve();
-    });
-
-    expect(result.current.initialDraft).toBeNull();
-  });
-
-  it("flushes a pending WS draft once the DB session ID becomes available", () => {
-    const { result, rerender } = renderHook(
-      ({ wsSessionId }: { wsSessionId: string | undefined }) =>
-        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
-      { initialProps: { wsSessionId: undefined as string | undefined } },
-    );
-    act(() => {
-      result.current.saveDraft("typed before init");
-    });
-
-    rerender({ wsSessionId: "ws-test-1" });
-    act(() => {
-      vi.advanceTimersByTime(500);
-    });
-
-    expect(mockSendRaw).toHaveBeenCalledTimes(1);
-  });
-
-  it("restores unsaved WS draft locally after unmount before DB session ID is available", () => {
-    const first = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-pending", initialDraft: null }),
-    );
-    act(() => {
-      first.result.current.saveDraft("local draft before init");
-    });
-    first.unmount();
-
-    const second = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-pending", initialDraft: null }),
-    );
-
-    expect(second.result.current.initialDraft).toBe("local draft before init");
-  });
-
-  it("keeps unsent drafts isolated while switching between existing WS sessions", () => {
-    const first = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
-    );
-    act(() => {
-      first.result.current.saveDraft("Hello");
-    });
-    first.unmount();
-
-    const second = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-2", initialDraft: null }),
-    );
-    act(() => {
-      second.result.current.saveDraft("World");
-    });
-    second.unmount();
-
-    const firstAgain = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-1", initialDraft: null }),
-    );
-    const secondAgain = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-2", initialDraft: null }),
-    );
-
-    expect(firstAgain.result.current.initialDraft).toBe("Hello");
-    expect(secondAgain.result.current.initialDraft).toBe("World");
-  });
-
-  it("exposes the resolved DB session id so callers can detect /clear", () => {
-    const { result, rerender } = renderHook(
-      ({ wsSessionId }: { wsSessionId: string }) =>
-        usePromptDraft({ sessionId: undefined, wsSessionId, initialDraft: null }),
-      { initialProps: { wsSessionId: "ws-test-1" } },
-    );
-    expect(result.current.dbSessionId).toBe(42);
-
-    rerender({ wsSessionId: "ws-test-2" });
-    expect(result.current.dbSessionId).toBe(43);
-  });
-
-  it("returns null dbSessionId before the WS session is initialized", () => {
-    const { result } = renderHook(() =>
-      usePromptDraft({ sessionId: undefined, wsSessionId: "ws-test-pending", initialDraft: null }),
-    );
-    expect(result.current.dbSessionId).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith("Could not load draft: load failed");
+    expect(toast.error).toHaveBeenCalledWith("Could not save draft: save failed");
   });
 });
