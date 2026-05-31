@@ -169,10 +169,10 @@ function handleSessionAction(
       const parsedMode = p?.mode ? parsePermissionMode(p.mode) : null;
       if (parsedMode && session) {
         const providerId = session.currentProviderId || session.runtimeProvider;
-        if (
-          findProviderMode(providerId, parsedMode) ||
-          parsedMode.startsWith(OPENCODE_AGENT_MODE_PREFIX)
-        ) {
+        const acceptsMode =
+          !!findProviderMode(providerId, parsedMode) ||
+          parsedMode.startsWith(OPENCODE_AGENT_MODE_PREFIX);
+        if (acceptsMode) {
           ctx.set(
             updateSession(ctx.get(), sessionId, {
               permissionMode: parsedMode,

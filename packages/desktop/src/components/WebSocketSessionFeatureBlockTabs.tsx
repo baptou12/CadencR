@@ -60,14 +60,8 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
 function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { sessionId, featureId, projectId, data, controls, refs, agentVisible, hotkeysEnabled } =
     args;
-  // Always thread the real feature/project IDs through `AgentSession`. They
-  // drive feature-scoped queries (working-directory lookup for basePath path
-  // trimming, file list autocomplete) that must run for every mounted agent,
-  // not just the focused one — otherwise the unified grid shows full
-  // absolute paths in tool calls for any agent that isn't currently active.
-  // Hotkey gating is handled separately via `disableShortcuts` and
-  // `agentTabActive` below; the IDs themselves don't need to be nulled.
   const onSend = useAgentSendHandler({ featureId, projectId, data, controls });
+  const isCodex = controls.activeProviderId === PROVIDER_IDS.CODEX_CLI;
   return useMemo(
     () => ({
       label: "Agent",
@@ -89,10 +83,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           turnTiming={controls.ws.turnTiming}
           onSend={onSend}
           onStop={controls.ws.interrupt}
-          disabled={
-            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI &&
-            controls.isCodexPermissionModePending
-          }
+          disabled={isCodex && controls.isCodexPermissionModePending}
           pendingPermission={controls.ws.pendingPermission}
           onPermissionDecision={(decision, feedback, optionId) => {
             controls.ws.respondToPermission(
@@ -110,25 +101,11 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
           permissionMode={controls.ws.permissionMode}
           enabledOptInModes={controls.enabledOptInModes}
           providerModes={controls.providerModes}
-          codexPermissionMode={
-            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
-              ? controls.codexPermissionMode
-              : undefined
-          }
-          codexPermissionDefaultMode={
-            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
-              ? controls.codexPermissionDefaultMode
-              : undefined
-          }
-          isCodexPermissionModePending={
-            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
-              ? controls.isCodexPermissionModePending
-              : false
-          }
+          codexPermissionMode={isCodex ? controls.codexPermissionMode : undefined}
+          codexPermissionDefaultMode={isCodex ? controls.codexPermissionDefaultMode : undefined}
+          isCodexPermissionModePending={isCodex ? controls.isCodexPermissionModePending : false}
           onCodexPermissionModeChange={
-            controls.activeProviderId === PROVIDER_IDS.CODEX_CLI
-              ? controls.handleCodexPermissionModeChange
-              : undefined
+            isCodex ? controls.handleCodexPermissionModeChange : undefined
           }
           agentCatalog={controls.agentCatalog}
           onPermissionModeToggle={controls.handlePermissionModeToggle}
@@ -170,6 +147,7 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       data,
       featureId,
       hotkeysEnabled,
+      isCodex,
       onSend,
       projectId,
       refs.agent,

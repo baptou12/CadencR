@@ -488,9 +488,9 @@ function ClaudeProviderPanel(): React.JSX.Element {
         title="Allow BypassPermissions"
         description={
           <>
-            Adds <strong>Bypass</strong> to the permission-mode cycle in the agent prompt for Claude
-            sessions. When active, Claude executes every tool call without prompting and skips all
-            safety checks.
+            Adds <strong>Bypass</strong> to Claude's permission-mode selector and cycle. Enabling
+            this setting makes the mode available; Claude only skips checks when the current mode is
+            Bypass.
           </>
         }
         warningTitle="Enable BypassPermissions for Claude?"
