@@ -49,6 +49,18 @@ pub trait AgentRuntimeAdapter: Send + Sync {
         self.catalog_entry_live().await
     }
 
+    /// Live catalog entry with access to persisted settings. Providers whose
+    /// discovery depends on app settings (for example Claude Code profiles
+    /// that inject Bedrock/Vertex env vars) can override this request-aware
+    /// hook while other providers keep the cwd-only default.
+    async fn catalog_entry_live_for_settings(
+        &self,
+        _read_pool: &sqlx::SqlitePool,
+        cwd: Option<&Path>,
+    ) -> super::super::runtime::ProviderCatalogEntry {
+        self.catalog_entry_live_for_cwd(cwd).await
+    }
+
     /// Extra models contributed by user configuration (e.g. custom Claude Code
     /// model aliases stored in SQLite). Returned entries are merged into the
     /// adapter's catalog; on id collision the user entry wins.
@@ -66,6 +78,18 @@ pub trait AgentRuntimeAdapter: Send + Sync {
     /// should override this.
     async fn default_model_id(&self) -> Option<String> {
         self.catalog_entry().default_model
+    }
+
+    /// Preferred default model id with access to persisted settings.
+    ///
+    /// Mirrors [`catalog_entry_live_for_settings`]: providers whose default
+    /// depends on app settings (Claude Code profiles injecting Bedrock/Vertex
+    /// env) must resolve the default against the *same* probe env the catalog
+    /// uses, otherwise the default-model probe runs with a different env key
+    /// and thrashes the shared catalog cache. Defaults to the settings-agnostic
+    /// [`default_model_id`].
+    async fn default_model_id_for_settings(&self, _read_pool: &sqlx::SqlitePool) -> Option<String> {
+        self.default_model_id().await
     }
 
     /// Provider-known context window for a given model id, if the provider

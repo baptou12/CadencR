@@ -1,5 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
+use sqlx::SqlitePool;
+use std::path::Path;
 
 use super::catalog::fallback_models;
 use super::custom_models;
@@ -135,20 +137,26 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
 
     async fn catalog_entry_live(&self) -> ProviderCatalogEntry {
         let models = self.load_models().await;
-        let default_model = Self::default_model_from(&models);
-        ProviderCatalogEntry {
-            id: "claude_code".to_string(),
-            label: "Claude".to_string(),
-            status: ProviderStatus::Available,
-            status_message: None,
-            models,
-            modes: Vec::new(),
-            default_model,
-        }
+        provider_catalog_entry_from_models(models)
+    }
+
+    async fn catalog_entry_live_for_settings(
+        &self,
+        read_pool: &SqlitePool,
+        _cwd: Option<&Path>,
+    ) -> ProviderCatalogEntry {
+        let (_, profile_env) = super::profiles::resolve_active_profile_env(read_pool).await;
+        let models = self.load_models_with_env(profile_env).await;
+        provider_catalog_entry_from_models(models)
     }
 
     async fn default_model_id(&self) -> Option<String> {
         ClaudeCodeAdapter::default_model_id(self).await
+    }
+
+    async fn default_model_id_for_settings(&self, read_pool: &SqlitePool) -> Option<String> {
+        let (_, profile_env) = super::profiles::resolve_active_profile_env(read_pool).await;
+        ClaudeCodeAdapter::default_model_id_with_env(self, profile_env).await
     }
 
     async fn extra_models(&self, read_pool: &sqlx::SqlitePool) -> Vec<ModelCatalogEntry> {
@@ -187,6 +195,30 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         content: Value,
         config: RuntimeSpawnConfig,
     ) -> Result<Box<dyn AgentRuntimeSession>, RuntimeError> {
+        // Resolve a stored bare alias (sonnet/opus/haiku) to the concrete model
+        // the active profile's catalog advertises. Under Bedrock/Vertex the
+        // bare alias is pinned by the CLI to a legacy version (e.g. `sonnet` →
+        // Sonnet 4.5), while the catalog/picker uses concrete ids. Probing with
+        // `config.env` (the active profile env) hits the same cache key the
+        // settings catalog populated, so this is a cache read in the common
+        // case. No-op under the default Anthropic backend, where the alias is
+        // itself the catalog id.
+        let model = match config.model {
+            Some(requested) => {
+                let catalog = self.load_models_with_env(config.env.clone()).await;
+                let resolved = super::model_alias::resolve_model_alias(&requested, &catalog);
+                if resolved != requested {
+                    tracing::debug!(
+                        %requested,
+                        %resolved,
+                        "rewrote Claude model alias to concrete catalog id for active profile"
+                    );
+                }
+                Some(resolved)
+            }
+            None => None,
+        };
+
         // Claude Code CLI v2.1.x parses `--effort` but drops it before building
         // the API request (anthropics/claude-code#41028). The CLI does honor
         // `CLAUDE_CODE_EFFORT_LEVEL`, so set both: the env var is what actually
@@ -203,7 +235,7 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
         let options = claude_agent_sdk_rs::Options {
             cwd: config.cwd,
             permission_mode: config.permission_mode.map(map_permission_mode),
-            model: config.model,
+            model,
             effort: config.thinking_effort,
             system_prompt: config.system_prompt,
             resume: config.resume_session_id,
@@ -229,6 +261,19 @@ impl AgentRuntimeAdapter for ClaudeCodeAdapter {
             query,
             prompt_receipts: std::sync::Arc::new(ClaudePromptReceipts::default()),
         }))
+    }
+}
+
+fn provider_catalog_entry_from_models(models: Vec<ModelCatalogEntry>) -> ProviderCatalogEntry {
+    let default_model = ClaudeCodeAdapter::default_model_from(&models);
+    ProviderCatalogEntry {
+        id: "claude_code".to_string(),
+        label: "Claude".to_string(),
+        status: ProviderStatus::Available,
+        status_message: None,
+        models,
+        modes: Vec::new(),
+        default_model,
     }
 }
 

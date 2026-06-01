@@ -77,7 +77,9 @@ pub async fn provider_catalog_live_for_cwd(
     cwd: Option<&Path>,
 ) -> AgentCatalogResponse {
     let providers = futures::future::join_all(ADAPTERS.iter().map(|(_, adapter)| async move {
-        let mut entry = adapter.catalog_entry_live_for_cwd(cwd).await;
+        let mut entry = adapter
+            .catalog_entry_live_for_settings(read_pool, cwd)
+            .await;
         let extra = adapter.extra_models(read_pool).await;
         if !extra.is_empty() {
             entry.models = merge_extra_models(entry.models, extra);
@@ -92,9 +94,9 @@ pub async fn provider_catalog_live_for_cwd(
     }
 }
 
-pub async fn provider_default_model(provider_id: &str) -> Option<String> {
+pub async fn provider_default_model(read_pool: &SqlitePool, provider_id: &str) -> Option<String> {
     if let Some(adapter) = runtime_adapter(provider_id) {
-        return adapter.default_model_id().await;
+        return adapter.default_model_id_for_settings(read_pool).await;
     }
 
     None

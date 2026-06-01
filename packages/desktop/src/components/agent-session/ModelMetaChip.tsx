@@ -1,6 +1,7 @@
 import { ChevronDownIcon, Loader2Icon } from "lucide-react";
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { ProviderIcon } from "@/lib/provider-icons";
+import { resolveProviderModelAlias } from "@/lib/provider-model-aliases";
 import { cn } from "@/lib/utils";
 import {
   RuntimeModelPicker,
@@ -76,6 +77,7 @@ export function ModelMetaChip({
             providers={pickerProviders}
             selectedProviderId={currentProviderId}
             selectedModelId={currentModelId}
+            resolveSelectedModelId={resolveProviderModelAlias}
             onAfterSelectClose={onModelSelected}
             onSelect={(providerId, modelId) => {
               if (canChangeProvider && onProviderChange && providerId !== currentProviderId) {

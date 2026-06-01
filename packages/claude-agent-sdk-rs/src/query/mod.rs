@@ -1,7 +1,8 @@
 //! Streaming Claude CLI query module.
 //!
 //! Public surface: [`Query`], [`TurnState`], [`query`],
-//! [`supported_commands`], [`supported_models`].
+//! [`supported_commands`], [`supported_models`],
+//! [`supported_models_with_env`].
 //!
 //! Layout:
 //! - [`turn_state`] — [`TurnState`] enum (turn/UI state machine)
@@ -26,7 +27,7 @@ mod wire;
 #[cfg(test)]
 mod test_support;
 
-pub use metadata::{supported_commands, supported_models};
+pub use metadata::{supported_commands, supported_models, supported_models_with_env};
 pub use query_struct::Query;
 pub use spawn::query;
 pub use turn_state::TurnState;

@@ -155,7 +155,7 @@ async fn run_auto_name(
     let provider_id = provider_settings.auto_name;
     let model_id = match stored_model {
         Some(v) if !v.is_empty() => v,
-        _ => crate::domain::agents::providers::provider_default_model(&provider_id)
+        _ => crate::domain::agents::providers::provider_default_model(pool, &provider_id)
             .await
             .unwrap_or_default(),
     };

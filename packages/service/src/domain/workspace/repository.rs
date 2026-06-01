@@ -72,7 +72,7 @@ pub async fn get_model_settings(pool: &SqlitePool) -> Result<ModelSettings, AppE
 
     for (agent_type, provider_id) in provider_by_agent {
         if !defaults_by_provider.contains_key(provider_id) {
-            let default_model = provider_default_model(provider_id)
+            let default_model = provider_default_model(pool, provider_id)
                 .await
                 .unwrap_or_else(|| "opus".to_string());
             defaults_by_provider.insert(provider_id.to_string(), default_model);

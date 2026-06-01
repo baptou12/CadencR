@@ -9,6 +9,7 @@
 //! [`run_initialize_probe`]; each helper supplies its own extractor for
 //! the field it cares about (`commands` vs `models`).
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::error::SdkError;
@@ -36,6 +37,7 @@ const INIT_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 async fn run_initialize_probe<T, F>(
     cwd: &str,
     path_to_cli: Option<&std::path::Path>,
+    env: Option<HashMap<String, String>>,
     id_prefix: &str,
     extract: F,
 ) -> Result<T, SdkError>
@@ -46,6 +48,7 @@ where
 
     let options = Options {
         cwd: std::path::PathBuf::from(cwd),
+        env,
         ..Options::default()
     };
 
@@ -112,7 +115,7 @@ pub async fn supported_commands(
     cwd: &str,
     path_to_cli: Option<&std::path::Path>,
 ) -> Result<Vec<crate::types::SlashCommand>, SdkError> {
-    run_initialize_probe(cwd, path_to_cli, "init_cmd", |response| {
+    run_initialize_probe(cwd, path_to_cli, None, "init_cmd", |response| {
         let commands = response
             .get("commands")
             .cloned()
@@ -166,7 +169,22 @@ pub async fn supported_models(
     cwd: &str,
     path_to_cli: Option<&std::path::Path>,
 ) -> Result<Vec<crate::types::ModelInfo>, SdkError> {
-    run_initialize_probe(cwd, path_to_cli, "init_models", |response| {
+    supported_models_with_env(cwd, path_to_cli, None).await
+}
+
+/// Fetch the list of models the CLI currently exposes with additional
+/// environment variables layered onto the probe process.
+///
+/// This must be used when the host has a runtime profile that changes Claude
+/// Code's provider backend (for example Bedrock or Vertex), because the CLI
+/// resolves aliases and model metadata during initialize using its process
+/// environment.
+pub async fn supported_models_with_env(
+    cwd: &str,
+    path_to_cli: Option<&std::path::Path>,
+    env: Option<HashMap<String, String>>,
+) -> Result<Vec<crate::types::ModelInfo>, SdkError> {
+    run_initialize_probe(cwd, path_to_cli, env, "init_models", |response| {
         let models = response
             .get("models")
             .cloned()
@@ -181,7 +199,7 @@ mod tests {
     use tempfile::TempDir;
 
     use super::super::test_support::write_mock_cli;
-    use super::{supported_commands, supported_models};
+    use super::{supported_commands, supported_models, supported_models_with_env};
 
     #[tokio::test]
     async fn supported_models_extracts_models_from_control_response() {
@@ -211,6 +229,36 @@ sleep 60
         assert_eq!(models[0].supports_effort, Some(true));
         assert_eq!(models[0].supports_auto_mode, Some(true));
         assert_eq!(models[2].value, "haiku");
+    }
+
+    #[tokio::test]
+    async fn supported_models_with_env_applies_env_to_probe_process() {
+        let dir = TempDir::new().unwrap();
+
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+REQ_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+DESC="${CLAUDE_CODE_USE_BEDROCK:-missing}:${ANTHROPIC_DEFAULT_SONNET_MODEL:-missing}"
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"commands":[],"models":[{"value":"sonnet","displayName":"Sonnet","description":"%s"}],"account":{}}}}\n' "$REQ_ID" "$DESC"
+sleep 60
+"#;
+        let script_path = write_mock_cli(dir.path(), script);
+        let mut env = std::collections::HashMap::new();
+        env.insert("CLAUDE_CODE_USE_BEDROCK".to_string(), "1".to_string());
+        env.insert(
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            "us.anthropic.claude-sonnet-4-6".to_string(),
+        );
+
+        let models = supported_models_with_env("/tmp", Some(script_path.as_path()), Some(env))
+            .await
+            .expect("should return models");
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(
+            models[0].description.as_deref(),
+            Some("1:us.anthropic.claude-sonnet-4-6")
+        );
     }
 
     #[tokio::test]
