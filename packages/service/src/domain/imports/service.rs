@@ -226,6 +226,9 @@ fn load_claude_code_conversation(
     project_path: &str,
     source_session_id: &str,
 ) -> std::io::Result<LoadedSession> {
+    if !is_safe_claude_session_id(source_session_id) {
+        return Ok(LoadedSession::NotFound);
+    }
     let Some(dir) = claude_projects_dir_for(&PathBuf::from(project_path)) else {
         return Ok(LoadedSession::NotFound);
     };
@@ -237,6 +240,13 @@ fn load_claude_code_conversation(
         Some(c) => LoadedSession::Found(c),
         None => LoadedSession::Empty,
     })
+}
+
+fn is_safe_claude_session_id(source_session_id: &str) -> bool {
+    !source_session_id.is_empty()
+        && source_session_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 #[cfg(test)]
@@ -251,59 +261,14 @@ mod tests {
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        sqlx::query(
+        for sql in [
             "CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, path TEXT NOT NULL)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "CREATE TABLE features (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'active',
-                type TEXT NOT NULL DEFAULT 'ws-session',
-                model_session TEXT,
-                agent_runtime_session TEXT
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "CREATE TABLE agent_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                feature_id INTEGER NOT NULL,
-                agent_type TEXT NOT NULL,
-                runtime_provider TEXT,
-                runtime_session_id TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                started_at TEXT,
-                ended_at TEXT,
-                model TEXT
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        sqlx::query(
-            "CREATE TABLE agent_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                message_type TEXT NOT NULL DEFAULT 'text',
-                tool_name TEXT,
-                tool_use_id TEXT,
-                parent_tool_use_id TEXT,
-                model TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
+            "CREATE TABLE features (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', type TEXT NOT NULL DEFAULT 'ws-session', model_session TEXT, agent_runtime_session TEXT)",
+            "CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, feature_id INTEGER NOT NULL, agent_type TEXT NOT NULL, runtime_provider TEXT, runtime_session_id TEXT, status TEXT NOT NULL DEFAULT 'pending', started_at TEXT, ended_at TEXT, model TEXT)",
+            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, message_type TEXT NOT NULL DEFAULT 'text', tool_name TEXT, tool_use_id TEXT, parent_tool_use_id TEXT, model TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        ] {
+            sqlx::query(sql).execute(&pool).await.unwrap();
+        }
         sqlx::query("INSERT INTO projects (id, name, path) VALUES (1, 'p', '/tmp/p')")
             .execute(&pool)
             .await
@@ -385,5 +350,15 @@ mod tests {
             .await
             .unwrap();
         assert!(ids.contains("s1"));
+    }
+
+    #[test]
+    fn claude_session_ids_must_stay_file_stems() {
+        assert!(is_safe_claude_session_id(
+            "00000000-0000-4000-8000-000000000000"
+        ));
+        for unsafe_id in ["../outside", "nested/session", ""] {
+            assert!(!is_safe_claude_session_id(unsafe_id));
+        }
     }
 }
