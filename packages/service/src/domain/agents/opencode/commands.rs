@@ -29,10 +29,9 @@ use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::process::Command;
 use tokio::sync::{broadcast, RwLock};
 
-use super::acp::port::reserve_local_port;
+use super::acp::{acp_command, port::reserve_local_port};
 use crate::domain::agents::acp::incoming::AcpNotification;
 use crate::domain::agents::acp::runtime::events::parse_available_commands;
 use crate::domain::agents::acp::{AcpClient, AcpClientInfo, AcpEvent, AcpSpawnOptions};
@@ -172,15 +171,8 @@ async fn probe_inner(cwd: &str) -> Result<Vec<RuntimeSlashCommand>, RuntimeError
     let port_reservation = reserve_local_port()?;
     let port = port_reservation.port();
     let binary = opencode_sdk_rs::process::resolve_binary().await?;
-    let mut command = Command::new(&binary);
+    let mut command = acp_command(&binary, std::ffi::OsStr::new(cwd), port);
     command
-        .arg("acp")
-        .arg("--cwd")
-        .arg(cwd)
-        .arg("--hostname")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg(port.to_string())
         // Sidecar isn't wired for a probe; disable the question tool so
         // opencode doesn't surface anything that depends on it.
         .env("OPENCODE_ENABLE_QUESTION_TOOL", "0");

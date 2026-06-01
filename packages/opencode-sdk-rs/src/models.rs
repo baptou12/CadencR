@@ -3,7 +3,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
-use tokio::process::Command;
 
 use crate::error::SdkError;
 use crate::process::resolve_binary;
@@ -33,8 +32,14 @@ pub async fn list_models_from_cli() -> Result<ConfigProvidersResponse, SdkError>
 }
 
 pub async fn list_models_from_binary(binary: &Path) -> Result<ConfigProvidersResponse, SdkError> {
-    let mut command = Command::new(binary);
-    command.arg("models").arg("--verbose").kill_on_drop(true);
+    let mut command = cli_discovery::login_shell_exec_command(
+        binary.as_os_str(),
+        [
+            std::ffi::OsString::from("models"),
+            std::ffi::OsString::from("--verbose"),
+        ],
+    );
+    command.kill_on_drop(true);
     let output = tokio::time::timeout(MODELS_CLI_TIMEOUT, command.output())
         .await
         .map_err(|_| SdkError::Timeout("opencode models --verbose".to_string()))??;

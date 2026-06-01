@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
 use tokio::sync::{broadcast, oneshot, Mutex};
 
 use crate::client_io::{spawn_reader, spawn_reaper, spawn_stderr_reader, ReaderState};
@@ -36,8 +35,13 @@ pub struct AppServerSpawnOptions {
 
 impl CodexAppServerClient {
     pub async fn spawn_with_options(options: AppServerSpawnOptions) -> Result<Self, SdkError> {
-        let mut command = Command::new(resolved_codex_command().await?);
-        command.args(app_server_args(&options.enable_features));
+        let binary = resolved_codex_command().await?;
+        let mut command = cli_discovery::login_shell_exec_command(
+            binary.as_os_str(),
+            app_server_args(&options.enable_features)
+                .into_iter()
+                .map(std::ffi::OsString::from),
+        );
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

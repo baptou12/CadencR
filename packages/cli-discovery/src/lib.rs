@@ -11,6 +11,7 @@
 //! exposes the full candidate list so the host app can render a picker UI.
 
 mod shell;
+mod shell_exec;
 mod types;
 mod version;
 mod walk;
@@ -19,6 +20,7 @@ mod walk;
 mod tests_support;
 
 pub use shell::login_shell_path;
+pub use shell_exec::{login_shell_command, login_shell_exec_command};
 pub use types::{Candidate, CandidateSource, DiscoverySpec, VersionKey};
 pub use version::{parse_version_string, query_version};
 

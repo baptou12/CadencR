@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use sqlx::SqlitePool;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 
 use crate::domain::workflow::ws_sender::WsSender;
 
@@ -119,14 +118,12 @@ pub async fn run_setup_commands(
         .filter(|l| !l.trim().is_empty())
         .collect();
     let log_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
     for cmd in commands {
         if !run_one_command(
             &write_pool,
             feature_id,
             &worktree_path,
             &ws_sender,
-            &shell,
             cmd,
             &log_lines,
         )
@@ -160,7 +157,6 @@ async fn run_one_command(
     feature_id: i64,
     worktree_path: &std::path::Path,
     ws_sender: &WsSender,
-    shell: &str,
     cmd: &str,
     log_lines: &Arc<tokio::sync::Mutex<Vec<String>>>,
 ) -> bool {
@@ -177,9 +173,8 @@ async fn run_one_command(
         }),
     );
 
-    let mut child = match Command::new(shell)
-        .args(["-i", "-c", cmd])
-        .current_dir(worktree_path)
+    let mut command = crate::shared::user_shell::command(cmd, worktree_path);
+    let mut child = match command
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -252,4 +247,77 @@ where
             );
         }
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shared::test_env::{env_lock, EnvVarGuard};
+    use sqlx::sqlite::SqlitePoolOptions;
+    use std::os::unix::fs::PermissionsExt;
+
+    async fn setup_pool(command: &str) -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .connect(":memory:")
+            .await
+            .expect("pool");
+        sqlx::query("CREATE TABLE features (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL)")
+            .execute(&pool)
+            .await
+            .expect("features table");
+        sqlx::query(
+            "CREATE TABLE project_settings (project_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(project_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .expect("project_settings table");
+        sqlx::query(
+            "CREATE TABLE feature_settings (feature_id INTEGER, key TEXT, value TEXT, PRIMARY KEY(feature_id, key))",
+        )
+        .execute(&pool)
+        .await
+        .expect("feature_settings table");
+        sqlx::query("INSERT INTO features (id, project_id) VALUES (1, 7)")
+            .execute(&pool)
+            .await
+            .expect("feature row");
+        sqlx::query(
+            "INSERT INTO project_settings (project_id, key, value) VALUES (7, 'setup_worktree', ?)",
+        )
+        .bind(command)
+        .execute(&pool)
+        .await
+        .expect("setup setting");
+        pool
+    }
+
+    #[tokio::test]
+    async fn run_setup_commands_does_not_start_interactive_shell_without_pty() {
+        let _guard = env_lock().lock().expect("env lock");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let shell = temp.path().join("fake-shell.sh");
+        std::fs::write(
+            &shell,
+            "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"-i\" ]; then\n    echo 'interactive shell without pty' >&2\n    exit 42\n  fi\ndone\nif [ \"$1\" = \"-l\" ]; then shift; fi\nexec /bin/sh \"$@\"\n",
+        )
+        .expect("write fake shell");
+        let mut perms = std::fs::metadata(&shell).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&shell, perms).expect("chmod");
+
+        let _shell_guard = EnvVarGuard::set("SHELL", shell.to_string_lossy().as_ref());
+        let worktree = temp.path().join("worktree");
+        std::fs::create_dir(&worktree).expect("worktree dir");
+        let pool = setup_pool("printf ok > setup.out").await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        run_setup_commands(pool.clone(), pool.clone(), 1, worktree.clone(), tx).await;
+
+        let step = super::super::db::get_setting(&pool, 1, "worktree_setup_step").await;
+        assert_eq!(step.as_deref(), Some("ready"));
+        assert_eq!(
+            std::fs::read_to_string(worktree.join("setup.out")).expect("setup output"),
+            "ok"
+        );
+    }
 }

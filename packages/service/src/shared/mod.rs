@@ -9,4 +9,5 @@ pub mod slug;
 pub mod ssh_env;
 #[cfg(test)]
 pub mod test_env;
+pub mod user_shell;
 pub mod worktree_paths;
