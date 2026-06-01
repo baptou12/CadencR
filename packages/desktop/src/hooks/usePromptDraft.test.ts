@@ -10,15 +10,16 @@ const mockFeatureSettingsData = vi.fn(
 const mockFeatureSettingsIsError = vi.fn((): boolean => false);
 const mockFeatureSettingsError = vi.fn((): Error | null => null);
 const mockSetQueryData = vi.fn();
-let setFeatureSettingOptions: {
-  mutation?: {
-    onError?: (error: unknown) => void;
-    onSuccess?: (
-      data: unknown,
-      variables: { id: number; data: { key: string; value: string } },
-    ) => void;
-  };
-} | null = null;
+
+interface SetFeatureSettingVariables {
+  id: number;
+  data: { key: string; value: string };
+}
+
+interface MutationCallbacks {
+  onError?: (error: unknown) => void;
+  onSuccess?: (data: unknown, variables: SetFeatureSettingVariables) => void;
+}
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn() },
@@ -30,16 +31,17 @@ vi.mock("@tanstack/react-query", () => ({
 
 vi.mock("../api/generated", () => ({
   getGetFeatureSettingsQueryKey: (id?: number) => [`/api/features/${id}/settings`],
-  useSetFeatureSetting: vi.fn((options) => {
-    setFeatureSettingOptions = options;
-    return { mutate: mockSetFeatureSettingMutate };
-  }),
+  useSetFeatureSetting: vi.fn(() => ({ mutate: mockSetFeatureSettingMutate })),
   useGetFeatureSettings: vi.fn(() => ({
     data: mockFeatureSettingsData(),
     isError: mockFeatureSettingsIsError(),
     error: mockFeatureSettingsError(),
   })),
 }));
+
+function mutationCallbacksAt(index: number): MutationCallbacks | undefined {
+  return mockSetFeatureSettingMutate.mock.calls[index]?.[1] as MutationCallbacks | undefined;
+}
 
 describe("usePromptDraft", () => {
   beforeEach(() => {
@@ -50,7 +52,6 @@ describe("usePromptDraft", () => {
     mockFeatureSettingsIsError.mockReturnValue(false);
     mockFeatureSettingsError.mockReturnValue(null);
     mockSetQueryData.mockClear();
-    setFeatureSettingOptions = null;
     vi.mocked(toast.error).mockClear();
   });
 
@@ -110,18 +111,23 @@ describe("usePromptDraft", () => {
     act(() => result.current.saveDraft("feature-local draft"));
     act(() => vi.advanceTimersByTime(500));
 
-    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
-      id: 7,
-      data: { key: "draft_prompt", value: "feature-local draft" },
-    });
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith(
+      {
+        id: 7,
+        data: { key: "draft_prompt", value: "feature-local draft" },
+      },
+      expect.any(Object),
+    );
   });
 
   it("patches the owning feature settings cache only after save succeeds", () => {
-    renderHook(() => usePromptDraft({ featureId: 7 }));
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
 
     expect(mockSetQueryData).not.toHaveBeenCalled();
+    act(() => result.current.saveDraft("saved after confirmation"));
+    act(() => vi.advanceTimersByTime(500));
 
-    setFeatureSettingOptions?.mutation?.onSuccess?.(undefined, {
+    mutationCallbacksAt(0)?.onSuccess?.(undefined, {
       id: 7,
       data: { key: "draft_prompt", value: "saved after confirmation" },
     });
@@ -143,9 +149,12 @@ describe("usePromptDraft", () => {
   });
 
   it("does not allocate a new settings cache value for unchanged drafts", () => {
-    renderHook(() => usePromptDraft({ featureId: 7 }));
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
 
-    setFeatureSettingOptions?.mutation?.onSuccess?.(undefined, {
+    act(() => result.current.saveDraft("same draft"));
+    act(() => vi.advanceTimersByTime(500));
+
+    mutationCallbacksAt(0)?.onSuccess?.(undefined, {
       id: 7,
       data: { key: "draft_prompt", value: "same draft" },
     });
@@ -171,10 +180,13 @@ describe("usePromptDraft", () => {
     act(() => vi.advanceTimersByTime(500));
 
     expect(mockSetFeatureSettingMutate).toHaveBeenCalledTimes(1);
-    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
-      id: 7,
-      data: { key: "draft_prompt", value: "abc" },
-    });
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith(
+      {
+        id: 7,
+        data: { key: "draft_prompt", value: "abc" },
+      },
+      expect.any(Object),
+    );
   });
 
   it("flushes a pending draft on unmount", () => {
@@ -183,10 +195,13 @@ describe("usePromptDraft", () => {
     act(() => result.current.saveDraft("pending on unmount"));
     unmount();
 
-    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
-      id: 7,
-      data: { key: "draft_prompt", value: "pending on unmount" },
-    });
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith(
+      {
+        id: 7,
+        data: { key: "draft_prompt", value: "pending on unmount" },
+      },
+      expect.any(Object),
+    );
   });
 
   it("does not save when no feature owns the prompt", () => {
@@ -204,18 +219,38 @@ describe("usePromptDraft", () => {
     act(() => result.current.saveDraft(null));
     act(() => vi.advanceTimersByTime(500));
 
-    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith({
+    expect(mockSetFeatureSettingMutate).toHaveBeenCalledWith(
+      {
+        id: 7,
+        data: { key: "draft_prompt", value: "" },
+      },
+      expect.any(Object),
+    );
+  });
+
+  it("ignores an older save confirmation after a newer clear was requested", () => {
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+
+    act(() => result.current.saveDraft("already sent"));
+    act(() => vi.advanceTimersByTime(500));
+    act(() => result.current.saveDraft(null));
+
+    mutationCallbacksAt(0)?.onSuccess?.(undefined, {
       id: 7,
-      data: { key: "draft_prompt", value: "" },
+      data: { key: "draft_prompt", value: "already sent" },
     });
+
+    expect(mockSetQueryData).not.toHaveBeenCalled();
   });
 
   it("surfaces draft load and save failures to the user", () => {
     mockFeatureSettingsIsError.mockReturnValue(true);
     mockFeatureSettingsError.mockReturnValue(new Error("load failed"));
 
-    renderHook(() => usePromptDraft({ featureId: 7 }));
-    setFeatureSettingOptions?.mutation?.onError?.(new Error("save failed"));
+    const { result } = renderHook(() => usePromptDraft({ featureId: 7 }));
+    act(() => result.current.saveDraft("will fail"));
+    act(() => vi.advanceTimersByTime(500));
+    mutationCallbacksAt(0)?.onError?.(new Error("save failed"));
 
     expect(toast.error).toHaveBeenCalledWith("Could not load draft: load failed");
     expect(toast.error).toHaveBeenCalledWith("Could not save draft: save failed");

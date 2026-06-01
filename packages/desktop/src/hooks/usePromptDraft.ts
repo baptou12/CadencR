@@ -55,41 +55,45 @@ export function usePromptDraft({ featureId }: UsePromptDraftOptions): UsePromptD
   const featureSettingsQuery = useGetFeatureSettings(featureId ?? 0, {
     query: { enabled: !!featureId },
   });
-  const { mutate: saveFeatureSetting } = useSetFeatureSetting({
-    mutation: {
-      onSuccess: (_data, variables) => {
-        if (variables.data.key !== FEATURE_DRAFT_KEY) return;
-        queryClient.setQueryData(
-          getGetFeatureSettingsQueryKey(variables.id),
-          (settings: FeatureSetting[] | undefined) =>
-            upsertDraftSetting(settings, variables.data.value),
-        );
-      },
-      onError: (error: unknown) => {
-        toast.error(`Could not save draft: ${apiErrorMessage(error, "Unknown error")}`);
-      },
-    },
-  });
+  const { mutate: saveFeatureSetting } = useSetFeatureSetting();
 
   const restoredFromSettings = useMemo(
     () => draftFromSettings(featureSettingsQuery.data),
     [featureSettingsQuery.data],
   );
-  const pendingRef = useRef<string | null | undefined>(undefined);
+  const pendingRef = useRef<{ value: string | null; seq: number } | undefined>(undefined);
+  const requestSeqRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushSave = useCallback(
     (targetFeatureId: number | undefined): void => {
       if (pendingRef.current === undefined) return;
-      const draft = pendingRef.current;
+      const draft = pendingRef.current.value;
+      const requestSeq = pendingRef.current.seq;
       pendingRef.current = undefined;
       if (!targetFeatureId) return;
-      saveFeatureSetting({
-        id: targetFeatureId,
-        data: { key: FEATURE_DRAFT_KEY, value: draft ?? "" },
-      });
+      saveFeatureSetting(
+        {
+          id: targetFeatureId,
+          data: { key: FEATURE_DRAFT_KEY, value: draft ?? "" },
+        },
+        {
+          onSuccess: (_data, variables): void => {
+            if (requestSeqRef.current !== requestSeq) return;
+            queryClient.setQueryData(
+              getGetFeatureSettingsQueryKey(variables.id),
+              (settings: FeatureSetting[] | undefined) =>
+                upsertDraftSetting(settings, variables.data.value),
+            );
+          },
+          onError: (error: unknown): void => {
+            if (requestSeqRef.current !== requestSeq) return;
+            toast.error(`Could not save draft: ${apiErrorMessage(error, "Unknown error")}`);
+          },
+        },
+      );
     },
-    [saveFeatureSetting],
+    [queryClient, saveFeatureSetting],
   );
 
   useEffect(() => {
@@ -111,7 +115,9 @@ export function usePromptDraft({ featureId }: UsePromptDraftOptions): UsePromptD
 
   const saveDraft = useCallback(
     (text: string | null): void => {
-      pendingRef.current = text;
+      const requestSeq = requestSeqRef.current + 1;
+      requestSeqRef.current = requestSeq;
+      pendingRef.current = { value: text, seq: requestSeq };
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
