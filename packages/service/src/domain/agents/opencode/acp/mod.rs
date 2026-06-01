@@ -21,10 +21,11 @@ mod question_sidecar;
 // do not remove this workaround directory just because the old transport is gone.
 mod upstream_workaround;
 
+use std::ffi::{OsStr, OsString};
+use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::Value;
-use tokio::process::Command;
 
 use crate::domain::agents::acp::runtime::{spawn_acp_runtime_session, AcpRuntimeSpawnArgs};
 use crate::domain::agents::acp::AcpClientInfo;
@@ -50,6 +51,25 @@ pub(super) async fn session_finished(_runtime_session_id: &str) -> bool {
     false
 }
 
+pub(in crate::domain::agents::opencode) fn acp_command(
+    binary: &Path,
+    cwd: &OsStr,
+    port: u16,
+) -> tokio::process::Command {
+    cli_discovery::login_shell_exec_command(
+        binary.as_os_str(),
+        [
+            OsString::from("acp"),
+            OsString::from("--cwd"),
+            cwd.to_os_string(),
+            OsString::from("--hostname"),
+            OsString::from("127.0.0.1"),
+            OsString::from("--port"),
+            OsString::from(port.to_string()),
+        ],
+    )
+}
+
 /// Entry point invoked by `OpenCodeAdapter::spawn`. ACP is the only
 /// supported OpenCode transport.
 pub(super) async fn spawn_acp_session(
@@ -60,15 +80,7 @@ pub(super) async fn spawn_acp_session(
     let reserved_question_port = reserve_local_port()?;
     let question_port = reserved_question_port.port();
     let instructions_dir = apply_instruction_config(&mut config)?;
-    let mut command = Command::new(&binary);
-    command
-        .arg("acp")
-        .arg("--cwd")
-        .arg(config.cwd.as_path())
-        .arg("--hostname")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg(question_port.to_string());
+    let mut command = acp_command(&binary, config.cwd.as_os_str(), question_port);
     // Opt into OpenCode's interactive `question` tool. Disabled by default
     // in ACP mode (PR opencode#11379) because some clients can't render
     // multi-option prompts. Cadencr DOES — we route the tool_call through

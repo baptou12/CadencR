@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::Value;
+use tokio::process::Command;
+
+const SAFE_PATH: &str = "/usr/bin:/bin:/usr/sbin:/sbin";
 
 /// Resolve the cwd for `terminal/create`, defaulting to the session cwd
 /// and rejecting anything that escapes the sandbox. The path may not
@@ -80,6 +83,31 @@ pub(super) fn parse_acp_env(
         -32602,
         "terminal/create: 'env' must be an array of {name,value} or an object".to_string(),
     ))
+}
+
+/// Apply the environment for an agent-requested terminal command.
+///
+/// ACP `terminal/create` commands are selected by the agent/provider, not by
+/// Cadencr or the user. Do not implicitly pass the service process' hydrated
+/// login-shell environment here: it can contain tokens, SSH sockets, cloud
+/// credentials, and other user secrets. Start from a small baseline required
+/// for normal local process execution, then overlay explicit ACP env entries.
+pub(super) fn apply_restricted_env(cmd: &mut Command, env: &HashMap<String, String>) {
+    cmd.env_clear();
+    cmd.env("PATH", SAFE_PATH);
+    copy_parent_if_present(cmd, "HOME");
+    copy_parent_if_present(cmd, "LANG");
+    copy_parent_if_present(cmd, "LC_ALL");
+    copy_parent_if_present(cmd, "LC_CTYPE");
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
+}
+
+fn copy_parent_if_present(cmd: &mut Command, key: &str) {
+    if let Some(value) = std::env::var_os(key) {
+        cmd.env(key, value);
+    }
 }
 
 fn parse_env_array(array: &[Value]) -> Result<HashMap<String, String>, (i64, String)> {

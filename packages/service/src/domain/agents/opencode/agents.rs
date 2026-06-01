@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use crate::domain::agents::adapter::RuntimeError;
@@ -72,12 +71,14 @@ async fn cache_modes(cwd: PathBuf, modes: Vec<ProviderModeCatalogEntry>) {
 
 async fn list_agents_output(cwd: &Path) -> Result<String, RuntimeError> {
     let binary = opencode_sdk_rs::process::resolve_binary().await?;
-    let mut command = Command::new(binary);
-    command
-        .arg("agent")
-        .arg("list")
-        .current_dir(cwd)
-        .kill_on_drop(true);
+    let mut command = cli_discovery::login_shell_exec_command(
+        binary.as_os_str(),
+        [
+            std::ffi::OsString::from("agent"),
+            std::ffi::OsString::from("list"),
+        ],
+    );
+    command.current_dir(cwd).kill_on_drop(true);
     let output = tokio::time::timeout(AGENT_LIST_TIMEOUT, command.output())
         .await
         .map_err(|_| RuntimeError::new("opencode agent list timed out"))?

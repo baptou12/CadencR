@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use sqlx::SqlitePool;
 use tokio::io::AsyncReadExt;
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tracing::warn;
@@ -259,26 +259,13 @@ fn signal_group(child: &Child, sig: i32) {
     }
 }
 
-/// Spawn `$SHELL -l -c <command>` in `cwd`.
+/// Spawn the shared user-shell command in `cwd`.
 ///
-/// Runs through the user's **login** shell so the command inherits the same
-/// `PATH`/environment the user gets in their terminal. Electron spawns the
-/// service sidecar with a minimal environment that misses tools installed via
-/// login profiles (Homebrew, asdf, nvm, …); a login shell sources those
-/// profiles. Falls back to a plain `/bin/sh -c` only when `$SHELL` is unset.
+/// The shared helper uses a login shell and inherits the process environment
+/// that service startup already hydrated from the user's shell.
 fn spawn_shell(command: &str, cwd: &str) -> std::io::Result<Child> {
-    let (shell, login) = match std::env::var("SHELL") {
-        Ok(s) if !s.trim().is_empty() => (s, true),
-        _ => ("/bin/sh".to_string(), false),
-    };
-    let mut cmd = Command::new(&shell);
-    if login {
-        cmd.arg("-l");
-    }
-    cmd.arg("-c")
-        .arg(command)
-        .current_dir(cwd)
-        .stdin(std::process::Stdio::null())
+    let mut cmd = crate::shared::user_shell::command(command, std::path::Path::new(cwd));
+    cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     // Run in its own process group so cancellation can signal the shell and

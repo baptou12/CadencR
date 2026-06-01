@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 use super::terminal_io::{
     build_output_payload, exit_signal, spawn_pumps, ExitInfo, TerminalOutput,
 };
-use super::terminal_sandbox::{parse_acp_env, resolve_sandboxed_cwd};
+use super::terminal_sandbox::{apply_restricted_env, parse_acp_env, resolve_sandboxed_cwd};
 
 const DEFAULT_OUTPUT_LIMIT: usize = 1024 * 1024; // 1 MiB
 
@@ -97,9 +97,7 @@ impl TerminalRegistry {
         };
         let mut cmd = Command::new(command);
         cmd.args(&args).current_dir(&cwd);
-        for (key, value) in env.iter() {
-            cmd.env(key, value);
-        }
+        apply_restricted_env(&mut cmd, &env);
         cmd.stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::null())
@@ -254,6 +252,7 @@ impl TerminalRegistry {
 #[cfg(test)]
 mod tests {
     use super::TerminalRegistry;
+    use crate::shared::test_env::{env_lock, EnvVarGuard};
     use serde_json::json;
     use std::path::PathBuf;
 
@@ -327,6 +326,28 @@ mod tests {
         let _ = registry.wait_for_exit(&id).await.unwrap();
         let out = registry.output(&id).await.unwrap();
         assert_eq!(out["output"].as_str().unwrap(), "ok");
+        let _ = registry.release(&id).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn create_does_not_leak_parent_secret_env_by_default() {
+        let _guard = env_lock().lock().expect("env lock");
+        let _secret = EnvVarGuard::set("CADENCR_TEST_AGENT_SECRET", "leaked");
+        let registry = TerminalRegistry::default();
+        let result = registry
+            .create(
+                &json!({
+                    "command": "sh",
+                    "args": ["-c", "printf %s \"${CADENCR_TEST_AGENT_SECRET-unset}\""],
+                }),
+                &std::env::temp_dir(),
+            )
+            .await
+            .expect("create ok");
+        let id = result["terminalId"].as_str().unwrap().to_string();
+        let _ = registry.wait_for_exit(&id).await.unwrap();
+        let out = registry.output(&id).await.unwrap();
+        assert_eq!(out["output"].as_str().unwrap(), "unset");
         let _ = registry.release(&id).await.unwrap();
     }
 
