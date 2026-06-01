@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3.3 - 2026-06-01
+
+Previous release: v0.3.2 - 2026-05-27
+
+### ✨ Added
+
+- [**Desktop**] Added conversation imports for existing Claude Code, Codex CLI, and OpenCode sessions so prior agent work can be brought into a project as Cadencr features with provider and model context preserved.
+
+### 🔧 Changed
+
+- [**Desktop**] Reworked custom actions so the header shows up to four actions inline, inline and overflow actions share the same live output/details surface, and long-running manual runs remain visible and cancellable after menus close.
+- [**Desktop**] Made archive cleanup safer by disabling destructive cleanup choices that would target the default branch or the main worktree.
+- [**provider:claude**] Kept Claude bypass available as an explicit permission mode in the selector and Shift+Tab cycle while separating it from the underlying launch capability.
+
+### 🐛 Fixed
+
+- [**provider:claude**] Fixed Claude Code model handling on Anthropic, Bedrock, and Vertex by applying profile env to model discovery, preserving Claude Code's default system prompt, and resolving stored aliases to the active catalog model at launch.
+- [**provider:claude**] Fixed Claude bypass reliability so sessions spawned without the capability can rearm before the next prompt and resume in the requested bypass mode.
+- [**Desktop**] Fixed prompt drafts so they stay scoped to the feature instead of leaking or restoring across conversation switches.
+- [**Desktop**] Fixed the sidebar label editor so rename opens reliably after the context menu closes.
+- [**Desktop**] Fixed the Terminal tab so closing the last pane immediately starts a fresh focused terminal instead of leaving a blank panel.
+
+### 🔒 Security
+
+- [**Backend**] Hardened managed npm language-server installs by keeping lifecycle scripts disabled, requiring packages to be at least 14 days old, and enabling stricter pnpm trust controls.
+- [**provider:claude**] Constrained Claude Code import session IDs to safe file names before loading local transcript files.
+
 ## v0.3.2 - 2026-05-27
 
 Previous release: v0.3.1 - 2026-05-25
