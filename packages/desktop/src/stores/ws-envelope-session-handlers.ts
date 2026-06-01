@@ -53,6 +53,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     lifecycle: transitionTurn(session.lifecycle, { type: "initialized" }),
     supportsPromptReceipts: p.supports_prompt_receipts ?? false,
   };
+  if (p.sessionDbId != null) updates.sessionDbId = p.sessionDbId;
   if (p.provider) {
     updates.currentProviderId = p.provider;
     updates.runtimeProvider = p.provider;

@@ -91,6 +91,7 @@ export function parseRuntimeSessionIdPayload(
 
 export function parseInitializedPayload(payload: unknown): {
   session_id?: string;
+  sessionDbId?: number;
   provider?: string;
   model?: string;
   thinking_effort?: string;
@@ -102,8 +103,11 @@ export function parseInitializedPayload(payload: unknown): {
 } | null {
   const record = asRecord(payload);
   if (!record) return null;
+  const explicitSessionDbId = optionalNumber(record, "session_db_id");
+  const sessionId = optionalString(record, "session_id");
   return {
-    session_id: optionalString(record, "session_id"),
+    session_id: sessionId,
+    sessionDbId: explicitSessionDbId ?? sessionDbIdFromSessionId(sessionId),
     provider: optionalString(record, "provider"),
     model: optionalString(record, "model"),
     thinking_effort: optionalString(record, "thinking_effort"),
@@ -113,6 +117,12 @@ export function parseInitializedPayload(payload: unknown): {
     context_window: optionalNumber(record, "context_window"),
     supports_prompt_receipts: optionalBoolean(record, "supports_prompt_receipts"),
   };
+}
+
+function sessionDbIdFromSessionId(value: string | undefined): number | undefined {
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 export function parseModelPayload(payload: unknown): {
