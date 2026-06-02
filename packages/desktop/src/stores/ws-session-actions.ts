@@ -202,6 +202,7 @@ export function applyPersistedState(
     currentModelId,
     runtimeProvider,
     runtimeSessionId,
+    permissionMode,
     codexPermissionMode,
     pendingPlanApproval,
     pendingPermission: pendingPermissionSnapshot,
@@ -268,6 +269,12 @@ export function applyPersistedState(
       shouldPreservePromptLifecycle && existing ? existing.lifecycle : lifecycleWithPendingGate,
     ...(resolvedProviderId ? { currentProviderId: resolvedProviderId } : {}),
     ...(currentModelId ? { currentModelId } : {}),
+    // Rehydrate the persisted permission mode so sticky modes (notably
+    // `bypassPermissions`) survive a store re-seed — app relaunch, dev HMR
+    // reload, or a session entry rebuilt after a dropped connection. Without
+    // this the entry keeps the `createSessionEntry` default (`acceptEdits`)
+    // and the mode silently reverts. Mirrors `codexPermissionMode` above.
+    ...(permissionMode ? { permissionMode } : {}),
     ...(codexPermissionMode
       ? { codexPermissionMode: parseCodexPermissionMode(codexPermissionMode) }
       : {}),

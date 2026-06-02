@@ -301,6 +301,25 @@ describe("useWebSocketSession", () => {
     );
   });
 
+  it("settles persistedLoaded when the snapshot fetch fails so init is never blocked", async () => {
+    const { useGetFeatureAgentState } = await import("@/api/generated");
+    const mockedQuery = useGetFeatureAgentState as ReturnType<typeof vi.fn>;
+    mockedQuery.mockReturnValue({ data: undefined, isError: true });
+
+    renderHook(() => useWebSocketSession("snapshot-error", 42));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The auto-init effect gates on `persistedLoaded`; a failed snapshot must
+    // still settle the gate or `session.init` would hang forever.
+    expect(useWsSessionStore.getState().sessions["snapshot-error"]?.persistedLoaded).toBe(true);
+
+    // Restore the default mock return so later tests aren't affected.
+    mockedQuery.mockReturnValue({ data: undefined, isLoading: false });
+  });
+
   it("initSession sends correct envelope", async () => {
     const { result } = renderHook(() => useWebSocketSession("test-id"));
     await act(async () => {
