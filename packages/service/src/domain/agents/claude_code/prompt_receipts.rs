@@ -22,6 +22,12 @@ impl ClaudePromptReceipts {
     pub(super) fn enqueue(&self, client_message_id: String, content: &Value) {
         let expected_text = normalize_text(&content_text(content));
         let mut pending = self.pending.lock().expect("ClaudePromptReceipts poisoned");
+        if pending
+            .iter()
+            .any(|receipt| receipt.client_message_id == client_message_id)
+        {
+            return;
+        }
         pending.push_back(PendingClaudePromptReceipt {
             client_message_id,
             expected_text,
@@ -116,6 +122,30 @@ mod tests {
                 }))
                 .is_none(),
             "receipt should be consumed exactly once"
+        );
+    }
+
+    #[test]
+    fn duplicate_client_message_id_is_idempotent() {
+        let receipts = ClaudePromptReceipts::default();
+        receipts.enqueue("client-1".to_string(), &json!("hello Claude"));
+        receipts.enqueue("client-1".to_string(), &json!("hello Claude"));
+
+        let first = receipts
+            .acknowledge_replay(&json!({
+                "role": "user",
+                "content": "hello Claude"
+            }))
+            .expect("first receipt");
+        let second = receipts.acknowledge_replay(&json!({
+            "role": "user",
+            "content": "hello Claude"
+        }));
+
+        assert_eq!(first.prompt_received_client_message_id(), Some("client-1"));
+        assert!(
+            second.is_none(),
+            "replaying a pending prompt must not enqueue a duplicate receipt"
         );
     }
 

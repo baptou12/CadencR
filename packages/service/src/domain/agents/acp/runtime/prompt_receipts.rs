@@ -34,6 +34,13 @@ impl PendingPromptReceipts {
     pub fn enqueue(&self, client_message_id: String, prompt: &[Value]) {
         let expected_text = normalize_text(&prompt_text(prompt));
         let mut pending = self.pending.lock().expect("PendingPromptReceipts poisoned");
+        if pending
+            .receipts
+            .iter()
+            .any(|receipt| receipt.client_message_id == client_message_id)
+        {
+            return;
+        }
         let enqueue_agent_message_generation = pending.agent_message_generation;
         pending.receipts.push_back(PendingPromptReceipt {
             client_message_id,
@@ -236,6 +243,30 @@ mod tests {
             .expect("receipt");
 
         assert_eq!(event.prompt_received_client_message_id(), Some("client-1"));
+    }
+
+    #[test]
+    fn duplicate_client_message_id_is_idempotent() {
+        let receipts = PendingPromptReceipts::default();
+        receipts.enqueue(
+            "client-1".to_string(),
+            &[json!({"type": "text", "text": "hello"})],
+        );
+        receipts.enqueue(
+            "client-1".to_string(),
+            &[json!({"type": "text", "text": "hello"})],
+        );
+
+        let first = receipts
+            .acknowledge_client_message_id("client-1")
+            .expect("first receipt");
+        let second = receipts.acknowledge_client_message_id("client-1");
+
+        assert_eq!(first.prompt_received_client_message_id(), Some("client-1"));
+        assert!(
+            second.is_none(),
+            "replaying a pending prompt must not enqueue a duplicate receipt"
+        );
     }
 
     #[test]

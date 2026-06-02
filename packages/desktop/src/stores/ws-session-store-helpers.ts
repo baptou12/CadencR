@@ -81,7 +81,10 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
   envelopes.push(createModeSet(session.serverSessionId, session.permissionMode));
   for (const prompt of session.queuedPrompts) {
     envelopes.push(
-      createPromptSend(session.serverSessionId, prompt.text, prompt.images, prompt.useWorktree),
+      createPromptSend(session.serverSessionId, prompt.text, {
+        images: prompt.images,
+        useWorktree: prompt.useWorktree,
+      }),
     );
   }
   return envelopes;

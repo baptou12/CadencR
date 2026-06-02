@@ -53,19 +53,25 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
   });
 }
 
+export interface PromptSendOptions {
+  images?: Array<{ base64: string; mimeType: string }>;
+  useWorktree?: boolean;
+  clientMessageId?: string;
+  replay?: boolean;
+}
+
 export function createPromptSend(
   sessionId: string,
   text: string,
-  images?: Array<{ base64: string; mimeType: string }>,
-  useWorktree?: boolean,
-  clientMessageId?: string,
+  options: PromptSendOptions = {},
 ): WsEnvelope {
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
-    ...(images && images.length > 0 ? { images } : {}),
-    ...(useWorktree ? { use_worktree: true } : {}),
-    ...(clientMessageId ? { client_message_id: clientMessageId } : {}),
+    ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
+    ...(options.useWorktree ? { use_worktree: true } : {}),
+    ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
+    ...(options.replay ? { replay: true } : {}),
   });
 }
 

@@ -177,8 +177,8 @@ pub(crate) async fn handle_prompt_send(
 
             // Persist user message (session row already exists from handle_init).
             let write_pool = app_state.write_pool.clone();
-            let persist_content = build_persist_content(&payload.text, &payload.images);
-            {
+            if !payload.replay {
+                let persist_content = build_persist_content(&payload.text, &payload.images);
                 let p = WsSessionPersistence::with_session_id(
                     write_pool.clone(),
                     feature_id,
@@ -439,13 +439,15 @@ pub(crate) async fn handle_prompt_send(
             drop(sessions);
 
             // Persist follow-up user message.
-            let persist_content = build_persist_content(&payload.text, &payload.images);
-            let p = WsSessionPersistence::with_session_id(
-                write_pool.clone(),
-                feature_id,
-                Some(db_session_id),
-            );
-            p.persist_user_message(&persist_content).await;
+            if !payload.replay {
+                let persist_content = build_persist_content(&payload.text, &payload.images);
+                let p = WsSessionPersistence::with_session_id(
+                    write_pool.clone(),
+                    feature_id,
+                    Some(db_session_id),
+                );
+                p.persist_user_message(&persist_content).await;
+            }
 
             // Follow-up turns re-enter the "agent working" state. The stream
             // reader is already running (same runtime as turn 1), so it's
