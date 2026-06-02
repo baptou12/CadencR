@@ -1,4 +1,5 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
+import { parseUserMessageContent } from "@/types/agent-types";
 import type { PromptDeliveryState } from "@/types/agent";
 
 export interface LocalUserMessageOptions {
@@ -9,6 +10,12 @@ export interface LocalUserMessageOptions {
 export interface DeferredPromptTurnBoundary {
   blocks: AgentBlockData[];
   shouldDefer: boolean;
+}
+
+export interface PendingPromptReplay {
+  clientMessageId: string;
+  text: string;
+  images?: Array<{ base64: string; mimeType: string }>;
 }
 
 export function movePendingPromptBlocksToTail(blocks: AgentBlockData[]): AgentBlockData[] {
@@ -62,6 +69,30 @@ export function removePendingPromptBlocks(blocks: AgentBlockData[]): AgentBlockD
   if (!blocks.some(isPendingPromptBlock)) return blocks;
   const next = blocks.filter((block) => !isPendingPromptBlock(block));
   return next.length === blocks.length ? blocks : next;
+}
+
+export function collectPendingPromptReplays(blocks: AgentBlockData[]): PendingPromptReplay[] {
+  return blocks.flatMap((block) => {
+    if (
+      block.type !== "user_message" ||
+      block.promptDeliveryState !== "pending_agent" ||
+      !block.clientMessageId
+    ) {
+      return [];
+    }
+    const parsed = parseUserMessageContent(block.content);
+    const images = parsed.images.map((image) => ({
+      base64: image.data,
+      mimeType: image.mediaType,
+    }));
+    return [
+      {
+        clientMessageId: block.clientMessageId,
+        text: parsed.text,
+        ...(images.length > 0 ? { images } : {}),
+      },
+    ];
+  });
 }
 
 function isPendingPromptBlock(block: AgentBlockData): boolean {

@@ -131,6 +131,8 @@ pub struct PromptSendPayload {
     pub use_worktree: Option<bool>,
     #[serde(default)]
     pub client_message_id: Option<String>,
+    #[serde(default)]
+    pub replay: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -543,6 +545,7 @@ mod tests {
             images: vec![],
             use_worktree: None,
             client_message_id: None,
+            replay: false,
         };
         let v = serde_json::to_value(&p).unwrap();
         let _: PromptSendPayload = serde_json::from_value(v).unwrap();

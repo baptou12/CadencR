@@ -67,6 +67,7 @@ import type { PermissionDecisionValue } from "@/components/ToolPermissionPrompt"
 import { isTurnActive, transitionTurn } from "./ws-turn-lifecycle";
 import { advancePendingPermissionQueue } from "@/lib/pending-permission-queue";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import { collectPendingPromptReplays } from "./ws-pending-prompts";
 
 import { blocksPatchWithDerived, createStreamingState } from "./ws-message-processing";
 export type { PermissionMode, PendingPlanApproval } from "./ws-session-types";
@@ -374,7 +375,11 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
       if (session.serverSessionId) {
         sendRaw(
           sessionId,
-          createPromptSend(session.serverSessionId, text, images, useWorktree, clientMessageId),
+          createPromptSend(session.serverSessionId, text, {
+            images,
+            useWorktree,
+            clientMessageId,
+          }),
         );
       } else {
         queuePrompt(sessionId, text, images, useWorktree);
@@ -507,6 +512,17 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     interrupt(sessionId: string) {
       const session = getSession(sessionId);
       sendRaw(sessionId, createInterrupt(session.serverSessionId));
+      if (!session.serverSessionId) return;
+      for (const replay of collectPendingPromptReplays(session.blocks)) {
+        sendRaw(
+          sessionId,
+          createPromptSend(session.serverSessionId, replay.text, {
+            images: replay.images,
+            clientMessageId: replay.clientMessageId,
+            replay: true,
+          }),
+        );
+      }
     },
 
     destroy(sessionId: string) {

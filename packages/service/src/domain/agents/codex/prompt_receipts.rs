@@ -16,10 +16,14 @@ pub(super) struct PendingPromptReceipts {
 
 impl PendingPromptReceipts {
     pub(super) fn enqueue(&self, client_message_id: String) {
-        self.client_message_ids
+        let mut client_message_ids = self
+            .client_message_ids
             .lock()
-            .expect("PendingPromptReceipts poisoned")
-            .push_back(client_message_id);
+            .expect("PendingPromptReceipts poisoned");
+        if client_message_ids.iter().any(|id| id == &client_message_id) {
+            return;
+        }
+        client_message_ids.push_back(client_message_id);
     }
 
     pub(super) fn acknowledge_completed_user_message(
@@ -106,6 +110,38 @@ mod tests {
             Some("client-1".to_string())
         );
         assert!(receipts.front().is_none());
+    }
+
+    #[test]
+    fn duplicate_client_message_id_is_idempotent() {
+        let receipts = PendingPromptReceipts::default();
+        receipts.enqueue("client-1".to_string());
+        receipts.enqueue("client-1".to_string());
+        let params = json!({
+            "threadId": "thread-root",
+            "turnId": "turn-1",
+            "item": {
+                "type": "userMessage",
+                "id": "user-message-1",
+                "content": [{ "type": "text", "text": "please steer" }]
+            }
+        });
+
+        let first =
+            receipts.acknowledge_completed_user_message("item/completed", &params, "thread-root");
+        let second =
+            receipts.acknowledge_completed_user_message("item/completed", &params, "thread-root");
+
+        assert_eq!(
+            first.and_then(|event| event
+                .prompt_received_client_message_id()
+                .map(ToOwned::to_owned)),
+            Some("client-1".to_string())
+        );
+        assert!(
+            second.is_none(),
+            "replaying a pending prompt must not enqueue a duplicate receipt"
+        );
     }
 
     #[test]
