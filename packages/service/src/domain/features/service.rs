@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 
 use super::models::{
     CreateFeatureResponse, Feature, FeatureModelSettings, FeatureProviderSettings, FeatureSetting,
-    FeatureStatus, WorkingDirResponse,
+    FeatureStatus, IsEmptyResponse, WorkingDirResponse,
 };
 use super::repository;
 use crate::error::AppError;
@@ -97,6 +97,11 @@ pub async fn update_status(
 
 pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Result<(), AppError> {
     repository::update_label(pool, id, label).await
+}
+
+pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<IsEmptyResponse, AppError> {
+    let empty = repository::is_empty(pool, id).await?;
+    Ok(IsEmptyResponse { empty })
 }
 
 pub async fn get_feature_settings(

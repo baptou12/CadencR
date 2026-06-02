@@ -62,6 +62,12 @@ vi.mock("../api/generated", () => ({
     data: { branch: "feature/a", target_branch: "main", merged: true },
     isLoading: false,
   })),
+  useIsFeatureEmpty: vi.fn(() => ({
+    data: { empty: false },
+    isLoading: false,
+    isFetching: false,
+    error: null,
+  })),
   useGetGitStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
   getListFeaturesQueryKey: vi.fn((id: number) => ["features", "list", id]),
   getGetFeatureQueryKey: (id: number) => ["features", "detail", id],

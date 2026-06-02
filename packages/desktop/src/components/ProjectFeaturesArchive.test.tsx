@@ -8,6 +8,9 @@ import { useFeatureLayoutStore } from "@/stores/feature-layout-store";
 const mockNavigate = vi.fn();
 const mockUpdateStatus = vi.fn();
 const mockDelete = vi.fn();
+const { mockUseIsFeatureEmpty } = vi.hoisted(() => ({
+  mockUseIsFeatureEmpty: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mockNavigate,
@@ -56,6 +59,7 @@ vi.mock("@/api/generated", () => ({
     data: { branch: "feature/a", target_branch: "main", merged: true },
     isLoading: false,
   })),
+  useIsFeatureEmpty: mockUseIsFeatureEmpty,
   useGetGitStatus: vi.fn(() => ({ data: undefined, isLoading: false })),
   useListProjectWorktrees: vi.fn(() => ({ data: [] })),
   useListFeatureWorktrees: vi.fn(() => ({ data: [] })),
@@ -94,6 +98,12 @@ describe("ProjectFeatures archived section", () => {
     mockNavigate.mockClear();
     mockUpdateStatus.mockClear();
     mockDelete.mockClear();
+    mockUseIsFeatureEmpty.mockReturnValue({
+      data: { empty: false },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
     useFeatureLayoutStore.setState({ features: {} });
   });
 
@@ -133,5 +143,24 @@ describe("ProjectFeatures archived section", () => {
 
     expect(screen.queryByText("Remove worktree")).not.toBeInTheDocument();
     expect(screen.queryByText("Remove branch")).not.toBeInTheDocument();
+  });
+
+  it("shows delete confirmation when archiving an active session with no agent messages", async () => {
+    const user = userEvent.setup();
+    mockUseIsFeatureEmpty.mockReturnValue({
+      data: { empty: true },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    renderProjectFeatures();
+
+    const featureRow = screen.getByText("Feature One").closest("[role=button]");
+    expect(featureRow).not.toBeNull();
+    fireEvent.contextMenu(featureRow as HTMLElement);
+    await user.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(screen.getByText("Delete session?")).toBeInTheDocument();
+    expect(screen.queryByText("Archive session?")).not.toBeInTheDocument();
   });
 });

@@ -65,6 +65,11 @@ pub struct UpdateLabelRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct IsEmptyResponse {
+    pub empty: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct WorkingDirResponse {
     pub path: Option<String>,
 }

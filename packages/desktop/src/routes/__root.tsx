@@ -17,6 +17,7 @@ import {
 } from "@/api/generated";
 import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { customInstance } from "@/api/client";
+import { resolveFeatureArchiveAction } from "@/lib/feature-archive-decision";
 import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
@@ -287,8 +288,9 @@ function RootLayout() {
       const remaining = activeFeatures.filter((f) => f.id !== activeFeatureId);
       const target = idx > 0 ? activeFeatures[idx - 1] : (remaining[0] ?? null);
       deleteNavTargetRef.current = target?.id ?? null;
+      const action = await resolveFeatureArchiveAction(feature);
       setConfirmAction({
-        action: feature.status === "archived" ? "delete" : "archive",
+        action,
         feature,
       });
     } catch (err) {
