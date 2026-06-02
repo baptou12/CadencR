@@ -4,4 +4,5 @@ pub mod routes;
 pub mod service;
 #[cfg(test)]
 mod service_tests;
+pub mod tree_all;
 pub mod watcher;

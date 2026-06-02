@@ -23,8 +23,25 @@ function sameStringArray(left: readonly string[], right: readonly string[]): boo
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
-function knownIgnoredDirectoryPaths(entries: readonly FileTreeEntry[]): readonly string[] {
-  return entries.filter((entry) => entry.is_dir && entry.is_gitignored).map((entry) => entry.path);
+/**
+ * Gitignored directory paths whose contents should load lazily on expand.
+ * Unions the fast `tracked` query with the lazily-fetched entries: a
+ * tracked-but-ignored directory (issue #41) is surfaced by the backend in
+ * the tracked query, so it never lands in `lazyEntries` — yet expanding it
+ * must still pull in its untracked ignored children.
+ */
+export function knownIgnoredDirectoryPaths(
+  trackedEntries: readonly FileTreeEntry[] | undefined,
+  lazyEntries: readonly FileTreeEntry[],
+): readonly string[] {
+  const paths = new Set<string>();
+  for (const entry of trackedEntries ?? []) {
+    if (entry.is_dir && entry.is_gitignored) paths.add(entry.path);
+  }
+  for (const entry of lazyEntries) {
+    if (entry.is_dir && entry.is_gitignored) paths.add(entry.path);
+  }
+  return [...paths];
 }
 
 function entriesSignature(entries: readonly FileTreeEntry[]): string {
@@ -122,7 +139,10 @@ export function useLazyIgnoredFileTreeEntries({
     return collectLazyIgnoredEntries(queryResults, trackedEntries);
   }, [featureId, projectId, queryDataVersion, trackedEntries]);
 
-  const ignoredDirs = useMemo(() => knownIgnoredDirectoryPaths(lazyEntries), [lazyEntries]);
+  const ignoredDirs = useMemo(
+    () => knownIgnoredDirectoryPaths(trackedEntries, lazyEntries),
+    [trackedEntries, lazyEntries],
+  );
   const syncExpanded = useCallback((): void => {
     const next = readExpandedIgnoredDirectories(model, ignoredDirsRef.current);
     setExpandedIgnoredDirs((current) => (sameStringArray(current, next) ? current : next));
