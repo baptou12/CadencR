@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.3.4 - 2026-06-02
+
+Previous release: v0.3.3 - 2026-06-01
+
+### 🔧 Changed
+
+- [**Backend**] Ran provider CLI launches, worktree setup commands, and custom actions through a non-interactive login shell so user-installed tools are found without triggering zsh prompt/plugin startup errors.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed websocket-backed sessions on feature pages so live agent status follows backend updates and prompt drafts stay cleared after sending.
+
+### 🔒 Security
+
+- [**Backend**] Restricted agent-requested ACP terminal commands to a small safe environment so provider-selected commands do not inherit user secrets unless they are explicitly passed through ACP environment variables.
+
 ## v0.3.3 - 2026-06-01
 
 Previous release: v0.3.2 - 2026-05-27
