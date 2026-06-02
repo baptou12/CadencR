@@ -9,8 +9,8 @@ minimumReleaseAge: 20160
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeExclude:
-  # Existing reviewed direct dependency; keep exceptions version-pinned.
-  - "@pierre/trees@1.0.0-beta.4"
+  # Emergency security fix for CVE-2026-44705; tmp <0.2.6 is vulnerable.
+  - "tmp@0.2.6"
 blockExoticSubdeps: true
 trustPolicy: no-downgrade
 # Older packages often predate registry trust evidence; keep downgrade checks
