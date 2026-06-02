@@ -190,6 +190,18 @@ export function useClaudeCodeProfiles() {
   });
 }
 
+// The active profile's env feeds the Claude model probe, so the agent catalog
+// (and the model picker built from it) is profile-dependent — under Bedrock /
+// Vertex even the model ids change. Any profile mutation that can alter the
+// active env therefore invalidates the catalog so the picker refetches the
+// right models, not just the profiles list.
+async function invalidateProfilesAndCatalog(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] }),
+    queryClient.invalidateQueries({ queryKey: ["agent-catalog"] }),
+  ]);
+}
+
 export function useUpsertClaudeCodeProfile() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -199,9 +211,7 @@ export function useUpsertClaudeCodeProfile() {
         url: `/api/claude-code/profiles/${encodeURIComponent(name)}`,
         data: { env },
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
-    },
+    onSuccess: () => invalidateProfilesAndCatalog(queryClient),
   });
 }
 
@@ -213,9 +223,7 @@ export function useDeleteClaudeCodeProfile() {
         method: "DELETE",
         url: `/api/claude-code/profiles/${encodeURIComponent(name)}`,
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
-    },
+    onSuccess: () => invalidateProfilesAndCatalog(queryClient),
   });
 }
 
@@ -228,9 +236,7 @@ export function useSetActiveClaudeCodeProfile() {
         url: "/api/claude-code/profiles/active",
         data: { name },
       }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["claude-code", "profiles"] });
-    },
+    onSuccess: () => invalidateProfilesAndCatalog(queryClient),
   });
 }
 
