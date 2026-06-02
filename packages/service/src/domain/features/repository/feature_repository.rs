@@ -132,6 +132,26 @@ pub async fn update_label(pool: &SqlitePool, id: i64, label: Option<&str>) -> Re
     Ok(())
 }
 
+pub async fn is_empty(pool: &SqlitePool, id: i64) -> Result<bool, AppError> {
+    let feature_exists: Option<(i64,)> =
+        sqlx::query_as("SELECT 1 FROM features WHERE id = ? LIMIT 1")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?;
+    if feature_exists.is_none() {
+        return Ok(true);
+    }
+
+    let message_exists: Option<(i64,)> = sqlx::query_as(
+        "SELECT 1 FROM agent_messages WHERE session_id IN \
+         (SELECT id FROM agent_sessions WHERE feature_id = ?) LIMIT 1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(message_exists.is_none())
+}
+
 pub async fn resolve_working_dir(
     pool: &SqlitePool,
     feature_id: i64,
@@ -245,6 +265,15 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
+        sqlx::query(
+            r#"CREATE TABLE agent_messages (
+                id INTEGER PRIMARY KEY,
+                session_id INTEGER NOT NULL
+            )"#,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
         pool
     }
 
@@ -305,5 +334,45 @@ mod tests {
     async fn get_by_id_missing_returns_none() {
         let pool = setup_pool().await;
         assert!(get_by_id(&pool, 99).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn is_empty_returns_true_when_ws_session_has_no_messages() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type) VALUES \
+             (1, 1, 'empty', 'active', 'ws-session')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, status) VALUES (10, 1, 'paused')")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(is_empty(&pool, 1).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn is_empty_returns_false_when_ws_session_has_messages() {
+        let pool = setup_pool().await;
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type) VALUES \
+             (1, 1, 'non-empty', 'active', 'ws-session')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO agent_sessions (id, feature_id, status) VALUES (10, 1, 'paused')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO agent_messages (session_id) VALUES (10)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert!(!is_empty(&pool, 1).await.unwrap());
     }
 }

@@ -148,6 +148,16 @@ pub async fn update_feature_label_handler(
     Ok(Json(SuccessResponse { success: true }))
 }
 
+#[utoipa::path(get, path = "/api/features/{id}/empty",
+    params(("id" = i64, Path,)),
+    responses((status = 200, body = IsEmptyResponse)))]
+pub async fn is_empty_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<IsEmptyResponse>, AppError> {
+    Ok(Json(service::is_empty(&state.read_pool, id).await?))
+}
+
 async fn broadcast_label_update(state: &AppState, feature_id: i64) {
     for sender in state.ws_feature_senders.get_senders(feature_id).await {
         send_feature_updated_envelope(&sender, feature_id, &["label"]);
@@ -285,6 +295,7 @@ pub fn features_router() -> Router<AppState> {
             "/api/features/{id}/label",
             put(update_feature_label_handler),
         )
+        .route("/api/features/{id}/empty", get(is_empty_handler))
         .route(
             "/api/features/{id}/settings",
             get(get_feature_settings_handler).put(set_feature_setting_handler),

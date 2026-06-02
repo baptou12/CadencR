@@ -9,9 +9,13 @@ import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialo
 import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
 import { useListFeatureWorktrees, type Feature } from "@/api/generated";
 import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
+import {
+  deleteFeatureDialogTitle,
+  type FeatureArchiveAction,
+} from "@/lib/feature-archive-decision";
 
 export interface ConfirmFeatureAction {
-  action: "archive" | "delete";
+  action: FeatureArchiveAction;
   feature: Feature;
 }
 
@@ -91,7 +95,7 @@ export function RootOverlays({
           onOpenChange={(open) => {
             if (!open) setConfirmAction(null);
           }}
-          title="Delete archived session?"
+          title={deleteFeatureDialogTitle(deleteConfirmAction.feature)}
           description="This cannot be undone."
           confirmText="Delete"
           variant="destructive"

@@ -826,6 +826,10 @@ export interface ImportedRecord {
   source_session_id: string;
 }
 
+export interface IsEmptyResponse {
+  empty: boolean;
+}
+
 export type LastRunSummaryEndedAt = string | null;
 
 /**
@@ -5395,6 +5399,58 @@ export const useAutoNameFeature = <TError = ErrorType<unknown>, TContext = unkno
 
   return useMutation(mutationOptions);
 };
+
+export const isFeatureEmpty = (id: number, signal?: AbortSignal) => {
+  return customInstance<IsEmptyResponse>({
+    url: `/api/features/${id}/empty`,
+    method: "GET",
+    signal,
+  });
+};
+
+export const getIsFeatureEmptyQueryKey = (id?: number) => {
+  return [`/api/features/${id}/empty`] as const;
+};
+
+export const getIsFeatureEmptyQueryOptions = <
+  TData = Awaited<ReturnType<typeof isFeatureEmpty>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof isFeatureEmpty>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getIsFeatureEmptyQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof isFeatureEmpty>>> = ({ signal }) =>
+    isFeatureEmpty(id, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof isFeatureEmpty>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type IsFeatureEmptyQueryResult = NonNullable<Awaited<ReturnType<typeof isFeatureEmpty>>>;
+export type IsFeatureEmptyQueryError = ErrorType<unknown>;
+
+export function useIsFeatureEmpty<
+  TData = Awaited<ReturnType<typeof isFeatureEmpty>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof isFeatureEmpty>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getIsFeatureEmptyQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const updateFeatureLabel = (id: number, updateLabelRequest: UpdateLabelRequest) => {
   return customInstance<FeaturesSuccessResponse>({

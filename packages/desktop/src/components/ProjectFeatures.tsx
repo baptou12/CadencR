@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { wsSessionIdFromFeature } from "@/lib/ws-session-id";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDownIcon, ChevronRightIcon, GitBranchIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ArchiveFeatureDialog } from "@/components/ArchiveFeatureDialog";
 import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
+import { WorktreeGroup } from "@/components/WorktreeGroup";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListFeatures,
+  useIsFeatureEmpty,
   useUpdateFeatureStatus,
   useUpdateFeatureLabel,
   useDeleteFeature,
@@ -26,6 +28,10 @@ import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { getFileName } from "@/lib/file-language";
+import {
+  deleteFeatureDialogTitle,
+  getPendingFeatureArchiveAction,
+} from "@/lib/feature-archive-decision";
 
 const ACTIVE_FEATURE_STATUS: FeatureStatus = "active";
 const ARCHIVED_FEATURE_STATUS: FeatureStatus = "archived";
@@ -267,6 +273,19 @@ export function ProjectFeatures({
 
   const confirmFeature = features.find((f) => f.id === confirmFeatureId);
   const isConfirmDelete = confirmFeature?.status === ARCHIVED_FEATURE_STATUS;
+  const emptyCheck = useIsFeatureEmpty(confirmFeatureId ?? 0, {
+    query: { enabled: confirmFeatureId != null && !isConfirmDelete, refetchOnMount: "always" },
+  });
+  const confirmAction = getPendingFeatureArchiveAction({
+    feature: confirmFeature,
+    emptyResponse: emptyCheck.data,
+    isCheckingEmpty: emptyCheck.isLoading || emptyCheck.isFetching,
+    hasEmptyCheckError: emptyCheck.error != null,
+  });
+  useEffect(() => {
+    if (emptyCheck.error == null || confirmFeatureId == null || isConfirmDelete) return;
+    toast.error(apiErrorMessage(emptyCheck.error, "Failed to check whether session is empty"));
+  }, [confirmFeatureId, emptyCheck.error, isConfirmDelete]);
   const confirmFeatureWorktree = confirmFeature ? worktreeByFeatureId.get(confirmFeature.id) : null;
   const cleanupAvailability = getArchiveCleanupAvailability(confirmFeatureWorktree);
 
@@ -283,7 +302,7 @@ export function ProjectFeatures({
       {flatActiveFeatures.map(renderFeature)}
 
       <ArchiveFeatureDialog
-        open={confirmFeatureId != null && !isConfirmDelete}
+        open={confirmFeatureId != null && confirmAction === "archive"}
         feature={confirmFeature}
         projectId={projectId}
         hasLiveWorktree={cleanupAvailability.hasLiveWorktree}
@@ -301,11 +320,11 @@ export function ProjectFeatures({
       />
 
       <ConfirmDialog
-        open={confirmFeatureId != null && isConfirmDelete}
+        open={confirmFeatureId != null && confirmAction === "delete"}
         onOpenChange={(open) => {
           if (!open) setConfirmFeatureId(null);
         }}
-        title="Delete archived session?"
+        title={deleteFeatureDialogTitle(confirmFeature)}
         description="This cannot be undone."
         confirmText="Delete"
         variant="destructive"
@@ -338,30 +357,6 @@ export function ProjectFeatures({
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function WorktreeGroup({
-  label,
-  features,
-  renderFeature,
-}: {
-  label: string;
-  features: readonly Feature[];
-  renderFeature: (feature: Feature) => ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 rounded-md bg-muted/30 p-1">
-      <div
-        className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-xs font-medium text-muted-foreground"
-        title={label}
-      >
-        <GitBranchIcon className="size-3 shrink-0 opacity-70" />
-        <span className="truncate">{label}</span>
-        <span className="shrink-0 opacity-70">({features.length})</span>
-      </div>
-      {features.map(renderFeature)}
     </div>
   );
 }
