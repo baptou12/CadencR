@@ -31,6 +31,7 @@ import { useSessionStatus } from "@/stores/session-status-selectors";
 import { liveStatusFromLifecycle } from "@/lib/agent-status";
 import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
+import { parsePermissionMode } from "@/types/permission-mode";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -141,8 +142,16 @@ export function useWebSocketSession(
   });
 
   useEffect(() => {
-    if (persistedLoaded || !featureId || !agentStateQuery.data) return;
+    if (persistedLoaded || !featureId) return;
     const store = useWsSessionStore.getState();
+    // Settle the gate even when the snapshot fetch fails so a transient REST
+    // error can't permanently block `session.init` (the auto-init effect now
+    // waits on `persistedLoaded`).
+    if (agentStateQuery.isError) {
+      store.markPersistedLoaded(sessionId);
+      return;
+    }
+    if (!agentStateQuery.data) return;
     const sessions = agentStateQuery.data.sessions;
     if (sessions.length === 0) {
       store.markPersistedLoaded(sessionId);
@@ -174,6 +183,7 @@ export function useWebSocketSession(
       sessionDbId: lastSession.sessionDbId,
       currentProviderId: lastSession.runtimeProvider ?? undefined,
       currentModelId: lastSession.model ?? undefined,
+      permissionMode: parsePermissionMode(lastSession.permissionMode) ?? undefined,
       codexPermissionMode: parseCodexPermissionMode(lastSession.codexPermissionMode),
       runtimeProvider: lastSession.runtimeProvider ?? undefined,
       runtimeSessionId: lastSession.runtimeSessionId ?? undefined,
@@ -182,7 +192,7 @@ export function useWebSocketSession(
       contextUsage: persistedContextUsage,
       hasFileChanges: lastSession.hasFileChanges,
     });
-  }, [featureId, agentStateQuery.data, persistedLoaded, sessionId]);
+  }, [featureId, agentStateQuery.data, agentStateQuery.isError, persistedLoaded, sessionId]);
 
   // Action wrappers depend only on sessionId — stable across same-session
   // chunks so consumers can list `ws.sendPrompt` etc. in deps without churn.

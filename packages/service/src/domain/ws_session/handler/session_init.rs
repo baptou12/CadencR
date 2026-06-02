@@ -6,7 +6,7 @@ use super::{
     QueryState, SdkHandle, SdkSessions, SessionConfig, WsSender,
 };
 use crate::app_state::AppState;
-use crate::domain::agents::adapter::RuntimeSpawnConfig;
+use crate::domain::agents::adapter::{RuntimePermissionMode, RuntimeSpawnConfig};
 use crate::domain::agents::runtime::DEFAULT_PROVIDER;
 use crate::domain::agents::{resolve_effective_provider, runtime_adapter};
 use crate::domain::settings;
@@ -245,30 +245,6 @@ pub(super) async fn handle_init(
         runtime_config.model = Some(model.clone());
     }
     runtime_config.thinking_effort = effective_thinking_effort.clone();
-    // `bypassPermissions` is the agent-equivalent of running as root. We
-    // require an explicit project-level acknowledgement stored in settings so
-    // a prompt-injected client can't flip it on its own — writes to
-    // `bypass_acknowledged` are gated by the settings allowlist.
-    if payload.permission_mode.as_deref() == Some("bypassPermissions") {
-        let ack = settings::resolve_setting(
-            &app_state.read_pool,
-            "bypass_acknowledged",
-            Some(feature_id),
-            Some(project_id),
-            Some("false"),
-        )
-        .await
-        .unwrap_or_else(|| "false".to_string());
-        if ack != "true" {
-            send_error(
-                sender,
-                &envelope.id,
-                "BYPASS_NOT_ACKED",
-                "bypassPermissions requires bypass_acknowledged=true in project settings",
-            );
-            return;
-        }
-    }
     // Honor the client's choice when supplied; otherwise fall back to the
     // active provider's default. The DB-read and provider-switch paths
     // already apply this default — session.init was the missing site.
@@ -301,6 +277,27 @@ pub(super) async fn handle_init(
         let ((_, profile_env), allow_bypass_permissions) = tokio::join!(profile_env, allow_bypass);
         runtime_config.env = profile_env;
         runtime_config.allow_bypass_permissions = allow_bypass_permissions;
+        // `bypassPermissions` is the agent-equivalent of running as root, so it
+        // is gated behind the `claude_bypass_permissions_enabled` capability —
+        // the Settings "dangerous mode" toggle, which carries its own
+        // confirmation dialog and is what the live `session.mode.set` path also
+        // checks. When a session asks for bypass without that capability (a
+        // stale mode replayed by the frontend's `reinitOnReconnect`, or a
+        // prompt-injected client) we downgrade to the provider default rather
+        // than reject: spawning `--permission-mode bypassPermissions` without
+        // `--allow-dangerously-skip-permissions` makes the CLI refuse to start,
+        // which would otherwise brick the session in a reconnect loop.
+        if !allow_bypass_permissions
+            && runtime_config.permission_mode == Some(RuntimePermissionMode::BypassPermissions)
+        {
+            tracing::warn!(
+                db_session_id,
+                feature_id,
+                "bypassPermissions requested without claude_bypass_permissions_enabled; \
+                 downgrading to provider default"
+            );
+            runtime_config.permission_mode = Some(default_permission_mode(&effective_provider));
+        }
     }
 
     info!(

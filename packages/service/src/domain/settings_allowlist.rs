@@ -17,7 +17,6 @@ pub const FEATURE_ALLOWED_KEYS: &[&str] = &[
     "model_session",
     "agent_runtime_session",
     "skip_worktree",
-    "bypass_acknowledged",
     "layout_state",
     "draft_prompt",
     // Git workflow (per-feature). `worktree_mode` selects how the worktree is
@@ -44,7 +43,6 @@ pub const PROJECT_ALLOWED_KEYS: &[&str] = &[
     "default_worktree_mode",
     "color",
     "setup_worktree",
-    "bypass_acknowledged",
 ];
 
 /// Keys writable via `PUT /api/workspace/settings/{key}`.
@@ -177,11 +175,21 @@ mod tests {
 
     #[test]
     fn accepts_known_feature_keys() {
-        assert!(is_feature_key_allowed("bypass_acknowledged"));
         assert!(is_feature_key_allowed("skip_worktree"));
         assert!(is_feature_key_allowed("model_session"));
         assert!(is_feature_key_allowed("layout_state"));
         assert!(is_feature_key_allowed("draft_prompt"));
+    }
+
+    #[test]
+    fn rejects_retired_bypass_acknowledged_key() {
+        // `bypass_acknowledged` was the gate for an old bypass design. The
+        // current design gates bypass solely on the workspace-scoped
+        // `claude_bypass_permissions_enabled` capability, so the legacy key is
+        // no longer read or writable at any scope.
+        assert!(!is_feature_key_allowed("bypass_acknowledged"));
+        assert!(!is_project_key_allowed("bypass_acknowledged"));
+        assert!(!is_workspace_key_allowed("bypass_acknowledged"));
     }
 
     #[test]

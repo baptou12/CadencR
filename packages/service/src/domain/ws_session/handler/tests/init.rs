@@ -201,6 +201,98 @@ async fn claude_init_allows_bypass_capability_without_activating_bypass_mode() {
 }
 
 #[tokio::test]
+async fn claude_init_activates_bypass_when_capability_enabled() {
+    // Regression: `session.init` with `permission_mode: "bypassPermissions"`
+    // used to be hard-rejected (`BYPASS_NOT_ACKED`) against the orphaned
+    // `bypass_acknowledged` setting that no UI ever wrote, bricking the
+    // session on every reconnect. With the capability enabled it must now
+    // initialize cleanly and keep the bypass mode active.
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+        .execute(&app_state.write_pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('claude_bypass_permissions_enabled', 'true')",
+    )
+    .execute(&app_state.write_pool)
+    .await
+    .unwrap();
+
+    let session_id = init_session_with_payload(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: Some("claude_code".to_string()),
+            model: None,
+            thinking_effort: None,
+            permission_mode: Some("bypassPermissions".to_string()),
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id.parse::<i64>().unwrap()).unwrap();
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session before first prompt");
+    };
+    assert!(options.allow_bypass_permissions);
+    assert_eq!(
+        options.permission_mode,
+        Some(RuntimePermissionMode::BypassPermissions),
+        "bypass must stay active when the capability is enabled"
+    );
+}
+
+#[tokio::test]
+async fn claude_init_downgrades_bypass_without_capability() {
+    // Defense in depth: if a session asks for bypass while the capability is
+    // off (a stale mode replayed on reconnect, or a prompt-injected client),
+    // init must still succeed by downgrading to the provider default rather
+    // than spawning the CLI into a mode it would refuse to start.
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let app_state = make_test_app_state().await;
+
+    let session_id = init_session_with_payload(
+        &tx,
+        &mut rx,
+        &sdk_sessions,
+        &app_state,
+        SessionInitPayload {
+            provider: Some("claude_code".to_string()),
+            model: None,
+            thinking_effort: None,
+            permission_mode: Some("bypassPermissions".to_string()),
+            system_prompt: None,
+            cwd: Some("/tmp/test".to_string()),
+            feature_id: Some(1),
+        },
+    )
+    .await;
+
+    let sessions = sdk_sessions.lock().await;
+    let handle = sessions.get(&session_id.parse::<i64>().unwrap()).unwrap();
+    let QueryState::Pending(options) = &handle.state else {
+        panic!("expected pending session before first prompt");
+    };
+    assert!(!options.allow_bypass_permissions);
+    assert_eq!(
+        options.permission_mode,
+        Some(RuntimePermissionMode::AcceptEdits),
+        "bypass without the capability must downgrade to the Claude default"
+    );
+}
+
+#[tokio::test]
 async fn test_different_features_get_different_sessions() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

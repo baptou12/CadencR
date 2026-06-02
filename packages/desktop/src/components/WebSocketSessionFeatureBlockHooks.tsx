@@ -164,6 +164,7 @@ export function useWsSessionEffects(args: {
   const { ws } = controls;
   const { initSession, isConnected } = ws;
   const serverSessionId = data.session?.serverSessionId;
+  const persistedLoaded = data.session?.persistedLoaded ?? false;
   useAgentLetterFocus({
     enabled: hotkeysEnabled && focusedTabId === "agent",
     onFocus: () => refs.agent.current?.focusActiveInput(),
@@ -172,6 +173,13 @@ export function useWsSessionEffects(args: {
     if (!autoInitSession) return;
     if (!isConnected || controls.initializedRef.current === sessionId) return;
     if (serverSessionId !== "") return;
+    // Wait for the persisted snapshot before initializing so the payload
+    // carries the restored permission mode. Otherwise the entry's default
+    // (`acceptEdits`) is sent and the backend's COALESCE overwrites the
+    // persisted mode — the silent revert that loses a sticky `bypassPermissions`
+    // after a reload/reconnect. `autoInitSession` and persisted loading are both
+    // gated on `!embedded`, so `persistedLoaded` always settles here.
+    if (!persistedLoaded) return;
     controls.initializedRef.current = sessionId;
     initSession({
       cwd,
@@ -198,6 +206,7 @@ export function useWsSessionEffects(args: {
     featureId,
     initSession,
     isConnected,
+    persistedLoaded,
     serverSessionId,
     sessionId,
   ]);

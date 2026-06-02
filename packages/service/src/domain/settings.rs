@@ -284,19 +284,19 @@ mod tests {
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'bypass_acknowledged', 'medium')",
+            "INSERT INTO project_settings (project_id, key, value) VALUES (1, 'custom_kv_key', 'medium')",
         )
         .execute(&pool)
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'bypass_acknowledged', 'high')",
+            "INSERT INTO feature_settings (feature_id, key, value) VALUES (1, 'custom_kv_key', 'high')",
         )
         .execute(&pool)
         .await
         .unwrap();
 
-        let result = resolve_setting(&pool, "bypass_acknowledged", Some(1), Some(1), None).await;
+        let result = resolve_setting(&pool, "custom_kv_key", Some(1), Some(1), None).await;
         assert_eq!(result, Some("high".to_string()));
     }
 

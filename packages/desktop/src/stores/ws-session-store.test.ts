@@ -576,6 +576,32 @@ describe("ws-session-store", () => {
     expect(session.runtimeSessionId).toBe("ses_live_123");
   });
 
+  it("setPersistedState restores the persisted permission mode (sticky bypassPermissions)", () => {
+    // Regression: a re-seed (app relaunch, dev HMR reload, reconnect rebuild)
+    // must rehydrate the persisted mode rather than keep the createSessionEntry
+    // default. Without this, sticky bypassPermissions silently reverts to
+    // acceptEdits.
+    useWsSessionStore.getState().connect("s1");
+    expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("acceptEdits");
+    useWsSessionStore.getState().setPersistedState("s1", {
+      blocks: [{ id: "b1", type: "text" as const, content: "restored" }],
+      lifecycle: { phase: "terminal", reason: "completed" },
+      currentProviderId: "claude_code",
+      permissionMode: "bypassPermissions",
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("bypassPermissions");
+  });
+
+  it("setPersistedState leaves the default permission mode untouched when omitted", () => {
+    useWsSessionStore.getState().connect("s1");
+    useWsSessionStore.getState().setPersistedState("s1", {
+      blocks: [{ id: "b1", type: "text" as const, content: "restored" }],
+      lifecycle: { phase: "terminal", reason: "completed" },
+      currentProviderId: "claude_code",
+    });
+    expect(useWsSessionStore.getState().sessions["s1"].permissionMode).toBe("acceptEdits");
+  });
+
   it("setPersistedState uses runtimeProvider as currentProviderId when provider field is omitted", () => {
     useWsSessionStore.getState().connect("s1");
     useWsSessionStore.getState().setPersistedState("s1", {

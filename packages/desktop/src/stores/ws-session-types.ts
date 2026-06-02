@@ -47,6 +47,7 @@ export interface PersistedStatePayload {
   currentProviderId?: string;
   currentModelId?: string;
   currentThinkingEffort?: string;
+  permissionMode?: PermissionMode;
   codexPermissionMode?: CodexPermissionMode;
   runtimeProvider?: string | null;
   runtimeSessionId?: string | null;
