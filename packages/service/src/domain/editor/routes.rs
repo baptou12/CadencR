@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use super::service;
+use super::tree_all;
 use crate::app_state::AppState;
 use crate::domain::projects::service::resolve_feature_editor_root;
 use crate::error::AppError;
-use crate::shared::env_file;
 
 // ---------------------------------------------------------------------------
 // Request / Response types
@@ -246,110 +246,8 @@ pub async fn tree_all_handler(
         resolve_feature_editor_root(&state.read_pool, params.project_id, params.feature_id).await?;
     let exclude_gitignored = params.exclude_gitignored;
 
-    let entries = tokio::task::spawn_blocking(move || -> Result<Vec<FileTreeEntry>, AppError> {
-        // The `ignore` crate walks recursively and applies `.gitignore`,
-        // `.ignore`, hidden-file rules, etc. When `exclude_gitignored` is true
-        // (the default) the walker skips ignored entries entirely, which is
-        // what makes the tree feasible on projects with `node_modules` /
-        // `target` / `dist` etc. When false we walk everything and mark
-        // ignored entries so the UI can dim them.
-        //
-        // We always build the gitignore matcher so we can correctly mark
-        // env files (added in a second pass below) as `is_gitignored` —
-        // they're almost always gitignored, but humans still need to see
-        // and edit them.
-        let gitignore_matcher = service::build_gitignore(&project_root);
-        // For the main-walk loop we only need a matcher when we're walking
-        // gitignored entries too; otherwise the helper short-circuits.
-        let gitignore_for_walk = if exclude_gitignored {
-            None
-        } else {
-            gitignore_matcher.as_ref()
-        };
-
-        let mut walker = ignore::WalkBuilder::new(&project_root);
-        walker
-            .hidden(false)
-            .git_ignore(exclude_gitignored)
-            .git_global(exclude_gitignored)
-            .git_exclude(exclude_gitignored)
-            // Always exclude `.git`: large, noisy, never useful to show.
-            // Other heavy dirs (`node_modules`, `target`, `dist`, …) are
-            // typically gitignored, so the `exclude_gitignored=true` query
-            // (the fast first pass) skips them naturally. The slow
-            // `exclude_gitignored=false` query intentionally walks them so
-            // we can show all files in the tree.
-            .filter_entry(|entry| entry.file_name() != ".git");
-
-        let mut entries: Vec<FileTreeEntry> = Vec::new();
-        for result in walker.build() {
-            let entry = result.map_err(|e| AppError::Internal(e.to_string()))?;
-            // Skip the project root itself.
-            if entry.depth() == 0 {
-                continue;
-            }
-
-            let path = entry.path();
-            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
-            let name = entry.file_name().to_string_lossy().to_string();
-
-            let relative = path
-                .strip_prefix(&project_root)
-                .map_err(|e| AppError::Internal(e.to_string()))?
-                .to_string_lossy()
-                .to_string();
-
-            // When excluding gitignored entries, the walker has already
-            // filtered them out; `gitignore_for_walk` is `None` and the
-            // helper short-circuits to `false`.
-            let is_gitignored = service::is_gitignored(gitignore_for_walk, path, is_dir);
-
-            entries.push(FileTreeEntry {
-                name,
-                path: relative,
-                is_dir,
-                is_gitignored,
-            });
-        }
-
-        // Second pass: env files (`.env`, `.env.local`, `local.env`, …)
-        // are almost always gitignored and would otherwise be invisible
-        // on the fast pass. Humans need to edit them by hand even when
-        // agents are doing the rest of the work, so we always surface
-        // them. The slow pass already walks everything; the dedupe below
-        // keeps it from double-listing entries.
-        let mut seen: std::collections::HashSet<String> =
-            entries.iter().map(|e| e.path.clone()).collect();
-        for rel in env_file::find_env_files(&project_root) {
-            if seen.contains(&rel) {
-                continue;
-            }
-            let full = project_root.join(&rel);
-            let name = full
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel.clone());
-            let is_gitignored = service::is_gitignored(gitignore_matcher.as_ref(), &full, false);
-            entries.push(FileTreeEntry {
-                name,
-                path: rel.clone(),
-                is_dir: false,
-                is_gitignored,
-            });
-            seen.insert(rel);
-        }
-
-        // Directories first, then case-insensitive name. Pierre re-sorts
-        // internally, but emitting a stable order avoids hydration jitter
-        // and keeps the non-pierre per-directory endpoint behaviour
-        // consistent across the surface.
-        entries.sort_by(|a, b| {
-            b.is_dir
-                .cmp(&a.is_dir)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-
-        Ok(entries)
+    let entries = tokio::task::spawn_blocking(move || {
+        tree_all::build_entries(&project_root, exclude_gitignored)
     })
     .await
     .map_err(|e| AppError::Internal(format!("Blocking task failed: {e}")))??;
