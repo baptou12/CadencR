@@ -13,202 +13,48 @@ use tokio::io::BufWriter;
 use tokio::process::ChildStdin;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, warn};
 
 use crate::error::SdkError;
 use crate::messages::SdkMessage;
 use crate::permissions::CanUseTool;
 use crate::transport::CliProcess;
+use crate::types::McpServerStatus;
 
-use super::permission_dispatch::handle_can_use_tool_request;
+use super::reader_task::ReaderTask;
 use super::turn_state::TurnState;
-use super::wire::{
-    build_success_ack, control_request_subtype, parse_control_response, parse_permission_request,
-    write_to_stdin, PendingControl,
-};
+use super::wire::PendingControl;
 
 /// Core background loop that reads from CLI stdout, handles permission
 /// requests, and forwards messages to the channel.
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn reader_loop(
-    mut process: CliProcess,
+    process: CliProcess,
     process_stdin: Arc<Mutex<Option<BufWriter<ChildStdin>>>>,
     tx: mpsc::Sender<Result<SdkMessage, SdkError>>,
     can_use_tool: Option<Arc<dyn CanUseTool>>,
     session_id: Arc<Mutex<Option<String>>>,
+    mcp_servers: Arc<Mutex<Vec<McpServerStatus>>>,
     turn_state: Arc<Mutex<TurnState>>,
     pending_control: PendingControl,
     cancel_token: Option<CancellationToken>,
-    mut interrupt_rx: mpsc::Receiver<()>,
-    mut kill_rx: mpsc::Receiver<()>,
+    interrupt_rx: mpsc::Receiver<()>,
+    kill_rx: mpsc::Receiver<()>,
 ) {
-    loop {
-        // Select between reading the next message, receiving an interrupt signal,
-        // and cancellation. The cancellation branch ensures we break out even if
-        // the reader is blocked waiting for CLI output.
-        let raw = tokio::select! {
-            result = process.read_message() => {
-                match result {
-                    Ok(Some(value)) => value,
-                    Ok(None) => {
-                        // EOF — process exited, check exit code
-                        let (code, stderr) = process.wait_with_stderr().await;
-                        if code.unwrap_or(0) != 0 {
-                            let _ = tx
-                                .send(Err(SdkError::ProcessExit { code, stderr }))
-                                .await;
-                        }
-                        info!("CLI process exited (code={code:?})");
-                        break;
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Err(e)).await;
-                        break;
-                    }
-                }
-            }
-            _ = interrupt_rx.recv() => {
-                debug!("interrupt signal received, sending SIGINT to CLI process");
-                if let Err(e) = process.interrupt().await {
-                    warn!("failed to interrupt CLI process: {e}");
-                }
-                continue;
-            }
-            _ = kill_rx.recv() => {
-                debug!("kill signal received, terminating CLI process");
-                if let Err(e) = process.kill().await {
-                    warn!("failed to kill CLI process: {e}");
-                }
-                break;
-            }
-            _ = async {
-                if let Some(ref token) = cancel_token {
-                    token.cancelled().await
-                } else {
-                    std::future::pending().await
-                }
-            } => {
-                warn!("cancel token fired, killing CLI process");
-                if let Err(e) = process.kill().await {
-                    warn!("failed to kill CLI process on cancel: {e}");
-                }
-                let _ = tx.send(Err(SdkError::Cancelled)).await;
-                break;
-            }
-        };
-
-        // Route `control_response` messages to whoever is awaiting them.
-        //
-        // The CLI replies to every `control_request` we send with a
-        // `control_response` carrying the same `request_id`. We resolve
-        // the matching oneshot in `pending_control` (registered by
-        // `Query::send_control_request`) so the caller learns the CLI's
-        // verdict — `subtype: "success"` → `Ok(inner_response)`,
-        // `subtype: "error"` → `Err(SdkError::ControlRequestFailed)`.
-        //
-        // Replies with no matching pending entry are intentionally
-        // dropped: the CLI sometimes echoes responses to its own
-        // `initialize` round-trip (or the SDK's startup `initialize`
-        // never registers a pending entry). These are not SDK messages
-        // and must not be forwarded to the caller.
-        if raw.get("type").and_then(|t| t.as_str()) == Some("control_response") {
-            let Some(request_id) = raw.pointer("/response/request_id").and_then(|v| v.as_str())
-            else {
-                debug!("received control_response without request_id, skipping");
-                continue;
-            };
-            match pending_control.lock().await.remove(request_id) {
-                Some(entry) => {
-                    let outcome = parse_control_response(&raw, &entry.subtype);
-                    // Receiver may have timed out and dropped — ignore.
-                    let _ = entry.sender.send(outcome);
-                }
-                None => {
-                    debug!(
-                        request_id,
-                        "received control_response with no pending sender, skipping"
-                    );
-                }
-            }
-            continue;
-        }
-
-        // Handle `initialize` control_request from the CLI (if it sends one).
-        // Respond so the CLI knows we support the control protocol.
-        if control_request_subtype(&raw) == Some("initialize") {
-            let request_id = raw
-                .get("request_id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            debug!("received initialize control request, responding");
-            if let Err(e) = write_to_stdin(&process_stdin, &build_success_ack(&request_id)).await {
-                let _ = tx.send(Err(e)).await;
-                break;
-            }
-            continue;
-        }
-
-        // Check if this is a permission request (canUseTool protocol).
-        // The actual callback dispatch is spawned onto a separate task —
-        // see `permission_dispatch::handle_can_use_tool_request` for why.
-        if control_request_subtype(&raw) == Some("can_use_tool") {
-            let request = parse_permission_request(&raw);
-            debug!(tool = %request.tool_name, "received permission request");
-
-            // Update turn state — we're now waiting for user. Done before
-            // the spawn so subsequent reads in this loop see the new state
-            // without racing the spawned task.
-            *turn_state.lock().await = TurnState::WaitingForPermission {
-                tool_name: request.tool_name.clone(),
-                tool_use_id: request.tool_use_id.clone(),
-            };
-
-            tokio::spawn(handle_can_use_tool_request(
-                Arc::clone(&process_stdin),
-                Arc::clone(&turn_state),
-                tx.clone(),
-                can_use_tool.as_ref().map(Arc::clone),
-                request,
-            ));
-
-            continue; // Don't yield permission requests to the caller
-        }
-
-        // Parse into SdkMessage
-        let message: SdkMessage = match serde_json::from_value(raw.clone()) {
-            Ok(msg) => msg,
-            Err(_) => SdkMessage::Unknown(raw),
-        };
-
-        // Capture session_id from System init
-        if let Some(sid) = message.session_id() {
-            let mut guard = session_id.lock().await;
-            if guard.is_none() {
-                debug!(session_id = sid, "captured session ID");
-                *guard = Some(sid.to_string());
-            }
-        }
-
-        // Update turn state on Result message
-        if let SdkMessage::Result {
-            ref subtype,
-            is_error,
-            ..
-        } = message
-        {
-            *turn_state.lock().await = TurnState::TurnComplete {
-                result_subtype: subtype.clone(),
-                is_error,
-            };
-        }
-
-        // Send message to caller
-        if tx.send(Ok(message)).await.is_err() {
-            debug!("receiver dropped, stopping reader loop");
-            break;
-        }
+    ReaderTask {
+        process,
+        process_stdin,
+        tx,
+        can_use_tool,
+        session_id,
+        mcp_servers,
+        turn_state,
+        pending_control,
+        cancel_token,
+        interrupt_rx,
+        kill_rx,
     }
+    .run()
+    .await;
 }
 
 #[cfg(test)]
@@ -233,6 +79,9 @@ mod tests {
         // emit system init, then sleep forever (simulates a long-running process).
         let script = r#"#!/bin/sh
 read -r INIT_REQ
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_close","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 sleep 300
@@ -269,6 +118,9 @@ sleep 300
         let script = r#"#!/bin/sh
 read -r INIT_REQ
 echo '{"type":"control_response","response":{"subtype":"success","request_id":"init_perm","response":{"pid":9999}}}'
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_456","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 echo '{"type":"control_request","request_id":"req_1_perm","request":{"subtype":"can_use_tool","tool_name":"Write","input":{"path":"/tmp/test.txt"}}}'
@@ -310,6 +162,9 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
         // so the CLI continues. Then emit system init + result.
         let script = r#"#!/bin/sh
 read -r SDK_INIT
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"control_request","request_id":"cli_init_1","request":{"subtype":"initialize"}}'
 read -r SDK_RESPONSE

@@ -1,10 +1,4 @@
 //! The [`Query`] handle: lifecycle, accessors, and the `Stream` impl.
-//!
-//! Control-protocol methods (`set_permission_mode`, `set_model`, …) live
-//! in [`super::control_commands`]. The background reader task that feeds
-//! the message channel lives in [`super::reader`]. The top-level
-//! constructor [`query`](super::spawn::query) builds this struct via
-//! [`Query::new`].
 
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -20,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::SdkError;
 use crate::messages::SdkMessage;
+use crate::types::McpServerStatus;
 
 use super::turn_state::TurnState;
 use super::wire::PendingControl;
@@ -53,18 +48,19 @@ pub struct Query {
     /// Session ID captured from System init message.
     pub(super) session_id: Arc<Mutex<Option<String>>>,
 
+    /// MCP server statuses captured from the System init message.
+    pub(super) mcp_servers: Arc<Mutex<Vec<McpServerStatus>>>,
+
+    /// MCP servers discovered from Claude configuration before session init.
+    pub(super) configured_mcp_servers: Vec<McpServerStatus>,
+
     /// Current turn state.
     pub(super) turn_state: Arc<Mutex<TurnState>>,
 
     /// In-flight `control_request`s awaiting a matching `control_response`.
-    /// Keyed by `request_id`. The reader loop owns the receive side of each
-    /// oneshot and resolves it when a `control_response` with the same id
-    /// arrives. Shared with the reader loop via `Arc`.
     pub(super) pending_control: PendingControl,
 
-    /// Monotonic counter used to mint unique `request_id`s for outbound
-    /// control requests. Mirrors the Python SDK's `f"req_{ctr}_{rand}"`
-    /// pattern; the random suffix is added at call site.
+    /// Monotonic counter used to mint unique outbound `request_id`s.
     pub(super) control_request_counter: Arc<AtomicU64>,
 
     /// Background reader task handle (for cleanup).
@@ -105,6 +101,37 @@ impl Query {
     /// Get the session ID (captured from System init message).
     pub async fn session_id(&self) -> Option<String> {
         self.session_id.lock().await.clone()
+    }
+
+    /// Get MCP server statuses available in the current Claude Code session.
+    pub async fn available_mcp_servers(&self) -> Result<Vec<McpServerStatus>, SdkError> {
+        let known_servers = self.cached_or_configured_mcp_servers().await;
+        if !known_servers.is_empty() {
+            tracing::info!(
+                mcp_count = known_servers.len(),
+                "claude mcp: available_mcp_servers returning cached/configured servers"
+            );
+            return Ok(known_servers);
+        }
+        tracing::info!("claude mcp: no cached/configured servers, querying live mcp_status");
+        let live_servers = self.mcp_server_status().await?;
+        if live_servers.is_empty() {
+            tracing::info!("claude mcp: live mcp_status returned no servers");
+            return Ok(known_servers);
+        }
+        tracing::info!(
+            mcp_count = live_servers.len(),
+            "claude mcp: available_mcp_servers returning live servers"
+        );
+        Ok(live_servers)
+    }
+
+    async fn cached_or_configured_mcp_servers(&self) -> Vec<McpServerStatus> {
+        let cached_servers = self.mcp_servers.lock().await.clone();
+        if cached_servers.is_empty() {
+            return self.configured_mcp_servers.clone();
+        }
+        cached_servers
     }
 
     /// Get the current turn state.
@@ -170,6 +197,8 @@ impl Query {
             message_rx,
             process_stdin: Arc::new(Mutex::new(None)),
             session_id: Arc::new(Mutex::new(session_id)),
+            mcp_servers: Arc::new(Mutex::new(Vec::new())),
+            configured_mcp_servers: Vec::new(),
             turn_state: Arc::new(Mutex::new(TurnState::AgentWorking)),
             pending_control: Arc::new(Mutex::new(HashMap::new())),
             control_request_counter: Arc::new(AtomicU64::new(0)),
@@ -208,6 +237,7 @@ mod tests {
         // then emit a system init, a stream event, and a result.
         let script = r#"#!/bin/sh
 read -r INIT_REQ
+read -r MCP_REQ; MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p'); printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_123","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 echo '{"type":"stream_event","uuid":"u2","session_id":"sess_123","parent_tool_use_id":null,"event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}}'
@@ -248,6 +278,76 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
     }
 
     #[tokio::test]
+    async fn query_caches_mcp_servers_from_system_init() {
+        let dir = TempDir::new().unwrap();
+
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+read -r MCP_REQ; MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p'); printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
+read -r USER_PROMPT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_mcp","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[{"name":"cadencr-session","status":"connected"},{"name":"filesystem","status":"unavailable"}],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_mcp","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+        let script_path = write_mock_cli(dir.path(), script);
+
+        let options = Options {
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
+        q.next().await.expect("init message").unwrap();
+
+        let servers = q.available_mcp_servers().await.unwrap();
+        assert_eq!(servers.len(), 2);
+        assert_eq!(servers[0].name, "cadencr-session");
+        assert_eq!(servers[0].status, "connected");
+        assert_eq!(servers[1].name, "filesystem");
+        assert_eq!(servers[1].status, "unavailable");
+        q.close().await;
+    }
+
+    #[tokio::test]
+    async fn query_falls_back_to_configured_mcp_servers_when_init_reports_none() {
+        let dir = TempDir::new().unwrap();
+
+        let script = r#"#!/bin/sh
+read -r INIT_REQ
+read -r MCP_REQ; MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p'); printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
+read -r USER_PROMPT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_cfg","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cfg","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#;
+        let script_path = write_mock_cli(dir.path(), script);
+        std::fs::write(
+            dir.path().join(".mcp.json"),
+            r#"{"mcpServers":{"chrome-devtools":{"command":"npx","args":["chrome-devtools-mcp@latest"]}}}"#,
+        )
+        .unwrap();
+
+        let options = Options {
+            cwd: dir.path().to_path_buf(),
+            path_to_cli: Some(script_path),
+            ..Options::default()
+        };
+
+        let mut q = query(serde_json::Value::String("test".into()), options)
+            .await
+            .unwrap();
+        q.next().await.expect("init message").unwrap();
+
+        let servers = q.available_mcp_servers().await.unwrap();
+        let server = servers
+            .iter()
+            .find(|server| server.name == "chrome-devtools")
+            .expect("project server");
+        assert_eq!(server.status, "configured");
+        q.close().await;
+    }
+
+    #[tokio::test]
     async fn take_message_rx_drains_stream_and_receiver_works() {
         let dir = TempDir::new().unwrap();
 
@@ -255,6 +355,7 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
         // then emit system init and a result.
         let script = r#"#!/bin/sh
 read -r INIT_REQ
+read -r MCP_REQ; MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p'); printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_take","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"default","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
