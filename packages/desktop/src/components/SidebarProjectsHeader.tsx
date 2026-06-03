@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 interface SidebarProjectsHeaderProps {
   onAddProject: () => void;
   isAddingProject: boolean;
+  canAddProject: boolean;
   onRefresh: () => void;
   isRefreshing: boolean;
 }
@@ -16,6 +17,7 @@ interface SidebarProjectsHeaderProps {
 export function SidebarProjectsHeader({
   onAddProject,
   isAddingProject,
+  canAddProject,
   onRefresh,
   isRefreshing,
 }: SidebarProjectsHeaderProps) {
@@ -33,16 +35,18 @@ export function SidebarProjectsHeader({
         >
           <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onAddProject}
-          disabled={isAddingProject}
-          title="Add project"
-          aria-label="Add project"
-        >
-          <Plus />
-        </Button>
+        {canAddProject ? (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={onAddProject}
+            disabled={isAddingProject}
+            title="Add project"
+            aria-label="Add project"
+          >
+            <Plus />
+          </Button>
+        ) : null}
       </div>
     </div>
   );

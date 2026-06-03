@@ -48,7 +48,7 @@ import { SidebarProjectsHeader } from "./SidebarProjectsHeader";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ImportConversationsDialog } from "./import/ImportConversationsDialog";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { ShortcutHintsProvider, useNavShortcutHint } from "@/hooks/useNavShortcutHints";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { SidebarShortcutBadge } from "@/components/SidebarShortcutBadge";
@@ -158,6 +158,7 @@ export function ProjectTree({
         <SidebarProjectsHeader
           onAddProject={handleAddProject}
           isAddingProject={isSelectingFolder || createProjectMutation.isLoading}
+          canAddProject={isDesktopShell()}
           onRefresh={() => void refresh()}
           isRefreshing={isRefreshing}
         />

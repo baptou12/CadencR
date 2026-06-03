@@ -18,6 +18,11 @@ files:
 extraResources:
   - from: resources/bin/cadencr-service
     to: cadencr-service
+  # The built SPA on the real filesystem (the asar copy the window loads can't
+  # be read by the Rust sidecar). Served over the remote listener via
+  # `--renderer-dir`.
+  - from: out/renderer
+    to: renderer
 mac:
   category: public.app-category.developer-tools
   hardenedRuntime: true
