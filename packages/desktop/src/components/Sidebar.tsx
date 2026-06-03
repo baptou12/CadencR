@@ -11,6 +11,7 @@ import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink"
 import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicator";
 import { InternetStatusIndicator } from "@/components/InternetStatusIndicator";
 import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
+import { RemoteAccessButton } from "@/components/remote/RemoteAccessButton";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
@@ -199,6 +200,7 @@ function SidebarFooter(): ReactElement {
   return (
     <div className="flex flex-col items-center gap-1 py-2">
       <SidebarUpdateButton />
+      <RemoteAccessButton />
       <div className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}>
         <Link
           to="/settings"
