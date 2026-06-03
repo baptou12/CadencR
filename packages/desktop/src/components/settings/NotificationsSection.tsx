@@ -11,6 +11,7 @@ import {
   type NotificationMode,
 } from "@/lib/notification-mode";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsSubsection } from "./SettingsSubsection";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSection } from "./SettingsSection";
 import { IconTile } from "./IconTile";
@@ -60,21 +61,12 @@ export function NotificationsSection(): React.JSX.Element {
   };
 
   return (
-    <SettingsSection
-      id="notifications"
-      title="Notifications"
-      subtitle="System notifications"
-      description="Cadencr can ping you when an agent finishes or needs your input. Choose where the ping shows up, then use the test button to verify delivery."
-    >
-      <SettingsCard padded>
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium">Notification destination</div>
-            <p className="text-xs text-muted-foreground">
-              Where agent-finished notifications appear. System notifications stay visible even when
-              Cadencr is in the background.
-            </p>
-          </div>
+    <SettingsSection id="notifications" title="Notifications" subtitle="System notifications">
+      <SettingsCard>
+        <SettingsSubsection
+          title="Notification destination"
+          description="Where agent-finished notifications appear. System notifications stay visible even when Cadencr is in the background."
+        >
           <RadioCardGroup<NotificationMode>
             ariaLabel="Notification destination"
             value={mode}
@@ -84,23 +76,23 @@ export function NotificationsSection(): React.JSX.Element {
             showDot={false}
             disabled={modeSetting.isLoading}
           />
-        </div>
-      </SettingsCard>
-      <SettingsCard>
-        <SettingsRow
-          icon={
-            <IconTile tint="yellow">
-              <Bell className="size-4" />
-            </IconTile>
-          }
-          label="Send test notification"
-          description="Always exercises the OS path so you can diagnose delivery problems independently of the destination above. If nothing appears, check System Settings → Notifications for Cadencr."
-          control={
-            <Button variant="outline" size="sm" onClick={handleSendTest} disabled={sending}>
-              {sending ? "Sending…" : "Send test"}
-            </Button>
-          }
-        />
+        </SettingsSubsection>
+        <SettingsSubsection padded={false}>
+          <SettingsRow
+            icon={
+              <IconTile tint="yellow">
+                <Bell className="size-4" />
+              </IconTile>
+            }
+            label="Send test notification"
+            description="Always exercises the OS path so you can diagnose delivery problems independently of the destination above. If nothing appears, check System Settings → Notifications for Cadencr."
+            control={
+              <Button variant="outline" size="sm" onClick={handleSendTest} disabled={sending}>
+                {sending ? "Sending…" : "Send test"}
+              </Button>
+            }
+          />
+        </SettingsSubsection>
       </SettingsCard>
     </SettingsSection>
   );

@@ -24,6 +24,9 @@
   --foreground: oklch(0.977 0.008 106.793);
   --card: oklch(0.22 0.022 277.497);
   --card-foreground: oklch(0.977 0.008 106.793);
+  /* Recessed grouping surface (settings section panels). Darker than the page
+   * in dark themes, a subtle gray below the page in light themes. */
+  --surface-sunken: oklch(0.19 0.022 277.497);
   --popover: oklch(0.22 0.022 277.497);
   --popover-foreground: oklch(0.977 0.008 106.793);
   --primary: oklch(0.742 0.149 301.871);
@@ -191,6 +194,8 @@
   --foreground: oklch(0.205 0.04 285);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.205 0.04 285);
+  /* Subtle gray well below the off-white page; white cards sit raised on it. */
+  --surface-sunken: oklch(0.965 0.008 290);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.205 0.04 285);
   --primary: oklch(0.55 0.245 295);
@@ -335,6 +340,7 @@
   --foreground: oklch(0.82 0.014 257);
   --card: oklch(0.27 0.014 257);
   --card-foreground: oklch(0.82 0.014 257);
+  --surface-sunken: oklch(0.235 0.014 257);
   --popover: oklch(0.3 0.014 257);
   --popover-foreground: oklch(0.82 0.014 257);
   --primary: oklch(0.72 0.13 240);
@@ -490,6 +496,7 @@
   --foreground: oklch(0.33 0.012 80);
   --card: oklch(0.995 0.002 80);
   --card-foreground: oklch(0.33 0.012 80);
+  --surface-sunken: oklch(0.972 0.004 80);
   --popover: oklch(0.995 0.002 80);
   --popover-foreground: oklch(0.33 0.012 80);
   --primary: oklch(0.55 0.18 260);

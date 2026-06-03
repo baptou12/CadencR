@@ -27,23 +27,14 @@ export function AgentVerbositySettings(): React.JSX.Element {
   );
 
   return (
-    <div className="space-y-2 rounded-xl border border-border/60 bg-card/30 p-3">
-      <div>
-        <div className="text-sm font-medium">Agent output verbosity</div>
-        <p className="text-xs text-muted-foreground">
-          Control how much of each agent turn stays expanded in the stream. Switching modes does not
-          affect what the agent does — only how its output is rendered.
-        </p>
-      </div>
-      <RadioCardGroup<AgentVerbosityMode>
-        ariaLabel="Agent output verbosity"
-        value={currentMode}
-        onChange={modeSetting.setValue}
-        options={options}
-        layout="stack"
-        showDot={false}
-        disabled={modeSetting.isLoading}
-      />
-    </div>
+    <RadioCardGroup<AgentVerbosityMode>
+      ariaLabel="Agent output verbosity"
+      value={currentMode}
+      onChange={modeSetting.setValue}
+      options={options}
+      layout="stack"
+      showDot={false}
+      disabled={modeSetting.isLoading}
+    />
   );
 }
