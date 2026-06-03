@@ -29,6 +29,7 @@ export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink()
         mode: filters.mode,
         freshMinutes: filters.freshMinutes,
         projectIds: filters.projectIds,
+        excludedTitles: filters.excludedTitles,
         queryText: filters.query.trim().toLowerCase(),
       }),
     [
@@ -36,6 +37,7 @@ export const UnifiedAgentsSidebarLink = memo(function UnifiedAgentsSidebarLink()
       filters.freshMinutes,
       filters.mode,
       filters.projectIds,
+      filters.excludedTitles,
       filters.query,
     ],
   );

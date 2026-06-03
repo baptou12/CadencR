@@ -12,6 +12,7 @@ interface UseUnifiedAgentsDataArgs {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
   projectIds: number[];
+  excludedTitles: string[];
   query: string;
   sortOrder: UnifiedAgentsSortOrder;
 }
@@ -36,6 +37,7 @@ export function useUnifiedAgentsData({
   mode,
   freshMinutes,
   projectIds,
+  excludedTitles,
   query,
   sortOrder,
 }: UseUnifiedAgentsDataArgs): UnifiedAgentsData {
@@ -63,11 +65,21 @@ export function useUnifiedAgentsData({
         mode,
         freshMinutes,
         projectIds,
+        excludedTitles,
         queryText,
         sortOrder,
         liveActiveSessionIds,
       }),
-    [freshMinutes, mode, projectIds, queryText, rawAgents, sortOrder, liveActiveSessionIds],
+    [
+      freshMinutes,
+      mode,
+      projectIds,
+      excludedTitles,
+      queryText,
+      rawAgents,
+      sortOrder,
+      liveActiveSessionIds,
+    ],
   );
   const refresh = useCallback((): void => {
     void refetchAgents();
@@ -90,6 +102,9 @@ export interface UnifiedAgentMatchFilters {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
   projectIds: number[];
+  /** Feature-title substrings to hide entirely (the `/exclude:` filter).
+   *  Case-insensitive; an excluded agent is dropped even if pinned. */
+  excludedTitles: string[];
   queryText: string;
   /** Live `sessionDbId`s with non-idle status — fed by the WS store.
    *  Optional so call sites that don't care about the "Recent" mode (e.g.
@@ -105,10 +120,13 @@ export function orderUnifiedAgentsForDisplay(
   entries: UnifiedAgentEntry[],
   filters: UnifiedAgentFilterArgs,
 ): UnifiedAgentEntry[] {
+  // Excluded agents are hidden entirely — pre-filter before the pin/sort
+  // logic so the `/exclude:` filter wins over the pinned-extras fallback.
+  const included = dropExcludedAgents(entries, filters.excludedTitles);
   if (hasNoActiveFilter(filters)) {
-    return pinFirst(entries.filter(isVisibleAgent), filters.sortOrder);
+    return pinFirst(included.filter(isVisibleAgent), filters.sortOrder);
   }
-  const { matching, pinnedExtras } = splitAgentsByFilterVisibility(entries, filters);
+  const { matching, pinnedExtras } = splitAgentsByFilterVisibility(included, filters);
   const orderedMatches =
     filters.queryText.length === 0
       ? pinFirst(matching, filters.sortOrder)
@@ -120,8 +138,23 @@ export function getUnifiedAgentsMatchingFilters(
   entries: UnifiedAgentEntry[],
   filters: UnifiedAgentMatchFilters,
 ): UnifiedAgentEntry[] {
-  const { matching, pinnedExtras } = splitAgentsByFilterVisibility(entries, filters);
+  const included = dropExcludedAgents(entries, filters.excludedTitles);
+  const { matching, pinnedExtras } = splitAgentsByFilterVisibility(included, filters);
   return [...matching, ...pinnedExtras];
+}
+
+function dropExcludedAgents(
+  entries: UnifiedAgentEntry[],
+  excludedTitles: string[],
+): UnifiedAgentEntry[] {
+  if (excludedTitles.length === 0) return entries;
+  const needles = excludedTitles.map((title: string): string => title.toLowerCase());
+  return entries.filter((entry: UnifiedAgentEntry): boolean => !isExcluded(entry, needles));
+}
+
+function isExcluded(entry: UnifiedAgentEntry, lowercaseNeedles: string[]): boolean {
+  const title = entry.feature.title.toLowerCase();
+  return lowercaseNeedles.some((needle: string): boolean => title.includes(needle));
 }
 
 function hasNoActiveFilter(filters: UnifiedAgentMatchFilters): boolean {

@@ -43,6 +43,7 @@ interface UnifiedAgentsGridProps {
   activeIndex: number;
   focusVersion: number;
   onActivate: (index: number) => void;
+  onExcludeAgent: (title: string) => void;
 }
 
 export const UnifiedAgentsGrid = memo(function UnifiedAgentsGrid({
@@ -51,6 +52,7 @@ export const UnifiedAgentsGrid = memo(function UnifiedAgentsGrid({
   activeIndex,
   focusVersion,
   onActivate,
+  onExcludeAgent,
 }: UnifiedAgentsGridProps): ReactElement {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const { rowHeights, setRowHeight } = useRowHeights();
@@ -79,6 +81,7 @@ export const UnifiedAgentsGrid = memo(function UnifiedAgentsGrid({
             onRowHeightChange={setRowHeight}
             onRowWidthLayoutChange={setRowWidthLayout}
             onActivate={onActivate}
+            onExcludeAgent={onExcludeAgent}
           />
         );
       }}
@@ -97,6 +100,7 @@ function UnifiedAgentsRow({
   onRowHeightChange,
   onRowWidthLayoutChange,
   onActivate,
+  onExcludeAgent,
 }: {
   rowAgents: UnifiedAgentEntry[];
   rowLayoutKey: RowLayoutKey;
@@ -108,6 +112,7 @@ function UnifiedAgentsRow({
   onRowHeightChange: (rowLayoutKey: RowLayoutKey, height: number, persist: boolean) => void;
   onRowWidthLayoutChange: (rowLayoutKey: RowLayoutKey, layout: PanelLayout) => void;
   onActivate: (index: number) => void;
+  onExcludeAgent: (title: string) => void;
 }): ReactElement {
   const onLayoutChanged = useCallback(
     (layout: PanelLayout): void => onRowWidthLayoutChange(rowLayoutKey, layout),
@@ -136,6 +141,7 @@ function UnifiedAgentsRow({
                 isActive={index === activeIndex}
                 isLast={offset === rowAgents.length - 1}
                 onActivate={onActivate}
+                onExcludeAgent={onExcludeAgent}
               />
             );
           })}
@@ -224,6 +230,7 @@ function RowPanel({
   isActive,
   isLast,
   onActivate,
+  onExcludeAgent,
 }: {
   entry: UnifiedAgentEntry;
   panelId: string;
@@ -232,6 +239,7 @@ function RowPanel({
   isActive: boolean;
   isLast: boolean;
   onActivate: (index: number) => void;
+  onExcludeAgent: (title: string) => void;
 }): ReactElement {
   return (
     <>
@@ -242,7 +250,13 @@ function RowPanel({
         className="min-w-0 px-1.5"
         style={SHADOW_FRIENDLY_OVERFLOW}
       >
-        <UnifiedAgentCard entry={entry} index={index} isActive={isActive} onActivate={onActivate} />
+        <UnifiedAgentCard
+          entry={entry}
+          index={index}
+          isActive={isActive}
+          onActivate={onActivate}
+          onExcludeAgent={onExcludeAgent}
+        />
       </ResizablePanel>
       {!isLast && <ResizableHandle className="bg-transparent" />}
     </>

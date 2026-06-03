@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnifiedAgentsMode } from "@/api/generated";
+import { dedupeTitles } from "@/components/unified-agents-filter-values";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 
 const FILTER_EVENT = "cadencr:unified-agents-filters-changed";
@@ -9,6 +10,7 @@ const FILTER_KEYS = {
   freshMinutes: "unified_agents_fresh_minutes",
   projectId: "unified_agents_project_id",
   projectIds: "unified_agents_project_ids",
+  excludedTitles: "unified_agents_excluded_titles",
   query: "unified_agents_query",
   sortOrder: "unified_agents_sort_order",
 } as const;
@@ -27,6 +29,7 @@ export interface PersistedUnifiedAgentsFilters {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
   projectIds: number[];
+  excludedTitles: string[];
   query: string;
   sortOrder: UnifiedAgentsSortOrder;
 }
@@ -43,6 +46,7 @@ export function readUnifiedAgentsFilters(): PersistedUnifiedAgentsFilters {
       FRESH_MINUTES_MAX,
     ),
     projectIds: readProjectIds(),
+    excludedTitles: readExcludedTitles(),
     query: window.localStorage.getItem(FILTER_KEYS.query) ?? "",
     sortOrder: readSortOrder(),
   };
@@ -101,6 +105,7 @@ function normalizeFilters(filters: PersistedUnifiedAgentsFilters): PersistedUnif
       FRESH_MINUTES_MAX,
     ),
     projectIds: uniquePositiveInts(filters.projectIds),
+    excludedTitles: dedupeTitles(filters.excludedTitles),
     query: filters.query,
     sortOrder: normalizeSortOrder(filters.sortOrder),
   };
@@ -115,7 +120,8 @@ function areUnifiedAgentsFiltersEqual(
     a.freshMinutes === b.freshMinutes &&
     a.query === b.query &&
     a.sortOrder === b.sortOrder &&
-    intArraysEqual(a.projectIds, b.projectIds)
+    intArraysEqual(a.projectIds, b.projectIds) &&
+    stringArraysEqual(a.excludedTitles, b.excludedTitles)
   );
 }
 
@@ -125,12 +131,24 @@ function intArraysEqual(a: number[], b: number[]): boolean {
   );
 }
 
+function stringArraysEqual(a: string[], b: string[]): boolean {
+  return (
+    a.length === b.length && a.every((value: string, index: number): boolean => value === b[index])
+  );
+}
+
 function writeFiltersToStorage(filters: PersistedUnifiedAgentsFilters): void {
   window.localStorage.setItem(FILTER_KEYS.mode, filters.mode);
   window.localStorage.setItem(FILTER_KEYS.freshMinutes, String(filters.freshMinutes));
   writeOptionalString(FILTER_KEYS.query, filters.query);
   writeProjectIds(filters.projectIds);
+  writeExcludedTitles(filters.excludedTitles);
   window.localStorage.setItem(FILTER_KEYS.sortOrder, filters.sortOrder);
+}
+
+function writeExcludedTitles(excludedTitles: string[]): void {
+  if (excludedTitles.length === 0) window.localStorage.removeItem(FILTER_KEYS.excludedTitles);
+  else window.localStorage.setItem(FILTER_KEYS.excludedTitles, JSON.stringify(excludedTitles));
 }
 
 function writeOptionalString(key: string, value: string): void {
@@ -199,6 +217,19 @@ function uniquePositiveInts(values: number[]): number[] {
     if (Number.isFinite(value) && value > 0 && !ids.includes(value)) ids.push(value);
   }
   return ids;
+}
+
+function readExcludedTitles(): string[] {
+  const stored = window.localStorage.getItem(FILTER_KEYS.excludedTitles);
+  if (!stored) return [];
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return [];
+    const strings = parsed.filter((item: unknown): item is string => typeof item === "string");
+    return dedupeTitles(strings);
+  } catch {
+    return [];
+  }
 }
 
 function readNullableInt(key: string): number | null {

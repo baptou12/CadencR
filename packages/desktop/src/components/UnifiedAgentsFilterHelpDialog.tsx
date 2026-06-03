@@ -44,6 +44,10 @@ export const UnifiedAgentsFilterHelpDialog = memo(function UnifiedAgentsFilterHe
                 code='/project:"My Project"'
                 detail="Filter by project. Use | for multiple projects."
               />
+              <HelpRow
+                code="/exclude:auth|docs"
+                detail="Hide agents whose name contains any of these. Use | for multiple."
+              />
               <HelpRow code="/sort:created" detail="Newest created agent first." />
               <HelpRow code="/sort:-created" detail="Oldest created agent first." />
               <HelpRow code="/sort:message" detail="Newest message first." />

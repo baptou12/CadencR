@@ -112,6 +112,7 @@ describe("UnifiedAgentCard ws-session hydration", () => {
         index={0}
         isActive={false}
         onActivate={vi.fn()}
+        onExcludeAgent={vi.fn()}
       />,
     );
 
@@ -178,6 +179,7 @@ describe("UnifiedAgentCard ws-session hydration", () => {
         index={0}
         isActive
         onActivate={vi.fn()}
+        onExcludeAgent={vi.fn()}
       />,
     );
 
@@ -201,7 +203,15 @@ describe("UnifiedAgentCard CMD+O shortcut", () => {
   });
 
   it("navigates to the feature page when the shortcut fires", () => {
-    render(<UnifiedAgentCard entry={makeEntry()} index={0} isActive onActivate={vi.fn()} />);
+    render(
+      <UnifiedAgentCard
+        entry={makeEntry()}
+        index={0}
+        isActive
+        onActivate={vi.fn()}
+        onExcludeAgent={vi.fn()}
+      />,
+    );
     const event = new KeyboardEvent("keydown");
     Object.defineProperty(event, "preventDefault", { value: vi.fn() });
     mocks.shortcutCallback?.(event);
@@ -213,8 +223,39 @@ describe("UnifiedAgentCard CMD+O shortcut", () => {
 
   it("is disabled when the card is not active so only one listener fires per grid", () => {
     render(
-      <UnifiedAgentCard entry={makeEntry()} index={0} isActive={false} onActivate={vi.fn()} />,
+      <UnifiedAgentCard
+        entry={makeEntry()}
+        index={0}
+        isActive={false}
+        onActivate={vi.fn()}
+        onExcludeAgent={vi.fn()}
+      />,
     );
     expect(mocks.shortcutEnabled).toBe(false);
+  });
+});
+
+describe("UnifiedAgentCard exclude action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWsSessionStore.setState({ sessions: {} });
+  });
+
+  it("invokes onExcludeAgent with the feature title", () => {
+    const onExcludeAgent = vi.fn();
+    render(
+      <UnifiedAgentCard
+        entry={makeEntry()}
+        index={0}
+        isActive
+        onActivate={vi.fn()}
+        onExcludeAgent={onExcludeAgent}
+      />,
+    );
+    const calls = mocks.WebSocketSessionFeatureBlock.mock.calls as unknown as Array<
+      [{ onExclude?: () => void }]
+    >;
+    calls[0]?.[0]?.onExclude?.();
+    expect(onExcludeAgent).toHaveBeenCalledWith("Session feature");
   });
 });

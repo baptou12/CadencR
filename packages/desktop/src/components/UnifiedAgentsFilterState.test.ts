@@ -9,6 +9,7 @@ const FILTER_KEYS = {
   freshMinutes: "unified_agents_fresh_minutes",
   projectId: "unified_agents_project_id",
   projectIds: "unified_agents_project_ids",
+  excludedTitles: "unified_agents_excluded_titles",
   query: "unified_agents_query",
   sortOrder: "unified_agents_sort_order",
 } as const;
@@ -29,6 +30,7 @@ describe("UnifiedAgentsFilterState", () => {
       mode: "recent",
       freshMinutes: 5,
       projectIds: [],
+      excludedTitles: [],
       query: "needle",
       sortOrder: "created_desc",
     });
@@ -44,9 +46,25 @@ describe("UnifiedAgentsFilterState", () => {
       mode: "all",
       freshMinutes: 999,
       projectIds: [42, 43],
+      excludedTitles: [],
       query: "",
       sortOrder: "created_asc",
     });
+  });
+
+  it("reads, trims, and dedupes persisted excluded titles", () => {
+    window.localStorage.setItem(
+      FILTER_KEYS.excludedTitles,
+      JSON.stringify(["  auth  ", "auth", "Docs site", 42]),
+    );
+
+    expect(readUnifiedAgentsFilters().excludedTitles).toEqual(["auth", "Docs site"]);
+  });
+
+  it("ignores malformed excluded-title storage", () => {
+    window.localStorage.setItem(FILTER_KEYS.excludedTitles, "{not json");
+
+    expect(readUnifiedAgentsFilters().excludedTitles).toEqual([]);
   });
 
   it("reads persisted activity sort options", () => {

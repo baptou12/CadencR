@@ -20,10 +20,7 @@ import {
   type UnifiedAgentsPerRowSetting,
 } from "@/components/UnifiedAgentsPerRowSetting";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
-import {
-  parseUnifiedAgentsFilterText,
-  serializeUnifiedAgentsFilterText,
-} from "@/components/UnifiedAgentsFilterLanguage";
+import { useUnifiedAgentsFilterText } from "@/components/useUnifiedAgentsFilterText";
 import type { UnifiedAgentsFilterInputHandle } from "@/components/UnifiedAgentsDynamicFilter";
 import { useUnifiedAgentPinControls } from "@/components/useUnifiedAgentPinControls";
 import { useUnifiedAgentsData, type UnifiedAgentsData } from "@/components/UnifiedAgentsViewData";
@@ -49,17 +46,13 @@ export function UnifiedAgentsView(): ReactElement {
     [data.agents],
   );
   const runningAgentsCount = useLiveWorkingCount(visibleSessionIds);
-  const serializedFilterText = useMemo(
-    () => serializeUnifiedAgentsFilterText(filters, projects),
-    [filters, projects],
+  const { filterText, commitFilterText, excludeAgent } = useUnifiedAgentsFilterText(
+    filters,
+    setFilters,
+    projects,
+    searchInputRef,
   );
-  const [filterText, setFilterText] = useState(serializedFilterText);
-  const filterTextEditedRef = useRef(false);
   const agentsPerRow = useUnifiedAgentsPerRowSetting();
-  useEffect((): void => {
-    if (filterTextEditedRef.current) return;
-    setFilterText(serializedFilterText);
-  }, [serializedFilterText]);
   const columns = agentsPerRow.value;
   const { activeIndex, activeAgent, setActiveSessionId } = useActiveAgent(data.agents);
   const activePinControls = useUnifiedAgentPinControls(activeAgent, { showProgressToast: true });
@@ -73,15 +66,6 @@ export function UnifiedAgentsView(): ReactElement {
   });
   const [searchEnterFocusRequest, setSearchEnterFocusRequest] = useState(0);
   const pendingSearchEnterFocusRef = useRef(false);
-  const commitFilterText = useCallback(
-    (nextText: string): void => {
-      filterTextEditedRef.current = true;
-      setFilterText(nextText);
-      const parsed = parseUnifiedAgentsFilterText(nextText, projects);
-      setFilters(parsed);
-    },
-    [projects, setFilters],
-  );
   const requestFirstMatchedAgentFocus = useCallback((): void => {
     pendingSearchEnterFocusRef.current = true;
     setSearchEnterFocusRequest((current) => current + 1);
@@ -115,6 +99,7 @@ export function UnifiedAgentsView(): ReactElement {
         activeIndex={activeIndex}
         focusVersion={focusVersion}
         onActivate={handleActivate}
+        onExcludeAgent={excludeAgent}
       />
     </div>
   );
@@ -240,6 +225,7 @@ interface UnifiedAgentsContentProps {
   activeIndex: number;
   focusVersion: number;
   onActivate: (index: number) => void;
+  onExcludeAgent: (title: string) => void;
 }
 
 function UnifiedAgentsContent({
@@ -248,6 +234,7 @@ function UnifiedAgentsContent({
   activeIndex,
   focusVersion,
   onActivate,
+  onExcludeAgent,
 }: UnifiedAgentsContentProps): ReactElement {
   if (data.isError) {
     return (
@@ -277,6 +264,7 @@ function UnifiedAgentsContent({
       activeIndex={activeIndex}
       focusVersion={focusVersion}
       onActivate={onActivate}
+      onExcludeAgent={onExcludeAgent}
     />
   );
 }
