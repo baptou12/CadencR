@@ -12,12 +12,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SettingsCard } from "./SettingsCard";
+import { SettingsSubsection } from "./SettingsSubsection";
 import { IconTile } from "./IconTile";
 
 /**
  * Per-provider opt-in for an unsafe permission mode (Claude Code's
  * BypassPermissions, Codex's danger-full-access). Flipping ON shows a
  * confirmation dialog; flipping OFF is silent.
+ *
+ * `variant` controls the wrapper: `"card"` (default) is a standalone
+ * red-tinted card; `"subsection"` renders the same content as a danger-tinted
+ * `SettingsSubsection` so it can sit inside a provider's card, divided from
+ * the rows above it.
  */
 export function DangerousModeToggle({
   settingKey,
@@ -25,12 +31,14 @@ export function DangerousModeToggle({
   description,
   warningTitle,
   warningBody,
+  variant = "card",
 }: {
   settingKey: string;
   title: string;
   description: ReactNode;
   warningTitle: string;
   warningBody: ReactNode;
+  variant?: "card" | "subsection";
 }): ReactNode {
   const { value, setValue, isLoading } = useDebouncedSetting(settingKey, 0);
   const enabled = value === "true";
@@ -49,8 +57,8 @@ export function DangerousModeToggle({
     setConfirmOpen(false);
   };
 
-  return (
-    <SettingsCard tone="danger" padded>
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-6">
         <div className="flex items-start gap-3">
           <IconTile tint="red">
@@ -96,6 +104,20 @@ export function DangerousModeToggle({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (variant === "subsection") {
+    return (
+      <SettingsSubsection className="border-[color-mix(in_oklab,var(--acc-red)_30%,transparent)] bg-[color-mix(in_oklab,var(--acc-red)_6%,transparent)]">
+        {body}
+      </SettingsSubsection>
+    );
+  }
+
+  return (
+    <SettingsCard tone="danger" padded>
+      {body}
     </SettingsCard>
   );
 }

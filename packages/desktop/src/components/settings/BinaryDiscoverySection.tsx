@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useBinaryDiscovery } from "@/api/generated";
 import type { DiscoveredCandidate, DiscoveredSource, ProviderDiscovery } from "@/api/generated";
 import { cn } from "@/lib/utils";
+import { SettingsHeading } from "./SettingsHeading";
 import { ErrorRow, LoadingRow } from "./SettingsStateRows";
 
 /**
@@ -27,10 +28,7 @@ export function BinaryDiscoverySection({
 
   return (
     <section className="space-y-3">
-      <div>
-        <h3 className="text-base font-semibold">CLI binary</h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+      <SettingsHeading title="CLI binary" description={description} />
 
       {query.isLoading ? (
         <LoadingRow label="Discovering installs…" />
@@ -67,7 +65,7 @@ function ProviderCard({ provider }: { provider: ProviderDiscovery }) {
           }
         />
       ) : (
-        <div className="rounded-md border border-border overflow-hidden">
+        <div className="rounded-md border border-border bg-card overflow-hidden">
           {candidates.map((candidate) => (
             <CandidateRow
               key={candidate.canonical}
@@ -91,7 +89,7 @@ function SummaryRow({
   overridePath: string | null;
 }) {
   return (
-    <div className="rounded-md border border-border bg-muted/30 px-4 py-3 space-y-1 text-sm">
+    <div className="rounded-md border border-border bg-card px-4 py-3 space-y-1 text-sm">
       <div>
         <span className="text-muted-foreground">Binary:</span>{" "}
         <code className="font-mono text-xs">{binName}</code>

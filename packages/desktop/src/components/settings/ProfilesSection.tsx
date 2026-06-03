@@ -20,6 +20,7 @@ import {
   useUpsertClaudeCodeProfile,
   type ClaudeCodeProfile,
 } from "@/api/agentRuntime";
+import { SettingsHeading } from "./SettingsHeading";
 import { ErrorRow, LoadingRow, toastCallbacks } from "./SettingsStateRows";
 
 interface EnvRow {
@@ -56,26 +57,28 @@ export function ProfilesSection() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold">Profiles</h3>
-          <p className="text-sm text-muted-foreground">
+      <SettingsHeading
+        title="Profiles"
+        description={
+          <>
             Named sets of environment variables applied when spawning the CLI. The{" "}
             <code className="px-1 py-0.5 rounded bg-muted text-xs">default</code> profile injects
             nothing.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>
-          <Plus className="size-3.5" /> New profile
-        </Button>
-      </div>
+          </>
+        }
+        action={
+          <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>
+            <Plus className="size-3.5" /> New profile
+          </Button>
+        }
+      />
 
       {profilesQuery.isLoading ? (
         <LoadingRow label="Loading profiles…" />
       ) : profilesQuery.isError ? (
         <ErrorRow label="Failed to load profiles." />
       ) : (
-        <div className="rounded-md border border-border overflow-hidden">
+        <div className="rounded-md border border-border bg-card overflow-hidden">
           <ProfileRow
             name={DEFAULT_CLAUDE_PROFILE_NAME}
             envCount={0}

@@ -8,7 +8,7 @@ import { useAnimationsEnabled } from "@/lib/animations/animations-setting";
  * `prefers-reduced-motion` preference; flipping the switch persists the
  * explicit override into the `animations_enabled` workspace setting.
  */
-export function AnimationsToggle(): React.JSX.Element {
+export function AnimationsToggle({ divided }: { divided?: boolean }): React.JSX.Element {
   const { enabled, systemReducedMotion, setEnabled, isLoading } = useAnimationsEnabled();
 
   const description = systemReducedMotion
@@ -24,6 +24,7 @@ export function AnimationsToggle(): React.JSX.Element {
       checked={enabled}
       onCheckedChange={setEnabled}
       disabled={isLoading}
+      divided={divided}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { render, screen } from "@/test-utils";
 import { LspServerList } from "./LspServerList";
 
@@ -19,13 +20,47 @@ vi.mock("@/api/generated", async () => {
 });
 
 describe("LspServerList", () => {
-  it("renders the section heading even while loading", () => {
+  it("shows a loading skeleton while fetching", () => {
     mockResult = { data: undefined, isLoading: true, error: null };
     render(<LspServerList />);
-    expect(screen.getByText("Language servers")).toBeInTheDocument();
-    // Skeleton must be present (per `explicit-state.md`).
+    // Skeleton must be present (per `explicit-state.md`). The "Language
+    // servers" heading now lives on the wrapping SettingsCard, not here.
     const skeleton = document.querySelector("[aria-busy='true']");
     expect(skeleton).not.toBeNull();
+  });
+
+  it("filters rows by language or server name", async () => {
+    mockResult = {
+      data: {
+        servers: [
+          {
+            lsp_id: "typescript-language-server",
+            bin_name: "typescript-language-server",
+            language_ids: ["typescript", "typescriptreact"],
+            status: "on_path",
+            path: "/opt/homebrew/bin/typescript-language-server",
+            version: "4.3.3",
+            downloadable: false,
+          },
+          {
+            lsp_id: "rust-analyzer",
+            bin_name: "rust-analyzer",
+            language_ids: ["rust"],
+            status: "missing",
+            path: null,
+            version: null,
+            downloadable: true,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
+    const user = userEvent.setup();
+    render(<LspServerList />);
+    await user.type(screen.getByRole("textbox", { name: /search language servers/i }), "rust");
+    expect(screen.getByText("rust-analyzer")).toBeInTheDocument();
+    expect(screen.queryByText("typescript-language-server")).not.toBeInTheDocument();
   });
 
   it("surfaces fetch errors verbatim", () => {

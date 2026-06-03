@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useShortcut } from "@/hooks/useShortcut";
 import {
@@ -22,8 +22,10 @@ import {
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { ModelSelector } from "@/components/ModelSelector";
-import { ProviderPicker, type ProviderPickerOption } from "@/components/settings/ProviderPicker";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ProviderIcon } from "@/lib/provider-icons";
 import { CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY } from "@/shared/permission-mode-settings";
 import { BinaryDiscoverySection } from "@/components/settings/BinaryDiscoverySection";
 import { CustomModelsSection } from "@/components/settings/CustomModelsSection";
@@ -39,6 +41,7 @@ import { LspServerList } from "@/components/settings/LspServerList";
 import { AnimationsToggle } from "@/components/settings/AnimationsToggle";
 import { SettingsSection } from "@/components/settings/SettingsSection";
 import { SettingsCard } from "@/components/settings/SettingsCard";
+import { SettingsSubsection } from "@/components/settings/SettingsSubsection";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { SettingsSwitchRow } from "@/components/settings/SettingsSwitchRow";
 import {
@@ -48,7 +51,7 @@ import {
 import { IconTile } from "@/components/settings/IconTile";
 import { useZoom } from "@/hooks/useZoom";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { PROVIDER_IDS, type ProviderId } from "@/lib/providers";
+import { getProviderMetadata, PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { APP_VERSION } from "@/lib/app-version";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useUpdateStore, type UpdateStatus } from "@/stores/update-store";
@@ -231,10 +234,17 @@ function Breadcrumbs(): React.JSX.Element {
 function AppearanceSection(): React.JSX.Element {
   return (
     <SettingsSection id="appearance" title="Appearance" subtitle="Theme · Animations · Verbosity">
-      <SettingsCard padded className="space-y-5">
-        <ThemeSelector />
-        <AnimationsToggle />
-        <AgentVerbositySettings />
+      <SettingsCard>
+        <SettingsSubsection padded={false}>
+          <ThemeSelector />
+          <AnimationsToggle divided />
+        </SettingsSubsection>
+        <SettingsSubsection
+          title="Agent output verbosity"
+          description="Control how much of each agent turn stays expanded in the stream. Switching modes does not affect what the agent does — only how its output is rendered."
+        >
+          <AgentVerbositySettings />
+        </SettingsSubsection>
       </SettingsCard>
     </SettingsSection>
   );
@@ -262,90 +272,101 @@ function EditorSection(): React.JSX.Element {
 
   return (
     <SettingsSection id="editor" title="Editor" subtitle="CodeMirror · File tree">
-      <SettingsCard padded>
-        <FileTreeIconSetSelector />
-      </SettingsCard>
-      <SettingsCard padded>
-        <LspServerList />
-      </SettingsCard>
       <SettingsCard>
-        <SettingsSwitchRow
-          icon={<Keyboard className="size-4" />}
-          iconTint="cyan"
-          label="Vim motions"
-          description="Modal editing in the built-in code editor."
-          checked={isVimEnabled}
-          onCheckedChange={(checked) => vimMode.setValue(checked ? "true" : "false")}
-        />
-        <SettingsSwitchRow
-          icon={<Save className="size-4" />}
-          iconTint="green"
-          label="Auto-save"
-          description="Automatically save files after a short delay."
-          checked={isAutoSaveEnabled}
-          onCheckedChange={(checked) => autoSave.setValue(checked ? "true" : "false")}
-          divided
-        />
-        <SettingsSwitchRow
-          icon={<History className="size-4" />}
-          iconTint="orange"
-          label="Git blame"
-          description="Show blame annotation on the current line."
-          checked={isGitBlameEnabled}
-          onCheckedChange={(checked) => gitBlame.setValue(checked ? "true" : "false")}
-          divided
-        />
-        <SettingsRow
-          divided
-          align="start"
-          icon={
-            <IconTile tint="pink">
-              <Files className="size-4" />
-            </IconTile>
-          }
-          label="Max open tabs"
-          description="Older tabs are closed once you exceed the cap. Disable to keep them all."
-          control={
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMaxTabsNum(maxTabsNum - 1)}
-                disabled={!isLimited}
-                className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
-                aria-label="Decrease max tabs"
-              >
-                −
-              </button>
-              <Input
-                type="number"
-                min={1}
-                max={50}
-                disabled={!isLimited}
-                value={maxTabsNum}
-                onChange={(e) => setMaxTabsNum(parseInt(e.target.value, 10) || 1)}
-                className="h-7 w-14 text-center disabled:opacity-50"
-              />
-              <button
-                type="button"
-                onClick={() => setMaxTabsNum(maxTabsNum + 1)}
-                disabled={!isLimited}
-                className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
-                aria-label="Increase max tabs"
-              >
-                +
-              </button>
-              <label className="ml-2 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-                <input
-                  type="checkbox"
-                  checked={!isLimited}
-                  onChange={(e) => maxTabs.setValue(e.target.checked ? "0" : "10")}
-                  className="accent-primary"
+        <SettingsSubsection
+          title="File tree icons"
+          description="Controls the icon density of the editor's file tree. Affects every project."
+        >
+          <FileTreeIconSetSelector />
+        </SettingsSubsection>
+        <SettingsSubsection
+          title="Language servers"
+          description="Cmd-click and F12 jump-to-definition use these. Servers launch on demand the first time you open a matching file."
+        >
+          <LspServerList />
+        </SettingsSubsection>
+        <SettingsSubsection padded={false}>
+          <SettingsSwitchRow
+            icon={<Keyboard className="size-4" />}
+            iconTint="cyan"
+            label="Vim motions"
+            description="Modal editing in the built-in code editor."
+            checked={isVimEnabled}
+            onCheckedChange={(checked) => vimMode.setValue(checked ? "true" : "false")}
+          />
+          <SettingsSwitchRow
+            icon={<Save className="size-4" />}
+            iconTint="green"
+            label="Auto-save"
+            description="Automatically save files after a short delay."
+            checked={isAutoSaveEnabled}
+            onCheckedChange={(checked) => autoSave.setValue(checked ? "true" : "false")}
+            divided
+          />
+          <SettingsSwitchRow
+            icon={<History className="size-4" />}
+            iconTint="orange"
+            label="Git blame"
+            description="Show blame annotation on the current line."
+            checked={isGitBlameEnabled}
+            onCheckedChange={(checked) => gitBlame.setValue(checked ? "true" : "false")}
+            divided
+          />
+          <SettingsRow
+            divided
+            align="start"
+            icon={
+              <IconTile tint="pink">
+                <Files className="size-4" />
+              </IconTile>
+            }
+            label="Max open tabs"
+            description="Older tabs are closed once you exceed the cap. Disable to keep them all."
+            control={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMaxTabsNum(maxTabsNum - 1)}
+                  disabled={!isLimited}
+                  className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
+                  aria-label="Decrease max tabs"
+                >
+                  −
+                </button>
+                <Input
+                  type="number"
+                  min={1}
+                  max={50}
+                  disabled={!isLimited}
+                  value={maxTabsNum}
+                  onChange={(e) => setMaxTabsNum(parseInt(e.target.value, 10) || 1)}
+                  className="h-7 w-14 text-center disabled:opacity-50"
                 />
-                Unlimited
-              </label>
-            </div>
-          }
-        />
+                <button
+                  type="button"
+                  onClick={() => setMaxTabsNum(maxTabsNum + 1)}
+                  disabled={!isLimited}
+                  className="grid size-7 place-items-center rounded-md border border-border bg-card text-sm transition-colors hover:bg-accent disabled:opacity-40"
+                  aria-label="Increase max tabs"
+                >
+                  +
+                </button>
+                <label
+                  htmlFor="max-tabs-unlimited"
+                  className="ml-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Unlimited
+                  <Switch
+                    id="max-tabs-unlimited"
+                    size="sm"
+                    checked={!isLimited}
+                    onCheckedChange={(checked) => maxTabs.setValue(checked ? "0" : "10")}
+                  />
+                </label>
+              </div>
+            }
+          />
+        </SettingsSubsection>
       </SettingsCard>
     </SettingsSection>
   );
@@ -358,15 +379,26 @@ function InterfaceSection(): React.JSX.Element {
 
   return (
     <SettingsSection id="interface" title="Interface & Zoom" subtitle="Global UI scaling">
-      <SettingsCard padded>
+      <SettingsCard>
         <SettingsRow
+          align="start"
           icon={
             <IconTile tint="cyan">
               <ZoomIn className="size-4" />
             </IconTile>
           }
           label="UI zoom"
-          description="Affects sidebar, editor, terminal, and chrome together."
+          description={
+            <>
+              Affects sidebar, editor, terminal, and chrome together.
+              <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Kbd>⌘ +</Kbd>
+                <Kbd>⌘ −</Kbd>
+                <Kbd>⌘ 0</Kbd>
+                work everywhere.
+              </span>
+            </>
+          }
           control={
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" className="size-7 p-0" onClick={zoomOut}>
@@ -381,14 +413,7 @@ function InterfaceSection(): React.JSX.Element {
               </Button>
             </div>
           }
-          className="!px-0 !py-0"
         />
-        <div className="ml-11 mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <Kbd>⌘ +</Kbd>
-          <Kbd>⌘ −</Kbd>
-          <Kbd>⌘ 0</Kbd>
-          <span>shortcuts work everywhere.</span>
-        </div>
       </SettingsCard>
     </SettingsSection>
   );
@@ -406,12 +431,7 @@ function Kbd({ children }: { children: ReactNode }): React.JSX.Element {
 
 function RuntimeSection(): React.JSX.Element {
   return (
-    <SettingsSection
-      id="runtime"
-      title="Runtime & Models"
-      subtitle="Per-agent provider & model"
-      description="Choose the runtime provider and model for sessions and auto-naming."
-    >
+    <SettingsSection id="runtime" title="Runtime & Models" subtitle="Per-agent provider & model">
       <SettingsCard>
         <ModelSelector level="global" />
       </SettingsCard>
@@ -424,18 +444,18 @@ function RuntimeSection(): React.JSX.Element {
 function GitSection(): React.JSX.Element {
   return (
     <SettingsSection id="git" title="Git" subtitle="Header actions defaults">
-      <SettingsCard padded>
-        <div className="space-y-3">
-          <div>
-            <div className="text-sm font-medium">Merge strategy</div>
-            <p className="text-xs text-muted-foreground">
-              Default mode used by the{" "}
-              <span className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">Merge</span>{" "}
-              action in the feature top bar.
-            </p>
-          </div>
-          <GitSettings />
-        </div>
+      <SettingsCard
+        padded
+        title="Merge strategy"
+        description={
+          <>
+            Default mode used by the{" "}
+            <span className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">Merge</span> action
+            in the feature top bar.
+          </>
+        }
+      >
+        <GitSettings />
       </SettingsCard>
     </SettingsSection>
   );
@@ -443,28 +463,40 @@ function GitSection(): React.JSX.Element {
 
 /* ─── Providers ──────────────────────────────────────────────────────── */
 
-const PROVIDER_PICKER_OPTIONS: ProviderPickerOption[] = [
-  { id: PROVIDER_IDS.CLAUDE_CODE },
-  { id: PROVIDER_IDS.OPENCODE },
-  { id: PROVIDER_IDS.CODEX_CLI },
+const PROVIDER_TABS: ProviderId[] = [
+  PROVIDER_IDS.CLAUDE_CODE,
+  PROVIDER_IDS.OPENCODE,
+  PROVIDER_IDS.CODEX_CLI,
 ];
 
 function ProvidersSection(): React.JSX.Element {
-  const [active, setActive] = useState<ProviderId>(PROVIDER_IDS.CLAUDE_CODE);
-
   return (
     <SettingsSection
       id="providers"
       title="CLI Providers"
       subtitle="Binaries · Profiles · Permission modes"
-      description="Cadencr spawns each provider's CLI directly. Manage which install gets used, configure custom profiles, and opt into unsafe permission modes."
     >
-      <ProviderPicker options={PROVIDER_PICKER_OPTIONS} activeId={active} onChange={setActive} />
-      <div id={`provider-panel-${active}`} role="tabpanel" className="mt-3 space-y-4">
-        {active === PROVIDER_IDS.CLAUDE_CODE && <ClaudeProviderPanel />}
-        {active === PROVIDER_IDS.OPENCODE && <OpencodeProviderPanel />}
-        {active === PROVIDER_IDS.CODEX_CLI && <CodexProviderPanel />}
-      </div>
+      <SettingsCard padded={false}>
+        <Tabs defaultValue={PROVIDER_IDS.CLAUDE_CODE}>
+          <TabsList aria-label="Provider" className="px-2">
+            {PROVIDER_TABS.map((id) => (
+              <TabsTrigger key={id} value={id}>
+                <ProviderIcon providerId={id} alt="" className="size-4 rounded-sm shrink-0" />
+                <span>{getProviderMetadata(id)?.label ?? id}</span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value={PROVIDER_IDS.CLAUDE_CODE}>
+            <ClaudeProviderPanel />
+          </TabsContent>
+          <TabsContent value={PROVIDER_IDS.OPENCODE}>
+            <OpencodeProviderPanel />
+          </TabsContent>
+          <TabsContent value={PROVIDER_IDS.CODEX_CLI}>
+            <CodexProviderPanel />
+          </TabsContent>
+        </Tabs>
+      </SettingsCard>
     </SettingsSection>
   );
 }
@@ -472,7 +504,7 @@ function ProvidersSection(): React.JSX.Element {
 function ClaudeProviderPanel(): React.JSX.Element {
   return (
     <>
-      <SettingsCard padded>
+      <SettingsSubsection>
         <BinaryDiscoverySection
           discoveryKey="claude"
           description={
@@ -482,8 +514,15 @@ function ClaudeProviderPanel(): React.JSX.Element {
             </>
           }
         />
-      </SettingsCard>
+      </SettingsSubsection>
+      <SettingsSubsection>
+        <ProfilesSection />
+      </SettingsSubsection>
+      <SettingsSubsection>
+        <CustomModelsSection />
+      </SettingsSubsection>
       <DangerousModeToggle
+        variant="subsection"
         settingKey={CLAUDE_BYPASS_PERMISSIONS_SETTING_KEY}
         title="Allow BypassPermissions"
         description={
@@ -507,19 +546,13 @@ function ClaudeProviderPanel(): React.JSX.Element {
           </>
         }
       />
-      <SettingsCard padded>
-        <ProfilesSection />
-      </SettingsCard>
-      <SettingsCard padded>
-        <CustomModelsSection />
-      </SettingsCard>
     </>
   );
 }
 
 function OpencodeProviderPanel(): React.JSX.Element {
   return (
-    <SettingsCard padded>
+    <SettingsSubsection>
       <BinaryDiscoverySection
         discoveryKey="opencode"
         description={
@@ -530,14 +563,14 @@ function OpencodeProviderPanel(): React.JSX.Element {
           </>
         }
       />
-    </SettingsCard>
+    </SettingsSubsection>
   );
 }
 
 function CodexProviderPanel(): React.JSX.Element {
   return (
     <>
-      <SettingsCard padded>
+      <SettingsSubsection>
         <BinaryDiscoverySection
           discoveryKey="codex"
           description={
@@ -548,8 +581,10 @@ function CodexProviderPanel(): React.JSX.Element {
             </>
           }
         />
-      </SettingsCard>
-      <CodexPermissionModeSetting />
+      </SettingsSubsection>
+      <SettingsSubsection>
+        <CodexPermissionModeSetting />
+      </SettingsSubsection>
     </>
   );
 }

@@ -45,22 +45,14 @@ export function FileTreeIconSetSelector(): React.JSX.Element {
   );
 
   return (
-    <div className="space-y-3">
-      <div>
-        <div className="text-sm font-medium">File tree icons</div>
-        <p className="text-xs text-muted-foreground">
-          Controls the icon density of the editor's file tree. Affects every project.
-        </p>
-      </div>
-      <RadioCardGroup<FileTreeIconSet>
-        ariaLabel="File tree icon set"
-        value={iconSet}
-        onChange={setIconSet}
-        options={options}
-        layout="stack"
-        showDot
-        disabled={isLoading}
-      />
-    </div>
+    <RadioCardGroup<FileTreeIconSet>
+      ariaLabel="File tree icon set"
+      value={iconSet}
+      onChange={setIconSet}
+      options={options}
+      layout="stack"
+      showDot
+      disabled={isLoading}
+    />
   );
 }

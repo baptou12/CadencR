@@ -17,6 +17,7 @@ import {
   useUpsertClaudeCodeCustomModel,
   type RuntimeModelOption,
 } from "@/api/agentRuntime";
+import { SettingsHeading } from "./SettingsHeading";
 import { ErrorRow, LoadingRow, toastCallbacks } from "./SettingsStateRows";
 
 export function CustomModelsSection() {
@@ -40,29 +41,26 @@ export function CustomModelsSection() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-base font-semibold">Custom models</h3>
-          <p className="text-sm text-muted-foreground">
-            Additional model IDs merged into the catalog — e.g. older aliases, Bedrock ARNs, or
-            gateway names.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>
-          <Plus className="size-3.5" /> New model
-        </Button>
-      </div>
+      <SettingsHeading
+        title="Custom models"
+        description="Additional model IDs merged into the catalog — e.g. older aliases, Bedrock ARNs, or gateway names."
+        action={
+          <Button variant="outline" size="sm" onClick={() => setEditing({ mode: "create" })}>
+            <Plus className="size-3.5" /> New model
+          </Button>
+        }
+      />
 
       {modelsQuery.isLoading ? (
         <LoadingRow label="Loading custom models…" />
       ) : modelsQuery.isError ? (
         <ErrorRow label="Failed to load custom models." />
       ) : models.length === 0 ? (
-        <div className="rounded-md border border-border px-4 py-6 text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
           No custom models yet.
         </div>
       ) : (
-        <div className="rounded-md border border-border overflow-hidden">
+        <div className="rounded-md border border-border bg-card overflow-hidden">
           {models.map((m) => (
             <div
               key={m.id}

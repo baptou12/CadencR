@@ -60,7 +60,7 @@ export function ModelSelectorRow(props: ModelSelectorRowProps) {
       : undefined;
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center sm:gap-4">
+    <div className="flex flex-col gap-2.5 rounded-lg px-3 py-2.5 sm:flex-row sm:items-center sm:gap-4">
       <div className="flex min-w-0 items-center gap-2.5 sm:w-[180px] sm:flex-none">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/60 text-muted-foreground">
           {icon}
