@@ -14,7 +14,10 @@ use crate::discovery::resolved_codex_command;
 use crate::error::SdkError;
 use crate::parse::{parse_model, parse_thread_handle, parse_turn_handle};
 use crate::protocol::{app_server_args, mcp_server_status_list_params};
-use crate::types::{AppServerClientInfo, AppServerEvent, CodexModel, ThreadHandle, TurnHandle};
+use crate::types::{
+    parse_mcp_server_status_list, AppServerClientInfo, AppServerEvent, CodexMcpServerStatus,
+    CodexModel, ThreadHandle, TurnHandle,
+};
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_MAX_LINE_BYTES: usize = 8 * 1024 * 1024;
@@ -257,6 +260,11 @@ impl CodexAppServerClient {
             }
         }
         Ok(json!({ "data": data }))
+    }
+
+    pub async fn available_mcp_servers(&self) -> Result<Vec<CodexMcpServerStatus>, SdkError> {
+        let response = self.mcp_server_status_list().await?;
+        Ok(parse_mcp_server_status_list(&response))
     }
 
     pub async fn respond_server_request(&self, id: Value, result: Value) -> Result<(), SdkError> {

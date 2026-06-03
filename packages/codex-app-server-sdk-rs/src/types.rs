@@ -74,3 +74,52 @@ pub struct TurnHandle {
     pub id: String,
     pub status: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CodexMcpServerStatus {
+    pub name: String,
+    pub auth_status: Option<String>,
+    pub tool_names: Vec<String>,
+}
+
+impl CodexMcpServerStatus {
+    pub fn from_value(value: &Value) -> Option<Self> {
+        let name = value.get("name")?.as_str()?.to_string();
+        let auth_status = value
+            .get("authStatus")
+            .or_else(|| value.get("auth_status"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        Some(Self {
+            name,
+            auth_status,
+            tool_names: parse_tool_names(value.get("tools")),
+        })
+    }
+}
+
+pub fn parse_mcp_server_status_list(response: &Value) -> Vec<CodexMcpServerStatus> {
+    response
+        .get("data")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(CodexMcpServerStatus::from_value)
+        .collect()
+}
+
+fn parse_tool_names(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::Object(tools)) => tools.keys().cloned().collect(),
+        Some(Value::Array(tools)) => tools
+            .iter()
+            .filter_map(|tool| {
+                tool.get("name")
+                    .and_then(Value::as_str)
+                    .or_else(|| tool.as_str())
+            })
+            .map(ToOwned::to_owned)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
