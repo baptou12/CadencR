@@ -4,6 +4,7 @@ import Axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { clearDeviceToken, isBrowserRemote, readDeviceToken } from "@/lib/remote/device-token";
 
 export interface RuntimeConfig {
   baseUrl: string;
@@ -28,6 +29,15 @@ function envFallback(): RuntimeConfig {
 }
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
+  // Remote browser: the SPA is served over HTTPS by the same Rust listener it
+  // talks to, so the API is same-origin and the credential is the paired
+  // device token. Must NOT fall through to `envFallback()` below — that points
+  // at the local dev port (`127.0.0.1:5005`), which a remote device can't reach
+  // and which would leak the wrong base URL into every request.
+  if (isBrowserRemote()) {
+    return { baseUrl: location.origin, authToken: readDeviceToken() };
+  }
+
   const fallback = envFallback();
   try {
     const result = await desktopBridge.runtimeConfig();
@@ -64,6 +74,11 @@ export function resolveApiBaseUrlSync(): string {
 }
 
 export function getAuthTokenSync(): string | null {
+  // In a remote browser the device token can change mid-session — revoked on
+  // the host (→ 401 → cleared) or re-paired — so read it live instead of the
+  // value frozen into the runtime config at boot. The loopback launch token
+  // never changes, so there the cached value is correct.
+  if (isBrowserRemote()) return readDeviceToken();
   return getRuntimeConfigSync().authToken;
 }
 
@@ -87,6 +102,20 @@ axiosInstance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
   return config;
 });
+
+// In a remote browser, a 401 means the paired device token is no longer valid
+// (revoked on the host, or expired). Drop it so we stop presenting a dead
+// credential — the user can re-pair with a fresh code. Harmless on loopback,
+// where the launch token never 401s mid-session.
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    if (error.response?.status === 401 && isBrowserRemote()) {
+      clearDeviceToken();
+    }
+    return Promise.reject(error);
+  },
+);
 
 /**
  * Endpoints that drive long-running processes. The 30 s default is way too

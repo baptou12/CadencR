@@ -34,6 +34,7 @@ import {
   listenForNotificationFallbacks,
 } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
+import { useRemotePairingToast } from "@/hooks/useRemotePairingToast";
 import { SidebarContext } from "@/components/SidebarContext";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { useThemeSync } from "@/hooks/useTheme";
@@ -64,6 +65,7 @@ export const Route = createRootRoute({
 
 function RootLayout() {
   useOperationToasts();
+  useRemotePairingToast();
   useThemeSync();
   useConnectionWatchdog();
   usePowerEvents();

@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { preloadRuntimeConfig } from "./api/client";
+import { ensurePaired } from "./api/remote-pairing";
 import { applyThemeToDocument, readPersistedTheme } from "./lib/themes";
 import "./index.css";
 
@@ -14,6 +15,9 @@ applyThemeToDocument(readPersistedTheme());
 // Preload port + token before mounting so sync accessors everywhere have
 // the config by the time the first request or WebSocket fires.
 async function bootstrap(): Promise<void> {
+  // In a remote browser, exchange any `?code=` pairing code for a device token
+  // and persist it *before* the API client reads its config below.
+  await ensurePaired();
   await preloadRuntimeConfig();
   const root = createRoot(document.getElementById("root")!);
   root.render(
