@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { handleInitialized } from "./ws-envelope-session-handlers";
+import { handleInitialized, handleMcpServers } from "./ws-envelope-session-handlers";
 import { createSessionEntry, type SessionEntry, type WsSessionStore } from "./ws-session-types";
 import type { StoreAccessors } from "./ws-envelope-types";
 
@@ -27,5 +27,25 @@ describe("handleInitialized", () => {
 
     expect(ctx.getSession("s1").serverSessionId).toBe("123");
     expect(ctx.getSession("s1").sessionDbId).toBe(123);
+  });
+});
+
+describe("handleMcpServers", () => {
+  it("stores every reported MCP status on the active session", () => {
+    const ctx = createTestContext(createSessionEntry());
+
+    handleMcpServers(ctx, "s1", {
+      mcp_servers: [
+        { name: "cadencr-session", status: "connected" },
+        { name: "filesystem", status: "unavailable" },
+        { name: "browser", status: "unknown" },
+      ],
+    });
+
+    expect(ctx.getSession("s1").mcpServers).toEqual([
+      { name: "cadencr-session", status: "connected" },
+      { name: "filesystem", status: "unavailable" },
+      { name: "browser", status: "unknown" },
+    ]);
   });
 });

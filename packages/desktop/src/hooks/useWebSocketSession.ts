@@ -32,6 +32,7 @@ import { liveStatusFromLifecycle } from "@/lib/agent-status";
 import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
 import { parsePermissionMode } from "@/types/permission-mode";
+import type { McpServerStatus, SessionEntry } from "@/stores/ws-session-types";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -79,6 +80,7 @@ export interface UseWebSocketSessionReturn {
   currentThinkingEffort?: string;
   runtimeProvider: string;
   runtimeSessionId: string;
+  mcpServers: McpServerStatus[] | null;
   hasFileChanges: boolean;
   setModel: (modelId: string) => void;
   setThinkingEffort: (thinkingEffort?: string) => void;
@@ -105,6 +107,27 @@ interface UseWebSocketSessionOptions {
   loadPersisted?: boolean;
 }
 
+type SessionActions = Pick<
+  UseWebSocketSessionReturn,
+  | "loadOlderMessages"
+  | "sendPrompt"
+  | "respondToPermission"
+  | "respondToQuestion"
+  | "interrupt"
+  | "destroy"
+  | "clearSession"
+  | "compactSession"
+  | "initSession"
+  | "setProvider"
+  | "setModel"
+  | "setThinkingEffort"
+  | "setPermissionMode"
+  | "setCodexPermissionMode"
+  | "approvePlan"
+  | "requestPlanChanges"
+  | "closeGate"
+>;
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -130,7 +153,17 @@ export function useWebSocketSession(
     // Connections are cached; no disconnect on unmount.
   }, [sessionId]);
 
-  // Load persisted state from DB when featureId is provided.
+  usePersistedSessionLoader(session, sessionId, featureId, options);
+  const actions = useSessionActions(sessionId);
+  return useSessionSnapshot(session, sessionId, actions, liveStatus);
+}
+
+function usePersistedSessionLoader(
+  session: SessionEntry | undefined,
+  sessionId: string,
+  featureId: number | undefined,
+  options: UseWebSocketSessionOptions | undefined,
+): void {
   const loadPersisted = options?.loadPersisted ?? true;
   const persistedLoaded = session?.persistedLoaded ?? false;
   const persistedStateParams = useMemo(() => ({ limit: AGENT_STATE_INITIAL_MESSAGE_LIMIT }), []);
@@ -193,10 +226,10 @@ export function useWebSocketSession(
       hasFileChanges: lastSession.hasFileChanges,
     });
   }, [featureId, agentStateQuery.data, agentStateQuery.isError, persistedLoaded, sessionId]);
+}
 
-  // Action wrappers depend only on sessionId — stable across same-session
-  // chunks so consumers can list `ws.sendPrompt` etc. in deps without churn.
-  const actions = useMemo(() => {
+function useSessionActions(sessionId: string): SessionActions {
+  return useMemo<SessionActions>(() => {
     const s = useWsSessionStore.getState();
     return {
       loadOlderMessages: (): Promise<number> => s.loadOlderMessages(sessionId),
@@ -230,8 +263,14 @@ export function useWebSocketSession(
       closeGate: (reason: GateCloseReason): void => s.closeGate(sessionId, reason),
     };
   }, [sessionId]);
+}
 
-  // Snapshot fields refresh per session change (incl. token chunks).
+function useSessionSnapshot(
+  session: SessionEntry | undefined,
+  sessionId: string,
+  actions: SessionActions,
+  liveStatus: LiveAgentStatus | null,
+): UseWebSocketSessionReturn {
   return useMemo<UseWebSocketSessionReturn>(() => {
     const lifecycle = session?.lifecycle ?? createIdleTurnLifecycle();
     // Status is the backend-pushed value when available. Until the
@@ -271,6 +310,7 @@ export function useWebSocketSession(
       currentThinkingEffort: session?.currentThinkingEffort,
       runtimeProvider: session?.runtimeProvider ?? DEFAULT_PROVIDER,
       runtimeSessionId: session?.runtimeSessionId ?? "",
+      mcpServers: session?.mcpServers ?? null,
       hasFileChanges: session?.hasFileChanges ?? false,
       ...actions,
     };

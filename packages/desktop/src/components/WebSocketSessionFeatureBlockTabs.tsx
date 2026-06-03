@@ -3,6 +3,7 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
 import { AgentSession } from "@/components/agent-session";
+import { SessionInfoMcpServersProvider } from "@/components/agent-session/SessionInfoChip";
 import { resolveWorktreeChoice } from "@/components/agent-session/WorktreePopover";
 import { FeatureGitTab } from "@/components/FeatureGitTab";
 import { FeatureTerminalTab } from "@/components/FeatureTerminalTab";
@@ -68,77 +69,79 @@ function useAgentTab(args: UseSessionTabsArgs): FeatureTabDef {
       Icon: BotIcon,
       shortcut: ["cmd", "shift", "A"],
       content: (
-        <AgentSession
-          ref={refs.agent}
-          agentType="session"
-          featureId={featureId}
-          projectId={projectId}
-          wsSessionId={sessionId}
-          blocks={controls.ws.blocks}
-          rootBlocks={controls.ws.rootBlocks}
-          toolResultMap={controls.ws.toolResultMap}
-          historyPrependDisplayOffset={controls.ws.historyPrependDisplayOffset}
-          status={controls.ws.status}
-          lifecycle={controls.ws.lifecycle}
-          turnTiming={controls.ws.turnTiming}
-          onSend={onSend}
-          onStop={controls.ws.interrupt}
-          disabled={isCodex && controls.isCodexPermissionModePending}
-          pendingPermission={controls.ws.pendingPermission}
-          onPermissionDecision={(decision, feedback, optionId) => {
-            controls.ws.respondToPermission(
-              controls.ws.pendingRequestId,
-              decision,
-              feedback,
-              optionId,
-            );
-          }}
-          isSubmittingPermission={controls.ws.isSubmittingPermission}
-          pendingQuestions={
-            controls.ws.pendingQuestions.length > 0 ? controls.ws.pendingQuestions : undefined
-          }
-          onAnswerSubmit={controls.ws.respondToQuestion}
-          permissionMode={controls.ws.permissionMode}
-          enabledOptInModes={controls.enabledOptInModes}
-          providerModes={controls.providerModes}
-          codexPermissionMode={isCodex ? controls.codexPermissionMode : undefined}
-          codexPermissionDefaultMode={isCodex ? controls.codexPermissionDefaultMode : undefined}
-          isCodexPermissionModePending={isCodex ? controls.isCodexPermissionModePending : false}
-          onCodexPermissionModeChange={
-            isCodex ? controls.handleCodexPermissionModeChange : undefined
-          }
-          agentCatalog={controls.agentCatalog}
-          onPermissionModeToggle={controls.handlePermissionModeToggle}
-          pendingPlanApproval={controls.ws.pendingPlanApproval}
-          onPlanApprove={controls.ws.approvePlan}
-          onPlanRequestChanges={controls.ws.requestPlanChanges}
-          onGateClose={() => controls.ws.closeGate("escape")}
-          contextUsage={controls.ws.contextUsage}
-          currentProviderId={controls.ws.currentProviderId}
-          onProviderChange={controls.ws.setProvider}
-          currentModelId={controls.ws.currentModelId}
-          onModelChange={(nextProviderId, modelId) =>
-            handleModelChange(nextProviderId, modelId, controls)
-          }
-          currentThinkingEffort={controls.ws.currentThinkingEffort}
-          onThinkingEffortChange={controls.ws.setThinkingEffort}
-          runtimeProvider={controls.ws.runtimeProvider}
-          runtimeSessionId={controls.ws.runtimeSessionId || undefined}
-          slashCommandsOverride={data.session?.slashCommands ?? []}
-          slashCommandsLoading={data.session?.slashCommandsLoading ?? false}
-          todos={agentVisible ? (data.session?.todos ?? null) : null}
-          disableShortcuts={!hotkeysEnabled}
-          agentTabActive={agentVisible && hotkeysEnabled}
-          hasMore={controls.ws.hasMore}
-          onLoadOlder={controls.ws.loadOlderMessages}
-          useWorktree={controls.useWorktree}
-          onToggleWorktree={controls.toggleWorktree}
-          worktreeProjectId={projectId}
-          worktreeDefaultBranch={data.defaultBranch}
-          worktreeSelectedBranch={controls.selectedBranch}
-          onWorktreeBranchChange={controls.setSelectedBranch}
-          className="h-full"
-        />
+        <SessionInfoMcpServersProvider mcpServers={controls.ws.mcpServers}>
+          <AgentSession
+            ref={refs.agent}
+            agentType="session"
+            featureId={featureId}
+            projectId={projectId}
+            wsSessionId={sessionId}
+            blocks={controls.ws.blocks}
+            rootBlocks={controls.ws.rootBlocks}
+            toolResultMap={controls.ws.toolResultMap}
+            historyPrependDisplayOffset={controls.ws.historyPrependDisplayOffset}
+            status={controls.ws.status}
+            lifecycle={controls.ws.lifecycle}
+            turnTiming={controls.ws.turnTiming}
+            onSend={onSend}
+            onStop={controls.ws.interrupt}
+            disabled={isCodex && controls.isCodexPermissionModePending}
+            pendingPermission={controls.ws.pendingPermission}
+            onPermissionDecision={(decision, feedback, optionId) => {
+              controls.ws.respondToPermission(
+                controls.ws.pendingRequestId,
+                decision,
+                feedback,
+                optionId,
+              );
+            }}
+            isSubmittingPermission={controls.ws.isSubmittingPermission}
+            pendingQuestions={
+              controls.ws.pendingQuestions.length > 0 ? controls.ws.pendingQuestions : undefined
+            }
+            onAnswerSubmit={controls.ws.respondToQuestion}
+            permissionMode={controls.ws.permissionMode}
+            enabledOptInModes={controls.enabledOptInModes}
+            providerModes={controls.providerModes}
+            codexPermissionMode={isCodex ? controls.codexPermissionMode : undefined}
+            codexPermissionDefaultMode={isCodex ? controls.codexPermissionDefaultMode : undefined}
+            isCodexPermissionModePending={isCodex ? controls.isCodexPermissionModePending : false}
+            onCodexPermissionModeChange={
+              isCodex ? controls.handleCodexPermissionModeChange : undefined
+            }
+            agentCatalog={controls.agentCatalog}
+            onPermissionModeToggle={controls.handlePermissionModeToggle}
+            pendingPlanApproval={controls.ws.pendingPlanApproval}
+            onPlanApprove={controls.ws.approvePlan}
+            onPlanRequestChanges={controls.ws.requestPlanChanges}
+            onGateClose={() => controls.ws.closeGate("escape")}
+            contextUsage={controls.ws.contextUsage}
+            currentProviderId={controls.ws.currentProviderId}
+            onProviderChange={controls.ws.setProvider}
+            currentModelId={controls.ws.currentModelId}
+            onModelChange={(nextProviderId, modelId) =>
+              handleModelChange(nextProviderId, modelId, controls)
+            }
+            currentThinkingEffort={controls.ws.currentThinkingEffort}
+            onThinkingEffortChange={controls.ws.setThinkingEffort}
+            runtimeProvider={controls.ws.runtimeProvider}
+            runtimeSessionId={controls.ws.runtimeSessionId || undefined}
+            slashCommandsOverride={data.session?.slashCommands ?? []}
+            slashCommandsLoading={data.session?.slashCommandsLoading ?? false}
+            todos={agentVisible ? (data.session?.todos ?? null) : null}
+            disableShortcuts={!hotkeysEnabled}
+            agentTabActive={agentVisible && hotkeysEnabled}
+            hasMore={controls.ws.hasMore}
+            onLoadOlder={controls.ws.loadOlderMessages}
+            useWorktree={controls.useWorktree}
+            onToggleWorktree={controls.toggleWorktree}
+            worktreeProjectId={projectId}
+            worktreeDefaultBranch={data.defaultBranch}
+            worktreeSelectedBranch={controls.selectedBranch}
+            onWorktreeBranchChange={controls.setSelectedBranch}
+            className="h-full"
+          />
+        </SessionInfoMcpServersProvider>
       ),
     }),
     [

@@ -1,4 +1,5 @@
 import type { CommandsListPayload } from "@/lib/ws-envelope";
+import type { McpServerStatus } from "./ws-session-types";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -87,6 +88,25 @@ export function parseRuntimeSessionIdPayload(
   const record = asRecord(payload);
   if (!record) return null;
   return { runtime_session_id: optionalString(record, "runtime_session_id") };
+}
+
+export function parseMcpServersPayload(payload: unknown): { mcpServers: McpServerStatus[] } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const servers = optionalArray(record, "mcp_servers");
+  if (!servers) return null;
+  return {
+    mcpServers: servers
+      .map((entry): McpServerStatus | null => {
+        const item = asRecord(entry);
+        if (!item) return null;
+        const name = optionalString(item, "name");
+        const status = optionalString(item, "status");
+        if (!name || !status) return null;
+        return { name, status };
+      })
+      .filter((entry): entry is McpServerStatus => entry !== null),
+  };
 }
 
 export function parseInitializedPayload(payload: unknown): {

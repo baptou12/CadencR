@@ -66,23 +66,12 @@ export interface QueuedPrompt {
   useWorktree?: boolean;
 }
 
-/**
- * Provider-neutral transport health for the agent stream.
- *
- * Set from the `session.stream_status` WebSocket envelope (see
- * `ws-envelope-handler.ts::handleStreamStatus`). Providers that do not emit
- * stream-health transitions remain at `"ok"`; the field is intentionally
- * provider-neutral so future providers can opt in without touching shared
- * frontend code.
- *
- * UI semantics (PR-A wires the state; PR-C will render the banner):
- * - `"ok"`: stream is healthy. No banner.
- * - `"degraded"`: dispatcher is reconnecting / stalled / reconcile failed.
- *   Render a "Reconnecting…" banner under the loader so the user is never
- *   left staring at a silent loader (matches `explicit-state.md`).
- *
- * Hard failures travel separately via the `session.error` envelope.
- */
+export interface McpServerStatus {
+  name: string;
+  status: string;
+}
+
+/** Provider-neutral transport health for the agent stream. */
 export interface StreamHealth {
   state: "ok" | "degraded";
   /** Free-form human-readable reason; suitable for a tooltip. */
@@ -143,6 +132,7 @@ export interface SessionEntry {
   currentModelId: string;
   runtimeProvider: string;
   runtimeSessionId: string;
+  mcpServers: McpServerStatus[] | null;
   supportsPromptReceipts: boolean;
   persistedLoaded: boolean;
   contextUsage: ContextUsageState | null;
@@ -202,6 +192,7 @@ export function createSessionEntry(): SessionEntry {
     currentModelId: FALLBACK_MODEL_ID,
     runtimeProvider: DEFAULT_PROVIDER,
     runtimeSessionId: "",
+    mcpServers: null,
     supportsPromptReceipts: false,
     persistedLoaded: false,
     contextUsage: null,
