@@ -1,0 +1,156 @@
+//! Security response headers for the network (remote) listener.
+//!
+//! The remote SPA holds a device token in browser storage, so it's served with
+//! a strict CSP plus hardening headers to blunt token exfiltration via injected
+//! or XSS content. This is layered outermost on the remote router so it covers
+//! every response, including 401/429 short-circuits and static SPA assets. The
+//! loopback listener is untouched — the Electron shell sets its own CSP.
+
+use axum::extract::Request;
+use axum::http::{header, HeaderName, HeaderValue};
+use axum::middleware::Next;
+use axum::response::Response;
+
+/// Same-origin-only CSP, built per-request so `connect-src` can name the exact
+/// `wss://<host>` origin in addition to `'self'`. Modern browsers treat
+/// same-origin `wss:` as covered by `'self'`, but that was historically
+/// inconsistent, so we spell out the WebSocket origin to keep remote streaming
+/// robust. The rest mirrors the packaged Electron renderer CSP. When the `Host`
+/// is missing or malformed we fall back to plain `'self'` (the request is about
+/// to be 421'd by the auth layer anyway).
+fn content_security_policy(host: Option<&str>) -> String {
+    let connect = match host.filter(|h| is_plain_host(h)) {
+        Some(host) => format!("connect-src 'self' wss://{host}"),
+        None => "connect-src 'self'".to_string(),
+    };
+    format!(
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data: blob:; font-src 'self' data:; {connect}; object-src 'none'; \
+         base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+    )
+}
+
+/// Conservative check that a `Host` value is a bare host[:port] before it's
+/// interpolated into the CSP. Rejects anything with spaces or odd characters so
+/// a weird `Host` can't produce a malformed (or injected) policy.
+fn is_plain_host(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 255
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':'))
+}
+
+/// Disable browser capabilities the workspace UI never legitimately needs from a
+/// remote tab, so injected content can't reach for them either.
+const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=(), payment=()";
+
+pub async fn remote_security_headers_middleware(request: Request, next: Next) -> Response {
+    let csp = content_security_policy(
+        request
+            .headers()
+            .get(header::HOST)
+            .and_then(|value| value.to_str().ok()),
+    );
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    if let Ok(value) = HeaderValue::from_str(&csp) {
+        headers.insert(header::CONTENT_SECURITY_POLICY, value);
+    }
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    // CSP `frame-ancestors 'none'` already blocks framing; X-Frame-Options is the
+    // legacy-browser belt to that suspenders.
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(
+        HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static(PERMISSIONS_POLICY),
+    );
+    response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request as HttpRequest, StatusCode};
+    use axum::routing::get;
+    use axum::Router;
+    use tower::ServiceExt;
+
+    fn app() -> Router {
+        Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn(
+                remote_security_headers_middleware,
+            ))
+    }
+
+    #[tokio::test]
+    async fn sets_csp_and_hardening_headers() {
+        let resp = app()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri("/")
+                    .header(header::HOST, "192.168.1.5:5006")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let headers = resp.headers();
+        let csp = headers
+            .get(header::CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(
+            csp.contains("default-src 'self'"),
+            "CSP must be same-origin"
+        );
+        // The exact same-origin wss origin is named so remote WebSocket streaming
+        // works even on browsers that don't treat wss as covered by 'self'.
+        assert!(
+            csp.contains("connect-src 'self' wss://192.168.1.5:5006"),
+            "CSP must name the same-origin wss endpoint: {csp}"
+        );
+        assert_eq!(
+            headers.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(),
+            "nosniff"
+        );
+        assert_eq!(headers.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+        assert!(headers.get("permissions-policy").is_some());
+    }
+
+    #[tokio::test]
+    async fn csp_falls_back_to_self_without_a_usable_host() {
+        let resp = app()
+            .oneshot(HttpRequest::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let csp = resp
+            .headers()
+            .get(header::CONTENT_SECURITY_POLICY)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(csp.contains("connect-src 'self';"), "got: {csp}");
+        assert!(!csp.contains("wss://"), "no host => no wss entry: {csp}");
+    }
+
+    #[test]
+    fn rejects_hosts_with_unusual_characters() {
+        assert!(is_plain_host("192.168.1.5:5006"));
+        assert!(is_plain_host("laptop.tail1234.ts.net"));
+        assert!(!is_plain_host("evil.example/ ; script-src *"));
+        assert!(!is_plain_host(""));
+    }
+}

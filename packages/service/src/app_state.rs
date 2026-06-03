@@ -15,6 +15,7 @@ use crate::domain::lsp::LspRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
+use crate::remote::{RemoteConfig, RemoteController};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -84,6 +85,9 @@ pub struct AppState {
     /// persisted: a service restart drops jobs, which is fine because
     /// already-imported sessions are skipped on re-run.
     pub import_jobs: ImportJobRegistry,
+    /// Lifecycle owner for the optional remote-access TLS listener. Shared
+    /// (`Arc`) and interior-mutable; the loopback server is unaffected.
+    pub remote: Arc<RemoteController>,
 }
 
 impl AppState {
@@ -101,6 +105,47 @@ impl AppState {
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(30)
+    }
+
+    /// Production constructor used by `main`. Creates the broadcast channels and
+    /// every shared registry. Kept next to the struct (mirroring `with_pool`) so
+    /// the entrypoint stays lean.
+    pub fn for_server(
+        read_pool: SqlitePool,
+        write_pool: SqlitePool,
+        auth_token: String,
+        frontend_port: u16,
+        port: u16,
+        remote: Arc<RemoteController>,
+    ) -> Self {
+        let (session_status_tx, _) = broadcast::channel(64);
+        let (file_change_tx, _) = broadcast::channel(16);
+        Self {
+            read_pool,
+            write_pool,
+            max_parallel_agents: Self::max_parallel_from_env(),
+            agent_timeout_minutes: Self::agent_timeout_minutes_from_env(),
+            session_status_tx: SessionStatusBroadcaster::new(
+                session_status_tx,
+                Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            ),
+            pty_manager: PtyManager::new(),
+            file_change_tx,
+            file_watcher: crate::domain::editor::watcher::new_shared(),
+            auth_token,
+            frontend_port,
+            port,
+            custom_action_scheduler: CustomActionScheduler::new(),
+            custom_action_runs: Arc::new(CustomActionRunRegistry::new()),
+            git_watcher: Arc::new(GitWatcherRegistry::new()),
+            push_sessions: Arc::new(PushSessionRegistry::new()),
+            ws_feature_senders: WsFeatureSenderRegistry::new(),
+            auto_name_runs: Arc::new(FeatureRunRegistry::new()),
+            lsp_sessions: LspRegistry::new(),
+            lsp_crashes: CrashTracker::new(),
+            import_jobs: ImportJobRegistry::new(),
+            remote,
+        }
     }
 
     /// Create an AppState for tests with a shared pool and default config.
@@ -136,6 +181,11 @@ impl AppState {
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),
             import_jobs: ImportJobRegistry::new(),
+            remote: Arc::new(RemoteController::new(RemoteConfig {
+                renderer_dir: None,
+                remote_port: 0,
+                data_dir: std::env::temp_dir().join("cadencr-remote-test"),
+            })),
         }
     }
 }

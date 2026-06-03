@@ -39,7 +39,7 @@ pub async fn auth_middleware(
     next.run(request).await
 }
 
-fn is_websocket_upgrade(request: &Request) -> bool {
+pub(crate) fn is_websocket_upgrade(request: &Request) -> bool {
     request
         .headers()
         .get(header::UPGRADE)
