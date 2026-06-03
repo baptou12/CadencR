@@ -14,6 +14,7 @@ mod permission_reply;
 pub(in crate::domain::agents) mod port;
 mod prompt_usage;
 mod question_sidecar;
+mod tool_result_flatten;
 // Workarounds for ACP-wire limitations in upstream OpenCode. Anything
 // that talks to the embedded HTTP backend on `--port` to make up for an
 // ACP-wire gap lives here; see `upstream_workaround/mod.rs` for the

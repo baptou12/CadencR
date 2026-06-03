@@ -28,7 +28,7 @@ pub(super) use tokio::sync::{mpsc, Mutex, RwLock};
 
 pub(super) use crate::domain::agents::adapter::{
     AgentRuntimeSession, RuntimeAccessMode, RuntimeError, RuntimeEvent, RuntimeEventKind,
-    RuntimeMessageRx, RuntimePermissionMode, RuntimeSessionHandle,
+    RuntimeMcpServerStatus, RuntimeMessageRx, RuntimePermissionMode, RuntimeSessionHandle,
 };
 pub(super) use crate::domain::agents::claude_code::ClaudeCodeSession;
 pub(super) use claude_agent_sdk_rs::{Query, SdkError};

@@ -104,6 +104,7 @@ mod tests {
         AcpRuntimeSession::assemble(
             client,
             neg,
+            std::env::temp_dir(),
             None,
             rx,
             tx,

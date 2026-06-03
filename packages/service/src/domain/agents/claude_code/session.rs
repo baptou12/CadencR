@@ -5,9 +5,9 @@ use tokio::sync::mpsc;
 use super::events::normalize_event;
 use super::prompt_receipts::ClaudePromptReceipts;
 use crate::domain::agents::adapter::{
-    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig, RuntimeMessageRx,
-    RuntimePermissionMode, RuntimePermissionUpdate, RuntimeToolPermissionHandler,
-    RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
+    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerConfig,
+    RuntimeMcpServerStatus, RuntimeMessageRx, RuntimePermissionMode, RuntimePermissionUpdate,
+    RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
 
 pub struct ClaudeCodeSession {
@@ -139,6 +139,34 @@ impl AgentRuntimeSession for ClaudeCodeSession {
 
     async fn session_id(&self) -> Option<String> {
         self.query.session_id().await
+    }
+
+    async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        Ok(self
+            .query
+            .available_mcp_servers()
+            .await
+            .map_err(RuntimeError::from)?
+            .into_iter()
+            .map(|server| RuntimeMcpServerStatus {
+                name: server.name,
+                status: server.status,
+            })
+            .collect())
+    }
+
+    async fn refresh_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        Ok(self
+            .query
+            .refresh_mcp_server_status()
+            .await
+            .map_err(RuntimeError::from)?
+            .into_iter()
+            .map(|server| RuntimeMcpServerStatus {
+                name: server.name,
+                status: server.status,
+            })
+            .collect())
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {

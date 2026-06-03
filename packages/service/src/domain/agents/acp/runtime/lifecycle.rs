@@ -89,7 +89,9 @@ pub async fn negotiate_session(
 
     let model_id = config.model.clone();
     let mcp_servers = build_stdio_mcp_payload(config.mcp_servers.as_ref());
-    let mcp_statuses = mcp_status_list(config.mcp_servers.as_ref());
+    let mcp_statuses = hooks
+        .available_mcp_servers(&config.cwd, mcp_status_list(config.mcp_servers.as_ref()))
+        .await;
     if let Some(resume_id) = resume_id {
         let current_mode = load_session(client, resume_id, &config.cwd, &mcp_servers).await?;
         return Ok(NegotiatedSession {

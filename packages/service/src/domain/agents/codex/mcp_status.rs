@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
+use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient, CodexMcpServerStatus};
 use serde_json::Value;
 use tokio::sync::broadcast;
 
@@ -16,24 +16,20 @@ pub(super) async fn mcp_server_statuses(
     startup_events: &mut broadcast::Receiver<AppServerEvent>,
     expected_names: &[String],
 ) -> Vec<RuntimeMcpServerStatus> {
-    let listed = match with_timeout(
-        "Codex mcpServerStatus/list",
-        client.mcp_server_status_list(),
-    )
-    .await
-    {
-        Ok(response) => parse_mcp_server_statuses(&response, expected_names),
-        Err(error) => {
-            tracing::warn!(%error, "failed to read Codex MCP server statuses");
-            expected_names
-                .iter()
-                .map(|name| RuntimeMcpServerStatus {
-                    name: name.clone(),
-                    status: "unknown".to_string(),
-                })
-                .collect()
-        }
-    };
+    let listed =
+        match with_timeout("Codex mcpServerStatus/list", client.available_mcp_servers()).await {
+            Ok(response) => parse_mcp_server_statuses(&response, expected_names),
+            Err(error) => {
+                tracing::warn!(%error, "failed to read Codex MCP server statuses");
+                expected_names
+                    .iter()
+                    .map(|name| RuntimeMcpServerStatus {
+                        name: name.clone(),
+                        status: "unknown".to_string(),
+                    })
+                    .collect()
+            }
+        };
     let unresolved = unresolved_expected_names(&listed, expected_names);
     if expected_names.is_empty() || unresolved.is_empty() {
         return listed;
@@ -116,20 +112,14 @@ fn merge_startup_statuses(
     listed
 }
 
-fn parse_mcp_server_statuses(
-    response: &Value,
+pub(super) fn parse_mcp_server_statuses(
+    response: &[CodexMcpServerStatus],
     expected_names: &[String],
 ) -> Vec<RuntimeMcpServerStatus> {
     let servers = response
-        .get("data")
-        .and_then(Value::as_array)
-        .map(|servers| {
-            servers
-                .iter()
-                .filter_map(McpServerHealth::from_value)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+        .iter()
+        .map(McpServerHealth::from)
+        .collect::<Vec<_>>();
 
     if expected_names.is_empty() {
         return servers
@@ -160,18 +150,16 @@ struct McpServerHealth {
 }
 
 impl McpServerHealth {
-    fn from_value(value: &Value) -> Option<Self> {
-        let name = value.get("name").and_then(Value::as_str)?.to_string();
-        let auth_ok = value
-            .get("authStatus")
-            .and_then(Value::as_str)
+    fn from(status: &CodexMcpServerStatus) -> Self {
+        let auth_ok = status
+            .auth_status
+            .as_deref()
             .map_or(true, |status| status != "notLoggedIn");
-        let tools = tool_names(value.get("tools"));
-        Some(Self {
-            name,
+        Self {
+            name: status.name.clone(),
             auth_ok,
-            tools,
-        })
+            tools: status.tool_names.iter().cloned().collect(),
+        }
     }
 
     fn status(&self) -> String {
@@ -187,39 +175,29 @@ impl McpServerHealth {
     }
 }
 
-fn tool_names(value: Option<&Value>) -> HashSet<String> {
-    match value {
-        Some(Value::Object(tools)) => tools.keys().cloned().collect(),
-        Some(Value::Array(tools)) => tools
-            .iter()
-            .filter_map(|tool| {
-                tool.get("name")
-                    .and_then(Value::as_str)
-                    .or_else(|| tool.as_str())
-            })
-            .map(ToOwned::to_owned)
-            .collect(),
-        _ => HashSet::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{merge_startup_statuses, parse_mcp_server_statuses};
-    use serde_json::json;
+    use codex_app_server_sdk_rs::CodexMcpServerStatus;
     use std::collections::HashMap;
+
+    fn status(name: &str, auth_status: Option<&str>, tool_names: &[&str]) -> CodexMcpServerStatus {
+        CodexMcpServerStatus {
+            name: name.to_string(),
+            auth_status: auth_status.map(ToOwned::to_owned),
+            tool_names: tool_names.iter().map(|tool| (*tool).to_string()).collect(),
+        }
+    }
 
     #[test]
     fn mcp_statuses_do_not_assume_missing_servers_are_connected() {
         let expected = vec!["cadencr-session".to_string(), "cadencr-extra".to_string()];
         let statuses = parse_mcp_server_statuses(
-            &json!({
-                "data": [{
-                    "name": "cadencr-session",
-                    "authStatus": "unsupported",
-                    "tools": { "mark_agent_done": {} }
-                }]
-            }),
+            &[status(
+                "cadencr-session",
+                Some("unsupported"),
+                &["mark_agent_done"],
+            )],
             &expected,
         );
         assert_eq!(statuses[0].status, "connected");
@@ -229,16 +207,10 @@ mod tests {
     #[test]
     fn mcp_statuses_return_ready_servers_when_no_expected_list_exists() {
         let statuses = parse_mcp_server_statuses(
-            &json!({
-                "data": [
-                    {
-                        "name": "cadencr-session",
-                        "authStatus": "unsupported",
-                        "tools": { "mark_agent_done": {} }
-                    },
-                    { "name": "custom" }
-                ]
-            }),
+            &[
+                status("cadencr-session", Some("unsupported"), &["mark_agent_done"]),
+                status("custom", None, &[]),
+            ],
             &[],
         );
 
@@ -252,7 +224,7 @@ mod tests {
     #[test]
     fn mcp_statuses_mark_expected_servers_unavailable_for_malformed_response() {
         let expected = vec!["cadencr-session".to_string()];
-        let statuses = parse_mcp_server_statuses(&json!({ "oops": true }), &expected);
+        let statuses = parse_mcp_server_statuses(&[], &expected);
 
         assert_eq!(statuses.len(), 1);
         assert_eq!(statuses[0].name, "cadencr-session");
@@ -262,7 +234,7 @@ mod tests {
     #[test]
     fn startup_ready_status_overrides_empty_status_list_for_expected_server() {
         let expected = vec!["cadencr-session".to_string()];
-        let listed = parse_mcp_server_statuses(&json!({ "data": [] }), &expected);
+        let listed = parse_mcp_server_statuses(&[], &expected);
         let statuses = merge_startup_statuses(
             listed,
             &HashMap::from([("cadencr-session".to_string(), "ready".to_string())]),
@@ -277,15 +249,11 @@ mod tests {
     fn mcp_statuses_require_expected_tools_and_auth() {
         let expected = vec!["cadencr-session".to_string()];
         let statuses = parse_mcp_server_statuses(
-            &json!({
-                "data": [
-                    {
-                        "name": "cadencr-session",
-                        "authStatus": "unsupported",
-                        "tools": { "mark_agent_done": {} }
-                    }
-                ]
-            }),
+            &[status(
+                "cadencr-session",
+                Some("unsupported"),
+                &["mark_agent_done"],
+            )],
             &expected,
         );
 

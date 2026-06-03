@@ -127,6 +127,7 @@ async fn stream_input_steers_immediately_and_cancel_is_non_error() {
     let mut session = AcpRuntimeSession::assemble(
         &client,
         &negotiated,
+        std::env::temp_dir(),
         None,
         rx,
         tx,
@@ -180,6 +181,7 @@ async fn prompt_receipt_waits_for_user_message_echo() {
     let mut session = AcpRuntimeSession::assemble(
         &client,
         &negotiated,
+        std::env::temp_dir(),
         None,
         rx,
         tx.clone(),
@@ -280,6 +282,7 @@ async fn prompt_receipt_falls_back_to_prompt_response_without_user_echo() {
     let mut session = AcpRuntimeSession::assemble(
         &client,
         &negotiated,
+        std::env::temp_dir(),
         None,
         rx,
         tx,

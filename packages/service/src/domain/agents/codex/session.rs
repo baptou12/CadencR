@@ -14,6 +14,7 @@ use super::event_loop::spawn_event_loop;
 use super::event_system::init_event;
 use super::event_turn_state::RootTurnTracker;
 use super::input::user_input_from_content;
+use super::mcp_status::parse_mcp_server_statuses;
 use super::permissions::PendingCodexRequest;
 use super::prompt_receipts::PendingPromptReceipts;
 use super::responses::response_value;
@@ -46,7 +47,7 @@ pub(super) struct CodexSession {
     pending_prompt_receipts: Arc<PendingPromptReceipts>,
     temp_files: Arc<Mutex<Vec<TempPath>>>,
     closing: Arc<AtomicBool>,
-    mcp_servers: Vec<RuntimeMcpServerStatus>,
+    mcp_servers: Arc<RwLock<Vec<RuntimeMcpServerStatus>>>,
     context_window: Option<u64>,
 }
 
@@ -81,7 +82,7 @@ impl CodexSession {
             pending_prompt_receipts: Arc::new(PendingPromptReceipts::default()),
             temp_files: Arc::new(Mutex::new(Vec::new())),
             closing: Arc::new(AtomicBool::new(false)),
-            mcp_servers,
+            mcp_servers: Arc::new(RwLock::new(mcp_servers)),
             context_window,
         }
     }
@@ -91,7 +92,7 @@ impl CodexSession {
             &self.thread_id,
             self.model.read().await.clone(),
             self.context_window,
-            self.mcp_servers.clone(),
+            self.mcp_servers.read().await.clone(),
         );
         let _ = self.local_tx.send(Ok(event));
     }
@@ -167,6 +168,28 @@ impl AgentRuntimeSession for CodexSession {
 
     async fn session_id(&self) -> Option<String> {
         Some(self.thread_id.clone())
+    }
+
+    async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        Ok(self.mcp_servers.read().await.clone())
+    }
+
+    async fn refresh_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        let expected_names = self
+            .mcp_servers
+            .read()
+            .await
+            .iter()
+            .map(|server| server.name.clone())
+            .collect::<Vec<_>>();
+        let response = with_timeout(
+            "Codex mcpServerStatus/list refresh",
+            self.client.available_mcp_servers(),
+        )
+        .await?;
+        let servers = parse_mcp_server_statuses(&response, &expected_names);
+        *self.mcp_servers.write().await = servers.clone();
+        Ok(servers)
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {
