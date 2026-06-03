@@ -12,8 +12,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionMode,
-    RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
+    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
+    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
 };
 
 use super::events_stream_blocks::EventIndexer;
@@ -99,6 +99,17 @@ pub trait AcpProviderHooks: Send + Sync {
     /// providers may opt in when their response carries context occupancy.
     fn prompt_response_usage(&self, _response: &Value) -> Option<RuntimeUsage> {
         None
+    }
+
+    /// Provider opt-in: refine the MCP server statuses negotiated at
+    /// spawn. Generic ACP only knows the configured catalog, so providers
+    /// with their own status mechanism can replace it here.
+    async fn available_mcp_servers(
+        &self,
+        _cwd: &Path,
+        configured: Vec<RuntimeMcpServerStatus>,
+    ) -> Vec<RuntimeMcpServerStatus> {
+        configured
     }
 
     /// Whether a provider's ACP sessions can be durably restored across a

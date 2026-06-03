@@ -112,56 +112,12 @@ mod tests {
     #[tokio::test]
     async fn set_permission_mode_from_inside_can_use_tool_does_not_deadlock() {
         let dir = TempDir::new().unwrap();
-
-        // Mock CLI:
-        //   - ack the SDK's `initialize`,
-        //   - consume the user prompt,
-        //   - emit `system.init`,
-        //   - emit a `can_use_tool` control_request (mirrors `ExitPlanMode`),
-        //   - read the NEXT control_request line (will be the nested
-        //     `set_permission_mode`); ack it with success,
-        //   - read the `can_use_tool` response,
-        //   - emit a successful `result` and exit.
-        let script = r#"#!/bin/sh
-set -e
-read -r INIT_REQ
-INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
-printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$INIT_ID"
-read -r USER_PROMPT
-echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_dl","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"plan","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
-echo '{"type":"control_request","request_id":"req_exit_plan","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":{"plan":"do stuff"}}}'
-read -r NESTED_REQ
-NESTED_ID=$(printf '%s' "$NESTED_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
-printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$NESTED_ID"
-read -r ALLOW_RESPONSE
-echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_dl","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
-"#;
-        let script_path = write_mock_cli(dir.path(), script);
+        let script_path = write_mock_cli(dir.path(), deadlock_regression_script());
 
         // Synchronization between the test main task and the callback.
         let entered = Arc::new(Notify::new());
         let (release_tx, release_rx) = oneshot::channel::<()>();
         let release_rx = Arc::new(tokio::sync::Mutex::new(Some(release_rx)));
-
-        struct GatedHandler {
-            entered: Arc<Notify>,
-            release_rx: Arc<tokio::sync::Mutex<Option<oneshot::Receiver<()>>>>,
-        }
-
-        #[async_trait::async_trait]
-        impl CanUseTool for GatedHandler {
-            async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
-                self.entered.notify_one();
-                if let Some(rx) = self.release_rx.lock().await.take() {
-                    let _ = rx.await;
-                }
-                PermissionResult::Allow {
-                    updated_input: request.input,
-                    updated_permissions: None,
-                    tool_use_id: Some(request.tool_use_id),
-                }
-            }
-        }
 
         let handler: Arc<dyn CanUseTool> = Arc::new(GatedHandler {
             entered: Arc::clone(&entered),
@@ -211,5 +167,45 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_dl","d
                 .any(|m| matches!(m, SdkMessage::Result { .. })),
             "expected Result message, got {messages:?}"
         );
+    }
+
+    struct GatedHandler {
+        entered: Arc<Notify>,
+        release_rx: Arc<tokio::sync::Mutex<Option<oneshot::Receiver<()>>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl CanUseTool for GatedHandler {
+        async fn can_use_tool(&self, request: PermissionRequest) -> PermissionResult {
+            self.entered.notify_one();
+            if let Some(rx) = self.release_rx.lock().await.take() {
+                let _ = rx.await;
+            }
+            PermissionResult::Allow {
+                updated_input: request.input,
+                updated_permissions: None,
+                tool_use_id: Some(request.tool_use_id),
+            }
+        }
+    }
+
+    fn deadlock_regression_script() -> &'static str {
+        r#"#!/bin/sh
+set -e
+read -r INIT_REQ
+INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$INIT_ID"
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
+read -r USER_PROMPT
+echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_dl","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"plan","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
+echo '{"type":"control_request","request_id":"req_exit_plan","request":{"subtype":"can_use_tool","tool_name":"ExitPlanMode","input":{"plan":"do stuff"}}}'
+read -r NESTED_REQ
+NESTED_ID=$(printf '%s' "$NESTED_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$NESTED_ID"
+read -r ALLOW_RESPONSE
+echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_dl","duration_ms":10,"duration_api_ms":5,"is_error":false,"num_turns":1,"result":"ok","errors":null,"stop_reason":"end_turn","total_cost_usd":0.0,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0},"permission_denials":[],"structured_output":null}'
+"#
     }
 }

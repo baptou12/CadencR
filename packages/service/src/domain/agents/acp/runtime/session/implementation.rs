@@ -4,6 +4,7 @@
 //! choices (model id mapping, permission decisions, tool name aliases) to
 //! `AcpProviderHooks`.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -15,8 +16,8 @@ use tokio::task::JoinHandle;
 
 use crate::domain::agents::acp::AcpClient;
 use crate::domain::agents::adapter::{
-    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMessageRx, RuntimePermissionMode,
-    RuntimePermissionResponse,
+    AgentRuntimeSession, RuntimeError, RuntimeEvent, RuntimeMcpServerStatus, RuntimeMessageRx,
+    RuntimePermissionMode, RuntimePermissionResponse,
 };
 
 use super::super::config_options::{set_config_option_model, set_config_option_thinking_effort};
@@ -59,7 +60,11 @@ pub struct AcpRuntimeSession {
     pub(in crate::domain::agents::acp::runtime) manual_compact_running: Arc<AtomicBool>,
     #[allow(dead_code)]
     pub(in crate::domain::agents::acp::runtime) pid: Option<u32>,
+    pub(in crate::domain::agents::acp::runtime) cwd: PathBuf,
     pub(in crate::domain::agents::acp::runtime) context_window: Option<u64>,
+    pub(in crate::domain::agents::acp::runtime) configured_mcp_servers: Vec<RuntimeMcpServerStatus>,
+    pub(in crate::domain::agents::acp::runtime) mcp_servers:
+        Arc<RwLock<Vec<RuntimeMcpServerStatus>>>,
     pub(in crate::domain::agents::acp::runtime) message_rx: Option<RuntimeMessageRx>,
     pub(in crate::domain::agents::acp::runtime) loop_task: Option<JoinHandle<()>>,
     /// Optional provider-spawned listener (e.g. OpenCode subscribes to its
@@ -179,6 +184,19 @@ impl AgentRuntimeSession for AcpRuntimeSession {
 
     async fn session_id(&self) -> Option<String> {
         self.current_session_id().await
+    }
+
+    async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        Ok(self.mcp_servers.read().await.clone())
+    }
+
+    async fn refresh_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        let servers = self
+            .hooks
+            .available_mcp_servers(&self.cwd, self.configured_mcp_servers.clone())
+            .await;
+        *self.mcp_servers.write().await = servers.clone();
+        Ok(servers)
     }
 
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError> {

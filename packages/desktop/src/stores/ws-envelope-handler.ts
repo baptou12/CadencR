@@ -27,6 +27,7 @@ import {
   handleCleared,
   handleGateClosed,
   handleInitialized,
+  handleMcpServers,
   handleMessage,
   handlePermissionRequest,
   handlePromptReceived,
@@ -126,165 +127,84 @@ function handleSessionAction(
   sessionId: string,
   envelope: { action: string; payload: unknown },
 ): void {
+  if (handleBaseSessionAction(ctx, sessionId, envelope)) return;
+  if (handleConfigSessionAction(ctx, sessionId, envelope)) return;
+  handleLifecycleSessionAction(ctx, sessionId, envelope);
+}
+
+function handleBaseSessionAction(
+  ctx: StoreAccessors,
+  sessionId: string,
+  envelope: { action: string; payload: unknown },
+): boolean {
   switch (envelope.action) {
     case "initialized":
       handleInitialized(ctx, sessionId, envelope.payload);
-      break;
-    case "runtime_session_id": {
-      const p = parseRuntimeSessionIdPayload(envelope.payload);
-      const sessionIdValue = p?.runtime_session_id;
-      if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).runtimeSessionId) {
-        ctx.set(
-          updateSession(ctx.get(), sessionId, {
-            runtimeSessionId: sessionIdValue,
-          }),
-        );
-      }
-      break;
-    }
+      return true;
+    case "runtime_session_id":
+      handleRuntimeSessionId(ctx, sessionId, envelope.payload);
+      return true;
+    case "mcp_servers":
+      handleMcpServers(ctx, sessionId, envelope.payload);
+      return true;
     case "message":
       handleMessage(ctx, sessionId, envelope.payload);
-      break;
+      return true;
     case "permission.request":
       handlePermissionRequest(ctx, sessionId, envelope.payload);
-      break;
-    case "codex_permission_mode.changed": {
-      const p = parseModePayload(envelope.payload);
-      if (p?.mode) {
-        ctx.set(
-          updateSession(ctx.get(), sessionId, {
-            codexPermissionMode: parseCodexPermissionMode(p.mode),
-          }),
-        );
-      }
-      break;
-    }
-    case "mode.changed": {
-      const p = parseModePayload(envelope.payload);
-      // Accept any mode the active provider's catalog defines. Unknown values
-      // are dropped silently — the backend rejects them via MODE_NOT_SUPPORTED
-      // before we ever see this event, so reaching this branch with an
-      // unrecognized mode would mean the FE catalog is stale.
-      const session = p?.mode ? ctx.getSession(sessionId) : null;
-      const parsedMode = p?.mode ? parsePermissionMode(p.mode) : null;
-      if (parsedMode && session) {
-        const providerId = session.currentProviderId || session.runtimeProvider;
-        const acceptsMode =
-          !!findProviderMode(providerId, parsedMode) ||
-          parsedMode.startsWith(OPENCODE_AGENT_MODE_PREFIX);
-        if (acceptsMode) {
-          ctx.set(
-            updateSession(ctx.get(), sessionId, {
-              permissionMode: parsedMode,
-            }),
-          );
-        }
-      }
-      break;
-    }
-    case "provider.set.ok": {
-      const p = parseProviderPayload(envelope.payload);
-      if (p?.provider) {
-        // Provider switch only updates provider state; the backend follows up
-        // with a `mode.changed` envelope carrying the new provider's default
-        // permission mode. We let that envelope drive the chip state via the
-        // shared path above instead of writing it optimistically here (would
-        // create dual sources of truth — see no-optimistic-updates.md).
-        ctx.set(
-          updateSession(ctx.get(), sessionId, {
-            currentProviderId: p.provider,
-            runtimeProvider: p.provider,
-            supportsPromptReceipts: p.supports_prompt_receipts ?? false,
-            ...(p.codex_permission_mode
-              ? {
-                  codexPermissionMode: parseCodexPermissionMode(p.codex_permission_mode),
-                }
-              : {}),
-          }),
-        );
-      }
-      break;
-    }
-    case "model.set.ok": {
-      const p = parseModelPayload(envelope.payload);
-      if (p?.model) {
-        // A model switch does not alter conversation history, so tokens are
-        // preserved. `context_window` is updated only when the backend
-        // seeded one authoritatively — otherwise we mark the window as
-        // unknown (null) and wait for the next `usage_update`/`result`.
-        const existing = ctx.getSession(sessionId).contextUsage;
-        const nextContextWindow = p.context_window ?? existing?.contextWindow ?? null;
-        const nextUsage = existing
-          ? { ...existing, contextWindow: nextContextWindow }
-          : {
-              inputTokens: 0,
-              outputTokens: 0,
-              contextWindow: nextContextWindow,
-              wasCompacted: false,
-            };
-        ctx.set(
-          updateSession(ctx.get(), sessionId, {
-            currentModelId: p.model,
-            contextUsage: nextUsage,
-          }),
-        );
-      }
-      break;
-    }
-    case "effort.set.ok": {
-      const p = parseEffortPayload(envelope.payload);
-      const previous = ctx.get().sessions[sessionId]?.currentThinkingEffort;
-      ctx.set(
-        updateSession(ctx.get(), sessionId, {
-          currentThinkingEffort: p?.thinking_effort,
-        }),
-      );
-      // The backend writes the per-model workspace default
-      // (`thinking_effort_model_<provider>_<model>`) only when the effort
-      // actually changed, so we mirror that condition to avoid a redundant
-      // workspace-settings refetch on no-op confirmations.
-      if (p?.thinking_effort !== previous) {
-        void queryClient.invalidateQueries({
-          queryKey: getWorkspaceSettingsQueryKey(),
-        });
-      }
-      break;
-    }
+      return true;
     case "error":
       handleError(ctx, sessionId, envelope.payload);
-      break;
+      return true;
+    default:
+      return false;
+  }
+}
+
+function handleConfigSessionAction(
+  ctx: StoreAccessors,
+  sessionId: string,
+  envelope: { action: string; payload: unknown },
+): boolean {
+  switch (envelope.action) {
+    case "codex_permission_mode.changed":
+      handleCodexPermissionModeChanged(ctx, sessionId, envelope.payload);
+      return true;
+    case "mode.changed":
+      handleModeChanged(ctx, sessionId, envelope.payload);
+      return true;
+    case "provider.set.ok":
+      handleProviderSetOk(ctx, sessionId, envelope.payload);
+      return true;
+    case "model.set.ok":
+      handleModelSetOk(ctx, sessionId, envelope.payload);
+      return true;
+    case "effort.set.ok":
+      handleEffortSetOk(ctx, sessionId, envelope.payload);
+      return true;
+    default:
+      return false;
+  }
+}
+
+function handleLifecycleSessionAction(
+  ctx: StoreAccessors,
+  sessionId: string,
+  envelope: { action: string; payload: unknown },
+): void {
+  switch (envelope.action) {
     case "compact.started":
-      if (ctx.getSession(sessionId).compactRequestPending) {
-        ctx.set(
-          updateSession(ctx.get(), sessionId, {
-            compactRequestPending: false,
-            pendingManualCompact: true,
-          }),
-        );
-      }
+      handleCompactStarted(ctx, sessionId);
       break;
     case "compact.ok":
-      ctx.set(
-        updateSession(ctx.get(), sessionId, {
-          lifecycle: transitionTurn(ctx.getSession(sessionId).lifecycle, {
-            type: "turn_ended",
-            reason: "completed",
-          }),
-          compactRequestPending: false,
-          pendingManualCompact: false,
-        }),
-      );
+      handleCompactOk(ctx, sessionId);
       break;
     case "cleared":
       handleCleared(ctx, sessionId, envelope.payload);
       break;
-    case "deleted": {
-      const del = ctx.get().sessions[sessionId];
-      if (del?.conn) del.conn.close();
-      const { [sessionId]: _, ...rest } = ctx.get().sessions;
-      ctx.set({ sessions: rest });
+    case "deleted":
+      handleDeleted(ctx, sessionId);
       break;
-    }
     case "usage_update":
       handleUsageUpdate(ctx, sessionId, envelope.payload);
       break;
@@ -294,37 +214,147 @@ function handleSessionAction(
     case "prompt_received":
       handlePromptReceived(ctx, sessionId, envelope.payload);
       break;
-    case "lifecycle": {
-      // OS suspend / resume — backend-confirmed transitions. Per
-      // `no-optimistic-updates.md`, the FE flips lifecycle only here,
-      // never on the raw Electron power event.
-      const p = parseLifecyclePayload(envelope.payload);
-      if (!p) break;
-      const session = ctx.getSession(sessionId);
-      const event = p.kind === "suspend_requested" ? "suspended" : "resumed";
-      ctx.set(
-        updateSession(ctx.get(), sessionId, {
-          lifecycle: transitionTurn(session.lifecycle, { type: event }),
-        }),
-      );
+    case "lifecycle":
+      handleLifecyclePayload(ctx, sessionId, envelope.payload);
       break;
-    }
     case "gate.closed":
       handleGateClosed(ctx, sessionId, envelope.payload);
       break;
-    case "feature.renamed": {
-      const p = parseFeatureRenamePayload(envelope.payload);
-      if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
+    case "feature.renamed":
+      handleFeatureRenamed(ctx, sessionId, envelope.payload);
       break;
-    }
-    case "feature.autonaming": {
-      const p = parseFeatureAutoNamingPayload(envelope.payload);
-      if (p) ctx.set(updateSession(ctx.get(), sessionId, { isAutoNaming: p.in_progress }));
+    case "feature.autonaming":
+      handleFeatureAutoNaming(ctx, sessionId, envelope.payload);
       break;
-    }
     case "ended":
     case "turn_complete":
       handleTurnComplete(ctx, sessionId, envelope.payload);
       break;
   }
+}
+
+function handleRuntimeSessionId(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseRuntimeSessionIdPayload(payload);
+  const sessionIdValue = p?.runtime_session_id;
+  if (sessionIdValue && sessionIdValue !== ctx.getSession(sessionId).runtimeSessionId) {
+    ctx.set(updateSession(ctx.get(), sessionId, { runtimeSessionId: sessionIdValue }));
+  }
+}
+
+function handleCodexPermissionModeChanged(
+  ctx: StoreAccessors,
+  sessionId: string,
+  payload: unknown,
+): void {
+  const p = parseModePayload(payload);
+  if (p?.mode) {
+    ctx.set(
+      updateSession(ctx.get(), sessionId, {
+        codexPermissionMode: parseCodexPermissionMode(p.mode),
+      }),
+    );
+  }
+}
+
+function handleModeChanged(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseModePayload(payload);
+  const session = p?.mode ? ctx.getSession(sessionId) : null;
+  const parsedMode = p?.mode ? parsePermissionMode(p.mode) : null;
+  if (!parsedMode || !session) return;
+  const providerId = session.currentProviderId || session.runtimeProvider;
+  const acceptsMode =
+    !!findProviderMode(providerId, parsedMode) || parsedMode.startsWith(OPENCODE_AGENT_MODE_PREFIX);
+  if (acceptsMode) {
+    ctx.set(updateSession(ctx.get(), sessionId, { permissionMode: parsedMode }));
+  }
+}
+
+function handleProviderSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseProviderPayload(payload);
+  if (!p?.provider) return;
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      currentProviderId: p.provider,
+      runtimeProvider: p.provider,
+      mcpServers: null,
+      supportsPromptReceipts: p.supports_prompt_receipts ?? false,
+      ...(p.codex_permission_mode
+        ? { codexPermissionMode: parseCodexPermissionMode(p.codex_permission_mode) }
+        : {}),
+    }),
+  );
+}
+
+function handleModelSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseModelPayload(payload);
+  if (!p?.model) return;
+  const existing = ctx.getSession(sessionId).contextUsage;
+  const nextContextWindow = p.context_window ?? existing?.contextWindow ?? null;
+  const nextUsage = existing
+    ? { ...existing, contextWindow: nextContextWindow }
+    : { inputTokens: 0, outputTokens: 0, contextWindow: nextContextWindow, wasCompacted: false };
+  ctx.set(
+    updateSession(ctx.get(), sessionId, { currentModelId: p.model, contextUsage: nextUsage }),
+  );
+}
+
+function handleEffortSetOk(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseEffortPayload(payload);
+  const previous = ctx.get().sessions[sessionId]?.currentThinkingEffort;
+  ctx.set(updateSession(ctx.get(), sessionId, { currentThinkingEffort: p?.thinking_effort }));
+  if (p?.thinking_effort !== previous) {
+    void queryClient.invalidateQueries({ queryKey: getWorkspaceSettingsQueryKey() });
+  }
+}
+
+function handleCompactStarted(ctx: StoreAccessors, sessionId: string): void {
+  if (!ctx.getSession(sessionId).compactRequestPending) return;
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      compactRequestPending: false,
+      pendingManualCompact: true,
+    }),
+  );
+}
+
+function handleCompactOk(ctx: StoreAccessors, sessionId: string): void {
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      lifecycle: transitionTurn(ctx.getSession(sessionId).lifecycle, {
+        type: "turn_ended",
+        reason: "completed",
+      }),
+      compactRequestPending: false,
+      pendingManualCompact: false,
+    }),
+  );
+}
+
+function handleDeleted(ctx: StoreAccessors, sessionId: string): void {
+  const del = ctx.get().sessions[sessionId];
+  if (del?.conn) del.conn.close();
+  const { [sessionId]: _, ...rest } = ctx.get().sessions;
+  ctx.set({ sessions: rest });
+}
+
+function handleLifecyclePayload(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseLifecyclePayload(payload);
+  if (!p) return;
+  const session = ctx.getSession(sessionId);
+  const event = p.kind === "suspend_requested" ? "suspended" : "resumed";
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      lifecycle: transitionTurn(session.lifecycle, { type: event }),
+    }),
+  );
+}
+
+function handleFeatureRenamed(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseFeatureRenamePayload(payload);
+  if (p?.title) ctx.set(updateSession(ctx.get(), sessionId, { featureTitle: p.title }));
+}
+
+function handleFeatureAutoNaming(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseFeatureAutoNamingPayload(payload);
+  if (p) ctx.set(updateSession(ctx.get(), sessionId, { isAutoNaming: p.in_progress }));
 }

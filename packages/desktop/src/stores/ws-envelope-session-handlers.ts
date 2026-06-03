@@ -4,6 +4,7 @@ import {
   parseClearedPayload,
   parseGateClosedPayload,
   parseInitializedPayload,
+  parseMcpServersPayload,
   parseMessageBlocksPayload,
   parsePermissionPayload,
   parsePromptReceivedPayload,
@@ -51,6 +52,7 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
   const updates: Partial<SessionEntry> = {
     serverSessionId: p.session_id ?? "",
     lifecycle: transitionTurn(session.lifecycle, { type: "initialized" }),
+    mcpServers: null,
     supportsPromptReceipts: p.supports_prompt_receipts ?? false,
   };
   if (p.sessionDbId != null) updates.sessionDbId = p.sessionDbId;
@@ -76,6 +78,29 @@ export function handleInitialized(ctx: StoreAccessors, sessionId: string, payloa
     };
   }
   ctx.set(updateSession(ctx.get(), sessionId, updates));
+}
+
+export function handleMcpServers(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
+  const p = parseMcpServersPayload(payload);
+  if (!p) return;
+  const current = ctx.getSession(sessionId).mcpServers;
+  if (mcpServersEqual(current, p.mcpServers)) return;
+  ctx.set(
+    updateSession(ctx.get(), sessionId, {
+      mcpServers: p.mcpServers,
+    }),
+  );
+}
+
+function mcpServersEqual(
+  current: SessionEntry["mcpServers"],
+  next: SessionEntry["mcpServers"],
+): boolean {
+  if (current === next) return true;
+  if (!current || !next || current.length !== next.length) return false;
+  return current.every(
+    (server, index) => server.name === next[index]?.name && server.status === next[index]?.status,
+  );
 }
 
 export function handleMessage(ctx: StoreAccessors, sessionId: string, payload: unknown): void {
@@ -256,6 +281,7 @@ export function handleCleared(ctx: StoreAccessors, sessionId: string, payload: u
       pendingPlanApproval: null,
       hasFileChanges: false,
       runtimeSessionId: "",
+      mcpServers: null,
     }),
   );
 }

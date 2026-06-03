@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use tokio::sync::{mpsc, RwLock};
 
-use super::config::RuntimePermissionMode;
+use super::config::{RuntimeMcpServerStatus, RuntimePermissionMode};
 use super::error::RuntimeError;
 use super::event_types::RuntimeEvent;
 use super::permission::{
@@ -33,6 +33,12 @@ pub trait AgentRuntimeSession: Send + Sync {
         None
     }
     async fn session_id(&self) -> Option<String>;
+    async fn available_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        Ok(Vec::new())
+    }
+    async fn refresh_mcp_servers(&self) -> Result<Vec<RuntimeMcpServerStatus>, RuntimeError> {
+        self.available_mcp_servers().await
+    }
     async fn stream_input(&self, content: Value) -> Result<(), RuntimeError>;
     async fn stream_input_with_client_message_id(
         &self,
@@ -156,6 +162,15 @@ mod tests {
         assert!(error
             .to_string()
             .contains("permission responses are not supported"));
+    }
+
+    #[tokio::test]
+    async fn default_available_mcp_servers_is_empty() {
+        let session = DummySession;
+
+        let servers = session.available_mcp_servers().await.unwrap();
+
+        assert!(servers.is_empty());
     }
 
     struct PermissionWhileStreamingSession {

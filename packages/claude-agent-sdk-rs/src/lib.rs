@@ -9,6 +9,7 @@
 pub mod commands;
 pub mod error;
 pub mod mcp;
+pub mod mcp_discovery;
 pub mod messages;
 pub mod options;
 pub mod permissions;

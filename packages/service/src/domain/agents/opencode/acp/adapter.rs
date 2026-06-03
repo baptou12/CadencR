@@ -4,16 +4,18 @@ use super::events_tool_call_question::{question_start_event, question_update_eve
 use super::permission_reply::route_subagent_permission_reply;
 use super::prompt_usage::prompt_response_usage;
 use super::question_sidecar::QuestionSidecar;
+use super::tool_result_flatten::flatten_tool_result_content;
 use super::upstream_workaround::{
     spawn_side_channel_listeners, PendingSubagentTasks, PermissionRegistry,
 };
 use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
 use crate::domain::agents::acp::runtime::provider_hooks::{
-    flatten_tool_result_content_with, AcpProviderHooks, PermissionFallbackOutcome,
+    AcpProviderHooks, PermissionFallbackOutcome,
 };
 use crate::domain::agents::adapter::{
-    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimePermissionDecision,
-    RuntimePermissionMode, RuntimePermissionResponse, RuntimeSlashCommand, RuntimeUsage,
+    RuntimeError, RuntimeEvent, RuntimeEventMetadata, RuntimeMcpServerStatus,
+    RuntimePermissionDecision, RuntimePermissionMode, RuntimePermissionResponse,
+    RuntimeSlashCommand, RuntimeUsage,
 };
 use crate::domain::agents::opencode::questions::extract_question_answers;
 use crate::domain::agents::opencode::tool_names::{
@@ -80,6 +82,26 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
     }
     fn prompt_response_usage(&self, response: &Value) -> Option<RuntimeUsage> {
         prompt_response_usage(response)
+    }
+    async fn available_mcp_servers(
+        &self,
+        cwd: &Path,
+        configured: Vec<RuntimeMcpServerStatus>,
+    ) -> Vec<RuntimeMcpServerStatus> {
+        match opencode_sdk_rs::list_mcp_servers_from_cli(Some(cwd)).await {
+            Ok(servers) if !servers.is_empty() => servers
+                .into_iter()
+                .map(|server| RuntimeMcpServerStatus {
+                    name: server.name,
+                    status: server.status,
+                })
+                .collect(),
+            Ok(_) => configured,
+            Err(error) => {
+                tracing::warn!(%error, "failed to read OpenCode MCP server statuses");
+                configured
+            }
+        }
     }
     fn supports_durable_resume(&self) -> bool {
         true
@@ -211,22 +233,9 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         Ok(PermissionFallbackOutcome::Handled)
     }
 }
-pub fn flatten_tool_result_content(content: &[Value]) -> Value {
-    flatten_tool_result_content_with(content, unwrap_text_block)
-}
-fn unwrap_text_block(block: &Value) -> Option<&str> {
-    let kind = block.get("type").and_then(Value::as_str)?;
-    match kind {
-        "text" => block.get("text").and_then(Value::as_str),
-        "content" => block
-            .get("content")
-            .and_then(|inner| unwrap_text_block(inner)),
-        _ => None,
-    }
-}
 #[cfg(test)]
 mod tests {
-    use super::{flatten_tool_result_content, OpenCodeAcpAdapter};
+    use super::OpenCodeAcpAdapter;
     use crate::domain::agents::acp::runtime::events_stream_blocks::EventIndexer;
     use crate::domain::agents::acp::runtime::provider_hooks::AcpProviderHooks;
     use crate::domain::agents::adapter::{RuntimeContentBlock, RuntimeEventMetadata};
@@ -243,40 +252,6 @@ mod tests {
             0,
             std::path::Path::new("/tmp"),
         )
-    }
-    #[test]
-    fn flatten_collapses_text_only_blocks_into_a_string() {
-        let payload = flatten_tool_result_content(&[
-            json!({ "type": "text", "text": "line one" }),
-            json!({ "type": "text", "text": "line two" }),
-        ]);
-        assert_eq!(payload, json!("line one\nline two"));
-    }
-    #[test]
-    fn flatten_passes_structured_blocks_through_and_handles_empty_input() {
-        let blocks = vec![json!({ "type": "diff", "path": "/x", "newText": "x" })];
-        let payload = flatten_tool_result_content(&blocks);
-        assert!(payload.is_array());
-        assert_eq!(payload[0]["type"], "diff");
-        let empty = flatten_tool_result_content(&[]);
-        assert!(empty.is_array());
-        assert!(empty.as_array().unwrap().is_empty());
-    }
-    #[test]
-    fn flatten_unwraps_opencode_content_envelope() {
-        let payload = flatten_tool_result_content(&[json!({
-            "type": "content",
-            "content": { "type": "text", "text": "(no output)" }
-        })]);
-        assert_eq!(payload, json!("(no output)"));
-    }
-    #[test]
-    fn flatten_handles_mixed_envelope_and_bare_text() {
-        let payload = flatten_tool_result_content(&[
-            json!({ "type": "content", "content": { "type": "text", "text": "first" } }),
-            json!({ "type": "text", "text": "second" }),
-        ]);
-        assert_eq!(payload, json!("first\nsecond"));
     }
     #[test]
     fn adapter_normalizes_lowercase_acp_tool_names() {

@@ -305,6 +305,7 @@ mod tests {
         let session = super::AcpRuntimeSession::assemble(
             &client,
             &negotiated,
+            std::env::temp_dir(),
             None,
             rx,
             tx,
@@ -347,6 +348,7 @@ mod tests {
         let mut session = super::AcpRuntimeSession::assemble(
             &client,
             &negotiated,
+            std::env::temp_dir(),
             None,
             rx,
             tx,

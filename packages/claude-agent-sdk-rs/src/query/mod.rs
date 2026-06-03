@@ -16,10 +16,12 @@
 //! - [`metadata`] — one-shot `supported_commands` / `supported_models`
 
 mod control_commands;
+mod mcp_status;
 mod metadata;
 mod permission_dispatch;
 mod query_struct;
 mod reader;
+mod reader_task;
 mod spawn;
 mod turn_state;
 mod wire;

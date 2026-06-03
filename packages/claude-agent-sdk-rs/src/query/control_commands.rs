@@ -98,9 +98,18 @@ impl Query {
     ///
     /// `request` is the inner object and MUST include a `subtype` field;
     /// the `type` + `request_id` envelope is added here.
-    async fn send_control_request(
+    pub(super) async fn send_control_request(
         &self,
         request: serde_json::Value,
+    ) -> Result<serde_json::Value, SdkError> {
+        self.send_control_request_with_timeout(request, CONTROL_REQUEST_TIMEOUT)
+            .await
+    }
+
+    pub(super) async fn send_control_request_with_timeout(
+        &self,
+        request: serde_json::Value,
+        timeout: std::time::Duration,
     ) -> Result<serde_json::Value, SdkError> {
         let subtype = request
             .get("subtype")
@@ -132,7 +141,7 @@ impl Query {
             return Err(e);
         }
 
-        match tokio::time::timeout(CONTROL_REQUEST_TIMEOUT, rx).await {
+        match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(outcome)) => outcome,
             Ok(Err(_recv_err)) => {
                 // Sender dropped without resolving — the reader loop must
@@ -200,6 +209,9 @@ CAPTURED='{}'
 read -r INIT_REQ
 INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
 printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{}}}}}}\n' "$INIT_ID"
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{{"type":"control_response","response":{{"subtype":"success","request_id":"%s","response":{{"mcpServers":[]}}}}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_mode","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"plan","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}}'
 read -r MODE_REQ
@@ -260,6 +272,9 @@ set -e
 read -r INIT_REQ
 INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
 printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$INIT_ID"
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_err","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"plan","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 read -r MODE_REQ
@@ -314,6 +329,9 @@ set -e
 read -r INIT_REQ
 INIT_ID=$(printf '%s' "$INIT_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
 printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{}}}\n' "$INIT_ID"
+read -r MCP_REQ
+MCP_ID=$(printf '%s' "$MCP_REQ" | sed -n 's/.*"request_id":"\([^"]*\)".*/\1/p')
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":{"mcpServers":[]}}}\n' "$MCP_ID"
 read -r USER_PROMPT
 echo '{"type":"system","subtype":"init","uuid":"u1","session_id":"sess_to","claude_code_version":"1.0","cwd":"/tmp","tools":[],"mcp_servers":[],"model":"claude-sonnet-4-20250514","permission_mode":"plan","slash_commands":[],"output_style":"stream","skills":[],"plugins":[]}'
 read -r DUMMY

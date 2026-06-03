@@ -141,6 +141,7 @@ mod tests {
         let session = AcpRuntimeSession::assemble(
             &client,
             &negotiated("s-compact-fast"),
+            std::env::temp_dir(),
             None,
             rx,
             tx,
@@ -169,6 +170,7 @@ mod tests {
         let mut session = AcpRuntimeSession::assemble(
             &client,
             &negotiated("s-compact-resume"),
+            std::env::temp_dir(),
             None,
             rx,
             tx,
@@ -207,6 +209,7 @@ mod tests {
         let session = AcpRuntimeSession::assemble(
             &client,
             &negotiated("s-compact-single"),
+            std::env::temp_dir(),
             None,
             rx,
             tx,
@@ -259,6 +262,7 @@ mod tests {
         let mut session = AcpRuntimeSession::assemble(
             &client,
             &negotiated("s-compact-dedupe"),
+            std::env::temp_dir(),
             None,
             rx,
             tx,

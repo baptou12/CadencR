@@ -72,6 +72,7 @@ pub async fn spawn_acp_runtime_session(
     let mut session = AcpRuntimeSession::assemble(
         &client,
         &negotiated,
+        config.cwd.clone(),
         pid,
         rx,
         tx.clone(),
@@ -207,6 +208,7 @@ impl AcpRuntimeSession {
     pub(super) fn assemble(
         client: &AcpClient,
         negotiated: &NegotiatedSession,
+        cwd: std::path::PathBuf,
         pid: Option<u32>,
         rx: mpsc::Receiver<Result<RuntimeEvent, RuntimeError>>,
         local_tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
@@ -238,7 +240,10 @@ impl AcpRuntimeSession {
             closing: Arc::new(AtomicBool::new(false)),
             manual_compact_running: Arc::new(AtomicBool::new(false)),
             pid,
+            cwd,
             context_window: negotiated.context_window,
+            configured_mcp_servers: negotiated.mcp_servers.clone(),
+            mcp_servers: Arc::new(RwLock::new(negotiated.mcp_servers.clone())),
             message_rx: Some(rx),
             loop_task: None,
             side_channel_task: None,
