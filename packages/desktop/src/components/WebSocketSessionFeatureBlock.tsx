@@ -44,6 +44,7 @@ export interface WebSocketSessionFeatureBlockProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  onExclude?: () => void;
   requestedFocusTab?: TabKind;
 }
 
@@ -213,6 +214,7 @@ function WebSocketSessionFeatureBody(
           isPinned={props.isPinned}
           isPinPending={props.isPinPending}
           onTogglePin={props.onTogglePin}
+          onExclude={props.onExclude}
         />
         <FeatureLayoutShell
           featureId={layoutFeatureId}
@@ -387,6 +389,7 @@ interface SessionFeatureTopBarProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  onExclude?: () => void;
 }
 
 function SessionFeatureTopBar({
@@ -401,6 +404,7 @@ function SessionFeatureTopBar({
   isPinned,
   isPinPending,
   onTogglePin,
+  onExclude,
 }: SessionFeatureTopBarProps): ReactElement {
   return (
     <FeatureTopBar
@@ -423,6 +427,7 @@ function SessionFeatureTopBar({
       isPinned={isPinned}
       isPinPending={isPinPending}
       onTogglePin={onTogglePin}
+      onExclude={onExclude}
       hideEmbeddedWorktreeSetup={embedded}
     />
   );

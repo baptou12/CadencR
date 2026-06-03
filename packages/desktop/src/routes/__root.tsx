@@ -266,11 +266,18 @@ function RootLayout() {
     setCommandPaletteOpen((prev) => !prev);
   });
 
-  useShortcut("new-session", (e) => {
-    e.preventDefault();
-    if (activeProjectId == null) return;
-    createSessionMutation.mutate({ data: { project_id: activeProjectId, type: "ws-session" } });
-  });
+  // Scoped to a feature page: disabled when no project is active (e.g. the
+  // /agents grid), so the Unified Agents view owns ⌘⇧N with its own
+  // project-picker flow instead of this binding silently no-opping.
+  useShortcut(
+    "new-session",
+    (e) => {
+      e.preventDefault();
+      if (activeProjectId == null) return;
+      createSessionMutation.mutate({ data: { project_id: activeProjectId, type: "ws-session" } });
+    },
+    { enabled: activeProjectId != null },
+  );
 
   // Archive active features, delete archived features.
   useShortcut("delete-feature", async (e) => {

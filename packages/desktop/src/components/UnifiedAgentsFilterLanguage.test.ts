@@ -25,6 +25,7 @@ describe("UnifiedAgentsFilterLanguage", () => {
       mode: "recent",
       freshMinutes: 20,
       projectIds: [1],
+      excludedTitles: [],
       query: "auth bug",
       sortOrder: "activity_asc",
     });
@@ -52,6 +53,7 @@ describe("UnifiedAgentsFilterLanguage", () => {
       mode: "all",
       freshMinutes: 5,
       projectIds: [1, 2],
+      excludedTitles: [],
       query: "",
       sortOrder: "created_desc",
     });
@@ -64,6 +66,7 @@ describe("UnifiedAgentsFilterLanguage", () => {
           mode: "recent",
           freshMinutes: 60,
           projectIds: [1, 3],
+          excludedTitles: [],
           query: "review ui",
           sortOrder: "created_asc",
         },
@@ -79,6 +82,7 @@ describe("UnifiedAgentsFilterLanguage", () => {
           mode: "recent",
           freshMinutes: 5,
           projectIds: [],
+          excludedTitles: [],
           query: "review ui",
           sortOrder: "created_desc",
         },
@@ -94,12 +98,52 @@ describe("UnifiedAgentsFilterLanguage", () => {
           mode: "all",
           freshMinutes: 5,
           projectIds: [],
+          excludedTitles: [],
           query: "",
           sortOrder: "activity_desc",
         },
         PROJECTS,
       ),
     ).toBe("/last:all /sort:message");
+  });
+
+  it("parses /exclude into a deduped, quote-aware title list", () => {
+    expect(
+      parseUnifiedAgentsFilterText('/exclude:auth|"Docs site"|AUTH bug', PROJECTS),
+    ).toMatchObject({
+      excludedTitles: ["auth", "Docs site"],
+      query: "bug",
+    });
+  });
+
+  it("serializes excluded titles with quoting", () => {
+    expect(
+      serializeUnifiedAgentsFilterText(
+        {
+          mode: "recent",
+          freshMinutes: 5,
+          projectIds: [],
+          excludedTitles: ["auth", "Docs site"],
+          query: "",
+          sortOrder: "created_desc",
+        },
+        PROJECTS,
+      ),
+    ).toBe('/exclude:auth|"Docs site"');
+  });
+
+  it("round-trips /exclude through parse and serialize", () => {
+    const text = '/exclude:auth|"Docs site"';
+    expect(
+      serializeUnifiedAgentsFilterText(parseUnifiedAgentsFilterText(text, PROJECTS), PROJECTS),
+    ).toBe(text);
+  });
+
+  it("suggests the exclude key after a slash trigger", () => {
+    expect(getUnifiedAgentsFilterSuggestions("/exc", PROJECTS)[0]).toMatchObject({
+      replacement: "/exclude:",
+      key: "exclude",
+    });
   });
 
   it("keeps invalid slash filters as free text", () => {

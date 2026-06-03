@@ -55,6 +55,10 @@ const FILTER_DEBOUNCE_MS = 300;
 export interface UnifiedAgentsFilterInputHandle {
   focus: () => void;
   blur: () => void;
+  /** Force the editor to display `text`, bypassing the dirty/focused guard
+   *  that `useExternalFilterValue` applies. Used for programmatic filter
+   *  changes (e.g. the per-card exclude button) so the box stays in sync. */
+  setValue: (text: string) => void;
 }
 
 interface UnifiedAgentsDynamicFilterProps {
@@ -121,7 +125,15 @@ function UnifiedAgentsDynamicFilterInner({
     [activeSlashFilterToken, projects],
   );
 
-  useFilterImperativeHandle(inputRef, editor);
+  const applyExternalValue = useCallback(
+    (text: string): void => {
+      dirtyRef.current = false;
+      setDraft(text);
+      setUnifiedAgentsFilterEditorText(editor, text, { selection: "none" });
+    },
+    [editor],
+  );
+  useFilterImperativeHandle(inputRef, editor, applyExternalValue);
   useExternalFilterValue(value, editor, focused, dirtyRef, setDraft);
   useDebouncedFilterCommit(draft, onValueChange, dirtyRef);
   useEffect(() => {
@@ -275,8 +287,8 @@ function FilterEditorShell({
           />
         }
         placeholder={
-          <div className="pointer-events-none absolute top-1.5 left-7 select-none font-mono text-[12.5px] text-muted-foreground">
-            Filter by agent name… type / for last, project, sort
+          <div className="pointer-events-none absolute top-1/2 left-7 -translate-y-1/2 select-none font-mono text-[12.5px] leading-5 text-muted-foreground">
+            Filter by agent name… type / for last, project, sort, exclude
           </div>
         }
         ErrorBoundary={LexicalErrorBoundary}
@@ -336,6 +348,7 @@ function FilterTextNodeNormalizationPlugin(): null {
 function useFilterImperativeHandle(
   inputRef: Ref<UnifiedAgentsFilterInputHandle> | undefined,
   editor: LexicalEditor,
+  setValue: (text: string) => void,
 ): void {
   useImperativeHandle(inputRef, () => ({
     focus() {
@@ -347,6 +360,9 @@ function useFilterImperativeHandle(
     blur() {
       editor.blur();
       editor.getRootElement()?.blur();
+    },
+    setValue(text: string) {
+      setValue(text);
     },
   }));
 }

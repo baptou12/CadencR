@@ -27,6 +27,7 @@ interface UnifiedAgentCardProps {
   index: number;
   isActive: boolean;
   onActivate: (index: number) => void;
+  onExcludeAgent: (title: string) => void;
 }
 
 export const UnifiedAgentCard = memo(function UnifiedAgentCard({
@@ -34,6 +35,7 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
   index,
   isActive,
   onActivate,
+  onExcludeAgent,
 }: UnifiedAgentCardProps): ReactElement {
   useHydrateUnifiedWsSession(entry);
   const pinControls = useUnifiedAgentPinControls(entry);
@@ -41,6 +43,10 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
   // Stable so the surrounding `React.memo` and the section's focus/pointer
   // handlers don't tear down every render while the grid streams updates.
   const activate = useCallback((): void => onActivate(index), [onActivate, index]);
+  const excludeAgent = useCallback(
+    (): void => onExcludeAgent(entry.feature.title),
+    [onExcludeAgent, entry.feature.title],
+  );
   // CMD+O on the active card opens its dedicated feature page. Gated on
   // `isActive` so only the focused card listens — the listener is bubble-
   // phase (@tanstack/react-hotkeys), and Cadencr doesn't bind CMD+O elsewhere
@@ -101,6 +107,7 @@ export const UnifiedAgentCard = memo(function UnifiedAgentCard({
           isPinned={entry.is_pinned}
           isPinPending={pinControls.isPending}
           onTogglePin={pinControls.toggle}
+          onExclude={excludeAgent}
         />
       </ResolvedModelProvider>
     </section>

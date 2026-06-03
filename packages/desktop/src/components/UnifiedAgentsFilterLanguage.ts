@@ -1,8 +1,19 @@
 import type { Project } from "@/api/generated";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
 import type { UnifiedAgentsSortOrder } from "@/components/UnifiedAgentsFilterState";
+import {
+  dedupeTitles,
+  firstFilterValue,
+  isQuote,
+  isWhitespace,
+  normalizeFilterValue,
+  quoteFilterValue,
+  splitFilterValues,
+} from "@/components/unified-agents-filter-values";
 
-const UNIFIED_AGENTS_FILTER_KEYS = ["last", "project", "sort"] as const;
+export { quoteFilterValue } from "@/components/unified-agents-filter-values";
+
+const UNIFIED_AGENTS_FILTER_KEYS = ["last", "project", "sort", "exclude"] as const;
 export type UnifiedAgentsFilterKey = (typeof UNIFIED_AGENTS_FILTER_KEYS)[number];
 const LAST_PRESETS = ["2", "5", "20", "60", "all"] as const;
 const SORT_VALUES = ["created", "-created", "message", "-message"] as const;
@@ -11,6 +22,7 @@ export interface UnifiedAgentsParsedFilter {
   mode: UnifiedAgentsFilterMode;
   freshMinutes: number;
   projectIds: number[];
+  excludedTitles: string[];
   query: string;
   sortOrder: UnifiedAgentsSortOrder;
 }
@@ -39,6 +51,7 @@ export const DEFAULT_UNIFIED_AGENTS_PARSED_FILTER: UnifiedAgentsParsedFilter = {
   mode: "recent",
   freshMinutes: 5,
   projectIds: [],
+  excludedTitles: [],
   query: "",
   sortOrder: "created_desc",
 };
@@ -69,6 +82,9 @@ export function serializeUnifiedAgentsFilterText(
   }
   const projectValue = serializeProjectFilter(filter.projectIds, projects);
   if (projectValue) parts.push(`/project:${projectValue}`);
+  if (filter.excludedTitles.length > 0) {
+    parts.push(`/exclude:${filter.excludedTitles.map(quoteFilterValue).join("|")}`);
+  }
   if (filter.query.trim()) parts.push(filter.query.trim());
   return parts.join(" ");
 }
@@ -165,6 +181,10 @@ function applyFilterPair(
     parsed.projectIds = resolveProjectValues(pair.value, projects);
     return true;
   }
+  if (pair.key === "exclude") {
+    parsed.excludedTitles = dedupeTitles(splitFilterValues(pair.value), normalizeFilterValue);
+    return true;
+  }
   const sortOrder = parseSortValue(firstFilterValue(pair.value));
   if (sortOrder) parsed.sortOrder = sortOrder;
   return true;
@@ -236,33 +256,6 @@ function resolveProject(value: string, projects: Project[]): Project | null {
   );
 }
 
-function splitFilterValues(value: string): string[] {
-  const values: string[] = [];
-  let current = "";
-  let quote: string | null = null;
-  for (const char of value.split("")) {
-    if (isQuote(char)) {
-      quote = quote === null ? char : quote === char ? null : quote;
-      current += char;
-    } else if (char === "|" && quote === null) {
-      values.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  values.push(current);
-  return values;
-}
-
-function firstFilterValue(value: string): string {
-  return splitFilterValues(value)[0] ?? "";
-}
-
-function normalizeFilterValue(value: string): string {
-  return value.trim().replace(/^["“”]|["“”]$/g, "");
-}
-
 function serializeLastFilter(filter: UnifiedAgentsParsedFilter): string {
   return filter.mode === "all" ? "/last:all" : `/last:${filter.freshMinutes}`;
 }
@@ -285,10 +278,6 @@ function projectNameOrId(projectId: number, projects: Project[]): string {
     projects.find((project: Project): boolean => project.id === projectId)?.name ??
     String(projectId)
   );
-}
-
-export function quoteFilterValue(value: string): string {
-  return /[\s|:"]/.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
 }
 
 function addFreeTextToken(textParts: string[], token: string): void {
@@ -358,17 +347,10 @@ function getProjectSuggestions(
 function keySuggestionDetail(key: UnifiedAgentsFilterKey): string {
   if (key === "last") return "Activity window";
   if (key === "project") return "Project";
+  if (key === "exclude") return "Hide agents by name";
   return "Sort order";
 }
 
 function isFilterKey(key: string): key is UnifiedAgentsFilterKey {
   return UNIFIED_AGENTS_FILTER_KEYS.includes(key as UnifiedAgentsFilterKey);
-}
-
-function isWhitespace(char: string): boolean {
-  return char.length > 0 && /\s/.test(char);
-}
-
-function isQuote(char: string): boolean {
-  return char === '"' || char === "“" || char === "”";
 }

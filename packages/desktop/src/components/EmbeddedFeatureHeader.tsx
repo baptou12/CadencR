@@ -1,6 +1,6 @@
 import { memo, useCallback, type MouseEvent, type ReactElement } from "react";
 import { Link } from "@tanstack/react-router";
-import { AlertTriangleIcon, GitBranchIcon, Loader2Icon, PinIcon } from "lucide-react";
+import { AlertTriangleIcon, EyeOffIcon, GitBranchIcon, Loader2Icon, PinIcon } from "lucide-react";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { SlidingText } from "@/components/SlidingText";
@@ -20,6 +20,7 @@ interface EmbeddedFeatureHeaderProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  onExclude?: () => void;
   worktreeStatus?: WorktreeStatus;
   worktreeBranch?: string | null;
 }
@@ -35,17 +36,10 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
   isPinned = false,
   isPinPending = false,
   onTogglePin,
+  onExclude,
   worktreeStatus,
   worktreeBranch,
 }: EmbeddedFeatureHeaderProps): ReactElement {
-  const activityLabel = formatActivity(lastActivityAt);
-  const handlePinClick = useCallback(
-    (event: MouseEvent<HTMLButtonElement>): void => {
-      event.stopPropagation();
-      onTogglePin?.();
-    },
-    [onTogglePin],
-  );
   return (
     <div
       className={cn(
@@ -68,6 +62,55 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
         <FeatureLabelChip label={label} className="max-w-24 leading-3" />
         <WorktreeIndicator status={worktreeStatus} branch={worktreeBranch} />
       </div>
+      <EmbeddedFeatureHeaderActions
+        featureId={featureId}
+        projectId={projectId}
+        lastActivityAt={lastActivityAt}
+        isPinned={isPinned}
+        isPinPending={isPinPending}
+        onTogglePin={onTogglePin}
+        onExclude={onExclude}
+      />
+    </div>
+  );
+});
+
+interface EmbeddedFeatureHeaderActionsProps {
+  featureId: number;
+  projectId: number;
+  lastActivityAt?: string | null;
+  isPinned: boolean;
+  isPinPending: boolean;
+  onTogglePin?: () => void;
+  onExclude?: () => void;
+}
+
+const EmbeddedFeatureHeaderActions = memo(function EmbeddedFeatureHeaderActions({
+  featureId,
+  projectId,
+  lastActivityAt,
+  isPinned,
+  isPinPending,
+  onTogglePin,
+  onExclude,
+}: EmbeddedFeatureHeaderActionsProps): ReactElement {
+  const activityLabel = formatActivity(lastActivityAt);
+  const handlePinClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      event.stopPropagation();
+      onTogglePin?.();
+    },
+    [onTogglePin],
+  );
+  const handleExcludeClick = useCallback(
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      event.stopPropagation();
+      onExclude?.();
+    },
+    [onExclude],
+  );
+  return (
+    <>
       {activityLabel && (
         <span
           title={lastActivityAt ? `Last activity: ${lastActivityAt}` : undefined}
@@ -76,6 +119,20 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
           {activityLabel}
         </span>
       )}
+      {onExclude ? (
+        <ShortcutTooltip label="Hide from this view" alignRight>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-6 shrink-0 rounded-md text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+            aria-label="Hide agent from this view"
+            onClick={handleExcludeClick}
+          >
+            <EyeOffIcon className="size-3.5" />
+          </Button>
+        </ShortcutTooltip>
+      ) : null}
       {onTogglePin ? (
         <ShortcutTooltip
           label={isPinned ? "Unpin agent" : "Pin agent"}
@@ -119,7 +176,7 @@ export const EmbeddedFeatureHeader = memo(function EmbeddedFeatureHeader({
           </Link>
         </Button>
       </ShortcutTooltip>
-    </div>
+    </>
   );
 });
 

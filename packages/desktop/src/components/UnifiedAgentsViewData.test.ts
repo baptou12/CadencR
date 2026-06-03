@@ -23,6 +23,7 @@ const ALL_FILTERS: UnifiedAgentFilterArgs = {
   mode: "all",
   freshMinutes: 5,
   projectIds: [],
+  excludedTitles: [],
   queryText: "",
   sortOrder: "created_desc",
 };
@@ -138,6 +139,31 @@ describe("UnifiedAgentsViewData", () => {
     );
 
     expect(ids(ordered)).toEqual([3, 2, 4, 1]);
+  });
+
+  it("hides agents whose title matches an excluded substring (case-insensitive)", () => {
+    const ordered = orderUnifiedAgentsForDisplay(
+      [
+        buildAgent({ id: 1, title: "Auth login" }),
+        buildAgent({ id: 2, title: "Docs update" }),
+        buildAgent({ id: 3, title: "AUTH logout" }),
+      ],
+      { ...ALL_FILTERS, excludedTitles: ["auth"] },
+    );
+
+    expect(ids(ordered)).toEqual([2]);
+  });
+
+  it("excludes pinned agents too — exclude wins over the pinned-extras fallback", () => {
+    const visible = getUnifiedAgentsMatchingFilters(
+      [
+        buildAgent({ id: 1, title: "Keep me" }),
+        buildAgent({ id: 2, title: "Hide me", isPinned: true }),
+      ],
+      { ...ALL_FILTERS, excludedTitles: ["hide me"] },
+    );
+
+    expect(ids(visible)).toEqual([1]);
   });
 
   it("keeps pinned extras visible for text filters", () => {

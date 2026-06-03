@@ -47,6 +47,7 @@ interface FeatureTopBarProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  onExclude?: () => void;
   hideEmbeddedWorktreeSetup?: boolean;
 }
 
@@ -89,6 +90,7 @@ function EmbeddedFeatureTopBar({
   isPinned,
   isPinPending,
   onTogglePin,
+  onExclude,
   hideEmbeddedWorktreeSetup,
 }: FeatureTopBarProps): ReactElement {
   return (
@@ -102,6 +104,7 @@ function EmbeddedFeatureTopBar({
       isPinned={isPinned}
       isPinPending={isPinPending}
       onTogglePin={onTogglePin}
+      onExclude={onExclude}
       className={className}
       wsWorktreeStatus={wsWorktreeStatus}
       wsWorktreeBranch={wsWorktreeBranch}

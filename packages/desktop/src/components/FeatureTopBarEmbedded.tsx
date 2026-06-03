@@ -13,6 +13,7 @@ interface EmbeddedSessionHeaderProps {
   isPinned?: boolean;
   isPinPending?: boolean;
   onTogglePin?: () => void;
+  onExclude?: () => void;
   className?: string;
   wsWorktreeStatus?: WorktreeStatus;
   wsWorktreeBranch?: string | null;
@@ -32,6 +33,7 @@ export function EmbeddedSessionHeader({
   isPinned,
   isPinPending,
   onTogglePin,
+  onExclude,
   className,
   wsWorktreeStatus,
   wsWorktreeBranch,
@@ -52,6 +54,7 @@ export function EmbeddedSessionHeader({
         isPinned={isPinned}
         isPinPending={isPinPending}
         onTogglePin={onTogglePin}
+        onExclude={onExclude}
         worktreeStatus={wsWorktreeStatus}
         worktreeBranch={wsWorktreeBranch}
         className={className}
