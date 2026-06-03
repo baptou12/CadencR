@@ -287,7 +287,7 @@ function FilterEditorShell({
           />
         }
         placeholder={
-          <div className="pointer-events-none absolute top-1.5 left-7 select-none font-mono text-[12.5px] text-muted-foreground">
+          <div className="pointer-events-none absolute top-1/2 left-7 -translate-y-1/2 select-none font-mono text-[12.5px] leading-5 text-muted-foreground">
             Filter by agent name… type / for last, project, sort, exclude
           </div>
         }

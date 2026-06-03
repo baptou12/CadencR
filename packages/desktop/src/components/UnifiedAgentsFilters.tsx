@@ -6,6 +6,7 @@ import {
   type UnifiedAgentsFilterInputHandle,
 } from "@/components/UnifiedAgentsDynamicFilter";
 import { UnifiedAgentsCounterPill } from "@/components/UnifiedAgentsCounterPill";
+import { UnifiedAgentsNewFeatureButton } from "@/components/UnifiedAgentsNewFeatureButton";
 import { UnifiedAgentsPerRowStepper } from "@/components/UnifiedAgentsPerRowStepper";
 import type { UnifiedAgentsPerRowSetting } from "@/components/UnifiedAgentsPerRowSetting";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,10 @@ export const UnifiedAgentsFilters = memo(function UnifiedAgentsFilters({
         isSaving={agentsPerRowSetting.isSaving}
         onChange={agentsPerRowSetting.setValue}
       />
-      <RefreshButton isFetching={isFetching} onRefresh={onRefresh} />
+      <div className="flex items-center gap-2">
+        <RefreshButton isFetching={isFetching} onRefresh={onRefresh} />
+        <UnifiedAgentsNewFeatureButton projects={projects} />
+      </div>
     </div>
   );
 });

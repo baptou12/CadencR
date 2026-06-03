@@ -33,7 +33,7 @@ const APP_SHORTCUTS = [
   },
   { id: "open-settings", keys: ["mod", "comma"], description: "Open settings", scope: "global" },
   { id: "toggle-sidebar", keys: ["mod", "b"], description: "Toggle sidebar", scope: "global" },
-  { id: "new-session", keys: ["mod", "shift", "n"], description: "New session", scope: "global" },
+  { id: "new-session", keys: ["mod", "shift", "n"], description: "New session", scope: "feature" },
   {
     id: "delete-feature",
     keys: ["mod", "shift", "x"],
@@ -170,6 +170,12 @@ const APP_SHORTCUTS = [
     id: "agents-open-feature",
     keys: ["mod", "shift", "o"],
     description: "Open active agent's feature page",
+    scope: "unified-agents",
+  },
+  {
+    id: "agents-new-feature",
+    keys: ["mod", "shift", "n"],
+    description: "New session (pick a project)",
     scope: "unified-agents",
   },
 
