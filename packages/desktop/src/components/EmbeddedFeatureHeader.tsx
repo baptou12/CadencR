@@ -120,7 +120,7 @@ const EmbeddedFeatureHeaderActions = memo(function EmbeddedFeatureHeaderActions(
         </span>
       )}
       {onExclude ? (
-        <ShortcutTooltip label="Hide from this view" alignRight>
+        <ShortcutTooltip label="Hide from this view" keys={["cmd", "shift", "H"]} alignRight>
           <Button
             type="button"
             variant="ghost"

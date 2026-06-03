@@ -61,6 +61,7 @@ export function UnifiedAgentsView(): ReactElement {
     activePinControls,
     agents: data.agents,
     columns,
+    excludeAgent,
     searchInputRef,
     setActiveSessionId,
   });
@@ -141,6 +142,7 @@ interface UnifiedAgentsKeyboardArgs {
   columns: number;
   activeIndex: number;
   activePinControls: ReturnType<typeof useUnifiedAgentPinControls>;
+  excludeAgent: (title: string) => void;
   searchInputRef: RefObject<UnifiedAgentsFilterInputHandle | null>;
   setActiveSessionId: (sessionId: number | null) => void;
 }
@@ -156,6 +158,7 @@ function useUnifiedAgentsKeyboard({
   columns,
   activeIndex,
   activePinControls,
+  excludeAgent,
   searchInputRef,
   setActiveSessionId,
 }: UnifiedAgentsKeyboardArgs): UnifiedAgentsKeyboardState {
@@ -200,6 +203,11 @@ function useUnifiedAgentsKeyboard({
   useGlobalShortcutById("agents-pin", (e) => {
     consumeKeyEvent(e);
     activePinControls.toggle();
+  });
+  useGlobalShortcutById("agents-hide", (e) => {
+    consumeKeyEvent(e);
+    const title = agents[activeIndex]?.feature.title;
+    if (title) excludeAgent(title);
   });
 
   const handleActivate = useCallback(

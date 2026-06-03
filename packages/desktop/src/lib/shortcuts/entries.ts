@@ -23,11 +23,14 @@ import { EDITOR_SHORTCUTS } from "./entries-editor";
 const APP_SHORTCUTS = [
   // ─── Global ──────────────────────────────────────────────────────────
   {
-    // ⌘⇧P matches VS Code / JetBrains convention. The old ⌘K chord is now
-    // free for the editor-buffer "Delete line" command so power users can
-    // delete lines with one hand inside the file editor.
+    // ⌘K — the global command-palette / "search everything" chord, matching
+    // Linear / Slack / Raycast. It also drives the sidebar Search button.
+    // ⌘⇧P is deliberately NOT used here: that chord is the unified-agents
+    // "Pin / unpin" local shortcut (`agents-pin`). Inside the CodeMirror
+    // buffer ⌘K stays "Delete line" — the root handler defers to the editor
+    // via `isInCodeMirrorEditor`.
     id: "command-palette",
-    keys: ["mod", "shift", "p"],
+    keys: ["mod", "k"],
     description: "Open command palette",
     scope: "global",
   },
@@ -143,6 +146,12 @@ const APP_SHORTCUTS = [
     scope: "unified-agents",
   },
   {
+    id: "agents-hide",
+    keys: ["mod", "shift", "h"],
+    description: "Hide active agent from this view",
+    scope: "unified-agents",
+  },
+  {
     id: "agents-navigate-left",
     keys: ["mod", "alt", "left"],
     description: "Move selection left",
@@ -202,7 +211,8 @@ const APP_SHORTCUTS = [
 
   // ─── Feature actions ─────────────────────────────────────────────────
   {
-    // Lives on ⌥P only — ⌘⇧P is now the global command palette.
+    // Lives on ⌥P only. (⌘⇧P is the unified-agents pin shortcut; the global
+    // command palette is on ⌘K.)
     id: "feature-settings",
     keys: ["alt", "p"],
     description: "Feature settings popover",

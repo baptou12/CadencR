@@ -6,8 +6,8 @@ export function useFeatureSettingsShortcuts(
   isSession: boolean,
   setSettingsOpen: Dispatch<SetStateAction<boolean>>,
 ): void {
-  // The registry entry `feature-settings` has both a primary (⌘⇧P) and an
-  // `altKeys` alternate (⌥P); `useShortcut` binds both via the resolver.
+  // The registry entry `feature-settings` is bound to ⌥P; `useShortcut`
+  // resolves it (plus any user override) via the registry.
   useShortcut("feature-settings", (event: KeyboardEvent): void => {
     if (isSession) return;
     event.preventDefault();

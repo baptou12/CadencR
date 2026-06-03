@@ -58,9 +58,10 @@ export function editorBufferKeymap(): Extension {
         // makes the chord explicit, future-proof, and survives an app-level
         // shortcut sneaking in with a colliding chord.
         { key: "Mod-/", run: toggleComment, preventDefault: true },
-        // ⌘K (was ⌘⇧K): delete the current line. The global command
-        // palette moved to ⌘⇧P so ⌘K is available here, matching the
-        // VS Code / Sublime convention.
+        // ⌘K: delete the current line (VS Code / Sublime convention). The
+        // global command palette shares ⌘K but its root handler defers to
+        // the editor while `.cm-editor` has focus (`isInCodeMirrorEditor`),
+        // so this `Prec.highest` binding wins inside the buffer.
         { key: "Mod-k", run: deleteLine, preventDefault: true },
         { key: "Mod-d", run: selectNextOccurrence, preventDefault: true },
         { key: "Mod-Shift-l", run: selectSelectionMatches, preventDefault: true },
