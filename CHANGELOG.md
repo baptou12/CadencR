@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.3.5 - 2026-06-03
+
+Previous release: v0.3.4 - 2026-06-02
+
+### ✨ Added
+
+- [**Desktop**] Added a redesigned Settings page with grouped cards, clearer section headings, and more consistent controls for providers, themes, notifications, file icons, LSP servers, and permission modes.
+
+### 🔧 Changed
+
+- [**Desktop**] Kept gitignored files and folders visible in the editor file tree as dimmed entries, so ignored project files can still be opened without losing their status context.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed empty-session cleanup so conversations without useful session content are deleted instead of being archived as clutter.
+- [**provider:claude**] Fixed Claude Code model discovery so changing the active profile refreshes the model list immediately.
+- [**provider:claude**] Fixed Claude sessions stuck in `bypassPermissions` so they can recover when the stored permission mode no longer matches the available launch capability.
+- [**provider:codex**] Fixed Codex and ACP steering prompts after stop/resume so pending prompts are replayed and receipt state stays accurate.
+- [**provider:codex**] Fixed Codex permission-mode persistence across session re-seeding so conversations keep the requested access mode.
+
+### 🔒 Security
+
+- [**dependencies**] Updated reviewed npm dependency overrides and lockfile entries for vulnerable transitive packages.
+
 ## v0.3.4 - 2026-06-02
 
 Previous release: v0.3.3 - 2026-06-01
