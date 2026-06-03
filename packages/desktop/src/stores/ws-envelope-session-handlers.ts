@@ -8,7 +8,9 @@ import {
   parseMessageBlocksPayload,
   parsePermissionPayload,
   parsePromptReceivedPayload,
+  parseUserMessageMirrorPayload,
 } from "./ws-envelope-payload";
+import { appendLocalUserMessage } from "./ws-session-store-helpers";
 import { buildClearedGatePatch } from "./ws-gate-state";
 import {
   type BlockMutation,
@@ -234,6 +236,23 @@ export function handlePermissionRequest(
       }),
     );
   }
+}
+
+/**
+ * Render a prompt another device sent on this feature (the remote-access
+ * mirror). The sending device shows its own prompt optimistically and never
+ * receives this echo — only passive viewers do — so we append a plain
+ * user_message block with no client-message-id / delivery-state tracking.
+ */
+export function handleUserMessageMirror(
+  ctx: StoreAccessors,
+  sessionId: string,
+  payload: unknown,
+): void {
+  const p = parseUserMessageMirrorPayload(payload);
+  if (!p) return;
+  const session = ctx.getSession(sessionId);
+  ctx.set(updateSession(ctx.get(), sessionId, appendLocalUserMessage(session, p.text)));
 }
 
 export function handlePromptReceived(

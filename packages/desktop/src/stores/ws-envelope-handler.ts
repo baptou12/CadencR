@@ -31,6 +31,7 @@ import {
   handleMessage,
   handlePermissionRequest,
   handlePromptReceived,
+  handleUserMessageMirror,
 } from "./ws-envelope-session-handlers";
 import { handleError } from "./ws-envelope-error-handler";
 import {
@@ -149,6 +150,9 @@ function handleBaseSessionAction(
       return true;
     case "message":
       handleMessage(ctx, sessionId, envelope.payload);
+      return true;
+    case "user_message":
+      handleUserMessageMirror(ctx, sessionId, envelope.payload);
       return true;
     case "permission.request":
       handlePermissionRequest(ctx, sessionId, envelope.payload);

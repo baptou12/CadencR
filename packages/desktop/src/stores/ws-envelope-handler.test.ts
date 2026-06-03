@@ -74,6 +74,34 @@ describe("handleEnvelope turn_complete", () => {
   });
 });
 
+describe("handleEnvelope user_message mirror", () => {
+  it("appends a user_message block for a prompt sent from another device", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", {
+      domain: "session",
+      action: "user_message",
+      payload: { text: "hello from another device" },
+    });
+
+    const last = ctx.getSession("s1").blocks.at(-1);
+    expect(last?.type).toBe("user_message");
+    expect(last?.content).toBe("hello from another device");
+    // Mirrored prompts are confirmed, not optimistic — no receipt tracking.
+    expect(last?.clientMessageId).toBeUndefined();
+  });
+
+  it("ignores a payload without text", () => {
+    const session = createSessionEntry();
+    const ctx = createTestContext(session);
+
+    handleEnvelope(ctx, "s1", { domain: "session", action: "user_message", payload: {} });
+
+    expect(ctx.getSession("s1").blocks).toHaveLength(0);
+  });
+});
+
 describe("handleEnvelope cleared", () => {
   it("resets prepend anchoring state when a clear divider starts a new turn history", () => {
     const session = createSessionEntry();

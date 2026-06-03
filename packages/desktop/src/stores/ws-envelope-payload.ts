@@ -293,6 +293,18 @@ export function parsePromptReceivedPayload(
 }
 
 /**
+ * Parse the `session.user_message` envelope — a prompt another device just sent,
+ * mirrored here so this (passive) viewer's conversation stays live. Requires a
+ * non-empty `text`; anything else is dropped.
+ */
+export function parseUserMessageMirrorPayload(payload: unknown): { text: string } | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const text = optionalString(record, "text");
+  return typeof text === "string" ? { text } : null;
+}
+
+/**
  * Parse the `session.lifecycle` envelope. Carries OS-power-driven
  * transitions (suspend / resume). Anything other than the two known kinds
  * is ignored — we'd rather drop than crash if the backend adds a new kind

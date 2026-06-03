@@ -109,6 +109,7 @@ pub(super) async fn spawn_pending_runtime_for_compact(
         spawn.feature_id,
         message_rx,
         sender.clone(),
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions.clone(),

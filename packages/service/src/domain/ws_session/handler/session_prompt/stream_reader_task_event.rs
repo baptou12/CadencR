@@ -29,7 +29,7 @@ impl StreamReaderTask {
     ) -> EventOutcome {
         state.last_runtime_activity = tokio::time::Instant::now();
 
-        match forward_immediate_event(&self.sender, self.db_session_id, &runtime_event) {
+        match forward_immediate_event(self, &runtime_event).await {
             ForwardOutcome::Forwarded => return EventOutcome::Continue,
             ForwardOutcome::SenderClosed => return EventOutcome::Break,
             ForwardOutcome::NotHandled => {}
@@ -218,16 +218,16 @@ impl StreamReaderTask {
                 usage_update.snapshot.input_tokens,
                 usage_update.snapshot.output_tokens,
                 usage_update.snapshot.context_window,
-            );
+            )
+            .await;
         }
 
         let envelope = self
             .runtime_event_envelope(state, runtime_event, persisted_message)
             .await;
         if self
-            .sender
-            .send(Message::Text(String::from(envelope).into()))
-            .is_err()
+            .send_and_mirror(Message::Text(String::from(envelope).into()))
+            .await
         {
             debug!(
                 self.db_session_id,
@@ -257,7 +257,7 @@ impl StreamReaderTask {
         result
     }
 
-    fn send_usage_update(
+    async fn send_usage_update(
         &self,
         input_tokens: u64,
         output_tokens: u64,
@@ -274,8 +274,8 @@ impl StreamReaderTask {
             .unwrap(),
         );
         let _ = self
-            .sender
-            .send(Message::Text(String::from(usage_env).into()));
+            .send_and_mirror(Message::Text(String::from(usage_env).into()))
+            .await;
     }
 
     async fn runtime_event_envelope(
@@ -358,11 +358,11 @@ impl StreamReaderTask {
             .unwrap(),
         );
         let _ = self
-            .sender
-            .send(Message::Text(String::from(err_env).into()));
+            .send_and_mirror(Message::Text(String::from(err_env).into()))
+            .await;
     }
 
-    pub(super) fn send_stream_closed(&self) {
+    pub(super) async fn send_stream_closed(&self) {
         info!(self.db_session_id, "SDK stream closed");
         let end_env = WsEnvelope::new(
             "session",
@@ -373,7 +373,7 @@ impl StreamReaderTask {
             .unwrap(),
         );
         let _ = self
-            .sender
-            .send(Message::Text(String::from(end_env).into()));
+            .send_and_mirror(Message::Text(String::from(end_env).into()))
+            .await;
     }
 }

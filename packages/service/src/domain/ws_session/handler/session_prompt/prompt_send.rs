@@ -103,6 +103,7 @@ pub(crate) async fn handle_prompt_send(
                 write_pool: app_state.write_pool.clone(),
                 session_status_tx: app_state.session_status_tx.clone(),
                 sender: sender.clone(),
+                ws_feature_senders: app_state.ws_feature_senders.clone(),
                 envelope_id: envelope.id.clone(),
             };
             drop(sessions);

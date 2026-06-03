@@ -8,7 +8,7 @@ use crate::domain::ws_session::protocol::{
     SlashCommandKindPayload, SlashCommandPayload, StreamStatusState, WsEnvelope,
 };
 
-use super::super::WsSender;
+use super::stream_reader_task::StreamReaderTask;
 
 pub(super) enum ForwardOutcome {
     Forwarded,
@@ -16,15 +16,13 @@ pub(super) enum ForwardOutcome {
     SenderClosed,
 }
 
-pub(super) fn forward_immediate_event(
-    sender: &WsSender,
-    db_session_id: i64,
+pub(super) async fn forward_immediate_event(
+    task: &StreamReaderTask,
     runtime_event: &RuntimeEvent,
 ) -> ForwardOutcome {
     if let Some(client_message_id) = runtime_event.prompt_received_client_message_id() {
         return send_envelope(
-            sender,
-            db_session_id,
+            task,
             "prompt_received",
             WsEnvelope::new(
                 "session",
@@ -34,13 +32,14 @@ pub(super) fn forward_immediate_event(
                 })
                 .unwrap(),
             ),
-        );
+            false,
+        )
+        .await;
     }
 
     if let Some(commands) = runtime_event.slash_commands_updated() {
         return send_envelope(
-            sender,
-            db_session_id,
+            task,
             "commands.updated",
             WsEnvelope::new(
                 "commands",
@@ -57,37 +56,47 @@ pub(super) fn forward_immediate_event(
                 })
                 .unwrap(),
             ),
-        );
+            false,
+        )
+        .await;
     }
 
     if let Some(status) = runtime_event.stream_status() {
         return send_envelope(
-            sender,
-            db_session_id,
+            task,
             "stream_status",
             WsEnvelope::new(
                 "session",
                 "stream_status",
                 serde_json::to_value(stream_status_payload(status)).unwrap(),
             ),
-        );
+            true,
+        )
+        .await;
     }
 
     ForwardOutcome::NotHandled
 }
 
-fn send_envelope(
-    sender: &WsSender,
-    db_session_id: i64,
+/// Forward `envelope` to the turn's owner. When `mirror` is set, also relay it
+/// to other devices viewing the feature — only stream content (`stream_status`)
+/// is mirrored; owner-specific acks (`prompt_received`, `commands.updated`) are
+/// not.
+async fn send_envelope(
+    task: &StreamReaderTask,
     label: &'static str,
     envelope: WsEnvelope,
+    mirror: bool,
 ) -> ForwardOutcome {
-    if sender
-        .send(Message::Text(String::from(envelope).into()))
-        .is_err()
-    {
+    let msg = Message::Text(String::from(envelope).into());
+    let owner_closed = if mirror {
+        task.send_and_mirror(msg).await
+    } else {
+        task.sender.send(msg).is_err()
+    };
+    if owner_closed {
         debug!(
-            db_session_id,
+            task.db_session_id,
             "WebSocket sender closed during {label} forward"
         );
         return ForwardOutcome::SenderClosed;
