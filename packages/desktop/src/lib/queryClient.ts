@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { CACHE_VERSION } from "./persistedQueries";
 
@@ -26,18 +26,22 @@ export const queryClient = new QueryClient({
  * built. Pass an array to fold several prefixes into a single cache walk
  * (e.g. on a file-tree change, refresh editor + git stats together).
  */
+export function urlPrefixPredicate(
+  urlPrefix: string | readonly string[],
+): (query: Query) => boolean {
+  const prefixes = typeof urlPrefix === "string" ? [urlPrefix] : urlPrefix;
+  return (query) => {
+    const head = query.queryKey[0];
+    if (typeof head !== "string") return false;
+    return prefixes.some((p) => head.startsWith(p));
+  };
+}
+
 export function invalidateByUrlPrefix(
   client: QueryClient,
   urlPrefix: string | readonly string[],
 ): Promise<void> {
-  const prefixes = typeof urlPrefix === "string" ? [urlPrefix] : urlPrefix;
-  return client.invalidateQueries({
-    predicate: (query) => {
-      const head = query.queryKey[0];
-      if (typeof head !== "string") return false;
-      return prefixes.some((p) => head.startsWith(p));
-    },
-  });
+  return client.invalidateQueries({ predicate: urlPrefixPredicate(urlPrefix) });
 }
 
 /**

@@ -1,8 +1,9 @@
 import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useShortcut } from "@/hooks/useShortcut";
-import { Settings, PanelLeftClose } from "lucide-react";
+import { Settings, PanelLeftClose, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
@@ -17,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
-export function Sidebar() {
+export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { setCollapsed } = useSidebarCollapsed();
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
@@ -29,6 +30,9 @@ export function Sidebar() {
     <aside ref={sidebarRef} className="flex h-full flex-col border-r border-border/60 bg-sidebar">
       <SidebarHeader onCollapse={() => setCollapsed(true)} />
       <div className="flex-1 min-w-0 min-h-0 overflow-hidden p-2">
+        <div className="mb-2 px-1">
+          <SidebarSearchButton onSearch={onSearch} />
+        </div>
         <div className="mb-2 px-1">
           <UnifiedAgentsSidebarLink />
         </div>
@@ -135,6 +139,25 @@ function useSidebarKeyboardNavigation(
       }
     },
     { enableOnFormTags: false, enableOnContentEditable: false },
+  );
+}
+
+function SidebarSearchButton({ onSearch }: { onSearch: () => void }): ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onSearch}
+      title="Search (⌘K)"
+      className={cn(
+        "flex w-full items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 py-1.5",
+        "text-sm text-muted-foreground outline-none transition-colors",
+        "hover:bg-accent/50 hover:text-foreground focus-visible:bg-accent focus-visible:outline-none",
+      )}
+    >
+      <Search className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-left">Search</span>
+      <KbdShortcut keys={["cmd", "K"]} variant="hint" />
+    </button>
   );
 }
 

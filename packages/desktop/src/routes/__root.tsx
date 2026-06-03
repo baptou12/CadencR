@@ -35,6 +35,7 @@ import {
 } from "@/lib/notify-agent-done";
 import { useAppClose } from "@/hooks/useAppClose";
 import { SidebarContext } from "@/components/SidebarContext";
+import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { useThemeSync } from "@/hooks/useTheme";
 import UniversalContextMenu from "@/components/UniversalContextMenu";
 import { RootOverlays, type ConfirmFeatureAction } from "@/components/RootOverlays";
@@ -262,9 +263,13 @@ function RootLayout() {
   });
 
   useShortcut("command-palette", (e) => {
+    // ⌘K is also "Delete line" inside the CodeMirror buffer; let the editor
+    // keymap win when focus is in the editor (see `editor-buffer-keymap.ts`).
+    if (isInCodeMirrorEditor(e.target)) return;
     e.preventDefault();
     setCommandPaletteOpen((prev) => !prev);
   });
+  const openCommandPalette = useCallback(() => setCommandPaletteOpen(true), []);
 
   // Scoped to a feature page: disabled when no project is active (e.g. the
   // /agents grid), so the Unified Agents view owns ⌘⇧N with its own
@@ -343,7 +348,7 @@ function RootLayout() {
                   }
                 }}
               >
-                <Sidebar />
+                <Sidebar onSearch={openCommandPalette} />
               </div>
             </ResizablePanel>
             <ResizableHandle

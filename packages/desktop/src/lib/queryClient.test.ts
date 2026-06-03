@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
-import { invalidateByUrlPrefix } from "./queryClient";
+import { QueryClient, type Query } from "@tanstack/react-query";
+import { invalidateByUrlPrefix, urlPrefixPredicate } from "./queryClient";
 
 /**
  * Regression test for the stale-query-key bug: invalidations were keyed under
@@ -64,6 +64,24 @@ describe("invalidateByUrlPrefix", () => {
     const cache = client.getQueryCache();
     expect(cache.find({ queryKey: ["/api/x"] })?.state.isInvalidated).toBe(true);
     expect(cache.find({ queryKey: ["/api/y"] })?.state.isInvalidated).toBe(true);
+  });
+
+  it("delegates matching to the shared urlPrefixPredicate", async () => {
+    // `urlPrefixPredicate` backs both `invalidateByUrlPrefix` and the
+    // unified-agents pin cache patch (`setQueriesData`), so its contract is
+    // exercised directly here against synthetic query keys.
+    const asQuery = (queryKey: readonly unknown[]): Query => ({ queryKey }) as unknown as Query;
+    const match = urlPrefixPredicate("/api/features");
+
+    expect(match(asQuery(["/api/features", { project_id: 1 }]))).toBe(true);
+    expect(match(asQuery(["/api/features/123"]))).toBe(true);
+    expect(match(asQuery(["/api/projects"]))).toBe(false);
+    expect(match(asQuery([{ kind: "weird" }]))).toBe(false);
+
+    const multi = urlPrefixPredicate(["/api/editor", "/api/git"]);
+    expect(multi(asQuery(["/api/editor/tree"]))).toBe(true);
+    expect(multi(asQuery(["/api/git/stats"]))).toBe(true);
+    expect(multi(asQuery(["/api/features"]))).toBe(false);
   });
 
   it("accepts an array of prefixes and folds them into a single cache walk", async () => {

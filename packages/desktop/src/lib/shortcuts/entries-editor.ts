@@ -113,8 +113,10 @@ export const EDITOR_SHORTCUTS = [
     scope: "editor-buffer",
   },
   {
-    // ⌘K — the global command palette moved to ⌘⇧P, freeing this chord
-    // for the VS Code / Sublime "Delete line" convention.
+    // ⌘K — "Delete line" (VS Code / Sublime convention) while focus is in
+    // the CodeMirror buffer. The global command palette also lives on ⌘K,
+    // but its root handler defers to the editor here via
+    // `isInCodeMirrorEditor`, so the buffer keymap wins when focused.
     id: "editor-delete-line",
     keys: ["mod", "k"],
     description: "Delete line",
