@@ -15,6 +15,7 @@
 
 pub mod client;
 pub mod error;
+pub mod mcp;
 pub mod models;
 pub mod parsing;
 pub mod permissions;
@@ -24,6 +25,10 @@ pub mod types;
 
 pub use client::OpenCodeClient;
 pub use error::SdkError;
+pub use mcp::{
+    list_mcp_servers_from_binary, list_mcp_servers_from_cli, list_mcp_servers_from_config_files,
+    parse_mcp_config_output, parse_mcp_list_output, OpenCodeMcpServerStatus,
+};
 pub use models::{list_models_from_cli, parse_models_verbose_output};
 pub use parsing::{parse_message_from, parse_session_from};
 pub use permissions::{PendingPermission, PermissionReply};

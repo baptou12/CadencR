@@ -18,11 +18,14 @@
 //! client; the legacy long-lived-server transport that used to live here
 //! has been retired.
 
+use std::path::Path;
+
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::error::SdkError;
+use crate::mcp::{list_mcp_servers_from_cli, OpenCodeMcpServerStatus};
 use crate::parsing::{parse_message_from, parse_session_from};
 use crate::permissions::{parse_pending_permission, PendingPermission, PermissionReply};
 use crate::types::{Message, Session};
@@ -47,6 +50,16 @@ impl OpenCodeClient {
 
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    /// Return MCP servers visible to the OpenCode CLI for the current
+    /// workspace. OpenCode exposes this through `opencode mcp list`, not the
+    /// embedded ACP HTTP backend.
+    pub async fn available_mcp_servers(
+        &self,
+        cwd: Option<&Path>,
+    ) -> Result<Vec<OpenCodeMcpServerStatus>, SdkError> {
+        list_mcp_servers_from_cli(cwd).await
     }
 
     /// `GET /session/{id}/message` — cumulative message snapshot for a
