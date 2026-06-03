@@ -10,7 +10,7 @@ import {
 import { TerminalPanel, type TerminalPanelHandle } from "@/components/terminal/TerminalPanel";
 import { useTerminalState, useTerminalStore } from "@/hooks/useTerminalState";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
-import { useListProjects } from "@/api/generated";
+import { listTerminalSessions, useListProjects } from "@/api/generated";
 import { useFeatureWorktreePath } from "@/hooks/useFeatureWorktreePath";
 import {
   getFocusedTab,
@@ -60,26 +60,54 @@ export const FeatureTerminalTab = memo(
     );
     const expectedCwd = worktreePath ?? projectPath;
 
-    // Reads fresh state from the store on every call instead of a captured
-    // closure. This matters under React StrictMode (and any double-invoke
-    // path): the auto-activate effect below fires twice on mount, and a
-    // stale closure would see `panes.length === 0` on both calls — calling
-    // `addPane()` twice. The second `addPane` lands on a non-null root and
-    // *splits* it, leaving the user with a phantom 2-pane terminal before
-    // they touch anything. Reading fresh state keeps activation idempotent.
-    const ensureTerminalOpen = useCallback((): void => {
+    // Guards the one-shot async hydration below so StrictMode's double-invoke
+    // (and overlapping visibility/focus effects) can't fire two backend
+    // lookups — and thus two pane trees — for the same empty feature.
+    const hydratingRef = useRef(false);
+
+    // Open the terminal, attaching to the feature's already-running shells when
+    // any exist so a second device (e.g. a remote browser) mirrors and can type
+    // into the same session instead of spawning a fresh one. Reads fresh store
+    // state throughout (never a captured closure) so it stays idempotent under
+    // StrictMode: a stale `panes.length === 0` would otherwise `addPane()` twice
+    // and split into a phantom 2-pane terminal.
+    const ensureTerminalOpen = useCallback(async (): Promise<void> => {
       const store = useTerminalStore.getState();
-      const fresh = store.getFeature(featureId);
-      if (!fresh.root) {
-        store.addPane(featureId);
+      if (!store.getFeature(featureId).root) {
+        // A hydration is already resolving the tree; it will also open the
+        // panel, so bail rather than racing it with a fresh `togglePanel`.
+        if (hydratingRef.current) return;
+        hydratingRef.current = true;
+        try {
+          const sessions = await listTerminalSessions({ feature_id: featureId }).catch(
+            (err: unknown) => {
+              // Degrade to a fresh shell — the terminal still opens, we just
+              // don't auto-attach this time. (Not a user-facing failure.)
+              console.warn("[terminal] could not list existing sessions; spawning fresh", err);
+              return [];
+            },
+          );
+          if (!store.getFeature(featureId).root) {
+            if (sessions.length > 0) {
+              store.adoptPtys(
+                featureId,
+                sessions.map((s) => ({ ptyId: s.pty_id, cwd: s.cwd })),
+              );
+            } else {
+              store.addPane(featureId);
+            }
+          }
+        } finally {
+          hydratingRef.current = false;
+        }
       }
-      if (!fresh.isOpen) {
+      if (!store.getFeature(featureId).isOpen) {
         store.togglePanel(featureId);
       }
     }, [featureId]);
 
-    const activate = useCallback((): void => {
-      ensureTerminalOpen();
+    const activate = useCallback(async (): Promise<void> => {
+      await ensureTerminalOpen();
       requestAnimationFrame(() => terminalRef.current?.focusActivePane());
     }, [ensureTerminalOpen]);
 
@@ -98,7 +126,7 @@ export const FeatureTerminalTab = memo(
         if (fresh.root) {
           terminalRef.current?.focusFirstPane();
         } else {
-          activate();
+          void activate();
         }
       },
       "terminal",
@@ -117,12 +145,12 @@ export const FeatureTerminalTab = memo(
     // but only move real DOM focus there when this pane is the focused one.
     useEffect(() => {
       if (hidden || !isTerminalVisible) return;
-      ensureTerminalOpen();
+      void ensureTerminalOpen();
     }, [hidden, ensureTerminalOpen, isTerminalVisible, hasPanes]);
 
     useEffect(() => {
       if (hidden || !isTerminalFocused) return;
-      activate();
+      void activate();
     }, [hidden, activate, isTerminalFocused, hasPanes]);
 
     return (

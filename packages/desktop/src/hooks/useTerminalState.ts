@@ -80,6 +80,13 @@ interface TerminalStore {
    * simple "new pane" actions. Returns the id of the newly-created leaf.
    */
   addPane: (featureId: number) => string | null;
+  /**
+   * Hydrate an empty feature with panes bound to PTYs already running on the
+   * backend, so a second device (e.g. a remote browser) attaches to the live
+   * shells instead of spawning new ones. No-op if the feature already has a
+   * pane tree, keeping it idempotent against StrictMode/double-invoke.
+   */
+  adoptPtys: (featureId: number, ptys: Array<{ ptyId: string; cwd?: string }>) => void;
   removePane: (featureId: number, paneId: string) => void;
   /**
    * Replace a leaf in-place with a fresh empty leaf (new id, no ptyId).
@@ -170,6 +177,20 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     });
     return createdId;
   },
+
+  adoptPtys: (featureId, ptys) =>
+    set((state) => {
+      const prev = state.features[featureId] ?? defaultState;
+      // Only adopt into an empty feature; never clobber an existing layout.
+      if (prev.root || ptys.length === 0) return state;
+      let root: SplitNode = makeLeaf({ ptyId: ptys[0].ptyId, cwd: ptys[0].cwd });
+      for (let i = 1; i < ptys.length; i += 1) {
+        const target = getLeaves(root).at(-1);
+        if (!target) break;
+        root = splitLeaf(root, target.id, "horizontal", makeLeaf(ptys[i]));
+      }
+      return updateFeature(state, featureId, { isOpen: true, isMinimized: false, root });
+    }),
 
   removePane: (featureId, paneId) =>
     set((state) => {

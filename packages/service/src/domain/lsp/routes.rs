@@ -13,13 +13,14 @@ use axum::extract::{Path, State, WebSocketUpgrade};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::api::middleware::{validate_ws_origin, validate_ws_token};
+use crate::api::middleware::authenticate_ws;
 use crate::app_state::AppState;
 use crate::error::AppError;
+use crate::remote::RemoteContext;
 
 use super::lifecycle::CrashKey;
 use super::probe::{probe_servers, ServerProbe};
@@ -119,14 +120,14 @@ pub async fn connect_handler(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
     headers: HeaderMap,
+    // Present only on the remote listener; its absence means loopback.
+    remote: Option<Extension<RemoteContext>>,
 ) -> Response {
-    if let Err(resp) = validate_ws_origin(&headers, state.frontend_port) {
-        return resp;
-    }
-    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
-        Ok(proto) => proto.to_string(),
-        Err(resp) => return resp,
-    };
+    let (selected_proto, device_id) =
+        match authenticate_ws(&headers, &state, remote.as_ref().map(|e| &e.0)).await {
+            Ok(resolved) => resolved,
+            Err(resp) => return resp,
+        };
 
     // Claim the reservation BEFORE the upgrade, so an invalid id returns 404
     // rather than completing the handshake and immediately closing — the
@@ -165,8 +166,23 @@ pub async fn connect_handler(
     let ws = ws.protocols([selected_proto]);
     let display_name = spec.server.display_name.clone();
     let crash_tracker = state.lsp_crashes.clone();
+    let live = state.remote.live();
     ws.on_upgrade(move |socket| async move {
-        run_proxy(socket, child, &display_name, crash_tracker, crash_key).await;
+        match device_id {
+            // Remote session: race the proxy against the device's cancel token so
+            // revoking the device force-closes the LSP socket immediately, like
+            // the agent and terminal sockets.
+            Some(id) => {
+                let guard = live.register(id);
+                tokio::select! {
+                    _ = run_proxy(socket, child, &display_name, crash_tracker, crash_key) => {}
+                    _ = guard.token.cancelled() => {
+                        tracing::debug!(device_id = id, "remote LSP force-closed (device revoked)");
+                    }
+                }
+            }
+            None => run_proxy(socket, child, &display_name, crash_tracker, crash_key).await,
+        }
     })
     .into_response()
 }
