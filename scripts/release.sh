@@ -110,8 +110,23 @@ assert_versions_ready() {
 
 run_trufflehog() {
   local previous_hash="$1"
+  local exclude_paths_file="scripts/trufflehog-exclude-paths.txt"
+  local args=(
+    trufflehog
+    git
+    --since-commit
+    "$previous_hash"
+    --fail
+  )
+
+  if [ -f "$exclude_paths_file" ]; then
+    args+=(--exclude-paths "$exclude_paths_file")
+  fi
+
+  args+=("file://$(pwd)")
+
   echo "Running trufflehog from previous release commit $previous_hash" >&2
-  run trufflehog git "file://$(pwd)" --since-commit "$previous_hash" --fail
+  run "${args[@]}"
 }
 
 create_release_tag() {
