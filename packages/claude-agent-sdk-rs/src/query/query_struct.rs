@@ -227,7 +227,7 @@ mod tests {
     use futures::StreamExt;
     use tempfile::TempDir;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
 
     #[tokio::test]
     async fn query_stream_from_mock_cli() {
@@ -247,6 +247,7 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_123","
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -292,6 +293,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_mcp","
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -330,6 +332,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_cfg","
         let options = Options {
             cwd: dir.path().to_path_buf(),
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -364,6 +367,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_take",
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             replay_user_messages: false,
             ..Options::default()
         };

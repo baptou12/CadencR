@@ -9,6 +9,8 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::mcp::McpServerConfig;
+
 /// Write `script` to `<dir>/claude` and chmod +x. Returns the path.
 ///
 /// Replaces the ~7-line boilerplate every mock-CLI test would otherwise
@@ -20,4 +22,19 @@ pub(super) fn write_mock_cli(dir: &Path, script: &str) -> PathBuf {
     perms.set_mode(0o755);
     std::fs::set_permissions(&script_path, perms).unwrap();
     script_path
+}
+
+/// Return a deterministic fake MCP config for mock-CLI tests that explicitly
+/// read the SDK's pre-prompt `mcp_status` control request.
+pub(super) fn mock_mcp_servers() -> std::collections::HashMap<String, McpServerConfig> {
+    let mut servers = std::collections::HashMap::new();
+    servers.insert(
+        "test-mcp".to_string(),
+        McpServerConfig::Stdio {
+            command: "test-mcp".to_string(),
+            args: None,
+            env: None,
+        },
+    );
+    servers
 }

@@ -98,7 +98,7 @@ mod tests {
     use crate::permissions::{CanUseTool, PermissionMode, PermissionRequest, PermissionResult};
     use crate::query::query;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
 
     /// Regression test for the post-`ExitPlanMode` deadlock.
     ///
@@ -126,6 +126,7 @@ mod tests {
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             can_use_tool: Some(handler),
             ..Options::default()
         };

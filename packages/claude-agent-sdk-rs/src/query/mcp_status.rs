@@ -92,7 +92,7 @@ mod tests {
     use futures::StreamExt;
     use tempfile::TempDir;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
 
     #[tokio::test]
     async fn available_mcp_servers_queries_live_mcp_status() {
@@ -103,6 +103,7 @@ mod tests {
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -134,6 +135,7 @@ mod tests {
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 

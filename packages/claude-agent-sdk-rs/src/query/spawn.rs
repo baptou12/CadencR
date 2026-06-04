@@ -174,7 +174,7 @@ mod tests {
     use futures::StreamExt;
     use tempfile::TempDir;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
     use super::query;
 
     #[tokio::test]
@@ -198,6 +198,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_init",
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -250,6 +251,7 @@ echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_image
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
         let content = serde_json::json!([{
@@ -297,6 +299,7 @@ echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_boot_
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -340,6 +343,7 @@ echo '{{"type":"result","subtype":"success","uuid":"u2","session_id":"s","durati
         let script_path = write_mock_cli(dir.path(), &init_capture_script(&captured));
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             system_prompt,
             ..Options::default()
         };

@@ -181,7 +181,7 @@ mod tests {
     use futures::StreamExt;
     use tempfile::TempDir;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
 
     /// Drive a real `Query` against a mock CLI shell script and confirm:
     ///   1. `set_permission_mode` writes the documented `control_request`
@@ -226,6 +226,7 @@ read -r DUMMY
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -286,6 +287,7 @@ read -r DUMMY
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -340,6 +342,7 @@ read -r DUMMY
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 

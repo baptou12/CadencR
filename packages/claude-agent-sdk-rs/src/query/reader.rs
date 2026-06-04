@@ -68,7 +68,7 @@ mod tests {
     use crate::options::Options;
     use crate::query::query;
 
-    use super::super::test_support::write_mock_cli;
+    use super::super::test_support::{mock_mcp_servers, write_mock_cli};
     use super::super::wire::control_request_subtype;
 
     #[tokio::test]
@@ -90,6 +90,7 @@ sleep 300
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
@@ -132,6 +133,7 @@ echo '{"type":"result","subtype":"success","uuid":"u3","session_id":"sess_456","
         // Use AllowAllTools handler
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             can_use_tool: Some(Arc::new(crate::permissions::AllowAllTools)),
             ..Options::default()
         };
@@ -175,6 +177,7 @@ echo '{"type":"result","subtype":"success","uuid":"u2","session_id":"sess_clinit
 
         let options = Options {
             path_to_cli: Some(script_path),
+            mcp_servers: Some(mock_mcp_servers()),
             ..Options::default()
         };
 
