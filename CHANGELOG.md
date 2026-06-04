@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.3.6 - 2026-06-03
+
+Previous release: v0.3.5 - 2026-06-03
+
+### ✨ Added
+
+- [**Desktop**] Added a unified-agents "New session" button with project selection and `Cmd+Shift+N` / `Ctrl+Shift+N`, so new conversations can start directly from the agents view.
+- [**Desktop**] Added `/exclude` filtering and per-agent hide controls to the unified agents view, making it easier to focus on the sessions that matter.
+- [**Desktop**] Added command-palette and sidebar search shortcuts, plus a faster keyboard path for hiding and pinning agents.
+- [**Backend**] Added session MCP server status support for OpenCode, Claude Code, and Codex so connected MCP servers can be surfaced while conversations run.
+
+### 🔧 Changed
+
+- [**Desktop**] Refined unified-agent filtering, filter help, card state, and sidebar links around hidden and excluded sessions.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed session and query refresh behavior around shortcut-driven agent actions so UI state stays current after keyboard commands.
+- [**provider:opencode**] Flattened OpenCode ACP tool results before display so tool output renders consistently in session streams.
+
+### 🔒 Security
+
+- [**provider:opencode**] Stopped logging raw OpenCode MCP discovery output so local MCP configuration details are not exposed in debug logs.
+
 ## v0.3.5 - 2026-06-03
 
 Previous release: v0.3.4 - 2026-06-02
