@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
 use cli_discovery::DiscoverySpec;
@@ -53,6 +53,13 @@ fn current_binary_override() -> Option<PathBuf> {
 pub(crate) async fn resolved_codex_command() -> Result<PathBuf, SdkError> {
     let spec = codex_discovery_spec();
     let override_path = current_binary_override();
+    if let Some(path) = &override_path {
+        if !is_executable_file(path) {
+            return Err(SdkError::CliNotFound {
+                searched: vec![path.clone()],
+            });
+        }
+    }
     if let Some(cached) = RESOLVED.read().ok().and_then(|guard| guard.clone()) {
         if cached.0 == override_path {
             return Ok(cached.1);
@@ -72,14 +79,34 @@ pub(crate) async fn resolved_codex_command() -> Result<PathBuf, SdkError> {
     Ok(resolved)
 }
 
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
     use std::sync::MutexGuard;
 
     use super::{
-        codex_discovery_spec, current_binary_override, set_binary_override, TEST_DISCOVERY_LOCK,
+        codex_discovery_spec, current_binary_override, resolved_codex_command, set_binary_override,
+        TEST_DISCOVERY_LOCK,
     };
+    use crate::error::SdkError;
 
     fn test_lock() -> MutexGuard<'static, ()> {
         TEST_DISCOVERY_LOCK
@@ -107,5 +134,43 @@ mod tests {
         set_binary_override(None);
         assert!(current_binary_override().is_none());
         set_binary_override(prior);
+    }
+
+    #[tokio::test]
+    async fn missing_explicit_override_does_not_fall_through_to_path() {
+        let _guard = test_lock();
+        let prior = current_binary_override();
+        let prior_path = std::env::var_os("PATH");
+        let dir = tempfile::TempDir::new().unwrap();
+        let path_binary = dir.path().join("codex");
+        std::fs::write(&path_binary, "#!/bin/sh\necho codex-cli 1.2.3\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&path_binary).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&path_binary, perms).unwrap();
+        }
+
+        let missing_override = dir.path().join("missing-codex");
+        set_binary_override(Some(missing_override.clone()));
+        std::env::set_var("PATH", dir.path());
+
+        let result = resolved_codex_command().await;
+
+        match prior_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        set_binary_override(prior);
+
+        match result {
+            Err(SdkError::CliNotFound { searched }) => {
+                assert_eq!(searched, vec![missing_override.clone()]);
+            }
+            Ok(path) => panic!("explicit missing override fell through to {path:?}"),
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+        assert_ne!(path_binary, missing_override);
     }
 }

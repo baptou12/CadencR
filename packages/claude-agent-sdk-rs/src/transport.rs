@@ -18,6 +18,10 @@ static BINARY_OVERRIDE: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new
 /// time. Invalidated whenever `set_binary_override` swaps the override.
 static RESOLVED: Lazy<RwLock<Option<(Option<PathBuf>, PathBuf)>>> = Lazy::new(|| RwLock::new(None));
 
+#[cfg(test)]
+static TEST_DISCOVERY_LOCK: Lazy<tokio::sync::Mutex<()>> =
+    Lazy::new(|| tokio::sync::Mutex::new(()));
+
 /// Set (or clear, with `None`) the global override path for the `claude`
 /// binary. Wins over `$PATH`/login-shell/well-known discovery, but loses to
 /// a per-call `Options.path_to_cli`.
@@ -77,6 +81,14 @@ pub async fn find_cli(path_override: Option<&Path>) -> Result<PathBuf, SdkError>
     let global_override = current_binary_override();
     let effective_override = path_override.map(Path::to_path_buf).or(global_override);
 
+    if let Some(path) = &effective_override {
+        if !is_executable_file(path) {
+            return Err(SdkError::CliNotFound {
+                searched: vec![path.clone()],
+            });
+        }
+    }
+
     if let Some(cached) = RESOLVED.read().ok().and_then(|guard| guard.clone()) {
         if cached.0 == effective_override {
             return Ok(cached.1);
@@ -95,6 +107,24 @@ pub async fn find_cli(path_override: Option<&Path>) -> Result<PathBuf, SdkError>
         *cache = Some((effective_override, resolved.clone()));
     }
     Ok(resolved)
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,5 +180,38 @@ mod tests {
             }
             Err(other) => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn missing_explicit_override_does_not_fall_through_to_path() {
+        let _guard = TEST_DISCOVERY_LOCK.lock().await;
+        let dir = TempDir::new().unwrap();
+        let path_binary = make_executable(dir.path(), "claude");
+        let prior_path = std::env::var_os("PATH");
+        let prior_override = current_binary_override();
+
+        set_binary_override(None);
+        std::env::set_var("PATH", dir.path());
+        if let Ok(mut cache) = RESOLVED.write() {
+            *cache = None;
+        }
+
+        let missing_override = dir.path().join("missing-claude");
+        let result = find_cli(Some(&missing_override)).await;
+
+        match prior_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+        set_binary_override(prior_override);
+
+        match result {
+            Err(SdkError::CliNotFound { searched }) => {
+                assert_eq!(searched, vec![missing_override.clone()]);
+            }
+            Ok(path) => panic!("explicit missing override fell through to {path:?}"),
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+        assert_ne!(path_binary, missing_override);
     }
 }

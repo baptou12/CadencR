@@ -34,7 +34,6 @@ pub async fn list_mcp_servers_from_binary(
         Ok(output) => {
             tracing::info!(
                 bytes = output.len(),
-                preview = %preview_output(&output),
                 "OpenCode debug config output received for MCP discovery"
             );
             let servers = match parse_mcp_config_output(&output) {
@@ -64,7 +63,6 @@ pub async fn list_mcp_servers_from_binary(
     let output = run_opencode_command(binary, cwd, ["mcp", "list"]).await?;
     tracing::info!(
         bytes = output.len(),
-        preview = %preview_output(&output),
         "OpenCode mcp list output received for MCP discovery"
     );
     let servers = parse_mcp_list_output(&output);
@@ -116,9 +114,8 @@ async fn run_opencode_command<const N: usize>(
 
     if !output.status.success() {
         return Err(SdkError::Protocol(format!(
-            "opencode mcp list exited with status {}: {}",
+            "opencode mcp list exited with status {}",
             output.status,
-            String::from_utf8_lossy(&output.stderr).trim(),
         )));
     }
 
@@ -289,8 +286,4 @@ fn user_home() -> Option<PathBuf> {
 fn dedupe_servers(servers: &mut Vec<OpenCodeMcpServerStatus>) {
     servers.sort_by(|left, right| left.name.cmp(&right.name));
     servers.dedup_by(|left, right| left.name == right.name);
-}
-
-fn preview_output(raw: &str) -> String {
-    raw.chars().take(500).collect()
 }
