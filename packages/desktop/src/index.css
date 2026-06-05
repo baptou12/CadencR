@@ -63,6 +63,37 @@ html {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
+/*
+ * `--app-vh` is the height the app shell fills. `100dvh` (the dynamic viewport)
+ * is right in a mobile browser, where it tracks the show/hide of the URL bar.
+ * But an iOS "Add to Home Screen" standalone app reports `dvh`/`%`/`fixed` as
+ * the screen height MINUS the status-bar inset, anchored to the top — leaving a
+ * dead strip at the bottom. There, only `lvh` spans the full screen, so
+ * `main.tsx` adds `.is-standalone` and we switch the unit. One variable feeds
+ * the whole chain (root elements + shell + drawer) so nothing clips.
+ */
+html {
+  --app-vh: 100dvh;
+}
+html.is-standalone {
+  --app-vh: 100lvh;
+}
+
+/*
+ * Lock the document to the viewport so the app never page-scrolls — scrolling
+ * belongs to the inner surfaces (agent stream, terminal, diff, editor). On
+ * mobile this is what keeps the feature header and prompt bar pinned while only
+ * the active tab's content scrolls. `overscroll-behavior: none` also kills the
+ * iOS rubber-band bounce that would otherwise reveal a blank strip.
+ */
+html,
+body,
+#root {
+  height: var(--app-vh);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
@@ -148,4 +179,48 @@ html {
 .titlebar-drag [role="tooltip"],
 .titlebar-drag [data-slot="context-menu-trigger"] {
   -webkit-app-region: no-drag;
+}
+
+/* ─── Touch / mobile affordances ──────────────────────────────────────────
+ * Hover-reveal controls (collapse buttons, copy chips, tab close, row actions)
+ * use `opacity-0` + a `*hover:opacity-100` utility. Touch devices have no hover
+ * state, so these stay invisible and unreachable. Force every hover-revealed
+ * opacity affordance fully visible on touch pointers or phone-sized viewports.
+ * The `hover` + `:opacity-100` pair matches `hover:`, `group-hover:` and named
+ * `group-hover/x:` variants while excluding state-driven `data-[…]:opacity-100`. */
+@media (hover: none), (max-width: 767px) {
+  [class*="hover"][class*=":opacity-100"] {
+    opacity: 1 !important;
+  }
+}
+
+/*
+ * iOS Safari auto-zooms the page when you focus an editable whose font-size is
+ * below 16px — that's what made the keyboard "zoom horizontally to the left of
+ * the prompt". Force every focusable editable (the Lexical prompt is a
+ * `contenteditable`, hence the explicit selector) to 16px on phones so focus
+ * never triggers the zoom. Checkbox/radio/range inputs are excluded — they have
+ * no text and the rule would distort their sizing.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select,
+  [contenteditable="true"] {
+    font-size: 16px;
+  }
+}
+
+/*
+ * xterm 6 scrolls through a JS-driven ScrollableElement, not a native overflow
+ * scroller, and its `.xterm-screen` layer paints over the viewport — so iOS
+ * never delivers a usable scroll gesture and the terminal looked frozen. We
+ * drive scrolling ourselves from touch deltas (see XTermInstance). `touch-action:
+ * none` hands every finger gesture to that handler and keeps `touchmove`
+ * cancelable so we can stop the page from claiming the drag. A tap still
+ * synthesizes a click, so tapping the terminal to focus it and open the
+ * keyboard keeps working. Inert on desktop pointers.
+ */
+.xterm {
+  touch-action: none;
 }

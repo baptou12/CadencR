@@ -2,6 +2,19 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <!-- Without this, mobile browsers (remote access on a phone) use a ~980px
+         layout viewport and render the desktop layout zoomed out, so the
+         responsive breakpoints never trigger. `viewport-fit=cover` lets the UI
+         extend under the iPhone safe-area insets. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- iOS Safari/Chrome have no JS Fullscreen API, so the only way to drop the
+         browser chrome on a phone is "Add to Home Screen": these tell iOS to
+         launch the saved icon in standalone (chromeless) mode. `black-translucent`
+         lets the UI run under the status bar (paired with the safe-area insets). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Cadencr" />
     <title>Cadencr</title>
   </head>
   <body>

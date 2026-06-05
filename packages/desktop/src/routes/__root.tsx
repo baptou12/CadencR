@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
 import { createRootRoute, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { Sidebar } from "@/components/Sidebar";
 import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { AppShell } from "@/components/AppShell";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useCreateFeature,
@@ -74,25 +73,33 @@ function RootLayout() {
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const sidebarCollapsed = useDebouncedSetting("sidebar_collapsed", 0);
-  const isSidebarCollapsed = sidebarCollapsed.value === "true";
+  // On mobile the sidebar is an off-canvas drawer (closed by default). Its
+  // open/closed state is ephemeral and must not clobber the persisted desktop
+  // collapse preference, so it lives in local state there.
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const isSidebarCollapsed = isMobile ? !mobileDrawerOpen : sidebarCollapsed.value === "true";
   const setSidebarCollapsed = useCallback(
-    (collapsed: boolean) => sidebarCollapsed.setValue(collapsed ? "true" : "false"),
-    [sidebarCollapsed],
+    (collapsed: boolean) => {
+      if (isMobile) setMobileDrawerOpen(!collapsed);
+      else sidebarCollapsed.setValue(collapsed ? "true" : "false");
+    },
+    [isMobile, sidebarCollapsed],
   );
   const sidebarPanelRef = useRef<PanelImperativeHandle>(null);
 
   useEffect(() => {
-    if (sidebarCollapsed.isLoading) return;
+    if (isMobile || sidebarCollapsed.isLoading) return;
     const panel = sidebarPanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed() === isSidebarCollapsed) return;
     if (isSidebarCollapsed) panel.collapse();
     else panel.expand();
-  }, [sidebarCollapsed.isLoading, isSidebarCollapsed]);
+  }, [isMobile, sidebarCollapsed.isLoading, isSidebarCollapsed]);
 
   useEffect(() => {
     leftSidebarRef.current?.focus();
@@ -138,6 +145,12 @@ function RootLayout() {
       });
     }
   }, [pathname, search]);
+
+  // Tapping a nav item navigates; auto-close the mobile drawer so the user
+  // lands on the destination instead of staring at the overlay.
+  useEffect(() => {
+    setMobileDrawerOpen(false);
+  }, [pathname]);
 
   const invalidateFeatures = useCallback(() => {
     // Catch every feature-scoped cache: list, detail, plan, plan/progress, etc.
@@ -325,72 +338,26 @@ function RootLayout() {
       value={{ collapsed: isSidebarCollapsed, setCollapsed: setSidebarCollapsed }}
     >
       <UniversalContextMenu>
-        <div className="flex h-screen">
-          <ResizablePanelGroup orientation="horizontal" onLayoutChanged={handleLayoutChanged}>
-            <ResizablePanel
-              id="sidebar"
-              panelRef={sidebarPanelRef}
-              collapsible
-              collapsedSize={0}
-              defaultSize={defaultLeftSize}
-              minSize="200px"
-              maxSize="400px"
-            >
+        <div className="flex h-[var(--app-vh)]">
+          <AppShell
+            isMobile={isMobile}
+            collapsed={isSidebarCollapsed}
+            setCollapsed={setSidebarCollapsed}
+            sidebarPanelRef={sidebarPanelRef}
+            leftSidebarRef={leftSidebarRef}
+            defaultLeftSize={defaultLeftSize}
+            onLayoutChanged={handleLayoutChanged}
+            onSearch={openCommandPalette}
+          >
+            <RootErrorBoundary>
               <div
-                ref={leftSidebarRef}
-                data-focus-zone="left-sidebar"
-                tabIndex={0}
-                className="h-full outline-none"
-                onFocus={(e) => {
-                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                    const firstItem = e.currentTarget.querySelector(
-                      "[data-nav-item]",
-                    ) as HTMLElement | null;
-                    if (firstItem) firstItem.focus();
-                  }
-                }}
+                key={routerState.location.pathname}
+                className="h-full animate-in fade-in-0 duration-200 ease-out"
               >
-                <Sidebar onSearch={openCommandPalette} />
+                <Outlet />
               </div>
-            </ResizablePanel>
-            <ResizableHandle
-              className={cn(
-                "cursor-col-resize",
-                isSidebarCollapsed && "pointer-events-none opacity-0",
-              )}
-            />
-            <ResizablePanel id="main">
-              <main
-                data-focus-zone="main-content"
-                tabIndex={0}
-                className="h-full overflow-hidden outline-none"
-                onFocus={(e) => {
-                  if (e.target === e.currentTarget && !e.currentTarget.matches(":active")) {
-                    const firstItem = e.currentTarget.querySelector(
-                      "[data-nav-item]",
-                    ) as HTMLElement | null;
-                    if (firstItem) {
-                      firstItem.focus();
-                    } else {
-                      const textarea = e.currentTarget.querySelector(
-                        "textarea",
-                      ) as HTMLElement | null;
-                      if (textarea) textarea.focus();
-                    }
-                  }
-                }}
-              >
-                <RootErrorBoundary>
-                  <div
-                    key={routerState.location.pathname}
-                    className="h-full animate-in fade-in-0 duration-200 ease-out"
-                  >
-                    <Outlet />
-                  </div>
-                </RootErrorBoundary>
-              </main>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+            </RootErrorBoundary>
+          </AppShell>
           <SuspendedBanner />
           <RootOverlays
             commandPaletteOpen={commandPaletteOpen}
