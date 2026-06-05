@@ -182,7 +182,7 @@ function SettingsPage() {
       />
 
       <main ref={mainRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[820px] space-y-6 px-10 py-8">
+        <div className="mx-auto max-w-[820px] space-y-6 px-4 py-6 md:px-10 md:py-8">
           <header className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <Breadcrumbs />

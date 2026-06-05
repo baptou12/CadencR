@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { createPortal } from "react-dom";
 
 import { KbdShortcut } from "@/components/KbdShortcut";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { cn } from "@/lib/utils";
 
 interface ShortcutTooltipProps {
@@ -65,6 +66,10 @@ export function ShortcutTooltip({
   const [position, setPosition] = useState<TooltipPosition | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const suppressUntilLeaveRef = useRef(false);
+  // Touch devices synthesize a `mouseenter` on tap, which would pop this
+  // hover tooltip open on every tab/button press. There's no hover intent on a
+  // phone, so suppress the tooltip entirely there.
+  const isMobile = useIsMobile();
 
   // While disabled, force-hide and arm a one-shot suppress so the synthetic
   // mouseenter fired when an overlay (popover) above the trigger unmounts
@@ -119,7 +124,7 @@ export function ShortcutTooltip({
   }, [visible, above, alignLeft, alignRight, toRight]);
 
   function handleMouseEnter(): void {
-    if (disabled || suppressUntilLeaveRef.current) return;
+    if (disabled || isMobile || suppressUntilLeaveRef.current) return;
     setVisible(true);
   }
 

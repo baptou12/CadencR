@@ -4,8 +4,27 @@ import { PanelLeft, Settings } from "lucide-react";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): ReactElement {
+  const isMobile = useIsMobile();
+  // On phones the brand + settings already live inside the drawer, so the
+  // collapsed chrome is just a menu button that opens it. Keeping the full
+  // logo here would eat the narrow topbar.
+  if (isMobile) {
+    return (
+      <Button
+        variant="ghost"
+        size="icon"
+        className="-ml-1 size-8 shrink-0"
+        title="Open menu"
+        onClick={onExpand}
+      >
+        <PanelLeft className="size-5" />
+        <span className="sr-only">Open menu</span>
+      </Button>
+    );
+  }
   return (
     <>
       {/* `mt-2` keeps the logo clear of the macOS traffic-light buttons,

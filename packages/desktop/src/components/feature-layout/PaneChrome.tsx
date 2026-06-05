@@ -109,7 +109,7 @@ function PaneTabs({
       onValueChange={onTabChange}
       className="flex min-w-0 flex-1"
     >
-      <TabsList className="flex-1 overflow-x-auto border-b-0">
+      <TabsList className="flex-1 overflow-x-auto overflow-y-hidden border-b-0">
         {leaf.tabIds.length === 0 && (
           <span className="px-3 py-2 text-xs italic text-muted-foreground">Drag tabs here</span>
         )}
