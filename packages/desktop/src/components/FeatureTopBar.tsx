@@ -13,6 +13,7 @@ import { useFeatureTitle } from "@/hooks/useFeatureTitle";
 import type { WorktreeStatus } from "@/types/workflow";
 import { WorktreeSetupSection } from "./WorktreeSetupSection";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
 import { SidebarCollapsedChrome } from "@/components/SidebarCollapsedChrome";
 import { useFeatureSettingsShortcuts } from "./useFeatureSettingsShortcuts";
@@ -236,28 +237,34 @@ function FeatureHeaderChrome({
   wsWorktreeError,
   onRetryWorktreeSetup,
 }: FeatureHeaderChromeProps): ReactElement {
+  const isMobile = useIsMobile();
   return (
     <>
       <div
-        className={cn(draggable && "titlebar-drag", "flex items-center gap-3 px-6 py-3", className)}
+        className={cn(
+          draggable && "titlebar-drag",
+          "flex items-center gap-3 px-3 py-3 md:px-6",
+          className,
+        )}
       >
         {showSidebarChrome && sidebarCollapsed && (
           <SidebarCollapsedChrome onExpand={onExpandSidebar} />
         )}
-        <ProjectColorDot projectId={projectId} className="size-2.5" />
-        {isAutoNaming ? (
-          <Skeleton className="h-5 w-40" />
-        ) : (
-          <FeatureTitleMenu
-            featureId={featureId}
-            title={featureTitle}
-            canAutoRename={canAutoRename}
-            isAutoRenamePending={isAutoRenamePending}
-            onAutoRename={onAutoRename}
-          />
-        )}
-        <FeatureLabelChip label={featureLabel} />
-        <div className="flex-1" />
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <ProjectColorDot projectId={projectId} className="size-2.5 shrink-0" />
+          {isAutoNaming ? (
+            <Skeleton className="h-5 w-40" />
+          ) : (
+            <FeatureTitleMenu
+              featureId={featureId}
+              title={featureTitle}
+              canAutoRename={canAutoRename}
+              isAutoRenamePending={isAutoRenamePending}
+              onAutoRename={onAutoRename}
+            />
+          )}
+          <FeatureLabelChip label={featureLabel} />
+        </div>
         {showCustomActions && <CustomActionsBar featureId={featureId} projectId={projectId} />}
 
         {/*
@@ -267,8 +274,10 @@ function FeatureHeaderChrome({
          * commit / push / open-PR action and the current → target chip are
          * relevant there too.
          */}
-        <GitActionButton featureId={featureId} />
-        <BranchChip featureId={featureId} projectId={projectId} />
+        <GitActionButton featureId={featureId} projectId={projectId} />
+        {/* On phones the branch chip lives inside the git popover (see
+            `GitActionButton`) so the title isn't squeezed. */}
+        {!isMobile && <BranchChip featureId={featureId} projectId={projectId} />}
 
         {!isSession && (
           <FeatureSettingsPopover
@@ -332,7 +341,7 @@ function FeatureTitleMenu({
         <ContextMenuTrigger asChild>
           <PopoverAnchor asChild>
             <h1
-              className="cursor-default text-lg font-semibold"
+              className="min-w-0 cursor-default truncate text-lg font-semibold"
               onDoubleClick={() => setRenameOpen(true)}
             >
               {title}

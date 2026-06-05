@@ -46,7 +46,7 @@ describe("GitActionButton shortcuts", () => {
     const { user } = render(
       <>
         <input aria-label="Focused input" />
-        <GitActionButton featureId={42} />
+        <GitActionButton featureId={42} projectId={7} />
       </>,
     );
 
@@ -59,7 +59,7 @@ describe("GitActionButton shortcuts", () => {
   it("shows a Git actions shortcut tooltip on hover", async () => {
     useGitStatusStore.getState().setStatus(makeMergeableSnapshot(42));
 
-    const { user } = render(<GitActionButton featureId={42} />);
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
 
     await user.hover(screen.getByRole("button", { name: /more git actions/i }));
 
@@ -69,7 +69,7 @@ describe("GitActionButton shortcuts", () => {
   it("allows merge from the menu when the source worktree has uncommitted changes", async () => {
     useGitStatusStore.getState().setStatus(makeDirtyMergeableSnapshot(42));
 
-    const { user } = render(<GitActionButton featureId={42} />);
+    const { user } = render(<GitActionButton featureId={42} projectId={7} />);
 
     await user.click(screen.getByRole("button", { name: /more git actions/i }));
     await user.click(await screen.findByText("Merge"));
