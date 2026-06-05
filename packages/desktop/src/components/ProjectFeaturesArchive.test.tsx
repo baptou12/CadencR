@@ -92,6 +92,12 @@ function renderProjectFeatures(activeFeatureId: number | null = null): void {
   );
 }
 
+function openFeatureContextMenu(featureTitle: string): void {
+  const featureRow = screen.getByText(featureTitle).closest("[role=button]");
+  expect(featureRow).not.toBeNull();
+  fireEvent.contextMenu(featureRow as HTMLElement);
+}
+
 describe("ProjectFeatures archived section", () => {
   beforeEach(() => {
     resetMockIds();
@@ -162,5 +168,28 @@ describe("ProjectFeatures archived section", () => {
 
     expect(screen.getByText("Delete session?")).toBeInTheDocument();
     expect(screen.queryByText("Archive session?")).not.toBeInTheDocument();
+  });
+
+  it("shows unarchive and delete actions for archived session context menus", async () => {
+    renderProjectFeatures(2);
+
+    openFeatureContextMenu("Archived Session");
+
+    expect(await screen.findByRole("menuitem", { name: "Unarchive" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("restores an archived session to active status from the context menu", async () => {
+    const user = userEvent.setup();
+    renderProjectFeatures(2);
+
+    openFeatureContextMenu("Archived Session");
+    await user.click(await screen.findByRole("menuitem", { name: "Unarchive" }));
+
+    expect(mockUpdateStatus).toHaveBeenCalledWith({
+      id: 2,
+      data: { status: "active" },
+    });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });

@@ -55,6 +55,7 @@ interface ProjectFeatureRowProps {
   onSaveLabel: (featureId: number, override?: string) => void;
   onCancelLabelEdit: () => void;
   onArchiveOrDelete: (featureId: number) => void;
+  onUnarchive: (featureId: number) => void;
 }
 
 /**
@@ -81,6 +82,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   onSaveLabel,
   onCancelLabelEdit,
   onArchiveOrDelete,
+  onUnarchive,
 }: ProjectFeatureRowProps): ReactElement {
   const startLabelEditOnMenuCloseRef = useRef(false);
   // Live status is the canonical 3-value enum: per-session entries pushed
@@ -237,6 +239,9 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
         <ContextMenuItem onSelect={() => onNavigate(feature)}>Open</ContextMenuItem>
         <ContextMenuItem onSelect={markStartLabelEditAfterMenuClose}>Set label</ContextMenuItem>
         <ContextMenuSeparator />
+        {isArchived && (
+          <ContextMenuItem onSelect={() => onUnarchive(feature.id)}>Unarchive</ContextMenuItem>
+        )}
         <ContextMenuItem variant="destructive" onSelect={() => onArchiveOrDelete(feature.id)}>
           {archiveActionLabel}
         </ContextMenuItem>
