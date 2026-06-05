@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import type { RemoteAuditEntry, RemoteStatus } from "@/api/generated";
-import { SectionHeading, formatRemoteAge } from "./remote-ui";
+import { formatRemoteAge } from "./remote-ui";
 
 /** Human label + dot tint per audit event. Unknown events fall back to neutral. */
 const EVENT_META: Record<string, { label: string; tint: string }> = {
@@ -17,7 +17,6 @@ const EVENT_META: Record<string, { label: string; tint: string }> = {
 export function RemoteActivitySection({ status }: { status: RemoteStatus }): ReactElement {
   return (
     <section className="space-y-2">
-      <SectionHeading>Recent activity</SectionHeading>
       {status.audit_tail.length === 0 ? (
         <p className="text-xs text-muted-foreground">No activity yet.</p>
       ) : (

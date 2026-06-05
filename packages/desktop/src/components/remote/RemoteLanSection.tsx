@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { ShieldCheck } from "lucide-react";
 import type { RemoteStatus } from "@/api/generated";
-import { CopyIconButton, SectionHeading } from "./remote-ui";
+import { CopyIconButton } from "./remote-ui";
 
 /**
  * LAN connect details: the HTTPS URLs the workspace is reachable at, plus the
@@ -10,8 +10,6 @@ import { CopyIconButton, SectionHeading } from "./remote-ui";
 export function RemoteLanSection({ status }: { status: RemoteStatus }): ReactElement {
   return (
     <section className="space-y-2">
-      <SectionHeading>Connect on your network</SectionHeading>
-
       {status.lan_urls.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           No local network address detected. Connect to Wi-Fi or use a tunnel.

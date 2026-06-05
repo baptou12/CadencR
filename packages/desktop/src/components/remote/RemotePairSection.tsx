@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Loader2, QrCode, RefreshCw } from "lucide-react";
 import { remotePairingCode, type PairingCodeResponse } from "@/api/generated";
@@ -21,6 +21,7 @@ export function RemotePairSection(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [selected, setSelected] = useState(0);
+  const autoMinted = useRef(false);
 
   const mint = async (): Promise<void> => {
     setMinting(true);
@@ -38,6 +39,16 @@ export function RemotePairSection(): ReactElement {
       setMinting(false);
     }
   };
+
+  // Pairing is the dialog's primary action, so mint a code on mount and show
+  // the QR straight away — no extra click. The ref guards against React Strict
+  // Mode's double-invoke (which would otherwise burn a second single-use code).
+  useEffect(() => {
+    if (autoMinted.current) return;
+    autoMinted.current = true;
+    void mint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   // Tick the countdown; drop the code at zero so a stale QR can't be scanned.
   useEffect(() => {

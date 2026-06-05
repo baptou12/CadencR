@@ -4,7 +4,7 @@ import type { RemoteStatus } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useRemoteStore } from "@/stores/remote-store";
 import { interpolatePort, TUNNEL_GUIDES, type TunnelGuide } from "@/lib/remote/tunnel-guides";
-import { CopyIconButton, SectionHeading } from "./remote-ui";
+import { CopyIconButton } from "./remote-ui";
 
 /**
  * Optional internet exposure via Tailscale/ngrok. Renders the guides as data and
@@ -15,7 +15,6 @@ export function RemoteTunnelSection({ status }: { status: RemoteStatus }): React
   const port = status.port ?? 0;
   return (
     <section className="space-y-2">
-      <SectionHeading>Expose over the internet (optional)</SectionHeading>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         Run a tunnel, then paste its hostname below so requests through it are allowed.
       </p>

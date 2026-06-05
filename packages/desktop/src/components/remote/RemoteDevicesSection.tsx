@@ -2,7 +2,7 @@ import { useState, type ReactElement } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import type { RemoteDevice, RemoteStatus } from "@/api/generated";
 import { useRemoteStore } from "@/stores/remote-store";
-import { SectionHeading, formatRemoteAge } from "./remote-ui";
+import { formatRemoteAge } from "./remote-ui";
 
 /**
  * Paired devices with a per-row Revoke. Revoking sets `revoked_at`, force-closes
@@ -12,7 +12,6 @@ import { SectionHeading, formatRemoteAge } from "./remote-ui";
 export function RemoteDevicesSection({ status }: { status: RemoteStatus }): ReactElement {
   return (
     <section className="space-y-2">
-      <SectionHeading>Paired devices ({status.devices.length})</SectionHeading>
       {status.devices.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           No devices paired yet. Use the code above to add one.

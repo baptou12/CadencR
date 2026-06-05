@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useRemoteStore } from "@/stores/remote-store";
+import { RemoteDisclosure } from "./remote-ui";
 import { RemoteLanSection } from "./RemoteLanSection";
 import { RemotePairSection } from "./RemotePairSection";
 import { RemoteTunnelSection } from "./RemoteTunnelSection";
@@ -44,7 +45,7 @@ export function RemoteAccessDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Remote access</DialogTitle>
           <DialogDescription>
@@ -85,12 +86,24 @@ export function RemoteAccessDialog({
             {error ? <p className="text-xs text-[var(--acc-red)]">{error}</p> : null}
 
             {enabled && status ? (
-              <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1">
-                <RemoteLanSection status={status} />
+              <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                {/* Hero: the primary task is pairing a device, so the QR leads. */}
                 <RemotePairSection />
-                <RemoteTunnelSection status={status} />
-                <RemoteDevicesSection status={status} />
-                <RemoteActivitySection status={status} />
+
+                {/* Everything else is reference or management — collapsed by
+                    default so the dialog stays a one-glance "it's on, scan this". */}
+                <RemoteDisclosure title="Connection & certificate">
+                  <RemoteLanSection status={status} />
+                </RemoteDisclosure>
+                <RemoteDisclosure title="Expose over the internet">
+                  <RemoteTunnelSection status={status} />
+                </RemoteDisclosure>
+                <RemoteDisclosure title={`Paired devices (${status.devices.length})`}>
+                  <RemoteDevicesSection status={status} />
+                </RemoteDisclosure>
+                <RemoteDisclosure title="Recent activity">
+                  <RemoteActivitySection status={status} />
+                </RemoteDisclosure>
               </div>
             ) : null}
           </>
