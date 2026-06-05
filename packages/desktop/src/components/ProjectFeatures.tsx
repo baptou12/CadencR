@@ -161,6 +161,7 @@ export function ProjectFeatures({
       },
     },
   });
+  const { mutate: updateFeatureStatus } = updateStatusMutation;
 
   const deleteMutation = useDeleteFeature({
     mutation: {
@@ -248,6 +249,23 @@ export function ProjectFeatures({
     });
   };
 
+  const handleUpdateFeatureStatus = useCallback(
+    (featureId: number, status: FeatureStatus): void => {
+      updateFeatureStatus({
+        id: featureId,
+        data: { status },
+      });
+    },
+    [updateFeatureStatus],
+  );
+
+  const handleUnarchiveFeature = useCallback(
+    (featureId: number): void => {
+      handleUpdateFeatureStatus(featureId, ACTIVE_FEATURE_STATUS);
+    },
+    [handleUpdateFeatureStatus],
+  );
+
   const renderFeature = (feature: Feature) => (
     <ProjectFeatureRow
       key={feature.id}
@@ -268,6 +286,7 @@ export function ProjectFeatures({
       onSaveLabel={handleSaveLabel}
       onCancelLabelEdit={() => setEditingLabelFeatureId(null)}
       onArchiveOrDelete={setConfirmFeatureId}
+      onUnarchive={handleUnarchiveFeature}
     />
   );
 
@@ -312,10 +331,7 @@ export function ProjectFeatures({
           if (!open) setConfirmFeatureId(null);
         }}
         onArchive={(featureId) => {
-          updateStatusMutation.mutate({
-            id: featureId,
-            data: { status: ARCHIVED_FEATURE_STATUS },
-          });
+          handleUpdateFeatureStatus(featureId, ARCHIVED_FEATURE_STATUS);
         }}
       />
 
