@@ -132,7 +132,7 @@ export function PlanApprovalBar({
           </Button>
         </div>
       ) : (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="default" size="sm" onClick={onApprove} className="gap-1.5">
             <Play className="size-3.5" />
             {approveLabel ?? "Approve & Execute"}

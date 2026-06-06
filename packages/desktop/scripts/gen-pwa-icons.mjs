@@ -13,6 +13,13 @@
 // broken icon and replaces with a generated letter tile — so these must exist
 // as real image files at the web root.
 //
+// The raster mark comes from the PNG, NOT the SVG: the logo positions its dashes
+// and orbit arcs with SVG `pathLength` (so `dasharray` is read against a 360-unit
+// path). Browsers honor `pathLength` — so the `favicon.svg` copy is correct — but
+// sharp's rasterizer (resvg) ignores it and reads the dasharray against the real
+// circumference, producing the wrong dash count and oversized arcs. Rasterizing
+// the pre-rendered PNG sidesteps that so every tile matches the real mark.
+//
 // The generated assets are committed under public/; re-run only when the brand
 // mark changes. Requires `sharp` and ImageMagick `magick` (for .ico).
 // Run from packages/desktop: `node scripts/gen-pwa-icons.mjs`
@@ -26,14 +33,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.resolve(__dirname, "../public");
 const ICONS_DIR = path.join(PUBLIC_DIR, "icons");
 const LOGO_SVG = path.resolve(__dirname, "../assets/cadencr-logo3.svg");
+const LOGO_PNG = path.resolve(__dirname, "../assets/cadencr-logo3.png");
 
 // Brand background = theme.css default `--background` oklch(0.22 0.022 277.497).
 const BG = { r: 0x18, g: 0x1a, b: 0x25 };
 
 // Render the source logo once and trim its transparent margin, so we have a
-// tight mark we can centre on the tile at a controlled size (the source SVG
-// frames the mark at ~half its canvas; trimming lets us pick the padding).
-const mark = await sharp(await readFile(LOGO_SVG), { density: 384 })
+// tight mark we can centre on the tile at a controlled size (the source PNG
+// frames the mark at ~half its canvas; trimming lets us pick the padding). We
+// raster from the PNG, not the SVG — see the `pathLength` note in the header.
+const mark = await sharp(await readFile(LOGO_PNG))
   .trim()
   .png()
   .toBuffer();
