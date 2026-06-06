@@ -2,21 +2,54 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useVisualViewportHeight } from "./useVisualViewportHeight";
 
-/** Minimal stand-in for `window.visualViewport` — jsdom doesn't provide one. */
-function installViewport(height: number, offsetTop = 0): { resize: (h: number) => void } {
+interface Viewport {
+  resize: (h: number) => void;
+  /** Pan the layout viewport up (as the browser does to lift a focused input). */
+  setPan: (offsetTop: number) => void;
+  /** Pan, then fire the standalone `visualViewport` scroll the pan emits. */
+  pan: (offsetTop: number) => void;
+  scrollTo: ReturnType<typeof vi.spyOn>;
+}
+
+/**
+ * Minimal stand-in for `window.visualViewport` — jsdom doesn't provide one.
+ * Also mocks the window scroll position so we can assert the hook re-pins the
+ * document, and mirrors the browser by clearing the pan when `scrollTo` runs.
+ */
+function installViewport(height: number): Viewport {
   const target = new EventTarget();
   const vv = {
     height,
-    offsetTop,
+    offsetTop: 0,
     addEventListener: target.addEventListener.bind(target),
     removeEventListener: target.removeEventListener.bind(target),
   };
   Object.defineProperty(window, "visualViewport", { value: vv, configurable: true });
+
+  let scrollY = 0;
+  vi.spyOn(window, "scrollX", "get").mockReturnValue(0);
+  vi.spyOn(window, "scrollY", "get").mockImplementation(() => scrollY);
+  const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation((() => {
+    // Real browsers reset both the document scroll and the visual-viewport pan.
+    scrollY = 0;
+    vv.offsetTop = 0;
+  }) as typeof window.scrollTo);
+
+  const setPan = (offsetTop: number): void => {
+    scrollY = offsetTop;
+    vv.offsetTop = offsetTop;
+  };
   return {
     resize: (h: number) => {
       vv.height = h;
       target.dispatchEvent(new Event("resize"));
     },
+    setPan,
+    pan: (offsetTop: number) => {
+      setPan(offsetTop);
+      target.dispatchEvent(new Event("scroll"));
+    },
+    scrollTo,
   };
 }
 
@@ -66,6 +99,47 @@ describe("useVisualViewportHeight", () => {
 
     Reflect.deleteProperty(window, "visualViewport");
     expect(() => renderHook(() => useVisualViewportHeight(true))).not.toThrow();
+  });
+
+  it("re-pins the document to the top when the keyboard-open viewport pans", () => {
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const { resize, pan, scrollTo } = installViewport(800);
+
+    renderHook(() => useVisualViewportHeight(true));
+    act(() => resize(450)); // keyboard opens
+    expect(vh()).toBe("450px");
+    scrollTo.mockClear(); // ignore the harmless reset done while already at top
+
+    act(() => pan(120)); // browser pans the shell up off the screen
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    expect(window.scrollY).toBe(0);
+    expect(vh()).toBe("450px"); // override survives the pan
+  });
+
+  it("leaves document scroll alone while the keyboard is closed", () => {
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const { pan, scrollTo } = installViewport(800);
+
+    renderHook(() => useVisualViewportHeight(true));
+    act(() => pan(120)); // a stray pan with no keyboard open
+
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("keeps the override when a resize lands on an already-panned viewport", () => {
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+    const { resize, setPan } = installViewport(800);
+
+    renderHook(() => useVisualViewportHeight(true));
+    act(() => resize(450)); // keyboard opens
+    expect(vh()).toBe("450px");
+
+    // The browser pans far enough that the raw inset (800 - 450 - 250 = 100)
+    // would fall under the threshold — but the pre-measure reset undoes the pan
+    // first, so the override must stick instead of snapping back.
+    setPan(250);
+    act(() => resize(450));
+    expect(vh()).toBe("450px");
   });
 
   it("clears the override and detaches its listener on unmount", () => {
