@@ -8,6 +8,7 @@
  */
 import { queryClient, invalidateByUrlPrefix } from "@/lib/queryClient";
 import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
+import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { notifyAgentDone, notifyAgentNeedsInput } from "@/lib/notify-agent-done";
 import { handleGitEnvelope } from "@/stores/ws-git-status-handler";
 import type { LiveAgentStatus, PendingKind } from "@/types/agent";
@@ -76,6 +77,8 @@ export function applySnapshot(
     const status = isStatus(obj.status) ? obj.status : null;
     if (!status) continue;
     const kind = isPendingKind(obj.kind) ? obj.kind : null;
+    const turnStartedAtMs =
+      typeof obj.turn_started_at_ms === "number" ? obj.turn_started_at_ms : null;
 
     // Preserve a more recent live entry if it has overtaken the snapshot.
     const existing = prev[sessionId];
@@ -83,7 +86,7 @@ export function applySnapshot(
       next[sessionId] = existing;
       continue;
     }
-    next[sessionId] = { status, kind, featureId, seq: snapshotSeq };
+    next[sessionId] = { status, kind, featureId, seq: snapshotSeq, turnStartedAtMs };
 
     if (status === "question" && existing?.status !== "question") {
       notifyTransition(featureId, existing?.status, status);
@@ -119,11 +122,13 @@ export function applyUpdate(
   featureId: number | null;
   prevStatus: LiveAgentStatus | undefined;
   nextStatus: LiveAgentStatus | null;
-  entry: Pick<SessionStatusEntry, "status" | "kind"> | null;
+  entry: Pick<SessionStatusEntry, "status" | "kind" | "turnStartedAtMs"> | null;
 } {
   const sessionId = typeof payload.session_id === "number" ? payload.session_id : null;
   const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
   const seq = typeof payload.seq === "number" ? payload.seq : 0;
+  const turnStartedAtMs =
+    typeof payload.turn_started_at_ms === "number" ? payload.turn_started_at_ms : null;
   if (sessionId == null || featureId == null) {
     return {
       next: null,
@@ -173,20 +178,20 @@ export function applyUpdate(
       featureId,
       prevStatus: existing.status,
       nextStatus: payload.status,
-      entry: { status: payload.status, kind },
+      entry: { status: payload.status, kind, turnStartedAtMs },
     };
   }
 
   return {
     next: {
       ...prev,
-      [sessionId]: { status: payload.status, kind, featureId, seq },
+      [sessionId]: { status: payload.status, kind, featureId, seq, turnStartedAtMs },
     },
     sessionId,
     featureId,
     prevStatus: existing?.status,
     nextStatus: payload.status,
-    entry: { status: payload.status, kind },
+    entry: { status: payload.status, kind, turnStartedAtMs },
   };
 }
 
@@ -211,6 +216,21 @@ export function handleAppEnvelope(
   }
   if (domain === "git") {
     handleGitEnvelope(action, payload);
+    return true;
+  }
+  if (domain === "app" && action === "feature_event") {
+    // A feature changed (possibly on another device). An "updated" event (e.g.
+    // auto-name) also changed a title, so refresh the individual feature — an
+    // open conversation header falls back to the REST title when this device
+    // has no live WS title — via the shared invalidation helper. create/delete
+    // only reshape the lists, so the single-feature refetch (a guaranteed 404
+    // after a delete) is skipped.
+    const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
+    if (payload.action === "updated" && featureId != null) {
+      invalidateFeatureQueries(featureId, ["title"]);
+    } else {
+      void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey() });
+    }
     return true;
   }
   return false;

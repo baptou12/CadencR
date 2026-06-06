@@ -73,9 +73,8 @@ impl StreamReaderTask {
     /// gone, so callers can stop the loop exactly as a bare `send().is_err()`.
     pub(super) async fn send_and_mirror(&self, msg: Message) -> bool {
         self.feature_senders
-            .broadcast_others(self.feature_id, &self.sender, &msg)
-            .await;
-        self.sender.send(msg).is_err()
+            .send_and_mirror(self.feature_id, &self.sender, msg)
+            .await
     }
 
     pub async fn run(mut self) {

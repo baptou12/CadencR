@@ -42,6 +42,8 @@ export interface PersistedStatePayload {
   lifecycle: TurnLifecycle;
   hasMore?: boolean;
   oldestMessageId?: number | null;
+  /** Highest DB message id in this snapshot — seeds the resync cursor. */
+  maxMessageId?: number | null;
   featureId?: number;
   sessionDbId?: number;
   currentProviderId?: string;
@@ -152,6 +154,13 @@ export interface SessionEntry {
   worktreeError: string | null;
   hasMore: boolean;
   oldestMessageId: number | null;
+  /**
+   * Highest DB message id this client has hydrated. Cursor for the
+   * reconnect resync: after the socket drops (e.g. mobile sleep) we fetch
+   * everything `after` this id so messages streamed while disconnected are
+   * recovered. `null` until the first persisted load supplies one.
+   */
+  lastAppliedMessageId: number | null;
   featureId: number | null;
   sessionDbId: number | null;
   cwd: string | null;
@@ -212,6 +221,7 @@ export function createSessionEntry(): SessionEntry {
     worktreeError: null,
     hasMore: false,
     oldestMessageId: null,
+    lastAppliedMessageId: null,
     featureId: null,
     sessionDbId: null,
     cwd: null,
@@ -288,7 +298,14 @@ export function updateSession(
   if (!prev) return {};
   const normalizedPatch = normalizeSessionPatch(prev, patch);
   const next = { ...prev, ...normalizedPatch };
-  if (normalizedPatch.lifecycle && lifecycleChanged(prev.lifecycle, normalizedPatch.lifecycle)) {
+  // Recompute timing on a lifecycle change UNLESS the caller supplied its own
+  // `turnTiming` (e.g. a status-driven sync anchoring the timer to the
+  // server-stamped turn start) — honoring it keeps all devices in sync.
+  if (
+    normalizedPatch.lifecycle &&
+    normalizedPatch.turnTiming === undefined &&
+    lifecycleChanged(prev.lifecycle, normalizedPatch.lifecycle)
+  ) {
     next.turnTiming = transitionTurnTiming(
       prev.turnTiming,
       prev.lifecycle,

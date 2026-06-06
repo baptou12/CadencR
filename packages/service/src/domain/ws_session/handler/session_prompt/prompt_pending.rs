@@ -10,9 +10,8 @@ use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 
 use super::super::{QueryState, SdkHandle, SdkSessions, SessionConfig, WsSender};
-use super::bridge::{
-    build_content_value, build_persist_content, PermissionResponse, WsBridgeCanUseTool,
-};
+use super::bridge::{PermissionResponse, WsBridgeCanUseTool};
+use super::content::{build_content_value, build_persist_content};
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
@@ -43,6 +42,8 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
     mark_agent_running(
         &context.app_state.write_pool,
         &context.app_state.session_status_tx,
+        &context.app_state.active_turns,
+        &context.sdk_sessions,
         context.db_session_id,
         context.feature_id,
     )
@@ -116,6 +117,7 @@ fn attach_permission_bridge(context: &mut PendingPromptContext) {
     let (permission_tx, permission_rx) = mpsc::channel::<PermissionResponse>(16);
     let bridge = WsBridgeCanUseTool {
         sender: context.sender.clone(),
+        feature_senders: context.app_state.ws_feature_senders.clone(),
         response_rx: Arc::new(Mutex::new(permission_rx)),
         feature_id: context.feature_id,
         db_session_id: context.db_session_id,
@@ -230,6 +232,7 @@ async fn register_runtime(
     spawn_auto_name_if_needed(
         use_worktree,
         context.app_state.write_pool.clone(),
+        context.app_state.feature_events_tx.clone(),
         context.sender.clone(),
         context.feature_id,
         context.payload.text.clone(),

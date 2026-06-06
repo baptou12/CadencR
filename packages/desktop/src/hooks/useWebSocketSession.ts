@@ -212,6 +212,7 @@ function usePersistedSessionLoader(
       lifecycle: restoredLifecycle,
       hasMore: lastSession.hasMore,
       oldestMessageId: lastSession.oldestMessageId,
+      maxMessageId: lastSession.maxMessageId,
       featureId,
       sessionDbId: lastSession.sessionDbId,
       currentProviderId: lastSession.runtimeProvider ?? undefined,

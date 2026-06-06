@@ -168,6 +168,12 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
     }
     drop(sessions);
 
+    // Drop this connection's active-turn ownership entries. The registry holds
+    // only `Weak` pointers, so a dropped connection becomes inert on its own —
+    // this is the eager sweep so a long-lived process doesn't accumulate dead
+    // entries for sessions this connection once drove.
+    state.active_turns.remove_owned_by(&sdk_sessions).await;
+
     // Drop any `git.status` subscriptions for this WS. The sender-keyed sweep
     // catches half-open shutdowns where the explicit unsubscribe never arrived.
     state.git_watcher.unsubscribe_sender(&outbound_tx).await;

@@ -105,6 +105,8 @@ pub(crate) async fn handle_prompt_send(
                 sender: sender.clone(),
                 ws_feature_senders: app_state.ws_feature_senders.clone(),
                 envelope_id: envelope.id.clone(),
+                sdk_sessions: sdk_sessions.clone(),
+                active_turns: app_state.active_turns.clone(),
             };
             drop(sessions);
             handle_followup_prompt(context, payload).await;

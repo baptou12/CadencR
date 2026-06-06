@@ -86,6 +86,12 @@ pub struct SessionStatusEvent {
     pub status: AgentStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<PendingKind>,
+    /// Server wall-clock (epoch ms) when the current turn started. Carried on
+    /// `Agent` events (and in the snapshot for a running session) so every
+    /// connected client anchors its elapsed timer to one source of truth
+    /// instead of each device's local clock-at-first-render.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_started_at_ms: Option<i64>,
     pub seq: u64,
 }
 
@@ -130,12 +136,41 @@ impl SessionStatusBroadcaster {
         status: AgentStatus,
         kind: Option<PendingKind>,
     ) -> u64 {
+        self.broadcast_inner(session_id, feature_id, status, kind, None)
+    }
+
+    /// Broadcast that a turn has started, carrying the server-stamped start
+    /// time so all clients render a synchronized elapsed timer.
+    pub fn broadcast_running_with_start(
+        &self,
+        session_id: i64,
+        feature_id: i64,
+        turn_started_at_ms: i64,
+    ) -> u64 {
+        self.broadcast_inner(
+            session_id,
+            feature_id,
+            AgentStatus::Agent,
+            None,
+            Some(turn_started_at_ms),
+        )
+    }
+
+    fn broadcast_inner(
+        &self,
+        session_id: i64,
+        feature_id: i64,
+        status: AgentStatus,
+        kind: Option<PendingKind>,
+        turn_started_at_ms: Option<i64>,
+    ) -> u64 {
         let seq = self.seq.fetch_add(1, Ordering::Relaxed) + 1;
         let _ = self.tx.send(SessionStatusEvent {
             session_id,
             feature_id,
             status,
             kind,
+            turn_started_at_ms,
             seq,
         });
         seq

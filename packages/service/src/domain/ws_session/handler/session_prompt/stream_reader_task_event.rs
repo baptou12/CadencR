@@ -82,9 +82,11 @@ impl StreamReaderTask {
             "permission.request",
             serde_json::to_value(&payload).unwrap(),
         );
+        // Mirror the gate to every device viewing this feature so it appears on
+        // the host and any remote clients alike, not only the turn owner.
         let _ = self
-            .sender
-            .send(Message::Text(String::from(envelope).into()));
+            .send_and_mirror(Message::Text(String::from(envelope).into()))
+            .await;
         true
     }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo } from "react";
-import { useListProjects, type Project } from "@/api/generated";
+import { getListFeaturesQueryKey, useListProjects, type Project } from "@/api/generated";
+import { queryClient } from "@/lib/queryClient";
 import { useSidebarProjectOrderStore } from "@/stores/sidebar-project-order-store";
 
 export function applyOrder(projects: readonly Project[], order: number[] | null): Project[] {
@@ -42,7 +43,13 @@ export function useOrderedProjects(): UseOrderedProjectsResult {
   const projects = useMemo(() => applyOrder(data ?? [], order), [data, order]);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const result = await query.refetch();
+    // Refetch projects AND every per-project feature list — the latter is what
+    // surfaces conversations created on another device. Refetching projects
+    // alone (the old behavior) left the sidebar's session rows stale.
+    const [result] = await Promise.all([
+      query.refetch(),
+      queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey() }),
+    ]);
     if (result.data) {
       useSidebarProjectOrderStore.getState().freeze(result.data.map((p) => p.id));
     }

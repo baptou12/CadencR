@@ -13,68 +13,13 @@ use crate::domain::ws_session::persistence::{
     PendingUserInput, PendingUserInputKind, WsSessionPersistence,
 };
 use crate::domain::ws_session::protocol::{
-    ImagePayload, PermissionDecision, PermissionRequestPayload, SessionErrorPayload, WsEnvelope,
+    PermissionDecision, PermissionRequestPayload, SessionErrorPayload, WsEnvelope,
 };
 
 use super::super::post_plan_mode::transition_session_to_post_plan_mode;
 use super::super::types::SdkSessions;
 use super::super::WsSender;
-
-pub(crate) fn build_content_value(text: &str, images: &[ImagePayload]) -> serde_json::Value {
-    if images.is_empty() {
-        serde_json::Value::String(text.to_string())
-    } else {
-        let mut blocks: Vec<serde_json::Value> =
-            Vec::with_capacity(images.len() + usize::from(!text.is_empty()));
-        if !text.is_empty() {
-            blocks.push(serde_json::json!({
-                "type": "text",
-                "text": text
-            }));
-        }
-        for img in images {
-            blocks.push(serde_json::json!({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": img.mime_type,
-                    "data": img.base64
-                }
-            }));
-        }
-        serde_json::Value::Array(blocks)
-    }
-}
-
-pub(crate) fn build_persist_content(text: &str, images: &[ImagePayload]) -> String {
-    if images.is_empty() {
-        text.to_string()
-    } else {
-        let content = build_content_value(text, images);
-        serde_json::to_string(&content).unwrap_or_else(|_| text.to_string())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{build_content_value, ImagePayload};
-
-    #[test]
-    fn content_blocks_match_text_presence() {
-        let images = vec![ImagePayload {
-            base64: "abc".into(),
-            mime_type: "image/png".into(),
-        }];
-        let image_only = build_content_value("", &images);
-        assert_eq!(image_only.as_array().map(Vec::len), Some(1));
-        assert_eq!(image_only[0]["type"], "image");
-        assert_eq!(image_only[0]["source"]["data"], "abc");
-        let content = build_content_value("hello", &images);
-        assert_eq!(content.as_array().map(Vec::len), Some(2));
-        assert_eq!(content[0]["text"], "hello");
-        assert_eq!(content[1]["source"]["data"], "abc");
-    }
-}
+use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 #[derive(Clone)]
 pub struct PermissionResponse {
@@ -90,6 +35,10 @@ pub struct PermissionResponse {
 
 pub(crate) struct WsBridgeCanUseTool {
     pub(crate) sender: WsSender,
+    /// Every other device viewing this feature. A gate is mirrored to them so
+    /// it appears on all connected clients, not just whichever one owns the
+    /// live turn.
+    pub(crate) feature_senders: WsFeatureSenderRegistry,
     pub(crate) response_rx: Arc<Mutex<mpsc::Receiver<PermissionResponse>>>,
     pub(crate) feature_id: i64,
     pub(crate) db_session_id: i64,
@@ -147,7 +96,7 @@ impl WsBridgeCanUseTool {
         )
         .await;
 
-        self.send_permission_payload(initial_payload);
+        self.send_permission_payload(initial_payload).await;
 
         let enriched_input = self.attach_plan_to_exit_block(request).await;
         if enriched_input != request.input {
@@ -158,7 +107,7 @@ impl WsBridgeCanUseTool {
                 &PendingUserInput::Permission(&enriched_payload),
             )
             .await;
-            self.send_permission_payload(enriched_payload);
+            self.send_permission_payload(enriched_payload).await;
         }
 
         let mut rx = self.response_rx.lock().await;
@@ -337,15 +286,25 @@ impl WsBridgeCanUseTool {
         }
     }
 
-    fn send_permission_payload(&self, payload: PermissionRequestPayload) {
+    async fn send_permission_payload(&self, payload: PermissionRequestPayload) {
         let envelope = WsEnvelope::new(
             "session",
             "permission.request",
             serde_json::to_value(payload).unwrap(),
         );
+        self.mirror_and_send(Message::Text(String::from(envelope).into()))
+            .await;
+    }
+
+    /// Send `msg` to the turn owner and mirror it to every other device viewing
+    /// this feature. This is how a permission/plan/question gate reaches all
+    /// connected clients — the answer can then come back from any of them
+    /// (resolved against the owning turn by the active-turn registry).
+    async fn mirror_and_send(&self, msg: Message) {
         let _ = self
-            .sender
-            .send(Message::Text(String::from(envelope).into()));
+            .feature_senders
+            .send_and_mirror(self.feature_id, &self.sender, msg)
+            .await;
     }
 
     async fn handle_provider_permission_prompt(
@@ -373,14 +332,7 @@ impl WsBridgeCanUseTool {
             &PendingUserInput::Permission(&payload),
         )
         .await;
-        let envelope = WsEnvelope::new(
-            "session",
-            "permission.request",
-            serde_json::to_value(payload).unwrap(),
-        );
-        let _ = self
-            .sender
-            .send(Message::Text(String::from(envelope).into()));
+        self.send_permission_payload(payload).await;
 
         // `wait_and_apply_decision` owns the clear + terminal-turn broadcast.
         permission_bridge::wait_and_apply_decision(

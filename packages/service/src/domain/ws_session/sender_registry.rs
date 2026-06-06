@@ -88,6 +88,21 @@ impl WsFeatureSenderRegistry {
             map.remove(&feature_id);
         }
     }
+
+    /// Send `msg` to the turn `owner` and mirror it to every *other* device
+    /// viewing `feature_id`. Others are mirrored first so the owner send can
+    /// move `msg` without a clone; with only the owner registered this is a
+    /// plain send. Returns `true` when the owner socket is gone, so callers can
+    /// stop a loop exactly as a bare `send().is_err()` would.
+    pub async fn send_and_mirror(
+        &self,
+        feature_id: i64,
+        owner: &mpsc::UnboundedSender<Message>,
+        msg: Message,
+    ) -> bool {
+        self.broadcast_others(feature_id, owner, &msg).await;
+        owner.send(msg).is_err()
+    }
 }
 
 #[cfg(test)]

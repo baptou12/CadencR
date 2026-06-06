@@ -5,8 +5,10 @@ use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
-use super::super::WsSender;
-use super::bridge::{build_content_value, build_persist_content};
+use std::sync::Arc;
+
+use super::super::{ActiveTurnRegistry, SdkSessions, WsSender};
+use super::content::{build_content_value, build_persist_content};
 use super::errors::persist_pause_and_send_session_error;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
 
@@ -19,6 +21,11 @@ pub(super) struct FollowupPromptContext {
     pub sender: WsSender,
     pub ws_feature_senders: WsFeatureSenderRegistry,
     pub envelope_id: String,
+    /// The owning connection's session map + the global registry, so a
+    /// follow-up turn re-stamps the start time and owner (single source of
+    /// truth for the synced timer + cross-device answers).
+    pub sdk_sessions: SdkSessions,
+    pub active_turns: Arc<ActiveTurnRegistry>,
 }
 
 pub(super) async fn handle_followup_prompt(
@@ -29,6 +36,8 @@ pub(super) async fn handle_followup_prompt(
     mark_agent_running(
         &context.write_pool,
         &context.session_status_tx,
+        &context.active_turns,
+        &context.sdk_sessions,
         context.db_session_id,
         context.feature_id,
     )

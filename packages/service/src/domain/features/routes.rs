@@ -4,6 +4,7 @@ use axum::Router;
 use serde::Deserialize;
 
 use crate::app_state::AppState;
+use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::features::models::*;
 use crate::domain::features::service;
 use crate::domain::features::worktree_settings::{
@@ -53,17 +54,24 @@ pub async fn create_feature_handler(
     if let Some(branch) = reuse_branch.as_deref() {
         validate_reuse_branch_for_project(&state.read_pool, body.project_id, branch).await?;
     }
-    Ok(Json(
-        service::create_feature_with_worktree(
-            &state.write_pool,
-            body.project_id,
-            body.title,
-            body.type_,
-            worktree_mode,
-            reuse_branch,
-        )
-        .await?,
-    ))
+    let created = service::create_feature_with_worktree(
+        &state.write_pool,
+        body.project_id,
+        body.title,
+        body.type_,
+        worktree_mode,
+        reuse_branch,
+    )
+    .await?;
+    // Tell every connected client (including remote devices) to refresh their
+    // sidebar feature lists so the new conversation appears without a manual
+    // refresh.
+    state.feature_events_tx.emit(
+        created.id,
+        Some(body.project_id),
+        FeatureEventAction::Created,
+    );
+    Ok(Json(created))
 }
 
 #[utoipa::path(get, path = "/api/features/{id}",
@@ -90,6 +98,9 @@ pub async fn delete_feature_handler(
     Path(id): Path<i64>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::delete_feature(&state.write_pool, &state.read_pool, id).await?;
+    state
+        .feature_events_tx
+        .emit(id, None, FeatureEventAction::Deleted);
     Ok(Json(SuccessResponse { success: true }))
 }
 
@@ -126,6 +137,10 @@ pub async fn update_feature_status_handler(
     Json(body): Json<UpdateStatusRequest>,
 ) -> Result<Json<SuccessResponse>, AppError> {
     service::update_status(&state.write_pool, id, body.status).await?;
+    // Archive/unarchive changes which features the sidebar shows.
+    state
+        .feature_events_tx
+        .emit(id, None, FeatureEventAction::Updated);
     Ok(Json(SuccessResponse { success: true }))
 }
 
