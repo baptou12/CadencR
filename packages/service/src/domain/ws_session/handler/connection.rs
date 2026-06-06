@@ -15,12 +15,10 @@ use tracing::debug;
 
 use crate::api::middleware::authenticate_ws;
 use crate::app_state::AppState;
-use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionErrorPayload, WsEnvelope};
 use crate::remote::RemoteContext;
 
 use super::dispatch::dispatch_envelope;
-use super::helpers::persist_and_close_query;
 use super::types::{QueryState, SdkSessions};
 
 pub async fn ws_handler(
@@ -141,38 +139,36 @@ async fn handle_connection(socket: WebSocket, state: AppState) {
         }
     }
 
-    // Cleanup: pause/persist the queries this connection was *driving* before
-    // dropping. Only an `Active` handle (a live turn owned by this connection)
-    // is paused and announced Idle. A `Pending` handle means this connection was
-    // merely viewing the feature — e.g. a remote device mirroring the
-    // conversation — so pausing it or broadcasting Idle would wrongly interrupt
-    // whichever device is actually running the turn. (Matches the "for every
-    // active session" intent noted in the inbound-loop comment above.)
+    // Cleanup: this connection is going away, but a turn it started must keep
+    // running on the host. Drop only `Pending` handles — viewers with no live
+    // process. Every `Active` handle is left in place: its stream reader holds
+    // this map alive and performs *deferred teardown* once the turn finishes
+    // and the owner is gone (see `StreamReaderTask::maybe_teardown_orphaned`).
+    // Closing it here is exactly what stopped the agent when a remote client
+    // (e.g. a phone) went to sleep mid-turn. We deliberately do NOT mark the
+    // session paused or broadcast Idle: it is still running, and a reconnecting
+    // device should see it that way.
     let mut sessions = sdk_sessions.lock().await;
-    debug!(count = sessions.len(), "WS cleanup: draining sessions");
-    for (db_session_id, handle) in sessions.drain() {
-        let feature_id = handle.feature_id;
-        let runtime_provider = handle.runtime_provider.clone();
-        if let QueryState::Active { query, .. } = handle.state {
-            persist_and_close_query(&query, &state.write_pool, db_session_id, &runtime_provider)
-                .await;
-            WsSessionPersistence::mark_paused_static(&state.write_pool, db_session_id).await;
-            WsSessionPersistence::broadcast_session_status(
-                &state.session_status_tx,
-                db_session_id,
-                feature_id,
-                crate::domain::session_status::AgentStatus::Idle,
-                None,
-            );
-        }
-    }
+    let live_turns = sessions
+        .values()
+        .filter(|handle| matches!(handle.state, QueryState::Active { .. }))
+        .count();
+    debug!(
+        total = sessions.len(),
+        live_turns, "WS cleanup: keeping live turns, dropping pending handles"
+    );
+    sessions.retain(|_, handle| matches!(handle.state, QueryState::Active { .. }));
     drop(sessions);
 
-    // Drop this connection's active-turn ownership entries. The registry holds
-    // only `Weak` pointers, so a dropped connection becomes inert on its own —
-    // this is the eager sweep so a long-lived process doesn't accumulate dead
-    // entries for sessions this connection once drove.
-    state.active_turns.remove_owned_by(&sdk_sessions).await;
+    // Only sweep this connection's active-turn ownership when no live turn
+    // survives. A surviving turn must keep its registry entry so other devices
+    // can resolve the owner map to answer permissions/questions and render the
+    // synchronized timer while it runs to completion. The registry holds only
+    // `Weak` pointers, so the entry self-clears once the turn's reader drops the
+    // map.
+    if live_turns == 0 {
+        state.active_turns.remove_owned_by(&sdk_sessions).await;
+    }
 
     // Drop any `git.status` subscriptions for this WS. The sender-keyed sweep
     // catches half-open shutdowns where the explicit unsubscribe never arrived.

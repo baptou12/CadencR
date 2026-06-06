@@ -238,6 +238,78 @@ async fn test_follow_up_prompt_does_not_block_ws_dispatch() {
 }
 
 #[tokio::test]
+async fn test_prompt_send_steers_turn_owned_by_another_connection_without_spawning() {
+    // The exact cross-device bug shape: a turn is live on connection A (e.g. a
+    // phone, possibly already disconnected), connection B (the host) has only a
+    // Pending handle for the same session. B's prompt.send must STEER A's live
+    // runtime (Phase 2 via the active-turn registry), never spawn a second
+    // agent on the existing conversation.
+    let app_state = make_test_app_state().await;
+    let feature_id = 1i64;
+
+    // Connection A: owns the live Active turn, recording what gets streamed.
+    let (tx_a, mut rx_a) = mpsc::unbounded_channel();
+    let owner_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let session_id = init_session(&tx_a, &mut rx_a, &owner_sessions, &app_state, feature_id).await;
+    let db_id: i64 = session_id.parse().unwrap();
+    let (prompt_tx, mut prompt_rx) = mpsc::channel(1);
+    {
+        let mut sessions = owner_sessions.lock().await;
+        let handle = sessions.get_mut(&db_id).unwrap();
+        let (permission_tx, _permission_rx) =
+            mpsc::channel::<session_prompt::PermissionResponse>(1);
+        let (_message_tx, message_rx) = mpsc::channel(1);
+        handle.state = QueryState::Active {
+            query: Arc::new(RwLock::new(Box::new(RecordingPromptSession {
+                tx: prompt_tx,
+                message_rx: Some(message_rx),
+            }))),
+            permission_tx,
+        };
+    }
+    // Register A as the turn's owner in the global registry (as mark_agent_running does).
+    app_state
+        .active_turns
+        .begin_turn(db_id, &owner_sessions, 1_000)
+        .await;
+
+    // Connection B (the host): a Pending handle for the SAME db session id.
+    let (tx_b, _rx_b) = mpsc::unbounded_channel();
+    let host_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    {
+        let mut handle = make_active_handle(feature_id, None);
+        handle.state = QueryState::Pending(Default::default());
+        host_sessions.lock().await.insert(db_id, handle);
+    }
+
+    let envelope = make_envelope(
+        "session",
+        "prompt.send",
+        serde_json::json!({
+            "session_id": session_id,
+            "text": "continue from the host",
+            "client_message_id": "host-1",
+        }),
+    );
+    dispatch_envelope(envelope, &tx_b, &host_sessions, &app_state).await;
+
+    // The prompt reached A's live runtime — proving it was steered, not spawned
+    // (a fresh spawn would never touch this RecordingPromptSession).
+    let streamed = tokio::time::timeout(std::time::Duration::from_secs(2), prompt_rx.recv())
+        .await
+        .expect("host prompt should stream into the existing runtime")
+        .unwrap();
+    assert_eq!(streamed, serde_json::json!("continue from the host"));
+
+    // The host's own handle was never converted to Active — no second agent.
+    let sessions = host_sessions.lock().await;
+    assert!(
+        matches!(sessions.get(&db_id).unwrap().state, QueryState::Pending(_)),
+        "host handle must stay Pending — the live turn was steered, not respawned"
+    );
+}
+
+#[tokio::test]
 async fn test_prompt_send_with_invalid_session_id_returns_error() {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));

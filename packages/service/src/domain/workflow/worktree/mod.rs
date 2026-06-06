@@ -19,10 +19,12 @@ mod branch;
 mod db;
 mod envelope;
 mod new_branch;
+mod replay;
 mod reuse;
 mod setup;
 
 pub use db::{get_project_directory, get_project_id_for_feature, get_setting, set_setting};
+pub use replay::replay_persisted_state;
 pub use reuse::attach_to_existing_branch;
 pub use setup::run_setup_commands;
 
@@ -61,7 +63,7 @@ pub async fn ensure_worktree(
         return ensure_skip(read_pool, feature_id, project_id, ws_sender).await;
     }
 
-    if let Some(existing) = ensure_existing_worktree(read_pool, feature_id, ws_sender).await {
+    if let Some(existing) = replay_persisted_state(read_pool, feature_id, ws_sender).await {
         return Ok(existing);
     }
 
@@ -118,44 +120,6 @@ async fn ensure_skip(
         serde_json::json!({ "feature_id": feature_id }),
     );
     Ok(PathBuf::from(project_dir))
-}
-
-/// If a worktree already exists on disk for this feature, re-emit the
-/// `worktree.created` (and optional `worktree.ready`) envelopes so a fresh
-/// frontend session picks up the state, and return its path. Returns `None`
-/// when no usable worktree is recorded — caller falls through to provisioning.
-async fn ensure_existing_worktree(
-    read_pool: &SqlitePool,
-    feature_id: i64,
-    ws_sender: &WsSender,
-) -> Option<PathBuf> {
-    let existing = get_setting(read_pool, feature_id, "worktree_path").await?;
-    if tokio::fs::metadata(&existing).await.is_err() {
-        return None;
-    }
-    let branch = get_setting(read_pool, feature_id, "worktree_branch").await;
-    let status = get_setting(read_pool, feature_id, "worktree_setup_step")
-        .await
-        .unwrap_or_else(|| "created".to_string());
-    send_envelope(
-        ws_sender,
-        "workflow",
-        "worktree.created",
-        serde_json::json!({
-            "feature_id": feature_id,
-            "path": existing,
-            "branch": branch,
-        }),
-    );
-    if status == "ready" {
-        send_envelope(
-            ws_sender,
-            "workflow",
-            "worktree.ready",
-            serde_json::json!({ "feature_id": feature_id }),
-        );
-    }
-    Some(PathBuf::from(existing))
 }
 
 /// `worktree_mode == "new"` path: build a fresh worktree on a brand-new

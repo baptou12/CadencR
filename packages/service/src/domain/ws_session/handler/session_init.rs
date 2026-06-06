@@ -374,4 +374,10 @@ pub(super) async fn handle_init(
 
     session_init_restore::restore_pending_or_idle(app_state, sender, db_session_id, feature_id)
         .await;
+
+    // Replay current worktree provisioning state so a client opening a
+    // conversation another device already started (e.g. desktop opening a
+    // phone-started worktree) sees the branch/path/setup status instead of
+    // nothing.
+    super::session_init_worktree::restore_worktree_state(app_state, sender, feature_id).await;
 }

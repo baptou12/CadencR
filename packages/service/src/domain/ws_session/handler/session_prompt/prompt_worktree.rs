@@ -1,3 +1,4 @@
+use axum::extract::ws::Message;
 use tracing::{error, info, warn};
 
 use crate::app_state::AppState;
@@ -6,8 +7,30 @@ use crate::domain::feature_events::{FeatureEventAction, FeatureEventBroadcaster}
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::protocol::PromptSendPayload;
+use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::{SessionConfig, WsSender};
+
+/// Wrap `owner` in a sender that fans every worktree envelope out to *every*
+/// device viewing the feature, not just the initiator. Without this, worktree
+/// creation/setup progress is invisible to a second client (e.g. the desktop
+/// opening a phone-started conversation). The spawned forwarder lives as long
+/// as the worktree flow holds a clone of the returned sender, then exits.
+fn fan_out_sender(
+    owner: WsSender,
+    feature_senders: WsFeatureSenderRegistry,
+    feature_id: i64,
+) -> WsSender {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await {
+            feature_senders
+                .send_and_mirror(feature_id, &owner, msg)
+                .await;
+        }
+    });
+    tx
+}
 
 pub(super) async fn prepare_worktree_if_requested(
     app_state: &AppState,
@@ -31,7 +54,18 @@ pub(super) async fn prepare_worktree_if_requested(
         config,
     )
     .await;
-    create_and_apply_worktree(app_state, write_pool, sender, feature_id, config, options).await;
+    // Worktree creation + setup progress must reach every device viewing the
+    // feature, so create/apply against a fan-out sender rather than the lone
+    // initiator socket.
+    let broadcast = fan_out_sender(
+        sender.clone(),
+        app_state.ws_feature_senders.clone(),
+        feature_id,
+    );
+    create_and_apply_worktree(
+        app_state, write_pool, &broadcast, feature_id, config, options,
+    )
+    .await;
     true
 }
 

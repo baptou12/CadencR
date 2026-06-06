@@ -10,7 +10,7 @@ use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionEndedPayload, WsEnvelope};
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
-use super::super::{SdkSessions, WsSender};
+use super::super::{persist_and_close_query, QueryState, SdkSessions, WsSender};
 use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
 
 pub(super) struct StreamReaderTask {
@@ -36,6 +36,10 @@ pub(super) struct StreamReaderState {
     pub(super) last_provider_reconcile: Instant,
     pub(super) last_signal_status: Option<AgentStatus>,
     pub(super) between_turns: bool,
+    /// Set once the first turn emits a `result`. Gates deferred teardown so a
+    /// just-started turn (whose first event hasn't arrived yet, so
+    /// `between_turns` is still its initial `true`) is never torn down.
+    pub(super) saw_result: bool,
 }
 
 enum ReaderAction {
@@ -44,11 +48,6 @@ enum ReaderAction {
     Event(RuntimeEvent),
     Error(RuntimeError),
     Closed,
-}
-
-pub(super) enum EventOutcome {
-    Continue,
-    Break,
 }
 
 impl StreamReaderState {
@@ -61,8 +60,27 @@ impl StreamReaderState {
             last_provider_reconcile: Instant::now(),
             last_signal_status: None,
             between_turns: true,
+            saw_result: false,
         }
     }
+}
+
+/// The owner connection has gone. The orphaned runtime is closed only once the
+/// turn is genuinely between turns (`between_turns`), at least one turn has
+/// completed (`saw_result`, so a just-started turn isn't killed), no
+/// permission/question gate is pending (a reconnecting device could still
+/// answer it), and the DB does not show a turn `running`. The last guard closes
+/// the race where another device (e.g. the host) has just dispatched a
+/// cross-device follow-up — `mark_agent_running` has set status `running`, but
+/// the provider hasn't emitted the first event yet so `between_turns` is still
+/// its post-result `true`. Pure so it is unit-testable without a live runtime.
+fn should_close_orphaned(
+    between_turns: bool,
+    saw_result: bool,
+    has_pending_user_input: bool,
+    turn_running: bool,
+) -> bool {
+    between_turns && saw_result && !has_pending_user_input && !turn_running
 }
 
 impl StreamReaderTask {
@@ -101,17 +119,13 @@ impl StreamReaderTask {
                     break;
                 }
                 ReaderAction::Event(runtime_event) => {
-                    if let EventOutcome::Break = self
-                        .handle_runtime_event(
-                            &mut state,
-                            runtime_adapter,
-                            &mut persistence,
-                            runtime_event,
-                        )
-                        .await
-                    {
-                        break;
-                    }
+                    self.handle_runtime_event(
+                        &mut state,
+                        runtime_adapter,
+                        &mut persistence,
+                        runtime_event,
+                    )
+                    .await;
                 }
             }
         }
@@ -146,10 +160,17 @@ impl StreamReaderTask {
     }
 
     async fn handle_timeout_tick(&self, state: &mut StreamReaderState) -> ReaderAction {
-        if self.sender.send(Message::Ping(vec![].into())).is_err() {
+        // Keepalive ping to the turn owner. A failed send means the owner socket
+        // is gone (e.g. a remote phone went to sleep). Unlike before, that does
+        // NOT end the turn — the agent keeps running on the host. Only once the
+        // turn has gone idle between turns with the owner still gone can the
+        // runtime no longer be driven from here, so we close it (persisting the
+        // resume id) and stop. A reconnecting device continues via --resume.
+        let owner_gone = self.sender.send(Message::Ping(vec![].into())).is_err();
+        if owner_gone && self.maybe_teardown_orphaned(state).await {
             debug!(
                 self.db_session_id,
-                "WebSocket closed during timeout check, stopping stream reader"
+                "owner gone and turn idle; closed orphaned runtime"
             );
             return ReaderAction::Break;
         }
@@ -193,9 +214,109 @@ impl StreamReaderTask {
             .send_and_mirror(Message::Text(String::from(end_env).into()))
             .await;
     }
+
+    /// Tear down a runtime whose owner connection has gone, but only when the
+    /// turn is safely between turns (see [`should_close_orphaned`]). Returns
+    /// `true` when the runtime was closed and the reader should stop.
+    async fn maybe_teardown_orphaned(&self, state: &StreamReaderState) -> bool {
+        // Cheap pre-check before the DB read: never tear down mid-turn or before
+        // the first turn has completed.
+        if !(state.between_turns && state.saw_result) {
+            return false;
+        }
+        let row = WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id).await;
+        let has_pending_user_input = row.as_ref().is_some_and(|row| row.has_pending_user_input());
+        // A `running` status means another device just dispatched a follow-up
+        // into this same turn; don't close it out from under that new turn.
+        let turn_running = row.is_some_and(|row| row.status == "running");
+        if !should_close_orphaned(
+            state.between_turns,
+            state.saw_result,
+            has_pending_user_input,
+            turn_running,
+        ) {
+            return false;
+        }
+        self.close_orphaned_runtime().await;
+        true
+    }
+
+    /// Persist the runtime session id (so the conversation resumes intact),
+    /// close the subprocess, and announce the session idle. Mirrors what the
+    /// connection-disconnect path used to do eagerly — now deferred until the
+    /// in-flight turn has actually finished.
+    async fn close_orphaned_runtime(&self) {
+        let query = {
+            let sessions = self.sdk_sessions.lock().await;
+            match sessions
+                .get(&self.db_session_id)
+                .map(|handle| &handle.state)
+            {
+                Some(QueryState::Active { query, .. }) => Some(query.clone()),
+                _ => None,
+            }
+        };
+        if let Some(query) = query {
+            persist_and_close_query(
+                &query,
+                &self.write_pool,
+                self.db_session_id,
+                &self.runtime_provider,
+            )
+            .await;
+        }
+        WsSessionPersistence::mark_paused_static(&self.write_pool, self.db_session_id).await;
+        WsSessionPersistence::broadcast_session_status(
+            &self.session_status_tx,
+            self.db_session_id,
+            self.feature_id,
+            AgentStatus::Idle,
+            None,
+        );
+    }
 }
 
 fn should_reconcile_provider(state: &StreamReaderState) -> bool {
     state.last_runtime_activity.elapsed() >= std::time::Duration::from_millis(750)
         && state.last_provider_reconcile.elapsed() >= std::time::Duration::from_millis(750)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_close_orphaned;
+
+    #[test]
+    fn closes_only_when_between_turns_after_a_result_with_no_pending_gate() {
+        // Owner gone, a turn has completed, nothing pending, no running turn →
+        // safe to close.
+        assert!(should_close_orphaned(true, true, false, false));
+    }
+
+    #[test]
+    fn never_closes_mid_turn() {
+        // A turn is actively running (not between turns).
+        assert!(!should_close_orphaned(false, true, false, false));
+    }
+
+    #[test]
+    fn never_closes_before_first_turn_completes() {
+        // `between_turns` is still its initial `true` but no result yet — a
+        // just-started turn must not be torn down out from under itself.
+        assert!(!should_close_orphaned(true, false, false, false));
+    }
+
+    #[test]
+    fn keeps_runtime_alive_while_a_gate_is_pending() {
+        // A reconnecting device could still answer the permission/question.
+        assert!(!should_close_orphaned(true, true, true, false));
+    }
+
+    #[test]
+    fn never_closes_while_a_cross_device_followup_is_starting() {
+        // Between turns after a result, but the DB shows `running`: another
+        // device dispatched a follow-up whose first event hasn't arrived yet.
+        // Closing here would kill that just-started turn (the race from the
+        // remote-disconnect → host-follow-up flow).
+        assert!(!should_close_orphaned(true, true, false, true));
+    }
 }

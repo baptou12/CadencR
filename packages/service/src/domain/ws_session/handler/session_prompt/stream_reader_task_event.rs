@@ -17,21 +17,30 @@ use crate::domain::ws_session::protocol::{
 use super::super::send_runtime_session_id;
 use super::mcp_servers::{refresh_mcp_servers_for_active_session, send_mcp_servers_if_init};
 use super::stream_reader_forward::{forward_immediate_event, ForwardOutcome};
-use super::stream_reader_task::{EventOutcome, StreamReaderState, StreamReaderTask};
+use super::stream_reader_task::{StreamReaderState, StreamReaderTask};
 
 impl StreamReaderTask {
+    /// Process one runtime event. A closed owner socket is no longer fatal:
+    /// every send becomes best-effort because the agent must keep running on
+    /// the host after a client (e.g. a sleeping phone) disconnects. The reader
+    /// stops only when the runtime stream itself ends, or via deferred teardown
+    /// (see [`StreamReaderTask::maybe_teardown_orphaned`]).
     pub(super) async fn handle_runtime_event(
         &self,
         state: &mut StreamReaderState,
         runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
         persistence: &mut WsSessionPersistence,
         runtime_event: RuntimeEvent,
-    ) -> EventOutcome {
+    ) {
         state.last_runtime_activity = tokio::time::Instant::now();
 
         match forward_immediate_event(self, &runtime_event).await {
-            ForwardOutcome::Forwarded => return EventOutcome::Continue,
-            ForwardOutcome::SenderClosed => return EventOutcome::Break,
+            // `prompt_received` / `commands.updated` / `stream_status` are
+            // transient UI acks that are never persisted. `SenderClosed` here
+            // means only the owner socket is gone — mirrored acks
+            // (`prompt_received`, `stream_status`) already reached other viewers
+            // before that send — so either outcome just continues the stream.
+            ForwardOutcome::Forwarded | ForwardOutcome::SenderClosed => return,
             ForwardOutcome::NotHandled => {}
         }
 
@@ -39,20 +48,20 @@ impl StreamReaderTask {
             .handle_permission_request(runtime_adapter, &runtime_event)
             .await
         {
-            return EventOutcome::Continue;
+            return;
         }
 
         self.capture_runtime_session_id(state, &runtime_event).await;
-        if self.send_mcp_servers_if_init(&runtime_event).await.is_err() {
-            return EventOutcome::Break;
-        }
+        // MCP-server snapshots only go to the owner socket; if it is gone, skip
+        // and keep streaming the rest of the turn.
+        let _ = self.send_mcp_servers_if_init(&runtime_event).await;
 
         if self.handle_non_result_signal(state, &runtime_event).await {
-            return EventOutcome::Continue;
+            return;
         }
 
         self.persist_and_forward_event(state, runtime_adapter, persistence, &runtime_event)
-            .await
+            .await;
     }
 
     async fn handle_permission_request(
@@ -196,7 +205,7 @@ impl StreamReaderTask {
         runtime_adapter: Option<&'static dyn AgentRuntimeAdapter>,
         persistence: &mut WsSessionPersistence,
         runtime_event: &RuntimeEvent,
-    ) -> EventOutcome {
+    ) {
         let usage_update = state
             .usage_state
             .apply_event(runtime_adapter, runtime_event);
@@ -227,20 +236,14 @@ impl StreamReaderTask {
         let envelope = self
             .runtime_event_envelope(state, runtime_event, persisted_message)
             .await;
-        if self
+        // The event is already persisted and mirrored to any other connected
+        // device, so a gone owner socket is fine — keep streaming.
+        let _ = self
             .send_and_mirror(Message::Text(String::from(envelope).into()))
-            .await
-        {
-            debug!(
-                self.db_session_id,
-                "WebSocket sender closed, stopping stream reader"
-            );
-            return EventOutcome::Break;
+            .await;
+        if runtime_event.is_result() {
+            let _ = self.refresh_mcp_servers_after_turn().await;
         }
-        if runtime_event.is_result() && self.refresh_mcp_servers_after_turn().await.is_err() {
-            return EventOutcome::Break;
-        }
-        EventOutcome::Continue
     }
 
     async fn refresh_mcp_servers_after_turn(&self) -> Result<(), ()> {
@@ -303,6 +306,7 @@ impl StreamReaderTask {
     async fn result_envelope(&self, state: &mut StreamReaderState) -> WsEnvelope {
         WsSessionPersistence::mark_completed_static(&self.write_pool, self.db_session_id).await;
         state.between_turns = true;
+        state.saw_result = true;
         let has_pending_user_input =
             WsSessionPersistence::get_session_row(&self.write_pool, self.db_session_id)
                 .await

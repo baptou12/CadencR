@@ -7,6 +7,8 @@ use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
 use crate::domain::agents::runtime_adapter;
 use crate::domain::feature_events::FeatureEventAction;
+use crate::domain::workflow::worktree;
+use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 
@@ -50,9 +52,54 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
     )
     .await;
     let use_worktree = prepare_worktree(&mut context).await;
+    reresolve_worktree_and_resume(&mut context).await;
     attach_permission_bridge(&mut context);
     validate_resume_id(adapter, &mut context);
     spawn_runtime(context, adapter, use_worktree).await;
+}
+
+/// Correct stale session state from `session.init` before spawning. When a
+/// conversation was started on another device, this connection's `Pending`
+/// handle can carry a pre-worktree cwd and no resume id (init ran before the
+/// worktree existed / before the runtime session id was persisted). Re-read
+/// both from the DB — the source of truth — so a follow-up from any device
+/// always resumes the SAME provider session in the SAME worktree instead of
+/// starting a fresh agent in the project root.
+async fn reresolve_worktree_and_resume(context: &mut PendingPromptContext) {
+    if let Some(path) = worktree::get_setting(
+        &context.app_state.read_pool,
+        context.feature_id,
+        "worktree_path",
+    )
+    .await
+    {
+        let cwd = std::path::PathBuf::from(&path);
+        if !path.is_empty() && context.options.cwd != cwd && cwd.exists() {
+            info!(context.db_session_id, worktree_path = %path, "re-resolved worktree cwd from DB before spawn");
+            context.config.canonical_cwd = permissions::canonicalize_worktree(&cwd);
+            context.config.cwd = cwd.clone();
+            context.options.cwd = cwd;
+        }
+    }
+
+    if context.options.resume_session_id.is_some() {
+        return;
+    }
+    let Some(row) =
+        WsSessionPersistence::get_session_row(&context.app_state.read_pool, context.db_session_id)
+            .await
+    else {
+        return;
+    };
+    // Only adopt the persisted id when it belongs to the provider we're about
+    // to spawn; `validate_resume_id` still format-checks it afterwards.
+    if row.runtime_provider.as_deref() != Some(context.provider_id.as_str()) {
+        return;
+    }
+    if let Some(sid) = row.runtime_session_id.filter(|s| !s.is_empty()) {
+        info!(context.db_session_id, runtime_session_id = %sid, "re-resolved resume id from DB before spawn");
+        context.options.resume_session_id = Some(sid);
+    }
 }
 
 async fn persist_initial_user_message(context: &PendingPromptContext) {
