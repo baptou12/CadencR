@@ -16,9 +16,6 @@ use super::service;
 use crate::app_state::AppState;
 use crate::error::AppError;
 
-/// Hard upper bound per run. SIGKILLs the child if it overruns.
-pub const RUN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-
 /// How often a still-running command's captured output is persisted so the UI
 /// can show it incrementally instead of waiting for the process to exit.
 const FLUSH_INTERVAL: Duration = Duration::from_millis(750);
@@ -31,8 +28,6 @@ const CANCEL_GRACE: Duration = Duration::from_secs(3);
 enum WaitResult {
     /// The command exited on its own with this code.
     Exited(i64),
-    /// The run exceeded [`RUN_TIMEOUT`].
-    TimedOut,
     /// The user requested cancellation (Ctrl-C).
     Cancelled,
 }
@@ -68,7 +63,7 @@ async fn prepare(state: &AppState, action_id: i64, feature_id: i64) -> Result<Pr
     Ok(Prepared { command, cwd })
 }
 
-/// Execute `action_id` for `feature_id`, blocking until completion (or timeout).
+/// Execute `action_id` for `feature_id`, blocking until completion.
 ///
 /// Used by the scheduler, where serialising runs prevents a slow command from
 /// overlapping itself across ticks.
@@ -116,7 +111,7 @@ pub async fn start(
 }
 
 /// Spawn the shell, stream stdout/stderr into the run row while it runs, and
-/// finalize with the exit code once it exits, times out or is cancelled.
+/// finalize with the exit code once it exits or is cancelled.
 async fn run_and_finalize(
     pool: SqlitePool,
     runs: Arc<CustomActionRunRegistry>,
@@ -159,12 +154,14 @@ async fn run_and_finalize(
     );
 
     // Register a cancel signal so a `cancel` request can interrupt this run.
+    // There is no timeout: custom actions are user-defined and may run
+    // indefinitely (e.g. dev servers), so a run only ends when the command
+    // exits or the user cancels it.
     let cancel = runs.register(run_id).await;
     let wait = tokio::select! {
-        res = tokio::time::timeout(RUN_TIMEOUT, child.wait()) => match res {
-            Ok(Ok(status)) => WaitResult::Exited(status.code().map(i64::from).unwrap_or(-1)),
-            Ok(Err(_)) => WaitResult::Exited(-1),
-            Err(_) => WaitResult::TimedOut,
+        res = child.wait() => match res {
+            Ok(status) => WaitResult::Exited(status.code().map(i64::from).unwrap_or(-1)),
+            Err(_) => WaitResult::Exited(-1),
         },
         _ = cancel.notified() => WaitResult::Cancelled,
     };
@@ -173,18 +170,8 @@ async fn run_and_finalize(
     // The select! futures are dropped above, so `child` is free to borrow again.
     let (exit_code, note) = match wait {
         WaitResult::Exited(code) => (code, None),
-        WaitResult::TimedOut => {
-            stop_child(&mut child, false).await;
-            (
-                -1,
-                Some(format!(
-                    "\n[cadencr] Command timed out after {} seconds and was killed.",
-                    RUN_TIMEOUT.as_secs()
-                )),
-            )
-        }
         WaitResult::Cancelled => {
-            let code = stop_child(&mut child, true).await;
+            let code = cancel_child(&mut child).await;
             (
                 code,
                 Some("\n[cadencr] Command stopped (Ctrl-C).".to_string()),
@@ -210,38 +197,28 @@ async fn run_and_finalize(
     finalize(&pool, run_id, Some(exit_code), &stdout, &stderr).await;
 }
 
-/// Tear down a running child and reap it. `graceful` sends a Ctrl-C (SIGINT)
-/// first and escalates to SIGKILL only if the command ignores it within
-/// [`CANCEL_GRACE`]; otherwise it goes straight to SIGKILL. Returns the exit
-/// code to record (130 = 128 + SIGINT for a user cancel, -1 for a hard kill).
-async fn stop_child(child: &mut Child, graceful: bool) -> i64 {
+/// Tear down a user-cancelled child and reap it. Sends a Ctrl-C (SIGINT) first
+/// and escalates to SIGKILL only if the command ignores it within
+/// [`CANCEL_GRACE`], so a well-behaved command can clean up. Returns the exit
+/// code to record (130 = 128 + SIGINT for a user cancel).
+async fn cancel_child(child: &mut Child) -> i64 {
     #[cfg(unix)]
     {
-        if graceful {
-            signal_group(child, libc::SIGINT);
-            if tokio::time::timeout(CANCEL_GRACE, child.wait())
-                .await
-                .is_err()
-            {
-                signal_group(child, libc::SIGKILL);
-                let _ = child.wait().await;
-            }
-            return 130;
+        signal_group(child, libc::SIGINT);
+        if tokio::time::timeout(CANCEL_GRACE, child.wait())
+            .await
+            .is_err()
+        {
+            signal_group(child, libc::SIGKILL);
+            let _ = child.wait().await;
         }
-        signal_group(child, libc::SIGKILL);
-        let _ = child.wait().await;
-        -1
     }
     #[cfg(not(unix))]
     {
         let _ = child.kill().await;
         let _ = child.wait().await;
-        if graceful {
-            130
-        } else {
-            -1
-        }
     }
+    130
 }
 
 /// Send `sig` to the child's whole process group (negative pid). The child
