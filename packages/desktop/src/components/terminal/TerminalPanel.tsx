@@ -9,10 +9,12 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { SplitSquareHorizontal, SplitSquareVertical, X } from "lucide-react";
 import { useScopedGlobalShortcutById } from "@/hooks/useShortcut";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { XTermInstance, type XTermInstanceHandle } from "./XTermInstance";
 import { PaneSlotPlaceholder } from "./PaneSlotPlaceholder";
+import { TerminalPaneToolbar } from "./TerminalPaneToolbar";
+import { MobileTerminalKeyBar } from "./MobileTerminalKeyBar";
 import {
   type TerminalPanelState,
   type SplitOrientation,
@@ -21,7 +23,6 @@ import {
   findAdjacentLeaf,
   useTerminalStore,
 } from "@/hooks/useTerminalState";
-import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -35,9 +36,6 @@ interface TerminalPanelProps {
   expectedCwd: string | null;
   hotkeysEnabled?: boolean;
 }
-
-const ICON_BTN =
-  "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
 
 export interface TerminalPanelHandle {
   focusActivePane: () => void;
@@ -59,9 +57,15 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
     ref,
   ) {
     const { isMinimized, root } = state;
+    const isMobile = useIsMobile();
     const leaves = useMemo(() => (root ? getLeaves(root) : []), [root]);
     const paneRefs = useRef<Map<string, XTermInstanceHandle>>(new Map());
     const [activePaneId, setActivePaneId] = useState<string | null>(null);
+    // Sticky Ctrl for the mobile key bar: armed on tap, consumed by the next
+    // keystroke in the focused pane (see XTermInstance's onData handler).
+    const [ctrlArmed, setCtrlArmed] = useState(false);
+    const consumeCtrl = useCallback(() => setCtrlArmed(false), []);
+    const toggleCtrl = useCallback(() => setCtrlArmed((v) => !v), []);
     // xterm canvas can't read CSS vars — feed the palette in as a prop.
     const { theme } = useTheme();
     const xtermPalette = theme.xterm;
@@ -136,6 +140,17 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       leaves.findIndex((l) => l.id === activePaneId),
     );
     const resolvedActivePaneId = leaves[activeIndex]?.id ?? null;
+
+    // Mobile key bar: send a fixed sequence (Esc/Tab/arrows) to the focused
+    // pane. These keys don't combine with Ctrl, so tapping one also disarms it.
+    const sendKeyToActivePane = useCallback(
+      (seq: string) => {
+        const id = resolvedActivePaneId ?? leaves[0]?.id;
+        if (id) paneRefs.current.get(id)?.write(seq);
+        setCtrlArmed(false);
+      },
+      [resolvedActivePaneId, leaves],
+    );
 
     useImperativeHandle(
       ref,
@@ -258,6 +273,10 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
       [removePane, focusPane],
     );
 
+    const closeActivePane = useCallback(() => {
+      if (resolvedActivePaneId) closePane(resolvedActivePaneId);
+    }, [resolvedActivePaneId, closePane]);
+
     // CMD+W: kill the active split's PTY (via `closePane`, which marks the
     // pane for kill and removes the leaf). Scoped to the terminal tab.
     //
@@ -363,40 +382,12 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
           if (e.target === e.currentTarget) focusFirstPane();
         }}
       >
-        {/* Floating action buttons */}
-        <div className="absolute right-2 top-1 z-10 flex items-center gap-0.5">
-          <ShortcutTooltip label="Split vertical" keys={["cmd", "D"]}>
-            <button
-              type="button"
-              onClick={() => splitPane(resolvedActivePaneId ?? undefined, "horizontal")}
-              className={ICON_BTN}
-            >
-              <SplitSquareHorizontal className="size-3.5" />
-            </button>
-          </ShortcutTooltip>
-          <ShortcutTooltip label="Split horizontal" keys={["cmd", "shift", "D"]} alignRight>
-            <button
-              type="button"
-              onClick={() => splitPane(resolvedActivePaneId ?? undefined, "vertical")}
-              className={ICON_BTN}
-            >
-              <SplitSquareVertical className="size-3.5" />
-            </button>
-          </ShortcutTooltip>
-          {leaves.length > 0 && (
-            <ShortcutTooltip label="Close terminal" alignRight>
-              <button
-                type="button"
-                onClick={() => {
-                  if (resolvedActivePaneId) closePane(resolvedActivePaneId);
-                }}
-                className={ICON_BTN}
-              >
-                <X className="size-3" />
-              </button>
-            </ShortcutTooltip>
-          )}
-        </div>
+        <TerminalPaneToolbar
+          activePaneId={resolvedActivePaneId}
+          splitPane={splitPane}
+          onClose={closeActivePane}
+          canClose={leaves.length > 0}
+        />
 
         {/* Split tree layout — provides resizable placeholders */}
         <div
@@ -405,6 +396,15 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
         >
           {root && renderTreeNode(root)}
         </div>
+
+        {/* Touch-keyboard accessory bar — restores Esc/Tab/Ctrl/arrows on phones */}
+        {isMobile && leaves.length > 0 && !isMinimized && (
+          <MobileTerminalKeyBar
+            ctrlArmed={ctrlArmed}
+            onToggleCtrl={toggleCtrl}
+            onSendKey={sendKeyToActivePane}
+          />
+        )}
 
         {/* XTermInstances via portals into persistent slot elements — never unmount */}
         {activeSlots.map(({ leaf, slot }) =>
@@ -425,6 +425,8 @@ export const TerminalPanel = forwardRef<TerminalPanelHandle, TerminalPanelProps>
               }}
               onExit={(ptyId) => handlePaneExit(ptyId, leaf.id)}
               onTerminalFocus={() => setActivePane(leaf.id)}
+              ctrlArmed={ctrlArmed}
+              onConsumeCtrl={consumeCtrl}
             />,
             slot,
             leaf.id,

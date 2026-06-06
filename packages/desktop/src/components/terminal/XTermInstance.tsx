@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import { useTerminalWebSocket } from "@/hooks/useTerminalWebSocket";
 import { isResizing, subscribeResize } from "@/lib/resize-coordinator";
+import { toControlChar } from "@/lib/terminal-keys";
 import type { XTermPalette } from "@/lib/themes";
 
 interface XTermInstanceProps {
@@ -34,6 +35,13 @@ interface XTermInstanceProps {
   onInitialCommandConsumed?: () => void;
   /** Called when the terminal receives focus */
   onTerminalFocus?: () => void;
+  /**
+   * When true, the next character typed (e.g. from the mobile key bar's sticky
+   * Ctrl) is converted to its control byte before being sent to the PTY.
+   */
+  ctrlArmed?: boolean;
+  /** Called once an armed Ctrl modifier has been applied, so it can disarm. */
+  onConsumeCtrl?: () => void;
 }
 
 export interface XTermInstanceHandle {
@@ -43,6 +51,8 @@ export interface XTermInstanceHandle {
   blur: () => void;
   /** Mark this instance for PTY kill on next unmount */
   markForKill: () => void;
+  /** Send a raw byte sequence to the PTY (e.g. Esc/Tab/arrows from the key bar). */
+  write: (data: string) => void;
 }
 
 export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>(
@@ -59,6 +69,8 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       initialCommand,
       onInitialCommandConsumed,
       onTerminalFocus,
+      ctrlArmed,
+      onConsumeCtrl,
     },
     ref,
   ) {
@@ -84,6 +96,11 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     initialCommandRef.current = initialCommand;
     const onInitialCommandConsumedRef = useRef(onInitialCommandConsumed);
     onInitialCommandConsumedRef.current = onInitialCommandConsumed;
+    // Read inside the (once-bound) onData handler without re-running its effect.
+    const ctrlArmedRef = useRef(false);
+    ctrlArmedRef.current = ctrlArmed ?? false;
+    const onConsumeCtrlRef = useRef(onConsumeCtrl);
+    onConsumeCtrlRef.current = onConsumeCtrl;
 
     useImperativeHandle(ref, () => ({
       focus: () => {
@@ -111,6 +128,9 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       },
       markForKill: () => {
         shouldKillRef.current = true;
+      },
+      write: (data: string) => {
+        if (ptyIdRef.current && !exitedRef.current) writeRef.current?.(data);
       },
     }));
 
@@ -285,9 +305,15 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         onFocusHandler = (): void => onTerminalFocusRef.current?.();
         terminal.textarea?.addEventListener("focus", onFocusHandler);
         dataDisposable = terminal.onData((data: string) => {
-          if (ptyIdRef.current && !exitedRef.current) {
-            writeRef.current?.(data);
+          if (!ptyIdRef.current || exitedRef.current) return;
+          if (ctrlArmedRef.current) {
+            // Sticky Ctrl from the mobile key bar: fold it into this keystroke.
+            const ctrl = toControlChar(data);
+            onConsumeCtrlRef.current?.();
+            writeRef.current?.(ctrl ?? data);
+            return;
           }
+          writeRef.current?.(data);
         });
         // iOS hands xterm no usable scroll gesture, so we drive scrolling from
         // touch deltas. Bind to the container we own, NOT `.xterm-viewport`:
