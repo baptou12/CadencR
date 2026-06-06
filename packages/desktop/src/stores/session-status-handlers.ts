@@ -222,12 +222,24 @@ export function handleAppEnvelope(
     // A feature changed (possibly on another device). An "updated" event (e.g.
     // auto-name) also changed a title, so refresh the individual feature — an
     // open conversation header falls back to the REST title when this device
-    // has no live WS title — via the shared invalidation helper. create/delete
-    // only reshape the lists, so the single-feature refetch (a guaranteed 404
-    // after a delete) is skipped.
+    // has no live WS title — via the shared invalidation helper. "reordered"
+    // (a new user message changed the most-recent-user-message sort key) only
+    // reshuffles its own project's list, so it's scoped to that project.
+    // create/delete reshape the lists too, but a created feature isn't cached
+    // yet, so they fall back to invalidating every project's list. The
+    // single-feature refetch (a guaranteed 404 after a delete) is skipped for
+    // all but "updated".
     const featureId = typeof payload.feature_id === "number" ? payload.feature_id : null;
     if (payload.action === "updated" && featureId != null) {
       invalidateFeatureQueries(featureId, ["title"]);
+    } else if (payload.action === "reordered" && featureId != null) {
+      const projectId = lookupFeature(featureId)?.project_id;
+      void queryClient.invalidateQueries({
+        queryKey:
+          projectId != null
+            ? getListFeaturesQueryKey({ project_id: projectId })
+            : getListFeaturesQueryKey(),
+      });
     } else {
       void queryClient.invalidateQueries({ queryKey: getListFeaturesQueryKey() });
     }

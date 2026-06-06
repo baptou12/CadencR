@@ -6,6 +6,7 @@ use tracing::{error, info, warn};
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::{AgentRuntimeAdapter, RuntimeSpawnConfig};
 use crate::domain::agents::runtime_adapter;
+use crate::domain::feature_events::FeatureEventAction;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 
@@ -72,6 +73,14 @@ async fn persist_initial_user_message(context: &PendingPromptContext) {
         &persist_content,
     )
     .await;
+    // The user message changed this feature's most-recent-user-message sort
+    // key. Broadcast so every client's sidebar re-sorts conversations and
+    // floats this one to the top of its project.
+    context.app_state.feature_events_tx.emit(
+        context.feature_id,
+        None,
+        FeatureEventAction::Reordered,
+    );
 }
 
 async fn resolve_adapter_or_report(
