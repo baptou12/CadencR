@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UnifiedAgentsMode } from "@/api/generated";
 import { dedupeTitles } from "@/components/unified-agents-filter-values";
 import type { UnifiedAgentsFilterMode } from "@/components/UnifiedAgentsFilters";
+import { intArraysEqual } from "@/lib/utils";
 
 const FILTER_EVENT = "cadencr:unified-agents-filters-changed";
 
@@ -122,12 +123,6 @@ function areUnifiedAgentsFiltersEqual(
     a.sortOrder === b.sortOrder &&
     intArraysEqual(a.projectIds, b.projectIds) &&
     stringArraysEqual(a.excludedTitles, b.excludedTitles)
-  );
-}
-
-function intArraysEqual(a: number[], b: number[]): boolean {
-  return (
-    a.length === b.length && a.every((value: number, index: number): boolean => value === b[index])
   );
 }
 

@@ -18,8 +18,19 @@ pub async fn list_by_project(
     } else {
         " AND status = 'active'"
     };
+    // Order conversations by the most recent *user* message in any of their
+    // sessions, falling back to the feature creation time when none exists.
     let sql = format!(
-        "SELECT {FEATURE_COLUMNS} FROM features WHERE project_id = ?{status_filter} ORDER BY created_at DESC"
+        "SELECT {FEATURE_COLUMNS} \
+         FROM features f \
+         LEFT JOIN ( \
+             SELECT s.feature_id AS feature_id, MAX(m.created_at) AS last_user_at \
+             FROM agent_sessions s \
+             JOIN agent_messages m ON m.session_id = s.id AND m.role = 'user' \
+             GROUP BY s.feature_id \
+         ) ua ON ua.feature_id = f.id \
+         WHERE f.project_id = ?{status_filter} \
+         ORDER BY datetime(COALESCE(ua.last_user_at, f.created_at)) DESC, f.id DESC"
     );
     let rows = sqlx::query_as::<_, Feature>(&sql)
         .bind(project_id)
@@ -268,7 +279,9 @@ mod tests {
         sqlx::query(
             r#"CREATE TABLE agent_messages (
                 id INTEGER PRIMARY KEY,
-                session_id INTEGER NOT NULL
+                session_id INTEGER NOT NULL,
+                role TEXT,
+                created_at TEXT
             )"#,
         )
         .execute(&pool)
@@ -328,6 +341,42 @@ mod tests {
             statuses,
             vec![FeatureStatus::Archived, FeatureStatus::Active]
         );
+    }
+
+    #[tokio::test]
+    async fn list_by_project_orders_by_latest_user_message() {
+        let pool = setup_pool().await;
+        // Feature 1 is created first but its only user message is older.
+        // Feature 2 is created later and has the newest user message, so it
+        // must sort first. An assistant message on feature 1 is newer than
+        // everything but must be ignored.
+        sqlx::query(
+            "INSERT INTO features (id, project_id, title, status, type, created_at) VALUES \
+             (1, 1, 'older', 'active', 'ws-session', '2026-01-01T00:00:00Z'), \
+             (2, 1, 'newer', 'active', 'ws-session', '2026-01-02T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, status) VALUES (10, 1, 'paused'), (20, 2, 'paused')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO agent_messages (session_id, role, created_at) VALUES \
+             (10, 'user', '2026-02-01T00:00:00Z'), \
+             (20, 'user', '2026-03-01T00:00:00Z'), \
+             (10, 'assistant', '2026-04-01T00:00:00Z')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let features = list_by_project(&pool, 1, false).await.unwrap();
+        let ids: Vec<i64> = features.iter().map(|f| f.id).collect();
+        assert_eq!(ids, vec![2, 1]);
     }
 
     #[tokio::test]

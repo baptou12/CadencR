@@ -12,21 +12,19 @@ import {
   ChevronDown,
   Download,
   Ellipsis,
-  Plus,
   PlusIcon,
   Settings,
   Trash2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  useListProjects,
   useCreateProject,
   useDeleteProject,
   getListProjectsQueryKey,
   useCreateFeature,
   useSetProjectSetting,
 } from "../api/generated";
-import { Button } from "@/components/ui/button";
+import { useOrderedProjects } from "@/hooks/useOrderedProjects";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
@@ -46,6 +44,7 @@ import { invalidateByUrlPrefix } from "@/lib/queryClient";
 import { ProjectColorDot } from "@/hooks/useProjectColor";
 import { PROJECT_COLORS } from "@/lib/project-colors";
 import { ProjectSettingsDialog } from "./ProjectSettingsDialog";
+import { SidebarProjectsHeader } from "./SidebarProjectsHeader";
 import { ProjectFeatures } from "./ProjectFeatures";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ImportConversationsDialog } from "./import/ImportConversationsDialog";
@@ -67,8 +66,7 @@ export function ProjectTree({
 }: ProjectTreeProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const projectsQuery = useListProjects();
-  const projects = projectsQuery.data ?? [];
+  const { projects, isRefreshing, refresh } = useOrderedProjects();
   const { collapsed } = useSidebarCollapsed();
 
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
@@ -157,17 +155,12 @@ export function ProjectTree({
   return (
     <ShortcutHintsProvider enabled={!collapsed}>
       <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
-        <div className="flex items-center justify-between px-2">
-          <span className="text-xs font-semibold uppercase text-muted-foreground">Projects</span>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={handleAddProject}
-            disabled={isSelectingFolder || createProjectMutation.isLoading}
-          >
-            <Plus />
-          </Button>
-        </div>
+        <SidebarProjectsHeader
+          onAddProject={handleAddProject}
+          isAddingProject={isSelectingFolder || createProjectMutation.isLoading}
+          onRefresh={() => void refresh()}
+          isRefreshing={isRefreshing}
+        />
 
         <ScrollArea className="flex-1 min-h-0 min-w-0 overflow-hidden">
           <div className="flex min-w-0 flex-col gap-0.5 px-1">

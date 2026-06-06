@@ -5,13 +5,16 @@ use sqlx::SqlitePool;
 
 pub async fn list_projects(pool: &SqlitePool) -> Result<Vec<Project>, AppError> {
     let rows = sqlx::query_as::<_, (i64, String, String, Option<String>, String)>(
+        // Order projects by the most recent *user* message across all their
+        // features, falling back to the feature creation time when a project
+        // has no user messages yet.
         r#"WITH latest_project_activity AS (
                SELECT
                    f.project_id,
-                   MAX(datetime(COALESCE(am.created_at, s.started_at, f.created_at))) AS activity_at
+                   MAX(datetime(COALESCE(um.created_at, f.created_at))) AS activity_at
                FROM features f
                LEFT JOIN agent_sessions s ON s.feature_id = f.id
-               LEFT JOIN agent_messages am ON am.session_id = s.id
+               LEFT JOIN agent_messages um ON um.session_id = s.id AND um.role = 'user'
                GROUP BY f.project_id
            )
            SELECT p.id, p.name, p.path, p.branch_prefix, p.created_at
@@ -334,7 +337,7 @@ mod tests {
         ).execute(&pool).await.unwrap();
 
         sqlx::query(
-            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, created_at TEXT DEFAULT (datetime('now')))"
+            "CREATE TABLE agent_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT, created_at TEXT DEFAULT (datetime('now')))"
         ).execute(&pool).await.unwrap();
 
         sqlx::query(
@@ -365,6 +368,58 @@ mod tests {
         assert!(names.contains(&"Beta"));
         assert_eq!(p1.name, "Alpha");
         assert_eq!(p2.path, "/tmp/beta");
+    }
+
+    #[tokio::test]
+    async fn list_projects_orders_by_latest_user_message() {
+        let pool = setup_test_db().await;
+        let alpha = create_project(&pool, "Alpha", "/tmp/alpha").await.unwrap();
+        let beta = create_project(&pool, "Beta", "/tmp/beta").await.unwrap();
+
+        // Helper: insert a feature + session, returning the session id.
+        async fn session_for(pool: &SqlitePool, project_id: i64) -> i64 {
+            let fid = sqlx::query_as::<_, (i64,)>(
+                "INSERT INTO features (project_id, title) VALUES (?, 'f') RETURNING id",
+            )
+            .bind(project_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .0;
+            sqlx::query_as::<_, (i64,)>(
+                "INSERT INTO agent_sessions (feature_id) VALUES (?) RETURNING id",
+            )
+            .bind(fid)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+            .0
+        }
+
+        let alpha_session = session_for(&pool, alpha.id).await;
+        let beta_session = session_for(&pool, beta.id).await;
+
+        // Alpha gets the newest *user* message; Beta only gets a newer
+        // *assistant* message, which must NOT affect ordering.
+        sqlx::query("INSERT INTO agent_messages (session_id, role, created_at) VALUES (?, 'user', '2026-01-02T00:00:00Z')")
+            .bind(alpha_session)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO agent_messages (session_id, role, created_at) VALUES (?, 'user', '2026-01-01T00:00:00Z')")
+            .bind(beta_session)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO agent_messages (session_id, role, created_at) VALUES (?, 'assistant', '2026-01-03T00:00:00Z')")
+            .bind(beta_session)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let projects = list_projects(&pool).await.unwrap();
+        let names: Vec<&str> = projects.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Alpha", "Beta"]);
     }
 
     #[tokio::test]

@@ -9,6 +9,11 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Shallow element-wise equality for two number arrays. */
+export function intArraysEqual(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 export function slugify(name: string): string {
   return name
     .toLowerCase()
