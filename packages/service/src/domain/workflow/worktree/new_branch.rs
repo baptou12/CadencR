@@ -224,7 +224,12 @@ mod tests {
             .await
             .unwrap();
 
-        let wt_path = project.path().join("..").join("base-branch-wt");
+        // Place the worktree in its own unique temp dir (a sibling of the
+        // project, not inside it). Using a fixed shared path here would let
+        // parallel runs — or a leftover from a panicked prior run — collide on
+        // `git worktree add ... already exists`.
+        let wt_parent = tempfile::tempdir().unwrap();
+        let wt_path = wt_parent.path().join("base-branch-wt");
         let wt_path_str = wt_path.to_str().unwrap();
         add_new_worktree(
             project.path().to_str().unwrap(),

@@ -22,6 +22,14 @@ async fn codex_permission_mode_migration_adds_session_column() {
             model TEXT,
             permission_mode TEXT
         );
+        -- Later migrations (e.g. the user-message sort indexes) reference
+        -- agent_messages(role, created_at), so the fixture must provide them.
+        CREATE TABLE agent_messages (
+            id INTEGER PRIMARY KEY,
+            session_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'assistant',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         INSERT INTO agent_sessions (id, feature_id, agent_type, status, model, permission_mode)
         VALUES (1, 1, 'session', 'paused', 'gpt-5.5', 'plan');"#,
     )
