@@ -39,7 +39,7 @@ function main() {
   };
 
   run("pnpm", ["--filter", "@cadencr/service", "build"], { cwd: desktopDir, env });
-  run("pnpm", ["exec", "electron-vite", "build"], { cwd: desktopDir, env });
+  run("node", ["scripts/electron-vite.mjs", "build"], { cwd: desktopDir, env });
   run("pnpm", ["exec", "electron-builder", "--config", "electron-builder.yml"], {
     cwd: desktopDir,
     env,
