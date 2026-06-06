@@ -15,6 +15,7 @@ export function isRemoteStatus(value: unknown): value is RemoteStatus {
   if (!isRecord(value)) return false;
   return (
     typeof value.enabled === "boolean" &&
+    typeof value.connected_devices === "number" &&
     Array.isArray(value.devices) &&
     Array.isArray(value.audit_tail) &&
     Array.isArray(value.lan_urls)

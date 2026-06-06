@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Loader2, QrCode, RefreshCw } from "lucide-react";
+import { CheckCircle2, Loader2, QrCode, RefreshCw } from "lucide-react";
 import { remotePairingCode, type PairingCodeResponse } from "@/api/generated";
 import { isPairingCodeResponse } from "@/lib/remote/validate";
 import { cn } from "@/lib/utils";
+import { useRemoteStore } from "@/stores/remote-store";
 import { CopyIconButton, SectionHeading } from "./remote-ui";
+
+// While a live code is on screen, re-poll status so we notice the moment a
+// device pairs with it (the code is single-use, so the QR is then dead).
+const USED_POLL_MS = 3000;
 
 /**
  * Mint a short-lived, single-use pairing code and present it as a QR + link.
@@ -21,14 +26,24 @@ export function RemotePairSection(): ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [remaining, setRemaining] = useState(0);
   const [selected, setSelected] = useState(0);
+  const [used, setUsed] = useState(false);
   const autoMinted = useRef(false);
+  // Device count at mint time. Pairing inserts a device row, and only one code
+  // is ever live, so any increase while this code is shown means it was used.
+  const baselineDevices = useRef(0);
+
+  const refresh = useRemoteStore((s) => s.refresh);
+  const deviceCount = useRemoteStore((s) => s.status?.devices.length ?? 0);
 
   const mint = async (): Promise<void> => {
     setMinting(true);
     setError(null);
+    setUsed(false);
     try {
       const result = await remotePairingCode();
       if (!isPairingCodeResponse(result)) throw new Error("Malformed pairing-code response.");
+      // This section only renders once status is loaded, so the count is real.
+      baselineDevices.current = useRemoteStore.getState().status?.devices.length ?? 0;
       setCode(result);
       setSelected(0);
       setRemaining(result.expires_in_secs);
@@ -61,10 +76,25 @@ export function RemotePairSection(): ReactElement {
     return () => clearTimeout(timer);
   }, [code, remaining]);
 
+  // Poll status while a live code is shown so we can detect it being consumed.
+  useEffect(() => {
+    if (!code || used) return;
+    const id = setInterval(() => void refresh(), USED_POLL_MS);
+    return () => clearInterval(id);
+  }, [code, used, refresh]);
+
+  // A new paired device means this single-use code was just consumed: retire the
+  // QR and tell the host explicitly, instead of leaving a dead code on screen.
+  useEffect(() => {
+    if (code && !used && deviceCount > baselineDevices.current) setUsed(true);
+  }, [code, used, deviceCount]);
+
   return (
     <section className="space-y-2">
       <SectionHeading>Pair a new device</SectionHeading>
-      {code ? (
+      {used ? (
+        <UsedNotice minting={minting} onRegenerate={() => void mint()} />
+      ) : code ? (
         <PairingCodeView
           urls={code.urls}
           selected={selected}
@@ -77,6 +107,44 @@ export function RemotePairSection(): ReactElement {
         <GeneratePrompt minting={minting} error={error} onGenerate={() => void mint()} />
       )}
     </section>
+  );
+}
+
+/**
+ * Shown after a code is consumed. The code is single-use by design, so rather
+ * than silently leaving a dead QR up (which would just fail on the next device),
+ * we say so and require an explicit click to mint a fresh one — no auto-regen.
+ */
+function UsedNotice({
+  minting,
+  onRegenerate,
+}: {
+  minting: boolean;
+  onRegenerate: () => void;
+}): ReactElement {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-start gap-1.5 rounded border border-border bg-card px-2.5 py-2 text-xs text-muted-foreground">
+        <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[var(--acc-green)]" aria-hidden />
+        <span>
+          This code paired a device and is now used up. Each code works once — generate a new one to
+          pair another device.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onRegenerate}
+        disabled={minting}
+        className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        {minting ? (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+        ) : (
+          <QrCode className="size-3.5" aria-hidden />
+        )}
+        Generate a new code
+      </button>
+    </div>
   );
 }
 

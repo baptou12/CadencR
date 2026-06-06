@@ -22,6 +22,9 @@ export function useRemotePairingToast(): void {
     }
     if (takeJustPaired()) {
       toast.success("Connected to this workspace.", {
+        // Actionable and easy to miss on mobile, so give it well beyond the
+        // default dismiss window to read the question and tap "Stay signed in".
+        duration: 15000,
         description: "Stay signed in on this device after closing the tab?",
         action: {
           label: "Stay signed in",

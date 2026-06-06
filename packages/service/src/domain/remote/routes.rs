@@ -7,6 +7,7 @@
 //! pairing code rather than a bearer token.
 
 use axum::extract::{Path, State};
+use axum::http::HeaderMap;
 use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 
@@ -23,7 +24,54 @@ use crate::remote::{
 };
 
 const AUDIT_TAIL_LIMIT: i64 = 50;
+/// Fallback label when the pairing request's User-Agent is missing or unknown.
 const DEVICE_LABEL: &str = "Remote device";
+
+/// Best-effort friendly name for a pairing device, derived from its User-Agent
+/// (e.g. "iPhone · Safari"), so the host's device list is legible instead of a
+/// row of identical "Remote device" entries. Purely cosmetic — never trusted for
+/// auth — so a spoofed or unknown UA just yields a generic label.
+fn device_label_from_user_agent(ua: Option<&str>) -> String {
+    let Some(ua) = ua else {
+        return DEVICE_LABEL.to_string();
+    };
+    let os = if ua.contains("iPhone") {
+        "iPhone"
+    } else if ua.contains("iPad") {
+        "iPad"
+    } else if ua.contains("Android") {
+        "Android"
+    } else if ua.contains("Macintosh") || ua.contains("Mac OS X") {
+        "Mac"
+    } else if ua.contains("Windows") {
+        "Windows"
+    } else if ua.contains("Linux") {
+        "Linux"
+    } else {
+        ""
+    };
+    // Order matters: Edge/Chrome UAs also contain "Safari", and Chrome-on-iOS is
+    // "CriOS" — check the more specific tokens first.
+    let browser = if ua.contains("Edg/") {
+        "Edge"
+    } else if ua.contains("OPR/") || ua.contains("Opera") {
+        "Opera"
+    } else if ua.contains("Firefox/") || ua.contains("FxiOS") {
+        "Firefox"
+    } else if ua.contains("CriOS") || ua.contains("Chrome/") {
+        "Chrome"
+    } else if ua.contains("Safari/") {
+        "Safari"
+    } else {
+        ""
+    };
+    match (os, browser) {
+        ("", "") => DEVICE_LABEL.to_string(),
+        (os, "") => os.to_string(),
+        ("", browser) => browser.to_string(),
+        (os, browser) => format!("{os} · {browser}"),
+    }
+}
 
 /// Loopback-only control endpoints (launch-token authenticated).
 pub fn loopback_router() -> Router<AppState> {
@@ -48,17 +96,20 @@ fn lan_urls(info: &RemoteInfo) -> Vec<String> {
         .collect()
 }
 
-/// Connect URLs that carry the pairing `code`: one per LAN interface, plus the
-/// tunnel host when configured (so a device off the LAN can still pair).
+/// Connect URLs that carry the pairing `code`. The tunnel host (when configured)
+/// comes first so the QR/link defaults to it: a device that needs a tunnel is
+/// most likely off the LAN, so pointing it at a LAN IP by default wouldn't even
+/// reach the host. The LAN addresses follow as in-network fallbacks.
 async fn pairing_urls(state: &AppState, info: &RemoteInfo, code: &str) -> Vec<String> {
-    let mut urls: Vec<String> = info
-        .lan_ips
-        .iter()
-        .map(|ip| format!("https://{ip}:{}/?code={code}", info.port))
-        .collect();
+    let mut urls: Vec<String> = Vec::new();
     if let Some(host) = load_tunnel_host(&state.read_pool).await {
         urls.push(format!("https://{host}/?code={code}"));
     }
+    urls.extend(
+        info.lan_ips
+            .iter()
+            .map(|ip| format!("https://{ip}:{}/?code={code}", info.port)),
+    );
     urls
 }
 
@@ -82,6 +133,7 @@ async fn current_status(state: &AppState) -> Result<RemoteStatus, AppError> {
         lan_urls,
         tunnel_host,
         devices,
+        connected_devices: state.remote.live().connected_device_count(),
         audit_tail,
     })
 }
@@ -188,6 +240,7 @@ pub async fn set_tunnel_host_handler(
 pub async fn pair_handler(
     State(state): State<AppState>,
     Extension(ctx): Extension<RemoteContext>,
+    headers: HeaderMap,
     Json(req): Json<PairRequest>,
 ) -> Result<Json<PairResponse>, AppError> {
     if !state.remote.pairing().consume(&req.code) {
@@ -203,11 +256,50 @@ pub async fn pair_handler(
 
     let raw = tokens::mint_raw_token();
     let hash = tokens::hash_token(&ctx.pepper, &raw);
-    let id = repo::insert_device(&state.write_pool, &hash, DEVICE_LABEL).await?;
+    let label = device_label_from_user_agent(
+        headers
+            .get(axum::http::header::USER_AGENT)
+            .and_then(|value| value.to_str().ok()),
+    );
+    let id = repo::insert_device(&state.write_pool, &hash, &label).await?;
     repo::record_audit(&state.write_pool, "pair", Some(id), None).await?;
 
     Ok(Json(PairResponse {
         device_token: raw,
-        label: DEVICE_LABEL.to_string(),
+        label,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IPHONE_SAFARI: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) \
+        AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1";
+    const MAC_CHROME: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+        AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+    const WIN_EDGE: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
+        (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0";
+
+    #[test]
+    fn labels_common_devices() {
+        assert_eq!(
+            device_label_from_user_agent(Some(IPHONE_SAFARI)),
+            "iPhone · Safari"
+        );
+        assert_eq!(
+            device_label_from_user_agent(Some(MAC_CHROME)),
+            "Mac · Chrome"
+        );
+        assert_eq!(
+            device_label_from_user_agent(Some(WIN_EDGE)),
+            "Windows · Edge"
+        );
+    }
+
+    #[test]
+    fn falls_back_when_unknown_or_missing() {
+        assert_eq!(device_label_from_user_agent(None), DEVICE_LABEL);
+        assert_eq!(device_label_from_user_agent(Some("curl/8.0")), DEVICE_LABEL);
+    }
 }

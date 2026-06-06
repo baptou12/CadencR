@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useState, type ReactElement } from "react";
 import { Loader2, Radio } from "lucide-react";
 import { isBrowserRemote } from "@/lib/remote/device-token";
 import { useRemoteStore } from "@/stores/remote-store";
-import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
 
 // The dialog (and its QR dependency) only loads when the user opens the panel.
@@ -10,24 +9,41 @@ const RemoteAccessDialog = lazy(() =>
   import("./RemoteAccessDialog").then((m) => ({ default: m.RemoteAccessDialog })),
 );
 
+// While remote access is on, re-poll the loopback status so the connected-device
+// count stays live (there's no push channel for remote connect/disconnect).
+const CONNECTED_POLL_MS = 10_000;
+
 /**
- * Sidebar-footer affordance for remote access, modeled on `SidebarUpdateButton`.
- * Shows a prominent green dot when remote access is on. Managing remote access
- * is host-only, so the button is hidden inside a remote browser session.
+ * Compact remote-access control in the sidebar footer, sitting inline before the
+ * version on the Settings row. The icon turns green when remote access is on and
+ * shows the number of devices currently connected to this instance. Managing
+ * remote access is host-only, so it's hidden inside a remote browser session.
  */
 export function RemoteAccessButton(): ReactElement | null {
   const enabled = useRemoteStore((s) => s.status?.enabled ?? false);
+  const connected = useRemoteStore((s) => s.status?.connected_devices ?? 0);
   const loaded = useRemoteStore((s) => s.loaded);
   const refresh = useRemoteStore((s) => s.refresh);
   const [open, setOpen] = useState(false);
 
-  // Fetch status once so the "ON" dot is accurate before the dialog is opened.
+  // Fetch status once so the icon state is accurate before the dialog is opened.
   // Guarded to the host shell — the control endpoints are loopback-only.
   useEffect(() => {
     if (!isBrowserRemote() && !loaded) void refresh();
   }, [loaded, refresh]);
 
+  // Keep the connected count fresh while remote access is enabled.
+  useEffect(() => {
+    if (isBrowserRemote() || !enabled) return;
+    const id = setInterval(() => void refresh(), CONNECTED_POLL_MS);
+    return () => clearInterval(id);
+  }, [enabled, refresh]);
+
   if (isBrowserRemote()) return null;
+
+  const title = enabled
+    ? `Remote access ON — ${connected} device${connected === 1 ? "" : "s"} connected`
+    : "Remote access";
 
   return (
     <>
@@ -35,16 +51,20 @@ export function RemoteAccessButton(): ReactElement | null {
         type="button"
         data-nav-item
         onClick={() => setOpen(true)}
-        className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}
-        title={enabled ? "Remote access is ON" : "Remote access"}
+        title={title}
+        aria-label={title}
+        className={cn(
+          "flex shrink-0 items-center gap-1 rounded-full border border-transparent px-2 py-0.5",
+          "text-[10px] text-muted-foreground transition-colors tabular-nums",
+          "hover:border-border hover:bg-accent hover:text-foreground",
+          "focus-visible:border-border focus-visible:bg-accent focus-visible:outline-none",
+        )}
       >
-        <span className="flex items-center gap-2">
-          <Radio className="size-4 shrink-0" aria-hidden />
-          <span>Remote access</span>
-        </span>
-        {enabled ? (
-          <span aria-hidden title="ON" className="size-1.5 rounded-full bg-[var(--acc-green)]" />
-        ) : null}
+        <Radio
+          className={cn("size-3.5 shrink-0", enabled && "text-[var(--acc-green)]")}
+          aria-hidden
+        />
+        {enabled ? <span>{connected}</span> : null}
       </button>
 
       {open ? (

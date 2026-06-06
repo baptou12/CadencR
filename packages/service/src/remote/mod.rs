@@ -46,7 +46,7 @@ pub struct RemoteContext {
 /// Setting key persisting whether remote access auto-starts at launch.
 pub const REMOTE_ENABLED_SETTING: &str = "remote_access_enabled";
 
-/// Setting key holding an optional tunnel hostname (ngrok/Tailscale). When set,
+/// Setting key holding an optional tunnel hostname (e.g. Tailscale). When set,
 /// it's added to the `Host`/`Origin` allowlist so tunneled requests aren't 421'd.
 pub const REMOTE_TUNNEL_HOST_SETTING: &str = "remote_tunnel_host";
 

@@ -20,13 +20,14 @@ export interface TunnelGuide {
    * Whether this option keeps traffic private (reachable only from your own
    * devices) rather than terminating TLS on a third party. Drives the
    * "Recommended" marker generically — no per-provider branch in components.
+   * Only private tunnels are shipped, so this is currently always true.
    */
   recommended?: boolean;
 }
 
-// Private options first: a public HTTPS tunnel hands your credentials and
-// traffic to the provider (see the warning in RemoteTunnelSection), so it's the
-// fallback, not the default.
+// Only private tunnels are offered. A public HTTPS tunnel terminates TLS on the
+// provider's servers — exposing pairing codes, device tokens, and everything in
+// the workspace — so we deliberately don't ship those options.
 export const TUNNEL_GUIDES: TunnelGuide[] = [
   {
     id: "tailscale",
@@ -36,14 +37,6 @@ export const TUNNEL_GUIDES: TunnelGuide[] = [
     commands: ["tailscale serve --bg https+insecure://localhost:{port}"],
     placeholder: "your-machine.tailnet.ts.net",
     recommended: true,
-  },
-  {
-    id: "ngrok",
-    name: "ngrok",
-    blurb: "Public HTTPS URL in one command. The free tier gives a new subdomain each run.",
-    docsUrl: "https://ngrok.com/docs/http/",
-    commands: ["ngrok http https://localhost:{port}"],
-    placeholder: "your-name.ngrok-free.app",
   },
 ];
 

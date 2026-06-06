@@ -28,10 +28,12 @@ pub struct RemoteStatus {
     pub fingerprint: Option<String>,
     /// `https://<lan-ip>:<port>/` for each detected interface.
     pub lan_urls: Vec<String>,
-    /// Configured tunnel hostname (ngrok/Tailscale), normalized; `None` if unset.
+    /// Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.
     /// Tunneled requests with this `Host` are allowed through.
     pub tunnel_host: Option<String>,
     pub devices: Vec<RemoteDevice>,
+    /// Distinct devices with a live socket open right now (≤ `devices.len()`).
+    pub connected_devices: usize,
     pub audit_tail: Vec<RemoteAuditEntry>,
 }
 

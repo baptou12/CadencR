@@ -1167,7 +1167,7 @@ export type RemoteStatusFingerprint = string | null;
 export type RemoteStatusPort = number | null;
 
 /**
- * Configured tunnel hostname (ngrok/Tailscale), normalized; `None` if unset.
+ * Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.
 Tunneled requests with this `Host` are allowed through.
  */
 export type RemoteStatusTunnelHost = string | null;
@@ -1177,6 +1177,11 @@ export type RemoteStatusTunnelHost = string | null;
  */
 export interface RemoteStatus {
   audit_tail: RemoteAuditEntry[];
+  /**
+   * Distinct devices with a live socket open right now (≤ `devices.len()`).
+   * @minimum 0
+   */
+  connected_devices: number;
   devices: RemoteDevice[];
   enabled: boolean;
   /** SHA-256 fingerprint of the self-signed cert (for TOFU verification). */
@@ -1185,7 +1190,7 @@ export interface RemoteStatus {
   lan_urls: string[];
   /** @minimum 0 */
   port?: RemoteStatusPort;
-  /** Configured tunnel hostname (ngrok/Tailscale), normalized; `None` if unset.
+  /** Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.
 Tunneled requests with this `Host` are allowed through. */
   tunnel_host?: RemoteStatusTunnelHost;
 }

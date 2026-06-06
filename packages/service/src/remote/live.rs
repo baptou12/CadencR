@@ -67,6 +67,19 @@ impl LiveSessions {
             }
         }
     }
+
+    /// Number of distinct devices with at least one live session right now.
+    /// Drives the "N connected" badge in the host sidebar; a single device with
+    /// several open tabs counts once.
+    pub fn connected_device_count(&self) -> usize {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .sessions
+            .values()
+            .map(|(device_id, _)| *device_id)
+            .collect::<std::collections::HashSet<i64>>()
+            .len()
+    }
 }
 
 #[cfg(test)]
@@ -84,6 +97,15 @@ mod tests {
 
         assert!(!keep.token.is_cancelled());
         assert!(drop_me.token.is_cancelled());
+    }
+
+    #[test]
+    fn connected_device_count_dedupes_by_device() {
+        let registry = Arc::new(LiveSessions::default());
+        let _a1 = registry.register(1);
+        let _a2 = registry.register(1); // same device, second tab
+        let _b = registry.register(2);
+        assert_eq!(registry.connected_device_count(), 2);
     }
 
     #[test]

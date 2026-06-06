@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from "react";
-import { AlertTriangle, ExternalLink } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type { RemoteStatus } from "@/api/generated";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useRemoteStore } from "@/stores/remote-store";
@@ -7,19 +7,19 @@ import { interpolatePort, TUNNEL_GUIDES, type TunnelGuide } from "@/lib/remote/t
 import { CopyIconButton } from "./remote-ui";
 
 /**
- * Optional internet exposure via Tailscale/ngrok. Renders the guides as data and
- * a hostname input — pasting the tunnel's hostname adds it to the backend's Host
- * allowlist (without it, tunneled requests are 421'd).
+ * Optional internet exposure via a private tunnel (Tailscale). Renders the
+ * guides as data and a hostname input — pasting the tunnel's hostname adds it to
+ * the backend's Host allowlist (without it, tunneled requests are 421'd) and
+ * makes the pairing QR/link default to that hostname.
  */
 export function RemoteTunnelSection({ status }: { status: RemoteStatus }): ReactElement {
   const port = status.port ?? 0;
   return (
     <section className="space-y-2">
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        Run a tunnel, then paste its hostname below so requests through it are allowed.
+        Run a private tunnel, then paste its hostname below so requests through it are allowed and
+        the pairing code points at it.
       </p>
-
-      <PublicTunnelWarning />
 
       {TUNNEL_GUIDES.map((guide) => (
         <TunnelGuideCard key={guide.id} guide={guide} port={port} />
@@ -27,26 +27,6 @@ export function RemoteTunnelSection({ status }: { status: RemoteStatus }): React
 
       <TunnelHostField status={status} />
     </section>
-  );
-}
-
-/**
- * A public HTTPS tunnel terminates TLS on the provider's servers, so it can read
- * everything — make that explicit rather than burying it. The LAN fingerprint
- * (shown above) does not protect a tunneled connection.
- */
-function PublicTunnelWarning(): ReactElement {
-  return (
-    <div className="flex items-start gap-1.5 rounded border border-[var(--acc-orange)] bg-card px-2.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
-      <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--acc-orange)]" aria-hidden />
-      <span>
-        A public HTTPS tunnel (like ngrok) decrypts your traffic on the provider's servers, so the
-        provider — or anyone who compromises it — can read your pairing codes, device tokens, and
-        everything you do in the workspace. The LAN fingerprint above does <strong>not</strong>{" "}
-        apply there. Prefer a private network like Tailscale, which keeps traffic between your own
-        devices.
-      </span>
-    </div>
   );
 }
 

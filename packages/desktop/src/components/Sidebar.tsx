@@ -307,20 +307,21 @@ function SidebarFooter(): ReactElement {
     <div className="flex flex-col items-center gap-1 py-2">
       <SidebarFullscreenButton />
       <SidebarUpdateButton />
-      <RemoteAccessButton />
-      <div className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}>
+      <div className="flex w-[90%] items-center gap-1.5">
         <Link
           to="/settings"
           data-nav-item
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-full",
-            "focus-visible:outline-none focus-visible:text-foreground",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-xs text-foreground/80 transition-colors",
+            "hover:border-border hover:bg-accent hover:text-foreground",
+            "focus-visible:border-border focus-visible:bg-accent focus-visible:outline-none focus-visible:text-foreground",
           )}
         >
           <Settings className="size-4 shrink-0" />
           <span>Settings</span>
         </Link>
-        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground tabular-nums">
+        <RemoteAccessButton />
+        <span className="flex shrink-0 items-center gap-1.5 px-1 text-[10px] text-muted-foreground tabular-nums">
           <InternetStatusIndicator />
           <span>v{APP_VERSION}</span>
         </span>
