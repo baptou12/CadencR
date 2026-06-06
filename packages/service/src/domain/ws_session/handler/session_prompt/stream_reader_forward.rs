@@ -21,6 +21,12 @@ pub(super) async fn forward_immediate_event(
     runtime_event: &RuntimeEvent,
 ) -> ForwardOutcome {
     if let Some(client_message_id) = runtime_event.prompt_received_client_message_id() {
+        // Mirror to every viewer, not just the turn owner. With cross-device
+        // steering the device that SENT this prompt may not be the turn owner
+        // (e.g. the host steers a turn owned by a now-disconnected phone), so
+        // sending the ack only to the owner socket would leave the real sender's
+        // message stuck pending. Other viewers ignore an unknown
+        // `client_message_id`, so mirroring is safe.
         return send_envelope(
             task,
             "prompt_received",
@@ -32,7 +38,7 @@ pub(super) async fn forward_immediate_event(
                 })
                 .unwrap(),
             ),
-            false,
+            true,
         )
         .await;
     }
@@ -79,9 +85,9 @@ pub(super) async fn forward_immediate_event(
 }
 
 /// Forward `envelope` to the turn's owner. When `mirror` is set, also relay it
-/// to other devices viewing the feature — only stream content (`stream_status`)
-/// is mirrored; owner-specific acks (`prompt_received`, `commands.updated`) are
-/// not.
+/// to other devices viewing the feature. Stream content (`stream_status`) and
+/// the `prompt_received` ack are mirrored (the sender may be a different device
+/// than the turn owner); `commands.updated` is owner-only.
 async fn send_envelope(
     task: &StreamReaderTask,
     label: &'static str,

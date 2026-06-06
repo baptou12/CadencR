@@ -122,6 +122,74 @@ async fn test_stream_reader_mirrors_to_other_feature_viewers() {
 }
 
 #[tokio::test]
+async fn test_stream_reader_mirrors_prompt_received_to_other_viewers() {
+    // With cross-device steering the device that SENT a prompt may not be the
+    // turn owner socket (e.g. the host steers a phone-owned turn). The
+    // `prompt_received` ack must therefore reach every viewer, not just the
+    // owner, or the real sender's message stays stuck pending.
+    let app_state = make_test_app_state().await;
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let (ws_tx, mut ws_rx) = mpsc::unbounded_channel();
+    let (viewer_tx, mut viewer_rx) = mpsc::unbounded_channel();
+
+    let db_session_id = 88i64;
+    let feature_id = 1i64;
+    {
+        let mut sessions = sdk_sessions.lock().await;
+        sessions.insert(db_session_id, make_active_handle(feature_id, None));
+    }
+    app_state
+        .ws_feature_senders
+        .register(feature_id, viewer_tx)
+        .await;
+
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    msg_tx
+        .send(Ok(RuntimeEvent::prompt_received_event(
+            "client-xyz".to_string(),
+        )))
+        .await
+        .unwrap();
+    drop(msg_tx);
+
+    session_prompt::spawn_stream_reader(
+        db_session_id,
+        feature_id,
+        msg_rx,
+        ws_tx,
+        app_state.ws_feature_senders.clone(),
+        app_state.write_pool.clone(),
+        app_state.session_status_tx.clone(),
+        sdk_sessions.clone(),
+        crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
+        None,
+        None,
+    );
+
+    // Block until the owner gets its first message, then let the reader drain.
+    tokio::time::timeout(std::time::Duration::from_secs(2), ws_rx.recv())
+        .await
+        .expect("owner should receive a message");
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    let saw_prompt_received = |rx: &mut mpsc::UnboundedReceiver<Message>| {
+        std::iter::from_fn(|| rx.try_recv().ok()).any(|msg| {
+            matches!(msg, Message::Text(text)
+            if serde_json::from_str::<WsEnvelope>(&text).is_ok_and(|env| {
+                env.action == "prompt_received"
+                    && env.payload.get("client_message_id").and_then(|v| v.as_str())
+                        == Some("client-xyz")
+            }))
+        })
+    };
+
+    assert!(
+        saw_prompt_received(&mut viewer_rx),
+        "a passive viewer must also receive the mirrored prompt_received"
+    );
+}
+
+#[tokio::test]
 async fn test_stream_reader_transitions_active_to_pending_on_error() {
     let app_state = make_test_app_state().await;
     let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
