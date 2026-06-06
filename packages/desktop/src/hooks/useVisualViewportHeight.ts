@@ -31,24 +31,57 @@ export function useVisualViewportHeight(enabled: boolean): void {
     if (!enabled || !vv) return;
 
     const root = document.documentElement;
-    // Only a viewport *resize* (the keyboard opening/closing) changes the height
-    // we write — `visualViewport.scroll` never does — so we listen to `resize`
-    // alone. The keyboard slide still fires many resize ticks at the same final
-    // height, so cache the last write and skip redundant style mutations.
+
+    // Focusing a bottom-pinned input (the agent prompt, the terminal) makes
+    // mobile browsers *pan the layout viewport up* to lift the caret above the
+    // on-screen keyboard. But our shell is anchored at the document's top and
+    // only collapses to the visible viewport height (below) — so that pan does
+    // not reveal anything, it just shoves the whole shell, prompt included, off
+    // the top of the screen, sometimes far enough that the input you just
+    // focused is no longer visible. While the keyboard is open we keep the
+    // document pinned to the top so the collapsed shell stays aligned with the
+    // visible area. (`overflow: hidden` on the document does not stop iOS from
+    // caret-scrolling, so this reset is what actually holds it in place.)
+    const undoPan = (): void => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+
+    // The keyboard slide fires many resize ticks at the same final height, so
+    // cache the last write and skip redundant style mutations.
     let lastHeightPx: number | null = null;
     const sync = (): void => {
+      // If the keyboard is already open, undo any pan before measuring: a panned
+      // viewport inflates `offsetTop`, which would under-report the inset below
+      // and spuriously drop the override, snapping the shell back behind the
+      // keyboard — the very bug we're fixing.
+      if (lastHeightPx !== null) undoPan();
+
       const inset = window.innerHeight - vv.height - vv.offsetTop;
       const heightPx = inset > KEYBOARD_INSET_THRESHOLD ? Math.round(vv.height) : null;
-      if (heightPx === lastHeightPx) return;
-      lastHeightPx = heightPx;
-      if (heightPx === null) root.style.removeProperty("--app-vh");
-      else root.style.setProperty("--app-vh", `${heightPx}px`);
+      if (heightPx !== lastHeightPx) {
+        lastHeightPx = heightPx;
+        if (heightPx === null) root.style.removeProperty("--app-vh");
+        else root.style.setProperty("--app-vh", `${heightPx}px`);
+      }
+      // Re-pin after a collapse: the browser often pans *after* the resize tick
+      // that opened the keyboard, so this trailing reset catches that pass.
+      if (heightPx !== null) undoPan();
+    };
+
+    // The pan can also arrive as a standalone visualViewport scroll (no height
+    // change) right after focus. A scroll never changes `vv.height`, so don't
+    // re-measure here — just re-pin. `undoPan`'s guard makes the scroll its own
+    // `scrollTo` fires a no-op, so this stays a single, self-terminating reset.
+    const repin = (): void => {
+      if (lastHeightPx !== null) undoPan();
     };
 
     sync();
     vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", repin);
     return () => {
       vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", repin);
       root.style.removeProperty("--app-vh");
     };
   }, [enabled]);
