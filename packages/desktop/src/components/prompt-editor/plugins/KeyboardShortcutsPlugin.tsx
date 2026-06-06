@@ -8,6 +8,7 @@ import {
   type LexicalCommand,
 } from "lexical";
 import { setEditorText } from "../editor-utils";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 interface KeyboardShortcutsPluginProps {
   onEnterSend?: () => boolean;
@@ -72,11 +73,17 @@ export function KeyboardShortcutsPlugin({
   onArrowDown,
 }: KeyboardShortcutsPluginProps) {
   const [editor] = useLexicalComposerContext();
+  // On phones the soft keyboard has no Shift+Enter, so plain Enter must insert
+  // a newline (returning false lets Lexical's default handler do it) and the
+  // visible Send button becomes the only way to submit. Mention/slash popovers
+  // register at COMMAND_PRIORITY_HIGH and still intercept Enter to confirm.
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     const unregisterEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event) => {
+        if (isMobile) return false;
         if (event?.shiftKey) return false;
         if (!onEnterSend) return false;
         event?.preventDefault();
@@ -113,7 +120,7 @@ export function KeyboardShortcutsPlugin({
       unregisterUp();
       unregisterDown();
     };
-  }, [editor, onEnterSend, onArrowUp, onArrowDown]);
+  }, [editor, isMobile, onEnterSend, onArrowUp, onArrowDown]);
 
   return null;
 }
