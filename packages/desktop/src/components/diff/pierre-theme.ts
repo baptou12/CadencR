@@ -5,12 +5,16 @@ const CADENCR_DRACULA_DIFF_THEME = "cadencr-dracula-diff";
 const CADENCR_AURORA_DIFF_THEME = "cadencr-aurora-diff";
 const CADENCR_ONE_DARK_DIFF_THEME = "cadencr-one-dark-diff";
 const CADENCR_ONE_LIGHT_DIFF_THEME = "cadencr-one-light-diff";
+const CADENCR_MONOKAI_DIFF_THEME = "cadencr-monokai-diff";
+const CADENCR_MONOKAI_LIGHT_DIFF_THEME = "cadencr-monokai-light-diff";
 
 type PierreThemeName =
   | typeof CADENCR_DRACULA_DIFF_THEME
   | typeof CADENCR_AURORA_DIFF_THEME
   | typeof CADENCR_ONE_DARK_DIFF_THEME
-  | typeof CADENCR_ONE_LIGHT_DIFF_THEME;
+  | typeof CADENCR_ONE_LIGHT_DIFF_THEME
+  | typeof CADENCR_MONOKAI_DIFF_THEME
+  | typeof CADENCR_MONOKAI_LIGHT_DIFF_THEME;
 type PierreThemeRegistration = Parameters<typeof registerCustomTheme>[1] extends () => Promise<
   infer Theme
 >
@@ -164,6 +168,50 @@ const ONE_LIGHT_THEME = buildPierreTheme(
   },
 );
 
+const MONOKAI_THEME = buildPierreTheme(
+  CADENCR_MONOKAI_DIFF_THEME,
+  "dark",
+  {
+    background: "#272822",
+    foreground: "#f8f8f2",
+    lineHighlight: "#3e3d32",
+    selection: "#49483e",
+  },
+  {
+    comment: "#75715e",
+    keyword: "#f92672",
+    string: "#e6db74",
+    number: "#ae81ff",
+    function: "#a6e22e",
+    type: "#66d9ef",
+    tag: "#f92672",
+    deleted: "#f92672",
+    inserted: "#a6e22e",
+  },
+);
+
+const MONOKAI_LIGHT_THEME = buildPierreTheme(
+  CADENCR_MONOKAI_LIGHT_DIFF_THEME,
+  "light",
+  {
+    background: "#faf9f5",
+    foreground: "#3a3a32",
+    lineHighlight: "#eceae1",
+    selection: "#e3e1d8",
+  },
+  {
+    comment: "#9a958a",
+    keyword: "#d4006a",
+    string: "#8a7400",
+    number: "#7c3aed",
+    function: "#5a8a00",
+    type: "#0089b3",
+    tag: "#d4006a",
+    deleted: "#d4006a",
+    inserted: "#5a8a00",
+  },
+);
+
 let registered = false;
 
 export function ensurePierreThemesRegistered(): void {
@@ -172,6 +220,8 @@ export function ensurePierreThemesRegistered(): void {
   registerCustomTheme(CADENCR_AURORA_DIFF_THEME, () => Promise.resolve(AURORA_THEME));
   registerCustomTheme(CADENCR_ONE_DARK_DIFF_THEME, () => Promise.resolve(ONE_DARK_THEME));
   registerCustomTheme(CADENCR_ONE_LIGHT_DIFF_THEME, () => Promise.resolve(ONE_LIGHT_THEME));
+  registerCustomTheme(CADENCR_MONOKAI_DIFF_THEME, () => Promise.resolve(MONOKAI_THEME));
+  registerCustomTheme(CADENCR_MONOKAI_LIGHT_DIFF_THEME, () => Promise.resolve(MONOKAI_LIGHT_THEME));
   registered = true;
 }
 
@@ -185,5 +235,9 @@ export function getPierreThemeName(themeId: ThemeId): PierreThemeName {
       return CADENCR_ONE_LIGHT_DIFF_THEME;
     case "dracula":
       return CADENCR_DRACULA_DIFF_THEME;
+    case "monokai":
+      return CADENCR_MONOKAI_DIFF_THEME;
+    case "monokai-light":
+      return CADENCR_MONOKAI_LIGHT_DIFF_THEME;
   }
 }

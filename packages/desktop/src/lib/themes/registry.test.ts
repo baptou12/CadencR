@@ -7,12 +7,14 @@ vi.mock("../../../assets/cadencr-logo3-light.svg", () => ({
 }));
 
 describe("theme registry", () => {
-  it("ships dracula, aurora, one-dark, and one-light", () => {
+  it("ships dracula, aurora, one-dark, one-light, monokai, and monokai-light", () => {
     const ids = THEME_LIST.map((t) => t.id);
     expect(ids).toContain("dracula");
     expect(ids).toContain("aurora");
     expect(ids).toContain("one-dark");
     expect(ids).toContain("one-light");
+    expect(ids).toContain("monokai");
+    expect(ids).toContain("monokai-light");
   });
 
   it("isThemeId narrows to known ids", () => {
@@ -20,6 +22,8 @@ describe("theme registry", () => {
     expect(isThemeId("aurora")).toBe(true);
     expect(isThemeId("one-dark")).toBe(true);
     expect(isThemeId("one-light")).toBe(true);
+    expect(isThemeId("monokai")).toBe(true);
+    expect(isThemeId("monokai-light")).toBe(true);
     expect(isThemeId("solarized")).toBe(false);
     expect(isThemeId(null)).toBe(false);
     expect(isThemeId(undefined)).toBe(false);
@@ -65,5 +69,14 @@ describe("theme registry", () => {
     expect(oneDark.logo.variant).toBe("dark");
     expect(oneLight.appearance).toBe("light");
     expect(oneLight.logo.variant).toBe("light");
+
+    const monokai = getTheme("monokai");
+    const monokaiLight = getTheme("monokai-light");
+    expect(monokai.appearance).toBe("dark");
+    expect(monokai.logo.variant).toBe("dark");
+    expect(monokai.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(monokaiLight.appearance).toBe("light");
+    expect(monokaiLight.logo.variant).toBe("light");
+    expect(monokaiLight.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 });

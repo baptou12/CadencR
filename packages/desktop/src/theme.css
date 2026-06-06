@@ -643,6 +643,295 @@
   --terminal-warning-button-bg-hover: oklch(0.92 0.006 80);
 }
 
+/* Monokai — Wimer Hazenberg's classic vivid dark palette. Same UI treatment
+ * as Dracula / One Dark (block / chip / terminal patterns). The high-saturation
+ * Monokai accents (pink, green, yellow, purple) live in the *code* surfaces
+ * (editor / diff / terminal / code blocks); the UI chrome stays neutral with
+ * Monokai's cyan/blue (`#66d9ef`, its type color) as the brand `--primary`, so
+ * the app doesn't read as a pink/purple theme. */
+:root[data-theme="monokai"] {
+  color-scheme: dark;
+  /* Tailwind semantic tokens — Monokai warm charcoal-green palette (hue ~110,
+   * very low chroma) derived from the `#272822` base. */
+  --background: oklch(0.26 0.012 110);
+  --foreground: oklch(0.95 0.01 110);
+  --card: oklch(0.26 0.012 110);
+  --card-foreground: oklch(0.95 0.01 110);
+  --surface-sunken: oklch(0.225 0.012 110);
+  --popover: oklch(0.29 0.012 110);
+  --popover-foreground: oklch(0.95 0.01 110);
+  --primary: oklch(0.78 0.11 215);
+  --primary-foreground: oklch(0.2 0.01 110);
+  --secondary: oklch(0.35 0.012 110);
+  --secondary-foreground: oklch(0.95 0.01 110);
+  --muted: oklch(0.35 0.012 110);
+  --muted-foreground: oklch(0.7 0.02 110);
+  --accent: oklch(0.33 0.012 110);
+  --accent-foreground: oklch(0.95 0.01 110);
+  --destructive: oklch(0.63 0.25 8);
+  --destructive-foreground: oklch(0.97 0.008 110);
+  --border: oklch(0.33 0.012 110);
+  --input: oklch(0.35 0.012 110);
+  --ring: oklch(0.7 0.1 215);
+  --chart-1: oklch(0.78 0.11 215);
+  --chart-2: oklch(0.65 0.26 8);
+  --chart-3: oklch(0.83 0.2 130);
+  --chart-4: oklch(0.86 0.16 100);
+  --chart-5: oklch(0.75 0.16 60);
+  --sidebar: oklch(0.24 0.012 110);
+  --sidebar-foreground: oklch(0.95 0.01 110);
+  --sidebar-primary: oklch(0.78 0.11 215);
+  --sidebar-primary-foreground: oklch(0.2 0.01 110);
+  --sidebar-accent: oklch(0.33 0.012 110);
+  --sidebar-accent-foreground: oklch(0.95 0.01 110);
+  --sidebar-border: oklch(0.35 0.012 110);
+  --sidebar-ring: oklch(0.7 0.1 215);
+
+  /* Vibrant accent palette — Monokai syntax colors. */
+  --acc-cyan: #66d9ef;
+  --acc-green: #a6e22e;
+  --acc-orange: #fd971f;
+  --acc-pink: #f92672;
+  --acc-purple: #ae81ff;
+  --acc-red: #f92672;
+  --acc-yellow: #e6db74;
+  --acc-comment: #75715e;
+
+  /* Code surface — slightly darker than the chat background for separation. */
+  --code-bg: #1e1f1a;
+  --code-fg: #f8f8f2;
+
+  /* Agent-stream block surfaces — neutral chrome (no pink/purple). Tool/Plan
+   * take the cyan/blue primary; Thinking diverges to a teal so it stays
+   * distinct from tool/plan — the same tool=blue / thinking=cyan split One Dark
+   * uses, kept in Monokai's blue family rather than violet so the stream reads
+   * neutral. (DESIGN.md rule 5 prescribes accent_violet for thinking; like
+   * One Dark / One Light this theme intentionally diverges — update DESIGN.md's
+   * `monokai` thinking slot when this lands.) Backgrounds derive from the
+   * `#272822` base with a barely-there cool wash so the accent carries the
+   * identity, not the surface. */
+  --block-tool-bg: #25292c;
+  --block-tool-accent: #66d9ef;
+  --block-thinking-bg: #232c2b;
+  --block-thinking-accent: #5fd3c4;
+  --block-plan-bg: #25292c;
+  --block-plan-accent: #66d9ef;
+  --block-bash-header-bg: #1a1b16;
+  --block-bash-body-bg: #131410;
+  --block-bash-fg: #f0f0e8;
+  --block-bash-muted-fg: #8f8a7d;
+  --block-task-bg: #20211b;
+
+  /* App-level semantic accents. */
+  --numstat-add-fg: #a6e22e;
+  --numstat-del-fg: #f92672;
+  --chip-worktree-bg: rgba(102, 217, 239, 0.18);
+  --chip-worktree-bg-hover: rgba(102, 217, 239, 0.28);
+  --chip-worktree-fg: #66d9ef;
+  --chip-shared-worktree-bg: rgba(253, 151, 31, 0.18);
+  --chip-shared-worktree-fg: #fd971f;
+
+  /* Prompt chip palette — Tailwind violet/fuchsia/blue identities (same as
+   * Dracula / One Dark). These chips are UI-conventional identities (model
+   * picker, Auto-Accept, Build/Default modes), not theme-specific syntax. */
+  --chip-violet-bg: #8b5cf6;
+  --chip-violet-fg: #a78bfa;
+  --chip-violet-soft: #c4b5fd;
+  --chip-fuchsia-bg: #d946ef;
+  --chip-fuchsia-fg: #e879f9;
+  --chip-blue-bg: #3b82f6;
+  --chip-blue-fg: #60a5fa;
+
+  /* CodeMirror editor — Monokai syntax. */
+  --editor-bg: #272822;
+  --editor-fg: #f8f8f2;
+  --editor-comment: #75715e;
+  --editor-cyan: #66d9ef;
+  --editor-green: #a6e22e;
+  --editor-orange: #fd971f;
+  --editor-pink: #f92672;
+  --editor-purple: #ae81ff;
+  --editor-red: #f92672;
+  --editor-yellow: #e6db74;
+  --editor-border: #3e3d32;
+  --editor-cursor: #f8f8f0;
+  --editor-line-highlight: rgba(255, 255, 255, 0.05);
+  --editor-gutter-bg: #272822;
+  --editor-gutter-fg: #5a5b50;
+  --editor-selection-bg: #49483e;
+  --editor-selection-bg-soft: #3e3d32;
+  --editor-search-match-bg: rgba(253, 151, 31, 0.28);
+
+  /* Diff decorations. */
+  --diff-add-bg: rgba(166, 226, 46, 0.1);
+  --diff-add-bg-strong: rgba(166, 226, 46, 0.22);
+  --diff-del-bg: rgba(249, 38, 114, 0.1);
+  --diff-del-bg-strong: rgba(249, 38, 114, 0.22);
+
+  /* Terminal chrome — match xterm.background in `lib/themes/monokai.ts`
+   * exactly so the panel reads as a single surface around the canvas. */
+  --terminal-bg: #272822;
+  --terminal-panel-icon: #75715e;
+  --terminal-panel-icon-hover: #f8f8f2;
+  --terminal-panel-icon-bg-hover: #3e3d32;
+  --terminal-panel-handle-bg: #3e3d32;
+  --terminal-panel-handle-bg-hover: #49483e;
+  --terminal-warning-bg: #3e3d32;
+  --terminal-warning-border: #49483e;
+  --terminal-warning-fg: #f8f8f2;
+  --terminal-warning-fg-secondary: #c9c7bd;
+  --terminal-warning-accent: #e6db74;
+  --terminal-warning-link: #66d9ef;
+  --terminal-warning-button-bg: #49483e;
+  --terminal-warning-button-bg-hover: #5a594d;
+}
+
+/* Monokai Light — the light counterpart to Monokai. Same UI treatment as
+ * Aurora / One Light (block / chip / terminal patterns). The deepened Monokai
+ * accents (pink, green, yellow, purple) live in the *code* surfaces (editor /
+ * diff / terminal / code blocks); the UI chrome stays neutral with a deepened
+ * cyan/blue `--primary`, so the app doesn't read as a pink/purple theme. */
+:root[data-theme="monokai-light"] {
+  color-scheme: light;
+  /* Tailwind semantic tokens — warm near-white paper (hue ~100, very low
+   * chroma) tuned to read as light/airy rather than cream. */
+  --background: oklch(0.98 0.005 100);
+  --foreground: oklch(0.33 0.012 100);
+  --card: oklch(0.99 0.004 100);
+  --card-foreground: oklch(0.33 0.012 100);
+  --surface-sunken: oklch(0.965 0.006 100);
+  --popover: oklch(0.99 0.004 100);
+  --popover-foreground: oklch(0.33 0.012 100);
+  --primary: oklch(0.54 0.13 230);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.965 0.006 100);
+  --secondary-foreground: oklch(0.33 0.012 100);
+  --muted: oklch(0.965 0.006 100);
+  --muted-foreground: oklch(0.46 0.01 100);
+  --accent: oklch(0.945 0.008 100);
+  --accent-foreground: oklch(0.33 0.012 100);
+  --destructive: oklch(0.55 0.23 8);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.92 0.006 100);
+  --input: oklch(0.975 0.006 100);
+  --ring: oklch(0.54 0.13 230);
+  --chart-1: oklch(0.54 0.13 230);
+  --chart-2: oklch(0.55 0.23 8);
+  --chart-3: oklch(0.55 0.16 130);
+  --chart-4: oklch(0.6 0.13 90);
+  --chart-5: oklch(0.6 0.16 55);
+  --sidebar: oklch(0.975 0.006 100);
+  --sidebar-foreground: oklch(0.33 0.012 100);
+  --sidebar-primary: oklch(0.54 0.13 230);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.945 0.008 100);
+  --sidebar-accent-foreground: oklch(0.33 0.012 100);
+  --sidebar-border: oklch(0.92 0.006 100);
+  --sidebar-ring: oklch(0.54 0.13 230);
+
+  /* Vibrant accents — Monokai syntax, deepened for white-bg legibility. */
+  --acc-cyan: #0089b3;
+  --acc-green: #5a8a00;
+  --acc-orange: #b35c00;
+  --acc-pink: #d4006a;
+  --acc-purple: #7c3aed;
+  --acc-red: #d4006a;
+  --acc-yellow: #8a7400;
+  --acc-comment: #9a958a;
+
+  /* Code surface — slightly deeper neutral tone so code blocks separate from
+   * the panel surface. */
+  --code-bg: oklch(0.965 0.006 100);
+  --code-fg: oklch(0.33 0.012 100);
+
+  /* Agent-stream block surfaces — neutral chrome (no pink/purple). Tool/Plan
+   * take the cyan/blue primary; Thinking diverges to a teal so it reads
+   * distinct from tool/plan on the light surface — Monokai's blue-family
+   * answer to One Dark's tool=blue / thinking=cyan split. Accents are deepened
+   * to ~L0.47 to clear AA on the faintly-tinted near-white surface. (DESIGN.md
+   * rule 5 prescribes accent_violet for thinking; like One Dark / One Light
+   * this theme intentionally diverges.) */
+  --block-tool-bg: oklch(0.96 0.025 230);
+  --block-tool-accent: oklch(0.47 0.13 230);
+  --block-thinking-bg: oklch(0.96 0.028 195);
+  --block-thinking-accent: oklch(0.47 0.1 195);
+  --block-plan-bg: oklch(0.96 0.025 230);
+  --block-plan-accent: oklch(0.47 0.13 230);
+  /* Bash variant — follow Aurora / One Light: header takes the accent gray,
+   * body is the soft code surface. Live xterm still stays dark. */
+  --block-bash-header-bg: var(--accent);
+  --block-bash-body-bg: var(--code-bg);
+  --block-bash-fg: var(--foreground);
+  --block-bash-muted-fg: var(--muted-foreground);
+  --block-task-bg: oklch(0.955 0.008 100);
+
+  /* App-level semantic accents — tuned for contrast on white. */
+  --numstat-add-fg: oklch(0.5 0.15 130);
+  --numstat-del-fg: oklch(0.52 0.23 8);
+  --chip-worktree-bg: oklch(0.9 0.06 215);
+  --chip-worktree-bg-hover: oklch(0.86 0.07 215);
+  --chip-worktree-fg: oklch(0.4 0.12 220);
+  --chip-shared-worktree-bg: oklch(0.9 0.07 65);
+  --chip-shared-worktree-fg: oklch(0.45 0.13 60);
+
+  /* Prompt chip palette — One Light pattern: bg/fg pull the saturated identity,
+   * `*-soft` flips to the darkest shade for high-contrast text on the tinted
+   * chip bg. Violet/fuchsia/blue hues are UI-conventional (model picker / mode
+   * chips), only retuned to read on white. */
+  --chip-violet-bg: oklch(0.55 0.22 295);
+  --chip-violet-fg: oklch(0.45 0.2 295);
+  --chip-violet-soft: oklch(0.35 0.18 295);
+  --chip-fuchsia-bg: oklch(0.55 0.22 325);
+  --chip-fuchsia-fg: oklch(0.45 0.2 325);
+  --chip-blue-bg: oklch(0.55 0.2 245);
+  --chip-blue-fg: oklch(0.45 0.18 245);
+
+  /* CodeMirror editor — Monokai Light syntax, near-white surface. */
+  --editor-bg: oklch(0.98 0.005 100);
+  --editor-fg: oklch(0.33 0.012 100);
+  --editor-comment: oklch(0.68 0.01 100);
+  --editor-cyan: #0089b3;
+  --editor-green: #5a8a00;
+  --editor-orange: #b35c00;
+  --editor-pink: #d4006a;
+  --editor-purple: #7c3aed;
+  --editor-red: #d4006a;
+  --editor-yellow: #8a7400;
+  --editor-border: oklch(0.92 0.006 100);
+  --editor-cursor: #0089b3;
+  /* Translucent overlay so CodeMirror's selection layer shows through. */
+  --editor-line-highlight: rgba(0, 0, 0, 0.04);
+  --editor-gutter-bg: oklch(0.98 0.005 100);
+  --editor-gutter-fg: oklch(0.66 0.008 100);
+  --editor-selection-bg: oklch(0.91 0.008 100);
+  --editor-selection-bg-soft: oklch(0.95 0.006 100);
+  --editor-search-match-bg: rgba(179, 92, 0, 0.18);
+
+  /* Diff decorations. */
+  --diff-add-bg: rgba(90, 138, 0, 0.12);
+  --diff-add-bg-strong: rgba(90, 138, 0, 0.22);
+  --diff-del-bg: rgba(212, 0, 106, 0.12);
+  --diff-del-bg-strong: rgba(212, 0, 106, 0.22);
+
+  /* Terminal chrome — match xterm.background in `lib/themes/monokai-light.ts`
+   * exactly (hex literal) so the panel reads as a single surface around the
+   * canvas. */
+  --terminal-bg: #faf9f5;
+  --terminal-panel-icon: oklch(0.55 0.01 100);
+  --terminal-panel-icon-hover: oklch(0.33 0.012 100);
+  --terminal-panel-icon-bg-hover: oklch(0.945 0.008 100);
+  --terminal-panel-handle-bg: oklch(0.945 0.008 100);
+  --terminal-panel-handle-bg-hover: oklch(0.91 0.008 100);
+  --terminal-warning-bg: oklch(0.975 0.006 100);
+  --terminal-warning-border: oklch(0.92 0.006 100);
+  --terminal-warning-fg: oklch(0.33 0.012 100);
+  --terminal-warning-fg-secondary: oklch(0.46 0.01 100);
+  --terminal-warning-accent: #b35c00;
+  --terminal-warning-link: #0089b3;
+  --terminal-warning-button-bg: oklch(0.945 0.008 100);
+  --terminal-warning-button-bg-hover: oklch(0.91 0.008 100);
+}
+
 @layer base {
   * {
     @apply border-border;

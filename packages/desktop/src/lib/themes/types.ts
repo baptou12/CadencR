@@ -13,7 +13,14 @@
  * the editor follows `data-theme` on the document automatically.
  */
 
-export const THEME_IDS = ["dracula", "aurora", "one-dark", "one-light"] as const;
+export const THEME_IDS = [
+  "dracula",
+  "aurora",
+  "one-dark",
+  "one-light",
+  "monokai",
+  "monokai-light",
+] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 export type ThemeAppearance = "light" | "dark";
 export type ThemeLogoVariant = "light" | "dark";
