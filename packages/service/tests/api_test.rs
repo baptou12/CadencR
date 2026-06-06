@@ -1,6 +1,6 @@
 mod common;
 
-use common::start_test_server;
+use common::{apply_ws_upgrade_headers, start_test_server};
 
 #[tokio::test]
 async fn test_health_check() {
@@ -269,16 +269,6 @@ async fn test_file_tree_includes_dotfiles() {
         ".git dir should be included in file tree, got: {:?}",
         names
     );
-}
-
-/// Full RFC 6455 header set; axum's extractor rejects the request before
-/// our handler runs if any are missing.
-fn apply_ws_upgrade_headers(req: reqwest::RequestBuilder, origin: &str) -> reqwest::RequestBuilder {
-    req.header("Upgrade", "websocket")
-        .header("Connection", "Upgrade")
-        .header("Sec-WebSocket-Version", "13")
-        .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
-        .header("Origin", origin)
 }
 
 #[tokio::test]

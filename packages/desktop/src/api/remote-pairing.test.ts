@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetDeviceTokenMemoryForTests } from "@/lib/remote/device-token";
-import { ensurePaired, takeJustPaired, takePairingError } from "./remote-pairing";
+import { ensurePaired, pairRemoteDevice, takeJustPaired, takePairingError } from "./remote-pairing";
 
 const KEY = "cadencr.remoteDeviceToken";
 
@@ -24,14 +24,18 @@ function stubLocation(search: string): void {
   });
 }
 
+function resetRemotePairingTestState(): void {
+  Reflect.deleteProperty(window, "cadencr");
+  localStorage.clear();
+  sessionStorage.clear();
+  __resetDeviceTokenMemoryForTests();
+}
+
 describe("ensurePaired", () => {
   let replaceState: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    Reflect.deleteProperty(window, "cadencr");
-    localStorage.clear();
-    sessionStorage.clear();
-    __resetDeviceTokenMemoryForTests();
+    resetRemotePairingTestState();
     replaceState = vi.fn();
     vi.stubGlobal("history", { replaceState });
   });
@@ -84,5 +88,42 @@ describe("ensurePaired", () => {
     expect(takeJustPaired()).toBe(false);
     expect(takePairingError()).toMatch(/expired/i);
     expect(replaceState).toHaveBeenCalled();
+  });
+});
+
+describe("pairRemoteDevice", () => {
+  beforeEach(() => {
+    resetRemotePairingTestState();
+    stubLocation("");
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("exchanges a code and stores trusted devices durably", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(mockResponse(200, { device_token: "trusted-token", label: "iPhone" })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const paired = await pairRemoteDevice("abc123", { trust: true });
+
+    expect(paired.storagePersisted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://192.168.1.5:5006/api/remote/pair",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ code: "abc123" }),
+      }),
+    );
+    expect(localStorage.getItem(KEY)).toBe("trusted-token");
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
+
+  it("rejects malformed pairing responses before writing storage", async () => {
+    vi.stubGlobal("fetch", () => Promise.resolve(mockResponse(200, { label: "missing token" })));
+
+    await expect(pairRemoteDevice("abc123", { trust: true })).rejects.toThrow(/malformed/i);
+
+    expect(localStorage.getItem(KEY)).toBeNull();
+    expect(sessionStorage.getItem(KEY)).toBeNull();
   });
 });

@@ -22,8 +22,9 @@ use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
+use crate::error::AppError;
 use axum::extract::{Query, State};
-use axum::routing::get;
+use axum::routing::{any, get};
 use axum::Json;
 use axum::Router;
 use serde::Deserialize;
@@ -120,6 +121,11 @@ pub fn build_remote_router(
     let limiter = std::sync::Arc::new(middleware::RateLimiter::default());
     build_api_routes()
         .merge(crate::domain::remote::public_router())
+        // Keep API misses API-shaped. Without this, an authenticated request for
+        // a loopback-only or typoed `/api/*` path would fall through to
+        // `index.html`, obscuring routing mistakes and weakening the "remote
+        // devices cannot reach host-control endpoints" invariant.
+        .route("/api/{*path}", any(api_not_found))
         .fallback_service(crate::remote::spa_service(renderer_dir))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -138,4 +144,8 @@ pub fn build_remote_router(
             middleware::remote_security_headers_middleware,
         ))
         .with_state(state)
+}
+
+async fn api_not_found() -> Result<(), AppError> {
+    Err(AppError::NotFound("api route".into()))
 }

@@ -3,12 +3,16 @@
 //! defense), and revoke. Runs against the real self-signed TLS listener using a
 //! rustls client.
 
+mod common;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use cadencr_service::app_state::AppState;
 use cadencr_service::domain::remote::repo;
 use cadencr_service::remote::{RemoteConfig, RemoteController};
+use common::apply_ws_upgrade_headers;
+use reqwest::StatusCode;
 use serde_json::Value;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
@@ -58,6 +62,19 @@ fn rustls_client() -> reqwest::Client {
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap()
+}
+
+async fn ws_status(
+    client: &reqwest::Client,
+    base: &str,
+    origin: &str,
+    protocol: Option<String>,
+) -> StatusCode {
+    let mut req = apply_ws_upgrade_headers(client.get(format!("{base}/ws")), origin);
+    if let Some(protocol) = protocol {
+        req = req.header("sec-websocket-protocol", protocol);
+    }
+    req.send().await.unwrap().status()
 }
 
 #[tokio::test]
@@ -142,6 +159,48 @@ async fn remote_pairing_device_auth_and_revoke() {
     assert_eq!(resp.status().as_u16(), 200, "valid code pairs");
     let body: Value = resp.json().await.unwrap();
     let device_token = body["device_token"].as_str().unwrap().to_string();
+
+    // Authenticated remote devices still must not reach host-control endpoints.
+    // Unknown/unmounted API paths should remain API-shaped 404s, not fall
+    // through to the SPA fallback as index.html.
+    let resp = client
+        .get(format!("{base}/api/remote/status"))
+        .header("x-cadencr-token", &device_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "NOT_FOUND", "API miss should stay JSON");
+
+    // Remote WebSocket routes authenticate inside the upgrade handler: missing
+    // token and loopback launch token are rejected, a foreign Origin is
+    // rejected, and a paired device token from the served origin upgrades.
+    let missing_token = ws_status(&client, &base, &base, None);
+    let launch_token = ws_status(
+        &client,
+        &base,
+        &base,
+        Some("cadencr-token.test-token".to_string()),
+    );
+    let foreign_origin = ws_status(
+        &client,
+        &base,
+        "https://evil.example",
+        Some(format!("cadencr-token.{device_token}")),
+    );
+    let valid_device = ws_status(
+        &client,
+        &base,
+        &base,
+        Some(format!("cadencr-token.{device_token}")),
+    );
+    let (missing_token, launch_token, foreign_origin, valid_device) =
+        tokio::join!(missing_token, launch_token, foreign_origin, valid_device);
+    assert_eq!(missing_token, StatusCode::UNAUTHORIZED);
+    assert_eq!(launch_token, StatusCode::UNAUTHORIZED);
+    assert_eq!(foreign_origin, StatusCode::FORBIDDEN);
+    assert_eq!(valid_device, StatusCode::SWITCHING_PROTOCOLS);
 
     // The device token authenticates a protected request.
     let resp = client

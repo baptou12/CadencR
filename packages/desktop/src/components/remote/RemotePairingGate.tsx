@@ -4,7 +4,8 @@ import { Loader2, QrCode } from "lucide-react";
 import { CadencrLogo } from "@/components/CadencrLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isBrowserRemote, readDeviceToken, writeDeviceToken } from "@/lib/remote/device-token";
+import { isBrowserRemote, readDeviceToken } from "@/lib/remote/device-token";
+import { pairRemoteDevice } from "@/api/remote-pairing";
 
 // The scanner pulls in the camera plumbing + jsQR decoder, so it only loads
 // when the user actually chooses to scan rather than paste.
@@ -65,27 +66,11 @@ function PairingScreen(): ReactNode {
     setPairing(true);
     setError(null);
     try {
-      const resp = await fetch(`${location.origin}/api/remote/pair`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      });
-      if (!resp.ok) {
-        throw new Error(
-          resp.status === 400
-            ? "That pairing code has expired. Generate a fresh one on your computer."
-            : `Pairing failed (HTTP ${resp.status}).`,
-        );
+      const paired = await pairRemoteDevice(code, { trust: true });
+      if (!paired.storagePersisted) {
+        throw new Error("Paired, but this browser couldn't save the sign-in. Try another browser.");
       }
-      const body: unknown = await resp.json();
-      const token = (body as { device_token?: unknown }).device_token;
-      if (typeof token !== "string") {
-        throw new Error("The pairing response was malformed.");
-      }
-      // Persist (localStorage) so this device stays paired across relaunches —
-      // the whole point of the standalone flow. Then reload so the app
-      // re-bootstraps with the token already in place.
-      writeDeviceToken(token, true);
+      // Reload once durable storage succeeded so bootstrap reads the saved token.
       location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Pairing failed.");

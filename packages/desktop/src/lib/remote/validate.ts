@@ -5,7 +5,7 @@
  * drives security-relevant UI, so it's worth not trusting the wire blindly.
  */
 
-import type { PairingCodeResponse, RemoteStatus } from "@/api/generated";
+import type { PairResponse, PairingCodeResponse, RemoteStatus } from "@/api/generated";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -30,4 +30,9 @@ export function isPairingCodeResponse(value: unknown): value is PairingCodeRespo
     typeof value.fingerprint === "string" &&
     Array.isArray(value.urls)
   );
+}
+
+export function isPairResponse(value: unknown): value is PairResponse {
+  if (!isRecord(value)) return false;
+  return typeof value.device_token === "string" && typeof value.label === "string";
 }

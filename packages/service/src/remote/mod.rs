@@ -2,8 +2,6 @@
 //! self-signed TLS that serves the existing API plus the built SPA, so another
 //! device can use the workspace. Started/stopped at runtime and torn down on
 //! quit. The loopback listener (the local `file://` renderer) is untouched.
-//!
-//! M1a wires the transport only; device-token auth + pairing land in M1b.
 
 pub mod live;
 mod net;
@@ -294,11 +292,55 @@ pub fn sanitize_tunnel_host(raw: &str) -> Option<String> {
         .unwrap_or(without_scheme)
         .trim_end_matches('.')
         .to_ascii_lowercase();
-    if host.is_empty() {
-        None
-    } else {
+    if is_valid_tunnel_host(&host) {
         Some(host)
+    } else {
+        None
     }
+}
+
+fn is_valid_tunnel_host(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    if host
+        .bytes()
+        .any(|b| b.is_ascii_whitespace() || matches!(b, b'@' | b'\\' | b'%'))
+    {
+        return false;
+    }
+
+    let (name, port) = match host.rsplit_once(':') {
+        Some((name, port)) => {
+            if name.contains(':') || port.is_empty() {
+                return false;
+            }
+            let Ok(port) = port.parse::<u16>() else {
+                return false;
+            };
+            (name, Some(port))
+        }
+        None => (host, None),
+    };
+    if matches!(port, Some(0)) {
+        return false;
+    }
+    is_valid_dns_host(name)
+}
+
+fn is_valid_dns_host(name: &str) -> bool {
+    if name.is_empty() || name == "localhost" || name.starts_with('.') || name.ends_with('.') {
+        return false;
+    }
+    name.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
 }
 
 /// Whether remote access should auto-start at launch (persisted setting).
@@ -334,6 +376,43 @@ mod tests {
         assert_eq!(sanitize_tunnel_host(""), None);
         assert_eq!(sanitize_tunnel_host("   "), None);
         assert_eq!(sanitize_tunnel_host("https://"), None);
+    }
+
+    #[test]
+    fn sanitize_rejects_misleading_or_invalid_authorities() {
+        assert_eq!(
+            sanitize_tunnel_host("https://trusted.ts.net@evil.example"),
+            None,
+            "userinfo-style hosts would make the browser connect to the wrong origin"
+        );
+        assert_eq!(sanitize_tunnel_host("host name.ts.net"), None);
+        assert_eq!(sanitize_tunnel_host("host\\name.ts.net"), None);
+        assert_eq!(sanitize_tunnel_host("host.ts.net:99999"), None);
+    }
+
+    #[test]
+    fn sanitize_accepts_valid_host_with_optional_port() {
+        assert_eq!(
+            sanitize_tunnel_host("Laptop.Tail1234.ts.net:8443/"),
+            Some("laptop.tail1234.ts.net:8443".to_string())
+        );
+    }
+
+    #[test]
+    fn dns_host_validation_is_conservative() {
+        assert!(is_valid_dns_host("laptop.tail1234.ts.net"));
+        assert!(!is_valid_dns_host("localhost"));
+        assert!(!is_valid_dns_host("-bad.example"));
+        assert!(!is_valid_dns_host("bad-.example"));
+        assert!(!is_valid_dns_host("bad..example"));
+    }
+
+    #[test]
+    fn tunnel_host_validation_handles_optional_ports() {
+        assert!(is_valid_tunnel_host("laptop.tail1234.ts.net:8443"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:0"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:99999"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:port"));
     }
 
     #[test]

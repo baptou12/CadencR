@@ -17,6 +17,7 @@
  */
 
 import { isBrowserRemote, writeDeviceToken } from "@/lib/remote/device-token";
+import { isPairResponse } from "@/lib/remote/validate";
 
 const CODE_PARAM = "code";
 /** Legacy host-side trust flag; no longer honored, just stripped from the URL. */
@@ -28,17 +29,41 @@ const PAIRING_ERROR_KEY = "cadencr.remotePairingError";
 /** Set after a successful pair so the app can offer "stay signed in" once mounted. */
 const JUST_PAIRED_KEY = "cadencr.remoteJustPaired";
 
-interface PairResponseBody {
-  device_token: string;
-  label: string;
+export interface PairRemoteDeviceResult {
+  storagePersisted: boolean;
 }
 
-function isPairResponseBody(value: unknown): value is PairResponseBody {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as Record<string, unknown>).device_token === "string"
-  );
+/**
+ * Exchange a short-lived pairing code for a device token and persist it using
+ * the requested trust level. Shared by the boot-time `?code=` flow and the
+ * manual re-pairing gate so token parsing, errors, and storage behavior stay
+ * identical.
+ */
+export async function pairRemoteDevice(
+  code: string,
+  options: { trust: boolean },
+): Promise<PairRemoteDeviceResult> {
+  const resp = await fetch(`${location.origin}/api/remote/pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!resp.ok) {
+    throw new Error(pairingErrorMessage(resp.status));
+  }
+  const body: unknown = await resp.json();
+  if (!isPairResponse(body)) {
+    throw new Error("The pairing response was malformed.");
+  }
+  return {
+    storagePersisted: writeDeviceToken(body.device_token, options.trust),
+  };
+}
+
+function pairingErrorMessage(status: number): string {
+  return status === 400
+    ? "This pairing code has expired. Generate a fresh one on the host computer."
+    : `Pairing failed (HTTP ${status}).`;
 }
 
 export async function ensurePaired(): Promise<void> {
@@ -48,25 +73,10 @@ export async function ensurePaired(): Promise<void> {
   if (!code) return;
 
   try {
-    const resp = await fetch(`${location.origin}/api/remote/pair`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    if (!resp.ok) {
-      throw new Error(
-        resp.status === 400
-          ? "This pairing link has expired. Generate a fresh one on the host."
-          : `Pairing failed (HTTP ${resp.status}).`,
-      );
-    }
-    const body: unknown = await resp.json();
-    if (!isPairResponseBody(body)) {
-      throw new Error("The pairing response was malformed.");
-    }
     // Session-only by default. The "stay signed in" opt-in happens on this
     // device after mount; only flag that offer if storage actually works.
-    if (writeDeviceToken(body.device_token, false)) {
+    const paired = await pairRemoteDevice(code, { trust: false });
+    if (paired.storagePersisted) {
       flagJustPaired();
     } else {
       stashPairingError(

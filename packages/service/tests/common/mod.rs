@@ -27,6 +27,19 @@ use cadencr_service::app_state::AppState;
 
 pub const TEST_AUTH_TOKEN: &str = "test-token";
 
+/// Full RFC 6455 header set; axum's extractor rejects the request before
+/// our handler runs if any are missing.
+pub fn apply_ws_upgrade_headers(
+    req: reqwest::RequestBuilder,
+    origin: &str,
+) -> reqwest::RequestBuilder {
+    req.header("Upgrade", "websocket")
+        .header("Connection", "Upgrade")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+        .header("Origin", origin)
+}
+
 /// Run a `git` command in `dir` with hermetic env (no system/global config,
 /// no GPG signing). Surfaces stderr on failure — never swallow git errors.
 pub fn git_in(dir: &std::path::Path, args: &[&str]) {
