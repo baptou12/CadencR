@@ -15,6 +15,7 @@
 //! They are grouped by responsibility into thematic files under `tests/`
 //! and exercise the public surface this module re-exports.
 
+mod active_turns;
 mod app;
 mod claude_access;
 mod codex_access;
@@ -36,6 +37,11 @@ pub use connection::ws_handler;
 
 // Public type for crate-wide use (referenced via `handler::SdkHandle`).
 pub use types::SdkHandle;
+
+// Process-global registry of which connection owns each session's live turn.
+// Held on `AppState` so cross-device permission/question/plan answers and the
+// synchronized turn timer can resolve the authoritative owner.
+pub use active_turns::ActiveTurnRegistry;
 
 // Re-export the cross-submodule helpers and types into the `handler` module
 // scope so the sibling production submodules can reach them via `super::*`

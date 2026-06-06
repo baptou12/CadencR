@@ -1,4 +1,5 @@
 mod bridge;
+mod content;
 mod errors;
 mod mcp_servers;
 mod prompt_followup;
@@ -12,12 +13,12 @@ mod stream_reader_resume;
 mod stream_reader_task;
 mod stream_reader_task_event;
 
-#[allow(unused_imports)]
-pub(crate) use bridge::build_content_value;
-#[allow(unused_imports)]
-pub(crate) use bridge::build_persist_content;
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;
+#[allow(unused_imports)]
+pub(crate) use content::build_content_value;
+#[allow(unused_imports)]
+pub(crate) use content::build_persist_content;
 pub(crate) use prompt_send::handle_prompt_send;
 #[allow(unused_imports)]
 pub(crate) use stream_reader::spawn_stream_reader;

@@ -15,6 +15,7 @@ pub(super) async fn handle_app_action(
         "subscribe.session_status" => {
             handle_subscribe_session_status(envelope, sender, app_state).await
         }
+        "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state).await,
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await
         }
@@ -85,6 +86,27 @@ async fn handle_unsubscribe_git_status(
         .await;
 }
 
+/// Build the per-session status snapshot and enrich each running entry with
+/// the server-stamped turn start from the active-turn registry, so a
+/// (re)connecting client anchors its elapsed timer to the same instant the
+/// host did. The DB has no per-turn start column, so this is the only place
+/// the snapshot picks the timestamp up.
+async fn session_status_snapshot_with_timers(
+    app_state: &AppState,
+) -> std::collections::HashMap<String, crate::domain::sessions::models::SessionStatusSnapshotEntry>
+{
+    let mut states =
+        crate::domain::sessions::repository::get_session_status_snapshot(&app_state.read_pool)
+            .await
+            .unwrap_or_default();
+    for entry in states.values_mut() {
+        if entry.status == crate::domain::session_status::AgentStatus::Agent {
+            entry.turn_started_at_ms = app_state.active_turns.started_at(entry.session_id).await;
+        }
+    }
+    states
+}
+
 /// Subscribe the client to real-time per-session status updates.
 /// Sends an initial snapshot keyed by `session_id`, then streams
 /// incremental [`SessionStatusEvent`]s.
@@ -108,10 +130,7 @@ async fn handle_subscribe_session_status(
     // guaranteed to flow through `rx` (either because it was emitted after
     // subscribe, or because it was buffered before this line).
     let seq = app_state.session_status_tx.current_seq();
-    let states =
-        crate::domain::sessions::repository::get_session_status_snapshot(&app_state.read_pool)
-            .await
-            .unwrap_or_default();
+    let states = session_status_snapshot_with_timers(app_state).await;
 
     let snapshot = WsEnvelope::reply(
         &envelope.id,
@@ -122,7 +141,7 @@ async fn handle_subscribe_session_status(
     let _ = sender.send(Message::Text(String::from(snapshot).into()));
 
     let sender = sender.clone();
-    let read_pool = app_state.read_pool.clone();
+    let app_state = app_state.clone();
     let broadcaster = app_state.session_status_tx.clone();
 
     tokio::spawn(async move {
@@ -147,11 +166,7 @@ async fn handle_subscribe_session_status(
                         skipped = n,
                         "session status broadcast lagged, sending fresh snapshot",
                     );
-                    let states = crate::domain::sessions::repository::get_session_status_snapshot(
-                        &read_pool,
-                    )
-                    .await
-                    .unwrap_or_default();
+                    let states = session_status_snapshot_with_timers(&app_state).await;
                     let seq = broadcaster.current_seq();
                     let snapshot = WsEnvelope::new(
                         "app",
@@ -168,6 +183,46 @@ async fn handle_subscribe_session_status(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
                 }
+            }
+        }
+    });
+}
+
+/// Subscribe the client to global feature-lifecycle events. There is no
+/// snapshot — the client already has the feature list via REST; each event is
+/// just a cue to refetch. Forwards every [`FeatureEvent`] as an
+/// `app/feature_event` envelope until the socket closes.
+async fn handle_subscribe_feature_events(sender: &WsSender, app_state: &AppState) {
+    let mut rx = app_state.feature_events_tx.subscribe();
+    let sender = sender.clone();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let update = WsEnvelope::new(
+                        "app",
+                        "feature_event",
+                        serde_json::to_value(&event).unwrap_or_else(|_| serde_json::json!({})),
+                    );
+                    if sender
+                        .send(Message::Text(String::from(update).into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                // A lagged client just needs to refetch — send a bare event so
+                // it invalidates regardless of which specific changes it missed.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let update = WsEnvelope::new("app", "feature_event", serde_json::json!({}));
+                    if sender
+                        .send(Message::Text(String::from(update).into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
     });

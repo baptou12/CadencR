@@ -168,6 +168,7 @@ async fn pending_spawn_config(
     let spawned_model = handle.desired_model.clone();
     let bridge = WsBridgeCanUseTool {
         sender: sender.clone(),
+        feature_senders: app_state.ws_feature_senders.clone(),
         response_rx: Arc::new(Mutex::new(permission_rx)),
         feature_id: handle.feature_id,
         db_session_id,

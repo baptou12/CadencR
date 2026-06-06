@@ -93,6 +93,77 @@ describe("session status lifecycle sync", () => {
     expect(updated.turnTiming.segmentStartedAt).toBe(1_000);
   });
 
+  it("anchors a second device's turn timer to the server-stamped start", () => {
+    vi.useFakeTimers();
+    // Local clock is far ahead of the server-stamped turn start to prove the
+    // timer uses the server value, not Date.now().
+    vi.setSystemTime(100_000);
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    const session = createSessionEntry();
+    session.sessionDbId = 20;
+    // Idle, no timing yet — exactly how a second device looks when it opens a
+    // conversation the host is already running.
+    useWsSessionStore.setState({ sessions: { s2: session } });
+    useSessionStatusStore.setState({
+      bySession: { 20: { status: "idle", kind: null, featureId: 2, seq: 1 } },
+    });
+
+    useSessionStatusStore.getState().connect();
+    const ws = MockWebSocket.instances.at(-1);
+    ws?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: {
+        session_id: 20,
+        feature_id: 2,
+        status: "agent",
+        kind: null,
+        seq: 2,
+        turn_started_at_ms: 42_000,
+      },
+    });
+
+    const updated = useWsSessionStore.getState().sessions.s2;
+    expect(updated.turnTiming.startedAt).toBe(42_000);
+    expect(updated.turnTiming.segmentStartedAt).toBe(42_000);
+  });
+
+  it("clears a pending gate when the session leaves the question state", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+
+    const session = createSessionEntry();
+    session.sessionDbId = 30;
+    // Mirror of a gate that another device answered: this device still shows it.
+    session.lifecycle = transitionTurn(session.lifecycle, { type: "permission_requested" });
+    session.pendingPermission = {
+      requestId: "req-1",
+      toolName: "Bash",
+      input: {},
+      description: "",
+      pattern: "",
+      options: [],
+    };
+    session.pendingRequestId = "req-1";
+    useWsSessionStore.setState({ sessions: { s3: session } });
+    useSessionStatusStore.setState({
+      bySession: { 30: { status: "question", kind: "permission", featureId: 3, seq: 1 } },
+    });
+
+    useSessionStatusStore.getState().connect();
+    const ws = MockWebSocket.instances.at(-1);
+    // Another device answered → backend broadcasts the session back to "agent".
+    ws?.simulateMessage({
+      domain: "app",
+      action: "session_status.update",
+      payload: { session_id: 30, feature_id: 3, status: "agent", kind: null, seq: 2 },
+    });
+
+    const updated = useWsSessionStore.getState().sessions.s3;
+    expect(updated.pendingPermission).toBeNull();
+    expect(updated.pendingRequestId).toBe("");
+  });
+
   it("invalidates editor read caches when file watcher events arrive", () => {
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
 
@@ -105,6 +176,40 @@ describe("session status lifecycle sync", () => {
     expect(predicate({ queryKey: ["/api/editor/read", { file_path: "a.ts" }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/editor/tree-all", { project_id: 1 }] })).toBe(true);
     expect(predicate({ queryKey: ["/api/sessions"] })).toBe(false);
+    invalidateSpy.mockRestore();
+  });
+
+  it("refetches the feature and lists when an 'updated' feature_event arrives", () => {
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    const handled = handleAppEnvelope("app", "feature_event", {
+      feature_id: 7,
+      action: "updated",
+    });
+
+    expect(handled).toBe(true);
+    // An auto-name reaches us as "updated": both the individual feature (open
+    // header REST fallback) and every per-project list must refresh.
+    const keys = invalidateSpy.mock.calls.map(
+      (c) => (c[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0],
+    );
+    expect(keys).toContain("/api/features/7");
+    expect(keys).toContain("/api/features");
+    invalidateSpy.mockRestore();
+  });
+
+  it("refetches only the lists for a created/deleted feature_event", () => {
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    handleAppEnvelope("app", "feature_event", { feature_id: 7, action: "created" });
+
+    // No single-feature refetch — create/delete only reshape the lists, and a
+    // delete's per-feature fetch would 404.
+    const keys = invalidateSpy.mock.calls.map(
+      (c) => (c[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0],
+    );
+    expect(keys).toContain("/api/features");
+    expect(keys).not.toContain("/api/features/7");
     invalidateSpy.mockRestore();
   });
 });

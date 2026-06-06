@@ -2,6 +2,7 @@ use tracing::{error, info, warn};
 
 use crate::app_state::AppState;
 use crate::domain::agents::adapter::RuntimeSpawnConfig;
+use crate::domain::feature_events::{FeatureEventAction, FeatureEventBroadcaster};
 use crate::domain::workflow::worktree;
 use crate::domain::ws_session::permissions;
 use crate::domain::ws_session::protocol::PromptSendPayload;
@@ -21,7 +22,15 @@ pub(super) async fn prepare_worktree_if_requested(
     if !use_worktree {
         return false;
     }
-    auto_name_for_worktree(write_pool, sender, payload, feature_id, config).await;
+    auto_name_for_worktree(
+        write_pool,
+        &app_state.feature_events_tx,
+        sender,
+        payload,
+        feature_id,
+        config,
+    )
+    .await;
     create_and_apply_worktree(app_state, write_pool, sender, feature_id, config, options).await;
     true
 }
@@ -29,6 +38,7 @@ pub(super) async fn prepare_worktree_if_requested(
 pub(super) fn spawn_auto_name_if_needed(
     use_worktree: bool,
     write_pool: sqlx::SqlitePool,
+    feature_events: FeatureEventBroadcaster,
     sender: WsSender,
     feature_id: i64,
     prompt_text: String,
@@ -48,6 +58,13 @@ pub(super) fn spawn_auto_name_if_needed(
                     sender,
                 )
                 .await;
+                // The live `feature.renamed` envelope only reached devices with
+                // this conversation open; broadcast a global feature_event so
+                // every connected client's sidebar (and any open header)
+                // refetches the new title.
+                if result.is_some() {
+                    feature_events.emit(feature_id, None, FeatureEventAction::Updated);
+                }
                 info!(feature_id, name = ?result, "auto-named feature");
             }
             Ok(false) => {}
@@ -58,6 +75,7 @@ pub(super) fn spawn_auto_name_if_needed(
 
 async fn auto_name_for_worktree(
     write_pool: &sqlx::SqlitePool,
+    feature_events: &FeatureEventBroadcaster,
     sender: &WsSender,
     payload: &PromptSendPayload,
     feature_id: i64,
@@ -73,6 +91,9 @@ async fn auto_name_for_worktree(
                 sender.clone(),
             )
             .await;
+            if result.is_some() {
+                feature_events.emit(feature_id, None, FeatureEventAction::Updated);
+            }
             info!(feature_id, name = ?result, "auto-named feature for worktree");
         }
         Ok(false) => {}

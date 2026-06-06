@@ -6,6 +6,7 @@ use tokio::sync::broadcast;
 use crate::domain::custom_actions::run_registry::CustomActionRunRegistry;
 use crate::domain::custom_actions::scheduler::CustomActionScheduler;
 use crate::domain::editor::watcher::{FileChangeEvent, SharedFileWatcher};
+use crate::domain::feature_events::FeatureEventBroadcaster;
 use crate::domain::features::run_registry::FeatureRunRegistry;
 use crate::domain::git::push_sessions::PushSessionRegistry;
 use crate::domain::git::watcher::GitWatcherRegistry;
@@ -14,6 +15,7 @@ use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
+use crate::domain::ws_session::handler::ActiveTurnRegistry;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use crate::remote::{RemoteConfig, RemoteController};
 
@@ -37,6 +39,10 @@ pub struct AppState {
     /// reject out-of-order updates and stale snapshots. See
     /// `domain::session_status` for the wire format and rules.
     pub session_status_tx: SessionStatusBroadcaster,
+    /// Global feature-lifecycle broadcast (create/delete/archive). Every
+    /// connected client subscribes once so a conversation created on one
+    /// device shows up on the others without a manual refresh.
+    pub feature_events_tx: FeatureEventBroadcaster,
     /// PTY lifecycle manager for terminal sessions.
     pub pty_manager: PtyManager,
     /// Broadcast channel for file-system change events.
@@ -68,6 +74,10 @@ pub struct AppState {
     /// Maps feature_id → active WS senders. Lets HTTP handlers push WS
     /// envelopes (e.g. auto-naming events) without holding a socket ref.
     pub ws_feature_senders: WsFeatureSenderRegistry,
+    /// Maps `agent_sessions.id` → the connection driving its live turn. Lets a
+    /// remote client answer a permission/question/plan against the host's live
+    /// query, and carries the server-stamped turn start for synced timers.
+    pub active_turns: Arc<ActiveTurnRegistry>,
     /// Active explicit auto-rename requests keyed by feature_id. Prevents
     /// duplicate model runs racing to update the same title.
     pub auto_name_runs: Arc<FeatureRunRegistry>,
@@ -119,6 +129,7 @@ impl AppState {
         remote: Arc<RemoteController>,
     ) -> Self {
         let (session_status_tx, _) = broadcast::channel(64);
+        let (feature_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
         Self {
             read_pool,
@@ -129,6 +140,7 @@ impl AppState {
                 session_status_tx,
                 Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ),
+            feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             pty_manager: PtyManager::new(),
             file_change_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
@@ -140,6 +152,7 @@ impl AppState {
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
+            active_turns: Arc::new(ActiveTurnRegistry::new()),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),
@@ -156,6 +169,7 @@ impl AppState {
     #[allow(dead_code)]
     pub fn with_pool(pool: SqlitePool) -> Self {
         let (session_status_tx, _) = broadcast::channel(64);
+        let (feature_events_tx, _) = broadcast::channel(64);
         let (file_change_tx, _) = broadcast::channel(16);
         Self {
             read_pool: pool.clone(),
@@ -166,6 +180,7 @@ impl AppState {
                 session_status_tx,
                 std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             ),
+            feature_events_tx: FeatureEventBroadcaster::new(feature_events_tx),
             pty_manager: PtyManager::new(),
             file_change_tx,
             file_watcher: crate::domain::editor::watcher::new_shared(),
@@ -177,6 +192,7 @@ impl AppState {
             git_watcher: Arc::new(GitWatcherRegistry::new()),
             push_sessions: Arc::new(PushSessionRegistry::new()),
             ws_feature_senders: WsFeatureSenderRegistry::new(),
+            active_turns: Arc::new(ActiveTurnRegistry::new()),
             auto_name_runs: Arc::new(FeatureRunRegistry::new()),
             lsp_sessions: LspRegistry::new(),
             lsp_crashes: CrashTracker::new(),

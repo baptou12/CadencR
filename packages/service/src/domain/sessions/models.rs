@@ -221,6 +221,12 @@ pub struct SessionStatusSnapshotEntry {
     pub status: crate::domain::session_status::AgentStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<crate::domain::session_status::PendingKind>,
+    /// Server-stamped turn start (epoch ms) for a running session, so a
+    /// (re)connecting client anchors its elapsed timer to the same instant as
+    /// every other device. Filled in by the WS handler from the in-memory
+    /// active-turn registry (the DB has no per-turn start column).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn_started_at_ms: Option<i64>,
 }
 
 #[cfg(test)]

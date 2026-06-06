@@ -36,6 +36,17 @@ fn acknowledge_permission_response(sender: &WsSender, envelope_id: &str) {
     let _ = sender.send(Message::Text(String::from(ack).into()));
 }
 
+/// Whether `sessions` holds a live (`Active`) handle for this session. Locks
+/// briefly and releases before the caller acquires any further lock, so it
+/// never nests the per-connection map lock with the owner-map lock.
+async fn session_is_active(sessions: &SdkSessions, db_session_id: i64) -> bool {
+    let guard = sessions.lock().await;
+    matches!(
+        guard.get(&db_session_id).map(|h| &h.state),
+        Some(QueryState::Active { .. })
+    )
+}
+
 /// Handle session.permission.respond
 pub(crate) async fn handle_permission_respond(
     envelope: WsEnvelope,
@@ -63,6 +74,22 @@ pub(crate) async fn handle_permission_respond(
             return;
         }
     };
+
+    // Resolve the connection that owns this session's live turn. The fast path
+    // is our own map (we drove the turn). A remote viewer's own map only holds
+    // a `Pending` handle, so it falls back to the global registry to reach the
+    // host's live query — this is what makes answering a permission/question/
+    // plan work from any connected device, not just the turn owner.
+    let effective_sessions: SdkSessions = if session_is_active(sdk_sessions, db_session_id).await {
+        sdk_sessions.clone()
+    } else {
+        app_state
+            .active_turns
+            .owner_sessions(db_session_id)
+            .await
+            .unwrap_or_else(|| sdk_sessions.clone())
+    };
+    let sdk_sessions = &effective_sessions;
 
     // Extract everything we need from the handle, then drop the sdk_sessions
     // lock before ANY `.await` that touches the DB or runtime. The lock is

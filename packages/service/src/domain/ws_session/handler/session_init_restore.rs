@@ -15,9 +15,8 @@ pub(super) async fn restore_pending_or_idle(
     db_session_id: i64,
     feature_id: i64,
 ) {
-    if let Some(row) =
-        WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await
-    {
+    let row = WsSessionPersistence::get_session_row(&app_state.read_pool, db_session_id).await;
+    if let Some(ref row) = row {
         if let Some(payload) = row
             .pending_permission
             .as_deref()
@@ -48,6 +47,22 @@ pub(super) async fn restore_pending_or_idle(
             );
             return;
         }
+    }
+
+    // No pending user input. Do NOT broadcast Idle if the turn is still
+    // running on another connection — a second device opening the conversation
+    // would otherwise reset the host's running status and elapsed timer. The
+    // joining client already receives the live status via the session_status
+    // snapshot it subscribed to at connect. We only clear + idle when the
+    // session is genuinely not running.
+    let turn_running = row.as_ref().is_some_and(|r| r.status == "running")
+        || app_state
+            .active_turns
+            .started_at(db_session_id)
+            .await
+            .is_some();
+    if turn_running {
+        return;
     }
     clear_stale_pending(app_state, db_session_id, feature_id).await;
 }
@@ -240,5 +255,28 @@ mod tests {
         let status = status_rx.recv().await.unwrap();
         assert_eq!(status.status, AgentStatus::Idle);
         assert_eq!(status.kind, None);
+    }
+
+    /// A second device opening a *running* conversation (no pending input)
+    /// must not broadcast Idle — that would reset the host's running status
+    /// and elapsed timer. Regression guard for the multi-device status bug.
+    #[tokio::test]
+    async fn restore_on_running_session_does_not_broadcast_idle() {
+        let state = test_state().await;
+        sqlx::query(
+            "INSERT INTO agent_sessions (id, feature_id, status, pending_permission) \
+             VALUES (3, 30, 'running', NULL)",
+        )
+        .execute(&state.write_pool)
+        .await
+        .unwrap();
+        let mut status_rx = state.session_status_tx.subscribe();
+        let (sender, mut rx) = mpsc::unbounded_channel();
+
+        restore_pending_or_idle(&state, &sender, 3, 30).await;
+
+        // No permission/question envelope, and crucially no status broadcast.
+        assert!(rx.try_recv().is_err());
+        assert!(status_rx.try_recv().is_err());
     }
 }

@@ -78,6 +78,9 @@ pub async fn get_session_status_snapshot(
                 feature_id: row.feature_id,
                 status,
                 kind,
+                // Filled by the WS handler from the active-turn registry; the
+                // DB has no per-turn start column.
+                turn_started_at_ms: None,
             },
         );
     }

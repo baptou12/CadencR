@@ -55,6 +55,7 @@ import { useWsSessionStore } from "@/stores/ws-session-store";
 import { updateSession, type SessionEntry, type WsSessionStore } from "@/stores/ws-session-types";
 import { transitionTurn, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
 import { startTurnTiming } from "@/stores/ws-turn-timing";
+import { buildClearedGatePatch } from "@/stores/ws-gate-state";
 import {
   applySnapshot,
   applyUpdate,
@@ -73,6 +74,13 @@ export interface SessionStatusEntry {
   kind: PendingKind | null;
   featureId: number;
   seq: number;
+  /**
+   * Server-stamped turn start (epoch ms) for a running turn, the single
+   * source of truth the elapsed timer is anchored to so every device renders
+   * the same value. `null`/absent when not running or not provided (the timer
+   * then falls back to local time).
+   */
+  turnStartedAtMs?: number | null;
 }
 
 interface SessionStatusState {
@@ -169,6 +177,10 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         // on wake, and the periodic 15 s poll covers the standalone case.
         // Reporting `connected` here is sufficient to clear the indicator.
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.session_status", {})));
+        // Also subscribe to global feature-lifecycle events so a conversation
+        // created/deleted/archived on another device updates this sidebar
+        // without a manual refresh.
+        ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
       });
 
       // Guard against React Strict Mode double-mount races: a closing
@@ -254,7 +266,7 @@ function syncWsLifecycles(
     if (!sessionId) continue;
     const session = updated.sessions[sessionId];
     if (!session) continue;
-    const patch = lifecyclePatchFromStatus(session, entry, previous[sessionDbId]?.status);
+    const patch = statusSyncPatch(session, entry, previous[sessionDbId]?.status);
     if (!patch) continue;
     updated = { ...updated, ...updateSession(updated, sessionId, patch) };
     changed = true;
@@ -264,7 +276,7 @@ function syncWsLifecycles(
 
 function syncWsLifecycle(
   sessionDbId: number,
-  entry: Pick<SessionStatusEntry, "status" | "kind">,
+  entry: Pick<SessionStatusEntry, "status" | "kind" | "turnStartedAtMs">,
   previousStatus?: LiveAgentStatus,
 ): void {
   const store = useWsSessionStore.getState();
@@ -273,9 +285,34 @@ function syncWsLifecycle(
   );
   if (!match) return;
   const [sessionId, session] = match;
-  const patch = lifecyclePatchFromStatus(session, entry, previousStatus);
+  const patch = statusSyncPatch(session, entry, previousStatus);
   if (!patch) return;
   useWsSessionStore.setState(updateSession(store, sessionId, patch));
+}
+
+/**
+ * Build the full ws-session patch for a status change: the lifecycle/timing
+ * patch plus a gate clear when the session leaves the "question" state.
+ *
+ * A gate (permission/plan/question) is answered on whichever device the user
+ * is holding; the backend then broadcasts the session out of "question" to
+ * every client. Clearing the gate here makes it disappear on the *other*
+ * devices too (the answering device already cleared its own). Keyed on the
+ * app-socket's own prev→next transition, so it never races a freshly-arrived
+ * gate on the per-feature socket.
+ */
+function statusSyncPatch(
+  session: SessionEntry,
+  entry: Pick<SessionStatusEntry, "status" | "kind" | "turnStartedAtMs">,
+  previousStatus?: LiveAgentStatus,
+): Partial<SessionEntry> | null {
+  const lifecyclePatch = lifecyclePatchFromStatus(session, entry, previousStatus);
+  const gatePatch =
+    previousStatus === "question" && entry.status !== "question"
+      ? buildClearedGatePatch(session)
+      : null;
+  if (!lifecyclePatch && !gatePatch) return null;
+  return { ...gatePatch, ...lifecyclePatch };
 }
 
 type LifecyclePatch =
@@ -284,19 +321,42 @@ type LifecyclePatch =
 
 function lifecyclePatchFromStatus(
   session: SessionEntry,
-  entry: Pick<SessionStatusEntry, "status" | "kind">,
+  entry: Pick<SessionStatusEntry, "status" | "kind" | "turnStartedAtMs">,
   previousStatus?: LiveAgentStatus,
 ): LifecyclePatch | null {
   const lifecycle = lifecycleFromStatus(session.lifecycle, entry.status, entry.kind);
+  const lifecycleChanged = lifecycle !== session.lifecycle;
+
+  // A second device observing a turn start via the global status: the
+  // lifecycle flips idle→active here. Anchor the timer to the server-stamped
+  // start so every device shows the same elapsed time. (When the server
+  // didn't supply one we fall through to `updateSession`'s local-clock
+  // default, preserving prior behavior for pre-field turns.)
+  const startsFreshTurn =
+    lifecycleChanged &&
+    !isInProgressLifecycle(session.lifecycle) &&
+    isInProgressLifecycle(lifecycle) &&
+    entry.turnStartedAtMs != null;
+
+  // Lifecycle unchanged but timing went stale (e.g. mid-turn snapshot): start
+  // it, anchored to the server start when available.
   const resetStaleActiveTiming =
-    lifecycle === session.lifecycle &&
+    !lifecycleChanged &&
     (session.turnTiming.startedAt == null || session.blocks.length === 0) &&
     enteredAgentFromIdle(previousStatus, entry.status);
-  if (lifecycle === session.lifecycle && !resetStaleActiveTiming) return null;
-  return {
-    lifecycle,
-    ...(resetStaleActiveTiming ? { turnTiming: startTurnTiming(Date.now()) } : {}),
-  };
+
+  if (!lifecycleChanged && !resetStaleActiveTiming) return null;
+  if (startsFreshTurn) {
+    return { lifecycle, turnTiming: startTurnTiming(entry.turnStartedAtMs as number) };
+  }
+  if (resetStaleActiveTiming) {
+    return { lifecycle, turnTiming: startTurnTiming(entry.turnStartedAtMs ?? Date.now()) };
+  }
+  return { lifecycle };
+}
+
+function isInProgressLifecycle(lifecycle: TurnLifecycle): boolean {
+  return lifecycle.phase === "active" || lifecycle.phase === "paused";
 }
 
 function enteredAgentFromIdle(

@@ -196,6 +196,7 @@ export function applyPersistedState(
     lifecycle,
     hasMore,
     oldestMessageId,
+    maxMessageId,
     featureId,
     sessionDbId,
     currentProviderId,
@@ -263,6 +264,7 @@ export function applyPersistedState(
     historyPrependDisplayOffset: 0,
     hasMore: hasMore ?? false,
     oldestMessageId: oldestMessageId ?? null,
+    lastAppliedMessageId: maxMessageId ?? null,
     featureId: featureId ?? null,
     sessionDbId: sessionDbId ?? null,
     lifecycle:
