@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useOperationToasts } from "@/hooks/useOperationToasts";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useVisualViewportHeight } from "@/hooks/useVisualViewportHeight";
 import { AppShell } from "@/components/AppShell";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { useQueryClient } from "@tanstack/react-query";
@@ -74,6 +75,9 @@ function RootLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  // On mobile, keep the shell sized above the on-screen keyboard so the
+  // terminal prompt (and any bottom-pinned input) stays visible while typing.
+  useVisualViewportHeight(isMobile);
   const leftSidebarRef = useRef<HTMLDivElement>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
