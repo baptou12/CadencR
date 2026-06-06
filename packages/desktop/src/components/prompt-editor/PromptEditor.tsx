@@ -142,7 +142,7 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           }
           placeholder={
             placeholder ? (
-              <div className="text-muted-foreground pointer-events-none absolute top-0 left-0 select-none text-sm leading-[22px]">
+              <div className="text-muted-foreground pointer-events-none absolute top-0 right-0 left-0 truncate select-none text-sm leading-[22px]">
                 {placeholder}
               </div>
             ) : null
