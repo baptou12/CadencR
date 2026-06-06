@@ -180,6 +180,9 @@ importers:
       idb-keyval:
         specifier: ^6.2.2
         version: 6.2.2
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
       lexical:
         specifier: ^0.42.0
         version: 0.42.0
@@ -5017,6 +5020,9 @@ packages:
 
   jsonschema@1.5.0:
     resolution: {integrity: sha512-K+A9hhqbn0f3pJX17Q/7H6yQfD/5OXgdrR5UE12gMXCiN9D5Xq2o5mddV2QEcX/bjla99ASsAAQUyMCCRWAEhw==}
+
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -12448,6 +12454,8 @@ snapshots:
   jsonpointer@5.0.1: {}
 
   jsonschema@1.5.0: {}
+
+  jsqr@1.4.0: {}
 
   keyv@4.5.4:
     dependencies:

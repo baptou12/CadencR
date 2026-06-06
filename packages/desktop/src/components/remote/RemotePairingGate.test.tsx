@@ -60,4 +60,16 @@ describe("RemotePairingGate", () => {
     expect(screen.getByRole("heading", { name: /pair this device/i })).toBeInTheDocument();
     expect(screen.queryByText("app-content")).not.toBeInTheDocument();
   });
+
+  it("offers both scan and paste affordances when unpaired", () => {
+    vi.spyOn(deviceToken, "isBrowserRemote").mockReturnValue(true);
+    vi.spyOn(deviceToken, "readDeviceToken").mockReturnValue(null);
+    render(
+      <RemotePairingGate>
+        <div>app-content</div>
+      </RemotePairingGate>,
+    );
+    expect(screen.getByRole("button", { name: /scan qr code/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /pair device/i })).toBeInTheDocument();
+  });
 });
