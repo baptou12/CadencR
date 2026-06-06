@@ -1,11 +1,10 @@
 import { forwardRef, useImperativeHandle, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { CheckIcon, GitBranchIcon } from "lucide-react";
 import { ShortcutTooltip } from "../ShortcutTooltip";
 import { AgentTodoList } from "../AgentTodoList";
 import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
-import { WorktreeButtonGroup } from "./WorktreePopover";
+import { WorktreeChip } from "./WorktreeChip";
 import type { TodoItem } from "@/types/agent";
 import type { ThinkingEffortLevel } from "@/shared/thinking-effort";
 import { findProviderMode, getVisibleModes } from "@/lib/provider-modes";
@@ -13,7 +12,7 @@ import type { PermissionMode } from "@/types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
 import type { RuntimeProviderModeOption } from "@/api/agentRuntime";
 import { ModelMetaChip, type Model, type Provider } from "./ModelMetaChip";
-import { META_BAR_CHIP, WORKTREE_ACTIVE_CHIP } from "./meta-bar-chip-styles";
+import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 import { CodexAccessModePopover } from "./CodexAccessModePopover";
 import { getDisplayMode } from "./meta-bar-codex-modes";
 
@@ -83,10 +82,10 @@ export interface MetaBarProps {
    */
   variant?: "session" | "standalone";
   /**
-   * When `true`, the auto-scroll, todos, and session-info chips are omitted
-   * because the parent renders them in a separate `MetaBarSecondary` strip
-   * below the prompt (used when the container is too narrow to fit them
-   * inline with the model picker / mode / worktree chips).
+   * When `true`, the auto-scroll, todos, session-info, and worktree chips are
+   * omitted because the parent renders them in a separate `MetaBarSecondary`
+   * strip below the prompt (used when the container is too narrow to fit them
+   * inline with the model picker / mode chips).
    */
   secondaryBelow?: boolean;
 }
@@ -218,34 +217,18 @@ export const MetaBar = forwardRef<MetaBarHandle, MetaBarProps>(function MetaBar(
         </ShortcutTooltip>
       )}
 
-      {/* Worktree chips — two-chip group (Branch + Use worktree) when the
-          embedder provides projectId + branch state, else legacy single toggle. */}
-      {showWorktreeChip &&
-        (worktreeProjectId != null && onWorktreeBranchChange && onToggleWorktree ? (
-          <WorktreeButtonGroup
-            projectId={worktreeProjectId}
-            defaultBranch={worktreeDefaultBranch}
-            useWorktree={!!useWorktree}
-            onToggleWorktree={onToggleWorktree}
-            selectedBranch={worktreeSelectedBranch ?? null}
-            onSelectedBranchChange={onWorktreeBranchChange}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={onToggleWorktree}
-            className={cn(
-              META_BAR_CHIP,
-              useWorktree
-                ? WORKTREE_ACTIVE_CHIP
-                : "bg-muted/50 text-muted-foreground hover:bg-muted/80",
-            )}
-          >
-            <GitBranchIcon className="size-3" />
-            Use worktree
-            {useWorktree && <CheckIcon className="size-3" />}
-          </button>
-        ))}
+      {/* Worktree chip — inline when wide; on narrow widths it drops to the
+          `MetaBarSecondary` strip below the prompt (`secondaryBelow`). */}
+      {showWorktreeChip && !secondaryBelow && (
+        <WorktreeChip
+          useWorktree={useWorktree}
+          onToggleWorktree={onToggleWorktree}
+          worktreeProjectId={worktreeProjectId}
+          worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeSelectedBranch={worktreeSelectedBranch}
+          onWorktreeBranchChange={onWorktreeBranchChange}
+        />
+      )}
 
       {/* Model chip */}
       {shouldShowModel && (
