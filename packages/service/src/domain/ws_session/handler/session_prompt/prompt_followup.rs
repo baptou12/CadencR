@@ -1,6 +1,7 @@
 use tracing::{error, info};
 
 use crate::domain::agents::adapter::RuntimeSessionHandle;
+use crate::domain::feature_events::{FeatureEventAction, FeatureEventBroadcaster};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
@@ -20,6 +21,7 @@ pub(super) struct FollowupPromptContext {
     pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     pub sender: WsSender,
     pub ws_feature_senders: WsFeatureSenderRegistry,
+    pub feature_events_tx: FeatureEventBroadcaster,
     pub envelope_id: String,
     /// The owning connection's session map + the global registry, so a
     /// follow-up turn re-stamps the start time and owner (single source of
@@ -68,6 +70,12 @@ async fn persist_followup_user_message(
         &persist_content,
     )
     .await;
+    // The user message changed this feature's most-recent-user-message sort
+    // key. Broadcast so every client's sidebar re-sorts conversations and
+    // floats this one to the top of its project.
+    context
+        .feature_events_tx
+        .emit(context.feature_id, None, FeatureEventAction::Reordered);
 }
 
 async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptSendPayload) {

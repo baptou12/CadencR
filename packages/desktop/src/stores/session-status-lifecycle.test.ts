@@ -3,6 +3,7 @@ import { useSessionStatusStore } from "@/stores/session-status-store";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { createSessionEntry } from "@/stores/ws-session-types";
 import { queryClient } from "@/lib/queryClient";
+import { getListFeaturesQueryKey, type Feature } from "@/api/generated";
 import { handleAppEnvelope } from "@/stores/session-status-handlers";
 import { transitionTurn } from "@/stores/ws-turn-lifecycle";
 import { startTurnTiming } from "@/stores/ws-turn-timing";
@@ -195,6 +196,40 @@ describe("session status lifecycle sync", () => {
     );
     expect(keys).toContain("/api/features/7");
     expect(keys).toContain("/api/features");
+    invalidateSpy.mockRestore();
+  });
+
+  it("scopes a 'reordered' feature_event to the cached feature's project", () => {
+    // Seed the per-project list cache so the handler can resolve the project.
+    queryClient.setQueryData(getListFeaturesQueryKey({ project_id: 4, include_archived: true }), [
+      { id: 7, project_id: 4 } as Feature,
+    ]);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    handleAppEnvelope("app", "feature_event", { feature_id: 7, action: "reordered" });
+
+    // A new user message reshuffles only its own project's list and leaves the
+    // title unchanged: scope to that project, skip the single-feature refetch.
+    const call = invalidateSpy.mock.calls[0]?.[0] as { queryKey?: unknown[] } | undefined;
+    expect(call?.queryKey?.[0]).toBe("/api/features");
+    expect(call?.queryKey?.[1]).toEqual({ project_id: 4 });
+    invalidateSpy.mockRestore();
+    queryClient.clear();
+  });
+
+  it("falls back to all lists for a 'reordered' feature_event with no cached feature", () => {
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+
+    handleAppEnvelope("app", "feature_event", { feature_id: 7, action: "reordered" });
+
+    // Uncached (e.g. a collapsed project on another device): broad invalidation
+    // with no single-feature refetch.
+    const call = invalidateSpy.mock.calls[0]?.[0] as { queryKey?: unknown[] } | undefined;
+    expect(call?.queryKey).toEqual(["/api/features"]);
+    const keys = invalidateSpy.mock.calls.map(
+      (c) => (c[0] as { queryKey?: unknown[] } | undefined)?.queryKey?.[0],
+    );
+    expect(keys).not.toContain("/api/features/7");
     invalidateSpy.mockRestore();
   });
 

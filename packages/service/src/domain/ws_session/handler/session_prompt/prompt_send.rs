@@ -104,6 +104,7 @@ pub(crate) async fn handle_prompt_send(
                 session_status_tx: app_state.session_status_tx.clone(),
                 sender: sender.clone(),
                 ws_feature_senders: app_state.ws_feature_senders.clone(),
+                feature_events_tx: app_state.feature_events_tx.clone(),
                 envelope_id: envelope.id.clone(),
                 sdk_sessions: sdk_sessions.clone(),
                 active_turns: app_state.active_turns.clone(),

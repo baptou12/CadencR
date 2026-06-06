@@ -20,6 +20,10 @@ pub enum FeatureEventAction {
     Created,
     Deleted,
     Updated,
+    /// A new user message landed, changing the most-recent-user-message sort
+    /// key. Clients re-sort their conversation lists but, unlike `Updated`,
+    /// the title is unchanged so no single-feature refetch is needed.
+    Reordered,
 }
 
 /// A feature-list change broadcast to every connected client.
