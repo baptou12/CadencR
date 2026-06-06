@@ -820,8 +820,18 @@ html[data-animations="off"] *::after {
 [data-sonner-toaster] [data-sonner-toast][data-type="info"] [data-icon] {
   color: var(--acc-cyan);
 }
-/* The toast description is muted relative to the title so a glance still
- * separates "what happened" from the details. */
-[data-sonner-toaster] [data-sonner-toast] [data-description] {
-  color: var(--muted-foreground);
+/* Toast description color.
+ *
+ * Sonner ships its OWN description color — `#3f3f3f` in its light rule and
+ * `hsl(0,0%,91%)` in its dark rule — and we never pass it a `theme`, so it uses
+ * the light value: dark grey text on our dark `--popover`, which is unreadable.
+ * Override it with `--popover-foreground` (tracks all three of our themes) and
+ * MATCH SONNER'S SPECIFICITY +1: its rule is
+ *   `[data-sonner-toast][data-styled='true'] [data-description]`  → (0,3,0)
+ * and Sonner injects its stylesheet after ours, so a (0,3,0) override would lose
+ * the tie. Including `[data-styled="true"]` here makes us (0,4,0) and win.
+ * Hierarchy with the title comes from weight/size; we only nudge opacity. */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--popover-foreground);
+  opacity: 0.9;
 }

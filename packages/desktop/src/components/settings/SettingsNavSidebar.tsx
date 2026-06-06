@@ -85,7 +85,9 @@ function SettingsNavSidebarImpl({
   return (
     <aside
       style={{ width: 240, flexShrink: 0 }}
-      className="flex flex-col border-r border-border bg-[var(--sidebar)]"
+      // Phones get the full width for content; sections still scroll in `main`,
+      // reachable from the workspace drawer's Settings link.
+      className="hidden flex-col border-r border-border bg-[var(--sidebar)] md:flex"
     >
       {header ? <div className="px-4 pt-5 pb-3">{header}</div> : null}
 

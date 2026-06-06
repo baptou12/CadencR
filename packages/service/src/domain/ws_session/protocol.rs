@@ -295,6 +295,15 @@ pub struct SessionEndedPayload {
     pub reason: String,
 }
 
+/// `session.user_message` — mirrors a just-sent user prompt to *other* devices
+/// viewing the same feature (the remote-access conversation mirror). The device
+/// that sent the prompt renders it locally and never receives this echo; only
+/// passive viewers do, so their conversation shows the prompt as it's sent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserMessageMirrorPayload {
+    pub text: String,
+}
+
 /// Discriminant for `SessionLifecyclePayload`.
 ///
 /// Currently only carries OS-power-driven transitions. `SuspendRequested` is

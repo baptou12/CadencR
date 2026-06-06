@@ -1,0 +1,432 @@
+//! Remote access: a second axum listener bound on `0.0.0.0:<remote_port>` over
+//! self-signed TLS that serves the existing API plus the built SPA, so another
+//! device can use the workspace. Started/stopped at runtime and torn down on
+//! quit. The loopback listener (the local `file://` renderer) is untouched.
+
+pub mod live;
+mod net;
+pub mod pairing;
+pub mod paths;
+mod secrets;
+mod secure_fs;
+mod spa;
+mod tls;
+
+pub use spa::spa_service;
+
+use std::net::{IpAddr, SocketAddr};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+
+use crate::app_state::AppState;
+use live::LiveSessions;
+use pairing::PairingCodes;
+
+/// Per-listener context baked into the remote router at `start` and read by the
+/// remote auth middleware and WebSocket handlers. Its presence (via an
+/// `Extension`) is also how shared handlers tell the remote listener apart from
+/// the loopback one.
+#[derive(Clone)]
+pub struct RemoteContext {
+    /// Exact `Host` values accepted on the remote listener (DNS-rebinding
+    /// defense). Never a wildcard.
+    pub allowed_hosts: Arc<Vec<String>>,
+    /// Exact `Origin` values accepted on remote WebSocket upgrades.
+    pub allowed_origins: Arc<Vec<String>>,
+    /// Pepper for device-token hashing.
+    pub pepper: Arc<Vec<u8>>,
+}
+
+/// Setting key persisting whether remote access auto-starts at launch.
+pub const REMOTE_ENABLED_SETTING: &str = "remote_access_enabled";
+
+/// Setting key holding an optional tunnel hostname (e.g. Tailscale). When set,
+/// it's added to the `Host`/`Origin` allowlist so tunneled requests aren't 421'd.
+pub const REMOTE_TUNNEL_HOST_SETTING: &str = "remote_tunnel_host";
+
+/// How long the remote listener gets to drain in-flight connections on stop.
+/// Kept under the desktop shell's 2 s SIGTERM grace (`sidecar.ts`) so quit
+/// isn't truncated by a hung remote WebSocket.
+const GRACEFUL_SHUTDOWN: Duration = Duration::from_millis(1500);
+
+/// Immutable wiring the controller needs to bring a listener up.
+#[derive(Clone)]
+pub struct RemoteConfig {
+    /// Built SPA directory; `None` in dev (Vite serves the renderer).
+    pub renderer_dir: Option<PathBuf>,
+    /// Port for the `0.0.0.0` TLS listener.
+    pub remote_port: u16,
+    /// Where cert/key/pepper live (`~/.cadencr/remote/`).
+    pub data_dir: PathBuf,
+}
+
+/// What the host UI needs to render the connect screen.
+#[derive(Debug, Clone)]
+pub struct RemoteInfo {
+    pub fingerprint: String,
+    pub port: u16,
+    pub lan_ips: Vec<IpAddr>,
+}
+
+#[derive(Debug)]
+pub enum RemoteError {
+    /// No SPA dir — remote serving only works in packaged builds.
+    NoRendererDir,
+    Tls(anyhow::Error),
+    /// Loading/generating the device-token pepper failed.
+    Secrets(anyhow::Error),
+    /// The listener failed to bind (e.g. the port is already in use).
+    BindFailed,
+}
+
+impl std::fmt::Display for RemoteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RemoteError::NoRendererDir => {
+                write!(
+                    f,
+                    "remote access requires a packaged build (no renderer dir)"
+                )
+            }
+            RemoteError::Tls(err) => write!(f, "TLS setup failed: {err}"),
+            RemoteError::Secrets(err) => write!(f, "secret setup failed: {err}"),
+            RemoteError::BindFailed => {
+                write!(f, "could not bind the remote listener (port may be in use)")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RemoteError {}
+
+#[derive(Default)]
+struct RemoteRuntime {
+    handle: Option<axum_server::Handle>,
+    join: Option<JoinHandle<()>>,
+    info: Option<RemoteInfo>,
+}
+
+/// Owns the lifecycle of the remote listener. Stored as `Arc<RemoteController>`
+/// in `AppState` (interior-mutable via the `Mutex`), mirroring the other shared
+/// registries.
+pub struct RemoteController {
+    config: RemoteConfig,
+    runtime: Mutex<RemoteRuntime>,
+    pairing: PairingCodes,
+    live: Arc<LiveSessions>,
+}
+
+impl RemoteController {
+    pub fn new(config: RemoteConfig) -> Self {
+        Self {
+            config,
+            runtime: Mutex::new(RemoteRuntime::default()),
+            pairing: PairingCodes::default(),
+            live: Arc::new(LiveSessions::default()),
+        }
+    }
+
+    /// Pairing-code store shared between the loopback `pairing-code` endpoint
+    /// (mint) and the remote `pair` endpoint (consume).
+    pub fn pairing(&self) -> &PairingCodes {
+        &self.pairing
+    }
+
+    /// Live remote-session registry, used to force-close a device's open
+    /// sockets on revoke.
+    pub fn live(&self) -> Arc<LiveSessions> {
+        Arc::clone(&self.live)
+    }
+
+    /// Start the listener. Idempotent: returns the current info if already
+    /// running. Requires a renderer dir (packaged build).
+    pub async fn start(&self, state: &AppState) -> Result<RemoteInfo, RemoteError> {
+        let mut rt = self.runtime.lock().await;
+        if let Some(info) = &rt.info {
+            return Ok(info.clone());
+        }
+
+        let renderer_dir = self
+            .config
+            .renderer_dir
+            .clone()
+            .ok_or(RemoteError::NoRendererDir)?;
+
+        let lan_ips = net::lan_ipv4s();
+        let tls = tls::load_or_generate(&self.config.data_dir, cert_sans(&lan_ips))
+            .await
+            .map_err(RemoteError::Tls)?;
+        let pepper = secrets::load_or_generate_pepper(&self.config.data_dir)
+            .map_err(RemoteError::Secrets)?;
+
+        // Bind the TCP socket up front so the real port is known *before* the
+        // router (and its `Host` allowlist) is built: with `remote_port = 0` the
+        // OS assigns the port, and the allowlist must carry the bound port or
+        // every request is 421'd. Binding here also surfaces "port in use"
+        // synchronously instead of racing the serve task.
+        let addr = SocketAddr::from(([0, 0, 0, 0], self.config.remote_port));
+        let listener = std::net::TcpListener::bind(addr).map_err(|err| {
+            tracing::error!("remote listener failed to bind {addr}: {err}");
+            RemoteError::BindFailed
+        })?;
+        let bound_addr = listener.local_addr().map_err(|_| RemoteError::BindFailed)?;
+        let port = bound_addr.port();
+
+        let tunnel_host = load_tunnel_host(&state.read_pool).await;
+        let context = RemoteContext {
+            allowed_hosts: Arc::new(allowed_hosts(&lan_ips, port, tunnel_host.as_deref())),
+            allowed_origins: Arc::new(allowed_origins(&lan_ips, port, tunnel_host.as_deref())),
+            pepper: Arc::new(pepper),
+        };
+
+        let router = crate::api::build_remote_router(state.clone(), &renderer_dir, context);
+        let handle = axum_server::Handle::new();
+        let server_handle = handle.clone();
+        let config = tls.config;
+
+        let join = tokio::spawn(async move {
+            // `from_tcp_rustls` reuses the already-bound listener (so the port
+            // can't drift from the allowlist). `with_connect_info` lets the
+            // rate-limit middleware read each request's source IP.
+            let result = axum_server::from_tcp_rustls(listener, config)
+                .handle(server_handle)
+                .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+                .await;
+            if let Err(err) = result {
+                tracing::error!("remote listener stopped with error: {err}");
+            }
+        });
+
+        let info = RemoteInfo {
+            fingerprint: tls.fingerprint,
+            port,
+            lan_ips,
+        };
+        tracing::info!("remote access listening on {bound_addr}");
+        rt.handle = Some(handle);
+        rt.join = Some(join);
+        rt.info = Some(info.clone());
+        Ok(info)
+    }
+
+    /// Stop the listener (graceful, bounded) and clear state. No-op when off.
+    pub async fn stop(&self) {
+        let mut rt = self.runtime.lock().await;
+        if let Some(handle) = rt.handle.take() {
+            handle.graceful_shutdown(Some(GRACEFUL_SHUTDOWN));
+        }
+        if let Some(join) = rt.join.take() {
+            let _ = join.await;
+        }
+        if rt.info.take().is_some() {
+            tracing::info!("remote access stopped");
+        }
+    }
+
+    /// Current listener info, or `None` when off.
+    pub async fn status(&self) -> Option<RemoteInfo> {
+        self.runtime.lock().await.info.clone()
+    }
+}
+
+/// SANs for the self-signed cert: loopback plus each detected LAN IP. Cosmetic
+/// for TOFU (the browser warns regardless), but keeps the warning honest.
+fn cert_sans(lan_ips: &[IpAddr]) -> Vec<String> {
+    let mut sans = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+    sans.extend(lan_ips.iter().map(IpAddr::to_string));
+    sans
+}
+
+/// Exact `Host` values accepted on the remote listener: loopback and each LAN
+/// IP on the remote port, plus the configured tunnel host (no port — tunnels
+/// terminate TLS on the standard 443). Never a wildcard — this is the
+/// DNS-rebinding guard.
+fn allowed_hosts(lan_ips: &[IpAddr], port: u16, tunnel_host: Option<&str>) -> Vec<String> {
+    let mut hosts = vec![format!("localhost:{port}"), format!("127.0.0.1:{port}")];
+    hosts.extend(lan_ips.iter().map(|ip| format!("{ip}:{port}")));
+    if let Some(host) = tunnel_host {
+        hosts.push(host.to_string());
+    }
+    hosts
+}
+
+/// `https://<host>` form of [`allowed_hosts`] for WebSocket origin checks.
+fn allowed_origins(lan_ips: &[IpAddr], port: u16, tunnel_host: Option<&str>) -> Vec<String> {
+    allowed_hosts(lan_ips, port, tunnel_host)
+        .into_iter()
+        .map(|host| format!("https://{host}"))
+        .collect()
+}
+
+/// Read + normalize the persisted tunnel host. `None` when unset/blank or on a
+/// read error (degrade gracefully — a missing tunnel host just means LAN-only).
+/// Shared by the listener (allowlist) and the HTTP layer (status + pairing URLs)
+/// so normalization lives in one place.
+pub async fn load_tunnel_host(pool: &sqlx::SqlitePool) -> Option<String> {
+    let raw = crate::domain::workspace::repository::get_setting(pool, REMOTE_TUNNEL_HOST_SETTING)
+        .await
+        .ok()
+        .flatten()?;
+    sanitize_tunnel_host(&raw)
+}
+
+/// Reduce user input to a bare `Host` value: strip scheme, path, and any
+/// trailing slash; lowercase. Returns `None` for blank input. Keeps an explicit
+/// `:port` if the user typed one (some tunnels expose a non-443 port).
+pub fn sanitize_tunnel_host(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let without_scheme = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))
+        .unwrap_or(trimmed);
+    let host = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(without_scheme)
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if is_valid_tunnel_host(&host) {
+        Some(host)
+    } else {
+        None
+    }
+}
+
+fn is_valid_tunnel_host(host: &str) -> bool {
+    if host.is_empty() || host.len() > 253 {
+        return false;
+    }
+    if host
+        .bytes()
+        .any(|b| b.is_ascii_whitespace() || matches!(b, b'@' | b'\\' | b'%'))
+    {
+        return false;
+    }
+
+    let (name, port) = match host.rsplit_once(':') {
+        Some((name, port)) => {
+            if name.contains(':') || port.is_empty() {
+                return false;
+            }
+            let Ok(port) = port.parse::<u16>() else {
+                return false;
+            };
+            (name, Some(port))
+        }
+        None => (host, None),
+    };
+    if matches!(port, Some(0)) {
+        return false;
+    }
+    is_valid_dns_host(name)
+}
+
+fn is_valid_dns_host(name: &str) -> bool {
+    if name.is_empty() || name == "localhost" || name.starts_with('.') || name.ends_with('.') {
+        return false;
+    }
+    name.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
+}
+
+/// Whether remote access should auto-start at launch (persisted setting).
+pub async fn is_enabled(pool: &sqlx::SqlitePool) -> bool {
+    matches!(
+        crate::domain::workspace::repository::get_setting(pool, REMOTE_ENABLED_SETTING).await,
+        Ok(Some(value)) if value == "true"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitize_strips_scheme_path_and_case() {
+        assert_eq!(
+            sanitize_tunnel_host("https://Foo.ngrok.app/connect?x=1"),
+            Some("foo.ngrok.app".to_string())
+        );
+        assert_eq!(
+            sanitize_tunnel_host("  laptop.tail1234.ts.net  "),
+            Some("laptop.tail1234.ts.net".to_string())
+        );
+        assert_eq!(
+            sanitize_tunnel_host("host:8443/"),
+            Some("host:8443".to_string())
+        );
+    }
+
+    #[test]
+    fn sanitize_rejects_blank() {
+        assert_eq!(sanitize_tunnel_host(""), None);
+        assert_eq!(sanitize_tunnel_host("   "), None);
+        assert_eq!(sanitize_tunnel_host("https://"), None);
+    }
+
+    #[test]
+    fn sanitize_rejects_misleading_or_invalid_authorities() {
+        assert_eq!(
+            sanitize_tunnel_host("https://trusted.ts.net@evil.example"),
+            None,
+            "userinfo-style hosts would make the browser connect to the wrong origin"
+        );
+        assert_eq!(sanitize_tunnel_host("host name.ts.net"), None);
+        assert_eq!(sanitize_tunnel_host("host\\name.ts.net"), None);
+        assert_eq!(sanitize_tunnel_host("host.ts.net:99999"), None);
+    }
+
+    #[test]
+    fn sanitize_accepts_valid_host_with_optional_port() {
+        assert_eq!(
+            sanitize_tunnel_host("Laptop.Tail1234.ts.net:8443/"),
+            Some("laptop.tail1234.ts.net:8443".to_string())
+        );
+    }
+
+    #[test]
+    fn dns_host_validation_is_conservative() {
+        assert!(is_valid_dns_host("laptop.tail1234.ts.net"));
+        assert!(!is_valid_dns_host("localhost"));
+        assert!(!is_valid_dns_host("-bad.example"));
+        assert!(!is_valid_dns_host("bad-.example"));
+        assert!(!is_valid_dns_host("bad..example"));
+    }
+
+    #[test]
+    fn tunnel_host_validation_handles_optional_ports() {
+        assert!(is_valid_tunnel_host("laptop.tail1234.ts.net:8443"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:0"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:99999"));
+        assert!(!is_valid_tunnel_host("laptop.tail1234.ts.net:port"));
+    }
+
+    #[test]
+    fn tunnel_host_extends_allowlist_without_port() {
+        let hosts = allowed_hosts(&[], 5006, Some("foo.ngrok.app"));
+        assert!(hosts.contains(&"foo.ngrok.app".to_string()));
+        assert!(hosts.contains(&"127.0.0.1:5006".to_string()));
+        let origins = allowed_origins(&[], 5006, Some("foo.ngrok.app"));
+        assert!(origins.contains(&"https://foo.ngrok.app".to_string()));
+    }
+
+    #[test]
+    fn no_tunnel_host_leaves_allowlist_lan_only() {
+        let hosts = allowed_hosts(&[], 5006, None);
+        assert!(hosts.iter().all(|h| h.ends_with(":5006")));
+    }
+}

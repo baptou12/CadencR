@@ -45,6 +45,15 @@ const RENAMES = {
   set_schedule: "set_custom_action_schedule",
   // LSP: disambiguate the catalog probe from the generic "list servers" name.
   list_servers: "list_lsp_servers",
+  // Remote access: the handlers use bare verbs (status/enable/pair/…); prefix
+  // them so the generated hooks/functions don't collide and read as a group.
+  status: "remote_status",
+  enable: "remote_enable",
+  disable: "remote_disable",
+  pairing_code: "remote_pairing_code",
+  pair: "remote_pair",
+  revoke: "remote_revoke_device",
+  set_tunnel_host: "remote_set_tunnel_host",
 };
 
 module.exports = (spec) => {

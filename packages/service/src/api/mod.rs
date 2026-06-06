@@ -22,12 +22,13 @@ use crate::domain::sessions::routes::sessions_router;
 use crate::domain::terminal::routes::terminal_router;
 use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
+use crate::error::AppError;
 use axum::extract::{Query, State};
-use axum::routing::get;
+use axum::routing::{any, get};
 use axum::Json;
 use axum::Router;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[utoipa::path(
     get,
@@ -57,7 +58,11 @@ pub struct AgentCatalogQuery {
     cwd: Option<PathBuf>,
 }
 
-pub fn build_router(state: AppState) -> Router {
+/// The shared API surface (every sub-router + `/ws` + agent catalog), with no
+/// auth layer or state applied. Both the loopback router and the remote router
+/// build on this so the 17-router merge lives in exactly one place; each adds
+/// its own middleware stack (the loopback and remote auth postures differ).
+pub fn build_api_routes() -> Router<AppState> {
     Router::new()
         .merge(openapi::routes())
         .merge(git_router())
@@ -78,16 +83,69 @@ pub fn build_router(state: AppState) -> Router {
         .merge(lsp_router())
         .route("/ws", get(ws_handler))
         .route("/api/agent-catalog", get(get_agent_catalog))
+}
+
+fn compression_layer() -> tower_http::compression::CompressionLayer {
+    // Compression sits OUTSIDE auth so 401 bodies also compress.
+    // Tower's CompressionLayer automatically skips `Upgrade` (WebSocket) requests.
+    tower_http::compression::CompressionLayer::new()
+        .gzip(true)
+        .br(true)
+}
+
+/// Loopback router for the local Electron renderer. Also hosts the loopback-only
+/// remote-access control endpoints (enable/disable/status/pairing-code/revoke),
+/// which a remote device can therefore never reach.
+pub fn build_router(state: AppState) -> Router {
+    build_api_routes()
+        .merge(crate::domain::remote::loopback_router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             middleware::auth_middleware,
         ))
-        // Compression sits OUTSIDE auth so 401 bodies also compress.
-        // Tower's CompressionLayer automatically skips `Upgrade` (WebSocket) requests.
-        .layer(
-            tower_http::compression::CompressionLayer::new()
-                .gzip(true)
-                .br(true),
-        )
+        .layer(compression_layer())
         .with_state(state)
+}
+
+/// Remote router served over TLS on the network listener: the same API, the
+/// public `pair` endpoint, and the built SPA as a fallback for client-side
+/// routing. Uses device-token auth + an extended `Host` allowlist (via
+/// `remote_auth_middleware`), with the `RemoteContext` injected as an extension
+/// for the middleware and WebSocket handlers.
+pub fn build_remote_router(
+    state: AppState,
+    renderer_dir: &Path,
+    context: crate::remote::RemoteContext,
+) -> Router {
+    // A fresh limiter per listener start; bound to the remote router only.
+    let limiter = std::sync::Arc::new(middleware::RateLimiter::default());
+    build_api_routes()
+        .merge(crate::domain::remote::public_router())
+        // Keep API misses API-shaped. Without this, an authenticated request for
+        // a loopback-only or typoed `/api/*` path would fall through to
+        // `index.html`, obscuring routing mistakes and weakening the "remote
+        // devices cannot reach host-control endpoints" invariant.
+        .route("/api/{*path}", any(api_not_found))
+        .fallback_service(crate::remote::spa_service(renderer_dir))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::remote_auth_middleware,
+        ))
+        // Outer to auth so abuse (esp. pairing brute-force) is shed before any
+        // DB work. Reads the limiter + `ConnectInfo` injected by the layers/serve
+        // below it.
+        .layer(axum::middleware::from_fn(middleware::rate_limit_middleware))
+        .layer(axum::Extension(limiter))
+        .layer(axum::Extension(context))
+        .layer(compression_layer())
+        // Outermost: stamp CSP + hardening headers on every remote response,
+        // including auth/rate-limit short-circuits and static SPA assets.
+        .layer(axum::middleware::from_fn(
+            middleware::remote_security_headers_middleware,
+        ))
+        .with_state(state)
+}
+
+async fn api_not_found() -> Result<(), AppError> {
+    Err(AppError::NotFound("api route".into()))
 }

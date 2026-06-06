@@ -1,29 +1,22 @@
 mod api;
 mod app_state;
 mod config;
+mod dev_env;
 mod domain;
 mod error;
+mod remote;
 mod shared;
 
 use axum::http::header::{HeaderName, CONTENT_TYPE};
 use axum::http::Method;
 use clap::Parser;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use app_state::AppState;
 use config::{Command, Config};
 use shared::db;
-
-const SERVICE_DOTENV_DISPLAY_PATH: &str = "packages/service/.env";
-const SERVICE_DOTENV_EXAMPLE_PATH: &str = "packages/service/.env.example";
-const REQUIRED_DEV_ENV_KEYS: [&str; 4] = [
-    "CADENCR_DB_PATH",
-    "CADENCR_RUST_PORT",
-    "CADENCR_FRONTEND_PORT",
-    "CADENCR_AUTH_TOKEN",
-];
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     // source tree on the developer machine — that is exactly how the prod
     // database used to get repointed at the dev DB on the user's laptop.
     let dotenv_path = if cfg!(debug_assertions) {
-        load_optional_package_dotenv(env!("CARGO_MANIFEST_DIR"))?
+        dev_env::load_optional_package_dotenv(env!("CARGO_MANIFEST_DIR"))?
     } else {
         None
     };
@@ -56,8 +49,11 @@ async fn main() -> anyhow::Result<()> {
         }
         None => {
             if cfg!(debug_assertions) {
-                let dotenv_path = require_dev_env_file(dotenv_path)?;
-                validate_required_env_keys(SERVICE_DOTENV_DISPLAY_PATH, &REQUIRED_DEV_ENV_KEYS)?;
+                let dotenv_path = dev_env::require_dev_env_file(dotenv_path)?;
+                dev_env::validate_required_env_keys(
+                    dev_env::SERVICE_DOTENV_DISPLAY_PATH,
+                    &dev_env::REQUIRED_DEV_ENV_KEYS,
+                )?;
                 info!("Loaded env from {}", dotenv_path.display());
             } else if let Some(dotenv_path) = dotenv_path.as_deref() {
                 info!("Loaded env from {}", dotenv_path.display());
@@ -93,9 +89,6 @@ async fn main() -> anyhow::Result<()> {
             )
             .await;
 
-            let (session_status_tx, _) = tokio::sync::broadcast::channel(64);
-            let (file_change_tx, _) = tokio::sync::broadcast::channel(16);
-
             let auth_token = config.auth_token.ok_or_else(|| {
                 anyhow::anyhow!(
                     "CADENCR_AUTH_TOKEN is required. Pass --auth-token <tok> or set the env \
@@ -105,39 +98,21 @@ async fn main() -> anyhow::Result<()> {
                 )
             })?;
 
-            let state = AppState {
+            let remote_controller =
+                std::sync::Arc::new(remote::RemoteController::new(remote::RemoteConfig {
+                    renderer_dir: config.renderer_dir.clone().map(PathBuf::from),
+                    remote_port: config.remote_port,
+                    data_dir: remote::paths::remote_data_dir(),
+                }));
+
+            let state = AppState::for_server(
                 read_pool,
                 write_pool,
-                max_parallel_agents: AppState::max_parallel_from_env(),
-                agent_timeout_minutes: AppState::agent_timeout_minutes_from_env(),
-                session_status_tx: domain::session_status::SessionStatusBroadcaster::new(
-                    session_status_tx,
-                    std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
-                ),
-                pty_manager: domain::terminal::service::PtyManager::new(),
-                file_change_tx,
-                file_watcher: domain::editor::watcher::new_shared(),
                 auth_token,
-                frontend_port: config.frontend_port,
-                port: config.port,
-                custom_action_scheduler:
-                    domain::custom_actions::scheduler::CustomActionScheduler::new(),
-                custom_action_runs: std::sync::Arc::new(
-                    domain::custom_actions::run_registry::CustomActionRunRegistry::new(),
-                ),
-                git_watcher: std::sync::Arc::new(domain::git::watcher::GitWatcherRegistry::new()),
-                push_sessions: std::sync::Arc::new(
-                    domain::git::push_sessions::PushSessionRegistry::new(),
-                ),
-                ws_feature_senders:
-                    domain::ws_session::sender_registry::WsFeatureSenderRegistry::new(),
-                auto_name_runs: std::sync::Arc::new(
-                    domain::features::run_registry::FeatureRunRegistry::new(),
-                ),
-                lsp_sessions: domain::lsp::LspRegistry::new(),
-                lsp_crashes: domain::lsp::lifecycle::CrashTracker::new(),
-                import_jobs: domain::imports::jobs::ImportJobRegistry::new(),
-            };
+                config.frontend_port,
+                config.port,
+                remote_controller,
+            );
 
             // Push user-selected CLI binary paths into the SDK overrides
             // BEFORE the warmup runs — the opencode warmup spawns the server
@@ -148,7 +123,18 @@ async fn main() -> anyhow::Result<()> {
             // Resume periodic custom-action schedules from a previous launch.
             state.custom_action_scheduler.bootstrap(&state).await;
 
+            // Auto-start remote access if the user left it enabled (persisted
+            // setting). Failures are non-fatal — the loopback server must come
+            // up regardless, and the UI surfaces the error on next toggle.
+            if remote::is_enabled(&state.read_pool).await {
+                match state.remote.start(&state).await {
+                    Ok(info) => info!("Remote access auto-started on port {}", info.port),
+                    Err(err) => tracing::warn!("Remote access auto-start failed: {err}"),
+                }
+            }
+
             let pty_manager = state.pty_manager.clone();
+            let remote_for_shutdown = state.remote.clone();
             let app = api::build_router(state).layer(build_cors_layer(config.frontend_port));
 
             let addr = format!("127.0.0.1:{}", config.port);
@@ -161,7 +147,7 @@ async fn main() -> anyhow::Result<()> {
             // a real-time WebSocket stream (commit output, agent output) into
             // a "dump everything at the end" feed. We never want that here.
             axum::serve(NoDelayListener(listener), app)
-                .with_graceful_shutdown(shutdown_signal(pty_manager))
+                .with_graceful_shutdown(shutdown_signal(pty_manager, remote_for_shutdown))
                 .await?;
         }
     }
@@ -206,56 +192,6 @@ impl axum::serve::Listener for NoDelayListener {
     fn local_addr(&self) -> std::io::Result<Self::Addr> {
         self.0.local_addr()
     }
-}
-
-fn service_dotenv_path(manifest_dir: impl AsRef<Path>) -> PathBuf {
-    manifest_dir.as_ref().join(".env")
-}
-
-fn load_optional_package_dotenv(manifest_dir: impl AsRef<Path>) -> anyhow::Result<Option<PathBuf>> {
-    let dotenv_path = service_dotenv_path(manifest_dir);
-    if !dotenv_path.is_file() {
-        return Ok(None);
-    }
-
-    // `from_path_override` so a parent process leaking CADENCR_* vars (the
-    // most common case: an in-app agent shell running `cargo run` from a
-    // worktree) cannot shadow the dev defaults declared in `.env`.
-    dotenvy::from_path_override(&dotenv_path).map_err(|error| {
-        anyhow::anyhow!("Failed to load `{SERVICE_DOTENV_DISPLAY_PATH}`: {error}")
-    })?;
-
-    Ok(Some(dotenv_path))
-}
-
-fn require_dev_env_file(dotenv_path: Option<PathBuf>) -> anyhow::Result<PathBuf> {
-    dotenv_path.ok_or_else(|| {
-        anyhow::anyhow!(
-            "Missing required dev env file `{SERVICE_DOTENV_DISPLAY_PATH}`. Copy \
-             `{SERVICE_DOTENV_EXAMPLE_PATH}` to `{SERVICE_DOTENV_DISPLAY_PATH}`."
-        )
-    })
-}
-
-fn validate_required_env_keys(display_path: &str, required_keys: &[&str]) -> anyhow::Result<()> {
-    let missing = required_keys
-        .iter()
-        .copied()
-        .filter(|key| {
-            std::env::var(key)
-                .ok()
-                .is_none_or(|value| value.trim().is_empty())
-        })
-        .collect::<Vec<_>>();
-
-    if missing.is_empty() {
-        return Ok(());
-    }
-
-    anyhow::bail!(
-        "Missing required keys in `{display_path}`: {}.",
-        missing.join(", ")
-    )
 }
 
 fn build_cors_layer(frontend_port: u16) -> CorsLayer {
@@ -303,7 +239,10 @@ fn init_tracing(to_stderr: bool) {
     }
 }
 
-async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
+async fn shutdown_signal(
+    pty_manager: domain::terminal::service::PtyManager,
+    remote: std::sync::Arc<remote::RemoteController>,
+) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -325,86 +264,12 @@ async fn shutdown_signal(pty_manager: domain::terminal::service::PtyManager) {
     }
     tracing::info!("Shutdown signal received, shutting down gracefully...");
 
+    // Drop the remote listener first so no new remote-driven work starts while
+    // we tear the rest down. Bounded so a hung remote WS can't block quit.
+    remote.stop().await;
+
     pty_manager.kill_all();
     crate::domain::agents::shutdown_runtime_servers().await;
 
     tracing::info!("Runtime servers stopped.");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        load_optional_package_dotenv, require_dev_env_file, service_dotenv_path,
-        validate_required_env_keys, REQUIRED_DEV_ENV_KEYS, SERVICE_DOTENV_DISPLAY_PATH,
-    };
-    use std::fs;
-    use std::sync::{Mutex, OnceLock};
-    use tempfile::tempdir;
-
-    fn env_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-    }
-
-    fn clear_env(keys: &[&str]) {
-        for key in keys {
-            std::env::remove_var(key);
-        }
-    }
-
-    #[test]
-    fn package_dotenv_loads_only_manifest_dir() {
-        let _guard = env_lock().lock().unwrap();
-        let workspace = tempdir().unwrap();
-        let manifest_dir = workspace.path().join("service");
-        let env_path = service_dotenv_path(&manifest_dir);
-
-        std::env::remove_var("SERVICE_TEST_ONLY");
-        fs::create_dir(&manifest_dir).unwrap();
-
-        assert_eq!(load_optional_package_dotenv(&manifest_dir).unwrap(), None);
-
-        fs::write(&env_path, "SERVICE_TEST_ONLY=loaded-from-manifest\n").unwrap();
-
-        let loaded = load_optional_package_dotenv(&manifest_dir).unwrap();
-
-        assert_eq!(loaded, Some(env_path));
-        assert_eq!(
-            std::env::var("SERVICE_TEST_ONLY").unwrap(),
-            "loaded-from-manifest"
-        );
-
-        std::env::remove_var("SERVICE_TEST_ONLY");
-    }
-
-    #[test]
-    fn missing_dev_env_file_is_fatal() {
-        let error = require_dev_env_file(None).unwrap_err();
-
-        assert!(error.to_string().contains("packages/service/.env"));
-    }
-
-    #[test]
-    fn missing_required_local_keys_are_fatal() {
-        let _guard = env_lock().lock().unwrap();
-        let workspace = tempdir().unwrap();
-        let manifest_dir = workspace.path().join("service");
-        let env_path = service_dotenv_path(&manifest_dir);
-        fs::create_dir(&manifest_dir).unwrap();
-        clear_env(&REQUIRED_DEV_ENV_KEYS);
-        fs::write(
-            &env_path,
-            "CADENCR_DB_PATH=./cadencr.local.db\nCADENCR_RUST_PORT=5005\nCADENCR_AUTH_TOKEN=\n",
-        )
-        .unwrap();
-        load_optional_package_dotenv(&manifest_dir).unwrap();
-
-        let error = validate_required_env_keys(SERVICE_DOTENV_DISPLAY_PATH, &REQUIRED_DEV_ENV_KEYS)
-            .unwrap_err();
-
-        let message = error.to_string();
-        assert!(message.contains("CADENCR_FRONTEND_PORT"));
-        assert!(message.contains("CADENCR_AUTH_TOKEN"));
-        clear_env(&REQUIRED_DEV_ENV_KEYS);
-    }
 }

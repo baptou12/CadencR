@@ -9,6 +9,9 @@ files:
 extraResources:
   - from: resources/bin/cadencr-service
     to: cadencr-service
+  # The built SPA on the real filesystem, served over the remote listener.
+  - from: out/renderer
+    to: renderer
 mac:
   # Intentionally NOT setting `identity: null` — that disables codesign
   # entirely, and macOS UNUserNotificationCenter then refuses to register

@@ -26,6 +26,19 @@ pub struct Config {
     #[arg(long, env = "CADENCR_APP_VERSION")]
     pub app_version: Option<String>,
 
+    /// Directory holding the built SPA assets, served over HTTPS to remote
+    /// devices. The desktop shell passes its packaged `renderer` dir; dev runs
+    /// leave it unset (Vite serves the renderer, so remote access is a
+    /// packaged-build-only feature — see `remote::RemoteError::NoRendererDir`).
+    #[arg(long, env = "CADENCR_RENDERER_DIR")]
+    pub renderer_dir: Option<String>,
+
+    /// Port for the remote-access TLS listener, bound on `0.0.0.0` only while
+    /// remote access is enabled. Distinct from `--port` (the loopback listener)
+    /// because both interfaces can't share one port.
+    #[arg(long, default_value = "5006", env = "CADENCR_REMOTE_PORT")]
+    pub remote_port: u16,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

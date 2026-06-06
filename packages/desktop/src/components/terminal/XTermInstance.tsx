@@ -276,6 +276,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
       let connected = false;
       let dataDisposable: { dispose: () => void } | null = null;
       let onFocusHandler: (() => void) | null = null;
+      let touchScrollCleanup: (() => void) | null = null;
 
       const ensureOpen = (): boolean => {
         if (opened) return true;
@@ -288,6 +289,14 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
             writeRef.current?.(data);
           }
         });
+        // iOS hands xterm no usable scroll gesture, so we drive scrolling from
+        // touch deltas. Bind to the container we own, NOT `.xterm-viewport`:
+        // the viewport is `position:absolute` and xterm's `.xterm-screen`
+        // (plus the scrollbar overlay) paint on top of it, so touches never
+        // reach a viewport-bound listener — but they DO bubble up to here. A
+        // tap (no move) is left alone, so tapping to focus still opens the
+        // keyboard.
+        touchScrollCleanup = attachTouchScroll(container, terminal);
         opened = true;
         openedRef.current = true;
         // Replay any focus request that came in before the textarea existed.
@@ -376,6 +385,7 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
         resizeObserver.disconnect();
         unsubscribeResize();
         if (onFocusHandler) terminal.textarea?.removeEventListener("focus", onFocusHandler);
+        touchScrollCleanup?.();
         dataDisposable?.dispose();
 
         if (ptyIdRef.current && !exitedRef.current && shouldKillRef.current) {
@@ -416,6 +426,55 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     );
   },
 );
+
+/**
+ * Make the terminal draggable by finger on touch devices. xterm 6 drives
+ * scrolling through VS Code's `ScrollableElement` (not a native CSS overflow
+ * scroller), and iOS never feeds that element a touch gesture — so a finger
+ * drag did nothing. We translate the vertical touch delta into whole-row
+ * scrolls via xterm's public `scrollLines()` API, which is the same path the
+ * wheel uses, so the buffer and scrollbar stay in sync. `surface` is the outer
+ * container (not `.xterm-viewport`, which is painted over and never sees the
+ * touches). Returns a cleanup fn; inert on non-touch input since touch events
+ * never fire there.
+ */
+function attachTouchScroll(surface: HTMLElement, terminal: Terminal): () => void {
+  let lastY = 0;
+  // Sub-row pixels carried between moves so slow drags still scroll smoothly
+  // instead of rounding every delta down to zero.
+  let pixelRemainder = 0;
+  // Row height in px, sampled once per drag at `touchstart`. Reading
+  // `clientHeight` here (not on every `touchmove`) keeps a forced reflow off
+  // the rapid-fire move path; the terminal can't resize mid-drag anyway.
+  let rowHeight = 1;
+
+  const onTouchStart = (e: TouchEvent): void => {
+    if (e.touches.length !== 1) return;
+    lastY = e.touches[0].clientY;
+    pixelRemainder = 0;
+    rowHeight = Math.max(1, surface.clientHeight / Math.max(1, terminal.rows));
+  };
+
+  const onTouchMove = (e: TouchEvent): void => {
+    if (e.touches.length !== 1) return;
+    const y = e.touches[0].clientY;
+    pixelRemainder += y - lastY;
+    lastY = y;
+    const rows = Math.trunc(pixelRemainder / rowHeight);
+    if (rows === 0) return;
+    pixelRemainder -= rows * rowHeight;
+    // Finger down (rows > 0) reveals older output, i.e. scroll up → negative.
+    terminal.scrollLines(-rows);
+    e.preventDefault();
+  };
+
+  surface.addEventListener("touchstart", onTouchStart, { passive: true });
+  surface.addEventListener("touchmove", onTouchMove, { passive: false });
+  return () => {
+    surface.removeEventListener("touchstart", onTouchStart);
+    surface.removeEventListener("touchmove", onTouchMove);
+  };
+}
 
 function createXtermInstance(theme: XTermPalette): Terminal {
   return new Terminal({

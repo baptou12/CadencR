@@ -3,6 +3,7 @@ import { PlusIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useListCustomActions, type CustomAction } from "@/api/generated";
 import { CustomActionButton } from "./CustomActionButton";
 import { CustomActionDetails } from "./CustomActionDetails";
@@ -22,7 +23,8 @@ const MAX_INLINE = 4;
  *
  * Layout: `[act1] [act2] [act3] [act4] [⋯ overflow] [+ add]`. The first four
  * actions render inline; any beyond that move into the overflow menu, keeping
- * the add button in a stable position.
+ * the add button in a stable position. On phones every action collapses into
+ * the overflow menu (`[⋯] [+]`) so the cramped header keeps room for the title.
  *
  * Both inline buttons and overflow entries open one shared details/output
  * popover (anchored to the toolbar), so output is reachable identically for
@@ -31,6 +33,7 @@ const MAX_INLINE = 4;
  * even after the popover/menu closes.
  */
 export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps): ReactElement {
+  const isMobile = useIsMobile();
   const { data: actions = [] } = useListCustomActions(
     { project_id: projectId, feature_id: featureId },
     {
@@ -59,8 +62,9 @@ export function CustomActionsBar({ featureId, projectId }: CustomActionsBarProps
     setDetailsId(action.id);
   }, []);
 
-  const inline = actions.length <= MAX_INLINE ? actions : actions.slice(0, MAX_INLINE);
-  const overflow = actions.length <= MAX_INLINE ? [] : actions.slice(MAX_INLINE);
+  const maxInline = isMobile ? 0 : MAX_INLINE;
+  const inline = actions.length <= maxInline ? actions : actions.slice(0, maxInline);
+  const overflow = actions.length <= maxInline ? [] : actions.slice(maxInline);
   // Resolve from the live list so the panel keeps streaming fresh data while open.
   const detailsAction =
     detailsId != null ? (actions.find((a) => a.id === detailsId) ?? null) : null;

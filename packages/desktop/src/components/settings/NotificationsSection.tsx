@@ -2,7 +2,7 @@ import { createElement, useMemo, useState } from "react";
 import { Bell } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import {
   NOTIFICATION_MODE_KEY,
@@ -77,22 +77,25 @@ export function NotificationsSection(): React.JSX.Element {
             disabled={modeSetting.isLoading}
           />
         </SettingsSubsection>
-        <SettingsSubsection padded={false}>
-          <SettingsRow
-            icon={
-              <IconTile tint="yellow">
-                <Bell className="size-4" />
-              </IconTile>
-            }
-            label="Send test notification"
-            description="Always exercises the OS path so you can diagnose delivery problems independently of the destination above. If nothing appears, check System Settings → Notifications for Cadencr."
-            control={
-              <Button variant="outline" size="sm" onClick={handleSendTest} disabled={sending}>
-                {sending ? "Sending…" : "Send test"}
-              </Button>
-            }
-          />
-        </SettingsSubsection>
+        {/* The OS notification path only exists in the desktop shell. */}
+        {isDesktopShell() ? (
+          <SettingsSubsection padded={false}>
+            <SettingsRow
+              icon={
+                <IconTile tint="yellow">
+                  <Bell className="size-4" />
+                </IconTile>
+              }
+              label="Send test notification"
+              description="Always exercises the OS path so you can diagnose delivery problems independently of the destination above. If nothing appears, check System Settings → Notifications for Cadencr."
+              control={
+                <Button variant="outline" size="sm" onClick={handleSendTest} disabled={sending}>
+                  {sending ? "Sending…" : "Send test"}
+                </Button>
+              }
+            />
+          </SettingsSubsection>
+        ) : null}
       </SettingsCard>
     </SettingsSection>
   );

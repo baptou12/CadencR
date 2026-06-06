@@ -2,6 +2,32 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <!-- Without this, mobile browsers (remote access on a phone) use a ~980px
+         layout viewport and render the desktop layout zoomed out, so the
+         responsive breakpoints never trigger. `viewport-fit=cover` lets the UI
+         extend under the iPhone safe-area insets. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- iOS Safari/Chrome have no JS Fullscreen API, so the only way to drop the
+         browser chrome on a phone is "Add to Home Screen": these tell iOS to
+         launch the saved icon in standalone (chromeless) mode. `black-translucent`
+         lets the UI run under the status bar (paired with the safe-area insets). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Cadencr" />
+    <meta name="theme-color" content="#181a25" />
+    <!-- Icons live at the web root (public/) with stable names: browsers and iOS
+         auto-probe /favicon.ico and /apple-touch-icon.png, and our SPA answers
+         unknown paths with index.html (HTML), which would otherwise be treated
+         as a broken icon. The SVG favicon (transparent) adapts to tab bars; the
+         .ico is the classic fallback. apple-touch-icon is an opaque 180x180 tile
+         (iOS ignores alpha and never reads manifest icons).
+         NOTE: iOS Safari refuses apple-touch-icon over a self-signed cert, so the
+         homescreen icon only appears over a trusted-cert (tunnel) connection. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" sizes="32x32" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Cadencr</title>
   </head>
   <body>

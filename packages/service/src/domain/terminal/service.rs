@@ -52,6 +52,17 @@ pub struct PtyHandle {
     /// it can detect when the terminal is running outside the feature's current
     /// worktree.
     pub cwd: String,
+    /// Feature this PTY belongs to. Lets a second client (e.g. a remote device)
+    /// discover and attach to the feature's live shells instead of spawning a
+    /// new one — the broadcast channel already supports multiple subscribers.
+    pub feature_id: i64,
+}
+
+/// A live PTY belonging to a feature, surfaced so another client can attach.
+pub struct PtySession {
+    pub pty_id: String,
+    pub cwd: String,
+    pub alive: bool,
 }
 
 /// Manages all PTY sessions. Stored in AppState.
@@ -70,6 +81,7 @@ impl PtyManager {
     /// Spawn a new PTY in the given working directory. Returns (pty_id, handle).
     pub fn create_pty(
         &self,
+        feature_id: i64,
         cwd: &str,
         cols: u16,
         rows: u16,
@@ -111,6 +123,7 @@ impl PtyManager {
             killer: Arc::new(Mutex::new(killer)),
             data_tx: data_tx.clone(),
             cwd: cwd.to_string(),
+            feature_id,
         });
 
         self.terminals.insert(pty_id.clone(), Arc::clone(&handle));
@@ -235,6 +248,22 @@ impl PtyManager {
     pub fn get_cwd(&self, pty_id: &str) -> Option<String> {
         self.terminals.get(pty_id).map(|h| h.cwd.clone())
     }
+
+    /// All PTYs spawned for `feature_id`, so another client can attach to the
+    /// feature's live shells. `alive` mirrors `get_scrollback`'s liveness check
+    /// (the child hasn't exited). Dead-but-not-yet-reaped PTYs are still listed;
+    /// the caller decides whether to attach (e.g. to read final scrollback).
+    pub fn feature_ptys(&self, feature_id: i64) -> Vec<PtySession> {
+        self.terminals
+            .iter()
+            .filter(|entry| entry.value().feature_id == feature_id)
+            .map(|entry| PtySession {
+                pty_id: entry.key().clone(),
+                cwd: entry.value().cwd.clone(),
+                alive: entry.value().alive.borrow().is_none(),
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -250,7 +279,7 @@ mod tests {
         let manager = PtyManager::new();
         let cwd = temp_existing_dir();
         let (pty_id, handle) = manager
-            .create_pty(&cwd, 80, 24)
+            .create_pty(1, &cwd, 80, 24)
             .expect("PTY should spawn in temp dir");
 
         assert_eq!(handle.cwd, cwd, "handle should expose spawned cwd");
@@ -270,6 +299,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn feature_ptys_lists_only_that_features_live_shells() {
+        let manager = PtyManager::new();
+        let cwd = temp_existing_dir();
+        let (pty_a, _) = manager.create_pty(7, &cwd, 80, 24).expect("spawn a");
+        let (_pty_b, _) = manager.create_pty(7, &cwd, 80, 24).expect("spawn b");
+        let (_pty_other, _) = manager.create_pty(99, &cwd, 80, 24).expect("spawn other");
+
+        let feature_7 = manager.feature_ptys(7);
+        assert_eq!(feature_7.len(), 2, "both feature-7 PTYs are listed");
+        assert!(
+            feature_7.iter().all(|s| s.alive),
+            "freshly spawned => alive"
+        );
+        assert!(feature_7.iter().any(|s| s.pty_id == pty_a));
+
+        assert_eq!(manager.feature_ptys(99).len(), 1, "other feature isolated");
+        assert!(
+            manager.feature_ptys(123).is_empty(),
+            "unknown feature => none"
+        );
+
+        // Kill every spawned shell so each blocking `child.wait()` returns and the
+        // test runtime can shut down — a lingering login shell would hang it.
+        manager.kill_all();
+    }
+
+    #[tokio::test]
     async fn create_pty_inherits_process_environment() {
         let _guard = crate::shared::test_env::env_lock().lock().unwrap();
         let _shell = crate::shared::test_env::EnvVarGuard::set("SHELL", "/bin/sh");
@@ -279,7 +335,7 @@ mod tests {
         let manager = PtyManager::new();
         let cwd = temp_existing_dir();
         let (pty_id, _) = manager
-            .create_pty(&cwd, 80, 24)
+            .create_pty(1, &cwd, 80, 24)
             .expect("PTY should spawn in temp dir");
         manager
             .write_pty(
@@ -304,7 +360,7 @@ mod tests {
         let manager = PtyManager::new();
         let cwd = temp_existing_dir();
         let (pty_id, _) = manager
-            .create_pty(&cwd, 80, 24)
+            .create_pty(1, &cwd, 80, 24)
             .expect("PTY should spawn in temp dir");
         manager
             .write_pty(&pty_id, b"printf 'CADENCR_SHELL_ARG0=%s\\n' \"$0\"\nexit\n")

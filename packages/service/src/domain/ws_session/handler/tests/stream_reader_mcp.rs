@@ -86,6 +86,7 @@ async fn test_stream_reader_refreshes_mcp_servers_after_turn_result() {
         feature_id,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions,

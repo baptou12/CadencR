@@ -8,6 +8,7 @@ use crate::domain::runtime_stream::RuntimeUsageState;
 use crate::domain::session_status::{AgentStatus, SessionStatusBroadcaster};
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::{SessionEndedPayload, WsEnvelope};
+use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::{SdkSessions, WsSender};
 use super::stream_reader_resume::transition_active_to_pending_on_stream_end;
@@ -17,6 +18,9 @@ pub(super) struct StreamReaderTask {
     pub feature_id: i64,
     pub message_rx: RuntimeMessageRx,
     pub sender: WsSender,
+    /// Other devices viewing the same feature; every owner-bound stream message
+    /// is mirrored to them via [`StreamReaderTask::send_and_mirror`].
+    pub feature_senders: WsFeatureSenderRegistry,
     pub write_pool: sqlx::SqlitePool,
     pub session_status_tx: SessionStatusBroadcaster,
     pub sdk_sessions: SdkSessions,
@@ -62,6 +66,18 @@ impl StreamReaderState {
 }
 
 impl StreamReaderTask {
+    /// Send `msg` to this turn's owner socket and mirror it to any *other*
+    /// devices viewing the same feature. Others are mirrored first so the owner
+    /// send can move `msg` without a clone; in the common single-viewer case
+    /// `broadcast_others` is a no-op. Returns `true` when the owner socket is
+    /// gone, so callers can stop the loop exactly as a bare `send().is_err()`.
+    pub(super) async fn send_and_mirror(&self, msg: Message) -> bool {
+        self.feature_senders
+            .broadcast_others(self.feature_id, &self.sender, &msg)
+            .await;
+        self.sender.send(msg).is_err()
+    }
+
     pub async fn run(mut self) {
         info!(self.db_session_id, "stream reader started");
         let initial_context_window = self.initial_context_window().await;
@@ -78,7 +94,7 @@ impl StreamReaderTask {
                 ReaderAction::Continue => continue,
                 ReaderAction::Break => break,
                 ReaderAction::Closed => {
-                    self.send_stream_closed();
+                    self.send_stream_closed().await;
                     break;
                 }
                 ReaderAction::Error(error) => {
@@ -175,8 +191,8 @@ impl StreamReaderTask {
             .unwrap(),
         );
         let _ = self
-            .sender
-            .send(Message::Text(String::from(end_env).into()));
+            .send_and_mirror(Message::Text(String::from(end_env).into()))
+            .await;
     }
 }
 

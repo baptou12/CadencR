@@ -292,16 +292,20 @@ export const AgentSession = memo(
 
     const isNarrow = useNarrowContainer(containerRef, META_BAR_COMPACT_THRESHOLD_PX);
 
-    // When narrow, secondary chips render below the prompt — so they don't
-    // count toward whether the inline `MetaBar` should appear above it.
+    // When narrow, secondary chips (incl. the worktree selector) render below
+    // the prompt — so they don't count toward whether the inline `MetaBar`
+    // should appear above it.
     const hasInlineMeta =
       !!onPermissionModeToggle ||
       !!onCodexPermissionModeChange ||
       !!onModelChange ||
       !!showReadOnlyModel ||
-      showWorktreeChip;
+      (showWorktreeChip && !isNarrow);
     const hasSecondaryMeta =
-      showAutoScrollChip || (todos && todos.length > 0) || !!(runtimeSessionId && onStop);
+      showWorktreeChip ||
+      showAutoScrollChip ||
+      (todos && todos.length > 0) ||
+      !!(runtimeSessionId && onStop);
     const hasMeta = hasInlineMeta || (hasSecondaryMeta && !isNarrow);
 
     // ---- Shared sub-sections ----
@@ -415,6 +419,13 @@ export const AgentSession = memo(
     const secondaryBar =
       isNarrow && hasSecondaryMeta && shouldShowPromptBar ? (
         <MetaBarSecondary
+          showWorktreeChip={showWorktreeChip}
+          useWorktree={useWorktree}
+          onToggleWorktree={onToggleWorktree}
+          worktreeProjectId={worktreeProjectId}
+          worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeSelectedBranch={worktreeSelectedBranch}
+          onWorktreeBranchChange={onWorktreeBranchChange}
           showAutoScrollChip={showAutoScrollChip}
           autoScrollEnabled={autoScrollEnabled}
           onToggleAutoScroll={scrollToBottom}

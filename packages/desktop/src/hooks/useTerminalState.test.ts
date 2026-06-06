@@ -45,6 +45,26 @@ describe("useTerminalState", () => {
     expect(result.current.root?.type).toBe("split");
   });
 
+  it("adoptPtys hydrates an empty feature with leaves bound to existing PTYs", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() =>
+      useTerminalStore
+        .getState()
+        .adoptPtys(1, [{ ptyId: "pty-a", cwd: "/work" }, { ptyId: "pty-b" }]),
+    );
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.panes.map((p) => p.ptyId)).toEqual(["pty-a", "pty-b"]);
+    expect(result.current.panes[0].cwd).toBe("/work");
+  });
+
+  it("adoptPtys is a no-op when the feature already has panes", () => {
+    const { result } = renderHook(() => useTerminalState(1));
+    act(() => result.current.togglePanel()); // one fresh pane, no ptyId
+    act(() => useTerminalStore.getState().adoptPtys(1, [{ ptyId: "pty-a" }]));
+    expect(result.current.panes).toHaveLength(1);
+    expect(result.current.panes[0].ptyId).toBeUndefined();
+  });
+
   it("splitPane returns the id of the newly-created leaf", () => {
     const { result } = renderHook(() => useTerminalState(1));
     act(() => result.current.togglePanel());

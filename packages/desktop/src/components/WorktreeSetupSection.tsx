@@ -184,21 +184,23 @@ export function WorktreeSetupSection({
 
   return (
     <div className="flex flex-col bg-background">
-      {/* Header — compact inline row */}
+      {/* Header — compact inline row. `min-w-0` + the per-child `shrink-0`
+          guards keep everything on one line: only the branch name shrinks and
+          truncates, so a long branch can never wrap the row to two lines. */}
       <div
-        className="flex cursor-pointer items-center gap-2 px-6 py-1.5 hover:bg-muted/70"
+        className="flex min-w-0 cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-muted/70 md:px-6"
         onClick={() => setUserToggle((prev) => !(prev ?? isOpen))}
       >
         <ChevronRightIcon
           className={cn(
-            "size-3.5 text-foreground/40 transition-transform duration-200",
+            "size-3.5 shrink-0 text-foreground/40 transition-transform duration-200",
             isOpen && "rotate-90",
           )}
         />
-        <GitBranchIcon className="size-3.5" />
-        <span className="text-xs font-medium">Worktree Setup</span>
+        <GitBranchIcon className="size-3.5 shrink-0" />
+        <span className="shrink-0 text-xs font-medium">Worktree Setup</span>
         {branch && (
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <span className="truncate text-xs font-mono text-muted-foreground">{branch}</span>
             <CopyButton
               text={branch}
@@ -206,14 +208,14 @@ export function WorktreeSetupSection({
               copiedLabel="Copied branch name"
               idleClassName="text-muted-foreground opacity-70"
               iconClassName="size-3"
-              className="hover:text-foreground"
+              className="shrink-0 hover:text-foreground"
             />
           </div>
         )}
         <Badge
           variant="secondary"
           className={cn(
-            "gap-1 text-[10px] px-1.5 py-0",
+            "shrink-0 gap-1 text-[10px] px-1.5 py-0",
             isDone && "bg-green-500/15 text-green-400",
             isRunning && "bg-blue-500/15 text-blue-400",
             isError && "bg-red-500/15 text-red-400",
@@ -242,7 +244,7 @@ export function WorktreeSetupSection({
 
       {/* Expanded details */}
       {isOpen && (
-        <div className="space-y-1.5 border-t border-border/50 px-6 py-2">
+        <div className="space-y-1.5 border-t border-border/50 px-3 py-2 md:px-6">
           {steps.map((s, i) => (
             <div key={i} className="flex items-start gap-2">
               <div className="mt-0.5">

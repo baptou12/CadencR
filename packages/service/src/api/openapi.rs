@@ -24,8 +24,11 @@ use crate::domain::imports::routes as imports_routes;
 use crate::domain::lsp::routes as lsp_routes;
 use crate::domain::projects::models as projects_models;
 use crate::domain::projects::routes as projects_routes;
+use crate::domain::remote::models as remote_models;
+use crate::domain::remote::routes as remote_routes;
 use crate::domain::sessions::models as sessions_models;
 use crate::domain::sessions::routes as sessions_routes;
+use crate::domain::terminal::routes as terminal_routes;
 use crate::domain::workspace::models as workspace_models;
 use crate::domain::workspace::routes as workspace_routes;
 
@@ -151,6 +154,7 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_routes::get_draft_handler,
         sessions_routes::save_draft_handler,
         sessions_routes::get_message_full_content_handler,
+        terminal_routes::list_terminal_sessions_handler,
         super::get_agent_catalog,
         discovery_routes::binary_discovery_handler,
         claude_code_routes::list_profiles_handler,
@@ -167,6 +171,13 @@ use crate::domain::workspace::routes as workspace_routes;
         imports_routes::start_claude_code_import_handler,
         imports_routes::start_provider_import_handler,
         imports_routes::get_import_job_handler,
+        remote_routes::status_handler,
+        remote_routes::enable_handler,
+        remote_routes::disable_handler,
+        remote_routes::pairing_code_handler,
+        remote_routes::revoke_handler,
+        remote_routes::set_tunnel_host_handler,
+        remote_routes::pair_handler,
     ),
     components(schemas(
         HealthResponse,
@@ -307,6 +318,7 @@ use crate::domain::workspace::routes as workspace_routes;
         sessions_models::SaveDraftRequest,
         sessions_models::SaveDraftResponse,
         sessions_models::MessageFullContentResponse,
+        terminal_routes::TerminalSessionInfo,
         claude_code_routes::ProfileView,
         claude_code_routes::ProfilesResponse,
         claude_code_routes::UpsertProfileRequest,
@@ -328,6 +340,13 @@ use crate::domain::workspace::routes as workspace_routes;
         imports_models::ImportedRecord,
         imports_models::SkippedRecord,
         imports_models::SkipReason,
+        remote_models::RemoteStatus,
+        remote_models::RemoteDevice,
+        remote_models::RemoteAuditEntry,
+        remote_models::PairingCodeResponse,
+        remote_models::PairRequest,
+        remote_models::PairResponse,
+        remote_models::TunnelHostRequest,
     ))
 )]
 struct ApiDoc;

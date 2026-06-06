@@ -1,8 +1,16 @@
 import { useRef, useState, type ReactElement, type RefObject } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useShortcut } from "@/hooks/useShortcut";
-import { Settings, PanelLeftClose, Search } from "lucide-react";
+import { Settings, PanelLeftClose, Search, Maximize, Minimize, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import { ProjectTree } from "@/components/ProjectTree";
 import { AppEnvironmentBadge } from "@/components/AppEnvironmentBadge";
@@ -11,16 +19,20 @@ import { UnifiedAgentsSidebarLink } from "@/components/UnifiedAgentsSidebarLink"
 import { ConnectionStatusIndicator } from "@/components/ConnectionStatusIndicator";
 import { InternetStatusIndicator } from "@/components/InternetStatusIndicator";
 import { SidebarUpdateButton } from "@/components/SidebarUpdateButton";
+import { RemoteAccessButton } from "@/components/remote/RemoteAccessButton";
 import { getActiveFocusZone } from "@/lib/focus-zones";
 import { APP_VERSION } from "@/lib/app-version";
 import { SIDEBAR_FOOTER_PILL_CLASS } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
 import { useSidebarCollapsed } from "@/components/SidebarContext";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { useFullscreen } from "@/hooks/useFullscreen";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const { setCollapsed } = useSidebarCollapsed();
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const sidebarRef = useRef<HTMLElement>(null);
   const [selectedFeatureId, setSelectedFeatureId] = useState<number | null>(null);
   const { activeProjectId, effectiveFeatureId } = useSidebarActiveIds(selectedFeatureId);
@@ -29,18 +41,25 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   return (
     <aside ref={sidebarRef} className="flex h-full flex-col border-r border-border/60 bg-sidebar">
       <SidebarHeader onCollapse={() => setCollapsed(true)} />
-      <div className="flex-1 min-w-0 min-h-0 overflow-hidden p-2">
-        <div className="mb-2 px-1">
+      {/* Flex column so the tree gets the *remaining* height (not 100%, which
+          overflows past the search bar and clips the scroll area's bottom). */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
+        <div className="mb-2 shrink-0 px-1">
           <SidebarSearchButton onSearch={onSearch} />
         </div>
-        <div className="mb-2 px-1">
-          <UnifiedAgentsSidebarLink />
+        {/* The unified agents grid is desktop-only — hide its entry on phones. */}
+        {!isMobile && (
+          <div className="mb-2 shrink-0 px-1">
+            <UnifiedAgentsSidebarLink />
+          </div>
+        )}
+        <div className="min-h-0 flex-1">
+          <ProjectTree
+            activeProjectId={activeProjectId}
+            activeFeatureId={effectiveFeatureId}
+            onSelectFeature={setSelectedFeatureId}
+          />
         </div>
-        <ProjectTree
-          activeProjectId={activeProjectId}
-          activeFeatureId={effectiveFeatureId}
-          onSelectFeature={setSelectedFeatureId}
-        />
       </div>
       <SidebarFooter />
     </aside>
@@ -195,23 +214,114 @@ function SidebarHeader({ onCollapse }: { onCollapse: () => void }): ReactElement
   );
 }
 
+function SidebarFullscreenButton(): ReactElement | null {
+  const isMobile = useIsMobile();
+  const { supported, isFullscreen, isStandalone, toggle } = useFullscreen();
+  // Phones only, and not when already chromeless (installed / Add-to-Home-Screen).
+  if (!isMobile || isStandalone) return null;
+  // Where the Fullscreen API exists (Android Chrome) the button toggles it.
+  if (supported) {
+    return (
+      <button
+        type="button"
+        data-nav-item
+        onClick={toggle}
+        className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}
+        title={isFullscreen ? "Exit full screen" : "Full screen"}
+      >
+        <span className="flex items-center gap-2">
+          {isFullscreen ? (
+            <Minimize className="size-4 shrink-0" />
+          ) : (
+            <Maximize className="size-4 shrink-0" />
+          )}
+          <span>{isFullscreen ? "Exit full screen" : "Full screen"}</span>
+        </span>
+      </button>
+    );
+  }
+  // iOS exposes no Fullscreen API. The only chromeless path is an installed
+  // Home-Screen web app, which web JS can neither trigger nor reach (the
+  // "Add to Home Screen" action lives in the browser's own toolbar Share menu,
+  // not the Web Share sheet). So we show clear, readable instructions instead.
+  return <AddToHomeScreenDialog />;
+}
+
+function AddToHomeScreenDialog(): ReactElement {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          data-nav-item
+          className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}
+          title="Full screen"
+        >
+          <span className="flex items-center gap-2">
+            <Maximize className="size-4 shrink-0" />
+            <span>Full screen</span>
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add to Home Screen</DialogTitle>
+          <DialogDescription>
+            iPhone browsers can’t go full screen from a web page. Add Cadencr to your Home Screen to
+            run it full screen, like an app.
+          </DialogDescription>
+        </DialogHeader>
+        <ol className="space-y-3 text-sm">
+          <li className="flex items-center gap-2">
+            <span className="font-medium text-foreground">1.</span>
+            <span>
+              Tap the <Share className="inline size-4 -translate-y-px" aria-label="Share" /> Share
+              button in your browser’s toolbar.
+            </span>
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="font-medium text-foreground">2.</span>
+            <span>
+              Scroll down and choose{" "}
+              <span className="font-medium text-foreground">Add to Home Screen</span>.
+            </span>
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="font-medium text-foreground">3.</span>
+            <span>
+              Open <span className="font-medium text-foreground">Cadencr</span> from the new icon —
+              it opens full screen.
+            </span>
+          </li>
+        </ol>
+        <p className="text-xs text-muted-foreground">
+          The first time you open it from the Home Screen, you’ll pair this device once more.
+        </p>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SidebarFooter(): ReactElement {
   return (
     <div className="flex flex-col items-center gap-1 py-2">
+      <SidebarFullscreenButton />
       <SidebarUpdateButton />
-      <div className={cn(SIDEBAR_FOOTER_PILL_CLASS, "text-foreground/80")}>
+      <div className="flex w-[90%] items-center gap-1.5">
         <Link
           to="/settings"
           data-nav-item
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 rounded-full",
-            "focus-visible:outline-none focus-visible:text-foreground",
+            "flex min-w-0 flex-1 items-center gap-2 rounded-full border border-transparent px-3 py-1.5 text-xs text-foreground/80 transition-colors",
+            "hover:border-border hover:bg-accent hover:text-foreground",
+            "focus-visible:border-border focus-visible:bg-accent focus-visible:outline-none focus-visible:text-foreground",
           )}
         >
           <Settings className="size-4 shrink-0" />
           <span>Settings</span>
         </Link>
-        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground tabular-nums">
+        <RemoteAccessButton />
+        <span className="flex shrink-0 items-center gap-1.5 px-1 text-[10px] text-muted-foreground tabular-nums">
           <InternetStatusIndicator />
           <span>v{APP_VERSION}</span>
         </span>

@@ -21,6 +21,18 @@ describe("sidecar process arguments", () => {
       "1.2.3",
     ]);
   });
+
+  it("appends --renderer-dir when provided, and omits it otherwise", () => {
+    expect(serviceArgs("/tmp/cadencr.db", undefined, "/res/renderer")).toEqual([
+      "--db-path",
+      "/tmp/cadencr.db",
+      "--port",
+      "5004",
+      "--renderer-dir",
+      "/res/renderer",
+    ]);
+    expect(serviceArgs("/tmp/cadencr.db", undefined, null)).not.toContain("--renderer-dir");
+  });
 });
 
 describe("parsePhaseLine", () => {

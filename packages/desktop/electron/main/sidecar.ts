@@ -76,6 +76,17 @@ function productionBinaryPath(): string {
   return path.join(process.resourcesPath, binaryName);
 }
 
+/**
+ * Built SPA directory on the real filesystem (copied via `extraResources`), so
+ * the service can serve it over the remote listener. The window itself still
+ * loads the asar copy — this is the readable mirror for the Rust process.
+ * `null` if it's somehow missing, in which case remote serving stays disabled.
+ */
+function productionRendererDir(): string | null {
+  const dir = path.join(process.resourcesPath, "renderer");
+  return fs.existsSync(path.join(dir, "index.html")) ? dir : null;
+}
+
 function generateAuthToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
@@ -95,6 +106,7 @@ export async function spawnProductionSidecar(
     productionDbPath(),
     authToken,
     options.appVersion,
+    productionRendererDir(),
   );
   let exited = false;
   let exitCode: number | null = null;
@@ -129,16 +141,25 @@ function spawnService(
   dbPath: string,
   authToken: string,
   appVersion: string | undefined,
+  rendererDir: string | null,
 ): ServiceProcess {
-  return spawn(binary, serviceArgs(dbPath, appVersion), {
+  return spawn(binary, serviceArgs(dbPath, appVersion, rendererDir), {
     env: { ...process.env, CADENCR_AUTH_TOKEN: authToken },
     stdio: ["ignore", "pipe", "pipe"],
   });
 }
 
-export function serviceArgs(dbPath: string, appVersion?: string): string[] {
+export function serviceArgs(
+  dbPath: string,
+  appVersion?: string,
+  rendererDir?: string | null,
+): string[] {
   const args = ["--db-path", dbPath, "--port", String(SIDECAR_PORT)];
   if (appVersion) args.push("--app-version", appVersion);
+  // Lets the service serve the SPA over the remote-access listener. Loopback
+  // (the local window) loads from file:// regardless, so this only enables the
+  // network path.
+  if (rendererDir) args.push("--renderer-dir", rendererDir);
   return args;
 }
 

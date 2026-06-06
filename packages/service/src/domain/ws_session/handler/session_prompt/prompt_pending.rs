@@ -15,7 +15,7 @@ use super::bridge::{
 };
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
-use super::prompt_status::mark_agent_running;
+use super::prompt_status::{mark_agent_running, mirror_user_message};
 use super::prompt_worktree::{prepare_worktree_if_requested, spawn_auto_name_if_needed};
 use super::stream_reader::spawn_stream_reader;
 
@@ -64,6 +64,13 @@ async fn persist_initial_user_message(context: &PendingPromptContext) {
         Some(context.db_session_id),
     );
     persistence.persist_user_message(&persist_content).await;
+    mirror_user_message(
+        &context.app_state.ws_feature_senders,
+        &context.sender,
+        context.feature_id,
+        &persist_content,
+    )
+    .await;
 }
 
 async fn resolve_adapter_or_report(
@@ -234,6 +241,7 @@ async fn register_runtime(
         context.feature_id,
         message_rx,
         context.sender,
+        context.app_state.ws_feature_senders.clone(),
         context.app_state.write_pool,
         context.app_state.session_status_tx,
         context.sdk_sessions,

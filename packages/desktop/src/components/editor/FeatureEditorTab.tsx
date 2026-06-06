@@ -246,6 +246,9 @@ const FeatureEditorTab = memo(
     }, [persistedCollapsed, sidebarVisible, toggleSidebar]);
 
     const dirtyCount = getDirtyTabs().length;
+    // Active file in the focused pane — lets the mobile editor drawer close
+    // itself once a file is opened from the tree.
+    const activeFilePath = panes[activePaneId]?.activeFilePath ?? null;
 
     const projectName = useMemo(() => basenameOfPath(projectPath), [projectPath]);
     const isWorktree = useFeatureWorktreePath(featureId) !== null;
@@ -313,6 +316,7 @@ const FeatureEditorTab = memo(
           sidebar={sidebar}
           editor={editorPane}
           onToggleSidebar={handleToggleSidebar}
+          activeFilePath={activeFilePath}
         />
       </div>
     );

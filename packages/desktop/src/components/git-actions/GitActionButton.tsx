@@ -13,7 +13,7 @@
  *   subtree only mount when the dialog opens.
  */
 import { lazy, memo, Suspense, useCallback, useState, type ReactElement } from "react";
-import { ChevronDown, GitCommit } from "lucide-react";
+import { ChevronDown, GitBranch, GitCommit } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
 import { getCompareUrl } from "@/api/generated";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useGlobalShortcutById, useShortcut } from "@/hooks/useShortcut";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { BranchChip } from "@/components/branch-chip/BranchChip";
 import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import { useGitAction, type GitAction } from "./useGitAction";
@@ -36,6 +38,7 @@ const MergeDialog = lazy(() => import("./MergeDialog"));
 
 interface GitActionButtonProps {
   featureId: number;
+  projectId: number;
 }
 
 async function openExternal(url: string): Promise<void> {
@@ -50,9 +53,11 @@ async function openExternal(url: string): Promise<void> {
 
 export const GitActionButton = memo(function GitActionButton({
   featureId,
+  projectId,
 }: GitActionButtonProps): ReactElement | null {
   const snapshot = useGitStatusStore(selectGitStatus(featureId));
   const state = useGitAction(snapshot);
+  const isMobile = useIsMobile();
   const [commitOpen, setCommitOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
@@ -125,36 +130,63 @@ export const GitActionButton = memo(function GitActionButton({
 
   return (
     <>
-      <div className="inline-flex items-center">
-        <Button
-          variant="outline"
-          size="xs"
-          className={`${GIT_ACTION_BUTTON_CLASS} rounded-r-none border-r-0`}
-          disabled={primaryDisabled}
-          onClick={() => state.primary && runAction(state.primary)}
-          title={primaryDisabled ? (state.disabled.commit ?? state.label) : state.label}
-        >
-          <PrimaryIcon className="size-3.5" />
-          <span>{state.label}</span>
-        </Button>
+      {/* Phones: a single compact "Git" button opens the actions menu — the
+          split button's inline status label ("No uncommitted changes", etc.)
+          would otherwise eat the space the feature title needs. */}
+      {isMobile ? (
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-          <ShortcutTooltip label="Git actions" keys={["cmd", "G"]}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="xs"
-                className={`${GIT_ACTION_BUTTON_CLASS} rounded-l-none px-1.5`}
-                aria-label="More git actions"
-              >
-                <ChevronDown className="size-3.5" />
-              </Button>
-            </PopoverTrigger>
-          </ShortcutTooltip>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              size="xs"
+              className={GIT_ACTION_BUTTON_CLASS}
+              aria-label="Git actions"
+            >
+              <GitBranch className="size-3.5" />
+              <span>Git</span>
+            </Button>
+          </PopoverTrigger>
           <PopoverContent align="end" className="w-80 p-0">
+            {/* On phones the branch → target chip is hidden from the cramped
+                header and shown here instead, so the title keeps the space. */}
+            <div className="border-b border-border px-3 py-2">
+              <BranchChip featureId={featureId} projectId={projectId} />
+            </div>
             <GitActionPopover state={state} onPick={runAction} />
           </PopoverContent>
         </Popover>
-      </div>
+      ) : (
+        <div className="inline-flex items-center">
+          <Button
+            variant="outline"
+            size="xs"
+            className={`${GIT_ACTION_BUTTON_CLASS} rounded-r-none border-r-0`}
+            disabled={primaryDisabled}
+            onClick={() => state.primary && runAction(state.primary)}
+            title={primaryDisabled ? (state.disabled.commit ?? state.label) : state.label}
+          >
+            <PrimaryIcon className="size-3.5" />
+            <span>{state.label}</span>
+          </Button>
+          <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+            <ShortcutTooltip label="Git actions" keys={["cmd", "G"]}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className={`${GIT_ACTION_BUTTON_CLASS} rounded-l-none px-1.5`}
+                  aria-label="More git actions"
+                >
+                  <ChevronDown className="size-3.5" />
+                </Button>
+              </PopoverTrigger>
+            </ShortcutTooltip>
+            <PopoverContent align="end" className="w-80 p-0">
+              <GitActionPopover state={state} onPick={runAction} />
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
       <Suspense fallback={null}>
         {commitOpen && (
           <CommitDialog featureId={featureId} open={commitOpen} onOpenChange={setCommitOpen} />

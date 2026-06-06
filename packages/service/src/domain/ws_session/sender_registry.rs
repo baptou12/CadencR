@@ -59,6 +59,35 @@ impl WsFeatureSenderRegistry {
         senders.retain(|s| !s.is_closed());
         senders.clone()
     }
+
+    /// Mirror `message` to every sender registered for `feature_id` EXCEPT
+    /// `exclude` — the connection that drives the turn and already received the
+    /// message directly. This is how a live turn's output reaches other devices
+    /// viewing the same feature (the remote-access mirror). `message` is taken
+    /// by reference and cloned only per *other* recipient, so the common
+    /// single-viewer case (only the driver is registered) does no work and no
+    /// clones. Dead senders are pruned in place.
+    pub async fn broadcast_others(
+        &self,
+        feature_id: i64,
+        exclude: &mpsc::UnboundedSender<Message>,
+        message: &Message,
+    ) {
+        let mut map = self.inner.lock().await;
+        let Some(senders) = map.get_mut(&feature_id) else {
+            return;
+        };
+        senders.retain(|s| !s.is_closed());
+        for sender in senders.iter() {
+            if sender.same_channel(exclude) {
+                continue;
+            }
+            let _ = sender.send(message.clone());
+        }
+        if senders.is_empty() {
+            map.remove(&feature_id);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -106,5 +135,37 @@ mod tests {
         drop(rx); // close the receiver → sender is dead
         let senders = registry.get_senders(1).await;
         assert!(senders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn broadcast_others_reaches_other_viewers_but_not_the_driver() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (driver_tx, mut driver_rx) = mpsc::unbounded_channel::<Message>();
+        let (viewer_tx, mut viewer_rx) = mpsc::unbounded_channel::<Message>();
+        registry.register(1, driver_tx.clone()).await;
+        registry.register(1, viewer_tx).await;
+
+        registry
+            .broadcast_others(1, &driver_tx, &Message::Text("hi".into()))
+            .await;
+
+        // The other viewer receives the mirror...
+        assert!(matches!(viewer_rx.try_recv(), Ok(Message::Text(_))));
+        // ...but the driver (excluded) does not — it already got it directly.
+        assert!(driver_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn broadcast_others_is_a_noop_with_only_the_driver() {
+        let registry = WsFeatureSenderRegistry::new();
+        let (driver_tx, mut driver_rx) = mpsc::unbounded_channel::<Message>();
+        registry.register(1, driver_tx.clone()).await;
+
+        // Single-viewer (local) case: nobody else to mirror to, so the driver
+        // never receives an echo of its own message.
+        registry
+            .broadcast_others(1, &driver_tx, &Message::Text("hi".into()))
+            .await;
+        assert!(driver_rx.try_recv().is_err());
     }
 }

@@ -2,6 +2,7 @@ import { memo } from "react";
 import { AgentTodoList } from "../AgentTodoList";
 import { AutoScrollChip } from "./AutoScrollChip";
 import { SessionInfoChip } from "./SessionInfoChip";
+import { WorktreeChip, type WorktreeChipProps } from "./WorktreeChip";
 import type { TodoItem } from "@/types/agent";
 import { META_BAR_CHIP } from "./meta-bar-chip-styles";
 
@@ -10,7 +11,8 @@ import { META_BAR_CHIP } from "./meta-bar-chip-styles";
  * is too narrow to fit every chip on a single row of the main `MetaBar`.
  *
  * Hosts the chips that don't need to live next to the model picker:
- *   - auto-scroll toggle
+ *   - auto-scroll toggle (bottom-left lead chip)
+ *   - branch + worktree selection
  *   - todos popover
  *   - session info popover (pushed to the right with `ml-auto`)
  *
@@ -18,7 +20,8 @@ import { META_BAR_CHIP } from "./meta-bar-chip-styles";
  * `MetaBar` — the only difference is its position in the DOM.
  */
 
-export interface MetaBarSecondaryProps {
+export interface MetaBarSecondaryProps extends WorktreeChipProps {
+  showWorktreeChip: boolean;
   showAutoScrollChip: boolean;
   autoScrollEnabled: boolean;
   onToggleAutoScroll: () => void;
@@ -31,6 +34,7 @@ export interface MetaBarSecondaryProps {
 }
 
 export const MetaBarSecondary = memo(function MetaBarSecondary({
+  showWorktreeChip,
   showAutoScrollChip,
   autoScrollEnabled,
   onToggleAutoScroll,
@@ -40,15 +44,32 @@ export const MetaBarSecondary = memo(function MetaBarSecondary({
   projectPath,
   isRunning = false,
   onPause,
+  useWorktree,
+  onToggleWorktree,
+  worktreeProjectId,
+  worktreeDefaultBranch,
+  worktreeSelectedBranch,
+  onWorktreeBranchChange,
 }: MetaBarSecondaryProps) {
   const hasTodos = todos && todos.length > 0;
   const hasInfo = runtimeSessionId && onPause;
-  if (!showAutoScrollChip && !hasTodos && !hasInfo) return null;
+  if (!showWorktreeChip && !showAutoScrollChip && !hasTodos && !hasInfo) return null;
 
   return (
     <div className="-mt-1 flex items-center gap-1.5 px-3 pb-2 pt-0">
       {showAutoScrollChip && (
         <AutoScrollChip enabled={autoScrollEnabled} onToggle={onToggleAutoScroll} />
+      )}
+
+      {showWorktreeChip && (
+        <WorktreeChip
+          useWorktree={useWorktree}
+          onToggleWorktree={onToggleWorktree}
+          worktreeProjectId={worktreeProjectId}
+          worktreeDefaultBranch={worktreeDefaultBranch}
+          worktreeSelectedBranch={worktreeSelectedBranch}
+          onWorktreeBranchChange={onWorktreeBranchChange}
+        />
       )}
 
       {hasTodos && <AgentTodoList todos={todos} chipClass={META_BAR_CHIP} />}

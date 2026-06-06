@@ -26,6 +26,7 @@ import {
 import { useSessionTabs } from "@/components/WebSocketSessionFeatureBlockTabs";
 import { useAgentFirstNonAgentWork } from "@/components/useAgentFirstNonAgentWork";
 import { useEditorStore } from "@/stores/editor-store";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { toRelativePath } from "@/lib/utils";
 
 export interface WebSocketSessionFeatureBlockProps {
@@ -76,6 +77,10 @@ function WebSocketSessionFeatureBody(
     onActivate,
     requestedFocusTab,
   } = props;
+  // Phones get the embedded-style single tab strip: splits/resize make no
+  // sense at 390px, so we collapse to one pane driven by the top tabs.
+  const isMobile = useIsMobile();
+  const splitsEnabled = !embedded && !isMobile;
   const layoutState = useFeatureLayoutStore(selectFeatureLayout(layoutFeatureId));
   const requestedFocusPending = useRequestedFeatureFocus(layoutFeatureId, requestedFocusTab);
   const focusedTabId = getFocusedTab(layoutState) ?? "agent";
@@ -219,7 +224,7 @@ function WebSocketSessionFeatureBody(
         <FeatureLayoutShell
           featureId={layoutFeatureId}
           tabs={tabs}
-          splitsEnabled={!embedded}
+          splitsEnabled={splitsEnabled}
           hotkeysEnabled={hotkeysEnabled}
           mountInactiveTabs={false}
           onTerminalActivate={() => requestAnimationFrame(() => refs.terminal.current?.activate())}

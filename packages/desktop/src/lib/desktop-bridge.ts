@@ -1,3 +1,5 @@
+import { isSafeExternalUrl } from "@/lib/safe-url";
+
 export interface RuntimeConfig {
   baseUrl: string;
   authToken: string | null;
@@ -132,7 +134,20 @@ const browserBridge: CadencrDesktopBridge = {
   readFileBase64: () => unavailable("readFileBase64"),
   onFileDrop: () => () => undefined,
   revealInFinder: () => unavailable("revealInFinder"),
-  openExternal: () => unavailable("openExternal"),
+  // Opening a URL has a universal browser equivalent (keeps "view compare URL",
+  // changelog links, etc. working in a remote tab), but it must enforce the same
+  // policy the Electron shell does — reject anything that isn't a credential-free
+  // https URL to a non-loopback host — so callers' error handling stays uniform.
+  openExternal: (url: string) => {
+    if (typeof window === "undefined") return Promise.resolve();
+    if (!isSafeExternalUrl(url)) {
+      return Promise.reject(
+        new Error("Only https:// URLs without credentials or loopback hosts can be opened."),
+      );
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+    return Promise.resolve();
+  },
   pickDirectory: () => unavailable("pickDirectory"),
   showSaveDialog: () => unavailable("showSaveDialog"),
   notifyPermission: () => Promise.resolve(false),
@@ -169,6 +184,16 @@ export const desktopBridge: CadencrDesktopBridge = new Proxy({} as CadencrDeskto
     return typeof value === "function" ? value.bind(bridge) : value;
   },
 });
+
+/**
+ * True when running inside the Electron desktop shell (preload bridge present).
+ * Use to gate native-only affordances — folder pickers, "reveal in Finder",
+ * save dialogs, native notifications — that have no browser equivalent, so a
+ * remote-browser session doesn't surface buttons that can only reject.
+ */
+export function isDesktopShell(): boolean {
+  return desktopBridge.isElectron;
+}
 
 export function setDesktopBridgeOverrideForTests(bridge: CadencrDesktopBridge): void {
   bridgeOverride = bridge;

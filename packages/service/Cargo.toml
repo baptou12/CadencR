@@ -17,7 +17,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-axum = "0.2"
-tower-http = { version = "0.6", features = ["cors", "compression-gzip", "compression-br"] }
+tower-http = { version = "0.6", features = ["cors", "compression-gzip", "compression-br", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -44,6 +44,14 @@ tempfile = "3"
 trash = "5"
 flate2 = "1"
 sha2 = "0.10"
+# Remote access: self-signed TLS listener + device-token auth.
+rcgen = "0.13"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+# Pin the `ring` crypto provider explicitly (installed at remote startup) so TLS
+# is deterministic regardless of what else pulls rustls into the tree.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+subtle = "2.6"
+if-addrs = "0.13"
 
 [[bin]]
 name = "dump-openapi"
@@ -55,3 +63,8 @@ workspace = true
 [dev-dependencies]
 assert-json-diff = "2"
 tower = { version = "0.5", features = ["util"] }
+# `rustls-tls` is dev-only: the remote-listener test needs a rustls client to
+# talk to our rustls server (macOS Secure Transport mis-negotiates against it).
+# Dev-dependency features don't leak into the shipped binary, which keeps
+# native-tls.
+reqwest = { version = "0.12", features = ["rustls-tls"] }

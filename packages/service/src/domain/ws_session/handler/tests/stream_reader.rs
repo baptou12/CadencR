@@ -32,6 +32,7 @@ async fn test_stream_reader_transitions_active_to_pending_on_stream_close() {
         feature_id,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions.clone(),
@@ -66,6 +67,57 @@ async fn test_stream_reader_transitions_active_to_pending_on_stream_close() {
         QueryState::Active { .. } => {
             panic!("expected Pending state after stream close, but found Active");
         }
+    }
+}
+
+#[tokio::test]
+async fn test_stream_reader_mirrors_to_other_feature_viewers() {
+    let app_state = make_test_app_state().await;
+    let sdk_sessions: SdkSessions = Arc::new(Mutex::new(HashMap::new()));
+    let (ws_tx, _ws_rx) = mpsc::unbounded_channel();
+    // A second device viewing the same feature, registered as a feature sender.
+    let (viewer_tx, mut viewer_rx) = mpsc::unbounded_channel();
+
+    let db_session_id = 77i64;
+    let feature_id = 3i64;
+    {
+        let mut sessions = sdk_sessions.lock().await;
+        sessions.insert(db_session_id, make_active_handle(feature_id, None));
+    }
+    app_state
+        .ws_feature_senders
+        .register(feature_id, viewer_tx)
+        .await;
+
+    // Close the stream immediately so the reader emits a single `ended`.
+    let (msg_tx, msg_rx) = mpsc::channel::<Result<RuntimeEvent, RuntimeError>>(1);
+    drop(msg_tx);
+
+    session_prompt::spawn_stream_reader(
+        db_session_id,
+        feature_id,
+        msg_rx,
+        ws_tx,
+        app_state.ws_feature_senders.clone(),
+        app_state.write_pool.clone(),
+        app_state.session_status_tx.clone(),
+        sdk_sessions.clone(),
+        crate::domain::agents::runtime::DEFAULT_PROVIDER.to_string(),
+        None,
+        None,
+    );
+
+    // The passive viewer receives the turn's `ended` even though it never drove
+    // the turn — that's the remote-access conversation mirror.
+    let msg = tokio::time::timeout(std::time::Duration::from_secs(2), viewer_rx.recv())
+        .await
+        .expect("viewer should receive the mirrored envelope")
+        .expect("viewer channel stays open");
+    if let Message::Text(text) = msg {
+        let env: WsEnvelope = serde_json::from_str(&text).unwrap();
+        assert_eq!(env.action, "ended", "mirror forwards the session.ended");
+    } else {
+        panic!("expected a text message");
     }
 }
 
@@ -110,6 +162,7 @@ async fn test_stream_reader_transitions_active_to_pending_on_error() {
         feature_id,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions.clone(),
@@ -160,6 +213,7 @@ async fn test_stream_reader_no_transition_when_session_removed() {
         1,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions.clone(),
@@ -219,6 +273,7 @@ async fn test_stream_reader_routes_acp_permission_request() {
         feature_id,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions,
@@ -277,6 +332,7 @@ async fn test_stream_reader_result_keeps_pending_user_input_status() {
         feature_id,
         msg_rx,
         ws_tx,
+        app_state.ws_feature_senders.clone(),
         app_state.write_pool.clone(),
         app_state.session_status_tx.clone(),
         sdk_sessions,

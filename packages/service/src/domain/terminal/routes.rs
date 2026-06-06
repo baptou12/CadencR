@@ -5,18 +5,19 @@ use axum::extract::{Query, State, WebSocketUpgrade};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
+use axum::{Extension, Json, Router};
 use futures::SinkExt;
 use futures::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
 use super::cwd::resolve_pty_cwd;
 use super::protocol::{ClientMessage, ServerMessage};
 use super::service::PtyHandle;
-use crate::api::middleware::{validate_ws_origin, validate_ws_token};
+use crate::api::middleware::authenticate_ws;
 use crate::app_state::AppState;
+use crate::remote::RemoteContext;
 
 type WsSink = futures::stream::SplitSink<WebSocket, Message>;
 type WsStream = futures::stream::SplitStream<WebSocket>;
@@ -33,7 +34,53 @@ pub struct TerminalWsParams {
 }
 
 pub fn terminal_router() -> Router<AppState> {
-    Router::new().route("/api/terminal/ws", get(terminal_ws_handler))
+    Router::new()
+        .route("/api/terminal/ws", get(terminal_ws_handler))
+        .route(
+            "/api/terminal/sessions",
+            get(list_terminal_sessions_handler),
+        )
+}
+
+/// A live terminal session a client can attach to (one PTY).
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct TerminalSessionInfo {
+    pub pty_id: String,
+    pub cwd: String,
+    pub alive: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TerminalSessionsQuery {
+    pub feature_id: i64,
+}
+
+/// List the live PTYs for a feature so another device can attach to the same
+/// shells (and type into them) instead of spawning a fresh terminal. Only live
+/// shells are returned, since attaching to an exited one would just replay
+/// scrollback and close.
+#[utoipa::path(
+    get,
+    path = "/api/terminal/sessions",
+    params(("feature_id" = i64, Query, description = "Feature whose terminal sessions to list")),
+    responses((status = 200, description = "Live terminal sessions", body = [TerminalSessionInfo])),
+)]
+pub async fn list_terminal_sessions_handler(
+    Query(query): Query<TerminalSessionsQuery>,
+    State(state): State<AppState>,
+) -> Json<Vec<TerminalSessionInfo>> {
+    let sessions = state
+        .pty_manager
+        .feature_ptys(query.feature_id)
+        .into_iter()
+        .filter(|session| session.alive)
+        .map(|session| TerminalSessionInfo {
+            pty_id: session.pty_id,
+            cwd: session.cwd,
+            alive: session.alive,
+        })
+        .collect();
+    Json(sessions)
 }
 
 async fn terminal_ws_handler(
@@ -41,17 +88,41 @@ async fn terminal_ws_handler(
     Query(params): Query<TerminalWsParams>,
     State(state): State<AppState>,
     headers: HeaderMap,
+    // Present only on the remote listener; its absence means loopback.
+    remote: Option<Extension<RemoteContext>>,
 ) -> Response {
-    if let Err(resp) = validate_ws_origin(&headers, state.frontend_port) {
-        return resp;
-    }
-    let selected_proto = match validate_ws_token(&headers, &state.auth_token) {
-        Ok(proto) => proto.to_string(),
-        Err(resp) => return resp,
-    };
+    let (selected_proto, device_id) =
+        match authenticate_ws(&headers, &state, remote.as_ref().map(|e| &e.0)).await {
+            Ok(resolved) => resolved,
+            Err(resp) => return resp,
+        };
     let ws = ws.protocols([selected_proto]);
-    ws.on_upgrade(move |socket| handle_terminal_ws(socket, params, state))
-        .into_response()
+    match device_id {
+        Some(device_id) => ws
+            .on_upgrade(move |socket| handle_remote_terminal_ws(socket, params, state, device_id))
+            .into_response(),
+        None => ws
+            .on_upgrade(move |socket| handle_terminal_ws(socket, params, state))
+            .into_response(),
+    }
+}
+
+/// Remote terminal connection wrapped so a device revoke force-closes it. The
+/// `/ws` handler records the `connect` audit; terminals only register for
+/// force-close to avoid double-counting sessions.
+async fn handle_remote_terminal_ws(
+    socket: WebSocket,
+    params: TerminalWsParams,
+    state: AppState,
+    device_id: i64,
+) {
+    let guard = state.remote.live().register(device_id);
+    tokio::select! {
+        _ = handle_terminal_ws(socket, params, state) => {}
+        _ = guard.token.cancelled() => {
+            info!(device_id, "remote terminal force-closed (device revoked)");
+        }
+    }
 }
 
 async fn handle_terminal_ws(socket: WebSocket, params: TerminalWsParams, state: AppState) {
@@ -136,7 +207,7 @@ async fn handle_new_pty(
         }
     };
 
-    let (pty_id, handle) = match state.pty_manager.create_pty(&cwd, cols, rows) {
+    let (pty_id, handle) = match state.pty_manager.create_pty(feature_id, &cwd, cols, rows) {
         Ok(result) => result,
         Err(e) => {
             send_error(socket, &format!("Failed to create PTY: {e}")).await;

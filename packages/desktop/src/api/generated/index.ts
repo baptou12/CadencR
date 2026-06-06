@@ -975,6 +975,35 @@ export interface OriginalBranchResponse {
   worktree_branch: string;
 }
 
+/**
+ * Body of `POST /api/remote/pair`.
+ */
+export interface PairRequest {
+  code: string;
+}
+
+/**
+ * Result of a successful pairing: the durable device token (the only place the
+raw token is ever transmitted, over TLS).
+ */
+export interface PairResponse {
+  device_token: string;
+  label: string;
+}
+
+/**
+ * Response to a pairing-code mint: the code plus connect URLs/QR payloads. The
+code — never a device token — is what the QR encodes.
+ */
+export interface PairingCodeResponse {
+  code: string;
+  /** @minimum 0 */
+  expires_in_secs: number;
+  fingerprint: string;
+  /** `https://<lan-ip>:<port>/?code=<code>` for each interface. */
+  urls: string[];
+}
+
 export type ProfileViewEnv = { [key: string]: string };
 
 export interface ProfileView {
@@ -1097,6 +1126,73 @@ export interface ReadFileResponse {
   content: string;
   /** @minimum 0 */
   line_count: number;
+}
+
+export type RemoteAuditEntryDetail = string | null;
+
+export type RemoteAuditEntryDeviceId = number | null;
+
+/**
+ * One audit-trail entry (`pair` / `connect` / `revoke` / `pair_rejected`).
+ */
+export interface RemoteAuditEntry {
+  created_at: string;
+  detail?: RemoteAuditEntryDetail;
+  device_id?: RemoteAuditEntryDeviceId;
+  event: string;
+}
+
+export type RemoteDeviceLabel = string | null;
+
+export type RemoteDeviceLastSeenAt = string | null;
+
+/**
+ * A paired (non-revoked) remote device, as shown in the host UI.
+ */
+export interface RemoteDevice {
+  created_at: string;
+  id: number;
+  label?: RemoteDeviceLabel;
+  last_seen_at?: RemoteDeviceLastSeenAt;
+}
+
+/**
+ * SHA-256 fingerprint of the self-signed cert (for TOFU verification).
+ */
+export type RemoteStatusFingerprint = string | null;
+
+/**
+ * @minimum 0
+ */
+export type RemoteStatusPort = number | null;
+
+/**
+ * Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.
+Tunneled requests with this `Host` are allowed through.
+ */
+export type RemoteStatusTunnelHost = string | null;
+
+/**
+ * Full remote-access state for the host dialog.
+ */
+export interface RemoteStatus {
+  audit_tail: RemoteAuditEntry[];
+  /**
+   * Distinct devices with a live socket open right now (≤ `devices.len()`).
+   * @minimum 0
+   */
+  connected_devices: number;
+  devices: RemoteDevice[];
+  enabled: boolean;
+  /** SHA-256 fingerprint of the self-signed cert (for TOFU verification). */
+  fingerprint?: RemoteStatusFingerprint;
+  /** `https://<lan-ip>:<port>/` for each detected interface. */
+  lan_urls: string[];
+  /** @minimum 0 */
+  port?: RemoteStatusPort;
+  /** Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.
+Tunneled requests with this `Host` are allowed through. */
+  tunnel_host?: RemoteStatusTunnelHost;
 }
 
 export interface RemoveOrphanWorktreeBody {
@@ -1365,6 +1461,15 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+/**
+ * A live terminal session a client can attach to (one PTY).
+ */
+export interface TerminalSessionInfo {
+  alive: boolean;
+  cwd: string;
+  pty_id: string;
+}
+
 export type TrashPathRequestFeatureId = number | null;
 
 export interface TrashPathRequest {
@@ -1384,6 +1489,15 @@ export const TriggeredBy = {
   manual: "manual",
   schedule: "schedule",
 } as const;
+
+export type TunnelHostRequestHost = string | null;
+
+/**
+ * Body of `PUT /api/remote/tunnel-host`. `null`/blank clears the tunnel host.
+ */
+export interface TunnelHostRequest {
+  host?: TunnelHostRequestHost;
+}
 
 /**
  * One row per uncommitted file. `status` is one of `"staged"`, `"unstaged"`,
@@ -1792,6 +1906,13 @@ export type DeleteWorktreeParams = {
 
 export type ListProjectWorktreesParams = {
   project_id: number;
+};
+
+export type ListTerminalSessionsParams = {
+  /**
+   * Feature whose terminal sessions to list
+   */
+  feature_id: number;
 };
 
 export const getAgentCatalog = (params?: GetAgentCatalogParams, signal?: AbortSignal) => {
@@ -9227,6 +9348,374 @@ export const useSetProjectSetting = <TError = ErrorType<unknown>, TContext = unk
   return useMutation(mutationOptions);
 };
 
+export const remoteRevokeDevice = (id: number) => {
+  return customInstance<RemoteStatus>({ url: `/api/remote/devices/${id}`, method: "DELETE" });
+};
+
+export const getRemoteRevokeDeviceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remoteRevokeDevice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof remoteRevokeDevice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["remoteRevokeDevice"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof remoteRevokeDevice>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return remoteRevokeDevice(id);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoteRevokeDeviceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof remoteRevokeDevice>>
+>;
+
+export type RemoteRevokeDeviceMutationError = ErrorType<unknown>;
+
+export const useRemoteRevokeDevice = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remoteRevokeDevice>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof remoteRevokeDevice>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationOptions = getRemoteRevokeDeviceMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const remoteDisable = (signal?: AbortSignal) => {
+  return customInstance<RemoteStatus>({ url: `/api/remote/disable`, method: "POST", signal });
+};
+
+export const getRemoteDisableMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext>;
+}): UseMutationOptions<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext> => {
+  const mutationKey = ["remoteDisable"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof remoteDisable>>, void> = () => {
+    return remoteDisable();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoteDisableMutationResult = NonNullable<Awaited<ReturnType<typeof remoteDisable>>>;
+
+export type RemoteDisableMutationError = ErrorType<unknown>;
+
+export const useRemoteDisable = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext>;
+}): UseMutationResult<Awaited<ReturnType<typeof remoteDisable>>, TError, void, TContext> => {
+  const mutationOptions = getRemoteDisableMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const remoteEnable = (signal?: AbortSignal) => {
+  return customInstance<RemoteStatus>({ url: `/api/remote/enable`, method: "POST", signal });
+};
+
+export const getRemoteEnableMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext>;
+}): UseMutationOptions<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext> => {
+  const mutationKey = ["remoteEnable"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof remoteEnable>>, void> = () => {
+    return remoteEnable();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoteEnableMutationResult = NonNullable<Awaited<ReturnType<typeof remoteEnable>>>;
+
+export type RemoteEnableMutationError = ErrorType<unknown>;
+
+export const useRemoteEnable = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext>;
+}): UseMutationResult<Awaited<ReturnType<typeof remoteEnable>>, TError, void, TContext> => {
+  const mutationOptions = getRemoteEnableMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const remotePair = (pairRequest: PairRequest, signal?: AbortSignal) => {
+  return customInstance<PairResponse>({
+    url: `/api/remote/pair`,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    data: pairRequest,
+    signal,
+  });
+};
+
+export const getRemotePairMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remotePair>>,
+    TError,
+    { data: PairRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof remotePair>>,
+  TError,
+  { data: PairRequest },
+  TContext
+> => {
+  const mutationKey = ["remotePair"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof remotePair>>,
+    { data: PairRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return remotePair(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemotePairMutationResult = NonNullable<Awaited<ReturnType<typeof remotePair>>>;
+export type RemotePairMutationBody = PairRequest;
+export type RemotePairMutationError = ErrorType<void>;
+
+export const useRemotePair = <TError = ErrorType<void>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remotePair>>,
+    TError,
+    { data: PairRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof remotePair>>,
+  TError,
+  { data: PairRequest },
+  TContext
+> => {
+  const mutationOptions = getRemotePairMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const remotePairingCode = (signal?: AbortSignal) => {
+  return customInstance<PairingCodeResponse>({
+    url: `/api/remote/pairing-code`,
+    method: "POST",
+    signal,
+  });
+};
+
+export const getRemotePairingCodeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remotePairingCode>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationOptions<Awaited<ReturnType<typeof remotePairingCode>>, TError, void, TContext> => {
+  const mutationKey = ["remotePairingCode"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof remotePairingCode>>, void> = () => {
+    return remotePairingCode();
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemotePairingCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof remotePairingCode>>
+>;
+
+export type RemotePairingCodeMutationError = ErrorType<unknown>;
+
+export const useRemotePairingCode = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remotePairingCode>>,
+    TError,
+    void,
+    TContext
+  >;
+}): UseMutationResult<Awaited<ReturnType<typeof remotePairingCode>>, TError, void, TContext> => {
+  const mutationOptions = getRemotePairingCodeMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
+export const remoteStatus = (signal?: AbortSignal) => {
+  return customInstance<RemoteStatus>({ url: `/api/remote/status`, method: "GET", signal });
+};
+
+export const getRemoteStatusQueryKey = () => {
+  return [`/api/remote/status`] as const;
+};
+
+export const getRemoteStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof remoteStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof remoteStatus>>, TError, TData>;
+}) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getRemoteStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof remoteStatus>>> = ({ signal }) =>
+    remoteStatus(signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof remoteStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type RemoteStatusQueryResult = NonNullable<Awaited<ReturnType<typeof remoteStatus>>>;
+export type RemoteStatusQueryError = ErrorType<unknown>;
+
+export function useRemoteStatus<
+  TData = Awaited<ReturnType<typeof remoteStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<Awaited<ReturnType<typeof remoteStatus>>, TError, TData>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getRemoteStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const remoteSetTunnelHost = (tunnelHostRequest: TunnelHostRequest) => {
+  return customInstance<RemoteStatus>({
+    url: `/api/remote/tunnel-host`,
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    data: tunnelHostRequest,
+  });
+};
+
+export const getRemoteSetTunnelHostMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remoteSetTunnelHost>>,
+    TError,
+    { data: TunnelHostRequest },
+    TContext
+  >;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof remoteSetTunnelHost>>,
+  TError,
+  { data: TunnelHostRequest },
+  TContext
+> => {
+  const mutationKey = ["remoteSetTunnelHost"];
+  const { mutation: mutationOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey } };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof remoteSetTunnelHost>>,
+    { data: TunnelHostRequest }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return remoteSetTunnelHost(data);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoteSetTunnelHostMutationResult = NonNullable<
+  Awaited<ReturnType<typeof remoteSetTunnelHost>>
+>;
+export type RemoteSetTunnelHostMutationBody = TunnelHostRequest;
+export type RemoteSetTunnelHostMutationError = ErrorType<unknown>;
+
+export const useRemoteSetTunnelHost = <TError = ErrorType<unknown>, TContext = unknown>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof remoteSetTunnelHost>>,
+    TError,
+    { data: TunnelHostRequest },
+    TContext
+  >;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof remoteSetTunnelHost>>,
+  TError,
+  { data: TunnelHostRequest },
+  TContext
+> => {
+  const mutationOptions = getRemoteSetTunnelHostMutationOptions(options);
+
+  return useMutation(mutationOptions);
+};
+
 export const getMessageFullContent = (messageId: number, signal?: AbortSignal) => {
   return customInstance<MessageFullContentResponse>({
     url: `/api/sessions/messages/${messageId}/full`,
@@ -9404,6 +9893,78 @@ export const useSaveSessionDraft = <TError = ErrorType<unknown>, TContext = unkn
 
   return useMutation(mutationOptions);
 };
+
+/**
+ * @summary List the live PTYs for a feature so another device can attach to the same
+shells (and type into them) instead of spawning a fresh terminal. Only live
+shells are returned, since attaching to an exited one would just replay
+scrollback and close.
+ */
+export const listTerminalSessions = (params: ListTerminalSessionsParams, signal?: AbortSignal) => {
+  return customInstance<TerminalSessionInfo[]>({
+    url: `/api/terminal/sessions`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getListTerminalSessionsQueryKey = (params?: ListTerminalSessionsParams) => {
+  return [`/api/terminal/sessions`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTerminalSessionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTerminalSessions>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListTerminalSessionsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listTerminalSessions>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTerminalSessionsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listTerminalSessions>>> = ({ signal }) =>
+    listTerminalSessions(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTerminalSessions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTerminalSessionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTerminalSessions>>
+>;
+export type ListTerminalSessionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the live PTYs for a feature so another device can attach to the same
+shells (and type into them) instead of spawning a fresh terminal. Only live
+shells are returned, since attaching to an exited one would just replay
+scrollback and close.
+ */
+
+export function useListTerminalSessions<
+  TData = Awaited<ReturnType<typeof listTerminalSessions>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListTerminalSessionsParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listTerminalSessions>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTerminalSessionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getWorkspaceModelSettings = (signal?: AbortSignal) => {
   return customInstance<ModelSettings>({

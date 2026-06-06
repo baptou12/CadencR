@@ -3,11 +3,12 @@ use tracing::{error, info};
 use crate::domain::agents::adapter::RuntimeSessionHandle;
 use crate::domain::ws_session::persistence::WsSessionPersistence;
 use crate::domain::ws_session::protocol::PromptSendPayload;
+use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 
 use super::super::WsSender;
 use super::bridge::{build_content_value, build_persist_content};
 use super::errors::persist_pause_and_send_session_error;
-use super::prompt_status::mark_agent_running;
+use super::prompt_status::{mark_agent_running, mirror_user_message};
 
 pub(super) struct FollowupPromptContext {
     pub query: RuntimeSessionHandle,
@@ -16,6 +17,7 @@ pub(super) struct FollowupPromptContext {
     pub write_pool: sqlx::SqlitePool,
     pub session_status_tx: crate::domain::session_status::SessionStatusBroadcaster,
     pub sender: WsSender,
+    pub ws_feature_senders: WsFeatureSenderRegistry,
     pub envelope_id: String,
 }
 
@@ -50,6 +52,13 @@ async fn persist_followup_user_message(
         Some(context.db_session_id),
     );
     persistence.persist_user_message(&persist_content).await;
+    mirror_user_message(
+        &context.ws_feature_senders,
+        &context.sender,
+        context.feature_id,
+        &persist_content,
+    )
+    .await;
 }
 
 async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptSendPayload) {
