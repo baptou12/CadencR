@@ -34,10 +34,20 @@ export interface PairRemoteDeviceResult {
 }
 
 /**
+ * How a device paired, for the post-pair toast:
+ * - `"session"` — session-only (the Safari `?code=` flow); the toast offers to
+ *   "stay signed in".
+ * - `"trusted"` — already persisted to `localStorage` (the manual gate, e.g. an
+ *   installed PWA); the toast just confirms it'll stay signed in.
+ */
+export type JustPairedMode = "session" | "trusted";
+
+/**
  * Exchange a short-lived pairing code for a device token and persist it using
  * the requested trust level. Shared by the boot-time `?code=` flow and the
  * manual re-pairing gate so token parsing, errors, and storage behavior stay
- * identical.
+ * identical — including flagging the post-pair toast, so the gate path (the
+ * only one a homescreen PWA ever takes) surfaces feedback too.
  */
 export async function pairRemoteDevice(
   code: string,
@@ -55,9 +65,12 @@ export async function pairRemoteDevice(
   if (!isPairResponse(body)) {
     throw new Error("The pairing response was malformed.");
   }
-  return {
-    storagePersisted: writeDeviceToken(body.device_token, options.trust),
-  };
+  const storagePersisted = writeDeviceToken(body.device_token, options.trust);
+  // Only flag the toast when the token actually persisted — otherwise the
+  // caller surfaces a storage-blocked error instead. The flag lives in
+  // sessionStorage, which survives the gate's `location.reload()`.
+  if (storagePersisted) flagJustPaired(options.trust ? "trusted" : "session");
+  return { storagePersisted };
 }
 
 function pairingErrorMessage(status: number): string {
@@ -74,11 +87,10 @@ export async function ensurePaired(): Promise<void> {
 
   try {
     // Session-only by default. The "stay signed in" opt-in happens on this
-    // device after mount; only flag that offer if storage actually works.
+    // device after mount; `pairRemoteDevice` flags the toast when the token
+    // persisted, so we only handle the storage-blocked case here.
     const paired = await pairRemoteDevice(code, { trust: false });
-    if (paired.storagePersisted) {
-      flagJustPaired();
-    } else {
+    if (!paired.storagePersisted) {
       stashPairingError(
         "Paired, but this browser blocks storage — you'll need to re-pair after a reload.",
       );
@@ -99,11 +111,13 @@ export function takePairingError(): string | null {
 }
 
 /**
- * Pop the one-shot "just paired" flag. True once, immediately after a fresh
- * pair, so the app can offer to keep this device signed in.
+ * Pop the one-shot "just paired" flag, immediately after a fresh pair, so the
+ * app can offer to keep this device signed in (`"session"`) or confirm it's
+ * already persistent (`"trusted"`). `null` when there's nothing to replay.
  */
-export function takeJustPaired(): boolean {
-  return takeFlag(JUST_PAIRED_KEY) === "1";
+export function takeJustPaired(): JustPairedMode | null {
+  const value = takeFlag(JUST_PAIRED_KEY);
+  return value === "session" || value === "trusted" ? value : null;
 }
 
 function takeFlag(key: string): string | null {
@@ -116,9 +130,9 @@ function takeFlag(key: string): string | null {
   }
 }
 
-function flagJustPaired(): void {
+function flagJustPaired(mode: JustPairedMode): void {
   try {
-    sessionStorage.setItem(JUST_PAIRED_KEY, "1");
+    sessionStorage.setItem(JUST_PAIRED_KEY, mode);
   } catch {
     // Offering the persistence opt-in is best-effort; nothing to surface.
   }

@@ -5,11 +5,16 @@ import { trustCurrentDevice } from "@/lib/remote/device-token";
 
 /**
  * One-shot pairing follow-ups for a remote-browser session (pairing runs before
- * React mounts, so its outcome is stashed and replayed here):
+ * React mounts — or before the gate's reload — so its outcome is stashed and
+ * replayed here):
  *
  * - on failure, an error toast;
- * - on success, an offer to *stay signed in* — the "trust this device" decision
- *   lives on the device that paired, not in the host's link.
+ * - after a session-only pair (the Safari `?code=` flow), an offer to *stay
+ *   signed in* — the "trust this device" decision lives on the device that
+ *   paired, not in the host's link;
+ * - after a trusted pair (the manual gate, e.g. an installed PWA, which already
+ *   persisted to `localStorage`), a plain confirmation — without this, the PWA
+ *   path showed no post-pair feedback at all.
  *
  * No-op in the desktop shell or when there's nothing to replay.
  */
@@ -20,7 +25,12 @@ export function useRemotePairingToast(): void {
       toast.error(error);
       return;
     }
-    if (takeJustPaired()) {
+    const mode = takeJustPaired();
+    if (mode === "trusted") {
+      toast.success("Connected to this workspace.", {
+        description: "This device will stay signed in.",
+      });
+    } else if (mode === "session") {
       toast.success("Connected to this workspace.", {
         // Actionable and easy to miss on mobile, so give it well beyond the
         // default dismiss window to read the question and tap "Stay signed in".

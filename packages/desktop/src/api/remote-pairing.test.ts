@@ -57,7 +57,7 @@ describe("ensurePaired", () => {
     // Session-only by default — persistence is opted into on the device, not here.
     expect(sessionStorage.getItem(KEY)).toBe("dev-tok");
     expect(localStorage.getItem(KEY)).toBeNull();
-    expect(takeJustPaired()).toBe(true);
+    expect(takeJustPaired()).toBe("session");
     expect(replaceState).toHaveBeenCalledWith(null, "", "/");
   });
 
@@ -85,7 +85,7 @@ describe("ensurePaired", () => {
     vi.stubGlobal("fetch", () => Promise.resolve(mockResponse(400, {})));
     await ensurePaired();
     expect(sessionStorage.getItem(KEY)).toBeNull();
-    expect(takeJustPaired()).toBe(false);
+    expect(takeJustPaired()).toBe(null);
     expect(takePairingError()).toMatch(/expired/i);
     expect(replaceState).toHaveBeenCalled();
   });
@@ -116,6 +116,9 @@ describe("pairRemoteDevice", () => {
     );
     expect(localStorage.getItem(KEY)).toBe("trusted-token");
     expect(sessionStorage.getItem(KEY)).toBeNull();
+    // The gate path (used by an installed PWA) must flag the post-pair toast
+    // too, as "trusted" — otherwise the PWA shows no pairing feedback.
+    expect(takeJustPaired()).toBe("trusted");
   });
 
   it("rejects malformed pairing responses before writing storage", async () => {
