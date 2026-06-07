@@ -100,6 +100,13 @@ function processStreamEvent(msg: Record<string, unknown>, state: StreamingState)
   if (!event) return [];
 
   const stream = getOrCreateStreamContext(state, getStreamSessionId(msg));
+  // The server stamps the active model onto every forwarded stream event. Seed
+  // `stream.model` from it so a client that missed `message_start` (e.g. a
+  // remote device that joined the turn late) still labels streamed text with
+  // the right model instead of "unknown".
+  if (typeof msg.model === "string") {
+    stream.model = msg.model;
+  }
   const parentToolUseId = (msg.parent_tool_use_id as string) ?? null;
   if (stream.parentToolUseId && stream.parentToolUseId !== parentToolUseId) {
     const prevParent = state.toolUseIdToBlock.get(stream.parentToolUseId);

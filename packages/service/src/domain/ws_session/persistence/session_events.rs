@@ -166,6 +166,15 @@ impl WsSessionPersistence {
         }
     }
 
+    /// Model captured from the most recent `message_start` for this event's
+    /// runtime session, if any. The forward path stamps this onto live blocks so
+    /// a client that missed `message_start` (e.g. a remote device that joined the
+    /// turn late) still labels streamed text with the right model.
+    pub fn current_model_for_event(&self, runtime_event: &RuntimeEvent) -> Option<&str> {
+        let key = runtime_stream_key(runtime_event.session_id());
+        self.current_models.get(&key).map(String::as_str)
+    }
+
     async fn mark_has_file_changes(&mut self, session_id: i64) {
         self.file_change_marked = true;
         let _ = sqlx::query("UPDATE agent_sessions SET has_file_changes = 1 WHERE id = ?")
@@ -280,6 +289,44 @@ mod session_events_tests {
                 parent_tool_use_id: parent_tool_use_id.map(ToOwned::to_owned),
             },
         )
+    }
+
+    #[tokio::test]
+    async fn message_start_model_is_exposed_for_stamping() {
+        let pool = setup_test_db().await;
+        let mut persistence = WsSessionPersistence::with_session_id(pool.clone(), 1, Some(1));
+
+        let content_block = stream_event(
+            "thread",
+            None,
+            RuntimeStreamEvent::ContentBlockStart {
+                index: 0,
+                block: RuntimeContentBlock::Text {
+                    text: "Hi".to_string(),
+                },
+            },
+        );
+
+        // No `message_start` seen yet -> nothing to stamp.
+        assert_eq!(persistence.current_model_for_event(&content_block), None);
+
+        persistence
+            .persist_runtime_event(&stream_event(
+                "thread",
+                None,
+                RuntimeStreamEvent::MessageStart {
+                    model: Some("claude-opus-4-8".to_string()),
+                    input_tokens: None,
+                },
+            ))
+            .await;
+
+        // After `message_start`, later events on the same runtime session expose
+        // the captured model so the forward path can stamp live blocks.
+        assert_eq!(
+            persistence.current_model_for_event(&content_block),
+            Some("claude-opus-4-8")
+        );
     }
 
     #[tokio::test]

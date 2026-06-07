@@ -256,3 +256,46 @@ describe("processSdkMessage – Bash stream events", () => {
     });
   });
 });
+
+describe("server-stamped model on stream events", () => {
+  it("labels streamed text with the stamped model when message_start was missed", () => {
+    const state = createStreamingState();
+    // A remote device that joined the turn late never saw `message_start`, so it
+    // relies on the model the server stamps onto the forwarded block.
+    const result = processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "thread",
+        model: "claude-opus-4-8",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "Hi" },
+        },
+      },
+      state,
+    );
+
+    expect(result.mutations).toHaveLength(1);
+    expect(result.mutations[0].block.type).toBe("text");
+    expect(result.mutations[0].block.model).toBe("claude-opus-4-8");
+  });
+
+  it("falls back to undefined model when nothing is stamped or started", () => {
+    const state = createStreamingState();
+    const result = processSdkMessage(
+      {
+        type: "stream_event",
+        session_id: "thread",
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "Hi" },
+        },
+      },
+      state,
+    );
+
+    expect(result.mutations[0].block.model).toBeUndefined();
+  });
+});
