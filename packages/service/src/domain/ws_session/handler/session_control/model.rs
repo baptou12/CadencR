@@ -1,4 +1,3 @@
-use axum::extract::ws::Message;
 use tracing::{error, info};
 
 use super::super::super::persistence::WsSessionPersistence;
@@ -65,6 +64,13 @@ pub(crate) async fn handle_model_set(
         }
     };
 
+    // The live turn may be owned by another connection (e.g. the host changing
+    // the model of a conversation started on a remote device). Operate on the
+    // owning map so the change reaches the running CLI, not just our viewer.
+    let effective_sessions =
+        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
+    let sdk_sessions = &effective_sessions;
+
     let mut sessions = sdk_sessions.lock().await;
     let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
@@ -78,6 +84,7 @@ pub(crate) async fn handle_model_set(
             return;
         }
     };
+    let feature_id = handle.feature_id;
 
     let target_provider = provider_for_model(&handle.runtime_provider, &payload.model);
     if has_messages && handle.runtime_provider != target_provider {
@@ -134,6 +141,7 @@ pub(crate) async fn handle_model_set(
         Some(adapter) => adapter.context_window_for_model(&payload.model).await,
         None => None,
     };
+    drop(sessions);
     WsSessionPersistence::update_context_window(
         &app_state.write_pool,
         db_session_id,
@@ -141,15 +149,17 @@ pub(crate) async fn handle_model_set(
     )
     .await;
 
-    let reply = WsEnvelope::reply(
+    // Reply to the caller and mirror to other devices so their model chip updates.
+    super::reply_and_broadcast(
+        app_state,
+        sender,
         &envelope.id,
-        "session",
+        feature_id,
         "model.set.ok",
-        serde_json::to_value(serde_json::json!({
+        serde_json::json!({
             "model": payload.model,
             "context_window": seeded_window,
-        }))
-        .unwrap(),
-    );
-    let _ = sender.send(Message::Text(String::from(reply).into()));
+        }),
+    )
+    .await;
 }

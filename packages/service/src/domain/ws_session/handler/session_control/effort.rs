@@ -1,4 +1,3 @@
-use axum::extract::ws::Message;
 use tracing::{error, info};
 
 use super::super::super::persistence::WsSessionPersistence;
@@ -36,14 +35,22 @@ pub(crate) async fn handle_effort_set(
         }
     };
 
+    // The live turn may be owned by another connection (e.g. the host changing
+    // effort on a conversation started on a remote device). Operate on the
+    // owning map so the change reaches the running CLI, not just our viewer.
+    let effective_sessions =
+        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
+    let sdk_sessions = &effective_sessions;
+
     // Snapshot the (provider, model) at the moment of the change so the per-
     // model workspace default is keyed against the model that's actually in
     // use right now. If the user later switches models, that's a separate
     // event and should not back-propagate to the previous model's default.
-    let (active_query, runtime_provider, current_model): (
+    let (active_query, runtime_provider, current_model, feature_id): (
         Option<RuntimeSessionHandle>,
         String,
         Option<String>,
+        i64,
     ) = {
         let mut sessions = sdk_sessions.lock().await;
         let handle = match sessions.get_mut(&db_session_id) {
@@ -72,6 +79,7 @@ pub(crate) async fn handle_effort_set(
             .desired_model
             .clone()
             .or_else(|| handle.spawned_model.clone());
+        let feature_id = handle.feature_id;
 
         let active = match &mut handle.state {
             QueryState::Pending(options) => {
@@ -80,7 +88,7 @@ pub(crate) async fn handle_effort_set(
             }
             QueryState::Active { query, .. } => Some(query.clone()),
         };
-        (active, provider, model)
+        (active, provider, model, feature_id)
     };
 
     if let Some(query) = active_query {
@@ -129,14 +137,14 @@ pub(crate) async fn handle_effort_set(
         }
     }
 
-    let reply = WsEnvelope::reply(
+    // Reply to the caller and mirror to other devices so their effort chip updates.
+    super::reply_and_broadcast(
+        app_state,
+        sender,
         &envelope.id,
-        "session",
+        feature_id,
         "effort.set.ok",
-        serde_json::to_value(serde_json::json!({
-            "thinking_effort": payload.thinking_effort,
-        }))
-        .unwrap(),
-    );
-    let _ = sender.send(Message::Text(String::from(reply).into()));
+        serde_json::json!({ "thinking_effort": payload.thinking_effort }),
+    )
+    .await;
 }

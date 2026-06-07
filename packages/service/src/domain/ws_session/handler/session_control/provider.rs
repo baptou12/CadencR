@@ -195,7 +195,7 @@ pub(crate) async fn handle_provider_set(
     let next_access_mode = configured_codex_access_mode
         .as_deref()
         .map(|mode| parse_access_mode(Some(mode)));
-    {
+    let feature_id = {
         let mut sessions = sdk_sessions.lock().await;
         let handle = match sessions.get_mut(&db_session_id) {
             Some(h) => h,
@@ -227,7 +227,8 @@ pub(crate) async fn handle_provider_set(
         handle.desired_access_mode = next_access_mode.clone();
         handle.config.access_mode = next_access_mode.clone();
         options.access_mode = next_access_mode;
-    }
+        handle.feature_id
+    };
 
     send_provider_set_ok(
         sender,
@@ -237,11 +238,32 @@ pub(crate) async fn handle_provider_set(
         configured_codex_access_mode.as_deref(),
     );
 
-    let mode_changed = WsEnvelope::reply(
+    // Mirror to other devices viewing this feature so their provider/mode chips
+    // stay in sync (provider can only change before the first prompt). The mode
+    // reply+mirror share one payload; the provider chip already got its reply
+    // above, so only its mirror is sent here.
+    let mut provider_payload = serde_json::json!({
+        "provider": payload.provider,
+        "supports_prompt_receipts": supports_prompt_receipts,
+    });
+    if let Some(mode) = configured_codex_access_mode.as_deref() {
+        provider_payload["codex_permission_mode"] = serde_json::Value::String(mode.to_string());
+    }
+    super::broadcast_control_change(
+        app_state,
+        sender,
+        feature_id,
+        "provider.set.ok",
+        provider_payload,
+    )
+    .await;
+    super::reply_and_broadcast(
+        app_state,
+        sender,
         &envelope.id,
-        "session",
+        feature_id,
         "mode.changed",
         serde_json::json!({ "mode": new_mode_wire }),
-    );
-    let _ = sender.send(Message::Text(String::from(mode_changed).into()));
+    )
+    .await;
 }
