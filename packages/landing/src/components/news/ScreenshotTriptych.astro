@@ -1,0 +1,38 @@
+---
+import { Image } from "astro:assets";
+import type { ImageMetadata } from "astro";
+
+interface ScreenshotItem {
+  src: ImageMetadata;
+  alt: string;
+  caption: string;
+}
+
+interface Props {
+  items: [ScreenshotItem, ScreenshotItem, ScreenshotItem];
+}
+
+const { items } = Astro.props;
+---
+<figure class="my-6">
+  <div class="grid grid-cols-3 gap-3 sm:gap-4">
+    {items.map((item) => (
+      <div class="min-w-0">
+        <Image
+          src={item.src}
+          alt={item.alt}
+          widths={[320, 480, 640]}
+          sizes="(min-width: 768px) 220px, 33vw"
+          format="webp"
+          quality={95}
+          loading="lazy"
+          decoding="async"
+          class="block h-auto w-full rounded-xl"
+        />
+        <figcaption class="mt-2 text-center text-[10px] leading-snug text-muted-foreground sm:text-xs">
+          {item.caption}
+        </figcaption>
+      </div>
+    ))}
+  </div>
+</figure>

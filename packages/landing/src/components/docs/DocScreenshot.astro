@@ -12,13 +12,15 @@ interface Props {
    * second border on top.
    */
   bordered?: boolean;
+  rounded?: boolean;
 }
 
-const { src, alt, caption, bordered = true } = Astro.props;
+const { src, alt, caption, bordered = true, rounded = bordered } = Astro.props;
 
+const radiusClass = rounded ? "rounded-xl" : "";
 const imageClass = bordered
-  ? "block h-auto w-full rounded-xl border border-border shadow-md"
-  : "block h-auto w-full";
+  ? ["block h-auto w-full border border-border shadow-md", radiusClass].filter(Boolean).join(" ")
+  : ["block h-auto w-full", radiusClass].filter(Boolean).join(" ");
 ---
 <figure class="my-6">
   <Image
