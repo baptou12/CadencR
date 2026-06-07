@@ -12,6 +12,12 @@ function Toaster({ ...props }: ToasterProps) {
   return (
     <Sonner
       className="toaster group"
+      // In an iOS standalone PWA the UI runs under the status bar (black-translucent
+      // + viewport-fit=cover), so a top-center toast would sit behind the notch.
+      // Pad the top offset by the safe-area inset; it resolves to 0 on desktop, so
+      // loopback/desktop toasts are unchanged. Mirrors AppShell's safe-area padding.
+      offset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
+      mobileOffset={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
       toastOptions={{
         style: {
           padding: "10px 12px",

@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { UnifiedAgentsShortcut } from "@/components/UnifiedAgentsShortcut";
 import { PostUpdateChangelogDialog } from "@/components/PostUpdateChangelogDialog";
 import { ThemeDrawer } from "@/components/theme/ThemeDrawer";
+import { useRemoteUpdateCheck } from "@/hooks/useRemoteUpdateCheck";
 import { useListFeatureWorktrees, type Feature } from "@/api/generated";
 import { getArchiveCleanupAvailability } from "@/components/archive-cleanup-availability";
 import {
@@ -53,6 +54,8 @@ export function RootOverlays({
   onDeleteFeature,
   appClose,
 }: RootOverlaysProps): ReactElement {
+  // In a remote PWA, watch for newer host frontend code and offer a reload.
+  useRemoteUpdateCheck();
   const archiveConfirmAction = confirmAction?.action === "archive" ? confirmAction : null;
   const deleteConfirmAction = confirmAction?.action === "delete" ? confirmAction : null;
   const archiveFeatureId = archiveConfirmAction?.feature.id ?? null;

@@ -137,6 +137,11 @@ pub fn build_remote_router(
         .layer(axum::middleware::from_fn(middleware::rate_limit_middleware))
         .layer(axum::Extension(limiter))
         .layer(axum::Extension(context))
+        // Stamp Cache-Control so an installed PWA always revalidates index.html
+        // while content-hashed `/assets/*` cache forever (PWA-update support).
+        .layer(axum::middleware::from_fn(
+            middleware::cache_control_middleware,
+        ))
         .layer(compression_layer())
         // Outermost: stamp CSP + hardening headers on every remote response,
         // including auth/rate-limit short-circuits and static SPA assets.

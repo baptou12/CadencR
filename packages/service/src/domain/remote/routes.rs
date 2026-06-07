@@ -134,6 +134,7 @@ async fn current_status(state: &AppState) -> Result<RemoteStatus, AppError> {
         tunnel_host,
         devices,
         connected_devices: state.remote.live().connected_device_count(),
+        pairing_state: state.remote.pairing().state(),
         audit_tail,
     })
 }
@@ -146,7 +147,9 @@ pub async fn status_handler(State(state): State<AppState>) -> Result<Json<Remote
 #[utoipa::path(post, path = "/api/remote/enable", responses((status = 200, body = RemoteStatus)))]
 pub async fn enable_handler(State(state): State<AppState>) -> Result<Json<RemoteStatus>, AppError> {
     state.remote.start(&state).await.map_err(|err| match err {
-        RemoteError::NoRendererDir => AppError::ServiceUnavailable(err.to_string()),
+        RemoteError::NoRendererDir | RemoteError::RendererIndexMissing(_) => {
+            AppError::ServiceUnavailable(err.to_string())
+        }
         _ => AppError::Internal(err.to_string()),
     })?;
     repository::set_setting(&state.write_pool, REMOTE_ENABLED_SETTING, "true").await?;

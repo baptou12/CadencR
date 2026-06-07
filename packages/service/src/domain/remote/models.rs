@@ -34,6 +34,9 @@ pub struct RemoteStatus {
     pub devices: Vec<RemoteDevice>,
     /// Distinct devices with a live socket open right now (≤ `devices.len()`).
     pub connected_devices: usize,
+    /// Lifecycle of the current pairing code, so the host can retire the QR the
+    /// moment it's consumed (or expired) instead of guessing from device counts.
+    pub pairing_state: crate::remote::pairing::PairingState,
     pub audit_tail: Vec<RemoteAuditEntry>,
 }
 

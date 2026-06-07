@@ -16,6 +16,7 @@ export function isRemoteStatus(value: unknown): value is RemoteStatus {
   return (
     typeof value.enabled === "boolean" &&
     typeof value.connected_devices === "number" &&
+    typeof value.pairing_state === "string" &&
     Array.isArray(value.devices) &&
     Array.isArray(value.audit_tail) &&
     Array.isArray(value.lan_urls)

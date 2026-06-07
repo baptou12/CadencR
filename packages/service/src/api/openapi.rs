@@ -341,6 +341,7 @@ use crate::domain::workspace::routes as workspace_routes;
         imports_models::SkippedRecord,
         imports_models::SkipReason,
         remote_models::RemoteStatus,
+        crate::remote::pairing::PairingState,
         remote_models::RemoteDevice,
         remote_models::RemoteAuditEntry,
         remote_models::PairingCodeResponse,
