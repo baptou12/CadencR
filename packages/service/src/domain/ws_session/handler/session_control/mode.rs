@@ -47,6 +47,13 @@ pub(crate) async fn handle_mode_set(
 
     let new_mode = parse_permission_mode(&payload.mode);
 
+    // The live turn may be owned by another connection (e.g. the host changing
+    // the mode of a conversation started on a remote device). Operate on the
+    // owning map so the change reaches the running CLI, not just our viewer.
+    let effective_sessions =
+        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
+    let sdk_sessions = &effective_sessions;
+
     let mut sessions = sdk_sessions.lock().await;
     let handle = match sessions.get_mut(&db_session_id) {
         Some(h) => h,
@@ -60,6 +67,7 @@ pub(crate) async fn handle_mode_set(
             return;
         }
     };
+    let feature_id = handle.feature_id;
 
     // Reject modes the active provider doesn't support — guards against a
     // stale FE catalog (e.g. user just switched provider but UI hadn't
@@ -94,6 +102,7 @@ pub(crate) async fn handle_mode_set(
     } else {
         queue_pending_permission_mode(handle, new_mode);
     }
+    drop(sessions);
 
     // Persist to DB
     WsSessionPersistence::update_permission_mode_static(
@@ -103,13 +112,16 @@ pub(crate) async fn handle_mode_set(
     )
     .await;
 
-    let reply = WsEnvelope::reply(
+    // Reply to the caller and mirror to other devices so their mode chip updates.
+    super::reply_and_broadcast(
+        app_state,
+        sender,
         &envelope.id,
-        "session",
+        feature_id,
         "mode.changed",
-        serde_json::to_value(serde_json::json!({ "mode": payload.mode })).unwrap(),
-    );
-    let _ = sender.send(Message::Text(String::from(reply).into()));
+        serde_json::json!({ "mode": payload.mode }),
+    )
+    .await;
 }
 
 fn queue_pending_permission_mode(
@@ -263,7 +275,14 @@ pub(crate) async fn handle_codex_permission_mode_set(
         }
     };
 
-    {
+    // The live turn may be owned by another connection (e.g. the host changing
+    // the mode of a conversation started on a remote device). Operate on the
+    // owning map so the change reaches the running CLI, not just our viewer.
+    let effective_sessions =
+        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
+    let sdk_sessions = &effective_sessions;
+
+    let feature_id = {
         let sessions = sdk_sessions.lock().await;
         let handle = match sessions.get(&db_session_id) {
             Some(h) => h,
@@ -287,7 +306,8 @@ pub(crate) async fn handle_codex_permission_mode_set(
             );
             return;
         }
-    }
+        handle.feature_id
+    };
 
     let Some(access_mode) = parse_access_mode_wire(&payload.mode) else {
         send_error(
@@ -344,11 +364,14 @@ pub(crate) async fn handle_codex_permission_mode_set(
         }
     }
 
-    let reply = WsEnvelope::reply(
+    // Reply to the caller and mirror to other devices so their mode chip updates.
+    super::reply_and_broadcast(
+        app_state,
+        sender,
         &envelope.id,
-        "session",
+        feature_id,
         "codex_permission_mode.changed",
         serde_json::json!({ "mode": mode_wire }),
-    );
-    let _ = sender.send(Message::Text(String::from(reply).into()));
+    )
+    .await;
 }

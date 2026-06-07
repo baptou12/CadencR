@@ -15,6 +15,7 @@ pub(crate) async fn handle_interrupt(
     envelope: WsEnvelope,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
+    app_state: &AppState,
 ) {
     let payload: SessionActionPayload = match serde_json::from_value(envelope.payload.clone()) {
         Ok(p) => p,
@@ -36,6 +37,15 @@ pub(crate) async fn handle_interrupt(
             return;
         }
     };
+
+    // The live turn may be owned by another connection (e.g. the host stopping a
+    // conversation started on a remote device). Resolve the owning map so the
+    // interrupt reaches the running CLI rather than failing with NOT_FOUND. The
+    // resulting Idle status already broadcasts to every device via
+    // `session_status_tx`, so no extra mirror is needed here.
+    let effective_sessions =
+        super::resolve_owner_sessions(sdk_sessions, app_state, db_session_id).await;
+    let sdk_sessions = &effective_sessions;
 
     let active_query = {
         let sessions = sdk_sessions.lock().await;

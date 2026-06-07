@@ -89,7 +89,9 @@ async fn handle_session_action(
         "effort.set" => {
             session_control::handle_effort_set(envelope, sender, sdk_sessions, app_state).await
         }
-        "interrupt" => session_control::handle_interrupt(envelope, sender, sdk_sessions).await,
+        "interrupt" => {
+            session_control::handle_interrupt(envelope, sender, sdk_sessions, app_state).await
+        }
         "suspend" => {
             session_control::handle_suspend(envelope, sender, sdk_sessions, app_state).await
         }

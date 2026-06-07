@@ -7,6 +7,7 @@
 mod support;
 
 mod app;
+mod bidirectional_controls;
 mod codex_provider;
 mod dispatch;
 mod gate;
