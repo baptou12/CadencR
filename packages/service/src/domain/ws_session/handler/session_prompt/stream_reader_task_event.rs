@@ -219,6 +219,11 @@ impl StreamReaderTask {
         }
 
         let persisted_message = persistence.persist_runtime_event(runtime_event).await;
+        // Only stream-event blocks carry a stamped model, so skip the lookup
+        // entirely for other events on this per-delta hot path.
+        let current_model = runtime_event
+            .stream_event()
+            .and_then(|_| persistence.current_model_for_event(runtime_event));
         if !usage_update.is_subagent {
             let _ = persist_usage(runtime_event, self.db_session_id, &self.write_pool).await;
         }
@@ -234,7 +239,7 @@ impl StreamReaderTask {
         }
 
         let envelope = self
-            .runtime_event_envelope(state, runtime_event, persisted_message)
+            .runtime_event_envelope(state, runtime_event, persisted_message, current_model)
             .await;
         // The event is already persisted and mirrored to any other connected
         // device, so a gone owner socket is fine — keep streaming.
@@ -288,11 +293,24 @@ impl StreamReaderTask {
         state: &mut StreamReaderState,
         runtime_event: &RuntimeEvent,
         persisted_message: Option<PersistedMessageRef>,
+        current_model: Option<&str>,
     ) -> WsEnvelope {
         if runtime_event.is_result() {
             return self.result_envelope(state).await;
         }
-        let block = raw_event_with_agent_message_id(runtime_event.raw_json(), persisted_message);
+        let mut block =
+            raw_event_with_agent_message_id(runtime_event.raw_json(), persisted_message);
+        // Stamp the active model onto the live block (`current_model` is set only
+        // for stream events). The block created on `content_block_start` would
+        // otherwise rely on the client having applied `message_start` first —
+        // unreliable for a remote device that joined the turn late, which then
+        // renders the model as "unknown".
+        if let (Some(model), serde_json::Value::Object(object)) = (current_model, &mut block) {
+            object.insert(
+                "model".to_string(),
+                serde_json::Value::String(model.to_string()),
+            );
+        }
         WsEnvelope::new(
             "session",
             "message",
