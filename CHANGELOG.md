@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.0 - 2026-06-07
+
+Previous release: v0.3.6 - 2026-06-03
+
+### ✨ Added
+
+- [**Desktop**] Added remote env: pair a phone, tablet, or second computer by QR code or link, then control the same local Cadencr workspace from the browser. Remote env includes host sidebar controls, pairing gate, trusted-device flow, installable PWA metadata/icons, mobile shell, mobile editor and terminal layouts, terminal key bar, live connected-device feedback, sleep-prevention controls, and connection fixes for multi-device, sleep/wake, re-pairing, stream model labels, and bidirectional session controls. On the backend it adds the remote listener, device-token authentication, pairing codes, TLS support, LAN/tunnel connection details, persisted remote devices, remote session mirroring, authenticated shared access to sessions, terminals, and LSP routes, plus loopback-only host controls, bearer-token checks, rate limiting, security headers, cache controls, and safer remote file handling.
+- [**Desktop**] Added Monokai and Monokai Light themes.
+- [**Desktop**] Added a feature unarchive action so archived work can be restored from the app.
+
+### 🔧 Changed
+
+- [**Desktop**] Reworked sidebar ordering so conversations float to the top after user messages while project order remains stable within a session.
+- [**Backend**] Removed the 300-second custom-action timeout so long-running commands can continue until they finish or are cancelled.
+
+### 🐛 Fixed
+
+- [**Desktop**] Fixed terminal clear shortcuts so the terminal can be cleared reliably from the keyboard.
+
 ## v0.3.6 - 2026-06-03
 
 Previous release: v0.3.5 - 2026-06-03

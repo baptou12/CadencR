@@ -1,0 +1,56 @@
+---
+title: "Cadencr v0.4.0 adds remote env for second-screen agent work"
+date: 2026-06-07
+summary: "Cadencr v0.4.0 introduces remote env: pair a phone, tablet, or second computer with your local desktop app, then steer the same sessions, terminals, and workspace from a browser."
+author: "Raphaël - RLE - Le Minor"
+tags: ["release", "remote", "mobile"]
+---
+
+Cadencr is a local app on purpose. Your agents, terminals, worktrees, and project state live on your machine. But the feedback loop around agent work does not always happen while you are sitting in front of that machine.
+
+Version 0.4.0 adds **remote env**: a way to open the same local Cadencr workspace from another device. Pair a phone, tablet, or second computer, and you can keep an eye on a running session, approve a plan, type a follow-up prompt, steer the model or permission mode, and use the terminal without moving the project into a hosted service.
+
+{/* Add the main remote-env screenshot here once available. */}
+
+## Why remote env exists
+
+Agent work has more idle time than normal coding. You send a prompt, review a plan, approve or redirect, wait for a command, check the output, then nudge the session again. That loop should not require the desktop app to be the only place where you can respond.
+
+Remote env is for those moments when your main machine is still doing the work, but you want a lighter control surface:
+
+- keep a session moving from the couch, a meeting room, or another desk
+- use a phone as a companion screen for plan approvals and quick prompts
+- monitor long-running agents without keeping the desktop window in front
+- open the same workspace from a second computer without cloning setup state
+
+The goal is not cloud sync. The goal is local-first remote control.
+
+## How it works
+
+Remote env starts from the Remote Access control in the Cadencr sidebar. The desktop app can start a local remote listener, show LAN and tunnel connection details, and generate a pairing QR code or link.
+
+On the second device, open the link or scan the QR code. The browser lands on a pairing gate, exchanges the short-lived pairing code for a device token, and then loads the Cadencr remote interface. Trusted devices can keep their token; temporary devices can stay session-only.
+
+Once paired, the remote device connects back to the same local backend. It is not a separate project and it is not a second copy of the session. It mirrors the live workspace: sessions, stream updates, terminal panes, LSP-backed editor access, model and permission controls, and the current worktree context all point at the host machine.
+
+## Built for phones, not just browsers
+
+Remote env also forced a lot of mobile work into the desktop app shell. The feature includes a responsive layout, mobile drawers, safer viewport sizing around browser chrome, prompt and terminal fixes for on-screen keyboards, and a terminal key bar for `Ctrl`, `Esc`, `Tab`, and arrow keys.
+
+That matters because a remote control surface only works if it is actually usable from a phone. You should be able to approve a plan, send a newline in a prompt, press `Esc` in a terminal, or keep typing while the keyboard is open without the UI disappearing underneath it.
+
+## Still local, still explicit
+
+Remote env is intentionally explicit. Host controls stay on loopback, paired devices authenticate with device tokens, pairing codes are short-lived and single-use, and remote responses include cache and security headers. The feature is powerful because a paired device can steer local sessions and terminals, so pairing is a deliberate action rather than a passive background sync.
+
+## Also in v0.4.0
+
+This release also adds Monokai and Monokai Light themes, a feature unarchive action, more predictable sidebar ordering, long-running custom actions without the old 300-second timeout, and a fix for terminal clear shortcuts.
+
+For the full list, read the changelog in the [v0.4.0 GitHub release notes](https://github.com/merkr-software/CadencR/releases/tag/v0.4.0) once the release is live.
+
+[Download Cadencr v0.4.0](https://github.com/merkr-software/CadencR/releases/tag/v0.4.0) once the release is live, or read the full changelog from the same release page.
+
+{/* Add the Monokai screenshot here once available. */}
+
+{/* Add the Monokai Light screenshot here once available. */}
