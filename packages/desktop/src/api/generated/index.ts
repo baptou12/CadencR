@@ -1004,6 +1004,21 @@ export interface PairingCodeResponse {
   urls: string[];
 }
 
+/**
+ * Lifecycle of the most-recently-minted pairing code, surfaced to the host UI
+so it can retire the QR the *moment* the code is actually used — rather than
+inferring consumption from a device-count change, which was unreliable.
+ */
+export type PairingState = (typeof PairingState)[keyof typeof PairingState];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const PairingState = {
+  none: "none",
+  pending: "pending",
+  consumed: "consumed",
+  expired: "expired",
+} as const;
+
 export type ProfileViewEnv = { [key: string]: string };
 
 export interface ProfileView {
@@ -1188,6 +1203,9 @@ export interface RemoteStatus {
   fingerprint?: RemoteStatusFingerprint;
   /** `https://<lan-ip>:<port>/` for each detected interface. */
   lan_urls: string[];
+  /** Lifecycle of the current pairing code, so the host can retire the QR the
+moment it's consumed (or expired) instead of guessing from device counts. */
+  pairing_state: PairingState;
   /** @minimum 0 */
   port?: RemoteStatusPort;
   /** Configured tunnel hostname (e.g. Tailscale), normalized; `None` if unset.

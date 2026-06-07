@@ -28,25 +28,28 @@ export function RemotePairSection(): ReactElement {
   const [selected, setSelected] = useState(0);
   const [used, setUsed] = useState(false);
   const autoMinted = useRef(false);
-  // Device count at mint time. Pairing inserts a device row, and only one code
-  // is ever live, so any increase while this code is shown means it was used.
-  const baselineDevices = useRef(0);
+  // Guards the consumed signal against a stale status snapshot left over from a
+  // *previous* code: we only trust "consumed" once we've seen this code reported
+  // "pending" at least once. Reset on every mint.
+  const sawPending = useRef(false);
 
   const refresh = useRemoteStore((s) => s.refresh);
-  const deviceCount = useRemoteStore((s) => s.status?.devices.length ?? 0);
+  const pairingState = useRemoteStore((s) => s.status?.pairing_state);
 
   const mint = async (): Promise<void> => {
     setMinting(true);
     setError(null);
     setUsed(false);
+    sawPending.current = false;
     try {
       const result = await remotePairingCode();
       if (!isPairingCodeResponse(result)) throw new Error("Malformed pairing-code response.");
-      // This section only renders once status is loaded, so the count is real.
-      baselineDevices.current = useRemoteStore.getState().status?.devices.length ?? 0;
       setCode(result);
       setSelected(0);
       setRemaining(result.expires_in_secs);
+      // Pull status now so the store reflects this fresh code as "pending"
+      // promptly (the 3s poll alone could otherwise miss it before a fast scan).
+      void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create a pairing code.");
       setCode(null);
@@ -83,11 +86,14 @@ export function RemotePairSection(): ReactElement {
     return () => clearInterval(id);
   }, [code, used, refresh]);
 
-  // A new paired device means this single-use code was just consumed: retire the
-  // QR and tell the host explicitly, instead of leaving a dead code on screen.
+  // The host reports the current code's lifecycle directly. Once we've observed
+  // it "pending" (so we're not reacting to a prior code's leftover state), a
+  // "consumed" report means this single-use code was just used: retire the QR.
   useEffect(() => {
-    if (code && !used && deviceCount > baselineDevices.current) setUsed(true);
-  }, [code, used, deviceCount]);
+    if (!code || used) return;
+    if (pairingState === "pending") sawPending.current = true;
+    else if (pairingState === "consumed" && sawPending.current) setUsed(true);
+  }, [code, used, pairingState]);
 
   return (
     <section className="space-y-2">

@@ -15,7 +15,7 @@ mod tls;
 pub use spa::spa_service;
 
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -76,6 +76,11 @@ pub struct RemoteInfo {
 pub enum RemoteError {
     /// No SPA dir — remote serving only works in packaged builds.
     NoRendererDir,
+    /// The SPA dir is set but has no built `index.html`. Starting anyway would
+    /// serve empty 404s for every page load — which browsers download as a
+    /// 0-byte file rather than show as an error — so we refuse loudly instead.
+    /// Typically means the frontend wasn't built into the renderer dir yet.
+    RendererIndexMissing(PathBuf),
     Tls(anyhow::Error),
     /// Loading/generating the device-token pepper failed.
     Secrets(anyhow::Error),
@@ -90,6 +95,13 @@ impl std::fmt::Display for RemoteError {
                 write!(
                     f,
                     "remote access requires a packaged build (no renderer dir)"
+                )
+            }
+            RemoteError::RendererIndexMissing(path) => {
+                write!(
+                    f,
+                    "remote access needs a built frontend: no index.html at {}",
+                    path.display()
                 )
             }
             RemoteError::Tls(err) => write!(f, "TLS setup failed: {err}"),
@@ -150,11 +162,7 @@ impl RemoteController {
             return Ok(info.clone());
         }
 
-        let renderer_dir = self
-            .config
-            .renderer_dir
-            .clone()
-            .ok_or(RemoteError::NoRendererDir)?;
+        let renderer_dir = resolve_renderer_dir(self.config.renderer_dir.as_deref())?;
 
         let lan_ips = net::lan_ipv4s();
         let tls = tls::load_or_generate(&self.config.data_dir, cert_sans(&lan_ips))
@@ -231,6 +239,19 @@ impl RemoteController {
     pub async fn status(&self) -> Option<RemoteInfo> {
         self.runtime.lock().await.info.clone()
     }
+}
+
+/// Resolve the SPA dir for serving, refusing if it's unset (dev / non-packaged)
+/// or set but missing a built `index.html`. Both cases would otherwise leave the
+/// SPA fallback returning empty, type-less 404s for every page load, which a
+/// browser surfaces as a 0-byte file download instead of a usable error.
+fn resolve_renderer_dir(renderer_dir: Option<&Path>) -> Result<PathBuf, RemoteError> {
+    let dir = renderer_dir.ok_or(RemoteError::NoRendererDir)?;
+    let index = dir.join("index.html");
+    if !index.is_file() {
+        return Err(RemoteError::RendererIndexMissing(index));
+    }
+    Ok(dir.to_path_buf())
 }
 
 /// SANs for the self-signed cert: loopback plus each detected LAN IP. Cosmetic
@@ -428,5 +449,29 @@ mod tests {
     fn no_tunnel_host_leaves_allowlist_lan_only() {
         let hosts = allowed_hosts(&[], 5006, None);
         assert!(hosts.iter().all(|h| h.ends_with(":5006")));
+    }
+
+    #[test]
+    fn renderer_dir_must_contain_index_html() {
+        // Unset (dev / non-packaged) → NoRendererDir.
+        assert!(matches!(
+            resolve_renderer_dir(None),
+            Err(RemoteError::NoRendererDir)
+        ));
+
+        // Set but no built index.html (e.g. the frontend wasn't built into the
+        // dir) → refuse, rather than start and serve 0-byte 404 "downloads".
+        let dir = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            resolve_renderer_dir(Some(dir.path())),
+            Err(RemoteError::RendererIndexMissing(_))
+        ));
+
+        // A real built SPA dir resolves.
+        std::fs::write(dir.path().join("index.html"), "<!doctype html>").unwrap();
+        assert_eq!(
+            resolve_renderer_dir(Some(dir.path())).unwrap(),
+            dir.path().to_path_buf()
+        );
     }
 }
