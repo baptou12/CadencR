@@ -41,21 +41,31 @@ impl Drop for SessionGuard {
 
 impl LiveSessions {
     /// Register a session for `device_id`, returning a guard whose `token` the
-    /// connection should select on. The guard deregisters on drop.
-    pub fn register(self: &std::sync::Arc<Self>, device_id: i64) -> SessionGuard {
+    /// connection should select on, plus whether this is the device's *first*
+    /// live socket (it had none open before this one). The flag lets the caller
+    /// fire a one-per-connection "device connected" event without spamming for
+    /// the several sockets a single device opens — computed inside the lock so
+    /// concurrent upgrades can't both observe themselves as first. The guard
+    /// deregisters on drop.
+    pub fn register(self: &std::sync::Arc<Self>, device_id: i64) -> (SessionGuard, bool) {
         let token = CancellationToken::new();
-        let id = {
+        let (id, first_for_device) = {
             let mut inner = self.inner.lock().unwrap();
+            let first_for_device = !inner
+                .sessions
+                .values()
+                .any(|(other, _)| *other == device_id);
             let id = inner.next_id;
             inner.next_id += 1;
             inner.sessions.insert(id, (device_id, token.clone()));
-            id
+            (id, first_for_device)
         };
-        SessionGuard {
+        let guard = SessionGuard {
             registry: std::sync::Arc::downgrade(self),
             id,
             token,
-        }
+        };
+        (guard, first_for_device)
     }
 
     /// Cancel every live session belonging to `device_id` (called on revoke).
@@ -90,8 +100,8 @@ mod tests {
     #[test]
     fn cancel_targets_only_the_revoked_device() {
         let registry = Arc::new(LiveSessions::default());
-        let keep = registry.register(1);
-        let drop_me = registry.register(2);
+        let (keep, _) = registry.register(1);
+        let (drop_me, _) = registry.register(2);
 
         registry.cancel_device(2);
 
@@ -109,10 +119,30 @@ mod tests {
     }
 
     #[test]
+    fn register_flags_only_the_first_socket_per_device() {
+        let registry = Arc::new(LiveSessions::default());
+        let (first, first_flag) = registry.register(1);
+        let (_second, second_flag) = registry.register(1); // same device, second tab
+        let (_other, other_flag) = registry.register(2);
+        assert!(first_flag, "first socket for a device should be flagged");
+        assert!(
+            !second_flag,
+            "a second concurrent socket must not be flagged"
+        );
+        assert!(other_flag, "a different device's first socket is flagged");
+
+        // Once every socket for device 1 closes, the next one is "first" again.
+        drop(first);
+        drop(_second);
+        let (_again, again_flag) = registry.register(1);
+        assert!(again_flag, "reconnecting after a full disconnect re-flags");
+    }
+
+    #[test]
     fn guard_deregisters_on_drop() {
         let registry = Arc::new(LiveSessions::default());
         {
-            let _guard = registry.register(7);
+            let (_guard, _) = registry.register(7);
             assert_eq!(registry.inner.lock().unwrap().sessions.len(), 1);
         }
         assert_eq!(registry.inner.lock().unwrap().sessions.len(), 0);

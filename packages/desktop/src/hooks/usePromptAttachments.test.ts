@@ -30,6 +30,7 @@ function bridge(): CadencrDesktopBridge {
     currentTheme: vi.fn(),
     onThemeChange: vi.fn(() => () => undefined),
     setBusy: vi.fn(() => Promise.resolve()),
+    setRemoteHostAwake: vi.fn(() => Promise.resolve()),
     onPowerSuspend: vi.fn(() => () => undefined),
     onPowerResume: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(() => Promise.resolve()),

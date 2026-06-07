@@ -16,6 +16,7 @@ pub(super) async fn handle_app_action(
             handle_subscribe_session_status(envelope, sender, app_state).await
         }
         "subscribe.feature_events" => handle_subscribe_feature_events(sender, app_state).await,
+        "subscribe.remote_events" => handle_subscribe_remote_events(sender, app_state).await,
         "subscribe.file_watcher" => {
             handle_subscribe_file_watcher(envelope, sender, app_state).await
         }
@@ -222,6 +223,40 @@ async fn handle_subscribe_feature_events(sender: &WsSender, app_state: &AppState
                         break;
                     }
                 }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
+/// Subscribe the client to remote device-connection events. Like
+/// `feature_events`, there is no snapshot — each event is a one-shot cue to
+/// show a "device connected" toast on the host. Only the host (loopback) UI
+/// subscribes; remote browsers deliberately don't, so a device never toasts
+/// for its own connection. Forwards every [`RemoteConnectedEvent`] as an
+/// `app/remote_connected` envelope until the socket closes.
+async fn handle_subscribe_remote_events(sender: &WsSender, app_state: &AppState) {
+    let mut rx = app_state.remote_events_tx.subscribe();
+    let sender = sender.clone();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok(event) => {
+                    let update = WsEnvelope::new(
+                        "app",
+                        "remote_connected",
+                        serde_json::to_value(&event).unwrap_or_else(|_| serde_json::json!({})),
+                    );
+                    if sender
+                        .send(Message::Text(String::from(update).into()))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                // A missed event just means a missed toast — skip it, don't
+                // synthesize a bogus connection.
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }

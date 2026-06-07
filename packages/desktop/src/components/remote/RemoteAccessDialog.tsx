@@ -1,5 +1,6 @@
-import { useEffect, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { Loader2 } from "lucide-react";
+import type { RemoteStatus } from "@/api/generated";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { useRemoteStore } from "@/stores/remote-store";
+import { useRemoteStore, type RemotePhase } from "@/stores/remote-store";
+import { useRemoteDialogStore } from "@/stores/remote-dialog-store";
+import { useRemotePreventSleep } from "@/lib/remote/sleep-prevention";
+import { PLATFORM_IS_MAC } from "@/lib/shortcuts/format";
 import { RemoteDisclosure } from "./remote-ui";
 import { RemoteLanSection } from "./RemoteLanSection";
 import { RemotePairSection } from "./RemotePairSection";
@@ -39,7 +43,6 @@ export function RemoteAccessDialog({
   }, [refresh]);
 
   const enabled = status?.enabled ?? false;
-  const busy = phase !== "idle";
   // First fetch still in flight: show a loader rather than a misleading "off".
   const initialLoading = !loaded && phase === "loading";
 
@@ -61,54 +64,133 @@ export function RemoteAccessDialog({
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
-              <div className="min-w-0 space-y-0.5">
-                <div className="text-sm font-medium">Remote access is {enabled ? "on" : "off"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {enabled
-                    ? "Reachable over TLS on your local network."
-                    : "Turn on to expose the workspace over your local network."}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {phase === "mutating" ? (
-                  <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
-                ) : null}
-                <Switch
-                  checked={enabled}
-                  disabled={busy}
-                  onCheckedChange={(next) => void (next ? enable() : disable())}
-                  aria-label="Toggle remote access"
-                />
-              </div>
-            </div>
+            <RemoteToggleRow
+              enabled={enabled}
+              phase={phase}
+              onEnable={() => void enable()}
+              onDisable={() => void disable()}
+            />
+
+            {PLATFORM_IS_MAC ? <SleepPreventionToggle /> : null}
 
             {error ? <p className="text-xs text-[var(--acc-red)]">{error}</p> : null}
 
-            {enabled && status ? (
-              <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
-                {/* Hero: the primary task is pairing a device, so the QR leads. */}
-                <RemotePairSection />
-
-                {/* Everything else is reference or management — collapsed by
-                    default so the dialog stays a one-glance "it's on, scan this". */}
-                <RemoteDisclosure title="Connection & certificate">
-                  <RemoteLanSection status={status} />
-                </RemoteDisclosure>
-                <RemoteDisclosure title="Expose over the internet">
-                  <RemoteTunnelSection status={status} />
-                </RemoteDisclosure>
-                <RemoteDisclosure title={`Paired devices (${status.devices.length})`}>
-                  <RemoteDevicesSection status={status} />
-                </RemoteDisclosure>
-                <RemoteDisclosure title="Recent activity">
-                  <RemoteActivitySection status={status} />
-                </RemoteDisclosure>
-              </div>
-            ) : null}
+            {enabled && status ? <RemoteEnabledSections status={status} /> : null}
           </>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The primary remote on/off switch, with an inline spinner while mutating. */
+function RemoteToggleRow({
+  enabled,
+  phase,
+  onEnable,
+  onDisable,
+}: {
+  enabled: boolean;
+  phase: RemotePhase;
+  onEnable: () => void;
+  onDisable: () => void;
+}): ReactElement {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium">Remote access is {enabled ? "on" : "off"}</div>
+        <div className="text-xs text-muted-foreground">
+          {enabled
+            ? "Reachable over TLS on your local network."
+            : "Turn on to expose the workspace over your local network."}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {phase === "mutating" ? (
+          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-hidden />
+        ) : null}
+        <Switch
+          checked={enabled}
+          disabled={phase !== "idle"}
+          onCheckedChange={(next) => (next ? onEnable() : onDisable())}
+          aria-label="Toggle remote access"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * macOS-only: keep the Mac awake while hosting. Hidden elsewhere (the assertion
+ * has no equivalent), so non-Mac users see no dead control. The preference
+ * persists independently of the on/off state; the blocker is only held while
+ * remote access is also active (see `useRemoteSleepGuard`).
+ */
+function SleepPreventionToggle(): ReactElement {
+  const [preventSleep, setPreventSleep] = useRemotePreventSleep();
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3">
+      <div className="min-w-0 space-y-0.5">
+        <div className="text-sm font-medium">Prevent Mac sleep while hosting</div>
+        <div className="text-xs text-muted-foreground">
+          Keeps this Mac awake while remote access is active. The screen can still lock or turn off.
+          Manual sleep, lid close, or low battery may still interrupt hosting.
+        </div>
+      </div>
+      <Switch
+        checked={preventSleep}
+        onCheckedChange={setPreventSleep}
+        aria-label="Prevent Mac sleep while hosting"
+      />
+    </div>
+  );
+}
+
+/**
+ * The QR/pairing hero plus the collapsed reference/management disclosures. The
+ * paired-devices section is controlled so the "View devices" toast action can
+ * expand it and scroll it into view (each toast bumps `focusDevicesNonce`).
+ */
+function RemoteEnabledSections({ status }: { status: RemoteStatus }): ReactElement {
+  const focusDevicesNonce = useRemoteDialogStore((s) => s.focusDevicesNonce);
+  const [devicesOpen, setDevicesOpen] = useState(false);
+  const devicesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (focusDevicesNonce === 0) return;
+    setDevicesOpen(true);
+    // Wait a frame for the section to expand, then bring it into view.
+    const raf = requestAnimationFrame(() => {
+      devicesRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusDevicesNonce]);
+
+  return (
+    <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+      {/* Hero: the primary task is pairing a device, so the QR leads. */}
+      <RemotePairSection />
+
+      {/* Everything else is reference or management — collapsed by default so
+          the dialog stays a one-glance "it's on, scan this". */}
+      <RemoteDisclosure title="Connection & certificate">
+        <RemoteLanSection status={status} />
+      </RemoteDisclosure>
+      <RemoteDisclosure title="Expose over the internet">
+        <RemoteTunnelSection status={status} />
+      </RemoteDisclosure>
+      <div ref={devicesRef}>
+        <RemoteDisclosure
+          title={`Paired devices (${status.devices.length})`}
+          open={devicesOpen}
+          onOpenChange={setDevicesOpen}
+        >
+          <RemoteDevicesSection status={status} />
+        </RemoteDisclosure>
+      </div>
+      <RemoteDisclosure title="Recent activity">
+        <RemoteActivitySection status={status} />
+      </RemoteDisclosure>
+    </div>
   );
 }

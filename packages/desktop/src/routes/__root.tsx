@@ -26,6 +26,7 @@ import { useConnectionWatchdog } from "@/hooks/useConnectionWatchdog";
 import { usePowerEvents } from "@/hooks/usePowerEvents";
 import { useAutoUpdateBridge } from "@/hooks/useAutoUpdateBridge";
 import { usePowerBusySignal } from "@/hooks/usePowerBusySignal";
+import { useRemoteSleepGuard } from "@/hooks/useRemoteSleepGuard";
 import { SuspendedBanner } from "@/components/SuspendedBanner";
 import {
   initNotificationPermission,
@@ -70,6 +71,7 @@ function RootLayout() {
   useConnectionWatchdog();
   usePowerEvents();
   usePowerBusySignal();
+  useRemoteSleepGuard();
   useAutoUpdateBridge();
   const leftWidth = useDebouncedSetting("sidebar_left_width", 300, { immediateCache: false });
   const navigate = useNavigate();

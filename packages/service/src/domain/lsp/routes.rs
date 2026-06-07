@@ -173,7 +173,9 @@ pub async fn connect_handler(
             // revoking the device force-closes the LSP socket immediately, like
             // the agent and terminal sockets.
             Some(id) => {
-                let guard = live.register(id);
+                // Secondary socket for an already-paired device; the "connected"
+                // event is the main WS's job, so ignore the first-socket flag.
+                let (guard, _) = live.register(id);
                 tokio::select! {
                     _ = run_proxy(socket, child, &display_name, crash_tracker, crash_key) => {}
                     _ = guard.token.cancelled() => {

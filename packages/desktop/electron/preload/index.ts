@@ -180,6 +180,8 @@ contextBridge.exposeInMainWorld("cadencr", {
   onThemeChange: (cb: (appearance: DesktopTheme) => void): (() => void) =>
     onIpc("theme:updated", cb),
   setBusy: (busy: boolean): Promise<void> => ipcRenderer.invoke("power:set-busy", busy),
+  setRemoteHostAwake: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke("power:set-remote-host", enabled),
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),

@@ -116,7 +116,9 @@ async fn handle_remote_terminal_ws(
     state: AppState,
     device_id: i64,
 ) {
-    let guard = state.remote.live().register(device_id);
+    // A terminal socket is a secondary connection for an already-paired device;
+    // the "connected" event fires for the main WS only, so ignore the flag here.
+    let (guard, _) = state.remote.live().register(device_id);
     tokio::select! {
         _ = handle_terminal_ws(socket, params, state) => {}
         _ = guard.token.cancelled() => {

@@ -40,6 +40,15 @@ pub struct RemoteStatus {
     pub audit_tail: Vec<RemoteAuditEntry>,
 }
 
+/// Broadcast when a remote device opens its first live socket (so the host UI
+/// can show a one-per-connection "device connected" toast). Forwarded to
+/// subscribed clients as an `app/remote_connected` WS envelope; never part of
+/// the REST surface.
+#[derive(Debug, Clone, Serialize)]
+pub struct RemoteConnectedEvent {
+    pub device_id: i64,
+}
+
 /// Response to a pairing-code mint: the code plus connect URLs/QR payloads. The
 /// code — never a device token — is what the QR encodes.
 #[derive(Debug, Serialize, ToSchema)]

@@ -21,18 +21,29 @@ export function SectionHeading({ children }: { children: ReactNode }): ReactElem
 export function RemoteDisclosure({
   title,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
   children,
 }: {
   title: string;
   defaultOpen?: boolean;
+  /** Controlled open state. When provided, `onOpenChange` owns toggling. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }): ReactElement {
-  const [open, setOpen] = useState(defaultOpen);
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? internalOpen;
+  const toggle = (): void => {
+    const next = !open;
+    if (onOpenChange) onOpenChange(next);
+    else setInternalOpen(next);
+  };
   return (
     <div className="rounded-lg border border-border bg-card">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         aria-expanded={open}
         className={cn(
           "flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-muted/50",

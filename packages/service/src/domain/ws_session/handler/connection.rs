@@ -50,7 +50,15 @@ pub async fn ws_handler(
 /// session immediately. Cancellation drops `handle_connection`, which drops the
 /// socket; the live-session guard deregisters on scope exit.
 async fn handle_remote_connection(socket: WebSocket, state: AppState, device_id: i64) {
-    let guard = state.remote.live().register(device_id);
+    let (guard, first_connection) = state.remote.live().register(device_id);
+    if first_connection {
+        // One toast per device-connection: only the device's first live socket
+        // emits (the registry deduped the rest). `send` errors only when no host
+        // client is subscribed, which is fine — nothing to notify.
+        let _ = state
+            .remote_events_tx
+            .send(crate::domain::remote::models::RemoteConnectedEvent { device_id });
+    }
     tokio::select! {
         _ = handle_connection(socket, state) => {}
         _ = guard.token.cancelled() => {

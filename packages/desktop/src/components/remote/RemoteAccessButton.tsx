@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useState, type ReactElement } from "react";
+import { lazy, Suspense, useEffect, type ReactElement } from "react";
 import { Loader2, Radio } from "lucide-react";
 import { isBrowserRemote } from "@/lib/remote/device-token";
 import { useRemoteStore } from "@/stores/remote-store";
+import { useRemoteDialogStore } from "@/stores/remote-dialog-store";
 import { cn } from "@/lib/utils";
 
 // The dialog (and its QR dependency) only loads when the user opens the panel.
@@ -24,7 +25,10 @@ export function RemoteAccessButton(): ReactElement | null {
   const connected = useRemoteStore((s) => s.status?.connected_devices ?? 0);
   const loaded = useRemoteStore((s) => s.loaded);
   const refresh = useRemoteStore((s) => s.refresh);
-  const [open, setOpen] = useState(false);
+  // Dialog open state is lifted to a store so the "device connected" toast can
+  // open it (and jump to the device list) from outside this component.
+  const open = useRemoteDialogStore((s) => s.open);
+  const setOpen = useRemoteDialogStore((s) => s.setOpen);
 
   // Fetch status once so the icon state is accurate before the dialog is opened.
   // Guarded to the host shell — the control endpoints are loopback-only.

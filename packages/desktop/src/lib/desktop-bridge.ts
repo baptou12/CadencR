@@ -94,6 +94,14 @@ export interface CadencrDesktopBridge {
    * normally when they don't (per `feature-sleep-aware-agent-reliability`).
    */
   setBusy: (busy: boolean) => Promise<void>;
+  /**
+   * Request (or release) a macOS-friendly idle-system-sleep block for remote
+   * hosting. Held independently of `setBusy` so neither caller releases the
+   * other's assertion. Uses `prevent-app-suspension`, so the display may still
+   * sleep/lock; only idle system sleep is blocked. No-op off macOS / in a
+   * browser. See `feature/macos-remote-ux-sleep-prevention`.
+   */
+  setRemoteHostAwake: (enabled: boolean) => Promise<void>;
   /** Fired just before the OS suspends. Cleanup is up to the renderer. */
   onPowerSuspend: (cb: () => void) => () => void;
   /** Fired right after wake-from-suspend. */
@@ -163,6 +171,7 @@ const browserBridge: CadencrDesktopBridge = {
   currentTheme: () => Promise.resolve(browserTheme()),
   onThemeChange: () => () => undefined,
   setBusy: () => Promise.resolve(),
+  setRemoteHostAwake: () => Promise.resolve(),
   onPowerSuspend: () => () => undefined,
   onPowerResume: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),

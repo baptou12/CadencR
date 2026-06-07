@@ -141,7 +141,7 @@ function UsedNotice({
         type="button"
         onClick={onRegenerate}
         disabled={minting}
-        className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {minting ? (
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -173,7 +173,7 @@ function GeneratePrompt({
         type="button"
         onClick={onGenerate}
         disabled={minting}
-        className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {minting ? (
           <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -212,31 +212,31 @@ function PairingCodeView({
     );
   }
   return (
-    <div className="flex gap-3">
-      {/* White plate so the QR scans on any theme (dark modules need a light field). */}
-      <div className="shrink-0 rounded-md bg-white p-2">
-        <QRCodeSVG value={url} size={132} marginSize={0} />
+    <div className="flex flex-col items-center gap-3">
+      {/* The QR is the primary action — large and centered. White plate so it
+          scans on any theme (dark modules need a light field). */}
+      <div className="rounded-md bg-white p-3">
+        <QRCodeSVG value={url} size={200} marginSize={0} />
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1">
-          <code className="truncate font-mono text-[11px]">{url}</code>
-          <CopyIconButton value={url} successLabel="Pairing link copied" />
-        </div>
-        {urls.length > 1 ? (
-          <PairingTargets urls={urls} selected={selected} onSelect={onSelect} />
-        ) : null}
-        <div className="mt-auto flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="tabular-nums">Expires in {remaining}s</span>
-          <button
-            type="button"
-            onClick={onRegenerate}
-            disabled={minting}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-          >
-            <RefreshCw className={`size-3 ${minting ? "animate-spin" : ""}`} aria-hidden />
-            New code
-          </button>
-        </div>
+      {/* URL + copy sit below the QR as the secondary, type-it-in fallback. */}
+      <div className="flex w-full items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1">
+        <code className="truncate font-mono text-[11px]">{url}</code>
+        <CopyIconButton value={url} successLabel="Pairing link copied" />
+      </div>
+      {urls.length > 1 ? (
+        <PairingTargets urls={urls} selected={selected} onSelect={onSelect} />
+      ) : null}
+      <div className="flex w-full items-center justify-between text-[11px] text-muted-foreground">
+        <span className="tabular-nums">Expires in {remaining}s</span>
+        <button
+          type="button"
+          onClick={onRegenerate}
+          disabled={minting}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+        >
+          <RefreshCw className={`size-3 ${minting ? "animate-spin" : ""}`} aria-hidden />
+          New code
+        </button>
       </div>
     </div>
   );

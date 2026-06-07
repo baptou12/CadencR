@@ -51,6 +51,7 @@ import {
   scheduleReconnect,
   unregisterReconnector,
 } from "@/lib/ws-reconnect";
+import { isBrowserRemote } from "@/lib/remote/device-token";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { updateSession, type SessionEntry, type WsSessionStore } from "@/stores/ws-session-types";
 import { transitionTurn, type TurnLifecycle } from "@/stores/ws-turn-lifecycle";
@@ -181,6 +182,12 @@ export const useSessionStatusStore = create<SessionStatusState>((set, get) => {
         // created/deleted/archived on another device updates this sidebar
         // without a manual refresh.
         ws.send(JSON.stringify(createEnvelope("app", "subscribe.feature_events", {})));
+        // Host-only: subscribe to remote device-connection events so a phone
+        // pairing/connecting shows a "Device connected" toast. Remote browsers
+        // skip this so a device never toasts for its own connection.
+        if (!isBrowserRemote()) {
+          ws.send(JSON.stringify(createEnvelope("app", "subscribe.remote_events", {})));
+        }
       });
 
       // Guard against React Strict Mode double-mount races: a closing
