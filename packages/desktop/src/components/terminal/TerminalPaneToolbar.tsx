@@ -7,16 +7,14 @@ const ICON_BTN =
   "flex size-6 items-center justify-center rounded text-[var(--terminal-panel-icon)] transition-colors hover:bg-[var(--terminal-panel-icon-bg-hover)] hover:text-[var(--terminal-panel-icon-hover)]";
 
 interface TerminalPaneToolbarProps {
-  activePaneId: string | null;
-  splitPane: (leafId: string | undefined, orientation: SplitOrientation) => string | null;
+  onSplit: (orientation: SplitOrientation) => void;
   onClose: () => void;
   canClose: boolean;
 }
 
 /** Floating split/close actions pinned to the top-right of the terminal panel. */
 export const TerminalPaneToolbar = memo(function TerminalPaneToolbar({
-  activePaneId,
-  splitPane,
+  onSplit,
   onClose,
   canClose,
 }: TerminalPaneToolbarProps) {
@@ -25,7 +23,8 @@ export const TerminalPaneToolbar = memo(function TerminalPaneToolbar({
       <ShortcutTooltip label="Split vertical" keys={["cmd", "D"]}>
         <button
           type="button"
-          onClick={() => splitPane(activePaneId ?? undefined, "horizontal")}
+          aria-label="Split terminal vertically"
+          onClick={() => onSplit("horizontal")}
           className={ICON_BTN}
         >
           <SplitSquareHorizontal className="size-3.5" />
@@ -34,7 +33,8 @@ export const TerminalPaneToolbar = memo(function TerminalPaneToolbar({
       <ShortcutTooltip label="Split horizontal" keys={["cmd", "shift", "D"]} alignRight>
         <button
           type="button"
-          onClick={() => splitPane(activePaneId ?? undefined, "vertical")}
+          aria-label="Split terminal horizontally"
+          onClick={() => onSplit("vertical")}
           className={ICON_BTN}
         >
           <SplitSquareVertical className="size-3.5" />
@@ -42,7 +42,12 @@ export const TerminalPaneToolbar = memo(function TerminalPaneToolbar({
       </ShortcutTooltip>
       {canClose && (
         <ShortcutTooltip label="Close terminal" alignRight>
-          <button type="button" onClick={onClose} className={ICON_BTN}>
+          <button
+            type="button"
+            aria-label="Close terminal pane"
+            onClick={onClose}
+            className={ICON_BTN}
+          >
             <X className="size-3" />
           </button>
         </ShortcutTooltip>
