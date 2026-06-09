@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef } from "react";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
 import { useShortcut } from "./useShortcut";
 import { useDebouncedSetting } from "./useDebouncedSetting";
+import { useIsMobile } from "./useIsMobile";
 
-const ZOOM_KEY = "zoom_global";
+// Zoom is kept per DEVICE TYPE (desktop vs mobile), not per connection: a phone
+// and the desktop app each want their own level, so they persist under separate
+// keys. `zoom_global` stays the desktop key to preserve existing preferences;
+// mobile uses `zoom_mobile`. (The apply mechanism — native vs CSS — is chosen
+// separately in `applyZoom` based on whether we're in the Electron shell.)
+const ZOOM_KEY_DESKTOP = "zoom_global";
+const ZOOM_KEY_MOBILE = "zoom_mobile";
 const ZOOM_DEFAULT = 100;
 const ZOOM_MIN = 50;
 const ZOOM_MAX = 200;
@@ -13,16 +20,35 @@ function clampZoom(level: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, level));
 }
 
+// Browsers default the root font-size to 16px; mobile zoom scales from this.
+const ROOT_FONT_PX = 16;
+
 function applyZoom(level: number) {
-  void desktopBridge.setZoom(level / 100);
+  const factor = level / 100;
+  // The Electron shell scales the whole webContents via the native zoom factor.
+  if (isDesktopShell()) {
+    void desktopBridge.setZoom(factor);
+    return;
+  }
+  if (typeof document === "undefined") return;
+  // Remote browser tab (mobile/PWA): scale the root font-size so rem-based text
+  // (and proportional rem spacing) resize. Unlike CSS `zoom`, this leaves the
+  // viewport units (`--app-vh`, `vw`) untouched, so the shell stays exactly one
+  // screen and never under/overflows — and iOS reliably scales rem text.
+  const root = document.documentElement;
+  if (factor === 1) root.style.removeProperty("font-size");
+  else root.style.fontSize = `${ROOT_FONT_PX * factor}px`;
 }
 
 /**
- * Returns zoom state and actions. Call `useZoomHotkeys` separately in the
- * single root component that should own the keyboard shortcuts.
+ * Returns zoom state and actions for the *current* device type — desktop and
+ * mobile read/write distinct settings and never affect each other. Call
+ * `useZoomHotkeys` separately in the single root component that should own the
+ * keyboard shortcuts.
  */
 export function useZoom() {
-  const setting = useDebouncedSetting(ZOOM_KEY, 0);
+  const isMobile = useIsMobile();
+  const setting = useDebouncedSetting(isMobile ? ZOOM_KEY_MOBILE : ZOOM_KEY_DESKTOP, 0);
   const currentRef = useRef(ZOOM_DEFAULT);
 
   const hasPersistedValue = setting.value != null;

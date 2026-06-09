@@ -444,7 +444,11 @@ export const AgentSession = memo(
         {promptBar}
         {secondaryBar}
         {normalizeContextWindow(contextUsage?.contextWindow) != null && (
-          <div className="flex items-center gap-2 px-3 pb-1.5 pt-0">
+          // The context bar is the bottom-most element, so it owns its
+          // home-indicator clearance (matching MobileTerminalKeyBar): without it
+          // the bar sits in the phone's rounded-corner zone and its ends get
+          // clipped. `max()` keeps the desktop 6px gap (inset is 0 there).
+          <div className="flex items-center gap-2 px-3 pt-0 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
             <ContextUsageBar
               usage={contextUsage}
               className="flex-1 px-0 py-0"

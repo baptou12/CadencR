@@ -44,9 +44,16 @@ export function AppShell({
   if (isMobile) {
     return (
       <div className="relative flex h-[var(--app-vh)] w-full overflow-hidden">
+        {/*
+         * Only the TOP safe-area inset is reserved shell-wide. Padding the bottom
+         * here left a dead background strip under the bottom-pinned prompt/context
+         * bar in standalone/fullscreen mode (where the inset is non-zero). Instead,
+         * bottom bars that hold tappable controls (the terminal key bar) own their
+         * own home-indicator clearance, so the session's bar reaches the edge.
+         */}
         <main
           data-focus-zone="main-content"
-          className="h-full w-full min-w-0 overflow-hidden outline-none pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+          className="h-full w-full min-w-0 overflow-hidden outline-none pt-[env(safe-area-inset-top)]"
         >
           {children}
         </main>

@@ -45,16 +45,25 @@ function bridge(): CadencrDesktopBridge {
 const mockSetValue = vi.fn();
 const mockSettingValue = { current: null as string | null };
 const mockSettingLoading = { current: false };
+const mockSettingKey = { current: "" };
 vi.mock("./useDebouncedSetting", () => ({
-  useDebouncedSetting: () => ({
-    value: mockSettingValue.current,
-    setValue: mockSetValue,
-    isLoading: mockSettingLoading.current,
-  }),
+  useDebouncedSetting: (key: string) => {
+    mockSettingKey.current = key;
+    return {
+      value: mockSettingValue.current,
+      setValue: mockSetValue,
+      isLoading: mockSettingLoading.current,
+    };
+  },
 }));
 
 vi.mock("@tanstack/react-hotkeys", () => ({
   useHotkeys: vi.fn(),
+}));
+
+const mockIsMobile = { current: false };
+vi.mock("./useIsMobile", () => ({
+  useIsMobile: () => mockIsMobile.current,
 }));
 
 describe("useZoom", () => {
@@ -63,6 +72,7 @@ describe("useZoom", () => {
     mockSetValue.mockClear();
     mockSettingValue.current = null;
     mockSettingLoading.current = false;
+    mockIsMobile.current = false;
     setDesktopBridgeOverrideForTests(bridge());
   });
 
@@ -137,5 +147,37 @@ describe("useZoom", () => {
     act(() => result.current.setZoom(75));
     expect(mockSetValue).toHaveBeenCalledWith("75");
     expect(mockSetZoom).toHaveBeenCalledWith(0.75);
+  });
+
+  it("scales the root font-size in a browser (no Electron shell)", () => {
+    setDesktopBridgeOverrideForTests({ ...bridge(), isElectron: false });
+    document.documentElement.style.removeProperty("font-size");
+    mockSettingValue.current = "150";
+
+    renderHook(() => useZoom());
+
+    expect(mockSetZoom).not.toHaveBeenCalled();
+    // 16px root × 1.5
+    expect(document.documentElement.style.fontSize).toBe("24px");
+  });
+
+  it("clears the root font-size override at 100% in a browser", () => {
+    setDesktopBridgeOverrideForTests({ ...bridge(), isElectron: false });
+    document.documentElement.style.fontSize = "24px";
+    mockSettingValue.current = "100";
+
+    renderHook(() => useZoom());
+
+    expect(document.documentElement.style.fontSize).toBe("");
+  });
+
+  it("persists desktop zoom under a different key than mobile zoom (per device type)", () => {
+    mockIsMobile.current = false;
+    renderHook(() => useZoom());
+    expect(mockSettingKey.current).toBe("zoom_global");
+
+    mockIsMobile.current = true;
+    renderHook(() => useZoom());
+    expect(mockSettingKey.current).toBe("zoom_mobile");
   });
 });
