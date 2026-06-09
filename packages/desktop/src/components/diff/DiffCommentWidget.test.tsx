@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@/test-utils";
 import {
   CommentForm,
@@ -7,6 +7,15 @@ import {
   CommentExtendLine,
   type DiffComment,
 } from "./DiffCommentWidget";
+
+const mockIsMobile = { current: false };
+vi.mock("@/hooks/useIsMobile", () => ({
+  useIsMobile: () => mockIsMobile.current,
+}));
+
+beforeEach(() => {
+  mockIsMobile.current = false;
+});
 
 const mockComment: DiffComment = {
   id: 1,
@@ -44,6 +53,18 @@ describe("CommentForm", () => {
   it("submit button is disabled when content is empty", () => {
     render(<CommentForm onSubmit={vi.fn()} onClose={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Comment" })).toBeDisabled();
+  });
+
+  it("shows the keyboard hint on desktop", () => {
+    mockIsMobile.current = false;
+    render(<CommentForm onSubmit={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText("to comment")).toBeInTheDocument();
+  });
+
+  it("hides the keyboard hint on mobile", () => {
+    mockIsMobile.current = true;
+    render(<CommentForm onSubmit={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText("to comment")).not.toBeInTheDocument();
   });
 
   it("pre-fills initialContent", () => {

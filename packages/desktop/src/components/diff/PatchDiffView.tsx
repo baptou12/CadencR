@@ -72,6 +72,27 @@ interface RenderableFilePatch {
   patch: string;
 }
 
+// Pierre's "+" gutter affordance is hover-driven (it follows `pointermove` and
+// is torn down on `pointerleave`), so on touch it only flickers in during a
+// scroll and a tap can never reach it. Where the pointer can't hover, a tap on a
+// line synthesizes the hover so the "+" appears on that line and stays (the user
+// then taps it) — preserving the desktop two-step instead of jumping straight
+// into the comment form.
+const CAN_HOVER = typeof window === "undefined" || window.matchMedia("(hover: hover)").matches;
+
+function revealGutterUtility(numberElement: HTMLElement): void {
+  const rect = numberElement.getBoundingClientRect();
+  numberElement.dispatchEvent(
+    new PointerEvent("pointermove", {
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+      bubbles: true,
+      composed: true,
+      pointerType: "touch",
+    }),
+  );
+}
+
 const VIRTUAL_FILE_METRICS: Partial<VirtualFileMetrics> = {
   hunkLineCount: 80,
   lineHeight: 19,
@@ -180,7 +201,16 @@ function SafePatchDiff<LAnnotation>({
 const DIFF_UNSAFE_CSS = `
   :host {
     display: block;
-    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+    /* Feed Pierre its OWN font tokens so the diff code renders in the exact same
+       face + size as the CodeMirror editor. Pierre applies these to the code
+       lines via var(--diffs-font-*); its default code fallback ("SF Mono", …,
+       "Courier New") resolves to Courier New on iOS (SF Mono isn't exposed by
+       name to web content there), which is why the diff didn't match the
+       editor's ui-monospace. Header keeps the UI/sans font. */
+    --diffs-font-family: var(--font-mono);
+    --diffs-header-font-family: var(--font-sans);
+    --diffs-font-size: var(--code-font-size);
+    --diffs-line-height: 1.65;
   }
   :host(.cadencr-patch-diff-focused) [data-diffs-header] {
     box-shadow: inset 0 0 0 1px var(--primary);
@@ -230,7 +260,6 @@ const DIFF_UNSAFE_CSS = `
     padding-top: 0;
     padding-bottom: 0;
   }
-  pre { font-size: 11.5px; line-height: 1.65; }
 `;
 
 function fromAnnotationSide(side: AnnotationSide | undefined): CommentSide {
@@ -351,6 +380,8 @@ function PatchDiffViewImpl({
       tokenizeMaxLineLength: 500,
       enableGutterUtility: Boolean(onAddComment),
       onGutterUtilityClick: onAddComment ? handleAddComment : undefined,
+      onLineClick:
+        !CAN_HOVER && onAddComment ? (line) => revealGutterUtility(line.numberElement) : undefined,
       unsafeCSS: DIFF_UNSAFE_CSS,
     }),
     [

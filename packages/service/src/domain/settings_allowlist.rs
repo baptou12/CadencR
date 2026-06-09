@@ -66,7 +66,10 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     "sidebar_collapsed",
     "sidebar_right_collapsed",
     "loader_style",
+    // UI zoom is kept per device type: desktop scales via the Electron native
+    // zoom factor, mobile (remote browser/PWA) via CSS zoom — independent levels.
     "zoom_global",
+    "zoom_mobile",
     "unified_agents_per_row",
     // Active theme (id from packages/desktop/src/lib/themes/registry.ts)
     "theme_current",
@@ -332,6 +335,14 @@ mod tests {
         assert!(is_workspace_key_allowed("editor_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("git_sidebar_collapsed"));
         assert!(is_workspace_key_allowed("unified_agents_per_row"));
+    }
+
+    #[test]
+    fn workspace_accepts_per_device_zoom_keys() {
+        // Desktop and mobile persist independent zoom levels under separate keys;
+        // without both, the FE gets a BAD_REQUEST and zoom silently fails to save.
+        assert!(is_workspace_key_allowed("zoom_global"));
+        assert!(is_workspace_key_allowed("zoom_mobile"));
     }
 
     #[test]

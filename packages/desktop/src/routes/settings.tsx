@@ -50,6 +50,7 @@ import {
 } from "@/components/settings/SettingsNavSidebar";
 import { IconTile } from "@/components/settings/IconTile";
 import { useZoom } from "@/hooks/useZoom";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { getProviderMetadata, PROVIDER_IDS, type ProviderId } from "@/lib/providers";
 import { APP_VERSION } from "@/lib/app-version";
@@ -376,9 +377,12 @@ function EditorSection(): React.JSX.Element {
 
 function InterfaceSection(): React.JSX.Element {
   const { zoomLevel, zoomIn, zoomOut, resetZoom } = useZoom();
+  // Desktop and mobile keep independent zoom levels, so this control only ever
+  // shows (and edits) the option for the device type it's running on.
+  const isMobile = useIsMobile();
 
   return (
-    <SettingsSection id="interface" title="Interface & Zoom" subtitle="Global UI scaling">
+    <SettingsSection id="interface" title="Interface & Zoom" subtitle="UI scaling for this device">
       <SettingsCard>
         <SettingsRow
           align="start"
@@ -389,15 +393,19 @@ function InterfaceSection(): React.JSX.Element {
           }
           label="UI zoom"
           description={
-            <>
-              Affects sidebar, editor, terminal, and chrome together.
-              <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <Kbd>⌘ +</Kbd>
-                <Kbd>⌘ −</Kbd>
-                <Kbd>⌘ 0</Kbd>
-                work everywhere.
-              </span>
-            </>
+            isMobile ? (
+              "Scales the interface on this device only — separate from the desktop app's zoom."
+            ) : (
+              <>
+                Affects sidebar, editor, terminal, and chrome together.
+                <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <Kbd>⌘ +</Kbd>
+                  <Kbd>⌘ −</Kbd>
+                  <Kbd>⌘ 0</Kbd>
+                  work everywhere.
+                </span>
+              </>
+            )
           }
           control={
             <div className="flex items-center gap-2">

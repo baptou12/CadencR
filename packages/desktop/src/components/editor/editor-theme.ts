@@ -73,9 +73,12 @@ const cadencrTheme = createTheme({
     gutterBackground: "var(--editor-gutter-bg)",
     gutterForeground: "var(--editor-gutter-fg)",
     gutterBorder: "var(--editor-border)",
-    fontFamily:
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-    fontSize: "13px",
+    // Shared with the git-diff so both code surfaces render identically — see
+    // `--font-mono` / `--code-font-size` in index.css. rem-based size scales with
+    // the mobile UI-zoom; neutral on desktop, where Electron's native zoom scales
+    // the whole webview anyway.
+    fontFamily: "var(--font-mono)",
+    fontSize: "var(--code-font-size)",
   },
   styles: editorHighlightStyles,
 });
