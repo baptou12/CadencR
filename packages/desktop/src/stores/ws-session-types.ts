@@ -28,6 +28,7 @@ import { DEFAULT_PROVIDER, FALLBACK_MODEL_ID } from "../shared/models";
 import { defaultEditModeFor } from "../lib/provider-modes";
 import type { PermissionMode } from "../types/permission-mode";
 import type { CodexPermissionMode } from "@/types/codex-permission-mode";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 
 export type { PermissionMode };
 
@@ -64,7 +65,7 @@ export interface PersistedStatePayload {
 
 export interface QueuedPrompt {
   text: string;
-  images?: Array<{ base64: string; mimeType: string }>;
+  attachments?: PromptAttachmentPayload[];
   useWorktree?: boolean;
 }
 
@@ -245,7 +246,7 @@ export interface WsSessionStore {
   sendPrompt: (
     sessionId: string,
     text: string,
-    images?: Array<{ base64: string; mimeType: string }>,
+    attachments?: PromptAttachmentPayload[],
     useWorktree?: boolean,
   ) => void;
   respondToPermission: (

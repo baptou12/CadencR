@@ -1,6 +1,7 @@
 import type { Loader2Icon } from "lucide-react";
 import type { AgentBlockData } from "../AgentBlock";
 import type { AgentType } from "../../types/agent-types";
+import type { PromptAttachmentPayload } from "../../types/agent-types";
 import type { AgentQuestion, AgentQuestionAnswers } from "../AgentQuestionDrawer";
 import type { TodoItem } from "@/types/agent";
 import type { ContextUsageState } from "@/types/agent";
@@ -49,10 +50,7 @@ export interface AgentSessionProps {
    * failed pre-send step (e.g. saving worktree settings) doesn't drop the
    * user's text. Consumers should toast errors themselves.
    */
-  onSend: (
-    message: string,
-    images?: Array<{ base64: string; mimeType: string }>,
-  ) => void | Promise<void>;
+  onSend: (message: string, attachments?: PromptAttachmentPayload[]) => void | Promise<void>;
   /** Called when the user clicks the stop button */
   onStop: () => void;
   /** Active questions from AskUserQuestion tool calls */

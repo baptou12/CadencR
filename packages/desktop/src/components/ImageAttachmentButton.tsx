@@ -1,12 +1,18 @@
 import { useRef } from "react";
-import { ImageIcon } from "lucide-react";
+import { Paperclip } from "lucide-react";
+import { attachmentAcceptForProvider } from "@/lib/prompt-attachments";
 
 interface ImageAttachmentButtonProps {
   onFilesSelected: (files: FileList | File[]) => void;
   disabled?: boolean;
+  providerId?: string;
 }
 
-export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttachmentButtonProps) {
+export function ImageAttachmentButton({
+  onFilesSelected,
+  disabled,
+  providerId,
+}: ImageAttachmentButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
@@ -26,7 +32,7 @@ export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttach
       <input
         ref={inputRef}
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp"
+        accept={attachmentAcceptForProvider(providerId)}
         multiple
         className="hidden"
         onChange={handleChange}
@@ -35,10 +41,10 @@ export function ImageAttachmentButton({ onFilesSelected, disabled }: ImageAttach
         type="button"
         onClick={handleClick}
         disabled={disabled}
-        aria-label="Attach images"
+        aria-label="Attach files"
         className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
       >
-        <ImageIcon className="size-4" />
+        <Paperclip className="size-4" />
       </button>
     </>
   );

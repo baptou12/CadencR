@@ -15,10 +15,6 @@ mod stream_reader_task_event;
 
 pub(crate) use bridge::PermissionResponse;
 pub(crate) use bridge::WsBridgeCanUseTool;
-#[allow(unused_imports)]
-pub(crate) use content::build_content_value;
-#[allow(unused_imports)]
-pub(crate) use content::build_persist_content;
 pub(crate) use prompt_send::handle_prompt_send;
 #[allow(unused_imports)]
 pub(crate) use stream_reader::spawn_stream_reader;

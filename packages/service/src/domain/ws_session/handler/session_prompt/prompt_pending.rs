@@ -14,7 +14,9 @@ use crate::domain::ws_session::protocol::PromptSendPayload;
 
 use super::super::{QueryState, SdkHandle, SdkSessions, SessionConfig, WsSender};
 use super::bridge::{PermissionResponse, WsBridgeCanUseTool};
-use super::content::{build_content_value, build_persist_content};
+use super::content::{
+    build_content_value_for_provider, build_persist_content, payload_attachments,
+};
 use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
@@ -106,7 +108,8 @@ async fn persist_initial_user_message(context: &PendingPromptContext) {
     if context.payload.replay {
         return;
     }
-    let persist_content = build_persist_content(&context.payload.text, &context.payload.images);
+    let attachments = payload_attachments(&context.payload);
+    let persist_content = build_persist_content(&context.payload.text, &attachments);
     let persistence = WsSessionPersistence::with_session_id(
         context.app_state.write_pool.clone(),
         context.feature_id,
@@ -220,7 +223,9 @@ async fn spawn_runtime(
         }),
         "spawning runtime query"
     );
-    let content_value = build_content_value(&context.payload.text, &context.payload.images);
+    let attachments = payload_attachments(&context.payload);
+    let content_value =
+        build_content_value_for_provider(&context.provider_id, &context.payload.text, &attachments);
     let options = std::mem::take(&mut context.options);
     match adapter.spawn(content_value, options).await {
         Ok(runtime_session) => register_runtime(context, runtime_session, use_worktree).await,

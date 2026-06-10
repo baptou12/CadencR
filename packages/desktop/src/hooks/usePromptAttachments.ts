@@ -6,6 +6,7 @@ export interface PromptAttachmentsArgs {
   wsSessionId?: string | null;
   sessionId?: number | null;
   featureId?: number | null;
+  providerId?: string;
 }
 
 export interface UsePromptAttachmentsResult extends UseImageAttachmentsResult {
@@ -33,6 +34,6 @@ export function usePromptAttachments(args: PromptAttachmentsArgs): UsePromptAtta
       }),
     [args.wsSessionId, args.sessionId, args.featureId],
   );
-  const attachments = useImageAttachments(promptDropTargetId);
+  const attachments = useImageAttachments(promptDropTargetId, args.providerId);
   return useMemo(() => ({ ...attachments, promptDropTargetId }), [attachments, promptDropTargetId]);
 }

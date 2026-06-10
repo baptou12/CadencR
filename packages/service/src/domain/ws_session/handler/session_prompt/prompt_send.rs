@@ -54,6 +54,7 @@ pub(crate) async fn handle_prompt_send(
                 query.clone(),
                 handle.feature_id,
                 db_session_id,
+                handle.runtime_provider.clone(),
                 sender,
                 sdk_sessions,
                 app_state,
@@ -101,6 +102,7 @@ fn build_followup_context(
     query: RuntimeSessionHandle,
     feature_id: i64,
     db_session_id: i64,
+    provider_id: String,
     sender: &WsSender,
     sdk_sessions: &SdkSessions,
     app_state: &AppState,
@@ -118,6 +120,7 @@ fn build_followup_context(
         envelope_id,
         sdk_sessions: sdk_sessions.clone(),
         active_turns: app_state.active_turns.clone(),
+        provider_id,
     }
 }
 
@@ -131,11 +134,15 @@ async fn owner_followup_context(
     app_state: &AppState,
     envelope_id: &str,
 ) -> Option<FollowupPromptContext> {
-    let (query, feature_id) = {
+    let (query, feature_id, provider_id) = {
         let sessions = owner.lock().await;
         let handle = sessions.get(&db_session_id)?;
         match &handle.state {
-            QueryState::Active { query, .. } => (query.clone(), handle.feature_id),
+            QueryState::Active { query, .. } => (
+                query.clone(),
+                handle.feature_id,
+                handle.runtime_provider.clone(),
+            ),
             QueryState::Pending(_) => return None,
         }
     };
@@ -147,6 +154,7 @@ async fn owner_followup_context(
         query,
         feature_id,
         db_session_id,
+        provider_id,
         sender,
         owner,
         app_state,

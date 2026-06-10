@@ -16,7 +16,7 @@ describe("buildUserMessageContent", () => {
 
   it("returns JSON with text and image blocks when images provided", () => {
     const result = buildUserMessageContent("describe this", [
-      { base64: "abc123", mimeType: "image/png" },
+      { base64: "abc123", fileName: "screen.png", kind: "image", mimeType: "image/png" },
     ]);
     const parsed = JSON.parse(result);
     expect(parsed).toHaveLength(2);
@@ -28,7 +28,9 @@ describe("buildUserMessageContent", () => {
   });
 
   it("omits the text block for image-only messages", () => {
-    const result = buildUserMessageContent("", [{ base64: "abc123", mimeType: "image/png" }]);
+    const result = buildUserMessageContent("", [
+      { base64: "abc123", fileName: "screen.png", kind: "image", mimeType: "image/png" },
+    ]);
 
     expect(JSON.parse(result)).toEqual([
       {
@@ -40,13 +42,53 @@ describe("buildUserMessageContent", () => {
 
   it("handles multiple images", () => {
     const result = buildUserMessageContent("two images", [
-      { base64: "img1", mimeType: "image/png" },
-      { base64: "img2", mimeType: "image/jpeg" },
+      { base64: "img1", fileName: "a.png", kind: "image", mimeType: "image/png" },
+      { base64: "img2", fileName: "b.jpg", kind: "image", mimeType: "image/jpeg" },
     ]);
     const parsed = JSON.parse(result);
     expect(parsed).toHaveLength(3);
     expect(parsed[1].source.data).toBe("img1");
     expect(parsed[2].source.media_type).toBe("image/jpeg");
+  });
+
+  it("serializes non-image attachments as attachment blocks", () => {
+    const result = buildUserMessageContent("review", [
+      { base64: "pdf", fileName: "brief.pdf", kind: "document", mimeType: "application/pdf" },
+    ]);
+    expect(JSON.parse(result)).toEqual([
+      { type: "text", text: "review" },
+      {
+        type: "attachment",
+        file_name: "brief.pdf",
+        kind: "document",
+        media_type: "application/pdf",
+        data: "pdf",
+      },
+    ]);
+  });
+
+  it("parses compact persisted non-image attachment metadata", () => {
+    const content = JSON.stringify([
+      { type: "text", text: "review" },
+      {
+        type: "attachment",
+        file_name: "brief.pdf",
+        kind: "document",
+        media_type: "application/pdf",
+      },
+    ]);
+
+    expect(parseUserMessageContent(content)).toEqual({
+      text: "review",
+      images: [],
+      attachments: [
+        {
+          fileName: "brief.pdf",
+          kind: "document",
+          mimeType: "application/pdf",
+        },
+      ],
+    });
   });
 
   it("returns undefined images as plain text", () => {
@@ -62,6 +104,7 @@ describe("buildUserMessageContent", () => {
     expect(parseUserMessageContent(content)).toEqual({
       text: "Describe this screenshot",
       images: [{ mediaType: "image/png", data: "abc" }],
+      attachments: [],
     });
     expect(extractUserMessageText(content)).toBe("Describe this screenshot");
   });
@@ -70,6 +113,7 @@ describe("buildUserMessageContent", () => {
     expect(parseUserMessageContent("plain prompt")).toEqual({
       text: "plain prompt",
       images: [],
+      attachments: [],
     });
   });
 });

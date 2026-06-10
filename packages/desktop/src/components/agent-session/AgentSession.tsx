@@ -406,6 +406,7 @@ export const AgentSession = memo(
         projectId={projectId}
         sessionId={sessionId}
         wsSessionId={wsSessionId}
+        providerId={activeProviderId}
         onToggleMaximize={onToggleMaximize}
         noTopPadding={!!hasMeta}
         slashCommandsOverride={slashCommandsOverride}

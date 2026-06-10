@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { buildUserMessageContent } from "@/types/agent-types";
 import { UserMessageBlock } from "./UserMessageBlock";
 
 describe("UserMessageBlock", () => {
@@ -17,5 +18,21 @@ describe("UserMessageBlock", () => {
     expect(bubble).toHaveAttribute("data-prompt-delivery-state", "pending_agent");
     expect(bubble).toHaveClass("border-amber-500/50", "bg-amber-500/10");
     expect(screen.getByText("Not received by agent yet…")).toHaveClass("text-amber-300");
+  });
+
+  it("renders non-image attachment filenames instead of image previews", () => {
+    const content = buildUserMessageContent("review this", [
+      {
+        base64: "JVBERi0x",
+        fileName: "requirements.pdf",
+        kind: "document",
+        mimeType: "application/pdf",
+      },
+    ]);
+
+    render(<UserMessageBlock content={content} />);
+
+    expect(screen.getByText("requirements.pdf")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).toBeNull();
   });
 });

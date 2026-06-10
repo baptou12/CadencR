@@ -233,6 +233,7 @@ describe("AgentPromptBar async onSend", () => {
       fileName: "screen.png",
       base64: "abc123",
       mimeType: "image/png",
+      kind: "image" as const,
       previewUrl: "blob:test",
     };
     attachmentMocks.attachments = [image];
@@ -242,7 +243,9 @@ describe("AgentPromptBar async onSend", () => {
 
     await user.click(screen.getByLabelText("Send message"));
 
-    expect(failingOnSend).toHaveBeenCalledWith("", [{ base64: "abc123", mimeType: "image/png" }]);
+    expect(failingOnSend).toHaveBeenCalledWith("", [
+      { base64: "abc123", fileName: "screen.png", kind: "image", mimeType: "image/png" },
+    ]);
     expect(attachmentMocks.clearAttachments).toHaveBeenCalledWith({
       revokeObjectUrls: false,
     });

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { FileText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageAttachment } from "@/hooks/useImageAttachments";
 
@@ -19,11 +19,18 @@ export function ImageAttachmentPreview({
     <div className={cn("flex flex-wrap gap-2 p-2", className)}>
       {attachments.map((attachment) => (
         <div key={attachment.id} className="relative group">
-          <img
-            src={attachment.previewUrl}
-            alt={attachment.fileName}
-            className="w-12 h-12 rounded object-cover border border-border"
-          />
+          {attachment.kind === "image" ? (
+            <img
+              src={attachment.previewUrl}
+              alt={attachment.fileName}
+              className="w-12 h-12 rounded object-cover border border-border"
+            />
+          ) : (
+            <div className="flex h-12 max-w-40 items-center gap-2 rounded border border-border bg-muted/50 px-2 text-xs text-foreground">
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{attachment.fileName}</span>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => onRemove(attachment.id)}

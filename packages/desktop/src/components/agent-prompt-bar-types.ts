@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { SlashCommand } from "@/hooks/useSlashCommand";
 import type { LiveAgentStatus } from "@/types/agent";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PermissionMode } from "@/types/permission-mode";
 import type { AgentQuestion, AgentQuestionAnswers } from "./AgentQuestionDrawer";
 import type { PendingPermission, PermissionDecisionValue } from "./ToolPermissionPrompt";
@@ -8,10 +9,7 @@ import type { PendingPermission, PermissionDecisionValue } from "./ToolPermissio
 export interface SplitSendAction {
   label: string;
   icon: ReactNode;
-  onClick: (
-    text: string,
-    images?: Array<{ base64: string; mimeType: string }>,
-  ) => void | Promise<void>;
+  onClick: (text: string, attachments?: PromptAttachmentPayload[]) => void | Promise<void>;
   variant?: "default" | "outline";
   kbdShortcut?: string[];
 }
@@ -24,10 +22,7 @@ export interface AgentPromptBarProps {
    * Errors are surfaced via toast inside the consumer; the bar restores
    * the draft on rejection.
    */
-  onSend: (
-    message: string,
-    images?: Array<{ base64: string; mimeType: string }>,
-  ) => void | Promise<void>;
+  onSend: (message: string, attachments?: PromptAttachmentPayload[]) => void | Promise<void>;
   onStop: () => void;
   status: LiveAgentStatus;
   splitSendActions?: SplitSendAction[];
@@ -51,6 +46,8 @@ export interface AgentPromptBarProps {
   projectId?: number;
   sessionId?: number;
   wsSessionId?: string;
+  /** Active provider controls which prompt attachment types are accepted. */
+  providerId?: string;
   onToggleMaximize?: () => void;
   noTopPadding?: boolean;
   slashCommandsOverride?: SlashCommand[];

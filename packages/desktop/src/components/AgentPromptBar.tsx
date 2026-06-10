@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useImperativeHandle, forwardRef } from "react";
-import { useScopedShortcut } from "@/hooks/useShortcut";
-import { useShortcut } from "@/hooks/useShortcut";
+import { useScopedShortcut, useShortcut } from "@/hooks/useShortcut";
 import { Loader2, Send, Pause } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AgentQuestionDrawer } from "./AgentQuestionDrawer";
@@ -52,6 +51,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       projectId,
       sessionId,
       wsSessionId,
+      providerId,
       onToggleMaximize,
       noTopPadding,
       slashCommandsOverride,
@@ -126,7 +126,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       clearAttachments,
       restoreAttachments,
       dragHandlers,
-    } = usePromptAttachments({ wsSessionId, sessionId, featureId });
+    } = usePromptAttachments({ wsSessionId, sessionId, featureId, providerId });
     const filesQuery = useListFiles(
       { feature_id: featureId! },
       { query: { enabled: !!featureId && agentTabActive && !disabled } },
@@ -135,7 +135,6 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       focusInput: () => editorRef.current?.focus(),
     }));
     const isRunning = status === "agent";
-    const isPaused = status === "question";
     const getAttachments = useCallback(() => attachments, [attachments]);
     const addHistoryEntry = useCallback(
       (entry: string) => {
@@ -344,7 +343,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               onArrowDown={handleArrowDown}
               disabled={disabled || sending}
               placeholder={
-                isPaused
+                status === "question"
                   ? "Send a message to resume…"
                   : "Send a message… (@ files, / commands, $ skills)"
               }
@@ -352,11 +351,14 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
               mentionFiles={filesQuery.data}
               slashCommands={slashCommandsOverride}
               slashCommandsLoading={slashCommandsLoading}
-              initialText={undefined}
               onPasteImages={addFiles}
             />
             <div className="flex shrink-0 items-center gap-1.5 self-end">
-              <ImageAttachmentButton onFilesSelected={addFiles} disabled={disabled || sending} />
+              <ImageAttachmentButton
+                onFilesSelected={addFiles}
+                disabled={disabled || sending}
+                providerId={providerId}
+              />
               {isRunning ? (
                 <button
                   type="button"
