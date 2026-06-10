@@ -20,6 +20,7 @@ import {
 } from "@/api/generated";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { PROVIDER_IDS } from "@/lib/providers";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type {
   useSessionControls,
   useSessionFeatureData,
@@ -232,7 +233,7 @@ function useAgentSendHandler(args: {
   projectId: number;
   data: ReturnType<typeof useSessionFeatureData>;
   controls: ReturnType<typeof useSessionControls>;
-}): (text: string, images?: Array<{ base64: string; mimeType: string }>) => Promise<void> {
+}): (text: string, attachments?: PromptAttachmentPayload[]) => Promise<void> {
   const { featureId, projectId, data, controls } = args;
   const queryClient = useQueryClient();
   const setFeatureSetting = useSetFeatureSetting();
@@ -240,7 +241,7 @@ function useAgentSendHandler(args: {
   // identity isn't churned every time react-query re-renders the host.
   const checkoutMutateAsync = useCheckoutBranch().mutateAsync;
   return useCallback(
-    async (text, images) => {
+    async (text, attachments) => {
       if (text.trim() === "/clear") {
         controls.ws.clearSession();
         return;
@@ -291,7 +292,7 @@ function useAgentSendHandler(args: {
         }
       }
       const shouldStartWorktree = isFirstPrompt && choice.kind !== "off";
-      controls.ws.sendPrompt(text, images, shouldStartWorktree ? true : undefined);
+      controls.ws.sendPrompt(text, attachments, shouldStartWorktree ? true : undefined);
     },
     [
       checkoutMutateAsync,

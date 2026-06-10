@@ -33,6 +33,7 @@ import { AGENT_STATE_INITIAL_MESSAGE_LIMIT } from "@/lib/agent-state-limits";
 import { parseCodexPermissionMode, type CodexPermissionMode } from "@/types/codex-permission-mode";
 import { parsePermissionMode } from "@/types/permission-mode";
 import type { McpServerStatus, SessionEntry } from "@/stores/ws-session-types";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 
 export interface UseWebSocketSessionReturn {
   blocks: AgentBlockData[];
@@ -87,7 +88,7 @@ export interface UseWebSocketSessionReturn {
   setProvider: (providerId: string) => void;
   sendPrompt: (
     text: string,
-    images?: Array<{ base64: string; mimeType: string }>,
+    attachments?: PromptAttachmentPayload[],
     useWorktree?: boolean,
   ) => void;
   respondToPermission: (
@@ -236,9 +237,9 @@ function useSessionActions(sessionId: string): SessionActions {
       loadOlderMessages: (): Promise<number> => s.loadOlderMessages(sessionId),
       sendPrompt: (
         text: string,
-        images?: Array<{ base64: string; mimeType: string }>,
+        attachments?: PromptAttachmentPayload[],
         useWorktree?: boolean,
-      ): void => s.sendPrompt(sessionId, text, images, useWorktree),
+      ): void => s.sendPrompt(sessionId, text, attachments, useWorktree),
       respondToPermission: (
         requestId: string,
         decision: PermissionDecisionValue,

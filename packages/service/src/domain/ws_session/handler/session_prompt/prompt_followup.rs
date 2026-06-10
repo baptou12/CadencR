@@ -9,7 +9,9 @@ use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use std::sync::Arc;
 
 use super::super::{ActiveTurnRegistry, SdkSessions, WsSender};
-use super::content::{build_content_value, build_persist_content};
+use super::content::{
+    build_content_value_for_provider, build_persist_content, payload_attachments,
+};
 use super::errors::persist_pause_and_send_session_error;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
 
@@ -28,6 +30,7 @@ pub(super) struct FollowupPromptContext {
     /// truth for the synced timer + cross-device answers).
     pub sdk_sessions: SdkSessions,
     pub active_turns: Arc<ActiveTurnRegistry>,
+    pub provider_id: String,
 }
 
 pub(super) async fn handle_followup_prompt(
@@ -56,7 +59,8 @@ async fn persist_followup_user_message(
     if payload.replay {
         return;
     }
-    let persist_content = build_persist_content(&payload.text, &payload.images);
+    let attachments = payload_attachments(payload);
+    let persist_content = build_persist_content(&payload.text, &attachments);
     let persistence = WsSessionPersistence::with_session_id(
         context.write_pool.clone(),
         context.feature_id,
@@ -79,7 +83,9 @@ async fn persist_followup_user_message(
 }
 
 async fn stream_followup_prompt(context: FollowupPromptContext, payload: PromptSendPayload) {
-    let content = build_content_value(&payload.text, &payload.images);
+    let attachments = payload_attachments(&payload);
+    let content =
+        build_content_value_for_provider(&context.provider_id, &payload.text, &attachments);
     let client_message_id = payload.client_message_id.clone();
     let query_guard = context.query.read().await;
     let stream_result = query_guard

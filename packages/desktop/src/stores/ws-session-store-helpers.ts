@@ -6,6 +6,7 @@ import { blocksPatchWithDerived } from "./ws-block-mutations";
 import type { LocalUserMessageOptions } from "./ws-pending-prompts";
 import { movePendingPromptBlocksToTail } from "./ws-pending-prompts";
 import type { AgentBlockData } from "@/components/AgentBlock";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 export { buildSlashCommandsKey } from "@/lib/slash-command-key";
 
 /**
@@ -52,11 +53,11 @@ export function appendLocalUserMessage(
 export function buildQueuedPromptPatch(
   session: SessionEntry,
   text: string,
-  images?: Array<{ base64: string; mimeType: string }>,
+  attachments?: PromptAttachmentPayload[],
   useWorktree?: boolean,
 ): Pick<SessionEntry, "queuedPrompts"> {
   const queuedPrompt: QueuedPrompt = { text };
-  if (images && images.length > 0) queuedPrompt.images = images;
+  if (attachments && attachments.length > 0) queuedPrompt.attachments = attachments;
   if (useWorktree) queuedPrompt.useWorktree = true;
   return {
     queuedPrompts: [...session.queuedPrompts, queuedPrompt],
@@ -82,7 +83,7 @@ export function buildQueuedInitEnvelopes(session: SessionEntry): WsEnvelope[] {
   for (const prompt of session.queuedPrompts) {
     envelopes.push(
       createPromptSend(session.serverSessionId, prompt.text, {
-        images: prompt.images,
+        attachments: prompt.attachments,
         useWorktree: prompt.useWorktree,
       }),
     );

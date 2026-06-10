@@ -33,6 +33,7 @@ fn input_from_block(
             .and_then(Value::as_str)
             .map(|text| text_input(text.to_string()))),
         Some("image") => image_input_from_block(&item, temp_files).map(Some),
+        Some("attachment" | "document") => attachment_input_from_block(&item, temp_files).map(Some),
         Some("localImage") => Ok(item
             .get("path")
             .and_then(Value::as_str)
@@ -69,6 +70,38 @@ fn image_input_from_block(
     }))
 }
 
+fn attachment_input_from_block(
+    item: &Value,
+    temp_files: &mut Vec<TempPath>,
+) -> Result<Value, RuntimeError> {
+    let source = item.get("source").unwrap_or(item);
+    let base64_data = source
+        .get("data")
+        .and_then(Value::as_str)
+        .or_else(|| item.get("data").and_then(Value::as_str))
+        .ok_or_else(|| RuntimeError::new("attachment input missing base64 data"))?;
+    let mime = source
+        .get("media_type")
+        .and_then(Value::as_str)
+        .or_else(|| item.get("media_type").and_then(Value::as_str))
+        .or_else(|| item.get("mimeType").and_then(Value::as_str))
+        .unwrap_or("application/octet-stream");
+    let file_name = item
+        .get("file_name")
+        .and_then(Value::as_str)
+        .or_else(|| item.get("title").and_then(Value::as_str))
+        .or_else(|| item.get("name").and_then(Value::as_str))
+        .unwrap_or("attachment");
+    let file = write_temp_attachment(base64_data, file_name, mime)?;
+    let path = file.to_path_buf();
+    temp_files.push(file);
+    Ok(text_input(attachment_reference_text(
+        file_name,
+        mime,
+        &path.to_string_lossy(),
+    )))
+}
+
 fn text_input(text: String) -> Value {
     serde_json::json!({
         "type": "text",
@@ -77,31 +110,67 @@ fn text_input(text: String) -> Value {
     })
 }
 
+fn attachment_reference_text(file_name: &str, mime: &str, path: &str) -> String {
+    format!(
+        "Attached file `{file_name}` ({mime}) is available at local path `{path}`. \
+         Read that file if you need the attachment contents."
+    )
+}
+
 fn write_temp_image(base64_data: &str, mime: &str) -> Result<TempPath, RuntimeError> {
-    let dir = std::env::temp_dir().join("cadencr-codex-images");
+    write_temp_base64_file(
+        base64_data,
+        "cadencr-codex-images",
+        "codex-image-",
+        extension_for_mime(mime),
+        "image",
+    )
+}
+
+fn write_temp_attachment(
+    base64_data: &str,
+    file_name: &str,
+    mime: &str,
+) -> Result<TempPath, RuntimeError> {
+    write_temp_base64_file(
+        base64_data,
+        "cadencr-codex-attachments",
+        "codex-attachment-",
+        attachment_extension(file_name, mime),
+        "attachment",
+    )
+}
+
+fn write_temp_base64_file(
+    base64_data: &str,
+    dir_name: &str,
+    prefix: &str,
+    extension: &str,
+    label: &str,
+) -> Result<TempPath, RuntimeError> {
+    let dir = std::env::temp_dir().join(dir_name);
     std::fs::create_dir_all(&dir).map_err(|e| {
         RuntimeError::new(format!(
-            "failed to create Codex image temp directory {}: {e}",
+            "failed to create Codex {label} temp directory {}: {e}",
             dir.display()
         ))
     })?;
-    let extension = extension_for_mime(mime);
     let mut file = tempfile::Builder::new()
-        .prefix("codex-image-")
+        .prefix(prefix)
         .suffix(&format!(".{extension}"))
         .tempfile_in(&dir)
         .map_err(|e| {
             RuntimeError::new(format!(
-                "failed to create Codex image temp file in {}: {e}",
+                "failed to create Codex {label} temp file in {}: {e}",
                 dir.display()
             ))
         })?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(base64_data)
-        .map_err(|e| RuntimeError::new(format!("failed to decode image input: {e}")))?;
+        .map_err(|e| RuntimeError::new(format!("failed to decode {label} input: {e}")))?;
     std::io::Write::write_all(&mut file, &bytes).map_err(|e| {
         RuntimeError::new(format!(
-            "failed to write Codex image temp file {}: {e}",
+            "failed to write Codex {label} temp file {}: {e}",
             file.path().display()
         ))
     })?;
@@ -114,6 +183,24 @@ fn extension_for_mime(mime: &str) -> &'static str {
         "image/gif" => "gif",
         "image/webp" => "webp",
         _ => "png",
+    }
+}
+
+fn attachment_extension<'a>(file_name: &'a str, mime: &str) -> &'a str {
+    if let Some(extension) = file_name
+        .rsplit('.')
+        .next()
+        .filter(|part| *part != file_name)
+    {
+        return extension;
+    }
+    match mime {
+        "application/pdf" => "pdf",
+        "text/csv" => "csv",
+        "text/markdown" => "md",
+        "application/json" => "json",
+        "text/plain" => "txt",
+        _ => "bin",
     }
 }
 
@@ -166,6 +253,36 @@ mod tests {
 
         assert!(path.ends_with(".webp"));
         assert!(std::path::Path::new(path).exists());
+        temp_files.clear();
+        assert!(!std::path::Path::new(path).exists());
+    }
+
+    #[test]
+    fn attachment_base64_is_written_to_lifetime_bound_file_reference_text() {
+        let mut temp_files = Vec::new();
+        let input = user_input_from_content(
+            json!([{
+                "type": "attachment",
+                "file_name": "brief.pdf",
+                "media_type": "application/pdf",
+                "data": "JVBERg=="
+            }]),
+            &mut temp_files,
+        )
+        .unwrap();
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0]["type"], "text");
+        let text = input[0]["text"].as_str().unwrap();
+        assert!(text.contains("brief.pdf"));
+        assert!(text.contains("application/pdf"));
+        let path = text
+            .split('`')
+            .find(|part| part.contains("cadencr-codex-attachments"))
+            .expect("attachment path in text");
+        assert!(path.ends_with(".pdf"));
+        assert!(std::path::Path::new(path).exists());
+        assert_eq!(std::fs::read(path).unwrap(), b"%PDF");
         temp_files.clear();
         assert!(!std::path::Path::new(path).exists());
     }

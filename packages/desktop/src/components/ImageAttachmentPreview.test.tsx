@@ -10,6 +10,7 @@ function makeAttachment(overrides: Partial<ImageAttachment> = {}): ImageAttachme
     previewUrl: "data:image/png;base64,abc123",
     base64: "abc123",
     mimeType: "image/png",
+    kind: "image",
     ...overrides,
   };
 }
@@ -27,6 +28,19 @@ describe("ImageAttachmentPreview", () => {
     ];
     render(<ImageAttachmentPreview attachments={attachments} onRemove={vi.fn()} />);
     expect(screen.getAllByRole("img")).toHaveLength(2);
+  });
+
+  it("renders non-image attachments as file chips", () => {
+    render(
+      <ImageAttachmentPreview
+        attachments={[
+          makeAttachment({ fileName: "brief.pdf", kind: "document", mimeType: "application/pdf" }),
+        ]}
+        onRemove={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText("brief.pdf")).toBeInTheDocument();
   });
 
   it("renders remove button for each attachment", () => {

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { buildUserMessageContent } from "@/types/agent-types";
+import { buildUserMessageContent, type PromptAttachmentPayload } from "@/types/agent-types";
 import { getWsProtocols, getWsUrl } from "@/lib/ws-url";
 import { createWsConnection } from "@/lib/ws-connection";
 import {
@@ -116,12 +116,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
   function queuePrompt(
     sessionId: string,
     text: string,
-    images?: Array<{ base64: string; mimeType: string }>,
+    attachments?: PromptAttachmentPayload[],
     useWorktree?: boolean,
   ): void {
     const session = getSession(sessionId);
     set(
-      updateSession(get(), sessionId, buildQueuedPromptPatch(session, text, images, useWorktree)),
+      updateSession(
+        get(),
+        sessionId,
+        buildQueuedPromptPatch(session, text, attachments, useWorktree),
+      ),
     );
   }
 
@@ -372,7 +376,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
     sendPrompt(
       sessionId: string,
       text: string,
-      images?: Array<{ base64: string; mimeType: string }>,
+      attachments?: PromptAttachmentPayload[],
       useWorktree?: boolean,
     ) {
       const session = getSession(sessionId);
@@ -382,16 +386,16 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         sendRaw(
           sessionId,
           createPromptSend(session.serverSessionId, text, {
-            images,
+            attachments,
             useWorktree,
             clientMessageId,
           }),
         );
       } else {
-        queuePrompt(sessionId, text, images, useWorktree);
+        queuePrompt(sessionId, text, attachments, useWorktree);
       }
 
-      const content = buildUserMessageContent(text, images);
+      const content = buildUserMessageContent(text, attachments);
       set(
         updateSession(
           get(),
@@ -523,7 +527,7 @@ export const useWsSessionStore = create<WsSessionStore>((set, get) => {
         sendRaw(
           sessionId,
           createPromptSend(session.serverSessionId, replay.text, {
-            images: replay.images,
+            attachments: replay.attachments,
             clientMessageId: replay.clientMessageId,
             replay: true,
           }),

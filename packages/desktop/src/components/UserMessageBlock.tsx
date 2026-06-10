@@ -1,14 +1,16 @@
+import { PaperclipIcon } from "lucide-react";
+import type { ReactElement } from "react";
 import { Markdown } from "@/components/Markdown";
 import { cn } from "@/lib/utils";
-import { parseUserMessageContent } from "@/types/agent-types";
+import { parseUserMessageContent, type ParsedPromptAttachment } from "@/types/agent-types";
 
 interface UserMessageBlockProps {
   content: string;
   deliveryState?: "pending_agent";
 }
 
-export function UserMessageBlock({ content, deliveryState }: UserMessageBlockProps) {
-  const { text: textContent, images } = parseUserMessageContent(content);
+export function UserMessageBlock({ content, deliveryState }: UserMessageBlockProps): ReactElement {
+  const { text: textContent, images, attachments } = parseUserMessageContent(content);
   const isPendingDelivery = deliveryState === "pending_agent";
 
   return (
@@ -36,6 +38,7 @@ export function UserMessageBlock({ content, deliveryState }: UserMessageBlockPro
             ))}
           </div>
         )}
+        {attachments.length > 0 && <AttachmentFileList attachments={attachments} />}
       </div>
       {isPendingDelivery && (
         <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10.5px]">
@@ -46,6 +49,26 @@ export function UserMessageBlock({ content, deliveryState }: UserMessageBlockPro
           <span className="text-amber-300">Not received by agent yet…</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function AttachmentFileList({
+  attachments,
+}: {
+  attachments: ParsedPromptAttachment[];
+}): ReactElement {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {attachments.map((attachment, index) => (
+        <span
+          key={`${attachment.fileName}:${attachment.mimeType}:${index}`}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[11.5px] text-muted-foreground"
+        >
+          <PaperclipIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{attachment.fileName}</span>
+        </span>
+      ))}
     </div>
   );
 }

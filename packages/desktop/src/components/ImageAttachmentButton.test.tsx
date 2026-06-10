@@ -5,7 +5,7 @@ import { ImageAttachmentButton } from "./ImageAttachmentButton";
 describe("ImageAttachmentButton", () => {
   it("renders a button with paperclip icon", () => {
     render(<ImageAttachmentButton onFilesSelected={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /attach images/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /attach files/i })).toBeInTheDocument();
   });
 
   it("is disabled when disabled prop is true", () => {
@@ -35,5 +35,16 @@ describe("ImageAttachmentButton", () => {
     expect(input).toHaveClass("hidden");
     expect(input).toHaveAttribute("accept", expect.stringContaining("image/"));
     expect(input).toHaveAttribute("multiple");
+  });
+
+  it("uses provider-specific accept types and accessible label", () => {
+    const { container } = render(
+      <ImageAttachmentButton onFilesSelected={vi.fn()} providerId="claude_code" />,
+    );
+    expect(screen.getByRole("button", { name: /attach files/i })).toBeInTheDocument();
+    expect(container.querySelector("input[type='file']")).toHaveAttribute(
+      "accept",
+      expect.stringContaining("application/pdf"),
+    );
   });
 });

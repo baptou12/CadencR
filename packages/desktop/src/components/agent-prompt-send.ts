@@ -21,11 +21,12 @@
 import { useCallback, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import type { ImageAttachment } from "@/hooks/useImageAttachments";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 
 export type SendFn = (
   text: string,
-  images?: Array<{ base64: string; mimeType: string }>,
+  attachments?: PromptAttachmentPayload[],
 ) => void | Promise<void>;
 
 export interface RunSendDeps {
@@ -64,9 +65,14 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
   const runSend = useCallback(
     async (send: SendFn, trimmed: string): Promise<void> => {
       const attachments = getAttachments();
-      const images =
+      const payloadAttachments =
         attachments.length > 0
-          ? attachments.map((a) => ({ base64: a.base64, mimeType: a.mimeType }))
+          ? attachments.map((a) => ({
+              base64: a.base64,
+              fileName: a.fileName,
+              kind: a.kind,
+              mimeType: a.mimeType,
+            }))
           : undefined;
       // Optimistically clear the visible textarea so the user sees their
       // submission "in flight". On failure we restore it below.
@@ -75,7 +81,7 @@ export function useAgentPromptSend(deps: RunSendDeps): AgentPromptSendApi {
       clearAttachments({ revokeObjectUrls: false });
       setSending(true);
       try {
-        await send(trimmed, images);
+        await send(trimmed, payloadAttachments);
         // Success: drop the persisted draft, record history, refocus.
         attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
         addHistoryEntry(trimmed);

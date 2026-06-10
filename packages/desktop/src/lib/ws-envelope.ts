@@ -1,3 +1,5 @@
+import type { PromptAttachmentPayload } from "@/types/agent-types";
+
 /**
  * WebSocket envelope utilities for communicating with the Rust Axum WS endpoint.
  *
@@ -54,7 +56,7 @@ export function createSessionInit(config: SessionConfig): WsEnvelope {
 }
 
 export interface PromptSendOptions {
-  images?: Array<{ base64: string; mimeType: string }>;
+  attachments?: PromptAttachmentPayload[];
   useWorktree?: boolean;
   clientMessageId?: string;
   replay?: boolean;
@@ -68,7 +70,9 @@ export function createPromptSend(
   return createEnvelope("session", "prompt.send", {
     session_id: sessionId,
     text,
-    ...(options.images && options.images.length > 0 ? { images: options.images } : {}),
+    ...(options.attachments && options.attachments.length > 0
+      ? { attachments: options.attachments }
+      : {}),
     ...(options.useWorktree ? { use_worktree: true } : {}),
     ...(options.clientMessageId ? { client_message_id: options.clientMessageId } : {}),
     ...(options.replay ? { replay: true } : {}),

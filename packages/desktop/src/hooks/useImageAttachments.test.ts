@@ -106,16 +106,66 @@ describe("useImageAttachments", () => {
     expect(result.current.attachments[0].base64).toBe("abc123");
   });
 
-  it("rejects unsupported file types", async () => {
-    const { result } = renderHook(() => useImageAttachments());
+  it("accepts provider-compatible PDFs for Claude", async () => {
+    const { result } = renderHook(() => useImageAttachments(undefined, "claude_code"));
     const file = createMockFile("doc.pdf", "application/pdf");
 
     act(() => {
       result.current.addFiles([file]);
     });
 
-    await new Promise((r) => setTimeout(r, 50));
-    expect(result.current.attachments).toHaveLength(0);
+    await waitFor(() => {
+      expect(result.current.attachments).toHaveLength(1);
+    });
+
+    expect(result.current.attachments[0]).toEqual(
+      expect.objectContaining({
+        fileName: "doc.pdf",
+        kind: "document",
+        mimeType: "application/pdf",
+      }),
+    );
+  });
+
+  it("accepts PDFs for Codex as app-server document file references", async () => {
+    const { result } = renderHook(() => useImageAttachments(undefined, "codex_cli"));
+    const file = createMockFile("doc.pdf", "application/pdf");
+
+    act(() => {
+      result.current.addFiles([file]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.attachments).toHaveLength(1);
+    });
+    expect(result.current.attachments[0]).toEqual(
+      expect.objectContaining({
+        fileName: "doc.pdf",
+        kind: "document",
+        mimeType: "application/pdf",
+      }),
+    );
+  });
+
+  it("accepts OpenCode audio drops as ACP audio attachments", async () => {
+    const { result } = renderHook(() => useImageAttachments("ws:first", "opencode"));
+    const callback = dropSubscribers[0];
+
+    act(() => {
+      callback({
+        type: "drop",
+        files: [{ handle: "h-1", name: "clip.wav" }],
+        targetPromptId: "ws:first",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.attachments).toHaveLength(1);
+    });
+
+    expect(result.current.attachments[0]).toEqual(
+      expect.objectContaining({ fileName: "clip.wav", kind: "audio", mimeType: "audio/wav" }),
+    );
   });
 
   it("removes an attachment by id", async () => {

@@ -65,6 +65,21 @@ describe("ws-envelope", () => {
       expect(env.payload).toEqual({ session_id: "s1", text: "hello" });
     });
 
+    it("createPromptSend includes provider-aware attachments", () => {
+      const env = createPromptSend("s1", "hello", {
+        attachments: [
+          { base64: "abc", fileName: "brief.pdf", kind: "document", mimeType: "application/pdf" },
+        ],
+      });
+      expect(env.payload).toEqual({
+        session_id: "s1",
+        text: "hello",
+        attachments: [
+          { base64: "abc", fileName: "brief.pdf", kind: "document", mimeType: "application/pdf" },
+        ],
+      });
+    });
+
     it("createCommandsGet includes provider", () => {
       const env = createCommandsGet("/repo", "codex_cli");
       expect(env.domain).toBe("commands");

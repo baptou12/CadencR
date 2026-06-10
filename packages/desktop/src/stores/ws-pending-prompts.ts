@@ -1,5 +1,6 @@
 import type { AgentBlockData } from "@/components/AgentBlock";
 import { parseUserMessageContent } from "@/types/agent-types";
+import type { PromptAttachmentPayload } from "@/types/agent-types";
 import type { PromptDeliveryState } from "@/types/agent";
 
 export interface LocalUserMessageOptions {
@@ -15,7 +16,7 @@ export interface DeferredPromptTurnBoundary {
 export interface PendingPromptReplay {
   clientMessageId: string;
   text: string;
-  images?: Array<{ base64: string; mimeType: string }>;
+  attachments?: PromptAttachmentPayload[];
 }
 
 export function movePendingPromptBlocksToTail(blocks: AgentBlockData[]): AgentBlockData[] {
@@ -81,15 +82,24 @@ export function collectPendingPromptReplays(blocks: AgentBlockData[]): PendingPr
       return [];
     }
     const parsed = parseUserMessageContent(block.content);
-    const images = parsed.images.map((image) => ({
+    const imageAttachments: PromptAttachmentPayload[] = parsed.images.map((image) => ({
       base64: image.data,
+      fileName: "image",
+      kind: "image",
       mimeType: image.mediaType,
     }));
+    const attachments = [
+      ...imageAttachments,
+      ...parsed.attachments.filter(
+        (attachment): attachment is PromptAttachmentPayload =>
+          typeof attachment.base64 === "string",
+      ),
+    ];
     return [
       {
         clientMessageId: block.clientMessageId,
         text: parsed.text,
-        ...(images.length > 0 ? { images } : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
       },
     ];
   });
