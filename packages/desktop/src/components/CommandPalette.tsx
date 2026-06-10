@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
@@ -63,6 +63,10 @@ export function CommandPalette({
   const [search, setSearch] = useState("");
   const [pendingProjectId, setPendingProjectId] = useState<number | null>(null);
   const [worktreeChoice, setWorktreeChoice] = useState<WorktreeChoiceValue>({ mode: "new" });
+  // Tracks whether the user has explicitly picked a worktree mode/branch in the
+  // current step. Guards the "apply project default" effect below from
+  // clobbering that pick when the async project-settings query settles.
+  const worktreeChoiceTouchedRef = useRef(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const projectsQuery = useListProjects();
@@ -125,6 +129,7 @@ export function CommandPalette({
         setSearch("");
         setPendingProjectId(null);
         setWorktreeChoice({ mode: "new" });
+        worktreeChoiceTouchedRef.current = false;
       }
       onOpenChange(open);
     },
@@ -154,12 +159,22 @@ export function CommandPalette({
   const startWorktreePick = useCallback((projectId: number) => {
     setPendingProjectId(projectId);
     setWorktreeChoice({ mode: "new" });
+    worktreeChoiceTouchedRef.current = false;
     setSearch("");
     setMode("pick-worktree-mode");
   }, []);
 
+  const handleWorktreeChoiceChange = useCallback((value: WorktreeChoiceValue) => {
+    worktreeChoiceTouchedRef.current = true;
+    setWorktreeChoice(value);
+  }, []);
+
+  // Seed the worktree step with the project's saved default once settings load.
+  // Skipped after the user picks a mode/branch so the async settle of
+  // `projectDefaultWorktreeMode` never overwrites an explicit "reuse" choice.
   useEffect(() => {
     if (mode !== "pick-worktree-mode") return;
+    if (worktreeChoiceTouchedRef.current) return;
     setWorktreeChoice(projectDefaultWorktreeMode === "skip" ? { mode: "skip" } : { mode: "new" });
   }, [mode, projectDefaultWorktreeMode]);
 
@@ -261,7 +276,7 @@ export function CommandPalette({
         onOpenChange={handleOpenChange}
         projectId={pendingProjectId}
         value={worktreeChoice}
-        onChange={setWorktreeChoice}
+        onChange={handleWorktreeChoiceChange}
         onConfirm={handleConfirmCreateFeature}
         onKeyDown={handleKeyDown}
       />
