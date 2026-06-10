@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use super::models::{
     CreateCustomActionRequest, CustomAction, CustomActionRun, CustomActionSchedule,
-    CustomActionVariable, RunResponse, Scope, SetCustomActionScheduleRequest,
+    CustomActionVariable, ResolvedCommand, RunResponse, Scope, SetCustomActionScheduleRequest,
     SetCustomActionVariableRequest, SuccessResponse, TriggeredBy, UpdateCustomActionRequest,
 };
 use super::repository;
@@ -66,6 +66,7 @@ pub async fn create_action_handler(
         body.icon_data.as_deref(),
         body.scope,
         body.project_id,
+        body.run_in_terminal.unwrap_or(false),
     )
     .await?;
     let row = repository::get(&state.read_pool, id)
@@ -108,6 +109,7 @@ pub async fn update_action_handler(
             _ => None,
         },
         body.position,
+        body.run_in_terminal,
     )
     .await?;
 
@@ -176,6 +178,20 @@ pub async fn run_action_handler(
     // the triggering button/menu closes.
     let run_id = runner::start(&state, id, q.feature_id, TriggeredBy::Manual).await?;
     Ok(Json(RunResponse { run_id }))
+}
+
+#[utoipa::path(get, path = "/api/custom-actions/{id}/resolved", params(("id" = i64, Path,), FeatureIdQuery), responses((status = 200, body = ResolvedCommand)))]
+pub async fn resolve_command_handler(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(q): Query<FeatureIdQuery>,
+) -> Result<Json<ResolvedCommand>, AppError> {
+    // Interpolate the command and resolve the feature's working directory the
+    // same way a backgrounded run would, so the terminal split runs the exact
+    // command the user configured. Setup errors (missing worktree/variables)
+    // surface here just as they do for `run`.
+    let (command, cwd) = runner::resolve(&state, id, q.feature_id).await?;
+    Ok(Json(ResolvedCommand { command, cwd }))
 }
 
 #[utoipa::path(get, path = "/api/custom-actions/{id}/runs", params(("id" = i64, Path,), FeatureIdAndLimitQuery), responses((status = 200, body = Vec<CustomActionRun>)))]
@@ -261,6 +277,10 @@ pub fn custom_actions_router() -> Router<AppState> {
             get(list_variables_handler).put(set_variable_handler),
         )
         .route("/api/custom-actions/{id}/run", post(run_action_handler))
+        .route(
+            "/api/custom-actions/{id}/resolved",
+            get(resolve_command_handler),
+        )
         .route("/api/custom-actions/{id}/runs", get(list_runs_handler))
         .route(
             "/api/custom-actions/{id}/runs/{run_id}/cancel",

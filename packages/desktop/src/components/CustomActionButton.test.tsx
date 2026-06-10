@@ -1,14 +1,17 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@/test-utils";
+import { fireEvent, render, screen, waitFor } from "@/test-utils";
 import { CustomActionButton } from "./CustomActionButton";
+import { useTerminalStore } from "@/hooks/useTerminalState";
 import type { CustomAction } from "@/api/generated";
 
 const mockRunCustomAction = vi.hoisted(() => vi.fn());
+const mockResolveCommand = vi.hoisted(() => vi.fn());
 
 vi.mock("@/api/generated", () => ({
   getGetCustomActionRunsQueryKey: vi.fn(() => ["custom-action-runs"]),
   getListCustomActionsQueryKey: vi.fn(() => ["custom-actions"]),
   useRunCustomAction: vi.fn(() => ({ mutate: mockRunCustomAction, isPending: false })),
+  resolveCommand: mockResolveCommand,
 }));
 
 function makeAction(): CustomAction {
@@ -21,6 +24,7 @@ function makeAction(): CustomAction {
     position: 0,
     scope: "project",
     project_id: 1,
+    run_in_terminal: false,
     variable_names: [],
     icon_data: null,
     last_run: null,
@@ -30,6 +34,7 @@ function makeAction(): CustomAction {
 describe("CustomActionButton", () => {
   beforeEach((): void => {
     mockRunCustomAction.mockClear();
+    mockResolveCommand.mockReset();
   });
 
   it("runs the action from the main icon button", async (): Promise<void> => {
@@ -68,5 +73,28 @@ describe("CustomActionButton", () => {
     await user.click(screen.getByTitle("Open Deploy details"));
 
     expect(onOpenDetails).toHaveBeenCalledWith(action);
+  });
+
+  it("spawns the resolved command in a terminal split when run_in_terminal is set", async (): Promise<void> => {
+    mockResolveCommand.mockResolvedValue({ command: "npm run dev", cwd: "/repo" });
+    const sendToTerminal = vi.fn();
+    useTerminalStore.setState({ sendToTerminal });
+
+    const { user } = render(
+      <CustomActionButton
+        action={{ ...makeAction(), run_in_terminal: true }}
+        featureId={42}
+        projectId={1}
+        onOpenDetails={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByTitle("Run Deploy in terminal"));
+
+    // The resolved command is handed to the terminal split with a trailing
+    // newline so the PTY executes it; no background run is started.
+    expect(mockResolveCommand).toHaveBeenCalledWith(7, { feature_id: 42 });
+    await waitFor(() => expect(sendToTerminal).toHaveBeenCalledWith(42, "npm run dev\n"));
+    expect(mockRunCustomAction).not.toHaveBeenCalled();
   });
 });

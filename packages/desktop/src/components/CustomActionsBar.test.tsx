@@ -26,6 +26,7 @@ function makeAction(id: number, name: string): CustomAction {
     name,
     position: id,
     scope: "global",
+    run_in_terminal: false,
     updated_at: "2026-01-01T00:00:00Z",
     variable_names: [],
   };

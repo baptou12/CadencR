@@ -63,6 +63,18 @@ async fn prepare(state: &AppState, action_id: i64, feature_id: i64) -> Result<Pr
     Ok(Prepared { command, cwd })
 }
 
+/// Resolve an action's `${VAR}`-interpolated command and working directory
+/// without running it. Used by the "run in terminal" path, which executes the
+/// command in a client-side PTY rather than a backgrounded server process.
+pub async fn resolve(
+    state: &AppState,
+    action_id: i64,
+    feature_id: i64,
+) -> Result<(String, String), AppError> {
+    let prepared = prepare(state, action_id, feature_id).await?;
+    Ok((prepared.command, prepared.cwd))
+}
+
 /// Execute `action_id` for `feature_id`, blocking until completion.
 ///
 /// Used by the scheduler, where serialising runs prevents a slow command from

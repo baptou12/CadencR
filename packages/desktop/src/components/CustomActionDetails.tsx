@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, PencilIcon, PlayIcon, SquareIcon, Trash2Icon } from "lucide-react";
+import { Loader2, PencilIcon, PlayIcon, SquareIcon, TerminalIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,12 @@ import {
   useDeleteCustomAction,
   useGetCustomActionRuns,
   useGetCustomActionVariables,
-  useRunCustomAction,
   useSetCustomActionVariable,
   type CustomAction,
   type CustomActionRun,
 } from "@/api/generated";
 import { invalidateCustomActionRunQueries } from "@/lib/custom-action-queries";
+import { useCustomActionRunner } from "@/hooks/useCustomActionRunner";
 import { BashBlock } from "./BashBlock";
 import { CustomActionScheduleControl } from "./CustomActionScheduleControl";
 
@@ -75,21 +75,7 @@ export function CustomActionDetails({
   // loader until the run actually finalizes rather than only during the POST.
   const [cancellingId, setCancellingId] = useState<number | null>(null);
 
-  const runMutation = useRunCustomAction({
-    mutation: {
-      // Runs are asynchronous now — surface the new in-flight row immediately
-      // instead of waiting for the 2s poll.
-      onSuccess: () => {
-        invalidateCustomActionRunQueries({
-          queryClient,
-          projectId,
-          actionId: action.id,
-          featureId,
-        });
-      },
-      onError: (err) => toast.error(`Run failed: ${err.message}`),
-    },
-  });
+  const { run, isStarting } = useCustomActionRunner({ action, featureId, projectId });
 
   const cancelMutation = useCancelCustomActionRun({
     mutation: {
@@ -237,7 +223,21 @@ export function CustomActionDetails({
       )}
 
       <section>
-        {isRunning && latestRun ? (
+        {action.run_in_terminal ? (
+          // Terminal actions are owned by the terminal split (its own
+          // kill/restart controls), so there's no background run to stop here.
+          <Button size="sm" onClick={run} disabled={isStarting} className="w-full">
+            {isStarting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Starting…
+              </>
+            ) : (
+              <>
+                <TerminalIcon className="size-3.5" /> Run in terminal
+              </>
+            )}
+          </Button>
+        ) : isRunning && latestRun ? (
           <Button
             size="sm"
             variant="destructive"
@@ -260,13 +260,8 @@ export function CustomActionDetails({
             )}
           </Button>
         ) : (
-          <Button
-            size="sm"
-            onClick={() => runMutation.mutate({ id: action.id, params: { feature_id: featureId } })}
-            disabled={runMutation.isPending}
-            className="w-full"
-          >
-            {runMutation.isPending ? (
+          <Button size="sm" onClick={run} disabled={isStarting} className="w-full">
+            {isStarting ? (
               <>
                 <Loader2 className="size-3.5 animate-spin" /> Starting…
               </>

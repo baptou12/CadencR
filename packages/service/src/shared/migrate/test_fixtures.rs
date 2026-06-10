@@ -2,7 +2,15 @@ use sqlx::SqlitePool;
 
 pub(super) async fn create_pre_agent_message_index_schema(pool: &SqlitePool) {
     sqlx::raw_sql(
-        r#"CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL);
+        r#"-- The run_in_terminal migration (20260609120000) alters custom_actions,
+        -- which already existed at this baseline, so the fixture must provide it.
+        CREATE TABLE custom_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            command TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'global'
+        );
+        CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL);
         CREATE TABLE agent_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL REFERENCES agent_sessions(id),
