@@ -279,6 +279,41 @@ mod tests {
         )
     }
 
+    fn make_init_with_context_window(session_id: &str, context_window: u64) -> RuntimeEvent {
+        RuntimeEvent::new(
+            RuntimeEventMetadata {
+                session_id: Some(session_id.into()),
+                usage: None,
+                context_window: None,
+                raw: json!({ "type": "system", "subtype": "init" }),
+            },
+            RuntimeEventKind::Init(crate::domain::agents::adapter::RuntimeInitEvent {
+                model: Some("claude-fable-5[1m]".into()),
+                mcp_servers: vec![],
+                context_window: Some(context_window),
+            }),
+        )
+    }
+
+    #[test]
+    fn init_event_corrects_stale_context_window_at_turn_start() {
+        // Regression for the inflated usage bar: a new session is seeded with
+        // the DB default (200k) even when the model runs the 1M-context
+        // beta. The init event resolves the real window before any usage
+        // arrives, so the first usage update already divides by 1M instead
+        // of waiting for the turn's Result.
+        let mut state = RuntimeUsageState::new(Some(200_000));
+        state.set_root_session_id("root-1");
+
+        let update = state.apply_event(None, &make_init_with_context_window("root-1", 1_000_000));
+        assert!(update.context_window_changed);
+        assert_eq!(update.snapshot.context_window, Some(1_000_000));
+
+        let update = state.apply_event(None, &make_message_start("root-1", 250_000, None));
+        assert_eq!(update.snapshot.context_window, Some(1_000_000));
+        assert_eq!(update.snapshot.input_tokens, 250_000);
+    }
+
     #[test]
     fn apply_event_updates_snapshot_for_root_session() {
         let mut state = RuntimeUsageState::new(None);

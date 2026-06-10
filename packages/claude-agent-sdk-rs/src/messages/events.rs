@@ -82,6 +82,10 @@ pub enum SystemMessage {
         tools: Vec<String>,
         mcp_servers: Vec<McpServerStatus>,
         model: String,
+        // The CLI emits this one field in camelCase (`permissionMode`);
+        // without the alias the whole init message fails to deserialize
+        // and falls back to `SdkMessage::Unknown`.
+        #[serde(alias = "permissionMode")]
         permission_mode: String,
         slash_commands: Vec<String>,
         output_style: String,
