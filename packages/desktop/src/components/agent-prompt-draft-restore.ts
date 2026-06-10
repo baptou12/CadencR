@@ -9,6 +9,8 @@ interface FeaturePromptDraftRestoreArgs {
   editorRef: RefObject<PromptEditorHandle | null>;
   restoringDraftRef: MutableRefObject<boolean>;
   setText: (text: string) => void;
+  /** Phones: restore the draft text without focusing (avoids popping the keyboard). */
+  isMobile: boolean;
 }
 
 export function useFeaturePromptDraftRestore({
@@ -19,6 +21,7 @@ export function useFeaturePromptDraftRestore({
   editorRef,
   restoringDraftRef,
   setText,
+  isMobile,
 }: FeaturePromptDraftRestoreArgs): void {
   const prevFeatureIdRef = useRef(featureId);
   useLayoutEffect(() => {
@@ -34,9 +37,20 @@ export function useFeaturePromptDraftRestore({
     if (nextText == null || (prevFeatureId === featureId && textRef.current)) return;
     restoringDraftRef.current = true;
     setText(nextText);
-    editorRef.current?.setText(nextText);
+    // On phones, restore the draft without moving the selection — that would
+    // focus the editor and pop the on-screen keyboard over the transcript.
+    editorRef.current?.setText(nextText, !isMobile);
     queueMicrotask(() => {
       restoringDraftRef.current = false;
     });
-  }, [draftFeatureId, editorRef, featureId, restoredDraft, restoringDraftRef, setText, textRef]);
+  }, [
+    draftFeatureId,
+    editorRef,
+    featureId,
+    isMobile,
+    restoredDraft,
+    restoringDraftRef,
+    setText,
+    textRef,
+  ]);
 }
