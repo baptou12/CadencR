@@ -15,6 +15,7 @@ import type { PromptEditorHandle } from "./prompt-editor/PromptEditor";
 import { shouldFocusPromptFromSurfaceClick } from "./agent-prompt-focus";
 import { usePromptAttachments } from "@/hooks/usePromptAttachments";
 import { usePromptDraft } from "@/hooks/usePromptDraft";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { usePromptHistory } from "@/hooks/usePromptHistory";
 import { useListFiles } from "@/api/generated";
 import { useAgentPromptSend } from "./agent-prompt-send";
@@ -64,6 +65,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
   ) {
     const editorRef = useRef<PromptEditorHandle>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const isMobile = useIsMobile();
     const [text, setText] = useState("");
     const textRef = useRef(text);
     textRef.current = text;
@@ -88,6 +90,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       editorRef,
       restoringDraftRef,
       setText,
+      isMobile,
     });
     const {
       visiblePermission,

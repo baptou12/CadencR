@@ -125,7 +125,9 @@ function WebSocketSessionFeatureBody(
     refs,
     focusedTabId,
     hotkeysEnabled,
-    autoFocusPrompt: !embedded && !requestedFocusPending,
+    // Phones don't get autofocus: it pops the on-screen keyboard the moment a
+    // conversation/agent tab opens, covering the transcript before it's read.
+    autoFocusPrompt: !embedded && !requestedFocusPending && !isMobile,
     autoInitSession: !embedded,
   });
   useEffect((): (() => void) | void => {
@@ -135,7 +137,9 @@ function WebSocketSessionFeatureBody(
     if (requestedFocusKeyRef.current === key) return;
     requestedFocusKeyRef.current = key;
     const focusRequestedTarget = (): void => {
-      if (requestedFocusTab === "agent") refs.agent.current?.focusPromptBar();
+      // Phones: never programmatically focus the prompt — it pops the on-screen
+      // keyboard over the transcript when a conversation/agent tab opens.
+      if (requestedFocusTab === "agent" && !isMobile) refs.agent.current?.focusPromptBar();
       if (requestedFocusTab === "terminal") refs.terminal.current?.activate();
       if (requestedFocusTab === "editor") refs.editor.current?.focusActiveEditor();
       if (requestedFocusTab === "git" && sectionRef.current) {
@@ -153,6 +157,7 @@ function WebSocketSessionFeatureBody(
     refs.terminal,
     requestedFocusTab,
     requestedFocusPending,
+    isMobile,
   ]);
   useWsSessionShortcuts({ controls, hotkeysEnabled });
 

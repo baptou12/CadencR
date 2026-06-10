@@ -218,11 +218,13 @@ export function useWsSessionEffects(args: {
   }, [autoFocusPrompt, focusedTabId, hotkeysEnabled, refs.agent, sessionId]);
   useEffect(() => {
     const handler = (): void => {
-      if (hotkeysEnabled) refs.agent.current?.focusPromptBar();
+      // `autoFocusPrompt` is false on phones, so notification-driven focus
+      // won't pop the keyboard there either.
+      if (autoFocusPrompt && hotkeysEnabled) refs.agent.current?.focusPromptBar();
     };
     window.addEventListener("cadencr:focus-prompt", handler);
     return () => window.removeEventListener("cadencr:focus-prompt", handler);
-  }, [hotkeysEnabled, refs.agent]);
+  }, [autoFocusPrompt, hotkeysEnabled, refs.agent]);
   useEffect(() => {
     if (!hotkeysEnabled) return;
     if (serverSessionId && data.effectiveCwd) {

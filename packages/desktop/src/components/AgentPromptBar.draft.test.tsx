@@ -21,6 +21,15 @@ vi.mock("@/hooks/usePromptHistory", () => ({
   usePromptHistory: vi.fn(() => ({ addEntry: vi.fn(), history: [], resetNavigation: vi.fn() })),
 }));
 
+const isMobileMock = vi.fn(() => false);
+vi.mock("@/hooks/useIsMobile", () => ({
+  useIsMobile: () => isMobileMock(),
+}));
+
+// Records every `setText(text, moveSelection)` the editor handle receives so
+// tests can assert the focus-suppression flag passed on draft restore.
+const setTextSpy = vi.fn();
+
 vi.mock("@/hooks/useImageAttachments", () => ({
   useImageAttachments: vi.fn(() => ({
     attachments: [],
@@ -36,14 +45,15 @@ vi.mock("@/hooks/useImageAttachments", () => ({
 vi.mock("./prompt-editor/PromptEditor", () => {
   const MockPromptEditor = forwardRef(function MockPromptEditor(
     { initialText, onChange }: { initialText?: string; onChange?: (text: string) => void },
-    ref: ForwardedRef<{ setText: (text: string) => void }>,
+    ref: ForwardedRef<{ setText: (text: string, moveSelection?: boolean) => void }>,
   ) {
     const [value, setValue] = useState(initialText ?? "");
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     useImperativeHandle(
       ref,
       () => ({
-        setText: (text: string) => {
+        setText: (text: string, moveSelection?: boolean) => {
+          setTextSpy(text, moveSelection);
           setValue(text);
           onChange?.(text);
         },
@@ -77,6 +87,8 @@ describe("AgentPromptBar conversation isolation", () => {
   beforeEach(() => {
     onSend.mockClear();
     onStop.mockClear();
+    setTextSpy.mockClear();
+    isMobileMock.mockReturnValue(false);
     usePromptDraftMock.mockClear();
     usePromptDraftMock.mockReturnValue({
       saveDraft: vi.fn(),
@@ -222,6 +234,35 @@ describe("AgentPromptBar conversation isolation", () => {
     );
 
     expect(screen.getByRole("textbox")).toHaveValue("feature-owned draft");
+  });
+
+  it("restores the draft without moving selection on mobile (no keyboard pop)", () => {
+    // Regression: draft restore ran `selectEnd()` on every conversation open,
+    // which focused the contenteditable and popped the phone keyboard over the
+    // transcript. Mobile must restore text without focusing.
+    isMobileMock.mockReturnValue(true);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "restored draft",
+      draftFeatureId: 10,
+    });
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("restored draft");
+    expect(setTextSpy).toHaveBeenCalledWith("restored draft", false);
+  });
+
+  it("restores the draft with cursor-at-end on desktop (unchanged behavior)", () => {
+    isMobileMock.mockReturnValue(false);
+    usePromptDraftMock.mockReturnValue({
+      saveDraft: vi.fn(),
+      initialDraft: "restored draft",
+      draftFeatureId: 10,
+    });
+    render(<AgentPromptBar onSend={onSend} onStop={onStop} status="idle" featureId={10} />);
+
+    expect(screen.getByRole("textbox")).toHaveValue("restored draft");
+    expect(setTextSpy).toHaveBeenCalledWith("restored draft", true);
   });
 
   it("threads featureId into usePromptDraft", () => {

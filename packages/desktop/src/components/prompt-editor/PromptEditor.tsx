@@ -21,7 +21,8 @@ import type { SlashCommand } from "@/hooks/useSlashCommand";
 export interface PromptEditorHandle {
   focus: () => void;
   clear: () => void;
-  setText: (text: string) => void;
+  /** Set text. `moveSelection: false` populates without focusing the editor. */
+  setText: (text: string, moveSelection?: boolean) => void;
   getText: () => string;
 }
 
@@ -104,8 +105,8 @@ const PromptEditorInner = forwardRef<PromptEditorHandle, PromptEditorProps>(
           root.append($createParagraphNode());
         });
       },
-      setText(text: string) {
-        if (editorRef.current) setEditorText(editorRef.current, text);
+      setText(text: string, moveSelection = true) {
+        if (editorRef.current) setEditorText(editorRef.current, text, moveSelection);
       },
       getText() {
         let text = "";
