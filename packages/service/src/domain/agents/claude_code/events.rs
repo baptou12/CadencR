@@ -27,6 +27,20 @@ pub(super) fn context_window_for_model_from_raw(raw: &Value, model: &str) -> Opt
     None
 }
 
+/// Early context-window hint from the init message's *resolved* model id, used
+/// to scale the live usage bar before the turn's authoritative
+/// `Result.modelUsage.contextWindow` arrives (init carries no window field).
+///
+/// Recognizes only the `[1m]` marker (the 1M-context beta), which is 1,000,000
+/// tokens on every backend — Anthropic, Bedrock, Vertex alike. Any other id
+/// returns `None` and defers to the CLI's authoritative `Result`; we never
+/// guess a size that could override a real value or be wrong for a
+/// custom/proxy/Bedrock-pinned model. `contains` (not `ends_with`) because
+/// Bedrock/Vertex ids affix region/routing (`us.anthropic.…-sonnet-4-5[1m]`).
+fn init_model_context_window(model: &str) -> Option<u64> {
+    model.contains("[1m]").then_some(1_000_000)
+}
+
 fn map_content_block(block: &claude_agent_sdk_rs::types::ContentBlock) -> RuntimeContentBlock {
     match block {
         claude_agent_sdk_rs::types::ContentBlock::Text { text } => {
@@ -143,17 +157,20 @@ pub(super) fn normalize_event(msg: claude_agent_sdk_rs::SdkMessage) -> RuntimeEv
         claude_agent_sdk_rs::SdkMessage::System(system) => match system {
             claude_agent_sdk_rs::messages::SystemMessage::Init {
                 model, mcp_servers, ..
-            } => RuntimeEventKind::Init(RuntimeInitEvent {
-                model: Some(model),
-                mcp_servers: mcp_servers
-                    .into_iter()
-                    .map(|server| RuntimeMcpServerStatus {
-                        name: server.name,
-                        status: server.status,
-                    })
-                    .collect(),
-                context_window: None,
-            }),
+            } => {
+                let context_window = init_model_context_window(&model);
+                RuntimeEventKind::Init(RuntimeInitEvent {
+                    model: Some(model),
+                    mcp_servers: mcp_servers
+                        .into_iter()
+                        .map(|server| RuntimeMcpServerStatus {
+                            name: server.name,
+                            status: server.status,
+                        })
+                        .collect(),
+                    context_window,
+                })
+            }
             claude_agent_sdk_rs::messages::SystemMessage::CompactBoundary {
                 compact_metadata,
                 ..
@@ -272,6 +289,57 @@ mod tests {
             context_window_for_model_from_raw(&raw, "default"),
             Some(1_000_000)
         );
+    }
+
+    fn init_message(model: &str) -> claude_agent_sdk_rs::SdkMessage {
+        // Real wire shape: the CLI emits `permissionMode` in camelCase.
+        serde_json::from_value(json!({
+            "type": "system",
+            "subtype": "init",
+            "uuid": "u-init",
+            "session_id": "s-init",
+            "claude_code_version": "2.0.75",
+            "cwd": "/tmp",
+            "tools": [],
+            "mcp_servers": [],
+            "model": model,
+            "permissionMode": "default",
+            "slash_commands": [],
+            "output_style": "default"
+        }))
+        .expect("valid init event")
+    }
+
+    #[test]
+    fn normalize_event_resolves_1m_context_window_from_init_model() {
+        // Regression: the usage bar divided by the session's stale 200k
+        // default for the whole first turn of a 1M-context model, climbing
+        // to 100% until the turn's Result corrected the window.
+        let event = normalize_event(init_message("claude-fable-5[1m]"));
+        let init = event.init().expect("init kind");
+        assert_eq!(init.context_window, Some(1_000_000));
+        assert_eq!(init.model.as_deref(), Some("claude-fable-5[1m]"));
+    }
+
+    #[test]
+    fn normalize_event_resolves_1m_window_for_bedrock_vertex_style_id() {
+        // Under Bedrock/Vertex the resolved id carries region/routing affixes,
+        // so the `[1m]` marker is not at the end. The 1M beta is still 1M
+        // tokens on every backend, so the hint must fire regardless of affix.
+        let event = normalize_event(init_message("us.anthropic.claude-sonnet-4-5[1m]"));
+        assert_eq!(
+            event.init().expect("init kind").context_window,
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn normalize_event_leaves_context_window_unresolved_without_1m_marker() {
+        // No guess for plain ids: a hardcoded 200k would override a window
+        // learned from a previous turn's Result, and would be wrong for a
+        // Bedrock-pinned or custom/proxy model. Defer to the CLI's Result.
+        let event = normalize_event(init_message("us.anthropic.claude-sonnet-4-5"));
+        assert_eq!(event.init().expect("init kind").context_window, None);
     }
 
     #[test]

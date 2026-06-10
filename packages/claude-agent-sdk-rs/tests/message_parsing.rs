@@ -321,6 +321,42 @@ fn system_init() {
     }
 }
 
+#[test]
+fn system_init_with_camel_case_permission_mode() {
+    // Current CLI versions emit `permissionMode` (camelCase) — the one
+    // field that diverges from snake_case. A failure here silently turns
+    // every init message into `SdkMessage::Unknown` downstream.
+    let raw = json!({
+        "type": "system",
+        "subtype": "init",
+        "uuid": "sys2",
+        "session_id": "sess_def",
+        "claude_code_version": "2.0.75",
+        "cwd": "/home/user",
+        "tools": ["Bash", "Read"],
+        "mcp_servers": [],
+        "model": "claude-fable-5[1m]",
+        "permissionMode": "default",
+        "slash_commands": [],
+        "output_style": "default",
+        "apiKeySource": "none",
+        "agents": ["Explore"],
+        "skills": []
+    });
+    let msg: SdkMessage = serde_json::from_value(raw).unwrap();
+    if let SdkMessage::System(SystemMessage::Init {
+        model,
+        permission_mode,
+        ..
+    }) = &msg
+    {
+        assert_eq!(model, "claude-fable-5[1m]");
+        assert_eq!(permission_mode, "default");
+    } else {
+        panic!("init with camelCase permissionMode must not fall back to Unknown: {msg:?}");
+    }
+}
+
 // ── System compact_boundary ──────────────────────────────────────────────────
 
 #[test]
