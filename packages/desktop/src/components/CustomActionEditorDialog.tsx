@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -48,6 +49,7 @@ interface FormState {
   command: string;
   scope: CustomActionScope;
   iconData: string | null;
+  runInTerminal: boolean;
 }
 
 const EMPTY_STATE: FormState = {
@@ -55,6 +57,7 @@ const EMPTY_STATE: FormState = {
   command: "",
   scope: "project",
   iconData: null,
+  runInTerminal: false,
 };
 
 export function CustomActionEditorDialog({
@@ -77,6 +80,7 @@ export function CustomActionEditorDialog({
         command: action.command,
         scope: action.scope,
         iconData: action.icon_data ?? null,
+        runInTerminal: action.run_in_terminal,
       });
     } else {
       setForm(EMPTY_STATE);
@@ -163,6 +167,7 @@ export function CustomActionEditorDialog({
           scope: form.scope,
           project_id: form.scope === "global" ? null : projectId,
           icon_data: form.iconData ?? "",
+          run_in_terminal: form.runInTerminal,
         },
       });
     } else {
@@ -173,6 +178,7 @@ export function CustomActionEditorDialog({
           scope: form.scope,
           project_id: form.scope === "global" ? null : projectId,
           icon_data: form.iconData,
+          run_in_terminal: form.runInTerminal,
         },
       });
     }
@@ -281,6 +287,23 @@ export function CustomActionEditorDialog({
               </div>
             </div>
           </div>
+
+          <label className="flex cursor-pointer items-start gap-2.5">
+            <Checkbox
+              checked={form.runInTerminal}
+              onCheckedChange={(checked) =>
+                setForm((f) => ({ ...f, runInTerminal: checked === true }))
+              }
+              className="mt-0.5"
+            />
+            <span className="space-y-0.5">
+              <span className="block text-xs font-medium">Run in a dedicated terminal split</span>
+              <span className="block text-xs text-muted-foreground">
+                Spawn the command in a new terminal pane instead of the background. Best for
+                long-running, interactive commands like dev servers.
+              </span>
+            </span>
+          </label>
         </div>
 
         <DialogFooter>

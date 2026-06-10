@@ -24,6 +24,7 @@ struct ActionRow {
     scope: Scope,
     project_id: Option<i64>,
     position: i64,
+    run_in_terminal: bool,
     created_at: String,
     updated_at: String,
 }
@@ -38,6 +39,7 @@ fn hydrate(row: ActionRow, last_run: Option<LastRunSummary>) -> CustomAction {
         scope: row.scope,
         project_id: row.project_id,
         position: row.position,
+        run_in_terminal: row.run_in_terminal,
         created_at: row.created_at,
         updated_at: row.updated_at,
         last_run,
@@ -54,7 +56,7 @@ pub async fn list_for_project(
     feature_id: Option<i64>,
 ) -> Result<Vec<CustomAction>, AppError> {
     let rows = sqlx::query_as::<_, ActionRow>(
-        r#"SELECT id, name, command, icon_data, scope, project_id, position, created_at, updated_at
+        r#"SELECT id, name, command, icon_data, scope, project_id, position, run_in_terminal, created_at, updated_at
            FROM custom_actions
            WHERE scope = 'global' OR project_id = ?
            ORDER BY position ASC, id ASC"#,
@@ -79,7 +81,7 @@ pub async fn list_for_project(
 
 pub async fn get(pool: &SqlitePool, id: i64) -> Result<Option<CustomAction>, AppError> {
     let row = sqlx::query_as::<_, ActionRow>(
-        r#"SELECT id, name, command, icon_data, scope, project_id, position, created_at, updated_at
+        r#"SELECT id, name, command, icon_data, scope, project_id, position, run_in_terminal, created_at, updated_at
            FROM custom_actions WHERE id = ?"#,
     )
     .bind(id)
@@ -95,16 +97,18 @@ pub async fn insert(
     icon_data: Option<&str>,
     scope: Scope,
     project_id: Option<i64>,
+    run_in_terminal: bool,
 ) -> Result<i64, AppError> {
     let result = sqlx::query(
-        r#"INSERT INTO custom_actions (name, command, icon_data, scope, project_id)
-           VALUES (?, ?, ?, ?, ?)"#,
+        r#"INSERT INTO custom_actions (name, command, icon_data, scope, project_id, run_in_terminal)
+           VALUES (?, ?, ?, ?, ?, ?)"#,
     )
     .bind(name)
     .bind(command)
     .bind(icon_data)
     .bind(scope)
     .bind(project_id)
+    .bind(run_in_terminal)
     .execute(pool)
     .await?;
     Ok(result.last_insert_rowid())
@@ -122,6 +126,7 @@ pub async fn update(
     scope: Option<Scope>,
     project_id: Option<Option<i64>>,
     position: Option<i64>,
+    run_in_terminal: Option<bool>,
 ) -> Result<(), AppError> {
     // `clear_icon = 1` lets us pass NULL through the COALESCE without losing
     // the "leave alone" semantics encoded by `Option<Option<&str>>`.
@@ -144,6 +149,7 @@ pub async fn update(
                project_id = CASE WHEN ? = 1 THEN NULL ELSE COALESCE(?, project_id) END,
                scope      = COALESCE(?, scope),
                position   = COALESCE(?, position),
+               run_in_terminal = COALESCE(?, run_in_terminal),
                updated_at = datetime('now')
            WHERE id = ?"#,
     )
@@ -155,6 +161,7 @@ pub async fn update(
     .bind(project_param)
     .bind(scope)
     .bind(position)
+    .bind(run_in_terminal)
     .bind(id)
     .execute(pool)
     .await?;
@@ -275,6 +282,24 @@ pub async fn finalize_run(
     .fetch_one(pool)
     .await?;
     Ok(ended_at.0)
+}
+
+/// Finalize every run still marked in-flight (`ended_at IS NULL`). Called once
+/// at startup: such a run's process died with the previous service instance, so
+/// without this its UI would be stuck "running" forever and the user could
+/// never re-trigger the action. Returns the number of rows reconciled.
+pub async fn fail_orphaned_runs(pool: &SqlitePool) -> Result<u64, AppError> {
+    let result = sqlx::query(
+        r#"UPDATE custom_action_runs
+           SET exit_code = -1,
+               ended_at  = datetime('now'),
+               stderr    = stderr || ?
+           WHERE ended_at IS NULL"#,
+    )
+    .bind("\n[cadencr] Interrupted — the app restarted while this command was running.")
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn list_runs(
@@ -449,6 +474,7 @@ mod tests {
             None,
             Scope::Project,
             Some(project_id),
+            false,
         )
         .await
         .unwrap();
@@ -457,6 +483,44 @@ mod tests {
         assert_eq!(row.name, "Greet");
         assert_eq!(row.variable_names, vec!["NAME".to_string()]);
         assert!(row.last_run.is_none(), "no runs recorded yet");
+        assert!(!row.run_in_terminal, "defaults to a backgrounded run");
+    }
+
+    #[tokio::test]
+    async fn run_in_terminal_round_trips_through_insert_and_update() {
+        let (pool, project_id, _) = pool_with_project_and_feature().await;
+        let id = insert(
+            &pool,
+            "n",
+            "npm run dev",
+            None,
+            Scope::Project,
+            Some(project_id),
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(get(&pool, id).await.unwrap().unwrap().run_in_terminal);
+
+        // Flipping it off persists; passing None leaves it untouched.
+        update(&pool, id, None, None, None, None, None, None, Some(false))
+            .await
+            .unwrap();
+        assert!(!get(&pool, id).await.unwrap().unwrap().run_in_terminal);
+        update(
+            &pool,
+            id,
+            Some("renamed"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(!get(&pool, id).await.unwrap().unwrap().run_in_terminal);
     }
 
     #[tokio::test]
@@ -469,7 +533,7 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .unwrap();
-        insert(&pool, "global", "echo g", None, Scope::Global, None)
+        insert(&pool, "global", "echo g", None, Scope::Global, None, false)
             .await
             .unwrap();
         insert(
@@ -479,6 +543,7 @@ mod tests {
             None,
             Scope::Project,
             Some(project_id),
+            false,
         )
         .await
         .unwrap();
@@ -489,6 +554,7 @@ mod tests {
             None,
             Scope::Project,
             Some(other_project),
+            false,
         )
         .await
         .unwrap();
@@ -503,9 +569,17 @@ mod tests {
     #[tokio::test]
     async fn list_for_project_embeds_last_run_for_feature() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
             .await
             .unwrap();
@@ -525,12 +599,30 @@ mod tests {
     #[tokio::test]
     async fn update_partial_keeps_unset_fields() {
         let (pool, project_id, _) = pool_with_project_and_feature().await;
-        let id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
-        update(&pool, id, Some("renamed"), None, None, None, None, None)
-            .await
-            .unwrap();
+        let id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
+        update(
+            &pool,
+            id,
+            Some("renamed"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         let row = get(&pool, id).await.unwrap().unwrap();
         assert_eq!(row.name, "renamed");
         assert_eq!(row.command, "echo");
@@ -546,10 +638,11 @@ mod tests {
             Some("data:image/png;base64,xx"),
             Scope::Project,
             Some(project_id),
+            false,
         )
         .await
         .unwrap();
-        update(&pool, id, None, None, Some(None), None, None, None)
+        update(&pool, id, None, None, Some(None), None, None, None, None)
             .await
             .unwrap();
         let row = get(&pool, id).await.unwrap().unwrap();
@@ -559,7 +652,7 @@ mod tests {
     #[tokio::test]
     async fn update_returns_not_found_for_missing_id() {
         let (pool, _, _) = pool_with_project_and_feature().await;
-        let err = update(&pool, 9_999, Some("x"), None, None, None, None, None)
+        let err = update(&pool, 9_999, Some("x"), None, None, None, None, None, None)
             .await
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
@@ -568,9 +661,17 @@ mod tests {
     #[tokio::test]
     async fn delete_cascades_to_variables_runs_and_schedules() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         upsert_variable(&pool, action_id, feature_id, "X", "v")
             .await
             .unwrap();
@@ -601,9 +702,17 @@ mod tests {
     #[tokio::test]
     async fn upsert_variable_overwrites_existing_value() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         upsert_variable(&pool, action_id, feature_id, "X", "first")
             .await
             .unwrap();
@@ -618,9 +727,17 @@ mod tests {
     #[tokio::test]
     async fn finalize_run_returns_stamped_ended_at() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Schedule)
             .await
             .unwrap();
@@ -642,9 +759,17 @@ mod tests {
     #[tokio::test]
     async fn update_run_output_streams_without_finishing_the_run() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         let run_id = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
             .await
             .unwrap();
@@ -670,11 +795,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_schedule_then_disable_via_delete() {
+    async fn fail_orphaned_runs_finalizes_only_in_flight_rows() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let action_id = insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
+        // One in-flight run (no finalize) and one already finished.
+        let orphan = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
             .await
             .unwrap();
+        let finished = insert_run(&pool, action_id, feature_id, TriggeredBy::Manual)
+            .await
+            .unwrap();
+        finalize_run(&pool, finished, Some(0), "ok", "")
+            .await
+            .unwrap();
+
+        let reconciled = fail_orphaned_runs(&pool).await.unwrap();
+        assert_eq!(reconciled, 1, "only the in-flight run is reconciled");
+
+        let runs = list_runs(&pool, action_id, feature_id, 10).await.unwrap();
+        let orphan_row = runs.iter().find(|r| r.id == orphan).unwrap();
+        assert_eq!(orphan_row.exit_code, Some(-1));
+        assert!(orphan_row.ended_at.is_some());
+        assert!(orphan_row.stderr.contains("restarted"));
+        // The already-finished run is left untouched.
+        let finished_row = runs.iter().find(|r| r.id == finished).unwrap();
+        assert_eq!(finished_row.exit_code, Some(0));
+        assert_eq!(finished_row.stderr, "");
+    }
+
+    #[tokio::test]
+    async fn upsert_schedule_then_disable_via_delete() {
+        let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
+        let action_id = insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         upsert_schedule(&pool, action_id, feature_id, 30, true)
             .await
             .unwrap();
@@ -704,12 +876,28 @@ mod tests {
     #[tokio::test]
     async fn list_enabled_schedules_filters_disabled_rows() {
         let (pool, project_id, feature_id) = pool_with_project_and_feature().await;
-        let a = insert(&pool, "a", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
-        let b = insert(&pool, "b", "echo", None, Scope::Project, Some(project_id))
-            .await
-            .unwrap();
+        let a = insert(
+            &pool,
+            "a",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
+        let b = insert(
+            &pool,
+            "b",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         upsert_schedule(&pool, a, feature_id, 30, true)
             .await
             .unwrap();

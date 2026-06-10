@@ -41,6 +41,10 @@ pub struct CustomAction {
     /// `Some(project_id)` when `scope = Project`, `None` for global.
     pub project_id: Option<i64>,
     pub position: i64,
+    /// When `true`, the action runs in a dedicated terminal split (a client-side
+    /// PTY) instead of a backgrounded server process — useful for long-running,
+    /// interactive commands such as dev servers.
+    pub run_in_terminal: bool,
     pub created_at: String,
     pub updated_at: String,
     /// Variable names referenced by `command` (`${VAR}` style), in declaration order.
@@ -57,6 +61,8 @@ pub struct CreateCustomActionRequest {
     pub icon_data: Option<String>,
     pub scope: Scope,
     pub project_id: Option<i64>,
+    /// Defaults to `false` (backgrounded server process) when omitted.
+    pub run_in_terminal: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -68,6 +74,7 @@ pub struct UpdateCustomActionRequest {
     pub scope: Option<Scope>,
     pub project_id: Option<i64>,
     pub position: Option<i64>,
+    pub run_in_terminal: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
@@ -123,4 +130,13 @@ pub struct RunResponse {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SuccessResponse {
     pub success: bool,
+}
+
+/// An action's `${VAR}`-interpolated command and resolved working directory,
+/// returned without running it. The frontend uses this to spawn the command in
+/// a dedicated terminal split when `run_in_terminal` is set.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ResolvedCommand {
+    pub command: String,
+    pub cwd: String,
 }

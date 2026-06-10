@@ -1,11 +1,9 @@
 import { memo, type ReactElement } from "react";
-import { toast } from "sonner";
-import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDownIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useRunCustomAction, type CustomAction } from "@/api/generated";
-import { invalidateCustomActionRunQueries } from "@/lib/custom-action-queries";
+import { type CustomAction } from "@/api/generated";
+import { useCustomActionRunner } from "@/hooks/useCustomActionRunner";
 import { CustomActionIcon } from "./CustomActionIcon";
 import { CustomActionStatusDot } from "./CustomActionStatusDot";
 
@@ -34,25 +32,7 @@ function CustomActionButtonInner({
   projectId,
   onOpenDetails,
 }: CustomActionButtonProps): ReactElement {
-  const queryClient = useQueryClient();
-
-  const runMutation = useRunCustomAction({
-    mutation: {
-      // The run is asynchronous: success just means it started. Refresh the
-      // list so the status dot flips to "running"; the bar's poll keeps it
-      // live and the eventual exit code (incl. failures) shows as a red dot
-      // and in the details output, not a transient toast.
-      onSuccess: () => {
-        invalidateCustomActionRunQueries({
-          queryClient,
-          projectId,
-          actionId: action.id,
-          featureId,
-        });
-      },
-      onError: (err) => toast.error(`${action.name} failed: ${err.message}`),
-    },
-  });
+  const { run, isStarting } = useCustomActionRunner({ action, featureId, projectId });
 
   return (
     <div className="inline-flex items-center">
@@ -60,19 +40,16 @@ function CustomActionButtonInner({
         variant="ghost"
         size="icon"
         className="relative size-7 rounded-r-none text-xs"
-        title={`Run ${action.name}`}
-        onClick={() => runMutation.mutate({ id: action.id, params: { feature_id: featureId } })}
-        disabled={runMutation.isPending}
+        title={action.run_in_terminal ? `Run ${action.name} in terminal` : `Run ${action.name}`}
+        onClick={run}
+        disabled={isStarting}
       >
         <CustomActionIcon
           iconData={action.icon_data ?? null}
           name={action.name}
           className="size-3.5"
         />
-        <CustomActionStatusDot
-          lastRun={action.last_run ?? null}
-          isRunning={runMutation.isPending}
-        />
+        <CustomActionStatusDot lastRun={action.last_run ?? null} isRunning={isStarting} />
       </Button>
       <Button
         variant="ghost"

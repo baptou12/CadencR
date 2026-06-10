@@ -30,6 +30,14 @@ async fn codex_permission_mode_migration_adds_session_column() {
             role TEXT NOT NULL DEFAULT 'assistant',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+        -- The run_in_terminal migration (20260609120000) alters custom_actions,
+        -- which already existed at this baseline, so the fixture must provide it.
+        CREATE TABLE custom_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            command TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'global'
+        );
         INSERT INTO agent_sessions (id, feature_id, agent_type, status, model, permission_mode)
         VALUES (1, 1, 'session', 'paused', 'gpt-5.5', 'plan');"#,
     )

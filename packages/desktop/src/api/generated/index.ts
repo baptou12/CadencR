@@ -268,11 +268,18 @@ export type CreateCustomActionRequestIconData = string | null;
 
 export type CreateCustomActionRequestProjectId = number | null;
 
+/**
+ * Defaults to `false` (backgrounded server process) when omitted.
+ */
+export type CreateCustomActionRequestRunInTerminal = boolean | null;
+
 export interface CreateCustomActionRequest {
   command: string;
   icon_data?: CreateCustomActionRequestIconData;
   name: string;
   project_id?: CreateCustomActionRequestProjectId;
+  /** Defaults to `false` (backgrounded server process) when omitted. */
+  run_in_terminal?: CreateCustomActionRequestRunInTerminal;
   scope: Scope;
 }
 
@@ -400,6 +407,10 @@ export interface CustomAction {
   position: number;
   /** `Some(project_id)` when `scope = Project`, `None` for global. */
   project_id?: CustomActionProjectId;
+  /** When `true`, the action runs in a dedicated terminal split (a client-side
+PTY) instead of a backgrounded server process — useful for long-running,
+interactive commands such as dev servers. */
+  run_in_terminal: boolean;
   scope: Scope;
   updated_at: string;
   /** Variable names referenced by `command` (`${VAR}` style), in declaration order. */
@@ -1232,6 +1243,16 @@ export interface RenamePathResponse {
   new_path: string;
 }
 
+/**
+ * An action's `${VAR}`-interpolated command and resolved working directory,
+returned without running it. The frontend uses this to spawn the command in
+a dedicated terminal split when `run_in_terminal` is set.
+ */
+export interface ResolvedCommand {
+  command: string;
+  cwd: string;
+}
+
 export interface RetryWorktreeBody {
   feature_id: number;
   project_id: number;
@@ -1587,6 +1608,8 @@ export type UpdateCustomActionRequestPosition = number | null;
 
 export type UpdateCustomActionRequestProjectId = number | null;
 
+export type UpdateCustomActionRequestRunInTerminal = boolean | null;
+
 export type UpdateCustomActionRequestScope = null | Scope;
 
 export interface UpdateCustomActionRequest {
@@ -1596,6 +1619,7 @@ export interface UpdateCustomActionRequest {
   name?: UpdateCustomActionRequestName;
   position?: UpdateCustomActionRequestPosition;
   project_id?: UpdateCustomActionRequestProjectId;
+  run_in_terminal?: UpdateCustomActionRequestRunInTerminal;
   scope?: UpdateCustomActionRequestScope;
 }
 
@@ -1694,6 +1718,10 @@ export type ListCustomActionsParams = {
    * Optional feature id to embed `last_run` summaries on each action.
    */
   feature_id?: number | null;
+};
+
+export type ResolveCommandParams = {
+  feature_id: number;
 };
 
 export type RunCustomActionParams = {
@@ -2917,6 +2945,61 @@ export const useDeleteCustomAction = <TError = ErrorType<unknown>, TContext = un
 
   return useMutation(mutationOptions);
 };
+
+export const resolveCommand = (id: number, params: ResolveCommandParams, signal?: AbortSignal) => {
+  return customInstance<ResolvedCommand>({
+    url: `/api/custom-actions/${id}/resolved`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getResolveCommandQueryKey = (id?: number, params?: ResolveCommandParams) => {
+  return [`/api/custom-actions/${id}/resolved`, ...(params ? [params] : [])] as const;
+};
+
+export const getResolveCommandQueryOptions = <
+  TData = Awaited<ReturnType<typeof resolveCommand>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params: ResolveCommandParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof resolveCommand>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getResolveCommandQueryKey(id, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof resolveCommand>>> = ({ signal }) =>
+    resolveCommand(id, params, signal);
+
+  return { queryKey, queryFn, enabled: !!id, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof resolveCommand>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ResolveCommandQueryResult = NonNullable<Awaited<ReturnType<typeof resolveCommand>>>;
+export type ResolveCommandQueryError = ErrorType<unknown>;
+
+export function useResolveCommand<
+  TData = Awaited<ReturnType<typeof resolveCommand>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  params: ResolveCommandParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof resolveCommand>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getResolveCommandQueryOptions(id, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const runCustomAction = (
   id: number,

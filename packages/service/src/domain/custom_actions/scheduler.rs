@@ -191,10 +191,17 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
-        let action_id =
-            repository::insert(&pool, "n", "echo", None, Scope::Project, Some(project_id))
-                .await
-                .unwrap();
+        let action_id = repository::insert(
+            &pool,
+            "n",
+            "echo",
+            None,
+            Scope::Project,
+            Some(project_id),
+            false,
+        )
+        .await
+        .unwrap();
         (state, action_id, feature_id)
     }
 

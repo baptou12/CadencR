@@ -388,6 +388,7 @@ mod tests {
             CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE diff_comments (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
             CREATE TABLE diff_viewed_files (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
+            CREATE TABLE custom_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, command TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'global');
             CREATE TABLE custom_action_runs (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
             CREATE TABLE custom_action_variables (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));
             CREATE TABLE custom_action_schedules (id INTEGER PRIMARY KEY, feature_id INTEGER NOT NULL REFERENCES features(id));

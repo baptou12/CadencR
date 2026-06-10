@@ -120,6 +120,15 @@ async fn main() -> anyhow::Result<()> {
             domain::agents::apply_binary_overrides_from_settings(&state.read_pool).await;
             domain::agents::spawn_runtime_startup_warmups();
 
+            // Reconcile custom-action runs orphaned by the previous exit: their
+            // processes died with the old service instance, so finalize them
+            // instead of leaving the UI stuck "running" and unable to re-run.
+            match domain::custom_actions::repository::fail_orphaned_runs(&state.write_pool).await {
+                Ok(n) if n > 0 => info!(count = n, "reconciled orphaned custom action runs"),
+                Ok(_) => {}
+                Err(e) => tracing::warn!("failed to reconcile orphaned custom action runs: {e}"),
+            }
+
             // Resume periodic custom-action schedules from a previous launch.
             state.custom_action_scheduler.bootstrap(&state).await;
 
