@@ -1,30 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 import { dispatchBrowserMcpTool, type BrowserMcpTarget } from "./browser-mcp-dispatch";
+import type { BrowserTabMetadata } from "./browser-types";
+
+function tabMeta(): BrowserTabMetadata {
+  return {
+    id: "tab-1",
+    title: "App",
+    url: "http://localhost:3000",
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+    sessionProfileId: "ephemeral",
+    isActive: true,
+    devToolsOpen: false,
+  };
+}
 
 function target(): BrowserMcpTarget {
   return {
     state: vi.fn(() => ({
       tabs: [],
-      activeTabId: null,
+      activeTabId: "tab-1",
       consoleEntries: [],
       networkEntries: [],
       error: null,
     })),
-    createTab: vi.fn(() => ({
-      id: "tab-1",
-      title: "New",
-      url: "about:blank",
-      loading: false,
-      canGoBack: false,
-      canGoForward: false,
-      sessionProfileId: "ephemeral",
-      isActive: true,
-      devToolsOpen: false,
-    })),
-    navigate: vi.fn(),
-    snapshot: vi.fn(async () => ({ documents: [] })),
-    screenshot: vi.fn(async () => "png"),
+    openUrl: vi.fn(async () => tabMeta()),
+    snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
+    screenshot: vi.fn(async () => "fullpng"),
+    screenshotTarget: vi.fn(async () => "elpng"),
+    evaluate: vi.fn(async () => ({ ok: true, result: 42 })),
     click: vi.fn(async () => undefined),
+    clickTarget: vi.fn(async () => ({ center: { x: 5, y: 6 } })),
+    fill: vi.fn(async () => undefined),
+    hover: vi.fn(async () => ({ center: { x: 1, y: 2 } })),
+    waitFor: vi.fn(async () => ({ found: true, elapsedMs: 5 })),
     typeText: vi.fn(async () => undefined),
     keypress: vi.fn(async () => undefined),
     selectElementContext: vi.fn(async () => ({ ok: true })),
@@ -34,77 +44,245 @@ function target(): BrowserMcpTarget {
 describe("dispatchBrowserMcpTool", () => {
   it("serializes browser_list_tabs state as JSON text", async () => {
     const fake = target();
-    await expect(dispatchBrowserMcpTool(fake, "browser_list_tabs", {})).resolves.toBe(
-      JSON.stringify(fake.state()),
-    );
+    await expect(dispatchBrowserMcpTool(fake, "browser_list_tabs", {})).resolves.toEqual({
+      text: JSON.stringify(fake.state()),
+    });
   });
 
-  it("opens a URL in a new tab when no tab id is supplied", async () => {
+  it("opens a URL and waits for it to settle", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_open_url", { url: "http://localhost:3000" });
-
-    expect(fake.createTab).toHaveBeenCalledWith("http://localhost:3000");
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined);
   });
 
   it("navigates an existing tab when browser_open_url includes tab_id", async () => {
     const fake = target();
-    vi.mocked(fake.navigate).mockReturnValue({
-      id: "tab-1",
-      title: "Existing",
-      url: "http://localhost:3000",
-      loading: false,
-      canGoBack: false,
-      canGoForward: false,
-      sessionProfileId: "ephemeral",
-      isActive: true,
-      devToolsOpen: false,
-    });
-
     await dispatchBrowserMcpTool(fake, "browser_open_url", {
       tab_id: "tab-1",
       url: "http://localhost:3000",
     });
-
-    expect(fake.navigate).toHaveBeenCalledWith("tab-1", "http://localhost:3000");
-    expect(fake.createTab).not.toHaveBeenCalled();
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", "tab-1");
   });
 
-  it("requires coordinates for browser_click", async () => {
+  it("passes selector, max_length and format to browser_get_snapshot", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_get_snapshot", {
+      selector: "#root",
+      max_length: 1000,
+      format: "html",
+    });
+    expect(fake.snapshot).toHaveBeenCalledWith("tab-1", "#root", 1000, "html");
+  });
+
+  it("returns a full-page screenshot as viewable image content", async () => {
+    const fake = target();
+    const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", {});
+    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", undefined);
+    expect(result.image).toEqual({ mimeType: "image/png", data: "fullpng" });
+  });
+
+  it("captures a region screenshot from a selector", async () => {
+    const fake = target();
+    const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", { selector: ".hero" });
+    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", {
+      selector: ".hero",
+      ref: undefined,
+    });
+    expect(fake.screenshot).not.toHaveBeenCalled();
+    expect(result.image).toEqual({ mimeType: "image/png", data: "elpng" });
+  });
+
+  it("captures a region screenshot from a ref", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_screenshot", { ref: "e7" });
+    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e7" });
+  });
+
+  it("captures a region screenshot from an explicit clip", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_screenshot", {
+      clip: { x: 1, y: 2, width: 3, height: 4 },
+    });
+    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", { x: 1, y: 2, width: 3, height: 4 });
+  });
+
+  it("requires a script for browser_evaluate", async () => {
+    await expect(dispatchBrowserMcpTool(target(), "browser_evaluate", {})).rejects.toThrow(
+      "script",
+    );
+  });
+
+  it("clicks by coordinates when no selector or ref is given", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_click", { x: 12, y: 34 });
+    expect(fake.click).toHaveBeenCalledWith("tab-1", 12, 34);
+    expect(fake.clickTarget).not.toHaveBeenCalled();
+  });
+
+  it("clicks by ref when one is supplied", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_click", { ref: "e3" });
+    expect(fake.clickTarget).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e3" });
+    expect(fake.click).not.toHaveBeenCalled();
+  });
+
+  it("requires coordinates when browser_click has no target", async () => {
+    await expect(dispatchBrowserMcpTool(target(), "browser_click", {})).rejects.toThrow("x");
+  });
+
+  it("fills a field by selector and reports ok", async () => {
+    const fake = target();
+    const result = await dispatchBrowserMcpTool(fake, "browser_fill", {
+      selector: "#email",
+      value: "a@b.c",
+    });
+    expect(fake.fill).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: "#email", ref: undefined },
+      "a@b.c",
+    );
+    expect(result).toEqual({ text: JSON.stringify({ ok: true }) });
+  });
+
+  it("requires a value for browser_fill", async () => {
     await expect(
-      dispatchBrowserMcpTool(target(), "browser_click", { tab_id: "tab-1" }),
-    ).rejects.toThrow("x");
+      dispatchBrowserMcpTool(target(), "browser_fill", { selector: "#email" }),
+    ).rejects.toThrow("value");
   });
 
-  it("allows mutating tools without agent-supplied active_tab_url on localhost tabs", async () => {
+  it("hovers an element by ref", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_hover", { ref: "e2" });
+    expect(fake.hover).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e2" });
+  });
+
+  it("waits for a selector and serializes the result", async () => {
+    const fake = target();
+    const result = await dispatchBrowserMcpTool(fake, "browser_wait_for", {
+      selector: "#ready",
+      timeout_ms: 2000,
+    });
+    expect(fake.waitFor).toHaveBeenCalledWith(
+      "tab-1",
+      { selector: "#ready", text: undefined },
+      2000,
+    );
+    expect(result).toEqual({ text: JSON.stringify({ found: true, elapsedMs: 5 }) });
+  });
+
+  it("requires a selector or text for browser_wait_for", async () => {
+    await expect(dispatchBrowserMcpTool(target(), "browser_wait_for", {})).rejects.toThrow(
+      "selector or text",
+    );
+  });
+
+  it("filters console entries by level and limit", async () => {
     const fake = target();
     vi.mocked(fake.state).mockReturnValue({
-      tabs: [
+      tabs: [],
+      activeTabId: "tab-1",
+      consoleEntries: [
         {
-          id: "tab-1",
-          title: "Local",
-          url: "http://localhost:5173/signup",
-          loading: false,
-          canGoBack: false,
-          canGoForward: false,
-          sessionProfileId: "ephemeral",
-          isActive: true,
-          devToolsOpen: false,
+          id: "1",
+          tabId: "t",
+          level: "info",
+          message: "a",
+          sourceUrl: "",
+          lineNumber: 0,
+          timestamp: "",
+        },
+        {
+          id: "2",
+          tabId: "t",
+          level: "error",
+          message: "boom",
+          sourceUrl: "",
+          lineNumber: 0,
+          timestamp: "",
         },
       ],
-      activeTabId: "tab-1",
-      consoleEntries: [],
       networkEntries: [],
       error: null,
     });
+    const result = await dispatchBrowserMcpTool(fake, "browser_get_console", { level: "error" });
+    const parsed = JSON.parse(result.text) as Array<{ level: string }>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].level).toBe("error");
+  });
 
-    await dispatchBrowserMcpTool(fake, "browser_click", { x: 12, y: 34 });
+  it("filters network entries and omits headers by default", async () => {
+    const fake = target();
+    vi.mocked(fake.state).mockReturnValue({
+      tabs: [],
+      activeTabId: "tab-1",
+      consoleEntries: [],
+      networkEntries: [
+        {
+          id: "1",
+          tabId: "t",
+          method: "GET",
+          url: "http://localhost/ok",
+          status: 200,
+          requestHeaders: {},
+          responseHeaders: {},
+          timestamp: "",
+        },
+        {
+          id: "2",
+          tabId: "t",
+          method: "GET",
+          url: "http://localhost/bad",
+          status: 500,
+          requestHeaders: { a: "b" },
+          responseHeaders: {},
+          timestamp: "",
+        },
+      ],
+      error: null,
+    });
+    const result = await dispatchBrowserMcpTool(fake, "browser_get_network", { failed_only: true });
+    const parsed = JSON.parse(result.text) as Array<Record<string, unknown>>;
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].url).toBe("http://localhost/bad");
+    expect(parsed[0]).not.toHaveProperty("requestHeaders");
+  });
 
-    expect(fake.click).toHaveBeenCalledWith("tab-1", 12, 34);
+  it("includes network headers when requested", async () => {
+    const fake = target();
+    vi.mocked(fake.state).mockReturnValue({
+      tabs: [],
+      activeTabId: "tab-1",
+      consoleEntries: [],
+      networkEntries: [
+        {
+          id: "1",
+          tabId: "t",
+          method: "GET",
+          url: "http://localhost/x",
+          status: 200,
+          requestHeaders: { a: "b" },
+          responseHeaders: {},
+          timestamp: "",
+        },
+      ],
+      error: null,
+    });
+    const result = await dispatchBrowserMcpTool(fake, "browser_get_network", {
+      include_headers: true,
+    });
+    const parsed = JSON.parse(result.text) as Array<Record<string, unknown>>;
+    expect(parsed[0]).toHaveProperty("requestHeaders", { a: "b" });
   });
 
   it("throws when a tab-scoped tool has no active tab", async () => {
     const fake = target();
-
+    vi.mocked(fake.state).mockReturnValue({
+      tabs: [],
+      activeTabId: null,
+      consoleEntries: [],
+      networkEntries: [],
+      error: null,
+    });
     await expect(dispatchBrowserMcpTool(fake, "browser_screenshot", {})).rejects.toThrow(
       "No active browser tab",
     );

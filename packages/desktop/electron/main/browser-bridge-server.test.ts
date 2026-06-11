@@ -9,7 +9,7 @@ describe("browser bridge server", () => {
   });
 
   it("dispatches authenticated browser tool requests", async () => {
-    const dispatch = vi.fn(async () => "tabs: []");
+    const dispatch = vi.fn(async () => ({ text: "tabs: []" }));
     const result = await dispatchBrowserBridgePayload(
       "Bearer secret",
       "secret",
@@ -19,5 +19,23 @@ describe("browser bridge server", () => {
 
     expect(result).toEqual({ status: 200, payload: { text: "tabs: []" } });
     expect(dispatch).toHaveBeenCalledWith("browser_list_tabs", { feature_id: 7 });
+  });
+
+  it("passes through an image payload for screenshot tools", async () => {
+    const dispatch = vi.fn(async () => ({
+      text: '{"format":"png"}',
+      image: { mimeType: "image/png", data: "AAAA" },
+    }));
+    const result = await dispatchBrowserBridgePayload(
+      "Bearer secret",
+      "secret",
+      JSON.stringify({ tool_name: "browser_screenshot", args: {} }),
+      dispatch,
+    );
+
+    expect(result).toEqual({
+      status: 200,
+      payload: { text: '{"format":"png"}', image: { mimeType: "image/png", data: "AAAA" } },
+    });
   });
 });

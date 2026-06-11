@@ -14,6 +14,15 @@ export function requiredNumber(value: unknown, label: string): number {
   return value;
 }
 
+export function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function positiveInt(value: unknown, fallback: number): number {
+  const parsed = optionalNumber(value);
+  return parsed !== undefined && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 export function parseBounds(value: unknown): BrowserBounds {
   if (!value || typeof value !== "object") throw new Error("Expected browser bounds.");
   const record = value as Record<string, unknown>;

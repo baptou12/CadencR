@@ -1,7 +1,30 @@
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, WebContentsView, session, type Session } from "electron";
-import { normalizeBrowserOpenUrl, redactBrowserHeaders } from "./browser-policy";
-import { elementContextScript } from "./browser-element-context-script";
+import { BrowserWindow, WebContentsView, session } from "electron";
+import { normalizeBrowserOpenUrl } from "./browser-policy";
+import {
+  captureDomOutline,
+  captureDomSnapshot,
+  captureElementContext,
+  captureRegionScreenshot,
+  captureScreenshot,
+  evaluateInPage,
+  type BrowserDomOutline,
+  type BrowserDomSnapshot,
+  type BrowserEvalResult,
+} from "./browser-dom";
+import {
+  clickTarget as clickTargetOnPage,
+  fillTarget as fillTargetOnPage,
+  hoverTarget as hoverTargetOnPage,
+  resolveTarget,
+  waitFor as waitForOnPage,
+  waitForLoad,
+  type BrowserTarget,
+  type BrowserWaitResult,
+  type ResolvedTarget,
+} from "./browser-interactions";
+import { BrowserNetworkCollector } from "./browser-network-collector";
+import { installTabEvents, type ManagedTab } from "./browser-tab-events";
 import {
   browserBounds,
   contentOffset,
@@ -12,48 +35,36 @@ import {
 } from "./browser-manager-layout";
 import {
   assertBrowserMutationAllowed,
-  consoleEntry,
-  isElementPayload,
-  isRecord,
   metadataFor,
   profileFromSelection,
   pushBounded,
   secureWebPreferences,
+  tabDiagnostics,
 } from "./browser-manager-utils";
-import { BrowserNetworkHeadersCache, networkFailureReason } from "./browser-network-headers";
 import { BrowserProfileStore } from "./browser-profile-store";
 import { browserPartitionForProfile, createBrowserProfile } from "./browser-profiles";
-import { captureScreenshotParams } from "./browser-screenshot";
 import { sendToWindow } from "./safe-send";
 import type {
   BrowserBounds,
-  BrowserConsoleEntry,
   BrowserElementContext,
-  BrowserNetworkEntry,
   BrowserProfileMetadata,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "./browser-types";
 
-const MAX_CONSOLE_PER_TAB = 1000;
 const MAX_NETWORK_PER_TAB = 2000;
-const DEFAULT_URL = "about:blank";
-
-interface ManagedTab {
-  metadata: BrowserTabMetadata;
-  view: WebContentsView;
-  devtoolsView: WebContentsView | null;
-  consoleEntries: BrowserConsoleEntry[];
-  networkEntries: BrowserNetworkEntry[];
-}
 
 export class BrowserManager {
   private readonly tabs = new Map<string, ManagedTab>();
   private activeTabId: string | null = null;
   private bounds: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 };
   private lastError: string | null = null;
-  private readonly instrumentedSessions = new WeakSet<Session>();
-  private readonly networkHeaders = new BrowserNetworkHeadersCache();
+  private readonly network = new BrowserNetworkCollector((webContentsId, entry) => {
+    const tab = [...this.tabs.values()].find((t) => t.view.webContents.id === webContentsId);
+    if (!tab) return;
+    pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
+    this.emitState();
+  });
 
   constructor(
     private readonly getMainWindow: () => BrowserWindow | null,
@@ -73,8 +84,14 @@ export class BrowserManager {
     };
     this.tabs.set(id, tab);
     this.attachView(id, view);
-    this.installTabEvents(tab);
-    this.ensureNetworkCollector(view.webContents.session);
+    installTabEvents(tab, {
+      emitState: () => this.emitState(),
+      setLastError: (message) => {
+        this.lastError = message;
+      },
+      openChildTab: (url, profileId) => this.openChildTab(url, profileId),
+    });
+    this.network.ensure(view.webContents.session);
     this.activateTab(id);
     if (rawUrl) this.navigate(id, rawUrl);
     this.emitState();
@@ -201,17 +218,38 @@ export class BrowserManager {
     return tab.metadata;
   }
 
-  async snapshot(tabId: string): Promise<unknown> {
-    return this.cdp(tabId, "DOMSnapshot.captureSnapshot", { computedStyles: [] });
+  async openUrl(url: string, tabId?: string): Promise<BrowserTabMetadata> {
+    const meta = tabId ? this.navigate(tabId, url) : this.createTab(url);
+    await waitForLoad(this.requireTab(meta.id).view.webContents);
+    return this.requireTab(meta.id).metadata;
   }
 
-  async screenshot(
+  async snapshot(
     tabId: string,
-    clip?: BrowserElementContext["element"]["boundingBox"],
-  ): Promise<string> {
-    const result = await this.cdp(tabId, "Page.captureScreenshot", captureScreenshotParams(clip));
-    if (isRecord(result) && typeof result.data === "string") return result.data;
-    throw new Error("Browser screenshot did not return image data.");
+    selector?: string,
+    maxLength?: number,
+    format?: string,
+  ): Promise<BrowserDomSnapshot | BrowserDomOutline> {
+    const wc = this.requireTab(tabId).view.webContents;
+    return format === "html"
+      ? captureDomSnapshot(wc, selector, maxLength)
+      : captureDomOutline(wc, selector, maxLength);
+  }
+
+  async screenshot(tabId: string, clip?: BrowserBounds): Promise<string> {
+    const wc = this.requireTab(tabId).view.webContents;
+    return clip ? captureRegionScreenshot(wc, clip) : captureScreenshot(wc);
+  }
+
+  async screenshotTarget(tabId: string, target: BrowserTarget): Promise<string> {
+    const wc = this.requireTab(tabId).view.webContents;
+    const { boundingBox } = await resolveTarget(wc, target);
+    return captureRegionScreenshot(wc, boundingBox);
+  }
+
+  async evaluate(tabId: string, script: string): Promise<BrowserEvalResult> {
+    this.assertMutatingAllowed(tabId);
+    return evaluateInPage(this.requireTab(tabId).view.webContents, script);
   }
 
   async click(tabId: string, x: number, y: number): Promise<void> {
@@ -231,20 +269,41 @@ export class BrowserManager {
     this.requireTab(tabId).view.webContents.sendInputEvent({ type: "keyDown", keyCode });
   }
 
+  async clickTarget(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
+    this.assertMutatingAllowed(tabId);
+    return clickTargetOnPage(this.requireTab(tabId).view.webContents, target);
+  }
+
+  async hover(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
+    this.assertMutatingAllowed(tabId);
+    return hoverTargetOnPage(this.requireTab(tabId).view.webContents, target);
+  }
+
+  async fill(tabId: string, target: BrowserTarget, value: string): Promise<void> {
+    this.assertMutatingAllowed(tabId);
+    return fillTargetOnPage(this.requireTab(tabId).view.webContents, target, value);
+  }
+
+  async waitFor(
+    tabId: string,
+    opts: { selector?: string; text?: string },
+    timeoutMs?: number,
+  ): Promise<BrowserWaitResult> {
+    return waitForOnPage(this.requireTab(tabId).view.webContents, opts, timeoutMs);
+  }
+
   async selectElementContext(tabId: string): Promise<BrowserElementContext> {
     const tab = this.requireTab(tabId);
-    const context = await tab.view.webContents.executeJavaScript(elementContextScript(), true);
-    if (!isElementPayload(context)) throw new Error("Browser element context capture failed.");
-    const screenshotPngBase64 = await this.screenshot(tabId, context.boundingBox);
-    return {
-      tabId,
-      url: tab.metadata.url,
-      title: tab.metadata.title,
-      capturedAt: new Date().toISOString(),
-      screenshotPngBase64,
-      element: context,
-      diagnostics: this.diagnostics(tab),
-    };
+    return captureElementContext(
+      tab.view.webContents,
+      {
+        tabId,
+        url: tab.metadata.url,
+        title: tab.metadata.title,
+        capturedAt: new Date().toISOString(),
+      },
+      tabDiagnostics(tab.consoleEntries, tab.networkEntries),
+    );
   }
 
   state(): BrowserStateSnapshot {
@@ -258,97 +317,13 @@ export class BrowserManager {
     };
   }
 
-  private installTabEvents(tab: ManagedTab): void {
-    const wc = tab.view.webContents;
-    wc.on("console-message", (_event, level, message, line, sourceId) => {
-      pushBounded(
-        tab.consoleEntries,
-        consoleEntry(tab.metadata.id, level, message, line, sourceId),
-        MAX_CONSOLE_PER_TAB,
-      );
+  private openChildTab(url: string, profileId: string): void {
+    try {
+      this.createTab(url, profileId);
+    } catch (error) {
+      this.lastError = error instanceof Error ? error.message : String(error);
       this.emitState();
-    });
-    wc.setWindowOpenHandler(({ url }) => {
-      try {
-        this.createTab(url, tab.metadata.sessionProfileId);
-      } catch (error) {
-        this.lastError = error instanceof Error ? error.message : String(error);
-        this.emitState();
-      }
-      return { action: "deny" };
-    });
-    wc.on("will-navigate", (event, url) => {
-      try {
-        normalizeBrowserOpenUrl(url);
-      } catch (error) {
-        event.preventDefault();
-        this.lastError = error instanceof Error ? error.message : String(error);
-        this.emitState();
-      }
-    });
-    wc.on("did-start-loading", () => {
-      this.lastError = null;
-      this.updateMetadata(tab, { loading: true });
-    });
-    wc.on("did-stop-loading", () => this.updateMetadata(tab, { loading: false }));
-    wc.on("did-navigate", () => {
-      this.lastError = null;
-      this.refreshMetadata(tab);
-    });
-    wc.on("page-title-updated", () => this.refreshMetadata(tab));
-    wc.on("did-fail-load", (_event, _code, description, url) => {
-      this.lastError = `${url}: ${description}`;
-      this.emitState();
-    });
-  }
-
-  private ensureNetworkCollector(electronSession: Session): void {
-    if (this.instrumentedSessions.has(electronSession)) return;
-    this.instrumentedSessions.add(electronSession);
-    electronSession.webRequest.onBeforeSendHeaders((details, callback) => {
-      this.networkHeaders.remember(details.id, details.requestHeaders);
-      callback({ requestHeaders: details.requestHeaders });
-    });
-    electronSession.webRequest.onCompleted((details) => this.recordNetwork(details));
-    electronSession.webRequest.onErrorOccurred((details) => this.recordNetwork(details));
-  }
-
-  private recordNetwork(
-    details: Electron.OnCompletedListenerDetails | Electron.OnErrorOccurredListenerDetails,
-  ): void {
-    const tab = [...this.tabs.values()].find(
-      (item) => item.view.webContents.id === details.webContentsId,
-    );
-    if (!tab) return;
-    const response = "statusCode" in details ? details : null;
-    pushBounded(
-      tab.networkEntries,
-      {
-        id: randomUUID(),
-        tabId: tab.metadata.id,
-        method: details.method,
-        url: details.url,
-        status: response?.statusCode,
-        requestHeaders: this.networkHeaders.take(details.id),
-        responseHeaders: redactBrowserHeaders(response?.responseHeaders ?? {}),
-        resourceType: details.resourceType,
-        timestamp: new Date().toISOString(),
-        failureReason: networkFailureReason(details),
-      },
-      MAX_NETWORK_PER_TAB,
-    );
-    this.emitState();
-  }
-
-  private async cdp(
-    tabId: string,
-    method: string,
-    params: Record<string, unknown>,
-  ): Promise<unknown> {
-    const wc = this.requireTab(tabId).view.webContents;
-    const dbg = wc.debugger;
-    if (!dbg.isAttached()) dbg.attach("1.3");
-    return dbg.sendCommand(method, params);
+    }
   }
 
   private assertMutatingAllowed(tabId: string): void {
@@ -368,34 +343,6 @@ export class BrowserManager {
 
   private detachView(view: WebContentsView): void {
     this.getMainWindow()?.contentView.removeChildView(view);
-  }
-
-  private refreshMetadata(tab: ManagedTab): void {
-    const wc = tab.view.webContents;
-    this.updateMetadata(tab, {
-      title: wc.getTitle() || wc.getURL(),
-      url: wc.getURL() || DEFAULT_URL,
-    });
-  }
-
-  private updateMetadata(tab: ManagedTab, patch: Partial<BrowserTabMetadata>): void {
-    const wc = tab.view.webContents;
-    tab.metadata = {
-      ...tab.metadata,
-      ...patch,
-      canGoBack: wc.canGoBack(),
-      canGoForward: wc.canGoForward(),
-    };
-    this.emitState();
-  }
-
-  private diagnostics(tab: ManagedTab): BrowserElementContext["diagnostics"] {
-    return {
-      consoleErrors: tab.consoleEntries.filter((entry) => entry.level === "error").slice(-20),
-      failedNetworkRequests: tab.networkEntries
-        .filter((entry) => entry.failureReason || (entry.status ?? 0) >= 400)
-        .slice(-20),
-    };
   }
 
   private emitState(): void {

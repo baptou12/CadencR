@@ -204,7 +204,15 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { controls, nonAgentTabsEnabled } = args;
   const sendContext = useCallback(
     (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
-      controls.ws.sendPrompt(message, images),
+      controls.ws.sendPrompt(
+        message,
+        images?.map((image) => ({
+          base64: image.base64,
+          mimeType: image.mimeType,
+          fileName: "browser-context.png",
+          kind: "image" as const,
+        })),
+      ),
     [controls.ws],
   );
   return useMemo(

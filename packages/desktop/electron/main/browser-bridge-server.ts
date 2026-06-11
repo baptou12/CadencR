@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { requiredRecord, requiredString } from "./browser-arg-validation";
+import type { BrowserBridgeResult } from "./browser-mcp-dispatch";
 
 export interface BrowserBridgeRequestPayload {
   tool_name: string;
@@ -15,7 +16,7 @@ export interface BrowserBridgeHandle {
 
 export interface BrowserBridgeServerOptions {
   token?: string;
-  dispatch: (toolName: string, args: Record<string, unknown>) => Promise<string>;
+  dispatch: (toolName: string, args: Record<string, unknown>) => Promise<BrowserBridgeResult>;
 }
 
 export async function startBrowserBridgeServer(
@@ -72,8 +73,8 @@ export async function dispatchBrowserBridgePayload(
     return { status: 401, payload: { error: "Unauthorized" } };
   }
   const payload = parsePayload(rawBody);
-  const text = await dispatch(payload.tool_name, payload.args);
-  return { status: 200, payload: { text } };
+  const result = await dispatch(payload.tool_name, payload.args);
+  return { status: 200, payload: result };
 }
 
 function parsePayload(raw: string): BrowserBridgeRequestPayload {

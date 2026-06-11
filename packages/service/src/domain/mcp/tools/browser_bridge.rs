@@ -19,8 +19,17 @@ impl BrowserBridgeRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct BrowserBridgeResponse {
-    text: String,
+pub struct BrowserBridgeImage {
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BrowserBridgeResponse {
+    pub text: String,
+    #[serde(default)]
+    pub image: Option<BrowserBridgeImage>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,7 +56,10 @@ impl BrowserBridgeClient {
         })
     }
 
-    pub async fn call(&self, request: BrowserBridgeRequest) -> Result<String, String> {
+    pub async fn call(
+        &self,
+        request: BrowserBridgeRequest,
+    ) -> Result<BrowserBridgeResponse, String> {
         let response = self
             .client
             .post(self.url.clone())
@@ -64,7 +76,6 @@ impl BrowserBridgeClient {
         response
             .json::<BrowserBridgeResponse>()
             .await
-            .map(|payload| payload.text)
             .map_err(|err| format!("Browser bridge response was invalid: {err}"))
     }
 }
@@ -115,7 +126,31 @@ mod tests {
             ))
             .await;
 
-        assert_eq!(result.expect("bridge response"), r#"{"ok":true}"#);
+        let response = result.expect("bridge response");
+        assert_eq!(response.text, r#"{"ok":true}"#);
+        assert!(response.image.is_none());
+    }
+
+    #[tokio::test]
+    async fn browser_bridge_call_parses_image_payload() {
+        let url = spawn_bridge_route(|| async {
+            r#"{"text":"{\"format\":\"png\"}","image":{"mimeType":"image/png","data":"AAAA"}}"#
+        })
+        .await;
+        let client = BrowserBridgeClient::from_env_values(Some(url), Some("token".to_string()))
+            .expect("loopback bridge client");
+
+        let response = client
+            .call(BrowserBridgeRequest::new(
+                "browser_screenshot",
+                serde_json::json!({}),
+            ))
+            .await
+            .expect("bridge response");
+
+        let image = response.image.expect("image payload");
+        assert_eq!(image.mime_type, "image/png");
+        assert_eq!(image.data, "AAAA");
     }
 
     #[tokio::test]

@@ -8,6 +8,7 @@ import {
 import type {
   BrowserConsoleEntry,
   BrowserElementContext,
+  BrowserNetworkEntry,
   BrowserTabMetadata,
 } from "./browser-types";
 
@@ -17,6 +18,18 @@ export function assertBrowserMutationAllowed(liveUrl: string): void {
   if (browserAutomationAccess(liveUrl) !== "full") {
     throw new Error("Browser automation is allowed only for localhost tabs.");
   }
+}
+
+export function tabDiagnostics(
+  consoleEntries: BrowserConsoleEntry[],
+  networkEntries: BrowserNetworkEntry[],
+): BrowserElementContext["diagnostics"] {
+  return {
+    consoleErrors: consoleEntries.filter((entry) => entry.level === "error").slice(-20),
+    failedNetworkRequests: networkEntries
+      .filter((entry) => entry.failureReason || (entry.status ?? 0) >= 400)
+      .slice(-20),
+  };
 }
 
 export function secureWebPreferences(profile: BrowserProfile): Electron.WebPreferences {
@@ -82,6 +95,19 @@ export function pushBounded<T>(items: T[], item: T, limit: number): void {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+// Validates the object returned by an injected in-page script. Returns it typed
+// when `isValid` passes, otherwise throws the page-supplied `error` (if any) or
+// `fallbackMessage`.
+export function expectScriptResult<T>(
+  result: unknown,
+  isValid: (record: Record<string, unknown>) => boolean,
+  fallbackMessage: string,
+): T {
+  if (isRecord(result) && isValid(result)) return result as unknown as T;
+  const reason = isRecord(result) && typeof result.error === "string" ? result.error : null;
+  throw new Error(reason ?? fallbackMessage);
 }
 
 export function isElementPayload(value: unknown): value is BrowserElementContext["element"] {

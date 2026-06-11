@@ -35,6 +35,7 @@ pub fn error_result(msg: &str) -> CallToolResult {
     CallToolResult::error(vec![Content::text(msg)])
 }
 
+#[allow(dead_code)]
 pub async fn dispatch_tool<Fut>(dispatch: Fut) -> CallToolResult
 where
     Fut: Future<Output = Result<String, String>>,

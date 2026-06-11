@@ -1,7 +1,7 @@
 use crate::domain::mcp::loopback::is_loopback_host;
 use reqwest::Url;
 
-pub const BROWSER_TOOL_NAMES: [&str; 10] = [
+pub const BROWSER_TOOL_NAMES: [&str; 14] = [
     "browser_list_tabs",
     "browser_open_url",
     "browser_get_console",
@@ -9,8 +9,12 @@ pub const BROWSER_TOOL_NAMES: [&str; 10] = [
     "browser_get_snapshot",
     "browser_screenshot",
     "browser_click",
+    "browser_fill",
+    "browser_hover",
     "browser_type",
     "browser_keypress",
+    "browser_wait_for",
+    "browser_evaluate",
     "browser_select_element_context",
 ];
 
@@ -38,6 +42,20 @@ mod tests {
         assert!(BROWSER_TOOL_NAMES.contains(&"browser_list_tabs"));
         assert!(BROWSER_TOOL_NAMES.contains(&"browser_click"));
         assert!(BROWSER_TOOL_NAMES.contains(&"browser_select_element_context"));
+    }
+
+    #[test]
+    fn browser_tool_names_include_inspection_surface() {
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_get_snapshot"));
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_screenshot"));
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_evaluate"));
+    }
+
+    #[test]
+    fn browser_tool_names_include_interaction_surface() {
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_fill"));
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_hover"));
+        assert!(BROWSER_TOOL_NAMES.contains(&"browser_wait_for"));
     }
 
     #[test]
