@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.1 - 2026-06-10
+
+Previous release: v0.4.0 - 2026-06-07
+
+### 🔧 Changed
+
+- [**Desktop**] Improved prompt attachments so uploaded files are prepared per provider, making mixed text, image, and file prompts more consistent across agents.
+- [**Backend**] Let custom actions run in a terminal split, so command output remains visible and recoverable instead of being limited to the action detail panel.
+- [**Desktop**] Improved mobile workspace ergonomics with per-device zoom, a unified code font, touch-friendly diff controls, and safer prompt focus behavior when opening conversations.
+- [**Backend**] Split websocket session protocol payloads into focused modules to keep live-session handling easier to maintain without changing the user workflow.
+
+### 🐛 Fixed
+
+- [**provider:codex**] Fixed PDF prompt attachments so Codex receives them as file references instead of unsupported inline content.
+- [**provider:claude**] Fixed Claude Code context-usage bars so they scale against the session's real context window instead of the default 200k-token window.
+- [**Desktop**] Fixed reused worktree branch selection so a manually chosen branch is preserved while project settings finish loading.
+- [**Desktop**] Fixed custom-action recovery so runs that were active before restart no longer remain stuck.
+
 ## v0.4.0 - 2026-06-07
 
 Previous release: v0.3.6 - 2026-06-03

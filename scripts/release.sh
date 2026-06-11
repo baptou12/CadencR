@@ -123,7 +123,7 @@ run_trufflehog() {
     args+=(--exclude-paths "$exclude_paths_file")
   fi
 
-  args+=("file://$(pwd)")
+  args+=("${TRUFFLEHOG_GIT_URL:-file://$(pwd)}")
 
   echo "Running trufflehog from previous release commit $previous_hash" >&2
   run "${args[@]}"
