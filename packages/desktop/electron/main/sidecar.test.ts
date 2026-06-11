@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePhaseLine, serviceArgs } from "./sidecar";
+import { parsePhaseLine, serviceArgs, serviceEnv } from "./sidecar";
 
 describe("sidecar process arguments", () => {
   it("does not expose the auth token on argv", () => {
@@ -7,6 +7,18 @@ describe("sidecar process arguments", () => {
 
     expect(args).toEqual(["--db-path", "/tmp/cadencr.db", "--port", "5004"]);
     expect(args).not.toContain("--auth-token");
+  });
+
+  it("passes browser bridge settings through environment only", () => {
+    const env = serviceEnv("auth", {
+      url: "http://127.0.0.1:1234/browser-bridge",
+      token: "bridge",
+    });
+
+    expect(env.CADENCR_AUTH_TOKEN).toBe("auth");
+    expect(env.CADENCR_BROWSER_BRIDGE_URL).toBe("http://127.0.0.1:1234/browser-bridge");
+    expect(env.CADENCR_BROWSER_BRIDGE_TOKEN).toBe("bridge");
+    expect(serviceArgs("/tmp/cadencr.db")).not.toContain("bridge");
   });
 
   it("appends --app-version when provided", () => {
