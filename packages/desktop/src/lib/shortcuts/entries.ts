@@ -204,6 +204,12 @@ const APP_SHORTCUTS = [
   },
   { id: "pane-git", keys: ["mod", "shift", "g"], description: "Git tab", scope: "feature-panes" },
   {
+    id: "pane-browser",
+    keys: ["mod", "shift", "b"],
+    description: "Browser tab",
+    scope: "feature-panes",
+  },
+  {
     id: "pane-editor",
     keys: ["mod", "shift", "e"],
     description: "Editor tab",

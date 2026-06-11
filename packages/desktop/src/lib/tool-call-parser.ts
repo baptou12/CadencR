@@ -18,11 +18,11 @@ interface ToolSummary {
 
 /** Parsed Cadencr MCP tool name */
 export interface CadencrMcpTool {
-  /** Server name without prefix, currently "session" */
+  /** Server name without prefix, currently "browser" */
   server: string;
-  /** Raw tool name, e.g. "mark_agent_done" */
+  /** Raw tool name, e.g. "browser_open_url" */
   tool: string;
-  /** Human-readable label, e.g. "Marking done" */
+  /** Human-readable label, e.g. "Opening URL" */
   label: string;
   /** Detail extracted from args */
   detail?: string;
@@ -33,9 +33,16 @@ const CADENCR_MCP_NAMESPACE_PREFIX = "mcp__cadencr_";
 
 /** Human-readable labels for known Cadencr MCP tools. Falls back to title-casing the tool name. */
 const cadencrToolLabels: Record<string, string> = {
-  mark_agent_done: "Marking done",
-  list_conversations: "Listing conversations",
-  read_conversation: "Reading conversation",
+  browser_click: "Clicking browser",
+  browser_get_console: "Reading console",
+  browser_get_network: "Reading network",
+  browser_get_snapshot: "Capturing snapshot",
+  browser_keypress: "Pressing key",
+  browser_list_tabs: "Listing browser tabs",
+  browser_open_url: "Opening URL",
+  browser_select_element_context: "Selecting element context",
+  browser_screenshot: "Taking screenshot",
+  browser_type: "Typing in browser",
 };
 
 /**
@@ -59,9 +66,12 @@ function cadencrDetail(tool: string, args: Record<string, unknown>): string | un
   if (commitMessage) return commitMessage;
   const prompt = nonEmptyString(args.prompt);
   if (prompt) return prompt.slice(0, 80);
-  if (tool === "read_conversation" && typeof args.session_id === "number") {
-    return `Session #${args.session_id}`;
-  }
+  const url = nonEmptyString(args.url);
+  if (url) return url;
+  const tabId = nonEmptyString(args.tab_id);
+  if (tabId) return `Tab ${tabId}`;
+  const key = nonEmptyString(args.key);
+  if (key) return key;
   return undefined;
 }
 
@@ -128,7 +138,7 @@ function parsedMcpParts(
   const server = rest.slice(0, sep);
   const tool = rest.slice(sep + separatorLength);
   if (!server || !tool) return undefined;
-  if (server !== "session") return undefined;
+  if (server !== "browser") return undefined;
   return { server, tool };
 }
 

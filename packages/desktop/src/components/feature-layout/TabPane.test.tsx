@@ -1,5 +1,5 @@
 import { DndContext } from "@dnd-kit/core";
-import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
+import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
@@ -20,7 +20,7 @@ const ROOT_HOST_KEY = makeTabHostKey(FEATURE_ID, ROOT_LEAF_ID);
 const leaf: LayoutLeaf = {
   type: "leaf",
   id: ROOT_LEAF_ID,
-  tabIds: ["agent", "terminal", "git", "editor"],
+  tabIds: ["agent", "terminal", "git", "editor", "browser"],
   activeTabId: "agent",
 };
 
@@ -29,6 +29,7 @@ const tabs: FeatureTabs = {
   terminal: { label: "Terminal", Icon: TerminalIcon, content: null },
   git: { label: "Git", Icon: GitCompareArrowsIcon, content: null },
   editor: { label: "Editor", Icon: CodeIcon, content: null },
+  browser: { label: "Browser", Icon: GlobeIcon, content: null },
 };
 
 function resetStores(): void {

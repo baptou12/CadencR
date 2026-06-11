@@ -19,7 +19,7 @@ describe("SessionInfoChip", () => {
     render(
       <SessionInfoMcpServersProvider
         mcpServers={[
-          { name: "cadencr-session", status: "connected" },
+          { name: "cadencr-browser", status: "connected" },
           { name: "filesystem", status: "unavailable" },
           { name: "browser", status: "unknown" },
         ]}
@@ -42,7 +42,7 @@ describe("SessionInfoChip", () => {
     expect(mcpHeading.compareDocumentPosition(profileHeading)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("cadencr-session")).toBeInTheDocument();
+    expect(screen.getByText("cadencr-browser")).toBeInTheDocument();
     expect(screen.getByText("connected")).toBeInTheDocument();
     expect(screen.getByText("filesystem")).toBeInTheDocument();
     expect(screen.getByText("unavailable")).toBeInTheDocument();

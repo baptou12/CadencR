@@ -25,12 +25,12 @@ function getState() {
 describe("feature-layout-store", () => {
   beforeEach(reset);
 
-  it("starts in flat state with all four tabs in the root pane", () => {
+  it("starts in flat state with all five tabs in the root pane", () => {
     const state = getState();
     expect(state.splitRoot.type).toBe("leaf");
     if (state.splitRoot.type === "leaf") {
       expect(state.splitRoot.id).toBe(ROOT_LEAF_ID);
-      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor"]);
+      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor", "browser"]);
       expect(state.splitRoot.activeTabId).toBe("agent");
     }
   });
@@ -42,7 +42,7 @@ describe("feature-layout-store", () => {
     const leaves = getLeaves(state.splitRoot);
     expect(leaves).toHaveLength(2);
     const root = findLeafById(state.splitRoot, ROOT_LEAF_ID);
-    expect(root?.tabIds).toEqual(["agent", "git", "editor"]);
+    expect(root?.tabIds).toEqual(["agent", "git", "editor", "browser"]);
     const newLeaf = leaves.find((l) => l.id !== ROOT_LEAF_ID);
     expect(newLeaf?.tabIds).toEqual(["terminal"]);
   });
@@ -55,7 +55,7 @@ describe("feature-layout-store", () => {
     const state = getState();
     expect(getLeaves(state.splitRoot)).toHaveLength(3);
     const root = findLeafById(state.splitRoot, ROOT_LEAF_ID);
-    expect(root?.tabIds).toEqual(["agent", "editor"]);
+    expect(root?.tabIds).toEqual(["agent", "editor", "browser"]);
   });
 
   it("dockTab returns a tab to the root pane and collapses empty source", () => {
@@ -71,7 +71,7 @@ describe("feature-layout-store", () => {
 
   it("root leaf survives even when emptied", () => {
     const store = useFeatureLayoutStore.getState();
-    for (const tab of ["agent", "terminal", "git", "editor"] as const) {
+    for (const tab of ["agent", "terminal", "git", "editor", "browser"] as const) {
       store.splitTabAt(FEATURE, tab, ROOT_LEAF_ID, "right");
     }
     const state = getState();
@@ -91,7 +91,7 @@ describe("feature-layout-store", () => {
     expect(pane!.tabIds).toEqual(["terminal", "git"]);
     expect(pane!.activeTabId).toBe("git");
     const root = findLeafById(state.splitRoot, ROOT_LEAF_ID);
-    expect(root?.tabIds).toEqual(["agent", "editor"]);
+    expect(root?.tabIds).toEqual(["agent", "editor", "browser"]);
   });
 
   it("setPaneActiveTab only switches when the tab lives in the pane", () => {
@@ -145,7 +145,7 @@ describe("feature-layout-store", () => {
     const state = getState();
     expect(state.splitRoot.type).toBe("leaf");
     if (state.splitRoot.type === "leaf") {
-      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor"]);
+      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor", "browser"]);
     }
   });
 

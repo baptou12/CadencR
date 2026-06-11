@@ -63,4 +63,12 @@ export function useFeatureLayoutHotkeys(
     },
     { enabled },
   );
+  useShortcut(
+    "pane-browser",
+    (e) => {
+      e.preventDefault();
+      activate("browser");
+    },
+    { enabled },
+  );
 }

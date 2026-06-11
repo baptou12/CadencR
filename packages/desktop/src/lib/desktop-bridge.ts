@@ -1,4 +1,23 @@
 import { isSafeExternalUrl } from "@/lib/safe-url";
+import type {
+  BrowserBounds,
+  BrowserConsoleEntry,
+  BrowserElementContext,
+  BrowserNetworkEntry,
+  BrowserProfileMetadata,
+  BrowserStateSnapshot,
+  BrowserTabMetadata,
+} from "@/shared/browser-types";
+
+export type {
+  BrowserBounds,
+  BrowserConsoleEntry,
+  BrowserElementContext,
+  BrowserNetworkEntry,
+  BrowserProfileMetadata,
+  BrowserStateSnapshot,
+  BrowserTabMetadata,
+} from "@/shared/browser-types";
 
 export interface RuntimeConfig {
   baseUrl: string;
@@ -106,6 +125,7 @@ export interface CadencrDesktopBridge {
   onPowerSuspend: (cb: () => void) => () => void;
   /** Fired right after wake-from-suspend. */
   onPowerResume: (cb: () => void) => () => void;
+
   /** Ask the main process to check for an update right now. */
   checkForUpdates: () => Promise<void>;
   /** Quit and install a downloaded update. */
@@ -119,13 +139,41 @@ export interface CadencrDesktopBridge {
   onUpdateEvent: (cb: (event: UpdateEvent) => void) => () => void;
 }
 
+export interface CadencrBrowserBridge extends CadencrDesktopBridge {
+  createBrowserTab: (url?: string, profileId?: string) => Promise<BrowserTabMetadata>;
+  listBrowserTabs: () => Promise<BrowserStateSnapshot>;
+  navigateBrowserTab: (tabId: string, url: string) => Promise<BrowserTabMetadata>;
+  activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
+  closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
+  setBrowserBounds: (bounds: BrowserBounds) => Promise<BrowserStateSnapshot>;
+  listBrowserProfiles: () => Promise<BrowserProfileMetadata[]>;
+  clearBrowserStorage: (profileId: string) => Promise<void>;
+  createBrowserProfile: (profileId: string) => Promise<BrowserProfileMetadata>;
+  duplicateBrowserProfile: (sourceId: string, newId: string) => Promise<BrowserProfileMetadata>;
+  deleteBrowserProfile: (profileId: string) => Promise<void>;
+  browserBack: (tabId: string) => Promise<void>;
+  browserForward: (tabId: string) => Promise<void>;
+  browserReload: (tabId: string) => Promise<void>;
+  browserStop: (tabId: string) => Promise<void>;
+  toggleBrowserDevTools: (tabId: string) => Promise<BrowserTabMetadata>;
+  getBrowserConsole: () => Promise<BrowserConsoleEntry[]>;
+  getBrowserNetwork: () => Promise<BrowserNetworkEntry[]>;
+  getBrowserSnapshot: (tabId: string) => Promise<unknown>;
+  getBrowserScreenshot: (tabId: string) => Promise<string>;
+  browserClick: (tabId: string, x: number, y: number) => Promise<void>;
+  browserType: (tabId: string, text: string) => Promise<void>;
+  browserKeypress: (tabId: string, keyCode: string) => Promise<void>;
+  selectBrowserElementContext: (tabId: string) => Promise<BrowserElementContext>;
+  onBrowserState: (cb: (state: BrowserStateSnapshot) => void) => () => void;
+}
+
 declare global {
   interface Window {
-    cadencr?: CadencrDesktopBridge;
+    cadencr?: Partial<CadencrBrowserBridge>;
   }
 }
 
-let bridgeOverride: CadencrDesktopBridge | null = null;
+let bridgeOverride: Partial<CadencrBrowserBridge> | null = null;
 
 function browserTheme(): DesktopTheme {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
@@ -136,7 +184,7 @@ function unavailable(name: string): Promise<never> {
   return Promise.reject(new Error(`${name} is only available in the desktop shell.`));
 }
 
-const browserBridge: CadencrDesktopBridge = {
+const browserBridge: CadencrBrowserBridge = {
   isElectron: false,
   runtimeConfig: () => unavailable("runtimeConfig"),
   readFileBase64: () => unavailable("readFileBase64"),
@@ -174,23 +222,52 @@ const browserBridge: CadencrDesktopBridge = {
   setRemoteHostAwake: () => Promise.resolve(),
   onPowerSuspend: () => () => undefined,
   onPowerResume: () => () => undefined,
+
+  createBrowserTab: () => unavailable("createBrowserTab"),
+  listBrowserTabs: () => unavailable("listBrowserTabs"),
+  navigateBrowserTab: () => unavailable("navigateBrowserTab"),
+  activateBrowserTab: () => unavailable("activateBrowserTab"),
+  closeBrowserTab: () => unavailable("closeBrowserTab"),
+  setBrowserBounds: () => unavailable("setBrowserBounds"),
+  listBrowserProfiles: () => unavailable("listBrowserProfiles"),
+  clearBrowserStorage: () => unavailable("clearBrowserStorage"),
+  createBrowserProfile: () => unavailable("createBrowserProfile"),
+  duplicateBrowserProfile: () => unavailable("duplicateBrowserProfile"),
+  deleteBrowserProfile: () => unavailable("deleteBrowserProfile"),
+  browserBack: () => unavailable("browserBack"),
+  browserForward: () => unavailable("browserForward"),
+  browserReload: () => unavailable("browserReload"),
+  browserStop: () => unavailable("browserStop"),
+  toggleBrowserDevTools: () => unavailable("toggleBrowserDevTools"),
+  getBrowserConsole: () => unavailable("getBrowserConsole"),
+  getBrowserNetwork: () => unavailable("getBrowserNetwork"),
+  getBrowserSnapshot: () => unavailable("getBrowserSnapshot"),
+  getBrowserScreenshot: () => unavailable("getBrowserScreenshot"),
+  browserClick: () => unavailable("browserClick"),
+  browserType: () => unavailable("browserType"),
+  browserKeypress: () => unavailable("browserKeypress"),
+  selectBrowserElementContext: () => unavailable("selectBrowserElementContext"),
+  onBrowserState: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),
   installUpdate: () => unavailable("installUpdate"),
   fetchChangelog: () => Promise.resolve(null),
   onUpdateEvent: () => () => undefined,
 };
 
-function activeBridge(): CadencrDesktopBridge {
-  if (bridgeOverride) return bridgeOverride;
-  if (typeof window !== "undefined" && window.cadencr) return window.cadencr;
-  return browserBridge;
+function resolveBridgeValue(prop: keyof CadencrBrowserBridge): { owner: object; value: unknown } {
+  if (bridgeOverride && prop in bridgeOverride) {
+    return { owner: bridgeOverride, value: bridgeOverride[prop] };
+  }
+  if (typeof window !== "undefined" && window.cadencr && prop in window.cadencr) {
+    return { owner: window.cadencr, value: window.cadencr[prop] };
+  }
+  return { owner: browserBridge, value: browserBridge[prop] };
 }
 
-export const desktopBridge: CadencrDesktopBridge = new Proxy({} as CadencrDesktopBridge, {
-  get(_target: CadencrDesktopBridge, prop: string | symbol): unknown {
-    const bridge = activeBridge();
-    const value = bridge[prop as keyof CadencrDesktopBridge];
-    return typeof value === "function" ? value.bind(bridge) : value;
+export const desktopBridge: CadencrBrowserBridge = new Proxy({} as CadencrBrowserBridge, {
+  get(_target: CadencrBrowserBridge, prop: string | symbol): unknown {
+    const { owner, value } = resolveBridgeValue(prop as keyof CadencrBrowserBridge);
+    return typeof value === "function" ? value.bind(owner) : value;
   },
 });
 

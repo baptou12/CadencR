@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useMemo, type ReactElement } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BotIcon, CodeIcon, GitCompareArrowsIcon, TerminalIcon } from "lucide-react";
+import { BotIcon, CodeIcon, GitCompareArrowsIcon, GlobeIcon, TerminalIcon } from "lucide-react";
 import { AgentSession } from "@/components/agent-session";
 import { SessionInfoMcpServersProvider } from "@/components/agent-session/SessionInfoChip";
 import { resolveWorktreeChoice } from "@/components/agent-session/WorktreePopover";
@@ -26,10 +26,13 @@ import type {
   useSessionFeatureData,
   useSessionRefs,
 } from "@/components/WebSocketSessionFeatureBlockHooks";
-
 const FeatureEditorTab = lazy(() => import("@/components/editor/FeatureEditorTab"));
+const BrowserWorkspaceTab = lazy(() =>
+  import("@/components/BrowserWorkspaceTab").then((module) => ({
+    default: module.BrowserWorkspaceTab,
+  })),
+);
 const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli"]);
-
 interface UseSessionTabsArgs {
   sessionId: string;
   featureId: number;
@@ -48,14 +51,16 @@ export function useSessionTabs(args: UseSessionTabsArgs): FeatureTabs {
   const terminalTab = useTerminalTab(args);
   const gitTab = useGitTab(args);
   const editorTab = useEditorTab(args);
+  const browserTab = useBrowserTab(args);
   return useMemo(
     () => ({
       agent: agentTab,
       terminal: terminalTab,
       git: gitTab,
       editor: editorTab,
+      browser: browserTab,
     }),
-    [agentTab, editorTab, gitTab, terminalTab],
+    [agentTab, browserTab, editorTab, gitTab, terminalTab],
   );
 }
 
@@ -195,6 +200,30 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
   );
 }
 
+function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
+  const { controls, nonAgentTabsEnabled } = args;
+  const sendContext = useCallback(
+    (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
+      controls.ws.sendPrompt(message, images),
+    [controls.ws],
+  );
+  return useMemo(
+    () => ({
+      label: "Browser",
+      Icon: GlobeIcon,
+      shortcut: ["cmd", "shift", "B"],
+      content: nonAgentTabsEnabled ? (
+        <Suspense fallback={null}>
+          <BrowserWorkspaceTab onSendContext={sendContext} />
+        </Suspense>
+      ) : (
+        <DeferredTabContent label="Browser" />
+      ),
+    }),
+    [nonAgentTabsEnabled, sendContext],
+  );
+}
+
 function useEditorTab(args: UseSessionTabsArgs): FeatureTabDef {
   const { featureId, projectId, data, refs, nonAgentTabsEnabled } = args;
   const projectPathOrCwd = data.effectiveCwd ?? data.projectPath;
@@ -227,7 +256,6 @@ function DeferredTabContent({ label }: { label: string }): ReactElement {
     </div>
   );
 }
-
 function useAgentSendHandler(args: {
   featureId: number;
   projectId: number;
@@ -237,8 +265,6 @@ function useAgentSendHandler(args: {
   const { featureId, projectId, data, controls } = args;
   const queryClient = useQueryClient();
   const setFeatureSetting = useSetFeatureSetting();
-  // Pull the stable `mutateAsync` out of the mutation result so the callback
-  // identity isn't churned every time react-query re-renders the host.
   const checkoutMutateAsync = useCheckoutBranch().mutateAsync;
   return useCallback(
     async (text, attachments) => {
@@ -265,8 +291,6 @@ function useAgentSendHandler(args: {
       if (isFirstPrompt && choice.kind !== "off") {
         await saveWorktreeChoice({ choice, featureId, setFeatureSetting });
       }
-      // Authoritative checkout for the no-worktree branch pick. Failure
-      // surfaces the verbatim git stderr and aborts the send.
       if (
         isFirstPrompt &&
         choice.kind === "off" &&

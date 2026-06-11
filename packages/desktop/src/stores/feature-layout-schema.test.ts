@@ -9,11 +9,38 @@ import {
 } from "./feature-layout-schema";
 
 describe("parseLayoutState", () => {
+  it("includes browser in the flat default tab ids", () => {
+    const state = flatLayoutState();
+    expect(state.splitRoot.type).toBe("leaf");
+    if (state.splitRoot.type === "leaf") {
+      expect(state.splitRoot.tabIds).toEqual(["agent", "terminal", "git", "editor", "browser"]);
+    }
+  });
+
   it("round-trips a flat default state", () => {
     const state = flatLayoutState();
     const json = serializeLayoutState(state);
     const parsed = parseLayoutState(json);
     expect(parsed).toEqual(state);
+  });
+
+  it("adds newly introduced tabs to the root pane when parsing an older saved layout", () => {
+    const parsed = parseLayoutState({
+      ...flatLayoutState(),
+      splitRoot: {
+        type: "leaf",
+        id: "root",
+        tabIds: ["agent", "terminal", "git", "editor"],
+        activeTabId: "agent",
+      },
+    });
+
+    expect(parsed?.splitRoot).toEqual({
+      type: "leaf",
+      id: "root",
+      tabIds: ["agent", "terminal", "git", "editor", "browser"],
+      activeTabId: "agent",
+    });
   });
 
   it("accepts a nested split tree containing the root leaf", () => {
@@ -38,8 +65,19 @@ describe("parseLayoutState", () => {
       focusedPaneId: "root",
       appliedLayoutId: 7,
     };
+    if (state.splitRoot.type !== "split") throw new Error("Expected split test fixture");
+
     const parsed = parseLayoutState(serializeLayoutState(state));
-    expect(parsed).toEqual(state);
+    expect(parsed).toEqual({
+      ...state,
+      splitRoot: {
+        ...state.splitRoot,
+        children: [
+          { type: "leaf", id: "root", tabIds: ["agent", "browser"], activeTabId: "agent" },
+          state.splitRoot.children[1],
+        ],
+      },
+    });
   });
 
   it("accepts both raw object and JSON string input", () => {

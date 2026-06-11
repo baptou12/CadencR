@@ -36,14 +36,14 @@ describe("handleMcpServers", () => {
 
     handleMcpServers(ctx, "s1", {
       mcp_servers: [
-        { name: "cadencr-session", status: "connected" },
+        { name: "cadencr-browser", status: "connected" },
         { name: "filesystem", status: "unavailable" },
         { name: "browser", status: "unknown" },
       ],
     });
 
     expect(ctx.getSession("s1").mcpServers).toEqual([
-      { name: "cadencr-session", status: "connected" },
+      { name: "cadencr-browser", status: "connected" },
       { name: "filesystem", status: "unavailable" },
       { name: "browser", status: "unknown" },
     ]);

@@ -18,34 +18,34 @@ function makeBlock(overrides: Partial<AgentBlockData>): AgentBlockData {
   };
 }
 
-describe("AgentBlock Cadencr MCP session tools", () => {
-  it("renders a mark_agent_done MCP call with custom styling", () => {
+describe("AgentBlock Cadencr MCP browser tools", () => {
+  it("renders a browser_open_url MCP call with custom styling", () => {
     render(
       <AgentBlock
         block={makeBlock({
-          toolName: "mcp__cadencr-session__mark_agent_done",
-          toolArgs: JSON.stringify({ summary: "Finished" }),
+          toolName: "mcp__cadencr-browser__browser_open_url",
+          toolArgs: JSON.stringify({ url: "http://localhost:5173" }),
         })}
       />,
     );
 
-    expect(screen.getByText("session")).toBeInTheDocument();
-    expect(screen.getByText("Marking done")).toBeInTheDocument();
-    expect(screen.getByText("Finished")).toBeInTheDocument();
+    expect(screen.getByText("browser")).toBeInTheDocument();
+    expect(screen.getByText("Opening URL")).toBeInTheDocument();
+    expect(screen.getByText("http://localhost:5173")).toBeInTheDocument();
   });
 
   it("renders a Codex namespace MCP call with custom styling", () => {
     render(
       <AgentBlock
         block={makeBlock({
-          toolName: "mcp__cadencr_session____read_conversation",
-          toolArgs: JSON.stringify({ session_id: 42 }),
+          toolName: "mcp__cadencr_browser____browser_screenshot",
+          toolArgs: JSON.stringify({ tab_id: "tab-42" }),
         })}
       />,
     );
 
-    expect(screen.getByText("session")).toBeInTheDocument();
-    expect(screen.getByText("Reading conversation")).toBeInTheDocument();
-    expect(screen.getByText("Session #42")).toBeInTheDocument();
+    expect(screen.getByText("browser")).toBeInTheDocument();
+    expect(screen.getByText("Taking screenshot")).toBeInTheDocument();
+    expect(screen.getByText("Tab tab-42")).toBeInTheDocument();
   });
 });

@@ -989,6 +989,15 @@
   }
 }
 
+@keyframes browser-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
 @keyframes context-usage-glow {
   0%,
   100% {
