@@ -82,7 +82,7 @@ mod tests {
     fn thread_config_merges_developer_instructions_with_mcp_servers() {
         let mut servers = HashMap::new();
         servers.insert(
-            "cadencr-session".to_string(),
+            "cadencr-browser".to_string(),
             RuntimeMcpServerConfig::Stdio {
                 command: "svc".to_string(),
                 args: None,
@@ -94,7 +94,7 @@ mod tests {
 
         assert_eq!(config["developer_instructions"], json!("Use Markdown"));
         assert_eq!(
-            config["mcp_servers"]["cadencr-session"]["command"],
+            config["mcp_servers"]["cadencr-browser"]["command"],
             json!("svc")
         );
     }
@@ -112,7 +112,7 @@ mod tests {
             )
         };
 
-        assert!(server("cadencr-session")["env"]["CADENCR_MCP_APPROVAL_MODE"].is_null());
+        assert!(server("cadencr-browser")["env"]["CADENCR_MCP_APPROVAL_MODE"].is_null());
         assert!(server("custom")["env"]["CADENCR_MCP_APPROVAL_MODE"].is_null());
     }
 }

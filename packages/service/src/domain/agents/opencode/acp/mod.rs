@@ -10,6 +10,7 @@ mod adapter_normalize;
 mod events_subagent_synthesis;
 mod events_tool_call_question;
 mod instructions;
+mod mcp_status;
 mod permission_reply;
 pub(in crate::domain::agents) mod port;
 mod prompt_usage;

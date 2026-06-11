@@ -3,7 +3,7 @@ use crate::domain::agents::response_style::rich_markdown_system_prompt;
 pub(super) const CODEX_MCP_INSTRUCTIONS: &str = r#"## Codex-specific Cadencr MCP guidance
 
 Cadencr MCP tools may appear in either canonical or Codex namespace form. Treat these as equivalent:
-- `mcp__cadencr-session__mark_agent_done` ↔ `mcp__cadencr_session____mark_agent_done`
+- `mcp__cadencr-browser__browser_open_url` ↔ `mcp__cadencr_browser____browser_open_url`
 
 When the prompt names canonical `mcp__cadencr-*__*` tools, use the matching
 Codex namespace tool if that is the form exposed in your tool list."#;
@@ -32,8 +32,8 @@ mod tests {
 
         assert!(prompt.starts_with(RICH_MARKDOWN_INSTRUCTION));
         assert!(prompt.contains("Base session prompt"));
-        assert!(prompt.contains("mcp__cadencr-session__mark_agent_done"));
-        assert!(prompt.contains("mcp__cadencr_session____mark_agent_done"));
+        assert!(prompt.contains("mcp__cadencr-browser__browser_open_url"));
+        assert!(prompt.contains("mcp__cadencr_browser____browser_open_url"));
     }
 
     #[test]
@@ -41,7 +41,7 @@ mod tests {
         let instructions = codex_developer_instructions();
 
         assert!(instructions.starts_with(RICH_MARKDOWN_INSTRUCTION));
-        assert!(instructions.contains("mcp__cadencr-session__mark_agent_done"));
-        assert!(instructions.contains("mcp__cadencr_session____mark_agent_done"));
+        assert!(instructions.contains("mcp__cadencr-browser__browser_open_url"));
+        assert!(instructions.contains("mcp__cadencr_browser____browser_open_url"));
     }
 }

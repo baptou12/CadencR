@@ -7,6 +7,7 @@ mod prompt_pending;
 mod prompt_send;
 mod prompt_status;
 mod prompt_worktree;
+mod runtime_mcp;
 mod stream_reader;
 mod stream_reader_forward;
 mod stream_reader_resume;

@@ -21,6 +21,7 @@ use super::errors::persist_pause_and_send_session_error;
 use super::mcp_servers::send_mcp_servers_for_runtime;
 use super::prompt_status::{mark_agent_running, mirror_user_message};
 use super::prompt_worktree::{prepare_worktree_if_requested, spawn_auto_name_if_needed};
+use super::runtime_mcp::attach_current_cadencr_browser_mcp;
 use super::stream_reader::spawn_stream_reader;
 
 pub(super) struct PendingPromptContext {
@@ -56,8 +57,22 @@ pub(super) async fn handle_pending_prompt(mut context: PendingPromptContext) {
     let use_worktree = prepare_worktree(&mut context).await;
     reresolve_worktree_and_resume(&mut context).await;
     attach_permission_bridge(&mut context);
+    if let Err(error) = attach_cadencr_mcp(&mut context) {
+        report_spawn_error(context, error).await;
+        return;
+    }
     validate_resume_id(adapter, &mut context);
     spawn_runtime(context, adapter, use_worktree).await;
+}
+
+fn attach_cadencr_mcp(context: &mut PendingPromptContext) -> Result<(), String> {
+    let browser_bridge = context.app_state.browser_bridge_config()?;
+    attach_current_cadencr_browser_mcp(
+        &mut context.options,
+        &context.app_state.db_path,
+        context.feature_id,
+        browser_bridge,
+    )
 }
 
 /// Correct stale session state from `session.init` before spawning. When a

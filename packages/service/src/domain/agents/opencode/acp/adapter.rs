@@ -1,6 +1,7 @@
 use super::adapter_normalize::normalize_edit_input;
 use super::events_subagent_synthesis::{extract_subagent_body, synthesize_subagent_text_event};
 use super::events_tool_call_question::{question_start_event, question_update_event};
+use super::mcp_status::merge_configured_mcp_servers;
 use super::permission_reply::route_subagent_permission_reply;
 use super::prompt_usage::prompt_response_usage;
 use super::question_sidecar::QuestionSidecar;
@@ -89,13 +90,16 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         configured: Vec<RuntimeMcpServerStatus>,
     ) -> Vec<RuntimeMcpServerStatus> {
         match opencode_sdk_rs::list_mcp_servers_from_cli(Some(cwd)).await {
-            Ok(servers) if !servers.is_empty() => servers
-                .into_iter()
-                .map(|server| RuntimeMcpServerStatus {
-                    name: server.name,
-                    status: server.status,
-                })
-                .collect(),
+            Ok(servers) if !servers.is_empty() => merge_configured_mcp_servers(
+                servers
+                    .into_iter()
+                    .map(|server| RuntimeMcpServerStatus {
+                        name: server.name,
+                        status: server.status,
+                    })
+                    .collect(),
+                configured,
+            ),
             Ok(_) => configured,
             Err(error) => {
                 tracing::warn!(%error, "failed to read OpenCode MCP server statuses");
@@ -233,6 +237,7 @@ impl AcpProviderHooks for OpenCodeAcpAdapter {
         Ok(PermissionFallbackOutcome::Handled)
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::OpenCodeAcpAdapter;
@@ -260,10 +265,11 @@ mod tests {
         assert_eq!(adapter.normalize_tool_name("write"), "Write");
         assert_eq!(adapter.normalize_tool_name("question"), "AskUserQuestion");
         assert_eq!(
-            adapter.normalize_tool_name("cadencr-session_mark_agent_done"),
-            "mcp__cadencr-session__mark_agent_done"
+            adapter.normalize_tool_name("cadencr-browser_browser_open_url"),
+            "mcp__cadencr-browser__browser_open_url"
         );
     }
+
     #[test]
     fn adapter_normalize_tool_input_renames_edit_keys() {
         let adapter = adapter();

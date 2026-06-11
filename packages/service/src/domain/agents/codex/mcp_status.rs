@@ -191,12 +191,12 @@ mod tests {
 
     #[test]
     fn mcp_statuses_do_not_assume_missing_servers_are_connected() {
-        let expected = vec!["cadencr-session".to_string(), "cadencr-extra".to_string()];
+        let expected = vec!["cadencr-browser".to_string(), "cadencr-extra".to_string()];
         let statuses = parse_mcp_server_statuses(
             &[status(
-                "cadencr-session",
+                "cadencr-browser",
                 Some("unsupported"),
-                &["mark_agent_done"],
+                &["browser_open_url"],
             )],
             &expected,
         );
@@ -208,14 +208,18 @@ mod tests {
     fn mcp_statuses_return_ready_servers_when_no_expected_list_exists() {
         let statuses = parse_mcp_server_statuses(
             &[
-                status("cadencr-session", Some("unsupported"), &["mark_agent_done"]),
+                status(
+                    "cadencr-browser",
+                    Some("unsupported"),
+                    &["browser_open_url"],
+                ),
                 status("custom", None, &[]),
             ],
             &[],
         );
 
         assert_eq!(statuses.len(), 2);
-        assert_eq!(statuses[0].name, "cadencr-session");
+        assert_eq!(statuses[0].name, "cadencr-browser");
         assert_eq!(statuses[0].status, "connected");
         assert_eq!(statuses[1].name, "custom");
         assert_eq!(statuses[1].status, "connected");
@@ -223,37 +227,33 @@ mod tests {
 
     #[test]
     fn mcp_statuses_mark_expected_servers_unavailable_for_malformed_response() {
-        let expected = vec!["cadencr-session".to_string()];
+        let expected = vec!["cadencr-browser".to_string()];
         let statuses = parse_mcp_server_statuses(&[], &expected);
 
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].name, "cadencr-session");
+        assert_eq!(statuses[0].name, "cadencr-browser");
         assert_eq!(statuses[0].status, "unavailable");
     }
 
     #[test]
     fn startup_ready_status_overrides_empty_status_list_for_expected_server() {
-        let expected = vec!["cadencr-session".to_string()];
+        let expected = vec!["cadencr-browser".to_string()];
         let listed = parse_mcp_server_statuses(&[], &expected);
         let statuses = merge_startup_statuses(
             listed,
-            &HashMap::from([("cadencr-session".to_string(), "ready".to_string())]),
+            &HashMap::from([("cadencr-browser".to_string(), "ready".to_string())]),
         );
 
         assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].name, "cadencr-session");
+        assert_eq!(statuses[0].name, "cadencr-browser");
         assert_eq!(statuses[0].status, "connected");
     }
 
     #[test]
-    fn mcp_statuses_require_expected_tools_and_auth() {
-        let expected = vec!["cadencr-session".to_string()];
+    fn mcp_statuses_do_not_require_workspace_tools_for_browser() {
+        let expected = vec!["cadencr-browser".to_string()];
         let statuses = parse_mcp_server_statuses(
-            &[status(
-                "cadencr-session",
-                Some("unsupported"),
-                &["mark_agent_done"],
-            )],
+            &[status("cadencr-browser", Some("unsupported"), &[])],
             &expected,
         );
 

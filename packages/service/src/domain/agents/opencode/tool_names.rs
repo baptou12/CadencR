@@ -69,16 +69,16 @@ mod tests {
     #[test]
     fn rewrites_opencode_cadencr_tool_names() {
         assert_eq!(
-            canonical_cadencr_tool_name("cadencr-session_mark_agent_done"),
-            "mcp__cadencr-session__mark_agent_done"
+            canonical_cadencr_tool_name("cadencr-browser_browser_open_url"),
+            "mcp__cadencr-browser__browser_open_url"
         );
     }
 
     #[test]
     fn passes_through_already_canonical_names() {
         assert_eq!(
-            canonical_cadencr_tool_name("mcp__cadencr-session__mark_agent_done"),
-            "mcp__cadencr-session__mark_agent_done"
+            canonical_cadencr_tool_name("mcp__cadencr-browser__browser_open_url"),
+            "mcp__cadencr-browser__browser_open_url"
         );
     }
 

@@ -108,6 +108,7 @@ async fn main() -> anyhow::Result<()> {
             let state = AppState::for_server(
                 read_pool,
                 write_pool,
+                db_path.clone(),
                 auth_token,
                 config.frontend_port,
                 config.port,

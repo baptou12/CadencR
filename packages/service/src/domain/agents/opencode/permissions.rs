@@ -140,7 +140,7 @@ mod tests {
             "type": "acp_permission_request",
             "request_id": "per_1",
             "call_id": "call_1",
-            "tool_name": "cadencr-session_mark_agent_done",
+            "tool_name": "cadencr-browser_browser_open_url",
             "tool_input": {},
         }))
         .unwrap();

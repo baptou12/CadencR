@@ -64,11 +64,11 @@ mod tests {
     #[test]
     fn cadencr_namespace_tools_use_canonical_backend_names() {
         let name = function_tool_name(&json!({
-            "namespace": "mcp__cadencr_session__",
-            "name": "read_conversation"
+            "namespace": "mcp__cadencr_browser__",
+            "name": "browser_screenshot"
         }));
 
-        assert_eq!(name, "mcp__cadencr-session__read_conversation");
+        assert_eq!(name, "mcp__cadencr-browser__browser_screenshot");
     }
 
     #[test]

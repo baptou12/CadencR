@@ -52,7 +52,7 @@ pub enum Command {
     /// occasionally dispatches handlers on fresh tokio tasks that do not
     /// inherit task-locals, so the id is stored on the shared context instead.
     McpServe {
-        /// Agent type to serve. Only `session` is supported.
+        /// MCP server to serve. Only `browser` is supported.
         #[arg(long)]
         agent_type: String,
 

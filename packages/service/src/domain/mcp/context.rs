@@ -8,6 +8,9 @@ use std::sync::Arc;
 /// sometimes runs handlers on freshly-spawned tokio tasks that don't inherit
 /// a task-local scope, so the earlier scope-based approach was unreliable.
 pub struct McpContext {
+    // Reserved for the future `cadencr-workspace` MCP server's conversation
+    // read tools.
+    #[allow(dead_code)]
     pub read_pool: SqlitePool,
     #[allow(dead_code)]
     pub write_pool: SqlitePool,
@@ -23,6 +26,9 @@ impl McpContext {
         })
     }
 
+    // Reserved for future MCP tools that should read the pinned feature id via
+    // an accessor instead of direct field access.
+    #[allow(dead_code)]
     pub fn feature_id(&self) -> i64 {
         self.feature_id
     }

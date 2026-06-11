@@ -123,8 +123,8 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-session",
-                    "tool": "read_conversation",
+                    "server": "cadencr-browser",
+                    "tool": "browser_screenshot",
                     "result": { "session_id": 42 },
                     "error": null
                 }
@@ -152,8 +152,8 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-session",
-                    "tool": "read_conversation",
+                    "server": "cadencr-browser",
+                    "tool": "browser_screenshot",
                     "error": "no such table: features"
                 }
             }),

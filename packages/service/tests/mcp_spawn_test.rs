@@ -1,15 +1,15 @@
 use cadencr_service::domain::mcp::servers::{mcp_server_name, AgentType};
 
-/// Verify mcp_server_name returns the canonical `cadencr-session` prefix.
+/// Verify mcp_server_name returns the canonical `cadencr-browser` prefix.
 #[test]
-fn test_mcp_server_name_session() {
-    assert_eq!(mcp_server_name(AgentType::Session), "cadencr-session");
+fn test_mcp_server_name_browser() {
+    assert_eq!(mcp_server_name(AgentType::Browser), "cadencr-browser");
 }
 
 /// Verify that the MCP stdio server responds to initialize + tools/list.
 ///
 /// Spawns the cadencr-service binary in mcp-serve mode and verifies the
-/// handshake and tool listing works end-to-end for the surviving `session`
+/// handshake and tool listing works end-to-end for the surviving `browser`
 /// agent type.
 #[tokio::test]
 async fn test_mcp_stdio_server_responds_to_tools_list() {
@@ -97,7 +97,7 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
         .arg(db_path.to_str().unwrap())
         .arg("mcp-serve")
         .arg("--agent-type")
-        .arg("session")
+        .arg("browser")
         .arg("--feature-id")
         .arg("1")
         .stdin(Stdio::piped())
@@ -118,7 +118,7 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     let init_resp: serde_json::Value = serde_json::from_str(&line).unwrap();
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], "cadencr-session");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "cadencr-browser");
     assert_eq!(init_resp["result"]["protocolVersion"], "2024-11-05");
 
     let initialized = r#"{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}"#;
@@ -145,16 +145,41 @@ async fn test_mcp_stdio_server_responds_to_tools_list() {
 
     let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert!(
-        tool_names.contains(&"mark_agent_done"),
-        "missing mark_agent_done"
+        tool_names.contains(&"browser_open_url"),
+        "missing browser_open_url"
     );
     assert!(
-        tool_names.contains(&"list_conversations"),
-        "missing list_conversations"
+        tool_names.contains(&"browser_screenshot"),
+        "missing browser_screenshot"
     );
     assert!(
-        tool_names.contains(&"read_conversation"),
-        "missing read_conversation"
+        !tool_names.contains(&"mark_agent_done"),
+        "mark_agent_done must not be exposed by cadencr-browser"
+    );
+    assert!(
+        !tool_names.contains(&"list_conversations"),
+        "list_conversations is reserved for future cadencr-workspace"
+    );
+    assert!(
+        !tool_names.contains(&"read_conversation"),
+        "read_conversation is reserved for future cadencr-workspace"
+    );
+    let open_url_tool = tools
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some("browser_open_url"))
+        .expect("browser_open_url tool");
+    let input_schema = &open_url_tool["inputSchema"];
+    assert!(
+        input_schema["properties"].get("feature_id").is_none(),
+        "browser tools are subprocess-pinned and must not ask agents for feature_id"
+    );
+    assert!(
+        !input_schema["required"]
+            .as_array()
+            .unwrap_or(&Vec::new())
+            .iter()
+            .any(|value| value.as_str() == Some("feature_id")),
+        "feature_id must not be a required browser tool argument"
     );
 
     drop(stdin);
