@@ -137,6 +137,7 @@ export function DiffFileHeader({
 }: DiffFileHeaderProps): ReactElement {
   return (
     <div
+      data-diff-file-header
       className={`group/header sticky top-0 z-10 flex w-full items-center gap-2 bg-sidebar px-4 py-2.5 text-sm text-foreground hover:bg-accent ${isFocused ? "ring-1 ring-inset ring-primary bg-accent" : ""}`}
     >
       <DiffFileHeaderPrefix

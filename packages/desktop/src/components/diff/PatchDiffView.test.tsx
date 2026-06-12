@@ -279,4 +279,20 @@ describe("PatchDiffView", () => {
     expect(options.unsafeCSS).toContain("color: var(--primary-foreground)");
     expect(options.unsafeCSS).toContain(":host(.cadencr-patch-diff-inline) [data-code]");
   });
+
+  it("plumbs the frost diff-header tint + backdrop vars into the sticky header", () => {
+    render(<PatchDiffView patch={patch} mode="unified" themeAppearance="dark" themeId="dracula" />);
+
+    const options = mocks.setOptionsMock.mock.calls.at(-1)?.[0] as { unsafeCSS?: string };
+    const css = options.unsafeCSS ?? "";
+
+    // The sticky header must consume the shadow-DOM-piercing frost tokens so the
+    // header stays opaque over scrolled diff lines (resolves to `none` off-frost).
+    expect(css).toContain("background-image: var(--diff-file-header-tint, none)");
+    expect(css).toContain("backdrop-filter: var(--diff-file-header-backdrop, none)");
+    // Focused state must use the longhand so the tint layer above survives — the
+    // `background` shorthand would reset background-image and re-expose the bleed.
+    expect(css).toContain(":host(.cadencr-patch-diff-focused) [data-diffs-header]");
+    expect(css).not.toContain("background: var(--accent)");
+  });
 });

@@ -214,7 +214,9 @@ const DIFF_UNSAFE_CSS = `
   }
   :host(.cadencr-patch-diff-focused) [data-diffs-header] {
     box-shadow: inset 0 0 0 1px var(--primary);
-    background: var(--accent);
+    /* background-color (not the shorthand) so the frost tint layer below
+       survives the focused state. */
+    background-color: var(--accent);
   }
   [data-diffs-header] {
     position: sticky;
@@ -223,6 +225,12 @@ const DIFF_UNSAFE_CSS = `
     min-height: 38px;
     border-bottom: 1px solid var(--border);
     background: var(--sidebar);
+    /* Frost themes: --sidebar is near-transparent there, so scrolled diff
+       lines bled through the sticky header. Both vars pierce the shadow
+       boundary and resolve to none everywhere else (see theme-frost.css). */
+    background-image: var(--diff-file-header-tint, none);
+    backdrop-filter: var(--diff-file-header-backdrop, none);
+    -webkit-backdrop-filter: var(--diff-file-header-backdrop, none);
     color: var(--foreground);
   }
   [data-header-content] { min-width: 0; }
