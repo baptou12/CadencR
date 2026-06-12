@@ -437,11 +437,11 @@
  * the app recedes even with no blur at all. */
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"],
 :root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
-  backdrop-filter: blur(4px) saturate(120%);
-  -webkit-backdrop-filter: blur(4px) saturate(120%);
+  backdrop-filter: blur(2px) saturate(120%);
+  -webkit-backdrop-filter: blur(2px) saturate(120%);
 }
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"] {
-  background-color: oklch(0.08 0.02 262 / 0.78);
+  background-color: oklch(0.08 0.02 262 / 0.64);
 }
 :root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
   background-color: oklch(0.82 0.014 255 / 0.66);
