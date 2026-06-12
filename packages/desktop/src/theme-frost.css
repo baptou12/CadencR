@@ -16,6 +16,16 @@
  * frost blocks switch them ON. The `.glass-surface` utility and the ambient
  * layer are therefore SAFE to mount/apply in every theme — outside frost they
  * render nothing extra. The six existing themes are byte-for-byte unchanged.
+ *
+ * --- Never write `-webkit-backdrop-filter` in this file ---
+ * The production build runs Lightning CSS (via @tailwindcss/vite), which
+ * treats the `-webkit-` alias and the standard property as one logical
+ * property: a `backdrop-filter` + `-webkit-backdrop-filter` pair is collapsed
+ * to ONLY the `-webkit-` form — which Chromium does not implement. That
+ * silently stripped every blur from the packaged app while `pnpm dev`
+ * (unminified CSS) kept working. Write only the standard property: the same
+ * Lightning CSS pass then re-emits the `-webkit-` alias itself, in the right
+ * order, so Safari remote clients keep their fallback too.
  * ------------------------------------------------------------------------- */
 
 :root {
@@ -377,7 +387,6 @@
  * ------------------------------------------------------------------------- */
 .glass-surface {
   backdrop-filter: var(--glass-backdrop);
-  -webkit-backdrop-filter: var(--glass-backdrop);
   box-shadow: var(--glass-shadow);
 }
 
@@ -408,7 +417,6 @@
     [data-slot="command"]
   ) {
   backdrop-filter: var(--glass-backdrop);
-  -webkit-backdrop-filter: var(--glass-backdrop);
   box-shadow: var(--glass-shadow-overlay);
 }
 
@@ -438,7 +446,6 @@
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"],
 :root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
   backdrop-filter: blur(2px) saturate(120%);
-  -webkit-backdrop-filter: blur(2px) saturate(120%);
 }
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"] {
   background-color: oklch(0.08 0.02 262 / 0.64);
@@ -472,7 +479,6 @@
 :root[data-theme="frost-dark"] [data-agent-prompt-bar] > .glass-surface,
 :root[data-theme="frost-light"] [data-agent-prompt-bar] > .glass-surface {
   backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 /* Git/diff sticky file headers — frosted band instead of see-through.
@@ -484,7 +490,6 @@
 :root[data-theme="frost-dark"] [data-diff-file-header],
 :root[data-theme="frost-light"] [data-diff-file-header] {
   backdrop-filter: var(--diff-file-header-backdrop);
-  -webkit-backdrop-filter: var(--diff-file-header-backdrop);
   background-image: var(--diff-file-header-tint);
 }
 
@@ -512,7 +517,6 @@
 :root[data-theme="frost-dark"] [data-pane-id]:not([data-pane-root]),
 :root[data-theme="frost-light"] [data-pane-id]:not([data-pane-root]) {
   backdrop-filter: var(--glass-backdrop);
-  -webkit-backdrop-filter: var(--glass-backdrop);
   box-shadow: var(--glass-shadow-pane);
 }
 
@@ -558,6 +562,36 @@
 }
 
 /* -------------------------------------------------------------------------
+ * Opaque backdrop root — REQUIRED for the frost glass blur to paint.
+ *
+ * Chromium only renders `backdrop-filter` when the page's backdrop root has an
+ * OPAQUE background. A partially-translucent root silently disables EVERY
+ * `backdrop-filter` on the page — the surfaces keep their tint but nothing
+ * blurs (crbug.com/380416865). In Frost, `html, body` inherit the ~0.55-alpha
+ * `--background` token (see `theme.css`), which tripped exactly this and left
+ * all the glass flat.
+ *
+ * Fix without losing the ambient field:
+ *   - `:root` (html) gets an OPAQUE base — it's the backdrop root, so this is
+ *     what re-enables the blur. It paints behind the ambient layer, so it's
+ *     never visible itself.
+ *   - `body` becomes fully TRANSPARENT (not the 0.55 tint). A *partial*-alpha
+ *     body is what broke the blur; a transparent one does not.
+ *   - The page tint the translucent body used to cast over the field moves to
+ *     the `.ambient-veil` layer below, so the look is unchanged. Without it the
+ *     un-dimmed halos + grain read far too bright and the noise too coarse.
+ * Scoped to the frost themes; every other theme is untouched.
+ * ------------------------------------------------------------------------- */
+:root[data-theme="frost-dark"],
+:root[data-theme="frost-light"] {
+  background-color: var(--ambient-base);
+}
+:root[data-theme="frost-dark"] body,
+:root[data-theme="frost-light"] body {
+  background-color: transparent;
+}
+
+/* -------------------------------------------------------------------------
  * Ambient living background — drifting halos + film grain.
  *
  * Mounted once at the app root by <AmbientBackground/>. Both layers are
@@ -568,14 +602,30 @@
  * `prefers-reduced-motion`.
  * ------------------------------------------------------------------------- */
 .ambient,
-.grain {
+.grain,
+.ambient-veil {
   display: none;
 }
 :root[data-theme="frost-dark"] .ambient,
 :root[data-theme="frost-light"] .ambient,
 :root[data-theme="frost-dark"] .grain,
-:root[data-theme="frost-light"] .grain {
+:root[data-theme="frost-light"] .grain,
+:root[data-theme="frost-dark"] .ambient-veil,
+:root[data-theme="frost-light"] .ambient-veil {
   display: block;
+}
+
+/* The page tint that used to live on the translucent `body` background (see the
+ * "Opaque backdrop root" note above). Rendered last in <AmbientBackground/>, so
+ * it dims the halos + grain just as the old body tint did, while `body` itself
+ * stays non-translucent and the blur keeps painting. `--background` is the exact
+ * token `body` carried, so the look is identical and stays in sync per theme. */
+.ambient-veil {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--background);
 }
 
 .ambient {
