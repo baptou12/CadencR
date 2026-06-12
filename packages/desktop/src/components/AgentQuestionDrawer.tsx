@@ -6,6 +6,12 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/KbdShortcut";
 import {
+  AGENT_OPTION_CARD_BASE,
+  AGENT_OPTION_CARD_RESTING,
+  AGENT_OPTION_CARD_SELECTED,
+  AGENT_OPTION_CARD_HIGHLIGHTED,
+} from "@/components/agent-prompt-option-card";
+import {
   SendIcon,
   MessageCircleQuestionIcon,
   ChevronLeftIcon,
@@ -399,7 +405,12 @@ export function AgentQuestionDrawer({
     : undefined;
 
   return (
-    <div className={cn("bg-card", inline ? "px-3 py-2" : "border-t border-border px-4 py-3")}>
+    <div
+      className={cn(
+        "agent-prompt-gate-panel bg-card",
+        inline ? "px-3 py-2" : "border-t border-border px-4 py-3",
+      )}
+    >
       {/* Header row: progress indicator (multi-question) + dismiss X */}
       {(questions.length > 1 || onCancel) && (
         <div className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
@@ -471,11 +482,11 @@ export function AgentQuestionDrawer({
               key={option.label}
               type="button"
               className={cn(
-                "w-full rounded-md border px-3 py-2 text-left transition-colors",
+                AGENT_OPTION_CARD_BASE,
                 selectedOptions.has(option.label)
-                  ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                  : "border-border bg-muted/40 hover:bg-muted/50",
-                highlightedIndex === optIdx && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
+                  ? AGENT_OPTION_CARD_SELECTED
+                  : AGENT_OPTION_CARD_RESTING,
+                highlightedIndex === optIdx && AGENT_OPTION_CARD_HIGHLIGHTED,
               )}
               onClick={(e) => {
                 handleOptionToggle(option.label);
@@ -499,12 +510,9 @@ export function AgentQuestionDrawer({
           <button
             type="button"
             className={cn(
-              "w-full rounded-md border px-3 py-2 text-left transition-colors",
-              showOther
-                ? "border-primary bg-primary/5 ring-2 ring-primary/30"
-                : "border-border bg-muted/40 hover:bg-muted/50",
-              highlightedIndex === currentQuestion.options!.length &&
-                "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
+              AGENT_OPTION_CARD_BASE,
+              showOther ? AGENT_OPTION_CARD_SELECTED : AGENT_OPTION_CARD_RESTING,
+              highlightedIndex === currentQuestion.options!.length && AGENT_OPTION_CARD_HIGHLIGHTED,
             )}
             onClick={(e) => {
               handleOtherToggle();
