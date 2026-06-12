@@ -45,6 +45,7 @@ export function PaneChrome({
       <div
         ref={containerRef}
         data-pane-id={leaf.id}
+        data-pane-root={isRoot || undefined}
         data-pane-focused={isFocused}
         className={cn(
           "relative flex h-full w-full flex-col bg-background outline-none",

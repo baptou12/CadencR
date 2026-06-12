@@ -1,0 +1,539 @@
+/* -------------------------------------------------------------------------
+ * Frost Glass theme system
+ *
+ * Two themes (`frost-dark`, `frost-light`) plus the cross-theme "glass"
+ * primitives that power them. Kept in its own file so the already-large
+ * `theme.css` token tables don't grow further, and so the glass mechanics
+ * (ambient field, backdrop blur, translucent surfaces) live in one place.
+ *
+ * Design language: luminous glassmorphism — translucent frosted surfaces
+ * floating over a slow-drifting field of blurred colored halos, with a single
+ * icy-azure accent. See the "Frost Glass Design Language" brief.
+ *
+ * --- How the glass stays OFF for every other theme ---
+ * All glass knobs default to a no-op in the base `:root` block below
+ * (`backdrop-filter: none`, transparent halos, zero opacity). Only the two
+ * frost blocks switch them ON. The `.glass-surface` utility and the ambient
+ * layer are therefore SAFE to mount/apply in every theme — outside frost they
+ * render nothing extra. The six existing themes are byte-for-byte unchanged.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* Glass primitives — OFF by default (any theme may override to opt in). */
+  --glass-backdrop: none; /* value for `backdrop-filter` */
+  --glass-shadow: none; /* inset highlight + accent-tinted cast */
+
+  /* Ambient halo field — invisible by default. */
+  --ambient-base: transparent;
+  --ambient-1: transparent;
+  --ambient-2: transparent;
+  --ambient-3: transparent;
+  --ambient-opacity: 0;
+  --grain-opacity: 0;
+  --grain-blend: overlay; /* how the frost grain composites over the field */
+}
+
+/* -------------------------------------------------------------------------
+ * Frost Dark — deep cold near-black base, translucent light-frost panels,
+ * icy-azure accent (hue ~230). The page itself is semi-translucent so the
+ * fixed ambient halos glow through every surface.
+ * ------------------------------------------------------------------------- */
+:root[data-theme="frost-dark"] {
+  color-scheme: dark;
+
+  /* Glass ON */
+  --glass-backdrop: blur(28px) saturate(150%);
+  --glass-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 24px 60px -24px oklch(0.6 0.16 230 / 0.4),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  --ambient-base: oklch(0.165 0.018 262);
+  --ambient-1: oklch(0.6 0.1 230 / 0.5);
+  --ambient-2: oklch(0.56 0.09 285 / 0.4);
+  --ambient-3: oklch(0.62 0.08 200 / 0.4);
+  --ambient-opacity: 0.5;
+  --grain-opacity: 0.3;
+  --grain-blend: screen; /* adds a fine cool-white frost speckle on the dark field */
+
+  /* Tailwind semantic tokens. Surfaces are translucent so the halos bleed
+   * through; foregrounds stay near-white-cool for contrast over the field. */
+  --background: oklch(0.18 0.022 262 / 0.55);
+  --foreground: oklch(0.96 0.01 255);
+  --card: oklch(0.96 0.02 250 / 0.08);
+  --card-foreground: oklch(0.96 0.01 255);
+  --surface-sunken: oklch(0.02 0.02 262 / 0.22);
+  --popover: oklch(0.21 0.03 260 / 0.82);
+  --popover-foreground: oklch(0.96 0.01 255);
+  --primary: oklch(0.72 0.15 230);
+  --primary-foreground: oklch(0.16 0.02 262);
+  --secondary: oklch(1 0 0 / 0.08);
+  --secondary-foreground: oklch(0.96 0.01 255);
+  --muted: oklch(1 0 0 / 0.06);
+  --muted-foreground: oklch(0.76 0.03 250);
+  --accent: oklch(1 0 0 / 0.1);
+  --accent-foreground: oklch(0.96 0.01 255);
+  --destructive: oklch(0.68 0.2 18);
+  --destructive-foreground: oklch(0.98 0.01 255);
+  --border: oklch(1 0 0 / 0.12);
+  --input: oklch(1 0 0 / 0.1);
+  --ring: oklch(0.72 0.15 230);
+  --chart-1: oklch(0.72 0.15 230);
+  --chart-2: oklch(0.72 0.14 285);
+  --chart-3: oklch(0.78 0.13 195);
+  --chart-4: oklch(0.82 0.13 160);
+  --chart-5: oklch(0.78 0.13 95);
+  --sidebar: oklch(0.5 0.04 262 / 0.06);
+  --sidebar-foreground: oklch(0.96 0.01 255);
+  --sidebar-primary: oklch(0.72 0.15 230);
+  --sidebar-primary-foreground: oklch(0.16 0.02 262);
+  --sidebar-accent: oklch(1 0 0 / 0.1);
+  --sidebar-accent-foreground: oklch(0.96 0.01 255);
+  --sidebar-border: oklch(1 0 0 / 0.1);
+  --sidebar-ring: oklch(0.72 0.15 230);
+
+  /* Vibrant accent palette — cooled toward the frost mood. */
+  --acc-cyan: oklch(0.82 0.11 205);
+  --acc-green: oklch(0.82 0.16 160);
+  --acc-orange: oklch(0.82 0.12 70);
+  --acc-pink: oklch(0.78 0.13 330);
+  --acc-purple: oklch(0.76 0.13 285);
+  --acc-red: oklch(0.72 0.18 18);
+  --acc-yellow: oklch(0.88 0.12 95);
+  --acc-comment: oklch(0.62 0.03 255);
+
+  /* Code surface — translucent but kept dark/legible. */
+  --code-bg: oklch(0.14 0.02 262 / 0.55);
+  --code-fg: oklch(0.94 0.01 255);
+
+  /* Agent-stream block surfaces — translucent tints, azure/cyan identity. */
+  --block-tool-bg: oklch(0.62 0.14 230 / 0.12);
+  --block-tool-accent: oklch(0.8 0.13 230);
+  --block-thinking-bg: oklch(0.62 0.14 285 / 0.12);
+  --block-thinking-accent: oklch(0.8 0.13 285);
+  --block-plan-bg: oklch(0.62 0.14 230 / 0.12);
+  --block-plan-accent: oklch(0.8 0.13 230);
+  --block-bash-header-bg: oklch(0.2 0.02 262 / 0.6);
+  --block-bash-body-bg: oklch(0.12 0.02 262 / 0.6);
+  --block-bash-fg: oklch(0.92 0.01 255);
+  --block-bash-muted-fg: oklch(0.7 0.02 255);
+  --block-task-bg: oklch(0.5 0.03 262 / 0.08);
+
+  /* App-level semantic accents. */
+  --numstat-add-fg: oklch(0.82 0.16 160);
+  --numstat-del-fg: oklch(0.72 0.18 18);
+  --chip-worktree-bg: oklch(0.7 0.13 205 / 0.2);
+  --chip-worktree-bg-hover: oklch(0.7 0.13 205 / 0.3);
+  --chip-worktree-fg: oklch(0.82 0.11 205);
+  --chip-shared-worktree-bg: oklch(0.78 0.12 70 / 0.2);
+  --chip-shared-worktree-fg: oklch(0.82 0.12 70);
+
+  /* Prompt chip palette — UI-conventional violet/fuchsia/blue identities. */
+  --chip-violet-bg: oklch(0.62 0.2 290);
+  --chip-violet-fg: oklch(0.78 0.14 290);
+  --chip-violet-soft: oklch(0.86 0.09 290);
+  --chip-fuchsia-bg: oklch(0.64 0.22 330);
+  --chip-fuchsia-fg: oklch(0.8 0.15 330);
+  --chip-blue-bg: oklch(0.62 0.18 245);
+  --chip-blue-fg: oklch(0.78 0.13 245);
+
+  /* CodeMirror editor — translucent cold surface, cool syntax accents. */
+  --editor-bg: oklch(0.15 0.02 262 / 0.55);
+  --editor-fg: oklch(0.94 0.01 255);
+  --editor-comment: oklch(0.62 0.03 255);
+  --editor-cyan: oklch(0.82 0.11 205);
+  --editor-green: oklch(0.82 0.16 160);
+  --editor-orange: oklch(0.82 0.12 70);
+  --editor-pink: oklch(0.78 0.13 330);
+  --editor-purple: oklch(0.76 0.13 285);
+  --editor-red: oklch(0.72 0.18 18);
+  --editor-yellow: oklch(0.88 0.12 95);
+  --editor-border: oklch(1 0 0 / 0.1);
+  --editor-cursor: oklch(0.8 0.13 230);
+  --editor-line-highlight: rgba(255, 255, 255, 0.05);
+  --editor-gutter-bg: transparent;
+  --editor-gutter-fg: oklch(0.6 0.03 255);
+  --editor-selection-bg: oklch(0.62 0.14 230 / 0.3);
+  --editor-selection-bg-soft: oklch(0.62 0.14 230 / 0.18);
+  --editor-search-match-bg: oklch(0.72 0.15 230 / 0.3);
+
+  /* Diff decorations. */
+  --diff-add-bg: oklch(0.82 0.16 160 / 0.12);
+  --diff-add-bg-strong: oklch(0.82 0.16 160 / 0.24);
+  --diff-del-bg: oklch(0.72 0.18 18 / 0.12);
+  --diff-del-bg-strong: oklch(0.72 0.18 18 / 0.24);
+
+  /* Terminal chrome — translucent cold. The xterm canvas itself paints from
+   * the solid JS palette in `lib/themes/frost-dark.ts`. */
+  --terminal-bg: oklch(0.14 0.02 262 / 0.55);
+  --terminal-panel-icon: oklch(0.6 0.03 255);
+  --terminal-panel-icon-hover: oklch(0.92 0.01 255);
+  --terminal-panel-icon-bg-hover: oklch(1 0 0 / 0.1);
+  --terminal-panel-handle-bg: oklch(1 0 0 / 0.08);
+  --terminal-panel-handle-bg-hover: oklch(1 0 0 / 0.14);
+  --terminal-warning-bg: oklch(0.24 0.03 260 / 0.7);
+  --terminal-warning-border: oklch(1 0 0 / 0.12);
+  --terminal-warning-fg: oklch(0.94 0.01 255);
+  --terminal-warning-fg-secondary: oklch(0.78 0.02 255);
+  --terminal-warning-accent: oklch(0.88 0.12 95);
+  --terminal-warning-link: oklch(0.8 0.13 230);
+  --terminal-warning-button-bg: oklch(1 0 0 / 0.1);
+  --terminal-warning-button-bg-hover: oklch(1 0 0 / 0.16);
+}
+
+/* -------------------------------------------------------------------------
+ * Frost Light — near-white cool base, classic white-glass panels, deepened
+ * azure accent (hue ~245) for contrast on the bright field.
+ * ------------------------------------------------------------------------- */
+:root[data-theme="frost-light"] {
+  color-scheme: light;
+
+  /* Glass ON */
+  --glass-backdrop: blur(28px) saturate(170%);
+  --glass-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 24px 60px -24px oklch(0.55 0.2 250 / 0.22),
+    0 1px 2px rgba(20, 22, 40, 0.06);
+  --ambient-base: oklch(0.978 0.006 255);
+  --ambient-1: oklch(0.85 0.08 240 / 0.55);
+  --ambient-2: oklch(0.87 0.07 290 / 0.45);
+  --ambient-3: oklch(0.9 0.06 200 / 0.45);
+  --ambient-opacity: 0.55;
+  --grain-opacity: 0.13;
+  --grain-blend: multiply; /* fine frosted-paper grain that reads on the near-white field */
+
+  /* Tailwind semantic tokens. */
+  --background: oklch(0.98 0.008 255 / 0.5);
+  --foreground: oklch(0.26 0.03 262);
+  --card: oklch(1 0 0 / 0.55);
+  --card-foreground: oklch(0.26 0.03 262);
+  --surface-sunken: oklch(0.9 0.02 255 / 0.35);
+  --popover: oklch(1 0 0 / 0.8);
+  --popover-foreground: oklch(0.26 0.03 262);
+  --primary: oklch(0.55 0.18 245);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(1 0 0 / 0.5);
+  --secondary-foreground: oklch(0.26 0.03 262);
+  --muted: oklch(0.6 0.04 255 / 0.12);
+  --muted-foreground: oklch(0.44 0.04 260);
+  --accent: oklch(1 0 0 / 0.6);
+  --accent-foreground: oklch(0.26 0.03 262);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.5 0.04 255 / 0.18);
+  --input: oklch(1 0 0 / 0.55);
+  --ring: oklch(0.6 0.17 245);
+  --chart-1: oklch(0.55 0.18 245);
+  --chart-2: oklch(0.55 0.18 290);
+  --chart-3: oklch(0.58 0.14 200);
+  --chart-4: oklch(0.58 0.16 160);
+  --chart-5: oklch(0.62 0.15 95);
+  --sidebar: oklch(1 0 0 / 0.4);
+  --sidebar-foreground: oklch(0.26 0.03 262);
+  --sidebar-primary: oklch(0.55 0.18 245);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(1 0 0 / 0.6);
+  --sidebar-accent-foreground: oklch(0.26 0.03 262);
+  --sidebar-border: oklch(0.5 0.04 255 / 0.16);
+  --sidebar-ring: oklch(0.6 0.17 245);
+
+  /* Vibrant accents — deepened for legibility on the bright frost field. */
+  --acc-cyan: oklch(0.55 0.13 215);
+  --acc-green: oklch(0.55 0.16 160);
+  --acc-orange: oklch(0.62 0.16 60);
+  --acc-pink: oklch(0.55 0.2 350);
+  --acc-purple: oklch(0.52 0.2 290);
+  --acc-red: oklch(0.55 0.22 25);
+  --acc-yellow: oklch(0.62 0.14 90);
+  --acc-comment: oklch(0.58 0.04 260);
+
+  /* Code surface — translucent cool off-white. */
+  --code-bg: oklch(0.97 0.01 255 / 0.65);
+  --code-fg: oklch(0.26 0.03 262);
+
+  /* Agent-stream block surfaces — light tints + saturated accent text. */
+  --block-tool-bg: oklch(0.7 0.13 245 / 0.14);
+  --block-tool-accent: oklch(0.48 0.18 245);
+  --block-thinking-bg: oklch(0.7 0.13 290 / 0.14);
+  --block-thinking-accent: oklch(0.48 0.18 290);
+  --block-plan-bg: oklch(0.7 0.13 245 / 0.14);
+  --block-plan-accent: oklch(0.48 0.18 245);
+  --block-bash-header-bg: oklch(0.85 0.02 255 / 0.6);
+  --block-bash-body-bg: oklch(0.95 0.01 255 / 0.6);
+  --block-bash-fg: oklch(0.26 0.03 262);
+  --block-bash-muted-fg: oklch(0.44 0.04 260);
+  --block-task-bg: oklch(0.9 0.02 255 / 0.4);
+
+  /* App-level semantic accents. */
+  --numstat-add-fg: oklch(0.5 0.16 160);
+  --numstat-del-fg: oklch(0.52 0.22 25);
+  --chip-worktree-bg: oklch(0.7 0.13 215 / 0.18);
+  --chip-worktree-bg-hover: oklch(0.7 0.13 215 / 0.28);
+  --chip-worktree-fg: oklch(0.45 0.13 215);
+  --chip-shared-worktree-bg: oklch(0.72 0.14 60 / 0.2);
+  --chip-shared-worktree-fg: oklch(0.5 0.14 60);
+
+  /* Prompt chip palette — deepened UI-conventional identities. */
+  --chip-violet-bg: oklch(0.55 0.22 295);
+  --chip-violet-fg: oklch(0.45 0.2 295);
+  --chip-violet-soft: oklch(0.35 0.18 295);
+  --chip-fuchsia-bg: oklch(0.55 0.22 330);
+  --chip-fuchsia-fg: oklch(0.45 0.2 330);
+  --chip-blue-bg: oklch(0.52 0.2 250);
+  --chip-blue-fg: oklch(0.45 0.18 250);
+
+  /* CodeMirror editor — translucent near-white surface, deepened syntax. */
+  --editor-bg: oklch(0.98 0.008 255 / 0.6);
+  --editor-fg: oklch(0.26 0.03 262);
+  --editor-comment: oklch(0.6 0.04 260);
+  --editor-cyan: oklch(0.5 0.13 215);
+  --editor-green: oklch(0.5 0.16 160);
+  --editor-orange: oklch(0.56 0.16 60);
+  --editor-pink: oklch(0.52 0.2 350);
+  --editor-purple: oklch(0.5 0.2 290);
+  --editor-red: oklch(0.52 0.22 25);
+  --editor-yellow: oklch(0.58 0.14 90);
+  --editor-border: oklch(0.5 0.04 255 / 0.16);
+  --editor-cursor: oklch(0.55 0.18 245);
+  --editor-line-highlight: rgba(20, 30, 60, 0.05);
+  --editor-gutter-bg: transparent;
+  --editor-gutter-fg: oklch(0.6 0.03 260);
+  --editor-selection-bg: oklch(0.6 0.16 245 / 0.22);
+  --editor-selection-bg-soft: oklch(0.6 0.16 245 / 0.12);
+  --editor-search-match-bg: oklch(0.6 0.17 245 / 0.25);
+
+  /* Diff decorations. */
+  --diff-add-bg: oklch(0.5 0.16 160 / 0.12);
+  --diff-add-bg-strong: oklch(0.5 0.16 160 / 0.24);
+  --diff-del-bg: oklch(0.52 0.22 25 / 0.12);
+  --diff-del-bg-strong: oklch(0.52 0.22 25 / 0.24);
+
+  /* Terminal chrome — translucent light. The xterm canvas paints from the
+   * solid JS palette in `lib/themes/frost-light.ts`. */
+  --terminal-bg: oklch(0.97 0.01 255 / 0.6);
+  --terminal-panel-icon: oklch(0.55 0.03 260);
+  --terminal-panel-icon-hover: oklch(0.26 0.03 262);
+  --terminal-panel-icon-bg-hover: oklch(0.5 0.04 255 / 0.14);
+  --terminal-panel-handle-bg: oklch(0.5 0.04 255 / 0.12);
+  --terminal-panel-handle-bg-hover: oklch(0.5 0.04 255 / 0.2);
+  --terminal-warning-bg: oklch(1 0 0 / 0.7);
+  --terminal-warning-border: oklch(0.5 0.04 255 / 0.18);
+  --terminal-warning-fg: oklch(0.26 0.03 262);
+  --terminal-warning-fg-secondary: oklch(0.44 0.04 260);
+  --terminal-warning-accent: oklch(0.56 0.16 60);
+  --terminal-warning-link: oklch(0.5 0.16 245);
+  --terminal-warning-button-bg: oklch(0.5 0.04 255 / 0.14);
+  --terminal-warning-button-bg-hover: oklch(0.5 0.04 255 / 0.22);
+}
+
+/* -------------------------------------------------------------------------
+ * .glass-surface — opt-in frosting for any panel root.
+ *
+ * Adds the backdrop blur + glass cast. Both resolve to a no-op outside frost
+ * themes (`backdrop-filter: none`, `box-shadow: none`), so it is safe to apply
+ * to chrome in any theme. It deliberately does NOT set a background — the
+ * element keeps its own translucent `bg-*` token so the blur has something to
+ * frost.
+ * ------------------------------------------------------------------------- */
+.glass-surface {
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Frost the floating overlays app-wide via their shadcn `data-slot` hooks —
+ * zero per-component edits. Scoped to the frost themes so nothing else is
+ * touched. Each of these already paints a translucent `bg-popover` /
+ * `bg-background` in frost, so the blur reads as frosted glass. */
+:root[data-theme="frost-dark"]
+  :is(
+    [data-slot="popover-content"],
+    [data-slot="dialog-content"],
+    [data-slot="dropdown-menu-content"],
+    [data-slot="dropdown-menu-sub-content"],
+    [data-slot="context-menu-content"],
+    [data-slot="context-menu-sub-content"],
+    [data-slot="select-content"],
+    [data-slot="command"]
+  ),
+:root[data-theme="frost-light"]
+  :is(
+    [data-slot="popover-content"],
+    [data-slot="dialog-content"],
+    [data-slot="dropdown-menu-content"],
+    [data-slot="dropdown-menu-sub-content"],
+    [data-slot="context-menu-content"],
+    [data-slot="context-menu-sub-content"],
+    [data-slot="select-content"],
+    [data-slot="command"]
+  ) {
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Pane chrome in the Frost themes.
+ *
+ * The pane wrapper normally paints an opaque `bg-background` slab. In Frost that
+ * slab buried the ambient field and read as a flat muddy rectangle. Instead:
+ *
+ *   - The ROOT pane (the main tab that holds the agent stream) drops its
+ *     background entirely, so the conversation column floats directly on the
+ *     frosted, grainy field. No backdrop-filter here on purpose — this is the
+ *     hottest streaming surface, and a blur would repaint on every token.
+ *   - SPLIT panes (terminal / editor / git) keep their translucent
+ *     `bg-background` tint and gain a backdrop blur, so each reads as a frosted
+ *     glass card over the field. Their Tailwind `shadow-md` is untouched. */
+:root[data-theme="frost-dark"] [data-pane-root],
+:root[data-theme="frost-light"] [data-pane-root] {
+  background-color: transparent;
+}
+:root[data-theme="frost-dark"] [data-pane-id]:not([data-pane-root]),
+:root[data-theme="frost-light"] [data-pane-id]:not([data-pane-root]) {
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+}
+
+/* Pierre's file tree paints its own background from the `--trees-bg` custom
+ * property (which resolves to `--sidebar`). The editor sidebar wrapper already
+ * provides the frosted `bg-sidebar`, so pierre stacked a SECOND translucent
+ * `--sidebar` layer over it — both on the host AND on the inner
+ * `[data-file-tree-virtualized-list]` inside its shadow DOM — making the tree
+ * column visibly lighter than the header and side margins. Custom properties
+ * pierce the shadow boundary, so zeroing `--trees-bg` on the host neutralises
+ * every internal fill at once; the wrapper's `bg-sidebar` is then the single,
+ * uniform surface for the whole panel. */
+:root[data-theme="frost-dark"] file-tree-container,
+:root[data-theme="frost-light"] file-tree-container {
+  --trees-bg: transparent;
+  background-color: transparent;
+}
+
+/* Worktree Setup header sits inside the transparent agent pane and shouldn't
+ * paint its own dark `bg-background` band — let it float on the field like the
+ * rest of the agent column. */
+:root[data-theme="frost-dark"] [data-worktree-setup],
+:root[data-theme="frost-light"] [data-worktree-setup] {
+  background-color: transparent;
+}
+
+/* Live terminal — let the gradient through.
+ *
+ * xterm's DOM renderer can't render a translucent background: it paints the
+ * theme background as an INLINE style on `.xterm-scrollable-element`, so a
+ * transparent palette value just collapses to opaque (black in light mode). We
+ * instead force that wrapper transparent in the Frost themes — the terminal
+ * text then renders straight onto the frosted `.glass-surface` container
+ * (translucent `--terminal-bg` + backdrop blur), which frosts the ambient
+ * halos behind it. `!important` is required to beat xterm's inline style, which
+ * it re-applies on every theme change. Scoped to Frost only, so every other
+ * theme keeps xterm's solid background untouched. */
+:root[data-theme="frost-dark"] .xterm .xterm-scrollable-element,
+:root[data-theme="frost-light"] .xterm .xterm-scrollable-element,
+:root[data-theme="frost-dark"] .xterm .xterm-viewport,
+:root[data-theme="frost-light"] .xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
+/* -------------------------------------------------------------------------
+ * Ambient living background — drifting halos + film grain.
+ *
+ * Mounted once at the app root by <AmbientBackground/>. Both layers are
+ * `display: none` outside the frost themes, so they cost nothing (no paint, no
+ * animation) in every other theme. Halo drift freezes automatically when
+ * `html[data-animations="off"]` is set (the global motion kill-switch in
+ * `theme.css` zeroes every animation-duration), which also covers OS
+ * `prefers-reduced-motion`.
+ * ------------------------------------------------------------------------- */
+.ambient,
+.grain {
+  display: none;
+}
+:root[data-theme="frost-dark"] .ambient,
+:root[data-theme="frost-light"] .ambient,
+:root[data-theme="frost-dark"] .grain,
+:root[data-theme="frost-light"] .grain {
+  display: block;
+}
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Flat base + a faint top-center glow so the large calm areas (the agent
+   * reading column) read as a lit field with depth rather than a flat slab.
+   * The white wash is negligible on the bright Frost Light base and a subtle
+   * lift on Frost Dark. */
+  background:
+    radial-gradient(120% 75% at 50% -8%, rgba(255, 255, 255, 0.05), transparent 58%),
+    var(--ambient-base);
+}
+.ambient::before,
+.ambient::after,
+.ambient .halo {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: var(--ambient-opacity);
+}
+.ambient::before {
+  width: 72vw;
+  height: 72vw;
+  top: -16vw;
+  left: -8vw;
+  background: radial-gradient(circle, var(--ambient-1), transparent 70%);
+  animation: frost-drift1 28s ease-in-out infinite alternate;
+}
+.ambient::after {
+  width: 66vw;
+  height: 66vw;
+  top: 8vh;
+  right: -12vw;
+  background: radial-gradient(circle, var(--ambient-2), transparent 70%);
+  animation: frost-drift2 36s ease-in-out infinite alternate;
+}
+.ambient .halo {
+  width: 62vw;
+  height: 62vw;
+  bottom: -22vw;
+  left: 18vw;
+  background: radial-gradient(circle, var(--ambient-3), transparent 70%);
+  animation: frost-drift3 42s ease-in-out infinite alternate;
+}
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  /* fractalNoise speckle, tinted a single cool blue-grey via feColorMatrix
+   * (the constant row outputs RGB ≈ 0.62 0.66 0.78 at alpha 0.7). The tint is
+   * intentionally shared by both frost variants; per-theme presence is tuned by
+   * --grain-opacity / --grain-blend rather than by recolouring the noise. */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.62 0 0 0 0 0.66 0 0 0 0 0.78 0 0 0 0.7 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+@keyframes frost-drift1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(8vw, 6vh) scale(1.1);
+  }
+}
+@keyframes frost-drift2 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-6vw, 10vh) scale(0.95);
+  }
+}
+@keyframes frost-drift3 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(10vw, -8vh) scale(1.08);
+  }
+}

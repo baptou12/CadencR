@@ -183,7 +183,7 @@ export function WorktreeSetupSection({
   ];
 
   return (
-    <div className="flex flex-col bg-background">
+    <div className="flex flex-col bg-background" data-worktree-setup>
       {/* Header — compact inline row. `min-w-0` + the per-child `shrink-0`
           guards keep everything on one line: only the branch name shrinks and
           truncates, so a long branch can never wrap the row to two lines. */}

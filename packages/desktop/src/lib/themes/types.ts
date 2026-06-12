@@ -20,6 +20,8 @@ export const THEME_IDS = [
   "one-light",
   "monokai",
   "monokai-light",
+  "frost-dark",
+  "frost-light",
 ] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 export type ThemeAppearance = "light" | "dark";

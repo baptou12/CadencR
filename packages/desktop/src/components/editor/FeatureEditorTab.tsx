@@ -255,7 +255,7 @@ const FeatureEditorTab = memo(
 
     const sidebar = useMemo(
       () => (
-        <div className="flex h-full flex-col bg-card">
+        <div className="glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar">
           <SidebarHeader
             projectName={projectName}
             isWorktree={isWorktree}
