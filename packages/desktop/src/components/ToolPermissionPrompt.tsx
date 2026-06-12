@@ -8,6 +8,11 @@ import { KbdShortcut } from "@/components/KbdShortcut";
 import { SendIcon, Loader2 } from "lucide-react";
 import { getPermissionPreview } from "./permission-preview";
 import { ToolPermissionPromptHeader } from "./ToolPermissionPromptHeader";
+import {
+  AGENT_OPTION_CARD_BASE,
+  AGENT_OPTION_CARD_RESTING,
+  AGENT_OPTION_CARD_HIGHLIGHTED,
+} from "./agent-prompt-option-card";
 
 export type PermissionDecisionValue = "allow_once" | "allow_future" | "deny";
 
@@ -124,9 +129,9 @@ function PermissionOptionButton({
       disabled={disabled}
       aria-busy={showSpinner}
       className={cn(
-        "w-full rounded-md border px-3 py-2 text-left transition-colors",
-        "border-border bg-muted/40 hover:bg-muted/50",
-        highlighted && "ring-2 ring-blue-400 bg-blue-50/10 transition-none",
+        AGENT_OPTION_CARD_BASE,
+        AGENT_OPTION_CARD_RESTING,
+        highlighted && AGENT_OPTION_CARD_HIGHLIGHTED,
         "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-muted/40",
       )}
       onClick={() => onClick(index)}
@@ -345,7 +350,7 @@ export function ToolPermissionPrompt({
   );
 
   return (
-    <div className="border-t border-amber-500/30 bg-card px-3 py-2">
+    <div className="agent-prompt-gate-panel border-t border-amber-500/30 bg-card px-3 py-2">
       <ToolPermissionPromptHeader toolName={permission.toolName} onCancel={onCancel} />
 
       {/* Description */}

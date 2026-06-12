@@ -211,6 +211,15 @@
     oklch(0.2 0.024 262 / 0.72)
   );
   --diff-file-header-backdrop: var(--glass-backdrop);
+
+  /* Inline agent-gate panels (question / permission / plan-approval) and their
+   * option tiles — a readable frosted panel plus tiles crisp enough to read
+   * against it (the default `bg-muted/40` + `border-border` vanish in Frost). */
+  --gate-panel-bg: oklch(0.22 0.024 262 / 0.72);
+  --option-card-bg: oklch(1 0 0 / 0.05);
+  --option-card-border: oklch(1 0 0 / 0.14);
+  --option-card-bg-hover: oklch(1 0 0 / 0.09);
+  --option-card-border-hover: oklch(1 0 0 / 0.22);
 }
 
 /* -------------------------------------------------------------------------
@@ -374,6 +383,13 @@
     oklch(0.98 0.008 255 / 0.75)
   );
   --diff-file-header-backdrop: var(--glass-backdrop);
+
+  /* Inline agent-gate panels + option tiles — see Frost Dark note. */
+  --gate-panel-bg: oklch(0.98 0.008 255 / 0.74);
+  --option-card-bg: oklch(0.5 0.04 255 / 0.07);
+  --option-card-border: oklch(0.5 0.04 255 / 0.22);
+  --option-card-bg-hover: oklch(0.5 0.04 255 / 0.12);
+  --option-card-border-hover: oklch(0.5 0.04 255 / 0.32);
 }
 
 /* -------------------------------------------------------------------------
@@ -479,6 +495,42 @@
 :root[data-theme="frost-dark"] [data-agent-prompt-bar] > .glass-surface,
 :root[data-theme="frost-light"] [data-agent-prompt-bar] > .glass-surface {
   backdrop-filter: none;
+}
+
+/* Inline agent-gate panels (question / permission / plan-approval) — a frosted
+ * glass panel, not a slab.
+ *
+ * All three inline prompts that take over the prompt-bar slot (the bar is
+ * `hidden` while any is open) carry `.agent-prompt-gate-panel` and paint a
+ * translucent `bg-card`. Over the ambient field that token read as a flat, muddy
+ * rectangle that clashed with the frosted chrome around it. Promote the panel to
+ * real glass: a readable tint (so the agent stream behind can't bleed into the
+ * panel text), the backdrop blur, and the floating-overlay azure cast. Unlike
+ * the prompt bar these panels host no nested backdrop-filter popovers, so making
+ * one a backdrop root is safe. Per-theme tints live in `--gate-panel-bg`. */
+:root[data-theme="frost-dark"] .agent-prompt-gate-panel,
+:root[data-theme="frost-light"] .agent-prompt-gate-panel {
+  background-color: var(--gate-panel-bg);
+  backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow-overlay);
+}
+
+/* Option tiles inside those panels. The shared `bg-muted/40` + `border-border`
+ * resolve to a ~2% white fill and a 12% rim in Frost — near-invisible against
+ * the glass panel above. Give resting tiles a more present inset fill and a
+ * crisper rim so each reads as a tappable surface. `:not(.border-primary)`
+ * leaves the selected state (azure `border-primary` + `bg-primary/5`) untouched;
+ * the keyboard-highlight ring also survives — it's only the tile bg wash it
+ * replaces. Per-theme tints live in the `--option-card-*` tokens. */
+:root[data-theme="frost-dark"] .agent-option-card:not(.border-primary),
+:root[data-theme="frost-light"] .agent-option-card:not(.border-primary) {
+  background-color: var(--option-card-bg);
+  border-color: var(--option-card-border);
+}
+:root[data-theme="frost-dark"] .agent-option-card:not(.border-primary):hover,
+:root[data-theme="frost-light"] .agent-option-card:not(.border-primary):hover {
+  background-color: var(--option-card-bg-hover);
+  border-color: var(--option-card-border-hover);
 }
 
 /* Git/diff sticky file headers — frosted band instead of see-through.
