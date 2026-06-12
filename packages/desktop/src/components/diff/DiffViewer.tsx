@@ -9,6 +9,7 @@ import { DiffViewerBottomBar } from "./DiffViewerBottomBar";
 import { useDiffData, type DiffMode } from "./useDiffData";
 import { useDiffKeyboard } from "./useDiffKeyboard";
 import { useExpandFilesWhenViewedReset } from "./useViewedFileCollapseSync";
+import { scrollFileToTop } from "./scroll-to-file";
 import type { ActiveWidget, CommentCallbacks, CommentLineData } from "./diff-comment-decorations";
 import type { DiffComment } from "./DiffCommentWidget";
 import { useOpenDiffInEditor } from "./OpenDiffInEditorContext";
@@ -142,14 +143,12 @@ export function DiffViewer({
   useExpandFilesWhenViewedReset(data.viewedFilesSet, setCollapsedFiles);
 
   const scrollToFileIndex = useCallback(
-    (index: number, behavior: ScrollBehavior = "smooth") => {
+    (index: number) => {
       const name = data.fileNames[index];
       if (!name) return;
       setSelectedFile(name);
-      const el = diffAreaRef.current?.querySelector<HTMLElement>(
-        `[data-file="${CSS.escape(name)}"]`,
-      );
-      el?.scrollIntoView({ behavior, block: "start" });
+      const container = diffAreaRef.current;
+      if (container) scrollFileToTop(container, name);
     },
     [data.fileNames],
   );
@@ -228,10 +227,8 @@ export function DiffViewer({
       next.delete(filePath);
       return next;
     });
-    requestAnimationFrame(() => {
-      const el = diffAreaRef.current?.querySelector(`[data-file="${CSS.escape(filePath)}"]`);
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    const container = diffAreaRef.current;
+    if (container) scrollFileToTop(container, filePath);
   }, []);
 
   const setFileListCollapsed = useCallback(
