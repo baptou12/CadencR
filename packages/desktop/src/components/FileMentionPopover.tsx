@@ -39,7 +39,7 @@ export function FileMentionPopover({
       {open && items.length > 0 && (
         <div
           ref={listRef}
-          className="absolute bottom-full left-0 z-50 mb-1 max-h-[300px] w-[400px] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
+          className="glass-surface absolute bottom-full left-0 z-50 mb-1 max-h-[300px] w-[400px] overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-lg"
         >
           {items.map((item, i) => (
             <button

@@ -22,6 +22,8 @@
   /* Glass primitives — OFF by default (any theme may override to opt in). */
   --glass-backdrop: none; /* value for `backdrop-filter` */
   --glass-shadow: none; /* inset highlight + accent-tinted cast */
+  --glass-shadow-pane: none; /* inset rim + neutral (colourless) float for split panes */
+  --glass-shadow-overlay: none; /* softened cast for floating overlays (popovers, dialogs) */
 
   /* Ambient halo field — invisible by default. */
   --ambient-base: transparent;
@@ -46,6 +48,18 @@
   --glass-shadow:
     0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 24px 60px -24px oklch(0.6 0.16 230 / 0.4),
     0 1px 2px rgba(0, 0, 0, 0.35);
+  /* Neutral float for split-pane cards — the same glassy inset rim the prompt
+   * carries, lifted by a soft *colourless* drop shadow (no azure cast), so a
+   * split tab feels like it floats very slightly without the blue glow. */
+  --glass-shadow-pane:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 12px 32px -16px rgba(0, 0, 0, 0.5),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  /* Floating overlays (popovers, menus, dialogs): same inset rim, but the azure
+   * cast is dialled right down (lower chroma + alpha) so the blue glow no longer
+   * halos the panel — the lift comes mostly from a soft neutral drop. */
+  --glass-shadow-overlay:
+    0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 16px 40px -24px oklch(0.6 0.08 230 / 0.18),
+    0 8px 24px -16px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
   --ambient-base: oklch(0.165 0.018 262);
   --ambient-1: oklch(0.6 0.1 230 / 0.5);
   --ambient-2: oklch(0.56 0.09 285 / 0.4);
@@ -177,6 +191,16 @@
   --terminal-warning-link: oklch(0.8 0.13 230);
   --terminal-warning-button-bg: oklch(1 0 0 / 0.1);
   --terminal-warning-button-bg-hover: oklch(1 0 0 / 0.16);
+
+  /* Sticky diff file headers (git tab + diff viewer) — frosted band dense
+   * enough to mask the diff lines scrolling beneath it. Consumed both by the
+   * light-DOM `[data-diff-file-header]` rule below and by Pierre's shadow DOM
+   * (PatchDiffView.tsx), where the vars pierce the shadow boundary. */
+  --diff-file-header-tint: linear-gradient(
+    oklch(0.2 0.024 262 / 0.72),
+    oklch(0.2 0.024 262 / 0.72)
+  );
+  --diff-file-header-backdrop: var(--glass-backdrop);
 }
 
 /* -------------------------------------------------------------------------
@@ -191,6 +215,14 @@
   --glass-shadow:
     0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 24px 60px -24px oklch(0.55 0.2 250 / 0.22),
     0 1px 2px rgba(20, 22, 40, 0.06);
+  /* Neutral float for split-pane cards — see Frost Dark note above. */
+  --glass-shadow-pane:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 32px -16px rgba(20, 22, 40, 0.16),
+    0 1px 2px rgba(20, 22, 40, 0.06);
+  /* Floating overlays — softened azure cast (see Frost Dark note). */
+  --glass-shadow-overlay:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 16px 40px -24px oklch(0.55 0.1 250 / 0.1),
+    0 8px 24px -16px rgba(20, 22, 40, 0.14), 0 1px 2px rgba(20, 22, 40, 0.06);
   --ambient-base: oklch(0.978 0.006 255);
   --ambient-1: oklch(0.85 0.08 240 / 0.55);
   --ambient-2: oklch(0.87 0.07 290 / 0.45);
@@ -213,7 +245,11 @@
   --secondary-foreground: oklch(0.26 0.03 262);
   --muted: oklch(0.6 0.04 255 / 0.12);
   --muted-foreground: oklch(0.44 0.04 260);
-  --accent: oklch(1 0 0 / 0.6);
+  /* Hover/selected tint. White-over-white was invisible on the bright field
+   * (selected sidebar rows, menu highlights, hovers all vanished) — use a
+   * translucent cool azure-grey instead, the light-field analogue of Frost
+   * Dark's white lift. */
+  --accent: oklch(0.55 0.1 250 / 0.14);
   --accent-foreground: oklch(0.26 0.03 262);
   --destructive: oklch(0.58 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
@@ -229,7 +265,7 @@
   --sidebar-foreground: oklch(0.26 0.03 262);
   --sidebar-primary: oklch(0.55 0.18 245);
   --sidebar-primary-foreground: oklch(0.99 0 0);
-  --sidebar-accent: oklch(1 0 0 / 0.6);
+  --sidebar-accent: oklch(0.55 0.1 250 / 0.14);
   --sidebar-accent-foreground: oklch(0.26 0.03 262);
   --sidebar-border: oklch(0.5 0.04 255 / 0.16);
   --sidebar-ring: oklch(0.6 0.17 245);
@@ -321,6 +357,13 @@
   --terminal-warning-link: oklch(0.5 0.16 245);
   --terminal-warning-button-bg: oklch(0.5 0.04 255 / 0.14);
   --terminal-warning-button-bg-hover: oklch(0.5 0.04 255 / 0.22);
+
+  /* Sticky diff file headers — see Frost Dark note. */
+  --diff-file-header-tint: linear-gradient(
+    oklch(0.98 0.008 255 / 0.75),
+    oklch(0.98 0.008 255 / 0.75)
+  );
+  --diff-file-header-backdrop: var(--glass-backdrop);
 }
 
 /* -------------------------------------------------------------------------
@@ -366,7 +409,81 @@
   ) {
   backdrop-filter: var(--glass-backdrop);
   -webkit-backdrop-filter: var(--glass-backdrop);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-shadow-overlay);
+}
+
+/* The hand-rolled floating popovers (slash-command, @-file mention, filter
+ * suggestions) frost via the shared `.glass-surface` utility, which carries the
+ * full azure `--glass-shadow`. As floating menus they want the same softened
+ * cast as the Radix overlays above — but the in-flow `.glass-surface` users
+ * (prompt bar, sidebar) must keep their original shadow, so this is scoped to
+ * the `absolute`-positioned popovers only. */
+:root[data-theme="frost-dark"] .glass-surface.absolute,
+:root[data-theme="frost-light"] .glass-surface.absolute {
+  box-shadow: var(--glass-shadow-overlay);
+}
+
+/* Modal scrim — blur + tint the whole app behind a dialog.
+ *
+ * The bare `bg-black/50` overlay let the busy agent stream read straight
+ * through the translucent modal, so the dialog text fought the prose behind
+ * it. Here the scrim gains a gentle backdrop blur and a deeper tint (toward
+ * near-black on Frost Dark, a soft white wash on Frost Light) so everything
+ * behind the modal recedes without dissolving — the app should stay
+ * recognisable behind the scrim. Paired with the denser dialog surface below,
+ * the modal content stays crisp and easy to read. */
+:root[data-theme="frost-dark"] [data-slot="dialog-overlay"],
+:root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
+  backdrop-filter: blur(4px) saturate(120%);
+  -webkit-backdrop-filter: blur(4px) saturate(120%);
+}
+:root[data-theme="frost-dark"] [data-slot="dialog-overlay"] {
+  background-color: oklch(0.08 0.02 262 / 0.62);
+}
+:root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
+  background-color: oklch(0.82 0.014 255 / 0.5);
+}
+
+/* Dialog surface — frosted, but opaque enough that body text stays legible
+ * over the blurred field. Floating menus/popovers already paint the denser
+ * `bg-popover` (0.8+), so only the dialog (which paints `bg-background` at
+ * 0.55) needs the lift. The backdrop blur + glass cast come from the shared
+ * `data-slot` block above. */
+:root[data-theme="frost-dark"] [data-slot="dialog-content"] {
+  background-color: oklch(0.2 0.024 262 / 0.86);
+}
+:root[data-theme="frost-light"] [data-slot="dialog-content"] {
+  background-color: oklch(0.99 0.008 255 / 0.86);
+}
+
+/* Prompt-bar surface — must NOT be a backdrop root.
+ *
+ * An element with `backdrop-filter` becomes the "backdrop root" for its
+ * descendants: their own backdrop-filters can no longer sample the page
+ * behind it. The slash-command and @-file popovers render INSIDE the prompt
+ * surface and float above the agent stream — with the surface blurring, their
+ * glass came out un-blurred and the stream text ghosted through the menu.
+ * Dropping the surface's own blur is visually free (only the flat ambient
+ * field paints behind the prompt — there is nothing textured to frost) and
+ * restores real glass on the popovers. The inset rim + azure cast
+ * (`--glass-shadow`) stay untouched. */
+:root[data-theme="frost-dark"] [data-agent-prompt-bar] > .glass-surface,
+:root[data-theme="frost-light"] [data-agent-prompt-bar] > .glass-surface {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Git/diff sticky file headers — frosted band instead of see-through.
+ *
+ * The header paints `bg-sidebar`, which is near-transparent in Frost, so diff
+ * lines scrolled straight through the sticky row. Give it a real backdrop
+ * blur plus a tint layered via `background-image`, so the Tailwind
+ * `bg-sidebar` / hover `bg-accent` / focus states underneath keep working. */
+:root[data-theme="frost-dark"] [data-diff-file-header],
+:root[data-theme="frost-light"] [data-diff-file-header] {
+  backdrop-filter: var(--diff-file-header-backdrop);
+  -webkit-backdrop-filter: var(--diff-file-header-backdrop);
+  background-image: var(--diff-file-header-tint);
 }
 
 /* Pane chrome in the Frost themes.
@@ -385,10 +502,16 @@
 :root[data-theme="frost-light"] [data-pane-root] {
   background-color: transparent;
 }
+
+/* Split panes (terminal / editor / git) get the frosted-card treatment: the
+ * backdrop blur plus the prompt's glassy inset rim, lifted by a soft neutral
+ * (colourless) drop shadow so each split tab feels like it floats very slightly
+ * — without any blue glow behind it. */
 :root[data-theme="frost-dark"] [data-pane-id]:not([data-pane-root]),
 :root[data-theme="frost-light"] [data-pane-id]:not([data-pane-root]) {
   backdrop-filter: var(--glass-backdrop);
   -webkit-backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-shadow-pane);
 }
 
 /* Pierre's file tree paints its own background from the `--trees-bg` custom
