@@ -423,37 +423,39 @@
   box-shadow: var(--glass-shadow-overlay);
 }
 
-/* Modal scrim — blur + tint the whole app behind a dialog.
+/* Modal scrim — dim (and, where supported, blur) the whole app behind a dialog.
  *
  * The bare `bg-black/50` overlay let the busy agent stream read straight
- * through the translucent modal, so the dialog text fought the prose behind
- * it. Here the scrim gains a gentle backdrop blur and a deeper tint (toward
- * near-black on Frost Dark, a soft white wash on Frost Light) so everything
- * behind the modal recedes without dissolving — the app should stay
- * recognisable behind the scrim. Paired with the denser dialog surface below,
- * the modal content stays crisp and easy to read. */
+ * through the translucent modal, so the dialog text fought the prose behind it.
+ *
+ * IMPORTANT: readability here must NOT depend on `backdrop-filter`. That blur
+ * is GPU-accelerated and silently paints nothing when hardware acceleration is
+ * unavailable (some Electron/driver setups) — in which case a blur-reliant
+ * scrim leaves the background crisp and a translucent dialog leaks the app
+ * behind it. So the *opaque dim* does the real work and the blur is only a
+ * progressive enhancement on top: the tint alone darkens the field enough that
+ * the app recedes even with no blur at all. */
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"],
 :root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
-  backdrop-filter: blur(4px) saturate(120%);
-  -webkit-backdrop-filter: blur(4px) saturate(120%);
+  backdrop-filter: blur(2px) saturate(120%);
+  -webkit-backdrop-filter: blur(2px) saturate(120%);
 }
 :root[data-theme="frost-dark"] [data-slot="dialog-overlay"] {
-  background-color: oklch(0.08 0.02 262 / 0.62);
+  background-color: oklch(0.08 0.02 262 / 0.64);
 }
 :root[data-theme="frost-light"] [data-slot="dialog-overlay"] {
-  background-color: oklch(0.82 0.014 255 / 0.5);
+  background-color: oklch(0.82 0.014 255 / 0.66);
 }
 
-/* Dialog surface — frosted, but opaque enough that body text stays legible
- * over the blurred field. Floating menus/popovers already paint the denser
- * `bg-popover` (0.8+), so only the dialog (which paints `bg-background` at
- * 0.55) needs the lift. The backdrop blur + glass cast come from the shared
- * `data-slot` block above. */
+/* Dialog surface — effectively opaque so body text stays crisp even when the
+ * backdrop blur doesn't paint (see scrim note above). A sliver of translucency
+ * (0.97) keeps a faint kinship with the glass language on GPUs that DO blur,
+ * without ever letting the app behind bleed through the modal text. */
 :root[data-theme="frost-dark"] [data-slot="dialog-content"] {
-  background-color: oklch(0.2 0.024 262 / 0.86);
+  background-color: oklch(0.2 0.024 262 / 0.97);
 }
 :root[data-theme="frost-light"] [data-slot="dialog-content"] {
-  background-color: oklch(0.99 0.008 255 / 0.86);
+  background-color: oklch(0.99 0.008 255 / 0.97);
 }
 
 /* Prompt-bar surface — must NOT be a backdrop root.
