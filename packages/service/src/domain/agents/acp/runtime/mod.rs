@@ -47,6 +47,7 @@ pub mod terminal_registry;
 mod terminal_sandbox;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod trusted_mcp_permissions;
 pub mod turn_lifecycle;
 pub mod turn_result;
 

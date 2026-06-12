@@ -33,6 +33,7 @@ mod responses;
 mod session;
 mod session_permissions;
 mod thread_params;
+mod trusted_mcp;
 mod turn_start;
 mod worktree_config;
 

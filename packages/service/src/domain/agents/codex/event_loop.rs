@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use codex_app_server_sdk_rs::AppServerEvent;
+use codex_app_server_sdk_rs::{AppServerEvent, CodexAppServerClient};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
 use super::event_state::IndexState;
@@ -11,9 +11,12 @@ use super::event_turn_state::{update_turn_state, RootTurnTracker};
 use super::events::notification_events;
 use super::permissions::PendingCodexRequest;
 use super::prompt_receipts::PendingPromptReceipts;
+use super::responses::response_value;
+use super::trusted_mcp::trusted_cadencr_browser_permission_response;
 use crate::domain::agents::adapter::{RuntimeError, RuntimeEvent};
 
 pub(super) fn spawn_event_loop(
+    client: CodexAppServerClient,
     mut source_rx: broadcast::Receiver<AppServerEvent>,
     tx: mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingCodexRequest>>>,
@@ -71,6 +74,20 @@ pub(super) fn spawn_event_loop(
                     }
                 }
                 Ok(AppServerEvent::ServerRequest { id, method, params }) => {
+                    if let Some(response) =
+                        trusted_cadencr_browser_permission_response(&id, &method, &params)
+                    {
+                        let result = response_value(&method, &params, &response);
+                        match client.respond_server_request(id.clone(), result).await {
+                            Ok(()) => continue,
+                            Err(error) => {
+                                tracing::warn!(
+                                    %error,
+                                    "failed to auto-allow trusted Cadencr browser MCP permission"
+                                );
+                            }
+                        }
+                    }
                     pending_requests.lock().await.insert(
                         request_key(&id),
                         PendingCodexRequest {

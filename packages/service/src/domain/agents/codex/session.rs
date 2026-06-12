@@ -150,6 +150,7 @@ impl AgentRuntimeSession for CodexSession {
 
         let (tx, rx) = mpsc::channel(256);
         spawn_event_loop(
+            self.client.clone(),
             source_rx,
             tx.clone(),
             Arc::clone(&self.pending_requests),

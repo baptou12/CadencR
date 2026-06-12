@@ -8,14 +8,47 @@
 
 use serde_json::{json, Value};
 
-use opencode_sdk_rs::PendingPermission;
+use opencode_sdk_rs::{OpenCodeClient, PendingPermission, PermissionReply};
 
 use crate::domain::agents::adapter::RuntimePermissionRequest;
 use crate::domain::agents::opencode::permissions::permission_options;
 use crate::domain::agents::opencode::tool_names::{
     canonical_acp_tool_name, canonical_cadencr_tool_name,
 };
+use crate::domain::mcp::trusted::is_trusted_cadencr_browser_tool_name;
 use crate::domain::permission_bridge::extract_permission_preview;
+
+pub(super) fn should_auto_allow_trusted_cadencr_browser_permission(
+    entry: &PendingPermission,
+) -> bool {
+    entry
+        .tool
+        .as_deref()
+        .map(|raw| canonical_cadencr_tool_name(&canonical_acp_tool_name(raw)))
+        .is_some_and(|name| is_trusted_cadencr_browser_tool_name(&name))
+}
+
+pub(super) async fn try_auto_allow_trusted_cadencr_browser_permission(
+    client: &OpenCodeClient,
+    directory: &str,
+    entry: &PendingPermission,
+) -> bool {
+    if !should_auto_allow_trusted_cadencr_browser_permission(entry) {
+        return false;
+    }
+    if let Err(error) = client
+        .reply_permission(&entry.id, PermissionReply::Once, Some(directory))
+        .await
+    {
+        tracing::warn!(
+            %error,
+            permission_id = %entry.id,
+            "failed to auto-allow trusted Cadencr browser MCP permission"
+        );
+        return false;
+    }
+    true
+}
 
 pub(super) fn build_request(entry: &PendingPermission) -> RuntimePermissionRequest {
     let tool_name = entry
@@ -52,7 +85,7 @@ fn merge_tool_input(metadata: &Value, patterns: &[String]) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::build_request;
+    use super::{build_request, should_auto_allow_trusted_cadencr_browser_permission};
     use opencode_sdk_rs::PendingPermission;
     use serde_json::json;
 
@@ -83,6 +116,17 @@ mod tests {
         assert_eq!(req.description.as_deref(), Some("Run git status"));
         // Mirrors the root-session OpenCode adapter's button set.
         assert_eq!(req.options.len(), 3);
+    }
+
+    #[test]
+    fn auto_allows_trusted_cadencr_browser_permission() {
+        let entry = PendingPermission {
+            tool: Some("cadencr-browser_browser_open_url".into()),
+            metadata: json!({ "url": "http://localhost:1420" }),
+            ..sample()
+        };
+
+        assert!(should_auto_allow_trusted_cadencr_browser_permission(&entry));
     }
 
     #[test]

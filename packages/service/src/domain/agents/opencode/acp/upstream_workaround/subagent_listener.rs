@@ -3,12 +3,8 @@
 //! wire). Polls `GET /session/{root}/children`, `/session/{child}/message`,
 //! and `/permission` on the embedded HTTP backend.
 //!
-//! Two subtleties: (a) `prime_snapshot` MUST run eagerly at startup —
-//! before the agent fires its first Task — so pre-existing children
-//! land in `historical_children` and aren't mispaired; (b) pending
-//! permissions linger in `/permission` until answered, so
-//! `surfaced_permissions` dedupes across re-polls and is pruned when
-//! an id leaves the live list (set tracks current pending, not lifetime).
+//! `prime_snapshot` runs eagerly so pre-existing children are not mispaired;
+//! `surfaced_permissions` tracks currently pending permission ids.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex as StdMutex};
@@ -19,7 +15,9 @@ use opencode_sdk_rs::{
 use serde_json::json;
 use tokio::sync::{mpsc, RwLock};
 
-use super::subagent_permission::build_request;
+use super::subagent_permission::{
+    build_request, try_auto_allow_trusted_cadencr_browser_permission,
+};
 use crate::domain::agents::acp::runtime::permissions::permission_raw_event;
 use crate::domain::agents::adapter::{
     RuntimeError, RuntimeEvent, RuntimeEventKind, RuntimeEventMetadata, RuntimePermissionRequest,
@@ -100,6 +98,9 @@ async fn poll_permissions(
     };
     state.prune_surfaced_permissions(&entries);
     for entry in entries {
+        if try_auto_allow_trusted_cadencr_browser_permission(client, directory, &entry).await {
+            continue;
+        }
         if let Some(event) = state.surface_permission(entry, permissions).await {
             if runtime_tx.send(Ok(event)).await.is_err() {
                 return Err(());
