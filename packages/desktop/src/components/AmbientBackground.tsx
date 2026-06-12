@@ -19,6 +19,11 @@ export function AmbientBackground(): React.JSX.Element {
         <div className="halo" />
       </div>
       <div className="grain" aria-hidden="true" />
+      {/* Dimming veil over the halos + grain. The page tint used to live on the
+       * translucent `body` background, but `body` must stay non-translucent so
+       * the frost `backdrop-filter` blur paints (see theme-frost.css). Rendered
+       * last so it sits in front of the ambient/grain layers, behind the app. */}
+      <div className="ambient-veil" aria-hidden="true" />
     </>
   );
 }
