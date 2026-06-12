@@ -39,7 +39,10 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   useSidebarKeyboardNavigation(sidebarRef, navigate, effectiveFeatureId);
 
   return (
-    <aside ref={sidebarRef} className="flex h-full flex-col border-r border-border/60 bg-sidebar">
+    <aside
+      ref={sidebarRef}
+      className="glass-surface flex h-full flex-col border-r border-border/60 bg-sidebar"
+    >
       <SidebarHeader onCollapse={() => setCollapsed(true)} />
       {/* Flex column so the tree gets the *remaining* height (not 100%, which
           overflows past the search bar and clips the scroll area's bottom). */}

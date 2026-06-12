@@ -1,5 +1,7 @@
 import { AURORA_THEME } from "./aurora";
 import { DRACULA_THEME } from "./dracula";
+import { FROST_DARK_THEME } from "./frost-dark";
+import { FROST_LIGHT_THEME } from "./frost-light";
 import { MONOKAI_THEME } from "./monokai";
 import { MONOKAI_LIGHT_THEME } from "./monokai-light";
 import { ONE_DARK_THEME } from "./one-dark";
@@ -14,6 +16,8 @@ export const THEME_LIST: ThemeDefinition[] = [
   ONE_LIGHT_THEME,
   MONOKAI_THEME,
   MONOKAI_LIGHT_THEME,
+  FROST_DARK_THEME,
+  FROST_LIGHT_THEME,
 ];
 
 /** All themes shipped with Cadencr, keyed by id. */
@@ -24,6 +28,8 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
   "one-light": ONE_LIGHT_THEME,
   monokai: MONOKAI_THEME,
   "monokai-light": MONOKAI_LIGHT_THEME,
+  "frost-dark": FROST_DARK_THEME,
+  "frost-light": FROST_LIGHT_THEME,
 };
 
 export const DEFAULT_THEME_ID: ThemeId = "dracula";

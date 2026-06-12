@@ -14,6 +14,11 @@ export function createXtermInstance(theme: XTermPalette): Terminal {
     fontWeightBold: "600",
     letterSpacing: 0,
     theme,
+    // Honor translucent theme backgrounds (the Frost themes paint a transparent
+    // xterm background so the frosted terminal panel + ambient gradient show
+    // through). Harmless for opaque themes — their hex backgrounds have full
+    // alpha, so nothing changes visually.
+    allowTransparency: true,
     macOptionIsMeta: true,
     allowProposedApi: true,
     scrollback: 5000,

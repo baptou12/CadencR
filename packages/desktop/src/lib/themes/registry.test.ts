@@ -7,7 +7,7 @@ vi.mock("../../../assets/cadencr-logo3-light.svg", () => ({
 }));
 
 describe("theme registry", () => {
-  it("ships dracula, aurora, one-dark, one-light, monokai, and monokai-light", () => {
+  it("ships dracula, aurora, one-dark, one-light, monokai, monokai-light, and the frost pair", () => {
     const ids = THEME_LIST.map((t) => t.id);
     expect(ids).toContain("dracula");
     expect(ids).toContain("aurora");
@@ -15,6 +15,8 @@ describe("theme registry", () => {
     expect(ids).toContain("one-light");
     expect(ids).toContain("monokai");
     expect(ids).toContain("monokai-light");
+    expect(ids).toContain("frost-dark");
+    expect(ids).toContain("frost-light");
   });
 
   it("isThemeId narrows to known ids", () => {
@@ -78,5 +80,14 @@ describe("theme registry", () => {
     expect(monokaiLight.appearance).toBe("light");
     expect(monokaiLight.logo.variant).toBe("light");
     expect(monokaiLight.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+
+    const frostDark = getTheme("frost-dark");
+    const frostLight = getTheme("frost-light");
+    expect(frostDark.appearance).toBe("dark");
+    expect(frostDark.logo.variant).toBe("dark");
+    expect(frostDark.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
+    expect(frostLight.appearance).toBe("light");
+    expect(frostLight.logo.variant).toBe("light");
+    expect(frostLight.xterm.background).toMatch(/^#[0-9a-fA-F]{6}$/);
   });
 });

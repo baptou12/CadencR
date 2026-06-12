@@ -426,6 +426,10 @@ export const XTermInstance = forwardRef<XTermInstanceHandle, XTermInstanceProps>
     }, [theme]);
 
     return (
+      // No `glass-surface` here on purpose: this is the live xterm surface and a
+      // `backdrop-filter` would re-blur the backdrop on every output frame. The
+      // enclosing pane already frosts the ambient field (see theme-frost.css),
+      // so the terminal only needs its translucent `--terminal-bg` tint on top.
       <div
         ref={containerRef}
         className="h-full w-full"
