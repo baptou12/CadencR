@@ -1,10 +1,27 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use sqlx::SqlitePool;
+
 use crate::app_state::BrowserBridgeConfig;
 use crate::domain::agents::adapter::{RuntimeMcpServerConfig, RuntimeSpawnConfig};
 
 const CADENCR_BROWSER_MCP_NAME: &str = "cadencr-browser";
+
+/// Workspace setting that gates whether the `cadencr-browser` MCP is exposed to
+/// agents. Mirrors `BROWSER_MCP_ENABLED_SETTING_KEY` on the frontend.
+const BROWSER_MCP_ENABLED_SETTING_KEY: &str = "browser_mcp_enabled";
+
+/// Whether agents should receive the `cadencr-browser` MCP. Defaults to enabled;
+/// only an explicit `"false"` workspace setting turns it off. A DB read error
+/// leaves the feature on so a transient failure never silently strips tools.
+pub(super) async fn browser_mcp_enabled(read_pool: &SqlitePool) -> bool {
+    !matches!(
+        crate::domain::workspace::repository::get_setting(read_pool, BROWSER_MCP_ENABLED_SETTING_KEY)
+            .await,
+        Ok(Some(value)) if value == "false"
+    )
+}
 
 pub(super) fn attach_cadencr_browser_mcp(
     config: &mut RuntimeSpawnConfig,
@@ -68,10 +85,48 @@ fn browser_bridge_env(config: Option<BrowserBridgeConfig>) -> Option<HashMap<Str
 
 #[cfg(test)]
 mod tests {
+    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::SqlitePool;
+
     use crate::app_state::{BrowserBridgeConfig, BROWSER_BRIDGE_TOKEN_ENV, BROWSER_BRIDGE_URL_ENV};
     use crate::domain::agents::adapter::{RuntimeMcpServerConfig, RuntimeSpawnConfig};
+    use crate::domain::workspace::repository::set_setting;
 
-    use super::attach_cadencr_browser_mcp;
+    use super::{attach_cadencr_browser_mcp, browser_mcp_enabled, BROWSER_MCP_ENABLED_SETTING_KEY};
+
+    async fn settings_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory db");
+        sqlx::query("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(&pool)
+            .await
+            .expect("create settings table");
+        pool
+    }
+
+    #[tokio::test]
+    async fn browser_mcp_enabled_defaults_on_when_unset() {
+        let pool = settings_pool().await;
+        assert!(browser_mcp_enabled(&pool).await);
+    }
+
+    #[tokio::test]
+    async fn browser_mcp_enabled_off_only_for_explicit_false() {
+        let pool = settings_pool().await;
+
+        set_setting(&pool, BROWSER_MCP_ENABLED_SETTING_KEY, "false")
+            .await
+            .expect("set false");
+        assert!(!browser_mcp_enabled(&pool).await);
+
+        set_setting(&pool, BROWSER_MCP_ENABLED_SETTING_KEY, "true")
+            .await
+            .expect("set true");
+        assert!(browser_mcp_enabled(&pool).await);
+    }
 
     #[test]
     fn attach_cadencr_browser_mcp_adds_feature_pinned_stdio_server() {

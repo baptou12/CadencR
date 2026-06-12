@@ -1,7 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen, waitFor } from "@/test-utils";
+import { server } from "@/test/msw-server";
 import { BrowserWorkspaceTab } from "./BrowserWorkspaceTab";
+import { BROWSER_DEFAULT_MODE_SETTING_KEY } from "@/lib/browser-settings";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
@@ -120,6 +123,33 @@ describe("BrowserWorkspaceTab", () => {
     await userEvent.click(screen.getByRole("button", { name: "New browser tab" }));
 
     expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith(undefined, "fresh");
+  });
+
+  it("opens the first tab in the saved default mode", async () => {
+    // Default mode persisted as "private" should seed the very first tab the
+    // bootstrap creates with the ephemeral "fresh" profile.
+    server.use(
+      http.get(
+        `http://127.0.0.1:5005/api/workspace/settings/${BROWSER_DEFAULT_MODE_SETTING_KEY}`,
+        () => HttpResponse.json({ value: "private" }),
+      ),
+    );
+    const mockBridge = bridge();
+    mockBridge.listBrowserTabs = vi.fn(() =>
+      Promise.resolve({
+        tabs: [],
+        activeTabId: null,
+        consoleEntries: [],
+        networkEntries: [],
+        error: null,
+      }),
+    );
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(mockBridge.createBrowserTab).toHaveBeenCalledWith(undefined, "fresh");
+    });
   });
 
   it("does not render console or network diagnostics in the Browser footer", async () => {

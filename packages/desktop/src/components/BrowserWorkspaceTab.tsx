@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ComponentType,
   type FormEvent,
@@ -34,17 +35,12 @@ import {
   type BrowserStateSnapshot,
   type BrowserTabMetadata,
 } from "@/lib/desktop-bridge";
+import { PROFILE_ID, useBrowserDefaultMode, type CookieMode } from "@/lib/browser-settings";
 import { useBrowserViewportBounds } from "./useBrowserViewportBounds";
 
 interface BrowserWorkspaceTabProps {
   onSendContext: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
 }
-
-/** Two cookie modes the user can pick from. Normal reuses an on-disk profile; private is in-memory only. */
-type CookieMode = "normal" | "private";
-
-/** Profile id passed to the backend for each mode. "default" → persistent partition, "fresh" → ephemeral. */
-const PROFILE_ID: Record<CookieMode, string> = { normal: "default", private: "fresh" };
 
 const EMPTY_STATE: BrowserStateSnapshot = {
   tabs: [],
@@ -73,7 +69,18 @@ interface BrowserWorkspaceModel {
 export const BrowserWorkspaceTab = memo(function BrowserWorkspaceTab({
   onSendContext,
 }: BrowserWorkspaceTabProps): ReactElement {
-  const model = useBrowserWorkspaceModel(onSendContext);
+  // Resolve the user's default mode before mounting the workspace so the first
+  // tab and the toolbar toggle both start from the saved preference.
+  const { mode: defaultMode, isLoading } = useBrowserDefaultMode();
+  if (isLoading) return <BrowserLoading />;
+  return <BrowserWorkspaceTabReady onSendContext={onSendContext} defaultMode={defaultMode} />;
+});
+
+const BrowserWorkspaceTabReady = memo(function BrowserWorkspaceTabReady({
+  onSendContext,
+  defaultMode,
+}: BrowserWorkspaceTabProps & { defaultMode: CookieMode }): ReactElement {
+  const model = useBrowserWorkspaceModel(onSendContext, defaultMode);
   if (model.loading) return <BrowserLoading />;
   return <BrowserWorkspaceView model={model} />;
 });
@@ -186,10 +193,11 @@ function BrowserEmptyState({ onNewTab }: { onNewTab: () => void }): ReactElement
 
 function useBrowserWorkspaceModel(
   onSendContext: BrowserWorkspaceTabProps["onSendContext"],
+  defaultMode: CookieMode,
 ): BrowserWorkspaceModel {
   const [state, setState] = useState<BrowserStateSnapshot>(EMPTY_STATE);
   const [urlInput, setUrlInput] = useState("localhost:1420");
-  const [mode, setMode] = useState<CookieMode>("normal");
+  const [mode, setMode] = useState<CookieMode>(defaultMode);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
@@ -198,7 +206,7 @@ function useBrowserWorkspaceModel(
     () => state.tabs.find((tab) => tab.id === state.activeTabId) ?? null,
     [state.activeTabId, state.tabs],
   );
-  useBrowserBootstrap({ setState, setUrlInput, setLoading });
+  useBrowserBootstrap({ setState, setUrlInput, setLoading, defaultMode });
   const runForActive = useRunForActive(activeTab, setPending);
   const visibleState = useMemo(
     () => ({
@@ -257,10 +265,16 @@ interface BrowserBootstrapArgs {
   setState: (state: BrowserStateSnapshot) => void;
   setUrlInput: (value: string) => void;
   setLoading: (value: boolean) => void;
+  defaultMode: CookieMode;
 }
 
 function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
-  const { setState, setUrlInput, setLoading } = args;
+  const { setState, setUrlInput, setLoading, defaultMode } = args;
+  // The default mode only seeds the very first tab; read it through a ref so a
+  // later settings change (this tab can stay mounted in the background) doesn't
+  // re-run the bootstrap and re-subscribe the state listener.
+  const defaultModeRef = useRef(defaultMode);
+  defaultModeRef.current = defaultMode;
   useEffect(() => {
     let alive = true;
     void desktopBridge
@@ -272,7 +286,7 @@ function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
           setUrlInput(snapshot.tabs.find((tab) => tab.isActive)?.url ?? snapshot.tabs[0].url);
           return;
         }
-        await desktopBridge.createBrowserTab(undefined, PROFILE_ID.normal);
+        await desktopBridge.createBrowserTab(undefined, PROFILE_ID[defaultModeRef.current]);
       })
       .catch((error: unknown) => showError(error, "Browser unavailable"))
       .finally(() => alive && setLoading(false));
