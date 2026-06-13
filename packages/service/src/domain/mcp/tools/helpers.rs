@@ -3,6 +3,7 @@ use std::future::Future;
 use rmcp::model::{CallToolResult, Content};
 
 /// Extract a required i64 parameter from JSON args, returning a clear error if missing.
+#[allow(dead_code)]
 pub fn require_i64(args: &serde_json::Value, key: &str) -> Result<i64, String> {
     args[key]
         .as_i64()
@@ -34,6 +35,7 @@ pub fn error_result(msg: &str) -> CallToolResult {
     CallToolResult::error(vec![Content::text(msg)])
 }
 
+#[allow(dead_code)]
 pub async fn dispatch_tool<Fut>(dispatch: Fut) -> CallToolResult
 where
     Fut: Future<Output = Result<String, String>>,

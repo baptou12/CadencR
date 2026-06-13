@@ -96,7 +96,7 @@ mod tests {
             &config,
             &thread_config(
                 Some(&HashMap::from([(
-                    "cadencr-session".to_string(),
+                    "cadencr-browser".to_string(),
                     RuntimeMcpServerConfig::Stdio {
                         command: "svc".to_string(),
                         args: None,
@@ -115,9 +115,9 @@ mod tests {
             .expect("base instructions");
         assert!(base_instructions.starts_with(RICH_MARKDOWN_INSTRUCTION));
         assert!(base_instructions.contains("Be useful"));
-        assert!(base_instructions.contains("mcp__cadencr_session____mark_agent_done"));
+        assert!(base_instructions.contains("mcp__cadencr_browser____browser_open_url"));
         assert_eq!(
-            params["config"]["mcp_servers"]["cadencr-session"]["command"],
+            params["config"]["mcp_servers"]["cadencr-browser"]["command"],
             json!("svc")
         );
         assert!(params.get("approvalPolicy").is_some());

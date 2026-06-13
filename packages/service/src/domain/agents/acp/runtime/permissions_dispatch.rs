@@ -17,6 +17,7 @@ use crate::domain::agents::adapter::{
 use super::schema_bridge::permission_response_value;
 use super::session_permissions::PermissionKey;
 use super::session_permissions::SessionPermissions;
+use super::trusted_mcp_permissions::try_auto_allow_trusted_cadencr_browser_permission;
 
 /// One pending `session/request_permission` server request awaiting the
 /// user's decision. Tracks the raw ACP server-request id so we can echo the
@@ -119,6 +120,10 @@ pub async fn dispatch_permission_request_with_cache(
     params: &Value,
     tx: &mpsc::Sender<Result<RuntimeEvent, RuntimeError>>,
 ) -> Result<(), RuntimeError> {
+    if try_auto_allow_trusted_cadencr_browser_permission(client, raw_id.clone(), &request).await? {
+        return Ok(());
+    }
+
     let key = PermissionKey::new(&request.tool_name, &request.tool_input);
     if let Some(decision) = session_permissions.lookup(&key).await {
         if let Some(option_id) = option_id_for_decision(&request, decision) {
@@ -294,7 +299,9 @@ mod tests {
         .await
         .unwrap();
 
-        let response = read_frame(&mut agent_stdin).await;
+        let response = tokio::time::timeout(Duration::from_secs(1), read_frame(&mut agent_stdin))
+            .await
+            .expect("cached permission should receive immediate ACP response");
         assert_eq!(response["id"], "perm-cache");
         assert_eq!(response["result"]["outcome"]["outcome"], "selected");
         assert_eq!(response["result"]["outcome"]["optionId"], "session");

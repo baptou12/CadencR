@@ -1,3 +1,8 @@
+#![allow(dead_code)]
+
+// Disabled in `cadencr-browser`; reserved for the future `cadencr-workspace`
+// MCP server.
+
 use std::sync::Arc;
 
 use crate::domain::mcp::McpContext;

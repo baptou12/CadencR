@@ -9,6 +9,7 @@ import {
   Code2,
   Files,
   GitMerge,
+  Globe,
   History,
   Info,
   Keyboard,
@@ -34,6 +35,7 @@ import { CodexPermissionModeSetting } from "@/components/settings/CodexPermissio
 import { ProfilesSection } from "@/components/settings/ProfilesSection";
 import { GitSettings } from "@/components/settings/GitSettings";
 import { NotificationsSection } from "@/components/settings/NotificationsSection";
+import { BrowserSection } from "@/components/settings/BrowserSection";
 import { AgentVerbositySettings } from "@/components/settings/AgentVerbositySettings";
 import { ThemeSelector } from "@/components/settings/ThemeSelector";
 import { FileTreeIconSetSelector } from "@/components/settings/FileTreeIconSetSelector";
@@ -84,6 +86,11 @@ const NAV_GROUPS: SettingsNavGroup[] = [
         id: "notifications",
         label: "Notifications",
         icon: <Bell className="size-4" />,
+      },
+      {
+        id: "browser",
+        label: "Browser",
+        icon: <Globe className="size-4" />,
       },
     ],
   },
@@ -208,6 +215,7 @@ function SettingsPage() {
           <EditorSection />
           <InterfaceSection />
           <NotificationsSection />
+          <BrowserSection />
           <RuntimeSection />
           <GitSection />
           <ProvidersSection />

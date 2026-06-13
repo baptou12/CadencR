@@ -295,7 +295,7 @@ mod tests {
                 model: None,
                 mcp_servers: vec![
                     RuntimeMcpServerStatus {
-                        name: "cadencr-session".into(),
+                        name: "cadencr-browser".into(),
                         status: "connected".into(),
                     },
                     RuntimeMcpServerStatus {
@@ -310,7 +310,7 @@ mod tests {
         let payload = mcp_servers_payload_from_event(&event).expect("payload");
 
         assert_eq!(payload.mcp_servers.len(), 2);
-        assert_eq!(payload.mcp_servers[0].name, "cadencr-session");
+        assert_eq!(payload.mcp_servers[0].name, "cadencr-browser");
         assert_eq!(payload.mcp_servers[0].status, "connected");
         assert_eq!(payload.mcp_servers[1].name, "filesystem");
         assert_eq!(payload.mcp_servers[1].status, "unavailable");
@@ -320,7 +320,7 @@ mod tests {
     fn mcp_payload_uses_init_event_when_active_session_temporarily_reports_empty() {
         let from_event = SessionMcpServersPayload {
             mcp_servers: vec![McpServerStatusPayload {
-                name: "cadencr-session".into(),
+                name: "cadencr-browser".into(),
                 status: "connected".into(),
             }],
         };
@@ -331,7 +331,7 @@ mod tests {
         let payload = choose_mcp_servers_payload(Some(from_event), Some(active));
 
         assert_eq!(payload.mcp_servers.len(), 1);
-        assert_eq!(payload.mcp_servers[0].name, "cadencr-session");
+        assert_eq!(payload.mcp_servers[0].name, "cadencr-browser");
     }
 
     #[tokio::test]

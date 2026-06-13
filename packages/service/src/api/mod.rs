@@ -3,7 +3,7 @@
 pub mod middleware;
 pub mod openapi;
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, BrowserBridgeConfig};
 use crate::domain::agents::claude_code::routes::claude_code_router;
 use crate::domain::agents::discovery::routes::discovery_router;
 use crate::domain::agents::runtime::AgentCatalogResponse;
@@ -24,10 +24,10 @@ use crate::domain::workspace::routes::workspace_router;
 use crate::domain::ws_session::handler::ws_handler;
 use crate::error::AppError;
 use axum::extract::{Query, State};
-use axum::routing::{any, get};
+use axum::routing::{any, get, put};
 use axum::Json;
 use axum::Router;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[utoipa::path(
@@ -56,6 +56,34 @@ pub async fn get_agent_catalog(
 #[derive(Debug, Deserialize)]
 pub struct AgentCatalogQuery {
     cwd: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BrowserBridgeRegistrationRequest {
+    url: String,
+    token: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BrowserBridgeRegistrationResponse {
+    ok: bool,
+}
+
+pub async fn register_browser_bridge(
+    State(state): State<AppState>,
+    Json(body): Json<BrowserBridgeRegistrationRequest>,
+) -> Result<Json<BrowserBridgeRegistrationResponse>, AppError> {
+    let config = validate_browser_bridge(body)?;
+    state
+        .set_browser_bridge(config)
+        .map_err(AppError::Internal)?;
+    Ok(Json(BrowserBridgeRegistrationResponse { ok: true }))
+}
+
+fn validate_browser_bridge(
+    body: BrowserBridgeRegistrationRequest,
+) -> Result<BrowserBridgeConfig, AppError> {
+    BrowserBridgeConfig::from_raw(&body.url, &body.token).map_err(AppError::BadRequest)
 }
 
 /// The shared API surface (every sub-router + `/ws` + agent catalog), with no
@@ -98,6 +126,7 @@ fn compression_layer() -> tower_http::compression::CompressionLayer {
 /// which a remote device can therefore never reach.
 pub fn build_router(state: AppState) -> Router {
     build_api_routes()
+        .route("/api/browser-bridge", put(register_browser_bridge))
         .merge(crate::domain::remote::loopback_router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -153,4 +182,32 @@ pub fn build_remote_router(
 
 async fn api_not_found() -> Result<(), AppError> {
     Err(AppError::NotFound("api route".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{validate_browser_bridge, BrowserBridgeRegistrationRequest};
+
+    #[test]
+    fn browser_bridge_registration_accepts_loopback_http_url() {
+        let config = validate_browser_bridge(BrowserBridgeRegistrationRequest {
+            url: "http://127.0.0.1:4000/browser-bridge".to_string(),
+            token: "secret".to_string(),
+        })
+        .expect("valid bridge");
+
+        assert_eq!(config.url, "http://127.0.0.1:4000/browser-bridge");
+        assert_eq!(config.token, "secret");
+    }
+
+    #[test]
+    fn browser_bridge_registration_rejects_remote_urls() {
+        let error = validate_browser_bridge(BrowserBridgeRegistrationRequest {
+            url: "https://example.com/browser-bridge".to_string(),
+            token: "secret".to_string(),
+        })
+        .expect_err("remote bridge should be rejected");
+
+        assert!(error.to_string().contains("loopback"));
+    }
 }

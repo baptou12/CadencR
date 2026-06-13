@@ -1,5 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
+use reqwest::Url;
 use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
@@ -13,11 +14,52 @@ use crate::domain::git::watcher::GitWatcherRegistry;
 use crate::domain::imports::jobs::ImportJobRegistry;
 use crate::domain::lsp::lifecycle::CrashTracker;
 use crate::domain::lsp::LspRegistry;
+use crate::domain::mcp::loopback::is_loopback_host;
 use crate::domain::session_status::SessionStatusBroadcaster;
 use crate::domain::terminal::service::PtyManager;
 use crate::domain::ws_session::handler::ActiveTurnRegistry;
 use crate::domain::ws_session::sender_registry::WsFeatureSenderRegistry;
 use crate::remote::{RemoteConfig, RemoteController};
+
+pub const BROWSER_BRIDGE_URL_ENV: &str = "CADENCR_BROWSER_BRIDGE_URL";
+pub const BROWSER_BRIDGE_TOKEN_ENV: &str = "CADENCR_BROWSER_BRIDGE_TOKEN";
+
+#[derive(Clone, Debug)]
+pub struct BrowserBridgeConfig {
+    pub url: String,
+    pub token: String,
+}
+
+impl BrowserBridgeConfig {
+    pub fn from_raw(url: &str, token: &str) -> Result<Self, String> {
+        let parsed =
+            Url::parse(url.trim()).map_err(|_| "Browser bridge URL is invalid".to_string())?;
+        if parsed.scheme() != "http" || !is_loopback_host(parsed.host_str()) {
+            return Err("Browser bridge URL must be an HTTP loopback URL".to_string());
+        }
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            return Err("Browser bridge token is required".to_string());
+        }
+        Ok(Self {
+            url: parsed.to_string(),
+            token,
+        })
+    }
+
+    pub fn from_env() -> Option<Self> {
+        let url = std::env::var(BROWSER_BRIDGE_URL_ENV).ok()?;
+        let token = std::env::var(BROWSER_BRIDGE_TOKEN_ENV).ok()?;
+        Self::from_raw(&url, &token).ok()
+    }
+
+    pub fn as_env(&self) -> [(String, String); 2] {
+        [
+            (BROWSER_BRIDGE_URL_ENV.to_string(), self.url.clone()),
+            (BROWSER_BRIDGE_TOKEN_ENV.to_string(), self.token.clone()),
+        ]
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,6 +67,13 @@ pub struct AppState {
     pub read_pool: SqlitePool,
     /// Read-write pool (max 1 connection, serializes writes)
     pub write_pool: SqlitePool,
+    /// SQLite database path used by Cadencr-owned MCP stdio subprocesses.
+    pub db_path: String,
+    /// Loopback desktop Browser bridge credentials used by Cadencr Browser MCP
+    /// subprocesses. In packaged builds this is also supplied via env at
+    /// service spawn; dev runs register it after the independently-started
+    /// service is reachable.
+    pub browser_bridge: Arc<RwLock<Option<BrowserBridgeConfig>>>,
     /// Maximum number of parallel agents. Defaults to 3.
     /// Overridden by CADENCR_MAX_PARALLEL env var.
     #[allow(dead_code)]
@@ -127,6 +176,7 @@ impl AppState {
     pub fn for_server(
         read_pool: SqlitePool,
         write_pool: SqlitePool,
+        db_path: String,
         auth_token: String,
         frontend_port: u16,
         port: u16,
@@ -139,6 +189,8 @@ impl AppState {
         Self {
             read_pool,
             write_pool,
+            db_path,
+            browser_bridge: Arc::new(RwLock::new(BrowserBridgeConfig::from_env())),
             max_parallel_agents: Self::max_parallel_from_env(),
             agent_timeout_minutes: Self::agent_timeout_minutes_from_env(),
             session_status_tx: SessionStatusBroadcaster::new(
@@ -181,6 +233,11 @@ impl AppState {
         Self {
             read_pool: pool.clone(),
             write_pool: pool,
+            db_path: std::env::temp_dir()
+                .join("cadencr-test.db")
+                .to_string_lossy()
+                .into_owned(),
+            browser_bridge: Arc::new(RwLock::new(None)),
             max_parallel_agents: 3,
             agent_timeout_minutes: 30,
             session_status_tx: SessionStatusBroadcaster::new(
@@ -211,5 +268,21 @@ impl AppState {
                 data_dir: std::env::temp_dir().join("cadencr-remote-test"),
             })),
         }
+    }
+
+    pub fn set_browser_bridge(&self, config: BrowserBridgeConfig) -> Result<(), String> {
+        let mut bridge = self
+            .browser_bridge
+            .write()
+            .map_err(|_| "Browser bridge config lock is poisoned".to_string())?;
+        *bridge = Some(config);
+        Ok(())
+    }
+
+    pub fn browser_bridge_config(&self) -> Result<Option<BrowserBridgeConfig>, String> {
+        self.browser_bridge
+            .read()
+            .map_err(|_| "Browser bridge config lock is poisoned".to_string())
+            .map(|bridge| bridge.clone())
     }
 }

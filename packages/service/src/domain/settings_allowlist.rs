@@ -121,6 +121,13 @@ pub const WORKSPACE_ALLOWED_KEYS: &[&str] = &[
     // open of the onboarding overlay. Set to "true" by `WelcomeIntro` after
     // the animation completes (or the user clicks to skip).
     "onboarding_intro_shown",
+    // Browser workspace preferences. `browser_default_mode` is "normal" or
+    // "private" (see packages/desktop/src/lib/browser-settings.ts) and seeds
+    // the Browser tab's first tab + toolbar toggle. `browser_mcp_enabled` is
+    // "true"/"false" (default enabled) and gates whether the `cadencr-browser`
+    // MCP is attached to agent turns — read in the session-prompt spawn path.
+    "browser_default_mode",
+    "browser_mcp_enabled",
 ];
 
 /// Prefixes for per-feature workspace keys whose suffix is a feature id. Must
@@ -392,6 +399,16 @@ mod tests {
         assert!(is_workspace_key_allowed("editor_file_tree_icon_set"));
         assert!(!is_feature_key_allowed("editor_file_tree_icon_set"));
         assert!(!is_project_key_allowed("editor_file_tree_icon_set"));
+    }
+
+    #[test]
+    fn workspace_accepts_browser_settings() {
+        // Browser tab default mode + the cadencr-browser MCP master switch are
+        // global UI/agent prefs, so they live on the workspace scope only.
+        assert!(is_workspace_key_allowed("browser_default_mode"));
+        assert!(is_workspace_key_allowed("browser_mcp_enabled"));
+        assert!(!is_feature_key_allowed("browser_mcp_enabled"));
+        assert!(!is_project_key_allowed("browser_mcp_enabled"));
     }
 
     #[test]

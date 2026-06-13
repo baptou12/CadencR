@@ -534,8 +534,8 @@ mod tests {
                 "item": {
                     "type": "function_call",
                     "call_id": "call_session",
-                    "namespace": "mcp__cadencr_session__",
-                    "name": "read_conversation",
+                    "namespace": "mcp__cadencr_browser__",
+                    "name": "browser_screenshot",
                     "arguments": "{\"feature_id\":1086}"
                 }
             }),
@@ -549,6 +549,6 @@ mod tests {
         let RuntimeContentBlock::ToolUse { name, .. } = block else {
             panic!("expected tool use");
         };
-        assert_eq!(name, "mcp__cadencr-session__read_conversation");
+        assert_eq!(name, "mcp__cadencr-browser__browser_screenshot");
     }
 }

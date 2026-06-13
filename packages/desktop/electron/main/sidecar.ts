@@ -37,8 +37,14 @@ export interface SidecarHandle {
   stop: () => Promise<void>;
 }
 
+export interface BrowserBridgeSidecarEnv {
+  url: string;
+  token: string;
+}
+
 export interface SpawnProductionSidecarOptions {
   appVersion?: string;
+  browserBridge?: BrowserBridgeSidecarEnv;
   onStatus?: (update: SidecarStatusUpdate) => void;
 }
 
@@ -107,6 +113,7 @@ export async function spawnProductionSidecar(
     authToken,
     options.appVersion,
     productionRendererDir(),
+    options.browserBridge,
   );
   let exited = false;
   let exitCode: number | null = null;
@@ -142,11 +149,28 @@ function spawnService(
   authToken: string,
   appVersion: string | undefined,
   rendererDir: string | null,
+  browserBridge?: BrowserBridgeSidecarEnv,
 ): ServiceProcess {
   return spawn(binary, serviceArgs(dbPath, appVersion, rendererDir), {
-    env: { ...process.env, CADENCR_AUTH_TOKEN: authToken },
+    env: serviceEnv(authToken, browserBridge),
     stdio: ["ignore", "pipe", "pipe"],
   });
+}
+
+export function serviceEnv(
+  authToken: string,
+  browserBridge?: BrowserBridgeSidecarEnv,
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    CADENCR_AUTH_TOKEN: authToken,
+    ...(browserBridge
+      ? {
+          CADENCR_BROWSER_BRIDGE_URL: browserBridge.url,
+          CADENCR_BROWSER_BRIDGE_TOKEN: browserBridge.token,
+        }
+      : {}),
+  };
 }
 
 export function serviceArgs(

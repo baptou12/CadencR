@@ -1,4 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type {
+  BrowserBounds,
+  BrowserCommentBadgeClick,
+  BrowserProfileMetadata,
+  BrowserShortcut,
+  BrowserStateSnapshot,
+  BrowserTabMetadata,
+} from "../main/browser-types";
 
 type RouteType = "workflow" | "session";
 type DesktopTheme = "light" | "dark";
@@ -184,6 +192,60 @@ contextBridge.exposeInMainWorld("cadencr", {
     ipcRenderer.invoke("power:set-remote-host", enabled),
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
+
+  createBrowserTab: (url?: string, profileId?: string): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:create-tab", url, profileId),
+  listBrowserTabs: (): Promise<BrowserStateSnapshot> => ipcRenderer.invoke("browser:list-tabs"),
+  navigateBrowserTab: (tabId: string, url: string): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:navigate", tabId, url),
+  activateBrowserTab: (tabId: string): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:activate-tab", tabId),
+  closeBrowserTab: (tabId: string): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:close-tab", tabId),
+  setBrowserBounds: (bounds: BrowserBounds): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:set-bounds", bounds),
+  setBrowserSuppressed: (value: boolean): Promise<void> =>
+    ipcRenderer.invoke("browser:set-suppressed", value),
+  listBrowserProfiles: (): Promise<BrowserProfileMetadata[]> =>
+    ipcRenderer.invoke("browser:list-profiles"),
+  clearBrowserStorage: (profileId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:clear-storage", profileId),
+  createBrowserProfile: (profileId: string): Promise<BrowserProfileMetadata> =>
+    ipcRenderer.invoke("browser:create-profile", profileId),
+  duplicateBrowserProfile: (sourceId: string, newId: string): Promise<BrowserProfileMetadata> =>
+    ipcRenderer.invoke("browser:duplicate-profile", sourceId, newId),
+  deleteBrowserProfile: (profileId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:delete-profile", profileId),
+  browserBack: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:back", tabId),
+  browserForward: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:forward", tabId),
+  browserReload: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:reload", tabId),
+  browserStop: (tabId: string): Promise<void> => ipcRenderer.invoke("browser:stop", tabId),
+  toggleBrowserDevTools: (tabId: string): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:toggle-devtools", tabId),
+  getBrowserConsole: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-console"),
+  getBrowserNetwork: (): Promise<unknown[]> => ipcRenderer.invoke("browser:get-network"),
+  getBrowserSnapshot: (tabId: string): Promise<unknown> =>
+    ipcRenderer.invoke("browser:get-snapshot", tabId),
+  getBrowserScreenshot: (tabId: string): Promise<string> =>
+    ipcRenderer.invoke("browser:screenshot", tabId),
+  browserClick: (tabId: string, x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke("browser:click", tabId, x, y),
+  browserType: (tabId: string, text: string): Promise<void> =>
+    ipcRenderer.invoke("browser:type", tabId, text),
+  browserKeypress: (tabId: string, keyCode: string): Promise<void> =>
+    ipcRenderer.invoke("browser:keypress", tabId, keyCode),
+  selectBrowserElementContext: (tabId: string, anchorId: string): Promise<unknown> =>
+    ipcRenderer.invoke("browser:select-element-context", tabId, anchorId),
+  removeBrowserCommentBadge: (tabId: string, anchorId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:remove-comment-badge", tabId, anchorId),
+  clearBrowserCommentBadges: (tabId: string): Promise<void> =>
+    ipcRenderer.invoke("browser:clear-comment-badges", tabId),
+  onBrowserState: (cb: (state: BrowserStateSnapshot) => void): (() => void) =>
+    onIpc("browser:state", cb),
+  onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void): (() => void) =>
+    onIpc("browser:shortcut", cb),
+  onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void): (() => void) =>
+    onIpc("browser:comment-badge-click", cb),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: (): Promise<void> => ipcRenderer.invoke("app:install-update"),
   fetchChangelog: (version: string): Promise<string | null> =>

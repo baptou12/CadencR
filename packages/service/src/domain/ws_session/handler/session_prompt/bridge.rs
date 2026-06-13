@@ -8,6 +8,7 @@ use tracing::{debug, error, info};
 use crate::domain::agents::adapter::{
     RuntimeToolPermissionHandler, RuntimeToolPermissionRequest, RuntimeToolPermissionResult,
 };
+use crate::domain::mcp::trusted::is_trusted_cadencr_browser_tool_name;
 use crate::domain::permission_bridge;
 use crate::domain::ws_session::persistence::{
     PendingUserInput, PendingUserInputKind, WsSessionPersistence,
@@ -73,6 +74,14 @@ impl RuntimeToolPermissionHandler for WsBridgeCanUseTool {
 
         if request.tool_name == "ExitPlanMode" {
             return self.handle_exit_plan_mode(&request).await;
+        }
+
+        if is_trusted_cadencr_browser_tool_name(&request.tool_name) {
+            return RuntimeToolPermissionResult::Allow {
+                updated_input: request.input,
+                updated_permissions: None,
+                tool_use_id: Some(request.tool_use_id),
+            };
         }
 
         self.handle_provider_permission_prompt(&request).await

@@ -343,8 +343,8 @@ mod tests {
                 "item": {
                     "type": "mcpToolCall",
                     "id": "tool",
-                    "server": "cadencr-session",
-                    "tool": "mark_agent_done",
+                    "server": "cadencr-browser",
+                    "tool": "browser_open_url",
                     "error": null,
                     "result": { "ok": true }
                 }

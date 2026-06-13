@@ -4,15 +4,13 @@
  *
  * - Reads through narrow store selectors, memoized so other features pushing
  *   status updates don't trigger re-renders here.
- * - `⌘B` opens the popover (focuses the search input). Note the existing
- *   `⌘B` hotkey for "expand sidebar" runs only when the sidebar is collapsed
- *   on its own button title; this binding fires globally when the chip is
- *   mounted so power users can jump straight to branch switching.
+ * - The target span is click-only. `⌘B` is owned globally by the sidebar
+ *   toggle; the branch picker intentionally has no hotkey so the two don't
+ *   collide inside a feature workspace.
  */
 import { memo, useCallback, useState, type ReactElement } from "react";
 import { ArrowRight, GitBranch, Users } from "lucide-react";
 import { HoverCard } from "radix-ui";
-import { useShortcut } from "@/hooks/useShortcut";
 
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { selectGitStatus, useGitStatusStore } from "@/stores/useGitStatusStore";
@@ -32,18 +30,6 @@ export const BranchChip = memo(function BranchChip({
 
   const handleOpen = useCallback(() => setOpen(true), []);
   const handleClose = useCallback(() => setOpen(false), []);
-
-  useShortcut(
-    "branch-picker",
-    (e) => {
-      // Only steal ⌘B when the chip is mounted *and* the focus isn't on a
-      // text editor — `enableOnFormTags: false` lets the global sidebar
-      // toggle win while typing.
-      e.preventDefault();
-      setOpen((prev) => !prev);
-    },
-    { enableOnFormTags: false, enableOnContentEditable: false },
-  );
 
   if (!snapshot || !snapshot.current_branch) {
     // No snapshot yet, or a degraded one (worktree path doesn't exist on

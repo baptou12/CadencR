@@ -1,31 +1,29 @@
-pub mod session;
+pub mod browser;
 
 use std::sync::Arc;
 
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 
-use self::session::SessionServer;
+use self::browser::BrowserServer;
 use super::context::McpContext;
 
-/// Agent types that can be served.
+/// MCP server families that can be served.
 ///
-/// After the ws-feature removal only the ws-session agent type is exposed —
-/// the legacy plan/prd/execute/qa/review/risk/retro multi-stage workflow is
-/// gone. The enum is kept as a single-variant type for forward-compatibility
-/// with future agent kinds and to preserve the existing `mcp_server_name`
-/// plumbing.
+/// `cadencr-browser` owns in-app Browser automation. Workspace/session tools
+/// are intentionally not exposed here because they will move to a future
+/// `cadencr-workspace` MCP server.
 #[derive(Debug, Clone, Copy)]
 pub enum AgentType {
-    Session,
+    Browser,
 }
 
 impl AgentType {
-    pub const ALL: &'static [AgentType] = &[AgentType::Session];
+    pub const ALL: &'static [AgentType] = &[AgentType::Browser];
 
     /// Short identifier used in MCP server names (`cadencr-<short>`).
     pub fn short_name(self) -> &'static str {
         match self {
-            Self::Session => "session",
+            Self::Browser => "browser",
         }
     }
 }
@@ -43,13 +41,9 @@ impl std::str::FromStr for AgentType {
 }
 
 /// Names of tools that the agent must expose for the MCP server to be
-/// considered healthy. Today the only such tool is `mark_agent_done`.
-pub fn cadencr_mcp_required_tools(server_name: &str) -> Vec<String> {
-    if cadencr_agent_type_from_server_name(server_name).is_some() {
-        vec!["mark_agent_done".to_string()]
-    } else {
-        Vec::new()
-    }
+/// considered healthy.
+pub fn cadencr_mcp_required_tools(_server_name: &str) -> Vec<String> {
+    Vec::new()
 }
 
 /// Whether the named server runs any tool that requires the elicitation
@@ -70,21 +64,15 @@ pub fn cadencr_mcp_tool_requires_approval_elicitation(
     false
 }
 
-fn cadencr_agent_type_from_server_name(server_name: &str) -> Option<AgentType> {
-    let short_name = server_name.strip_prefix("cadencr-")?;
-    short_name.parse().ok()
-}
-
-/// A type-erased MCP server wrapper. Only `Session` remains after the
-/// ws-feature cleanup.
+/// A type-erased MCP server wrapper.
 pub enum McpServer {
-    Session(SessionServer),
+    Browser(BrowserServer),
 }
 
 /// Create the MCP server for the given agent type.
 pub fn create_mcp_server(agent_type: AgentType, ctx: Arc<McpContext>) -> McpServer {
     match agent_type {
-        AgentType::Session => McpServer::Session(SessionServer::new(ctx)),
+        AgentType::Browser => McpServer::Browser(BrowserServer::new(ctx)),
     }
 }
 
@@ -105,14 +93,14 @@ mod tests {
 
     #[test]
     fn mcp_server_name_uses_current_cadencr_prefix() {
-        assert_eq!(mcp_server_name(AgentType::Session), "cadencr-session");
+        assert_eq!(mcp_server_name(AgentType::Browser), "cadencr-browser");
     }
 
     #[test]
-    fn required_tools_contains_mark_agent_done_for_cadencr_servers() {
+    fn required_tools_are_empty_for_cadencr_browser() {
         assert_eq!(
-            cadencr_mcp_required_tools("cadencr-session"),
-            vec!["mark_agent_done".to_string()]
+            cadencr_mcp_required_tools("cadencr-browser"),
+            Vec::<String>::new()
         );
     }
 

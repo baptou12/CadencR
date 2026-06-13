@@ -16,7 +16,12 @@ import {
 } from "./sidecar";
 import { createSplashWindow, type SplashHandle } from "./splash";
 import { installContextMenu } from "./context-menu";
+import { devUserDataPath } from "./dev-user-data";
 import { sendToWindow } from "./safe-send";
+import { registerBrowserIpc } from "./browser-ipc";
+import { startBrowserBridgeServer, type BrowserBridgeHandle } from "./browser-bridge-server";
+import { dispatchBrowserMcpTool } from "./browser-mcp-dispatch";
+import type { BrowserManager } from "./browser-manager";
 
 let mainWindow: BrowserWindow | null = null;
 let splash: SplashHandle | null = null;
@@ -28,6 +33,9 @@ let themeEventsRegistered = false;
 let powerRegistered = false;
 let updaterRegistered = false;
 let sidecarStopPromise: Promise<void> | null = null;
+let browserIpcRegistered = false;
+let browserManager: BrowserManager | null = null;
+let browserBridge: BrowserBridgeHandle | null = null;
 
 function installCsp(): void {
   const csp = rendererCsp(app.isPackaged);
@@ -40,6 +48,9 @@ async function prepareRuntime(): Promise<void> {
   if (app.isPackaged) {
     sidecar = await spawnProductionSidecar({
       appVersion: app.getVersion(),
+      browserBridge: browserBridge
+        ? { url: browserBridge.url, token: browserBridge.token }
+        : undefined,
       onStatus: (update: SidecarStatusUpdate) => splash?.setPhase(update.phase, update.detail),
     });
   } else {
@@ -47,7 +58,47 @@ async function prepareRuntime(): Promise<void> {
     console.info(`Loaded env from ${dotenvPath}`);
     sidecar = createDevSidecarHandle();
   }
+  if (!app.isPackaged && browserBridge)
+    await registerBrowserBridgeWithService(sidecar, browserBridge);
   setRuntimeConfig({ baseUrl: sidecar.baseUrl, authToken: sidecar.authToken });
+}
+
+async function registerBrowserBridgeWithService(
+  handle: SidecarHandle,
+  bridge: BrowserBridgeHandle,
+): Promise<void> {
+  if (!handle.authToken) {
+    throw new Error("Cannot register Browser bridge: service auth token is missing.");
+  }
+  const response = await retryBrowserBridgeRegistration(handle, bridge);
+  if (!response.ok) {
+    throw new Error(
+      `Cannot register Browser bridge: service returned ${response.status} ${await response.text()}`,
+    );
+  }
+}
+
+async function retryBrowserBridgeRegistration(
+  handle: SidecarHandle,
+  bridge: BrowserBridgeHandle,
+): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      return await fetch(`${handle.baseUrl}/api/browser-bridge`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          "x-cadencr-token": handle.authToken ?? "",
+        },
+        body: JSON.stringify({ url: bridge.url, token: bridge.token }),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < 59) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error(`Cannot register Browser bridge: ${String(lastError)}`);
 }
 
 function sendCloseRequest(): void {
@@ -142,6 +193,10 @@ function wireMainProcess(): void {
     registerIpc({ getMainWindow: () => mainWindow, confirmClose, requestQuit });
     ipcRegistered = true;
   }
+  if (!browserIpcRegistered) {
+    browserManager = registerBrowserIpc({ getMainWindow: () => mainWindow });
+    browserIpcRegistered = true;
+  }
   if (!themeEventsRegistered) {
     registerThemeEvents(() => mainWindow);
     themeEventsRegistered = true;
@@ -162,6 +217,12 @@ function wireMainProcess(): void {
 
 async function bootstrap(): Promise<void> {
   installCsp();
+  browserBridge = await startBrowserBridgeServer({
+    dispatch: (toolName, args) => {
+      if (!browserManager) throw new Error("Browser manager is not ready.");
+      return dispatchBrowserMcpTool(browserManager, toolName, args);
+    },
+  });
   installApplicationMenu(requestQuit);
   splash = createSplashWindow(app.getVersion());
   splash.setPhase("starting");
@@ -195,7 +256,10 @@ app.setAppUserModelId(app.isPackaged ? "com.cadencr.desktop" : "com.cadencr.desk
 // app is also open. Must run before `requestSingleInstanceLock()`.
 if (!app.isPackaged) {
   app.setName("Cadencr Dev");
-  const devUserData = path.join(app.getPath("appData"), "@cadencr", "desktop-dev");
+  const devUserData = devUserDataPath(
+    app.getPath("appData"),
+    process.env.CADENCR_DEV_USER_DATA_SUFFIX,
+  );
   app.setPath("userData", devUserData);
 }
 
@@ -248,11 +312,19 @@ async function prepareForUpdateInstall(): Promise<void> {
   powerRegistered = false;
   shutdownAutoUpdater();
   await stopSidecarForExit();
+  await stopBrowserBridge();
 }
 
 async function stopSidecarThenQuit(): Promise<void> {
   await stopSidecarForExit();
+  await stopBrowserBridge();
   app.quit();
+}
+
+async function stopBrowserBridge(): Promise<void> {
+  if (!browserBridge) return;
+  await browserBridge.stop();
+  browserBridge = null;
 }
 
 async function stopSidecarForExit(): Promise<void> {

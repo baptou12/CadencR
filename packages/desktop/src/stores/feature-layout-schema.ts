@@ -19,8 +19,14 @@
  * when their last tab is pulled out.
  */
 
-export type TabKind = "agent" | "terminal" | "git" | "editor";
-export const ALL_TAB_KINDS: readonly TabKind[] = ["agent", "terminal", "git", "editor"] as const;
+export type TabKind = "agent" | "terminal" | "git" | "editor" | "browser";
+export const ALL_TAB_KINDS: readonly TabKind[] = [
+  "agent",
+  "terminal",
+  "git",
+  "editor",
+  "browser",
+] as const;
 
 export const ROOT_LEAF_ID = "root";
 export const LAYOUT_STATE_KEY = "layout_state";
@@ -106,7 +112,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function isTabKind(value: unknown): value is TabKind {
-  return value === "agent" || value === "terminal" || value === "git" || value === "editor";
+  return typeof value === "string" && ALL_TAB_KINDS.includes(value as TabKind);
 }
 
 function parseTabKindArray(value: unknown): TabKind[] | null {
@@ -152,7 +158,8 @@ function parseLayoutNode(value: unknown): LayoutNode | null {
       }
       sizes = [value.sizes[0], value.sizes[1]];
     }
-    return { type: "split", orientation: value.orientation, children: [a, b], sizes };
+    const split: LayoutSplit = { type: "split", orientation: value.orientation, children: [a, b] };
+    return sizes ? { ...split, sizes } : split;
   }
   return null;
 }
@@ -164,6 +171,35 @@ function containsRootLeaf(node: LayoutNode): boolean {
 function containsLeaf(node: LayoutNode, leafId: string): boolean {
   if (node.type === "leaf") return node.id === leafId;
   return containsLeaf(node.children[0], leafId) || containsLeaf(node.children[1], leafId);
+}
+
+function collectTabs(node: LayoutNode, out: Set<TabKind>): void {
+  if (node.type === "leaf") {
+    for (const tab of node.tabIds) out.add(tab);
+    return;
+  }
+  collectTabs(node.children[0], out);
+  collectTabs(node.children[1], out);
+}
+
+function appendTabsToRoot(node: LayoutNode, tabs: readonly TabKind[]): LayoutNode {
+  if (tabs.length === 0) return node;
+  if (node.type === "leaf") {
+    if (node.id !== ROOT_LEAF_ID) return node;
+    return { ...node, tabIds: [...node.tabIds, ...tabs] };
+  }
+  const [a, b] = node.children;
+  const newA = appendTabsToRoot(a, tabs);
+  if (newA !== a) return { ...node, children: [newA, b] };
+  const newB = appendTabsToRoot(b, tabs);
+  return newB === b ? node : { ...node, children: [a, newB] };
+}
+
+function normalizeLayoutNode(node: LayoutNode): LayoutNode {
+  const presentTabs = new Set<TabKind>();
+  collectTabs(node, presentTabs);
+  const missingTabs = ALL_TAB_KINDS.filter((tab) => !presentTabs.has(tab));
+  return appendTabsToRoot(node, missingTabs);
 }
 
 /**
@@ -209,7 +245,7 @@ export function parseLayoutState(input: unknown): FeatureLayoutState | null {
 
   return {
     version: 1,
-    splitRoot,
+    splitRoot: normalizeLayoutNode(splitRoot),
     focusedPaneId,
     appliedLayoutId,
   };

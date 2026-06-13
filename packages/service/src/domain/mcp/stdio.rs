@@ -33,7 +33,7 @@ pub async fn run_mcp_stdio(
     let stdio = rmcp::transport::io::stdio();
 
     let quit_reason = match server {
-        McpServer::Session(s) => s.serve(stdio).await?.waiting().await,
+        McpServer::Browser(s) => s.serve(stdio).await?.waiting().await,
     };
 
     info!(?quit_reason, "MCP stdio server shutting down");

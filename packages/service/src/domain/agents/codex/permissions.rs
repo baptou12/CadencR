@@ -335,13 +335,16 @@ mod tests {
             &json!("approval-6"),
             "mcpServer/elicitation/request",
             &json!({
-                "serverName": "cadencr-session",
+                "serverName": "cadencr-browser",
                 "_meta": {
-                    "tool_name": "mcp__cadencr-session__mark_agent_done"
+                    "tool_name": "mcp__cadencr-browser__browser_open_url"
                 }
             }),
         );
-        assert_eq!(canonical.tool_name, "mcp__cadencr-session__mark_agent_done");
+        assert_eq!(
+            canonical.tool_name,
+            "mcp__cadencr-browser__browser_open_url"
+        );
     }
 
     #[test]
