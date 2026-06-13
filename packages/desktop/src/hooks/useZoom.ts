@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { desktopBridge, isDesktopShell } from "@/lib/desktop-bridge";
+import { notifyZoomApplied } from "@/lib/zoom-coordinator";
 import { useShortcut } from "./useShortcut";
 import { useDebouncedSetting } from "./useDebouncedSetting";
 import { useIsMobile } from "./useIsMobile";
@@ -23,11 +25,17 @@ function clampZoom(level: number): number {
 // Browsers default the root font-size to 16px; mobile zoom scales from this.
 const ROOT_FONT_PX = 16;
 
-function applyZoom(level: number) {
+function applyZoom(level: number): void {
   const factor = level / 100;
   // The Electron shell scales the whole webContents via the native zoom factor.
   if (isDesktopShell()) {
-    void desktopBridge.setZoom(factor);
+    void desktopBridge
+      .setZoom(factor)
+      .then(notifyZoomApplied)
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(`Could not apply zoom: ${message}`);
+      });
     return;
   }
   if (typeof document === "undefined") return;
@@ -38,6 +46,7 @@ function applyZoom(level: number) {
   const root = document.documentElement;
   if (factor === 1) root.style.removeProperty("font-size");
   else root.style.fontSize = `${ROOT_FONT_PX * factor}px`;
+  notifyZoomApplied();
 }
 
 /**

@@ -1,9 +1,10 @@
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   clearDesktopBridgeOverrideForTests,
   setDesktopBridgeOverrideForTests,
 } from "@/lib/desktop-bridge";
+import { subscribeZoomApplied } from "@/lib/zoom-coordinator";
 import type { CadencrDesktopBridge } from "@/lib/desktop-bridge";
 import { useZoom } from "./useZoom";
 
@@ -93,6 +94,32 @@ describe("useZoom", () => {
     mockSettingValue.current = "120";
     renderHook(() => useZoom());
     expect(mockSetZoom).toHaveBeenCalledWith(1.2);
+  });
+
+  it("notifies native browser bounds trackers after desktop zoom is applied", async () => {
+    const onZoomApplied = vi.fn();
+    const unsubscribe = subscribeZoomApplied(onZoomApplied);
+    let resolveZoom!: () => void;
+    mockSetZoom.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveZoom = resolve;
+        }),
+    );
+    mockSettingValue.current = "120";
+
+    try {
+      renderHook(() => useZoom());
+      expect(onZoomApplied).not.toHaveBeenCalled();
+
+      resolveZoom();
+
+      await waitFor(() => {
+        expect(onZoomApplied).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("does not apply the default zoom while the persisted setting is still loading", () => {
