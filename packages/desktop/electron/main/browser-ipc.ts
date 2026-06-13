@@ -7,6 +7,7 @@ import {
   requiredString,
 } from "./browser-arg-validation";
 import { BrowserManager } from "./browser-manager";
+import { BrowserProfileController } from "./browser-profile-controller";
 import { assertTrustedSender } from "./ipc";
 
 interface BrowserIpcOptions {
@@ -15,6 +16,7 @@ interface BrowserIpcOptions {
 
 export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   const manager = new BrowserManager(options.getMainWindow);
+  const profiles = new BrowserProfileController();
   ipcMain.handle(
     "browser:create-tab",
     (event, rawUrl: unknown, profileId: unknown, scopeId: unknown) => {
@@ -52,26 +54,26 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   });
   ipcMain.handle("browser:list-profiles", (event) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.listProfiles();
+    return profiles.list();
   });
   ipcMain.handle("browser:clear-storage", (event, profileId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.clearStorage(requiredString(profileId, "profile id"));
+    return profiles.clearStorage(requiredString(profileId, "profile id"));
   });
   ipcMain.handle("browser:create-profile", (event, profileId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.createProfile(requiredString(profileId, "profile id"));
+    return profiles.create(requiredString(profileId, "profile id"));
   });
   ipcMain.handle("browser:duplicate-profile", (event, sourceId: unknown, newId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.duplicateProfile(
+    return profiles.duplicate(
       requiredString(sourceId, "source profile id"),
       requiredString(newId, "new profile id"),
     );
   });
   ipcMain.handle("browser:delete-profile", (event, profileId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    manager.deleteProfile(requiredString(profileId, "profile id"));
+    profiles.delete(requiredString(profileId, "profile id"));
   });
   ipcMain.handle("browser:back", (event, tabId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);

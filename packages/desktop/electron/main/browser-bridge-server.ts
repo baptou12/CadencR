@@ -1,11 +1,15 @@
 import crypto from "node:crypto";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
-import { requiredRecord, requiredString } from "./browser-arg-validation";
+import { optionalNumber, requiredRecord, requiredString } from "./browser-arg-validation";
 import type { BrowserBridgeResult } from "./browser-mcp-dispatch";
 
 export interface BrowserBridgeRequestPayload {
   tool_name: string;
   args: Record<string, unknown>;
+  // Feature the calling MCP subprocess is pinned to; used as the browser scope so
+  // agent-opened tabs show up in that feature's Browser panel. Optional so older
+  // callers (and manual tooling) still work — they fall back to scopeless.
+  feature_id?: number;
 }
 
 export interface BrowserBridgeHandle {
@@ -16,7 +20,11 @@ export interface BrowserBridgeHandle {
 
 export interface BrowserBridgeServerOptions {
   token?: string;
-  dispatch: (toolName: string, args: Record<string, unknown>) => Promise<BrowserBridgeResult>;
+  dispatch: (
+    toolName: string,
+    args: Record<string, unknown>,
+    featureId?: number,
+  ) => Promise<BrowserBridgeResult>;
 }
 
 export async function startBrowserBridgeServer(
@@ -59,7 +67,9 @@ async function handleRequest(
     );
     sendJson(response, result.status, result.payload);
   } catch (error) {
-    sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) });
+    sendJson(response, 400, {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
@@ -73,7 +83,7 @@ export async function dispatchBrowserBridgePayload(
     return { status: 401, payload: { error: "Unauthorized" } };
   }
   const payload = parsePayload(rawBody);
-  const result = await dispatch(payload.tool_name, payload.args);
+  const result = await dispatch(payload.tool_name, payload.args, payload.feature_id);
   return { status: 200, payload: result };
 }
 
@@ -83,6 +93,7 @@ function parsePayload(raw: string): BrowserBridgeRequestPayload {
   return {
     tool_name: requiredString(record.tool_name, "tool_name"),
     args: requiredRecord(record.args, "args object"),
+    feature_id: optionalNumber(record.feature_id),
   };
 }
 

@@ -219,15 +219,19 @@ fn action_tool_schema(name: &str) -> serde_json::Value {
 
 fn bridge_result(response: BrowserBridgeResponse) -> CallToolResult {
     match response.image {
-        Some(image) => CallToolResult::success(vec![
+        // Never forward an empty image. An `input_image` with no base64 data is a
+        // malformed data URI (`data:image/png;base64,`) that some models reject on
+        // every subsequent turn, permanently wedging the conversation. The desktop
+        // bridge already guards this, but enforce it at the MCP boundary too.
+        Some(image) if !image.data.is_empty() => CallToolResult::success(vec![
             Content::image(image.data, image.mime_type),
             Content::text(response.text),
         ]),
-        None => text_result(&response.text),
+        _ => text_result(&response.text),
     }
 }
 
-async fn run_browser_tool(name: &str, args: serde_json::Value) -> CallToolResult {
+async fn run_browser_tool(name: &str, args: serde_json::Value, feature_id: i64) -> CallToolResult {
     if !BROWSER_TOOL_NAMES.contains(&name) {
         return error_result(&format!("Unknown tool: {name}"));
     }
@@ -249,7 +253,10 @@ async fn run_browser_tool(name: &str, args: serde_json::Value) -> CallToolResult
     let Some(client) = BrowserBridgeClient::from_env() else {
         return error_result("Browser MCP execution requires the desktop Browser bridge.");
     };
-    match client.call(BrowserBridgeRequest::new(name, args)).await {
+    match client
+        .call(BrowserBridgeRequest::new(name, args, feature_id))
+        .await
+    {
         Ok(response) => bridge_result(response),
         Err(e) => error_result(&e),
     }
@@ -286,7 +293,7 @@ impl ServerHandler for BrowserServer {
             if let Err(e) = pinned_feature_id(&args, self.ctx.feature_id) {
                 return Ok(error_result(&e));
             }
-            Ok(run_browser_tool(request.name.as_ref(), args).await)
+            Ok(run_browser_tool(request.name.as_ref(), args, self.ctx.feature_id).await)
         }
     }
 }

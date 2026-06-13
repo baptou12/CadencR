@@ -40,7 +40,12 @@ let browserBridge: BrowserBridgeHandle | null = null;
 function installCsp(): void {
   const csp = rendererCsp(app.isPackaged);
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({ responseHeaders: { ...details.responseHeaders, "Content-Security-Policy": [csp] } });
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [csp],
+      },
+    });
   });
 }
 
@@ -118,7 +123,10 @@ function rendererLoadUrl(): { kind: "url"; value: string } | { kind: "file"; val
     }
     return { kind: "url", value: rendererUrl };
   }
-  return { kind: "file", value: path.join(__dirname, "../renderer/index.html") };
+  return {
+    kind: "file",
+    value: path.join(__dirname, "../renderer/index.html"),
+  };
 }
 
 function secureWebContents(webContents: WebContents): void {
@@ -218,9 +226,14 @@ function wireMainProcess(): void {
 async function bootstrap(): Promise<void> {
   installCsp();
   browserBridge = await startBrowserBridgeServer({
-    dispatch: (toolName, args) => {
+    dispatch: (toolName, args, featureId) => {
       if (!browserManager) throw new Error("Browser manager is not ready.");
-      return dispatchBrowserMcpTool(browserManager, toolName, args);
+      // Shield the renderer's focus (most visibly the agent prompt) from being
+      // stolen by the guest page while the agent drives the browser.
+      const manager = browserManager;
+      return manager.focusGuard.run(() =>
+        dispatchBrowserMcpTool(manager, toolName, args, featureId),
+      );
     },
   });
   installApplicationMenu(requestQuit);
