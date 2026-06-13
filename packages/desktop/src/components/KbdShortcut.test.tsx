@@ -49,4 +49,11 @@ describe("KbdShortcut", () => {
     expect(kbd).toBeInTheDocument();
     expect(kbd?.className).toContain("font-mono");
   });
+
+  it("renders a dimmed placeholder instead of the keys when disabled", () => {
+    const { container } = render(<KbdShortcut keys={["1"]} variant="square" disabled />);
+    expect(screen.queryByText("1")).toBeNull();
+    expect(screen.getByText("-")).toBeInTheDocument();
+    expect(container.querySelector("kbd")?.className).toContain("opacity-50");
+  });
 });

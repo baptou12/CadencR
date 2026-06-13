@@ -50,17 +50,40 @@ interface KbdShortcutProps {
    * explicit that the keys won't fire right now.
    */
   scope?: TabKind;
+  /**
+   * Forces the muted `-` placeholder regardless of `scope` — for shortcuts
+   * that stay registered but are temporarily inert (e.g. digit selectors
+   * while a free-text input is focused).
+   */
+  disabled?: boolean;
 }
 
-export function KbdShortcut({ keys, size = "default", variant, scope }: KbdShortcutProps) {
+export function KbdShortcut({
+  keys,
+  size = "default",
+  variant,
+  scope,
+  disabled,
+}: KbdShortcutProps) {
   const resolvedVariant = variant ?? (size === "sm" ? "inline-sm" : "inline");
   const map = size === "sm" ? KEY_MAP_SM : KEY_MAP;
   const className = VARIANT_CLASSES[resolvedVariant];
 
+  if (disabled) {
+    return <KbdPlaceholder className={className} />;
+  }
   if (scope !== undefined) {
     return <ScopedKbdShortcut keys={keys} map={map} className={className} scope={scope} />;
   }
   return <KbdContent keys={keys} map={map} className={className} />;
+}
+
+function KbdPlaceholder({ className }: { className: string }) {
+  return (
+    <kbd className={cn(className, "opacity-50")}>
+      <span className="leading-none">-</span>
+    </kbd>
+  );
 }
 
 interface ScopedProps {
@@ -75,11 +98,7 @@ interface ScopedProps {
 function ScopedKbdShortcut({ keys, map, className, scope }: ScopedProps) {
   const isActive = useIsTabFocused(scope);
   if (!isActive) {
-    return (
-      <kbd className={cn(className, "opacity-50")}>
-        <span className="leading-none">-</span>
-      </kbd>
-    );
+    return <KbdPlaceholder className={className} />;
   }
   return <KbdContent keys={keys} map={map} className={className} />;
 }
