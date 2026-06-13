@@ -68,7 +68,11 @@ export function secureWebPreferences(profile: BrowserProfile): Electron.WebPrefe
   };
 }
 
-export function metadataFor(id: string, profileId: string): BrowserTabMetadata {
+export function metadataFor(
+  id: string,
+  profileId: string,
+  scopeId: number | null,
+): BrowserTabMetadata {
   return {
     id,
     title: "New tab",
@@ -79,6 +83,7 @@ export function metadataFor(id: string, profileId: string): BrowserTabMetadata {
     sessionProfileId: profileId,
     isActive: false,
     devToolsOpen: false,
+    scopeId,
   };
 }
 

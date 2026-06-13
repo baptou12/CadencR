@@ -1,5 +1,6 @@
 import { ipcMain, type BrowserWindow } from "electron";
 import {
+  optionalNumber,
   optionalString,
   parseBounds,
   requiredNumber,
@@ -14,13 +15,20 @@ interface BrowserIpcOptions {
 
 export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
   const manager = new BrowserManager(options.getMainWindow);
-  ipcMain.handle("browser:create-tab", (event, rawUrl: unknown, profileId: unknown) => {
+  ipcMain.handle(
+    "browser:create-tab",
+    (event, rawUrl: unknown, profileId: unknown, scopeId: unknown) => {
+      assertTrustedSender(event, options.getMainWindow);
+      return manager.createTab(
+        optionalString(rawUrl),
+        optionalString(profileId) ?? "fresh",
+        optionalNumber(scopeId) ?? null,
+      );
+    },
+  );
+  ipcMain.handle("browser:list-tabs", (event, scopeId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.createTab(optionalString(rawUrl), optionalString(profileId) ?? "fresh");
-  });
-  ipcMain.handle("browser:list-tabs", (event) => {
-    assertTrustedSender(event, options.getMainWindow);
-    return manager.state();
+    return manager.state(optionalNumber(scopeId) ?? null);
   });
   ipcMain.handle("browser:navigate", (event, tabId: unknown, rawUrl: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
@@ -34,9 +42,9 @@ export function registerBrowserIpc(options: BrowserIpcOptions): BrowserManager {
     assertTrustedSender(event, options.getMainWindow);
     return manager.closeTab(requiredString(tabId, "tab id"));
   });
-  ipcMain.handle("browser:set-bounds", (event, bounds: unknown) => {
+  ipcMain.handle("browser:set-bounds", (event, bounds: unknown, scopeId: unknown) => {
     assertTrustedSender(event, options.getMainWindow);
-    return manager.setBounds(parseBounds(bounds));
+    return manager.setBounds(parseBounds(bounds), optionalNumber(scopeId) ?? null);
   });
   ipcMain.handle("browser:set-suppressed", (event, value: unknown) => {
     assertTrustedSender(event, options.getMainWindow);

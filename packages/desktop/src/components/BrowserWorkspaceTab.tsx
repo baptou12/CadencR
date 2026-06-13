@@ -20,24 +20,37 @@ import {
 } from "./browser/useBrowserWorkspaceModel";
 
 interface BrowserWorkspaceTabProps {
+  /**
+   * The feature-layout scope that owns this workspace's tabs. Tabs are isolated
+   * per scope so a tab opened here never leaks into another feature's Browser.
+   */
+  scopeId: number;
   onSendContext: (message: string, images?: Array<{ base64: string; mimeType: string }>) => void;
 }
 
 export const BrowserWorkspaceTab = memo(function BrowserWorkspaceTab({
+  scopeId,
   onSendContext,
 }: BrowserWorkspaceTabProps): ReactElement {
   // Resolve the user's default mode before mounting the workspace so the first
   // tab and the toolbar toggle both start from the saved preference.
   const { mode: defaultMode, isLoading } = useBrowserDefaultMode();
   if (isLoading) return <BrowserLoading />;
-  return <BrowserWorkspaceTabReady onSendContext={onSendContext} defaultMode={defaultMode} />;
+  return (
+    <BrowserWorkspaceTabReady
+      scopeId={scopeId}
+      onSendContext={onSendContext}
+      defaultMode={defaultMode}
+    />
+  );
 });
 
 const BrowserWorkspaceTabReady = memo(function BrowserWorkspaceTabReady({
+  scopeId,
   onSendContext,
   defaultMode,
 }: BrowserWorkspaceTabProps & { defaultMode: CookieMode }): ReactElement {
-  const model = useBrowserWorkspaceModel(defaultMode);
+  const model = useBrowserWorkspaceModel(defaultMode, scopeId);
   const comments = useBrowserComments({ runForActive: model.runForActive, onSend: onSendContext });
   useBrowserKeyboard(model, comments.addComment);
   if (model.loading) return <BrowserLoading />;

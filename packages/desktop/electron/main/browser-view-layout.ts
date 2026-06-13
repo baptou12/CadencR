@@ -43,19 +43,33 @@ export class BrowserViewLayout {
   }
 
   /**
-   * Position + visibility for all views from the active tab, bounds, devtools
-   * and suppression state. Single source of truth so activate / resize /
-   * devtools / suppress all stay consistent.
+   * Position + visibility for all views from each scope's active tab + bounds,
+   * devtools and suppression state. Single source of truth so activate /
+   * resize / devtools / suppress all stay consistent.
+   *
+   * Tabs are isolated per feature scope: only the active tab of a scope whose
+   * viewport is currently mounted (non-empty bounds) is attached and visible.
+   * Tabs belonging to a backgrounded feature are fully detached, so a feature's
+   * tabs never paint over another's.
    */
-  apply(tabs: Map<string, ManagedTab>, activeTabId: string | null, bounds: BrowserBounds): void {
+  apply(
+    tabs: Map<string, ManagedTab>,
+    activeByScope: Map<number | null, string>,
+    boundsByScope: Map<number | null, BrowserBounds>,
+  ): void {
     const attached = !this.suppressed;
     for (const [id, tab] of tabs) {
-      const active = id === activeTabId && attached;
+      const scope = tab.metadata.scopeId;
+      const scopeBounds = boundsByScope.get(scope);
+      const hasBounds = !!scopeBounds && scopeBounds.width > 0 && scopeBounds.height > 0;
+      const attachThis = attached && hasBounds;
+      const active = attachThis && activeByScope.get(scope) === id;
       const devToolsOpen = tab.metadata.devToolsOpen;
-      this.layoutView(tab.view, attached, active, browserBounds(bounds, devToolsOpen));
+      const base = scopeBounds ?? { x: 0, y: 0, width: 0, height: 0 };
+      this.layoutView(tab.view, attachThis, active, browserBounds(base, devToolsOpen));
       if (tab.devtoolsView) {
         const dtVisible = active && devToolsOpen;
-        this.layoutView(tab.devtoolsView, attached, dtVisible, devtoolsBounds(bounds));
+        this.layoutView(tab.devtoolsView, attachThis, dtVisible, devtoolsBounds(base));
       }
     }
   }

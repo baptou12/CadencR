@@ -15,6 +15,13 @@ export interface BrowserTabMetadata {
   sessionProfileId: string;
   isActive: boolean;
   devToolsOpen: boolean;
+  /**
+   * The feature-layout scope that owns this tab. Tabs are isolated per scope so
+   * a tab opened in one feature's Browser never leaks into another's. `null` is
+   * a scopeless tab — created by agent/MCP automation, which has no UI feature
+   * context, so it isn't shown in any feature's tab strip.
+   */
+  scopeId: number | null;
 }
 
 export interface BrowserConsoleEntry {
@@ -41,6 +48,12 @@ export interface BrowserNetworkEntry {
 }
 
 export interface BrowserStateSnapshot {
+  /**
+   * The scope this snapshot describes, or `null`/`undefined` for the unscoped
+   * (all-tabs) view used by agent/MCP automation. UI consumers ignore snapshots
+   * whose `scopeId` doesn't match their own feature scope.
+   */
+  scopeId?: number | null;
   tabs: BrowserTabMetadata[];
   activeTabId: string | null;
   consoleEntries: BrowserConsoleEntry[];

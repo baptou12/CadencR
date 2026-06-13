@@ -63,10 +63,11 @@ describe("browser-manager-utils", () => {
   });
 
   it("builds default metadata for new tabs", () => {
-    expect(metadataFor("tab-1", "fresh")).toMatchObject({
+    expect(metadataFor("tab-1", "fresh", 7)).toMatchObject({
       id: "tab-1",
       url: "about:blank",
       devToolsOpen: false,
+      scopeId: 7,
     });
   });
 });

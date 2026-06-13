@@ -193,17 +193,24 @@ contextBridge.exposeInMainWorld("cadencr", {
   onPowerSuspend: (cb: () => void): (() => void) => onIpc("power:suspend", cb),
   onPowerResume: (cb: () => void): (() => void) => onIpc("power:resume", cb),
 
-  createBrowserTab: (url?: string, profileId?: string): Promise<BrowserTabMetadata> =>
-    ipcRenderer.invoke("browser:create-tab", url, profileId),
-  listBrowserTabs: (): Promise<BrowserStateSnapshot> => ipcRenderer.invoke("browser:list-tabs"),
+  createBrowserTab: (
+    url?: string,
+    profileId?: string,
+    scopeId?: number | null,
+  ): Promise<BrowserTabMetadata> =>
+    ipcRenderer.invoke("browser:create-tab", url, profileId, scopeId),
+  listBrowserTabs: (scopeId?: number | null): Promise<BrowserStateSnapshot> =>
+    ipcRenderer.invoke("browser:list-tabs", scopeId),
   navigateBrowserTab: (tabId: string, url: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:navigate", tabId, url),
   activateBrowserTab: (tabId: string): Promise<BrowserTabMetadata> =>
     ipcRenderer.invoke("browser:activate-tab", tabId),
   closeBrowserTab: (tabId: string): Promise<BrowserStateSnapshot> =>
     ipcRenderer.invoke("browser:close-tab", tabId),
-  setBrowserBounds: (bounds: BrowserBounds): Promise<BrowserStateSnapshot> =>
-    ipcRenderer.invoke("browser:set-bounds", bounds),
+  setBrowserBounds: (
+    bounds: BrowserBounds,
+    scopeId?: number | null,
+  ): Promise<BrowserStateSnapshot> => ipcRenderer.invoke("browser:set-bounds", bounds, scopeId),
   setBrowserSuppressed: (value: boolean): Promise<void> =>
     ipcRenderer.invoke("browser:set-suppressed", value),
   listBrowserProfiles: (): Promise<BrowserProfileMetadata[]> =>

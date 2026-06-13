@@ -36,6 +36,10 @@ const COMPACT_ACTION_PROVIDERS = new Set(["opencode", "codex_cli"]);
 interface UseSessionTabsArgs {
   sessionId: string;
   featureId: number;
+  // Scope that owns this block's layout + browser tabs. Equals `featureId` on
+  // the feature route, but a distinct per-card id in the unified grid, so each
+  // card's Browser stays isolated.
+  layoutFeatureId: number;
   projectId: number;
   data: ReturnType<typeof useSessionFeatureData>;
   controls: ReturnType<typeof useSessionControls>;
@@ -201,7 +205,7 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
 }
 
 function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { controls, nonAgentTabsEnabled } = args;
+  const { controls, nonAgentTabsEnabled, layoutFeatureId } = args;
   const sendContext = useCallback(
     (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
       controls.ws.sendPrompt(
@@ -222,13 +226,13 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
       shortcut: ["cmd", "shift", "B"],
       content: nonAgentTabsEnabled ? (
         <Suspense fallback={null}>
-          <BrowserWorkspaceTab onSendContext={sendContext} />
+          <BrowserWorkspaceTab scopeId={layoutFeatureId} onSendContext={sendContext} />
         </Suspense>
       ) : (
         <DeferredTabContent label="Browser" />
       ),
     }),
-    [nonAgentTabsEnabled, sendContext],
+    [layoutFeatureId, nonAgentTabsEnabled, sendContext],
   );
 }
 

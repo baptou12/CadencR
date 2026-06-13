@@ -51,7 +51,10 @@ function displayUrl(url: string): string {
   return url === "about:blank" ? "" : url;
 }
 
-export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorkspaceModel {
+export function useBrowserWorkspaceModel(
+  defaultMode: CookieMode,
+  scopeId: number,
+): BrowserWorkspaceModel {
   const [state, setState] = useState<BrowserStateSnapshot>(EMPTY_STATE);
   const [urlInput, setUrlInput] = useState("localhost:1420");
   const [mode, setMode] = useState<CookieMode>(defaultMode);
@@ -60,7 +63,7 @@ export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorksp
   const [pending, setPending] = useState(false);
   const urlInputRef = useRef<HTMLInputElement | null>(null);
   const urlEditingRef = useRef(false);
-  const viewportRef = useBrowserViewportBounds(reportBrowserError);
+  const viewportRef = useBrowserViewportBounds(scopeId, reportBrowserError);
 
   const activeTab = useMemo(
     () => state.tabs.find((tab) => tab.id === state.activeTabId) ?? null,
@@ -76,6 +79,7 @@ export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorksp
     urlEditingRef,
     urlInputRef,
     defaultMode,
+    scopeId,
   });
   const runForActive = useRunForActive(activeTab, setPending);
 
@@ -98,7 +102,7 @@ export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorksp
       // pointed at the typed URL instead of silently doing nothing.
       if (!activeTab) {
         try {
-          await desktopBridge.createBrowserTab(url, PROFILE_ID[mode]);
+          await desktopBridge.createBrowserTab(url, PROFILE_ID[mode], scopeId);
         } catch (error) {
           showBrowserError(error, "Could not open a new tab");
         }
@@ -108,12 +112,12 @@ export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorksp
         desktopBridge.navigateBrowserTab(tab.id, url).then(() => undefined),
       );
     },
-    [activeTab, mode, runForActive],
+    [activeTab, mode, runForActive, scopeId],
   );
 
   const newTab = useCallback(async (): Promise<void> => {
     try {
-      await desktopBridge.createBrowserTab(undefined, PROFILE_ID[mode]);
+      await desktopBridge.createBrowserTab(undefined, PROFILE_ID[mode], scopeId);
       setUrlInput("");
       // Focus after the create round-trips so the freshly mounted tab owns the
       // address bar and the user can type a URL immediately.
@@ -121,7 +125,7 @@ export function useBrowserWorkspaceModel(defaultMode: CookieMode): BrowserWorksp
     } catch (error) {
       showBrowserError(error, "Could not open a new tab");
     }
-  }, [focusUrlBar, mode]);
+  }, [focusUrlBar, mode, scopeId]);
 
   const activateTab = useCallback(
     (tabId: string): void => void desktopBridge.activateBrowserTab(tabId).catch(reportBrowserError),
@@ -226,10 +230,12 @@ interface BrowserBootstrapArgs {
   urlEditingRef: React.RefObject<boolean>;
   urlInputRef: React.RefObject<HTMLInputElement | null>;
   defaultMode: CookieMode;
+  scopeId: number;
 }
 
 function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
-  const { setState, setUrlInput, setLoading, urlEditingRef, urlInputRef, defaultMode } = args;
+  const { setState, setUrlInput, setLoading, urlEditingRef, urlInputRef, defaultMode, scopeId } =
+    args;
   // The default mode only seeds the very first tab; read it through a ref so a
   // later settings change (this tab can stay mounted in the background) doesn't
   // re-run the bootstrap and re-subscribe the state listener.
@@ -248,7 +254,7 @@ function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
       useBrowserStore.getState().setSnapshot(next);
     };
     void desktopBridge
-      .listBrowserTabs()
+      .listBrowserTabs(scopeId)
       .then(async (snapshot) => {
         if (!alive) return;
         if (snapshot.tabs.length > 0) {
@@ -257,11 +263,18 @@ function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
           if (!isUrlBarActive()) setUrlInput(displayUrl(active.url));
           return;
         }
-        await desktopBridge.createBrowserTab(undefined, PROFILE_ID[defaultModeRef.current]);
+        await desktopBridge.createBrowserTab(
+          undefined,
+          PROFILE_ID[defaultModeRef.current],
+          scopeId,
+        );
       })
       .catch((error: unknown) => showBrowserError(error, "Browser unavailable"))
       .finally(() => alive && setLoading(false));
     const off = desktopBridge.onBrowserState((next) => {
+      // The main process broadcasts one snapshot per feature scope; keep only
+      // the one for this workspace so another feature's tabs never appear here.
+      if (next.scopeId !== scopeId) return;
       applySnapshot(next);
       const active = next.tabs.find((tab) => tab.id === next.activeTabId);
       if (active && !isUrlBarActive()) setUrlInput(displayUrl(active.url));
@@ -271,7 +284,7 @@ function useBrowserBootstrap(args: BrowserBootstrapArgs): void {
       off();
       useBrowserStore.getState().setSnapshot(EMPTY_STATE);
     };
-  }, [setLoading, setState, setUrlInput, urlEditingRef, urlInputRef]);
+  }, [scopeId, setLoading, setState, setUrlInput, urlEditingRef, urlInputRef]);
 }
 
 function useRunForActive(

@@ -91,6 +91,7 @@ export function createBrowserViewportBoundsTracker(
 }
 
 export function useBrowserViewportBounds(
+  scopeId: number,
   onError: (error: unknown) => void,
 ): (node: HTMLDivElement | null) => void {
   const trackerRef = useRef<BrowserViewportBoundsTracker | null>(null);
@@ -100,11 +101,11 @@ export function useBrowserViewportBounds(
       trackerRef.current?.dispose();
       trackerRef.current = createBrowserViewportBoundsTracker({
         onBounds: (bounds) => {
-          void desktopBridge.setBrowserBounds(bounds).catch(onError);
+          void desktopBridge.setBrowserBounds(bounds, scopeId).catch(onError);
         },
       });
       trackerRef.current.attach(node);
     },
-    [onError],
+    [onError, scopeId],
   );
 }

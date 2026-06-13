@@ -31,6 +31,7 @@ import {
 import { BrowserNetworkCollector } from "./browser-network-collector";
 import { BrowserOriginStore } from "./browser-origin-store";
 import { installTabEvents, type ManagedTab } from "./browser-tab-events";
+import { BrowserScopeState } from "./browser-scope-state";
 import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
 import { BrowserViewLayout } from "./browser-view-layout";
 import {
@@ -59,8 +60,10 @@ const MAX_NETWORK_PER_TAB = 2000;
 
 export class BrowserManager {
   private readonly tabs = new Map<string, ManagedTab>();
-  private activeTabId: string | null = null;
-  private bounds: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 };
+  // Per-feature-scope active-tab + viewport-bounds bookkeeping. Tabs are
+  // isolated by scope so a tab opened in one feature's Browser never leaks into
+  // another's.
+  private readonly scopes = new BrowserScopeState();
   private lastError: string | null = null;
   // Native-view attachment + geometry (incl. overlay suppression) lives here.
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
@@ -69,7 +72,7 @@ export class BrowserManager {
     const tab = [...this.tabs.values()].find((t) => t.view.webContents.id === webContentsId);
     if (!tab) return;
     pushBounded(tab.networkEntries, { ...entry, tabId: tab.metadata.id }, MAX_NETWORK_PER_TAB);
-    this.emitState();
+    this.emitState(tab.metadata.scopeId);
   });
 
   constructor(
@@ -77,12 +80,16 @@ export class BrowserManager {
     private readonly profileStore = new BrowserProfileStore(),
   ) {}
 
-  createTab(rawUrl?: string, profileId = "fresh"): BrowserTabMetadata {
+  createTab(
+    rawUrl?: string,
+    profileId = "fresh",
+    scopeId: number | null = null,
+  ): BrowserTabMetadata {
     const id = randomUUID();
     const profile = profileFromSelection(profileId);
     const view = new WebContentsView({ webPreferences: secureWebPreferences(profile) });
     const tab: ManagedTab = {
-      metadata: metadataFor(id, profileId),
+      metadata: metadataFor(id, profileId, scopeId),
       view,
       devtoolsView: null,
       consoleEntries: [],
@@ -91,11 +98,14 @@ export class BrowserManager {
     };
     this.tabs.set(id, tab);
     installTabEvents(tab, {
-      emitState: () => this.emitState(),
+      // Every tab event belongs to this tab's scope, so its state push targets
+      // that scope alone.
+      emitState: () => this.emitState(scopeId),
       setLastError: (message) => {
         this.lastError = message;
       },
-      openChildTab: (url, profileId) => this.openChildTab(url, profileId),
+      // A child window/tab spawned by this page inherits its feature scope.
+      openChildTab: (url, childProfileId) => this.openChildTab(url, childProfileId, scopeId),
       recordOrigin: (url) => this.origins.record(url),
       emitShortcut: (shortcut) => this.emitShortcut(shortcut),
       emitCommentBadgeClick: (id, anchorId, box) =>
@@ -108,12 +118,12 @@ export class BrowserManager {
     this.network.ensure(view.webContents.session);
     this.activateTab(id);
     if (rawUrl) this.navigate(id, rawUrl);
-    this.emitState();
+    this.emitState(scopeId);
     return tab.metadata;
   }
 
-  listTabs(): BrowserTabMetadata[] {
-    return this.state().tabs;
+  listTabs(scopeId?: number | null): BrowserTabMetadata[] {
+    return this.state(scopeId).tabs;
   }
 
   listProfiles(): BrowserProfileMetadata[] {
@@ -144,22 +154,20 @@ export class BrowserManager {
     const tab = this.requireTab(tabId);
     const url = normalizeBrowserOpenUrl(rawUrl);
     this.lastError = null;
-    this.emitState();
+    this.emitState(tab.metadata.scopeId);
     void tab.view.webContents.loadURL(url).catch((error: unknown) => {
       this.lastError = error instanceof Error ? error.message : String(error);
-      this.emitState();
+      this.emitState(tab.metadata.scopeId);
     });
     return tab.metadata;
   }
 
   activateTab(tabId: string): BrowserTabMetadata {
     const tab = this.requireTab(tabId);
-    this.activeTabId = tabId;
-    for (const [id, item] of this.tabs) {
-      item.metadata = { ...item.metadata, isActive: id === tabId };
-    }
+    this.scopes.activate(tab.metadata.scopeId, tabId);
+    this.scopes.refreshActiveFlags(this.tabs);
     this.applyLayout();
-    this.emitState();
+    this.emitState(tab.metadata.scopeId);
     return tab.metadata;
   }
 
@@ -173,27 +181,38 @@ export class BrowserManager {
   }
 
   private applyLayout(): void {
-    this.layout.apply(this.tabs, this.activeTabId, this.bounds);
+    this.layout.apply(this.tabs, this.scopes.active, this.scopes.bounds);
   }
 
   closeTab(tabId: string): BrowserStateSnapshot {
     const tab = this.requireTab(tabId);
+    const scope = tab.metadata.scopeId;
     this.layout.detach(tab.view);
     if (tab.devtoolsView) this.layout.detach(tab.devtoolsView);
     tab.view.webContents.close();
     this.tabs.delete(tabId);
-    if (this.activeTabId === tabId) this.activeTabId = this.tabs.keys().next().value ?? null;
-    if (this.activeTabId) this.activateTab(this.activeTabId);
-    this.emitState();
-    return this.state();
+    // Closing a scope's active tab promotes the next tab *in the same scope*,
+    // so closing a tab never reveals another feature's tab.
+    const next = this.scopes.forget(scope, tabId, this.tabs);
+    if (next) {
+      this.activateTab(next);
+      return this.state(scope);
+    }
+    this.scopes.refreshActiveFlags(this.tabs);
+    this.applyLayout();
+    this.emitState(scope);
+    return this.state(scope);
   }
 
-  setBounds(bounds: BrowserBounds): BrowserStateSnapshot {
+  setBounds(bounds: BrowserBounds, scopeId: number | null = null): BrowserStateSnapshot {
     const win = this.getMainWindow();
     const zoomFactor = win?.webContents.getZoomFactor() ?? 1;
-    this.bounds = windowRelativeBounds(scaleBounds(bounds, zoomFactor), contentOffset(win));
+    this.scopes.setBounds(
+      scopeId,
+      windowRelativeBounds(scaleBounds(bounds, zoomFactor), contentOffset(win)),
+    );
     this.applyLayout();
-    return this.state();
+    return this.state(scopeId);
   }
 
   goBack(tabId: string): void {
@@ -227,7 +246,7 @@ export class BrowserManager {
     this.applyLayout();
     if (open) tab.view.webContents.openDevTools({ mode: "detach" });
     else tab.view.webContents.closeDevTools();
-    this.emitState();
+    this.emitState(tab.metadata.scopeId);
     return tab.metadata;
   }
 
@@ -350,24 +369,17 @@ export class BrowserManager {
     );
   }
 
-  state(): BrowserStateSnapshot {
-    const active = this.activeTabId ? this.tabs.get(this.activeTabId) : null;
-    return {
-      tabs: [...this.tabs.values()].map((tab) => tab.metadata),
-      activeTabId: this.activeTabId,
-      consoleEntries: active?.consoleEntries ?? [],
-      networkEntries: active?.networkEntries ?? [],
-      knownOrigins: this.origins.list(),
-      error: this.lastError,
-    };
+  // See `BrowserScopeState.snapshot` for the scoped vs unscoped (agent/MCP) view.
+  state(scopeId?: number | null): BrowserStateSnapshot {
+    return this.scopes.snapshot(scopeId, this.tabs, this.origins.list(), this.lastError);
   }
 
-  private openChildTab(url: string, profileId: string): void {
+  private openChildTab(url: string, profileId: string, scopeId: number | null): void {
     try {
-      this.createTab(url, profileId);
+      this.createTab(url, profileId, scopeId);
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
-      this.emitState();
+      this.emitState(scopeId);
     }
   }
 
@@ -386,8 +398,15 @@ export class BrowserManager {
     return tab;
   }
 
-  private emitState(): void {
-    sendToWindow(this.getMainWindow(), "browser:state", this.state());
+  /**
+   * Push the snapshot for the one scope an operation changed. Browser state is
+   * isolated per feature scope, so an event only ever affects its own scope's
+   * snapshot — broadcasting to all of them would just be discarded by the rest.
+   * Scopeless (agent/MCP) tabs have no UI workspace, so they aren't broadcast.
+   */
+  private emitState(scope: number | null): void {
+    if (scope === null) return;
+    sendToWindow(this.getMainWindow(), "browser:state", this.state(scope));
   }
 
   private emitShortcut(shortcut: BrowserShortcut): void {
