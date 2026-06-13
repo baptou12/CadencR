@@ -27,9 +27,12 @@ describe("browser-policy", () => {
     expect(browserAutomationAccess(url)).not.toBe("full");
   });
 
-  it("denies javascript and file URLs for opening", () => {
+  it("denies javascript URLs for opening", () => {
     expect(() => normalizeBrowserOpenUrl("javascript:alert(1)")).toThrow("blocked");
-    expect(() => normalizeBrowserOpenUrl("file:///tmp/a.html")).toThrow("blocked");
+  });
+
+  it("allows file URLs for opening local files", () => {
+    expect(normalizeBrowserOpenUrl("file:///tmp/a.html")).toBe("file:///tmp/a.html");
   });
 
   it("normalizes bare localhost-like input to http URLs", () => {

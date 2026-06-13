@@ -1,4 +1,4 @@
-use super::tools::browser::BROWSER_TOOL_NAMES;
+use super::tools::browser::is_auto_trusted_browser_tool;
 
 const SERVER_DASH: &str = "cadencr-browser";
 const SERVER_UNDERSCORE: &str = "cadencr_browser";
@@ -42,7 +42,7 @@ fn namespace_server(namespace: &str) -> Option<&str> {
 }
 
 fn is_browser_tool(tool: &str) -> bool {
-    BROWSER_TOOL_NAMES.contains(&tool)
+    is_auto_trusted_browser_tool(tool)
 }
 
 #[cfg(test)]
@@ -86,6 +86,23 @@ mod tests {
         assert!(is_trusted_cadencr_browser_namespace_tool(
             "mcp__cadencr_browser__",
             "browser_open_url"
+        ));
+    }
+
+    #[test]
+    fn external_url_opener_is_not_auto_trusted() {
+        // browser_open_external_url is a real browser tool but must follow the
+        // provider's normal permission flow, so it is not auto-trusted.
+        assert!(!is_trusted_cadencr_browser_tool_name(
+            "mcp__cadencr-browser__browser_open_external_url"
+        ));
+        assert!(!is_trusted_cadencr_browser_server_tool(
+            "cadencr-browser",
+            "browser_open_external_url"
+        ));
+        // A normal browser tool stays trusted.
+        assert!(is_trusted_cadencr_browser_tool_name(
+            "mcp__cadencr-browser__browser_open_url"
         ));
     }
 

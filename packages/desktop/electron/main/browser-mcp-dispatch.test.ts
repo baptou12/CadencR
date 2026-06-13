@@ -27,6 +27,7 @@ function target(): BrowserMcpTarget {
       error: null,
     })),
     openUrl: vi.fn(async () => tabMeta()),
+    openExternalUrl: vi.fn(async () => tabMeta()),
     snapshot: vi.fn(async () => ({ found: true, outline: "[e1] button" })),
     screenshot: vi.fn(async () => "fullpng"),
     screenshotTarget: vi.fn(async () => "elpng"),
@@ -63,6 +64,14 @@ describe("dispatchBrowserMcpTool", () => {
       url: "http://localhost:3000",
     });
     expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", "tab-1");
+  });
+
+  it("routes browser_open_external_url to the external opener", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_open_external_url", {
+      url: "https://example.com",
+    });
+    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", undefined);
   });
 
   it("passes selector, max_length and format to browser_get_snapshot", async () => {
