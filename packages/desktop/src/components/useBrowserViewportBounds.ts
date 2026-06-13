@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 
 import { desktopBridge } from "@/lib/desktop-bridge";
+import { subscribeZoomApplied } from "@/lib/zoom-coordinator";
 
 interface ViewportBounds {
   x: number;
@@ -37,6 +38,7 @@ export function createBrowserViewportBoundsTracker(
 ): BrowserViewportBoundsTracker {
   let nodeRef: HTMLDivElement | null = null;
   let observer: ResizeObserver | null = null;
+  let unsubscribeZoomApplied: (() => void) | null = null;
   let frame: number | null = null;
   let lastBounds: ViewportBounds | null = null;
 
@@ -45,11 +47,6 @@ export function createBrowserViewportBoundsTracker(
       cancelAnimationFrame(frame);
       frame = null;
     }
-  };
-  const disconnect = (): void => {
-    observer?.disconnect();
-    observer = null;
-    cancelFrame();
   };
   const sync = (): void => {
     frame = null;
@@ -64,6 +61,23 @@ export function createBrowserViewportBoundsTracker(
     if (frame !== null) return;
     frame = requestAnimationFrame(sync);
   };
+  const resyncBounds = (): void => {
+    lastBounds = null;
+    scheduleSync();
+  };
+  const removeViewListeners = (): void => {
+    const view = nodeRef?.ownerDocument.defaultView;
+    view?.removeEventListener("resize", scheduleSync);
+    view?.removeEventListener("scroll", scheduleSync, true);
+    unsubscribeZoomApplied?.();
+    unsubscribeZoomApplied = null;
+  };
+  const disconnect = (): void => {
+    observer?.disconnect();
+    observer = null;
+    removeViewListeners();
+    cancelFrame();
+  };
   const attach = (node: HTMLDivElement | null): void => {
     disconnect();
     nodeRef = node;
@@ -77,13 +91,12 @@ export function createBrowserViewportBoundsTracker(
       observer.observe(node);
     }
     scheduleSync();
-    node.ownerDocument.defaultView?.addEventListener("resize", scheduleSync);
-    node.ownerDocument.defaultView?.addEventListener("scroll", scheduleSync, true);
+    const view = node.ownerDocument.defaultView;
+    view?.addEventListener("resize", scheduleSync);
+    view?.addEventListener("scroll", scheduleSync, true);
+    unsubscribeZoomApplied = subscribeZoomApplied(resyncBounds);
   };
   const dispose = (): void => {
-    const view = nodeRef?.ownerDocument.defaultView;
-    view?.removeEventListener("resize", scheduleSync);
-    view?.removeEventListener("scroll", scheduleSync, true);
     disconnect();
   };
 

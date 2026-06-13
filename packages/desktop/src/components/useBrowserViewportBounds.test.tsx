@@ -7,6 +7,7 @@ import {
   setDesktopBridgeOverrideForTests,
   type CadencrBrowserBridge,
 } from "@/lib/desktop-bridge";
+import { notifyZoomApplied } from "@/lib/zoom-coordinator";
 
 let animationFrameCallbacks: Array<FrameRequestCallback> = [];
 
@@ -148,6 +149,34 @@ describe("useBrowserViewportBounds", () => {
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
     flushAnimationFrames();
     expect(requestAnimationFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-reports unchanged bounds after app zoom is applied", async () => {
+    const mockBridge = bridge();
+    setDesktopBridgeOverrideForTests(mockBridge);
+
+    render(<TestViewport visible />);
+
+    flushAnimationFrames();
+    await waitFor(() => {
+      expect(mockBridge.setBrowserBounds).toHaveBeenCalledTimes(1);
+    });
+
+    notifyZoomApplied();
+    flushAnimationFrames();
+
+    await waitFor(() => {
+      expect(mockBridge.setBrowserBounds).toHaveBeenCalledTimes(2);
+    });
+    expect(mockBridge.setBrowserBounds).toHaveBeenLastCalledWith(
+      {
+        x: 12,
+        y: 34,
+        width: 640,
+        height: 360,
+      },
+      7,
+    );
   });
 
   it("disconnects observers and zeroes native bounds when unmounted", async () => {
