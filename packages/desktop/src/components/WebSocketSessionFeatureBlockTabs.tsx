@@ -205,7 +205,10 @@ function useGitTab(args: UseSessionTabsArgs): FeatureTabDef {
 }
 
 function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
-  const { controls, nonAgentTabsEnabled, layoutFeatureId } = args;
+  // Scope the Browser by the real featureId (not layoutFeatureId): the agent's
+  // MCP is pinned to featureId, so its tabs are created in that scope. Using the
+  // same id here is what makes agent-opened tabs appear in this panel.
+  const { controls, nonAgentTabsEnabled, featureId } = args;
   const sendContext = useCallback(
     (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
       controls.ws.sendPrompt(
@@ -226,13 +229,13 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
       shortcut: ["cmd", "shift", "B"],
       content: nonAgentTabsEnabled ? (
         <Suspense fallback={null}>
-          <BrowserWorkspaceTab scopeId={layoutFeatureId} onSendContext={sendContext} />
+          <BrowserWorkspaceTab scopeId={featureId} onSendContext={sendContext} />
         </Suspense>
       ) : (
         <DeferredTabContent label="Browser" />
       ),
     }),
-    [layoutFeatureId, nonAgentTabsEnabled, sendContext],
+    [featureId, nonAgentTabsEnabled, sendContext],
   );
 }
 

@@ -54,8 +54,10 @@ describe("dispatchBrowserMcpTool", () => {
 
   it("opens a URL and waits for it to settle", async () => {
     const fake = target();
-    await dispatchBrowserMcpTool(fake, "browser_open_url", { url: "http://localhost:3000" });
-    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined);
+    await dispatchBrowserMcpTool(fake, "browser_open_url", {
+      url: "http://localhost:3000",
+    });
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined, undefined);
   });
 
   it("navigates an existing tab when browser_open_url includes tab_id", async () => {
@@ -64,7 +66,13 @@ describe("dispatchBrowserMcpTool", () => {
       tab_id: "tab-1",
       url: "http://localhost:3000",
     });
-    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", "tab-1");
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", "tab-1", undefined);
+  });
+
+  it("opens an agent tab in the calling feature's scope", async () => {
+    const fake = target();
+    await dispatchBrowserMcpTool(fake, "browser_open_url", { url: "http://localhost:3000" }, 42);
+    expect(fake.openUrl).toHaveBeenCalledWith("http://localhost:3000", undefined, 42);
   });
 
   it("routes browser_open_external_url to the external opener", async () => {
@@ -72,7 +80,7 @@ describe("dispatchBrowserMcpTool", () => {
     await dispatchBrowserMcpTool(fake, "browser_open_external_url", {
       url: "https://example.com",
     });
-    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", undefined);
+    expect(fake.openExternalUrl).toHaveBeenCalledWith("https://example.com", undefined, undefined);
   });
 
   it("passes selector, max_length and format to browser_get_snapshot", async () => {
@@ -94,7 +102,9 @@ describe("dispatchBrowserMcpTool", () => {
 
   it("captures a region screenshot from a selector", async () => {
     const fake = target();
-    const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", { selector: ".hero" });
+    const result = await dispatchBrowserMcpTool(fake, "browser_screenshot", {
+      selector: ".hero",
+    });
     expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", {
       selector: ".hero",
       ref: undefined,
@@ -106,7 +116,10 @@ describe("dispatchBrowserMcpTool", () => {
   it("captures a region screenshot from a ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_screenshot", { ref: "e7" });
-    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e7" });
+    expect(fake.screenshotTarget).toHaveBeenCalledWith("tab-1", {
+      selector: undefined,
+      ref: "e7",
+    });
   });
 
   it("captures a region screenshot from an explicit clip", async () => {
@@ -114,7 +127,12 @@ describe("dispatchBrowserMcpTool", () => {
     await dispatchBrowserMcpTool(fake, "browser_screenshot", {
       clip: { x: 1, y: 2, width: 3, height: 4 },
     });
-    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", { x: 1, y: 2, width: 3, height: 4 });
+    expect(fake.screenshot).toHaveBeenCalledWith("tab-1", {
+      x: 1,
+      y: 2,
+      width: 3,
+      height: 4,
+    });
   });
 
   it("requires a script for browser_evaluate", async () => {
@@ -133,7 +151,10 @@ describe("dispatchBrowserMcpTool", () => {
   it("clicks by ref when one is supplied", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_click", { ref: "e3" });
-    expect(fake.clickTarget).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e3" });
+    expect(fake.clickTarget).toHaveBeenCalledWith("tab-1", {
+      selector: undefined,
+      ref: "e3",
+    });
     expect(fake.click).not.toHaveBeenCalled();
   });
 
@@ -164,7 +185,10 @@ describe("dispatchBrowserMcpTool", () => {
   it("hovers an element by ref", async () => {
     const fake = target();
     await dispatchBrowserMcpTool(fake, "browser_hover", { ref: "e2" });
-    expect(fake.hover).toHaveBeenCalledWith("tab-1", { selector: undefined, ref: "e2" });
+    expect(fake.hover).toHaveBeenCalledWith("tab-1", {
+      selector: undefined,
+      ref: "e2",
+    });
   });
 
   it("waits for a selector and serializes the result", async () => {
@@ -178,7 +202,9 @@ describe("dispatchBrowserMcpTool", () => {
       { selector: "#ready", text: undefined },
       2000,
     );
-    expect(result).toEqual({ text: JSON.stringify({ found: true, elapsedMs: 5 }) });
+    expect(result).toEqual({
+      text: JSON.stringify({ found: true, elapsedMs: 5 }),
+    });
   });
 
   it("requires a selector or text for browser_wait_for", async () => {
@@ -216,7 +242,9 @@ describe("dispatchBrowserMcpTool", () => {
       networkEntries: [],
       error: null,
     });
-    const result = await dispatchBrowserMcpTool(fake, "browser_get_console", { level: "error" });
+    const result = await dispatchBrowserMcpTool(fake, "browser_get_console", {
+      level: "error",
+    });
     const parsed = JSON.parse(result.text) as Array<{ level: string }>;
     expect(parsed).toHaveLength(1);
     expect(parsed[0].level).toBe("error");
@@ -253,7 +281,9 @@ describe("dispatchBrowserMcpTool", () => {
       ],
       error: null,
     });
-    const result = await dispatchBrowserMcpTool(fake, "browser_get_network", { failed_only: true });
+    const result = await dispatchBrowserMcpTool(fake, "browser_get_network", {
+      failed_only: true,
+    });
     const parsed = JSON.parse(result.text) as Array<Record<string, unknown>>;
     expect(parsed).toHaveLength(1);
     expect(parsed[0].url).toBe("http://localhost/bad");

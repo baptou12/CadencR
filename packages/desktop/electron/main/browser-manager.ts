@@ -1,28 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { BrowserWindow, WebContentsView, session } from "electron";
+import { BrowserWindow, WebContentsView } from "electron";
 import { normalizeBrowserOpenUrl } from "./browser-policy";
+import type { BrowserDomOutline, BrowserDomSnapshot, BrowserEvalResult } from "./browser-dom";
 import {
-  captureDomOutline,
-  captureDomSnapshot,
-  captureElementContext,
-  capturePageImage,
-  captureRegionScreenshot,
-  evaluateInPage,
-  type BrowserDomOutline,
-  type BrowserDomSnapshot,
-  type BrowserEvalResult,
-} from "./browser-dom";
+  clearCommentBadges,
+  removeCommentBadge,
+  selectElementContext,
+} from "./browser-comment-context";
+import { BrowserFocusGuard } from "./browser-focus-guard";
 import {
-  addCommentBadgeScript,
-  clearCommentBadgesScript,
-  removeCommentBadgeScript,
-} from "./browser-comment-overlay-script";
+  clickPage,
+  clickTargetPage,
+  evaluatePage,
+  fillPage,
+  hoverPage,
+  keypressPage,
+  screenshotPage,
+  screenshotTargetPage,
+  snapshotPage,
+  typeTextPage,
+  waitForPage,
+} from "./browser-page-actions";
 import {
-  clickTarget as clickTargetOnPage,
-  fillTarget as fillTargetOnPage,
-  hoverTarget as hoverTargetOnPage,
-  resolveTarget,
-  waitFor as waitForOnPage,
   waitForLoad,
   type BrowserTarget,
   type BrowserWaitResult,
@@ -35,22 +34,17 @@ import { BrowserScopeState } from "./browser-scope-state";
 import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-manager-layout";
 import { BrowserViewLayout } from "./browser-view-layout";
 import {
-  assertBrowserMutationAllowed,
-  externalAutomationMatches,
   metadataFor,
   originOf,
   profileFromSelection,
   pushBounded,
   secureWebPreferences,
-  tabDiagnostics,
 } from "./browser-manager-utils";
-import { BrowserProfileStore } from "./browser-profile-store";
-import { browserPartitionForProfile, createBrowserProfile } from "./browser-profiles";
+import { createBrowserProfile } from "./browser-profiles";
 import { sendToWindow } from "./safe-send";
 import type {
   BrowserBounds,
   BrowserElementContext,
-  BrowserProfileMetadata,
   BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
@@ -65,6 +59,9 @@ export class BrowserManager {
   // another's.
   private readonly scopes = new BrowserScopeState();
   private lastError: string | null = null;
+  // Keeps a guest page from stealing the agent prompt's focus while the agent
+  // drives the browser; `focusGuard.run` wraps each MCP tool dispatch (index.ts).
+  readonly focusGuard = new BrowserFocusGuard(() => this.getMainWindow());
   // Native-view attachment + geometry (incl. overlay suppression) lives here.
   private readonly layout = new BrowserViewLayout(() => this.getMainWindow());
   private readonly origins = new BrowserOriginStore();
@@ -75,10 +72,7 @@ export class BrowserManager {
     this.emitState(tab.metadata.scopeId);
   });
 
-  constructor(
-    private readonly getMainWindow: () => BrowserWindow | null,
-    private readonly profileStore = new BrowserProfileStore(),
-  ) {}
+  constructor(private readonly getMainWindow: () => BrowserWindow | null) {}
 
   createTab(
     rawUrl?: string,
@@ -87,7 +81,9 @@ export class BrowserManager {
   ): BrowserTabMetadata {
     const id = randomUUID();
     const profile = profileFromSelection(profileId);
-    const view = new WebContentsView({ webPreferences: secureWebPreferences(profile) });
+    const view = new WebContentsView({
+      webPreferences: secureWebPreferences(profile),
+    });
     const tab: ManagedTab = {
       metadata: metadataFor(id, profileId, scopeId),
       view,
@@ -116,6 +112,7 @@ export class BrowserManager {
         }),
     });
     this.network.ensure(view.webContents.session);
+    this.focusGuard.watch(view.webContents);
     this.activateTab(id);
     if (rawUrl) this.navigate(id, rawUrl);
     this.emitState(scopeId);
@@ -124,30 +121,6 @@ export class BrowserManager {
 
   listTabs(scopeId?: number | null): BrowserTabMetadata[] {
     return this.state(scopeId).tabs;
-  }
-
-  listProfiles(): BrowserProfileMetadata[] {
-    return this.profileStore.list();
-  }
-
-  createProfile(profileId: string): BrowserProfileMetadata {
-    return this.profileStore.createPersistent(profileId);
-  }
-
-  duplicateProfile(sourceId: string, newId: string): BrowserProfileMetadata {
-    return this.profileStore.duplicatePersistent(sourceId, newId);
-  }
-
-  deleteProfile(profileId: string): void {
-    this.profileStore.deletePersistent(profileId);
-  }
-
-  async clearStorage(profileId: string): Promise<void> {
-    const profile = profileFromSelection(profileId);
-    const partition = browserPartitionForProfile(profile);
-    const targetSession = session.fromPartition(partition);
-    await targetSession.clearStorageData();
-    await targetSession.clearCache();
   }
 
   navigate(tabId: string, rawUrl: string): BrowserTabMetadata {
@@ -250,8 +223,14 @@ export class BrowserManager {
     return tab.metadata;
   }
 
-  async openUrl(url: string, tabId?: string): Promise<BrowserTabMetadata> {
-    const meta = tabId ? this.navigate(tabId, url) : this.createTab(url);
+  async openUrl(
+    url: string,
+    tabId?: string,
+    scopeId: number | null = null,
+  ): Promise<BrowserTabMetadata> {
+    // A new agent tab is created in the calling feature's scope so it shows up in
+    // that feature's Browser panel; navigating an existing tab keeps its scope.
+    const meta = tabId ? this.navigate(tabId, url) : this.createTab(url, "fresh", scopeId);
     await waitForLoad(this.requireTab(meta.id).view.webContents);
     return this.requireTab(meta.id).metadata;
   }
@@ -259,8 +238,12 @@ export class BrowserManager {
   // Permission-gated external opener (browser_open_external_url). Opens any web
   // URL and unlocks automation for the resulting origin only; if the tab later
   // navigates to a different origin it re-locks (see assertMutatingAllowed).
-  async openExternalUrl(url: string, tabId?: string): Promise<BrowserTabMetadata> {
-    const meta = await this.openUrl(url, tabId);
+  async openExternalUrl(
+    url: string,
+    tabId?: string,
+    scopeId: number | null = null,
+  ): Promise<BrowserTabMetadata> {
+    const meta = await this.openUrl(url, tabId, scopeId);
     const tab = this.requireTab(meta.id);
     tab.externalAutomationOrigin = originOf(tab.view.webContents.getURL());
     return tab.metadata;
@@ -272,58 +255,43 @@ export class BrowserManager {
     maxLength?: number,
     format?: string,
   ): Promise<BrowserDomSnapshot | BrowserDomOutline> {
-    const wc = this.requireTab(tabId).view.webContents;
-    return format === "html"
-      ? captureDomSnapshot(wc, selector, maxLength)
-      : captureDomOutline(wc, selector, maxLength);
+    return snapshotPage(this.requireTab(tabId), selector, maxLength, format);
   }
 
   async screenshot(tabId: string, clip?: BrowserBounds): Promise<string> {
-    const wc = this.requireTab(tabId).view.webContents;
-    return clip ? captureRegionScreenshot(wc, clip) : capturePageImage(wc);
+    return screenshotPage(this.requireTab(tabId), clip);
   }
 
   async screenshotTarget(tabId: string, target: BrowserTarget): Promise<string> {
-    const wc = this.requireTab(tabId).view.webContents;
-    const { boundingBox } = await resolveTarget(wc, target);
-    return captureRegionScreenshot(wc, boundingBox);
+    return screenshotTargetPage(this.requireTab(tabId), target);
   }
 
   async evaluate(tabId: string, script: string): Promise<BrowserEvalResult> {
-    this.assertMutatingAllowed(tabId);
-    return evaluateInPage(this.requireTab(tabId).view.webContents, script);
+    return evaluatePage(this.requireTab(tabId), script);
   }
 
   async click(tabId: string, x: number, y: number): Promise<void> {
-    this.assertMutatingAllowed(tabId);
-    const wc = this.requireTab(tabId).view.webContents;
-    wc.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
-    wc.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    clickPage(this.requireTab(tabId), x, y);
   }
 
   async typeText(tabId: string, text: string): Promise<void> {
-    this.assertMutatingAllowed(tabId);
-    this.requireTab(tabId).view.webContents.insertText(text);
+    typeTextPage(this.requireTab(tabId), text);
   }
 
   async keypress(tabId: string, keyCode: string): Promise<void> {
-    this.assertMutatingAllowed(tabId);
-    this.requireTab(tabId).view.webContents.sendInputEvent({ type: "keyDown", keyCode });
+    keypressPage(this.requireTab(tabId), keyCode);
   }
 
   async clickTarget(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
-    this.assertMutatingAllowed(tabId);
-    return clickTargetOnPage(this.requireTab(tabId).view.webContents, target);
+    return clickTargetPage(this.requireTab(tabId), target);
   }
 
   async hover(tabId: string, target: BrowserTarget): Promise<ResolvedTarget> {
-    this.assertMutatingAllowed(tabId);
-    return hoverTargetOnPage(this.requireTab(tabId).view.webContents, target);
+    return hoverPage(this.requireTab(tabId), target);
   }
 
   async fill(tabId: string, target: BrowserTarget, value: string): Promise<void> {
-    this.assertMutatingAllowed(tabId);
-    return fillTargetOnPage(this.requireTab(tabId).view.webContents, target, value);
+    return fillPage(this.requireTab(tabId), target, value);
   }
 
   async waitFor(
@@ -331,42 +299,19 @@ export class BrowserManager {
     opts: { selector?: string; text?: string },
     timeoutMs?: number,
   ): Promise<BrowserWaitResult> {
-    return waitForOnPage(this.requireTab(tabId).view.webContents, opts, timeoutMs);
+    return waitForPage(this.requireTab(tabId), opts, timeoutMs);
   }
 
-  async selectElementContext(tabId: string, anchorId?: string): Promise<BrowserElementContext> {
-    const tab = this.requireTab(tabId);
-    const context = await captureElementContext(
-      tab.view.webContents,
-      {
-        tabId,
-        url: tab.metadata.url,
-        title: tab.metadata.title,
-        capturedAt: new Date().toISOString(),
-      },
-      tabDiagnostics(tab.consoleEntries, tab.networkEntries),
-      anchorId ?? null,
-    );
-    // Pin a numbered badge to the element the user just picked. The agent/MCP
-    // path passes no anchor and gets context without a badge.
-    if (anchorId) {
-      await tab.view.webContents.executeJavaScript(addCommentBadgeScript(anchorId), true);
-    }
-    return context;
+  selectElementContext(tabId: string, anchorId?: string): Promise<BrowserElementContext> {
+    return selectElementContext(this.requireTab(tabId), anchorId);
   }
 
-  async removeCommentBadge(tabId: string, anchorId: string): Promise<void> {
-    await this.requireTab(tabId).view.webContents.executeJavaScript(
-      removeCommentBadgeScript(anchorId),
-      true,
-    );
+  removeCommentBadge(tabId: string, anchorId: string): Promise<void> {
+    return removeCommentBadge(this.requireTab(tabId), anchorId);
   }
 
-  async clearCommentBadges(tabId: string): Promise<void> {
-    await this.requireTab(tabId).view.webContents.executeJavaScript(
-      clearCommentBadgesScript(),
-      true,
-    );
+  clearCommentBadges(tabId: string): Promise<void> {
+    return clearCommentBadges(this.requireTab(tabId));
   }
 
   // See `BrowserScopeState.snapshot` for the scoped vs unscoped (agent/MCP) view.
@@ -381,15 +326,6 @@ export class BrowserManager {
       this.lastError = error instanceof Error ? error.message : String(error);
       this.emitState(scopeId);
     }
-  }
-
-  private assertMutatingAllowed(tabId: string): void {
-    const tab = this.requireTab(tabId);
-    const liveUrl = tab.view.webContents.getURL();
-    // A tab approved via the external opener may be automated only while it stays
-    // on the approved origin; otherwise fall back to the localhost-only gate.
-    if (externalAutomationMatches(liveUrl, tab.externalAutomationOrigin)) return;
-    assertBrowserMutationAllowed(liveUrl);
   }
 
   private requireTab(tabId: string): ManagedTab {

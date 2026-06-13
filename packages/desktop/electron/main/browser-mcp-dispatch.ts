@@ -15,9 +15,13 @@ import {
 } from "./browser-arg-validation";
 
 export interface BrowserMcpTarget {
-  state(): BrowserStateSnapshot;
-  openUrl(url: string, tabId?: string): Promise<BrowserTabMetadata>;
-  openExternalUrl(url: string, tabId?: string): Promise<BrowserTabMetadata>;
+  state(scopeId?: number | null): BrowserStateSnapshot;
+  openUrl(url: string, tabId?: string, scopeId?: number | null): Promise<BrowserTabMetadata>;
+  openExternalUrl(
+    url: string,
+    tabId?: string,
+    scopeId?: number | null,
+  ): Promise<BrowserTabMetadata>;
   snapshot(tabId: string, selector?: string, maxLength?: number, format?: string): Promise<unknown>;
   screenshot(tabId: string, clip?: BrowserBounds): Promise<string>;
   screenshotTarget(tabId: string, target: BrowserTarget): Promise<string>;
@@ -46,53 +50,61 @@ export async function dispatchBrowserMcpTool(
   target: BrowserMcpTarget,
   toolName: string,
   args: Record<string, unknown>,
+  // Browser scope (the calling feature). New agent tabs are created in this
+  // scope so they appear in the feature's Browser panel; active-tab resolution
+  // and list/console/network views are scoped to it too. Undefined = scopeless.
+  scopeId?: number | null,
 ): Promise<BrowserBridgeResult> {
   switch (toolName) {
     case "browser_list_tabs":
-      return text(target.state());
+      return text(target.state(scopeId));
     case "browser_open_url":
       return text(
-        await target.openUrl(requiredString(args.url, "url"), optionalString(args.tab_id)),
+        await target.openUrl(requiredString(args.url, "url"), optionalString(args.tab_id), scopeId),
       );
     case "browser_open_external_url":
       return text(
-        await target.openExternalUrl(requiredString(args.url, "url"), optionalString(args.tab_id)),
+        await target.openExternalUrl(
+          requiredString(args.url, "url"),
+          optionalString(args.tab_id),
+          scopeId,
+        ),
       );
     case "browser_get_console":
-      return getConsole(target, args);
+      return getConsole(target, args, scopeId);
     case "browser_get_network":
-      return getNetwork(target, args);
+      return getNetwork(target, args, scopeId);
     case "browser_get_snapshot":
       return text(
         await target.snapshot(
-          tabId(target, args),
+          tabId(target, args, scopeId),
           optionalString(args.selector),
           maxLength(args),
           optionalString(args.format),
         ),
       );
     case "browser_screenshot":
-      return screenshot(target, args);
+      return screenshot(target, args, scopeId);
     case "browser_evaluate":
       return text(
-        await target.evaluate(tabId(target, args), requiredString(args.script, "script")),
+        await target.evaluate(tabId(target, args, scopeId), requiredString(args.script, "script")),
       );
     case "browser_click":
-      return click(target, args);
+      return click(target, args, scopeId);
     case "browser_fill":
-      return fill(target, args);
+      return fill(target, args, scopeId);
     case "browser_hover":
-      return text(await target.hover(tabId(target, args), parseTarget(args)));
+      return text(await target.hover(tabId(target, args, scopeId), parseTarget(args)));
     case "browser_wait_for":
-      return waitFor(target, args);
+      return waitFor(target, args, scopeId);
     case "browser_type":
-      await target.typeText(tabId(target, args), requiredString(args.text, "text"));
+      await target.typeText(tabId(target, args, scopeId), requiredString(args.text, "text"));
       return text({ ok: true });
     case "browser_keypress":
-      await target.keypress(tabId(target, args), requiredString(args.key, "key"));
+      await target.keypress(tabId(target, args, scopeId), requiredString(args.key, "key"));
       return text({ ok: true });
     case "browser_select_element_context":
-      return text(await target.selectElementContext(tabId(target, args)));
+      return text(await target.selectElementContext(tabId(target, args, scopeId)));
     default:
       throw new Error(`Unknown Browser MCP tool: ${toolName}`);
   }
@@ -101,8 +113,9 @@ export async function dispatchBrowserMcpTool(
 async function screenshot(
   target: BrowserMcpTarget,
   args: Record<string, unknown>,
+  scopeId?: number | null,
 ): Promise<BrowserBridgeResult> {
-  const id = tabId(target, args);
+  const id = tabId(target, args, scopeId);
   const selector = optionalString(args.selector);
   const ref = optionalString(args.ref);
   const region = clip(args.clip);
@@ -110,6 +123,16 @@ async function screenshot(
     selector || ref
       ? await target.screenshotTarget(id, { selector, ref })
       : await target.screenshot(id, region);
+  // A hidden/blank/not-yet-rendered tab composites to nothing, so capturePage
+  // returns "". Never forward an empty image: an `input_image` with no data is a
+  // malformed data URI that some agents (codex) reject on every later turn,
+  // wedging the whole conversation. Fail with a useful hint instead.
+  if (!data) {
+    throw new Error(
+      "Screenshot returned no image data — the tab is blank or not rendered yet. " +
+        "Use browser_get_snapshot to inspect the page, or wait for it to load.",
+    );
+  }
   return {
     text: JSON.stringify({
       tabId: id,
@@ -125,8 +148,9 @@ async function screenshot(
 async function click(
   target: BrowserMcpTarget,
   args: Record<string, unknown>,
+  scopeId?: number | null,
 ): Promise<BrowserBridgeResult> {
-  const id = tabId(target, args);
+  const id = tabId(target, args, scopeId);
   if (args.selector !== undefined || args.ref !== undefined) {
     return text(await target.clickTarget(id, parseTarget(args)));
   }
@@ -137,31 +161,50 @@ async function click(
 async function fill(
   target: BrowserMcpTarget,
   args: Record<string, unknown>,
+  scopeId?: number | null,
 ): Promise<BrowserBridgeResult> {
-  await target.fill(tabId(target, args), parseTarget(args), requiredString(args.value, "value"));
+  await target.fill(
+    tabId(target, args, scopeId),
+    parseTarget(args),
+    requiredString(args.value, "value"),
+  );
   return text({ ok: true });
 }
 
 async function waitFor(
   target: BrowserMcpTarget,
   args: Record<string, unknown>,
+  scopeId?: number | null,
 ): Promise<BrowserBridgeResult> {
-  const opts = { selector: optionalString(args.selector), text: optionalString(args.text) };
+  const opts = {
+    selector: optionalString(args.selector),
+    text: optionalString(args.text),
+  };
   if (!opts.selector && !opts.text) throw new Error("Expected a selector or text to wait for.");
-  return text(await target.waitFor(tabId(target, args), opts, optionalNumber(args.timeout_ms)));
+  return text(
+    await target.waitFor(tabId(target, args, scopeId), opts, optionalNumber(args.timeout_ms)),
+  );
 }
 
-function getConsole(target: BrowserMcpTarget, args: Record<string, unknown>): BrowserBridgeResult {
+function getConsole(
+  target: BrowserMcpTarget,
+  args: Record<string, unknown>,
+  scopeId?: number | null,
+): BrowserBridgeResult {
   const level = optionalString(args.level);
-  const entries = target.state().consoleEntries;
+  const entries = target.state(scopeId).consoleEntries;
   const filtered = level ? entries.filter((entry) => entry.level === level) : entries;
   return text(filtered.slice(-positiveInt(args.limit, 50)));
 }
 
-function getNetwork(target: BrowserMcpTarget, args: Record<string, unknown>): BrowserBridgeResult {
+function getNetwork(
+  target: BrowserMcpTarget,
+  args: Record<string, unknown>,
+  scopeId?: number | null,
+): BrowserBridgeResult {
   const urlContains = optionalString(args.url_contains);
   const includeHeaders = args.include_headers === true;
-  let entries = target.state().networkEntries;
+  let entries = target.state(scopeId).networkEntries;
   if (args.failed_only === true) {
     entries = entries.filter((entry) => entry.failureReason || (entry.status ?? 0) >= 400);
   }
@@ -216,10 +259,14 @@ function maxLength(args: Record<string, unknown>): number | undefined {
   return value !== undefined && value > 0 ? value : undefined;
 }
 
-function tabId(target: BrowserMcpTarget, args: Record<string, unknown>): string {
+function tabId(
+  target: BrowserMcpTarget,
+  args: Record<string, unknown>,
+  scopeId?: number | null,
+): string {
   const explicit = optionalString(args.tab_id);
   if (explicit) return explicit;
-  const active = target.state().activeTabId;
+  const active = target.state(scopeId).activeTabId;
   if (!active) throw new Error("No active browser tab.");
   return active;
 }

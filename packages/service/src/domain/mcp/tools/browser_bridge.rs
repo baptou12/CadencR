@@ -7,13 +7,18 @@ use serde_json::Value;
 pub struct BrowserBridgeRequest {
     pub tool_name: String,
     pub args: Value,
+    // Feature this MCP subprocess is pinned to. The desktop bridge uses it as the
+    // browser scope so agent-opened tabs appear in that feature's Browser panel
+    // (instead of a hidden scopeless tab).
+    pub feature_id: i64,
 }
 
 impl BrowserBridgeRequest {
-    pub fn new(tool_name: impl Into<String>, args: Value) -> Self {
+    pub fn new(tool_name: impl Into<String>, args: Value, feature_id: i64) -> Self {
         Self {
             tool_name: tool_name.into(),
             args,
+            feature_id,
         }
     }
 }
@@ -107,10 +112,14 @@ mod tests {
 
     #[test]
     fn browser_bridge_request_preserves_tool_and_args() {
-        let request =
-            BrowserBridgeRequest::new("browser_list_tabs", serde_json::json!({ "feature_id": 7 }));
+        let request = BrowserBridgeRequest::new(
+            "browser_list_tabs",
+            serde_json::json!({ "tab_id": "t1" }),
+            7,
+        );
         assert_eq!(request.tool_name, "browser_list_tabs");
-        assert_eq!(request.args["feature_id"], 7);
+        assert_eq!(request.args["tab_id"], "t1");
+        assert_eq!(request.feature_id, 7);
     }
 
     #[tokio::test]
@@ -123,6 +132,7 @@ mod tests {
             .call(BrowserBridgeRequest::new(
                 "browser_list_tabs",
                 serde_json::json!({}),
+                1,
             ))
             .await;
 
@@ -144,6 +154,7 @@ mod tests {
             .call(BrowserBridgeRequest::new(
                 "browser_screenshot",
                 serde_json::json!({}),
+                1,
             ))
             .await
             .expect("bridge response");
@@ -163,6 +174,7 @@ mod tests {
             .call(BrowserBridgeRequest::new(
                 "browser_list_tabs",
                 serde_json::json!({}),
+                1,
             ))
             .await;
 
@@ -181,6 +193,7 @@ mod tests {
             .call(BrowserBridgeRequest::new(
                 "browser_list_tabs",
                 serde_json::json!({}),
+                1,
             ))
             .await;
 
