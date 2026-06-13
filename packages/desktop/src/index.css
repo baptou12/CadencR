@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/figtree";
 @import "./theme.css";
 @import "./theme-frost.css";
 @import "./pierre-tree.css";
@@ -9,6 +10,9 @@
   --font-sans:
     "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Brand wordmark face (the "CADENCR" logotype). See DESIGN.md › Typography ›
+   * families.brand. Used at weight 800. */
+  --font-brand: "Figtree Variable", var(--font-sans);
   /* Single source of truth for the code/monospace font. Both the CodeMirror
    * editor and the Pierre git-diff reference this so they render the exact same
    * face — previously each declared its own (subtly divergent) stack. */

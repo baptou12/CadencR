@@ -40,10 +40,7 @@ export function SidebarCollapsedChrome({ onExpand }: { onExpand: () => void }): 
           <PanelLeft className="size-4" />
         </Button>
         <CadencrLogo className="size-9 shrink-0 -translate-y-px" />
-        <span
-          className="text-xl font-bold uppercase leading-none tracking-widest"
-          style={{ fontFamily: "'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif" }}
-        >
+        <span className="font-brand text-xl font-extrabold uppercase leading-none tracking-widest">
           Cadencr
         </span>
         <AppEnvironmentBadge
