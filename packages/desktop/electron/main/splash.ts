@@ -1,4 +1,23 @@
 import { BrowserWindow } from "electron";
+import { readFileSync } from "node:fs";
+
+// The splash loads from a data: URL before the renderer exists, so the brand
+// font (Figtree — the "CADENCR" wordmark face) must be embedded inline rather
+// than linked. @fontsource-variable/figtree is a runtime dependency, so it
+// resolves from node_modules in dev and from the packaged app bundle (asar).
+function loadFigtreeBase64(): string {
+  try {
+    const fontPath =
+      require.resolve("@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2");
+    return readFileSync(fontPath).toString("base64");
+  } catch (error) {
+    // Cosmetic only — the wordmark falls back to Inter/system. Never block boot
+    // on a missing splash font, but surface why it fell back.
+    console.warn("[splash] Figtree font unavailable; using fallback font:", error);
+    return "";
+  }
+}
+const FIGTREE_WOFF2_BASE64: string = loadFigtreeBase64();
 
 const SPLASH_WIDTH = 520;
 const SPLASH_HEIGHT = 400;
@@ -143,12 +162,21 @@ export function createSplashWindow(version: string): SplashHandle {
 }
 
 function renderHtml(version: string): string {
+  const figtreeFace = FIGTREE_WOFF2_BASE64
+    ? `@font-face {
+    font-family: "Figtree Variable";
+    font-weight: 300 900;
+    font-display: block;
+    src: url("data:font/woff2;base64,${FIGTREE_WOFF2_BASE64}") format("woff2");
+  }`
+    : "";
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <title>Cadencr</title>
 <style>
+  ${figtreeFace}
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%;
@@ -164,8 +192,8 @@ function renderHtml(version: string): string {
   }
   .logo { width: 120px; height: 120px; margin-bottom: 18px; }
   .name {
-    font-family: 'Avenir Next', 'Montserrat', 'Helvetica Neue', sans-serif;
-    font-size: 28px; font-weight: 700; letter-spacing: 0.18em;
+    font-family: "Figtree Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 28px; font-weight: 800; letter-spacing: 0.18em;
     text-transform: uppercase;
     color: #f8f8f2; margin-bottom: 4px;
   }

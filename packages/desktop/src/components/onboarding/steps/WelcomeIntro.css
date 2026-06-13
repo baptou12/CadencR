@@ -117,13 +117,13 @@
   animation-delay: 1600ms;
 }
 
-/* Wordmark uses the Sidebar typography exactly: Avenir Next stack, bold,
+/* Wordmark uses the Sidebar typography exactly: --font-brand (Figtree) at 800,
  * uppercase, tracking-widest (0.1em). NO letter-spacing animation — the type
  * is already typeset; it just settles into place with a hairline lift. */
 .welcome-intro__wordmark {
-  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-family: var(--font-brand);
   font-size: clamp(1.625rem, 3.6vmin, 2.25rem);
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   /* Compensate the trailing letter-spacing so the optical center matches
@@ -147,7 +147,7 @@
 }
 
 .welcome-intro__tagline {
-  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.875rem;
   font-weight: 300;
   letter-spacing: 0.04em;
@@ -172,7 +172,7 @@
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.18);
 
-  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.18em;
@@ -225,7 +225,7 @@
 .welcome-intro__hint {
   position: absolute;
   bottom: 2rem;
-  font-family: "Avenir Next", "Montserrat", "Helvetica Neue", sans-serif;
+  font-family: var(--font-sans);
   font-size: 0.6875rem;
   font-weight: 400;
   letter-spacing: 0.2em;

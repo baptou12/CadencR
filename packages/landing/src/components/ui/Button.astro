@@ -7,8 +7,9 @@ interface Props {
   variant?: Variant;
   size?: Size;
   ariaLabel?: string;
+  class?: string;
 }
-const { href, variant = "primary", size = "md", ariaLabel } = Astro.props;
+const { href, variant = "primary", size = "md", ariaLabel, class: klass } = Astro.props;
 
 const base =
   "inline-flex items-center gap-2 rounded-lg border font-medium whitespace-nowrap transition-colors duration-150 [&>svg]:w-[14px] [&>svg]:h-[14px] [&>svg]:stroke-[2]";
@@ -28,6 +29,6 @@ const sizes: Record<Size, string> = {
 
 const Tag = href ? "a" : "button";
 ---
-<Tag href={href} aria-label={ariaLabel} class:list={[base, variants[variant], sizes[size]]}>
+<Tag href={href} aria-label={ariaLabel} class:list={[base, variants[variant], sizes[size], klass]}>
   <slot />
 </Tag>
