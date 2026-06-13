@@ -6,6 +6,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useSuppressBrowserView } from "@/lib/browser-suppression";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
@@ -35,6 +36,17 @@ function DialogOverlay({
   );
 }
 
+// Mounted only while the dialog is actually open (Radix unmounts Content's
+// subtree when closed), so the native browser view is hidden for exactly that
+// window — otherwise the guest page (an OS-level view above the React DOM)
+// would paint over the dialog. Putting the hook in DialogContent's own body
+// instead would suppress forever, since the controlled `<Dialog open={x}>`
+// pattern keeps that wrapper mounted regardless of open state.
+function SuppressBrowserViewWhileOpen(): null {
+  useSuppressBrowserView();
+  return null;
+}
+
 function DialogContent({
   className,
   children,
@@ -55,6 +67,7 @@ function DialogContent({
         )}
         {...props}
       >
+        <SuppressBrowserViewWhileOpen />
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close

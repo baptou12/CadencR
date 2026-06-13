@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useWsSessionStore } from "@/stores/ws-session-store";
 import { isTurnActive } from "@/stores/ws-turn-lifecycle";
 import { useEditorStore } from "@/stores/editor-store";
+import { browserTabCount } from "@/stores/browser-store";
 import { useTerminalStore } from "@/hooks/useTerminalState";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { useGlobalShortcutById } from "@/hooks/useShortcut";
@@ -38,6 +39,11 @@ export function shouldBypassAppClose(featureId: number | null): boolean {
   }
   if (focusedTab === "terminal") {
     return useTerminalStore.getState().features[featureId]?.root != null;
+  }
+  if (focusedTab === "browser") {
+    // ⌘W closes the focused browser tab while any exist; only an empty
+    // browser surface lets the chord fall through to close the window.
+    return browserTabCount() > 0;
   }
   return false;
 }

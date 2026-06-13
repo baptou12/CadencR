@@ -206,10 +206,10 @@ function useBrowserTab(args: UseSessionTabsArgs): FeatureTabDef {
     (message: string, images?: Array<{ base64: string; mimeType: string }>): void =>
       controls.ws.sendPrompt(
         message,
-        images?.map((image) => ({
+        images?.map((image, index) => ({
           base64: image.base64,
           mimeType: image.mimeType,
-          fileName: "browser-context.png",
+          fileName: images.length > 1 ? `browser-context-${index + 1}.png` : "browser-context.png",
           kind: "image" as const,
         })),
       ),
