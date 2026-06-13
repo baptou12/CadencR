@@ -19,6 +19,10 @@ export interface ManagedTab {
   devtoolsView: WebContentsView | null;
   consoleEntries: BrowserConsoleEntry[];
   networkEntries: BrowserNetworkEntry[];
+  // Origin approved via the permission-gated browser_open_external_url tool. While
+  // the tab stays on this origin it is exempt from the localhost-only automation
+  // (mutation) gate; navigating elsewhere re-locks it. null = not unlocked.
+  externalAutomationOrigin: string | null;
 }
 
 // The slice of BrowserManager that tab-event handlers drive. Passed in so the

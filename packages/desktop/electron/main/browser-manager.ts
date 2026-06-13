@@ -35,7 +35,9 @@ import { contentOffset, scaleBounds, windowRelativeBounds } from "./browser-mana
 import { BrowserViewLayout } from "./browser-view-layout";
 import {
   assertBrowserMutationAllowed,
+  externalAutomationMatches,
   metadataFor,
+  originOf,
   profileFromSelection,
   pushBounded,
   secureWebPreferences,
@@ -85,6 +87,7 @@ export class BrowserManager {
       devtoolsView: null,
       consoleEntries: [],
       networkEntries: [],
+      externalAutomationOrigin: null,
     };
     this.tabs.set(id, tab);
     installTabEvents(tab, {
@@ -234,6 +237,16 @@ export class BrowserManager {
     return this.requireTab(meta.id).metadata;
   }
 
+  // Permission-gated external opener (browser_open_external_url). Opens any web
+  // URL and unlocks automation for the resulting origin only; if the tab later
+  // navigates to a different origin it re-locks (see assertMutatingAllowed).
+  async openExternalUrl(url: string, tabId?: string): Promise<BrowserTabMetadata> {
+    const meta = await this.openUrl(url, tabId);
+    const tab = this.requireTab(meta.id);
+    tab.externalAutomationOrigin = originOf(tab.view.webContents.getURL());
+    return tab.metadata;
+  }
+
   async snapshot(
     tabId: string,
     selector?: string,
@@ -360,7 +373,11 @@ export class BrowserManager {
 
   private assertMutatingAllowed(tabId: string): void {
     const tab = this.requireTab(tabId);
-    assertBrowserMutationAllowed(tab.view.webContents.getURL());
+    const liveUrl = tab.view.webContents.getURL();
+    // A tab approved via the external opener may be automated only while it stays
+    // on the approved origin; otherwise fall back to the localhost-only gate.
+    if (externalAutomationMatches(liveUrl, tab.externalAutomationOrigin)) return;
+    assertBrowserMutationAllowed(liveUrl);
   }
 
   private requireTab(tabId: string): ManagedTab {

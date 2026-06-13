@@ -20,6 +20,28 @@ export function assertBrowserMutationAllowed(liveUrl: string): void {
   }
 }
 
+/**
+ * Origin of any URL, or null when it can't be parsed (e.g. about:blank). Unlike
+ * the origin-store's history helper this is intentionally scheme-agnostic — it
+ * backs the external-automation check, which only ever compares http(s) origins.
+ */
+export function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether a tab whose external automation was unlocked for `unlockedOrigin` may
+ * still be mutated at `liveUrl`. The unlock is scoped to the approved origin, so
+ * a tab that later navigates elsewhere (link click, redirect) re-locks itself.
+ */
+export function externalAutomationMatches(liveUrl: string, unlockedOrigin: string | null): boolean {
+  return unlockedOrigin !== null && originOf(liveUrl) === unlockedOrigin;
+}
+
 export function tabDiagnostics(
   consoleEntries: BrowserConsoleEntry[],
   networkEntries: BrowserNetworkEntry[],

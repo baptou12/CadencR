@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertBrowserMutationAllowed,
   consoleLevelName,
+  externalAutomationMatches,
   isElementPayload,
   metadataFor,
   pushBounded,
@@ -47,6 +48,18 @@ describe("browser-manager-utils", () => {
   it("requires live localhost URLs before browser mutation", () => {
     expect(() => assertBrowserMutationAllowed("http://localhost:5173/signup")).not.toThrow();
     expect(() => assertBrowserMutationAllowed("https://example.com/")).toThrow("localhost");
+  });
+
+  it("scopes external automation unlock to the approved origin", () => {
+    const origin = "https://example.com";
+    // Same origin (any path) stays unlocked.
+    expect(externalAutomationMatches("https://example.com/dashboard", origin)).toBe(true);
+    // Navigating to a different origin re-locks.
+    expect(externalAutomationMatches("https://evil.test/", origin)).toBe(false);
+    expect(externalAutomationMatches("http://example.com/", origin)).toBe(false);
+    // Never unlocked when no origin was approved, or for unparseable URLs.
+    expect(externalAutomationMatches("https://example.com/", null)).toBe(false);
+    expect(externalAutomationMatches("about:blank", origin)).toBe(false);
   });
 
   it("builds default metadata for new tabs", () => {

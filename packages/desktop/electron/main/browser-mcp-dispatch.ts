@@ -17,6 +17,7 @@ import {
 export interface BrowserMcpTarget {
   state(): BrowserStateSnapshot;
   openUrl(url: string, tabId?: string): Promise<BrowserTabMetadata>;
+  openExternalUrl(url: string, tabId?: string): Promise<BrowserTabMetadata>;
   snapshot(tabId: string, selector?: string, maxLength?: number, format?: string): Promise<unknown>;
   screenshot(tabId: string, clip?: BrowserBounds): Promise<string>;
   screenshotTarget(tabId: string, target: BrowserTarget): Promise<string>;
@@ -52,6 +53,10 @@ export async function dispatchBrowserMcpTool(
     case "browser_open_url":
       return text(
         await target.openUrl(requiredString(args.url, "url"), optionalString(args.tab_id)),
+      );
+    case "browser_open_external_url":
+      return text(
+        await target.openExternalUrl(requiredString(args.url, "url"), optionalString(args.tab_id)),
       );
     case "browser_get_console":
       return getConsole(target, args);

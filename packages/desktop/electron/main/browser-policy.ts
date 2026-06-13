@@ -36,9 +36,12 @@ export function normalizeBrowserOpenUrl(rawInput: string): string {
   const parsed = safeUrl(candidate);
   if (!parsed) throw new Error("Browser URL is invalid.");
   if (parsed.href === "about:blank") return parsed.href;
-  if (parsed.protocol === "javascript:" || parsed.protocol === "file:") {
+  if (parsed.protocol === "javascript:") {
     throw new Error(`Browser navigation blocked for ${parsed.protocol} URLs.`);
   }
+  // Local files load directly; Chromium still blocks web origins from
+  // navigating to file: URLs on its own, so only user-initiated opens reach here.
+  if (parsed.protocol === "file:") return parsed.toString();
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Browser navigation blocked for ${parsed.protocol} URLs.`);
   }
