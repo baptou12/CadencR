@@ -4,6 +4,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
 
@@ -49,5 +52,36 @@ describe("DropdownMenu", () => {
     await user.click(screen.getByText("Open"));
     await user.click(screen.getByText("Clickable"));
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("opens submenu items, portalled outside the clipping parent content", async () => {
+    const { user } = render(
+      <DropdownMenu>
+        <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Set default</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              <DropdownMenuItem>Layout A</DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>,
+    );
+
+    await user.click(screen.getByText("Open"));
+    // ArrowDown focuses the first item (the sub-trigger), ArrowRight opens the submenu.
+    await user.keyboard("{ArrowDown}{ArrowRight}");
+
+    const subItem = await screen.findByText("Layout A");
+    expect(subItem).toBeInTheDocument();
+
+    // Regression guard: the sub-content must be portalled, not nested inside the
+    // parent content (which clips with overflow), or it would be invisible.
+    const parentContent = document.querySelector('[data-slot="dropdown-menu-content"]');
+    const subContent = document.querySelector('[data-slot="dropdown-menu-sub-content"]');
+    expect(parentContent).not.toBeNull();
+    expect(subContent).not.toBeNull();
+    expect(parentContent?.contains(subContent)).toBe(false);
   });
 });
