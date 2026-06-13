@@ -1,20 +1,24 @@
 import { isSafeExternalUrl } from "@/lib/safe-url";
 import type {
   BrowserBounds,
+  BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
+  BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "@/shared/browser-types";
 
 export type {
   BrowserBounds,
+  BrowserCommentBadgeClick,
   BrowserConsoleEntry,
   BrowserElementContext,
   BrowserNetworkEntry,
   BrowserProfileMetadata,
+  BrowserShortcut,
   BrowserStateSnapshot,
   BrowserTabMetadata,
 } from "@/shared/browser-types";
@@ -146,6 +150,7 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   activateBrowserTab: (tabId: string) => Promise<BrowserTabMetadata>;
   closeBrowserTab: (tabId: string) => Promise<BrowserStateSnapshot>;
   setBrowserBounds: (bounds: BrowserBounds) => Promise<BrowserStateSnapshot>;
+  setBrowserSuppressed: (value: boolean) => Promise<void>;
   listBrowserProfiles: () => Promise<BrowserProfileMetadata[]>;
   clearBrowserStorage: (profileId: string) => Promise<void>;
   createBrowserProfile: (profileId: string) => Promise<BrowserProfileMetadata>;
@@ -163,8 +168,15 @@ export interface CadencrBrowserBridge extends CadencrDesktopBridge {
   browserClick: (tabId: string, x: number, y: number) => Promise<void>;
   browserType: (tabId: string, text: string) => Promise<void>;
   browserKeypress: (tabId: string, keyCode: string) => Promise<void>;
-  selectBrowserElementContext: (tabId: string) => Promise<BrowserElementContext>;
+  selectBrowserElementContext: (tabId: string, anchorId: string) => Promise<BrowserElementContext>;
+  /** Remove the on-page numbered badge anchored to `anchorId`. */
+  removeBrowserCommentBadge: (tabId: string, anchorId: string) => Promise<void>;
+  /** Remove every on-page comment badge from the tab. */
+  clearBrowserCommentBadges: (tabId: string) => Promise<void>;
   onBrowserState: (cb: (state: BrowserStateSnapshot) => void) => () => void;
+  onBrowserShortcut: (cb: (shortcut: BrowserShortcut) => void) => () => void;
+  /** A user click on an on-page comment badge, to reopen that comment's composer. */
+  onBrowserCommentBadgeClick: (cb: (event: BrowserCommentBadgeClick) => void) => () => void;
 }
 
 declare global {
@@ -229,6 +241,9 @@ const browserBridge: CadencrBrowserBridge = {
   activateBrowserTab: () => unavailable("activateBrowserTab"),
   closeBrowserTab: () => unavailable("closeBrowserTab"),
   setBrowserBounds: () => unavailable("setBrowserBounds"),
+  // No native browser view exists in a remote/browser tab, so suppression is a
+  // no-op (resolve) rather than an error — dialogs never call it expecting work.
+  setBrowserSuppressed: () => Promise.resolve(),
   listBrowserProfiles: () => unavailable("listBrowserProfiles"),
   clearBrowserStorage: () => unavailable("clearBrowserStorage"),
   createBrowserProfile: () => unavailable("createBrowserProfile"),
@@ -247,7 +262,12 @@ const browserBridge: CadencrBrowserBridge = {
   browserType: () => unavailable("browserType"),
   browserKeypress: () => unavailable("browserKeypress"),
   selectBrowserElementContext: () => unavailable("selectBrowserElementContext"),
+  // No native browser view in a remote/browser tab, so badge ops are no-ops.
+  removeBrowserCommentBadge: () => Promise.resolve(),
+  clearBrowserCommentBadges: () => Promise.resolve(),
   onBrowserState: () => () => undefined,
+  onBrowserShortcut: () => () => undefined,
+  onBrowserCommentBadgeClick: () => () => undefined,
   checkForUpdates: () => unavailable("checkForUpdates"),
   installUpdate: () => unavailable("installUpdate"),
   fetchChangelog: () => Promise.resolve(null),

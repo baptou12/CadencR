@@ -29,6 +29,7 @@ function bridge(): CadencrBrowserBridge {
     activeTabId: "tab-1",
     consoleEntries: [],
     networkEntries: [],
+    knownOrigins: [],
     error: null,
   };
   return {
@@ -64,6 +65,7 @@ function bridge(): CadencrBrowserBridge {
     activateBrowserTab: vi.fn(() => Promise.resolve(state.tabs[0])),
     closeBrowserTab: vi.fn(() => Promise.resolve(state)),
     setBrowserBounds: vi.fn(() => Promise.resolve(state)),
+    setBrowserSuppressed: vi.fn(() => Promise.resolve()),
     listBrowserProfiles: vi.fn(() =>
       Promise.resolve([
         { id: "default", label: "default", mode: "persistent" as const },
@@ -86,12 +88,16 @@ function bridge(): CadencrBrowserBridge {
     getBrowserConsole: vi.fn(() => Promise.resolve([])),
     getBrowserNetwork: vi.fn(() => Promise.resolve([])),
     getBrowserSnapshot: vi.fn(),
-    getBrowserScreenshot: vi.fn(),
+    getBrowserScreenshot: vi.fn(() => Promise.resolve("png-base64")),
     browserClick: vi.fn(),
     browserType: vi.fn(),
     browserKeypress: vi.fn(),
     selectBrowserElementContext: vi.fn(),
+    removeBrowserCommentBadge: vi.fn(() => Promise.resolve()),
+    clearBrowserCommentBadges: vi.fn(() => Promise.resolve()),
     onBrowserState: vi.fn(() => () => undefined),
+    onBrowserShortcut: vi.fn(() => () => undefined),
+    onBrowserCommentBadgeClick: vi.fn(() => () => undefined),
     checkForUpdates: vi.fn(),
     installUpdate: vi.fn(),
     fetchChangelog: vi.fn(),
@@ -141,6 +147,7 @@ describe("BrowserWorkspaceTab", () => {
         activeTabId: null,
         consoleEntries: [],
         networkEntries: [],
+        knownOrigins: [],
         error: null,
       }),
     );
@@ -170,6 +177,7 @@ describe("BrowserWorkspaceTab", () => {
           },
         ],
         activeTabId: "tab-1",
+        knownOrigins: [],
         consoleEntries: [
           {
             id: "console-1",
@@ -221,6 +229,38 @@ describe("BrowserWorkspaceTab", () => {
     });
   });
 
+  it("opens a new tab from the URL bar when every tab is closed", async () => {
+    const mockBridge = bridge();
+    mockBridge.listBrowserTabs = vi.fn(() =>
+      Promise.resolve({
+        tabs: [],
+        activeTabId: null,
+        consoleEntries: [],
+        networkEntries: [],
+        knownOrigins: [],
+        error: null,
+      }),
+    );
+    setDesktopBridgeOverrideForTests(mockBridge);
+    render(<BrowserWorkspaceTab onSendContext={vi.fn()} />);
+
+    // With no live tab the page-scoped actions are unavailable.
+    expect(await screen.findByRole("button", { name: "Add comment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "DevTools" })).toBeDisabled();
+
+    const urlInput = screen.getByLabelText("Browser URL");
+    await userEvent.clear(urlInput);
+    await userEvent.type(urlInput, "localhost:4000");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    // Navigation with no active tab opens a fresh tab pointed at the URL
+    // instead of calling navigate on a non-existent tab.
+    await waitFor(() => {
+      expect(mockBridge.createBrowserTab).toHaveBeenLastCalledWith("localhost:4000", "default");
+    });
+    expect(mockBridge.navigateBrowserTab).not.toHaveBeenCalled();
+  });
+
   it("lets the user dismiss persistent browser navigation errors", async () => {
     const mockBridge = bridge();
     mockBridge.listBrowserTabs = vi.fn(() =>
@@ -241,6 +281,7 @@ describe("BrowserWorkspaceTab", () => {
         activeTabId: "tab-1",
         consoleEntries: [],
         networkEntries: [],
+        knownOrigins: [],
         error: "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:5175/signup'",
       }),
     );
@@ -254,7 +295,7 @@ describe("BrowserWorkspaceTab", () => {
     expect(screen.queryByText(/ERR_CONNECTION_REFUSED/)).not.toBeInTheDocument();
   });
 
-  it("captures element context and sends screenshot metadata to the active agent", async () => {
+  it("batches element comments and sends them as one message with screenshots", async () => {
     const mockBridge = bridge();
     mockBridge.selectBrowserElementContext = vi.fn(() =>
       Promise.resolve({
@@ -279,14 +320,32 @@ describe("BrowserWorkspaceTab", () => {
     setDesktopBridgeOverrideForTests(mockBridge);
     render(<BrowserWorkspaceTab onSendContext={onSendContext} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Send context" }));
-
+    // Pick an element to start a comment; the picker resolves with its context
+    // and anchors an on-page badge keyed by a generated id.
+    await userEvent.click(await screen.findByRole("button", { name: "Add comment" }));
     await waitFor(() => {
-      expect(mockBridge.selectBrowserElementContext).toHaveBeenCalledWith("tab-1");
+      expect(mockBridge.selectBrowserElementContext).toHaveBeenCalledWith(
+        "tab-1",
+        expect.any(String),
+      );
     });
-    expect(onSendContext).toHaveBeenCalledWith(expect.stringContaining("Browser element context"), [
-      { base64: "png-base64", mimeType: "image/png" },
-    ]);
+
+    // Write the note in the reused git CommentForm and commit it with Enter.
+    expect(onSendContext).not.toHaveBeenCalled();
+    const textarea = await screen.findByPlaceholderText("Add a comment...");
+    await userEvent.type(textarea, "Make this required{Enter}");
+
+    // Nothing is sent until the user presses the now-active Send button.
+    expect(onSendContext).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /Send/ }));
+
+    expect(onSendContext).toHaveBeenCalledTimes(1);
+    const [message, images] = onSendContext.mock.calls[0];
+    expect(message).toContain("Make this required");
+    expect(message).toContain("#email");
+    expect(images).toEqual([{ base64: "png-base64", mimeType: "image/png" }]);
+    // Sending clears the on-page badges for that tab.
+    expect(mockBridge.clearBrowserCommentBadges).toHaveBeenCalledWith("tab-1");
   });
 
   it("keeps native Browser bounds aligned when the viewport position shifts", async () => {
