@@ -73,6 +73,10 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
     disabledRef.current = disabled;
     const navigatingHistoryRef = useRef(false);
     const restoringDraftRef = useRef(false);
+    // Set once the user types in or sends from this feature; reset on feature
+    // switch by the draft-restore hook. Gates draft auto-restore so a late
+    // query refetch can't re-inject text the user already sent.
+    const interactedRef = useRef(false);
     const hadSpecialStateRef = useRef(false);
     const shouldRestoreFocusRef = useRef(false);
     const {
@@ -89,6 +93,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       textRef,
       editorRef,
       restoringDraftRef,
+      interactedRef,
       setText,
       isMobile,
     });
@@ -153,6 +158,7 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       saveDraft,
       addHistoryEntry,
       getAttachments,
+      interactedRef,
     });
     const canSend =
       (text.trim().length > 0 || attachments.length > 0) &&
@@ -190,6 +196,9 @@ export const AgentPromptBar = forwardRef<AgentPromptBarHandle, AgentPromptBarPro
       (newText: string) => {
         setText(newText);
         if (restoringDraftRef.current) return;
+        // A real user edit (typing or history navigation) hands the input to
+        // the user, suppressing later draft auto-restore for this feature.
+        interactedRef.current = true;
         if (navigatingHistoryRef.current) {
           navigatingHistoryRef.current = false;
           return;

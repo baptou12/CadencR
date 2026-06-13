@@ -8,6 +8,15 @@ interface FeaturePromptDraftRestoreArgs {
   textRef: MutableRefObject<string>;
   editorRef: RefObject<PromptEditorHandle | null>;
   restoringDraftRef: MutableRefObject<boolean>;
+  /**
+   * True once the user has typed in or sent from the current feature's input.
+   * The hook resets it to `false` on every feature switch; the caller flips it
+   * to `true` on user edits and sends. Auto-restore is suppressed while it is
+   * `true` so a late draft-query refetch can't re-inject text the user already
+   * cleared by sending (the input is empty then, so `textRef` alone is not
+   * enough to tell "untouched" from "just sent").
+   */
+  interactedRef: MutableRefObject<boolean>;
   setText: (text: string) => void;
   /** Phones: restore the draft text without focusing (avoids popping the keyboard). */
   isMobile: boolean;
@@ -20,6 +29,7 @@ export function useFeaturePromptDraftRestore({
   textRef,
   editorRef,
   restoringDraftRef,
+  interactedRef,
   setText,
   isMobile,
 }: FeaturePromptDraftRestoreArgs): void {
@@ -27,14 +37,20 @@ export function useFeaturePromptDraftRestore({
   useLayoutEffect(() => {
     const prevFeatureId = prevFeatureIdRef.current;
     prevFeatureIdRef.current = featureId;
+    const featureChanged = prevFeatureId !== featureId;
+    // Arriving at a feature re-arms auto-restore for it.
+    if (featureChanged) interactedRef.current = false;
     const draftBelongsToFeature = draftFeatureId != null && draftFeatureId === featureId;
-    const nextText =
-      prevFeatureId !== featureId
-        ? draftBelongsToFeature
-          ? (restoredDraft ?? "")
-          : ""
-        : restoredDraft;
-    if (nextText == null || (prevFeatureId === featureId && textRef.current)) return;
+    const nextText = featureChanged
+      ? draftBelongsToFeature
+        ? (restoredDraft ?? "")
+        : ""
+      : restoredDraft;
+    if (nextText == null) return;
+    // Same feature: only auto-apply while the input is still untouched. Once the
+    // user has typed or sent, the editor is theirs — never clobber it with a
+    // (possibly stale) draft delivered by a later query refetch.
+    if (!featureChanged && (textRef.current || interactedRef.current)) return;
     restoringDraftRef.current = true;
     setText(nextText);
     // On phones, restore the draft without moving the selection — that would
@@ -47,6 +63,7 @@ export function useFeaturePromptDraftRestore({
     draftFeatureId,
     editorRef,
     featureId,
+    interactedRef,
     isMobile,
     restoredDraft,
     restoringDraftRef,
