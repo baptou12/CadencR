@@ -14,6 +14,7 @@ const mockedUseHotkeys = vi.mocked(useHotkeys);
 interface RegisteredHotkey {
   callback: (event: KeyboardEvent) => void;
   hotkey: string;
+  ignoreInputs?: boolean;
 }
 
 function registeredHotkeys(): RegisteredHotkey[] {
@@ -21,6 +22,7 @@ function registeredHotkeys(): RegisteredHotkey[] {
     definitions.map((definition) => ({
       callback: definition.callback as (event: KeyboardEvent) => void,
       hotkey: String(definition.hotkey),
+      ignoreInputs: definition.options?.ignoreInputs,
     })),
   );
 }
@@ -121,6 +123,21 @@ describe("AgentQuestionDrawer", () => {
     expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
+  it("dims the digit badges while the Other free-text input is focused", async () => {
+    const user = userEvent.setup();
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    // Digit badge is shown while options are selectable by number.
+    expect(screen.getByText("1")).toBeInTheDocument();
+
+    const otherBtn = screen.getAllByRole("button").find((b) => b.textContent?.includes("Other"))!;
+    await user.click(otherBtn);
+    await user.click(screen.getByRole("textbox"));
+
+    // With the input focused, the 1-9 selectors are inert, so badges show "-".
+    expect(screen.queryByText("1")).toBeNull();
+    expect(screen.getAllByText("-").length).toBeGreaterThan(0);
+  });
+
   it("shows first question when multiple questions provided", () => {
     render(
       <AgentQuestionDrawer
@@ -156,6 +173,15 @@ describe("AgentQuestionDrawer", () => {
     expect(hotkeyStrings).toContain("Mod+O");
     // No cmd+digit hotkeys remain (those are reserved for the sidebar)
     expect(hotkeyStrings.some((s) => /Mod\+\d/.test(s))).toBe(false);
+  });
+
+  it("registers digit hotkeys so they do not fire while typing in the Other input", () => {
+    // Regression: typing a number in the free-text "Other" input must insert
+    // the digit, not select/toggle an option. Digit hotkeys must ignore inputs.
+    render(<AgentQuestionDrawer questions={[questionWithOptions]} onSubmit={onSubmit} open />);
+    for (const digit of ["1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
+      expect(findRegisteredHotkey(digit).ignoreInputs).toBe(true);
+    }
   });
 
   it("does not select options from AZERTY physical digit keys unless they emit digits", () => {

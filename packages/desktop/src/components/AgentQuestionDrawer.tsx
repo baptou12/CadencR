@@ -65,7 +65,9 @@ export function AgentQuestionDrawer({
   const [selectedOptions, setSelectedOptions] = useState<Set<string>>(new Set());
   const [freeText, setFreeText] = useState("");
   const [showOther, setShowOther] = useState(false);
-  const freeTextFocusedRef = useRef(false);
+  // Drives re-render so the digit badges dim while the free-text input is
+  // focused — mirroring that the 1-9 selectors don't fire inside inputs.
+  const [freeTextFocused, setFreeTextFocused] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -279,9 +281,10 @@ export function AgentQuestionDrawer({
 
   // 1 through 9 selects/toggles an option by index. Mod+O toggles "Other..."
   const otherShortcutIndex = currentQuestion?.options?.length ?? 0; // 0-based index for "Other" highlight
-  // Default (no enableOnFormTags) — pressing "1" while typing in the free-text
-  // input must insert the character, not select an option. Same applies to
-  // Enter and arrow navigation while focused inside the textarea.
+  // `useScopedShortcut` enables form tags by default, so pressing "1" while
+  // typing in the "Other" free-text input would otherwise select an option
+  // instead of inserting the digit. Opt out explicitly so numbers are typed
+  // into the input — same as q-submit/q-prev/q-next below.
   useScopedShortcut(
     "q-select-1-9",
     (e) => {
@@ -295,7 +298,11 @@ export function AgentQuestionDrawer({
       flashHighlight(digit - 1);
     },
     "agent",
-    { enabled: open && !disableShortcuts },
+    {
+      enabled: open && !disableShortcuts,
+      enableOnFormTags: false,
+      enableOnContentEditable: false,
+    },
     [open, disableShortcuts, currentQuestion, handleOptionToggle, flashHighlight],
   );
 
@@ -342,7 +349,7 @@ export function AgentQuestionDrawer({
   useScopedShortcut(
     "q-prev",
     (e) => {
-      if (!open || freeTextFocusedRef.current) return;
+      if (!open || freeTextFocused) return;
       e.preventDefault();
       handleBack();
     },
@@ -352,13 +359,13 @@ export function AgentQuestionDrawer({
       enableOnFormTags: false,
       enableOnContentEditable: false,
     },
-    [open, disableShortcuts, canGoBack, handleBack],
+    [open, disableShortcuts, canGoBack, handleBack, freeTextFocused],
   );
 
   useScopedShortcut(
     "q-next",
     (e) => {
-      if (!open || freeTextFocusedRef.current) return;
+      if (!open || freeTextFocused) return;
       e.preventDefault();
       handleForward();
     },
@@ -368,7 +375,7 @@ export function AgentQuestionDrawer({
       enableOnFormTags: false,
       enableOnContentEditable: false,
     },
-    [open, disableShortcuts, canGoForward, handleForward],
+    [open, disableShortcuts, canGoForward, handleForward, freeTextFocused],
   );
 
   useScopedHotkeys(
@@ -496,7 +503,12 @@ export function AgentQuestionDrawer({
               }}
             >
               <span className="text-sm font-medium text-foreground">
-                <KbdShortcut keys={[String(optIdx + 1)]} variant="square" scope="agent" />
+                <KbdShortcut
+                  keys={[String(optIdx + 1)]}
+                  variant="square"
+                  scope="agent"
+                  disabled={freeTextFocused}
+                />
                 {option.label}
               </span>
               {option.description && (
@@ -533,12 +545,8 @@ export function AgentQuestionDrawer({
           <Input
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
-            onFocus={() => {
-              freeTextFocusedRef.current = true;
-            }}
-            onBlur={() => {
-              freeTextFocusedRef.current = false;
-            }}
+            onFocus={() => setFreeTextFocused(true)}
+            onBlur={() => setFreeTextFocused(false)}
             onKeyDown={(e) => {
               if (e.key === "Enter") handleFreeTextSubmit();
             }}
