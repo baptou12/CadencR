@@ -31,7 +31,7 @@
 :root {
   /* Glass primitives — OFF by default (any theme may override to opt in). */
   --glass-backdrop: none; /* value for `backdrop-filter` */
-  --glass-shadow: none; /* inset highlight + accent-tinted cast */
+  --glass-shadow: none; /* inset highlight + accent-tinted cast (prompt bar) */
   --glass-shadow-pane: none; /* inset rim + neutral (colourless) float for split panes */
   --glass-shadow-overlay: none; /* softened cast for floating overlays (popovers, dialogs) */
 
@@ -58,12 +58,10 @@
   --glass-shadow:
     0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 24px 60px -24px oklch(0.6 0.16 230 / 0.4),
     0 1px 2px rgba(0, 0, 0, 0.35);
-  /* Neutral float for split-pane cards — the same glassy inset rim the prompt
-   * carries, lifted by a soft *colourless* drop shadow (no azure cast), so a
-   * split tab feels like it floats very slightly without the blue glow. */
-  --glass-shadow-pane:
-    0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 12px 32px -16px rgba(0, 0, 0, 0.5),
-    0 1px 2px rgba(0, 0, 0, 0.3);
+  /* Neutral float for split-pane cards — the glassy white inset rim (no azure
+   * glow, no dark hairline edge) lifted by a very small, discrete colourless
+   * drop, so a split tab reads as a frosted card edged only by its white rim. */
+  --glass-shadow-pane: 0 1px 0 rgba(255, 255, 255, 0.12) inset, 0 2px 6px rgba(0, 0, 0, 0.16);
   /* Floating overlays (popovers, menus, dialogs): same inset rim, but the azure
    * cast is dialled right down (lower chroma + alpha) so the blue glow no longer
    * halos the panel — the lift comes mostly from a soft neutral drop. */
@@ -71,11 +69,11 @@
     0 1px 0 rgba(255, 255, 255, 0.1) inset, 0 16px 40px -24px oklch(0.6 0.08 230 / 0.18),
     0 8px 24px -16px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.3);
   --ambient-base: oklch(0.165 0.018 262);
-  --ambient-1: oklch(0.6 0.1 230 / 0.5);
-  --ambient-2: oklch(0.56 0.09 285 / 0.4);
-  --ambient-3: oklch(0.62 0.08 200 / 0.4);
-  --ambient-opacity: 0.5;
-  --grain-opacity: 0.3;
+  --ambient-1: oklch(0.6 0.12 230 / 0.55);
+  --ambient-2: oklch(0.56 0.11 285 / 0.46);
+  --ambient-3: oklch(0.62 0.1 200 / 0.46);
+  --ambient-opacity: 0.56;
+  --grain-opacity: 0.36;
   --grain-blend: screen; /* adds a fine cool-white frost speckle on the dark field */
 
   /* Tailwind semantic tokens. Surfaces are translucent so the halos bleed
@@ -235,19 +233,21 @@
     0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 24px 60px -24px oklch(0.55 0.2 250 / 0.22),
     0 1px 2px rgba(20, 22, 40, 0.06);
   /* Neutral float for split-pane cards — see Frost Dark note above. */
-  --glass-shadow-pane:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 32px -16px rgba(20, 22, 40, 0.16),
-    0 1px 2px rgba(20, 22, 40, 0.06);
+  --glass-shadow-pane: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 2px 6px rgba(20, 22, 40, 0.08);
   /* Floating overlays — softened azure cast (see Frost Dark note). */
   --glass-shadow-overlay:
     0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 16px 40px -24px oklch(0.55 0.1 250 / 0.1),
     0 8px 24px -16px rgba(20, 22, 40, 0.14), 0 1px 2px rgba(20, 22, 40, 0.06);
-  --ambient-base: oklch(0.978 0.006 255);
-  --ambient-1: oklch(0.85 0.08 240 / 0.55);
-  --ambient-2: oklch(0.87 0.07 290 / 0.45);
-  --ambient-3: oklch(0.9 0.06 200 / 0.45);
-  --ambient-opacity: 0.55;
-  --grain-opacity: 0.13;
+  /* Cool-tinted base + deepened, more saturated halos. The original near-white
+   * halos (chroma ~0.06–0.08) all but vanished once the 50%-white ambient veil
+   * washed over them; pushing chroma up and lightness down lets the blue /
+   * violet / teal fields actually read as colour on the bright field. */
+  --ambient-base: oklch(0.974 0.014 250);
+  --ambient-1: oklch(0.79 0.16 245 / 0.7);
+  --ambient-2: oklch(0.81 0.15 300 / 0.6);
+  --ambient-3: oklch(0.83 0.14 200 / 0.6);
+  --ambient-opacity: 0.68;
+  --grain-opacity: 0.19;
   --grain-blend: multiply; /* fine frosted-paper grain that reads on the near-white field */
 
   /* Tailwind semantic tokens. */
@@ -548,28 +548,33 @@
 /* Pane chrome in the Frost themes.
  *
  * The pane wrapper normally paints an opaque `bg-background` slab. In Frost that
- * slab buried the ambient field and read as a flat muddy rectangle. Instead:
+ * slab buried the ambient field and read as a flat muddy rectangle. Every pane
+ * — root AND split — instead drops its own background and shares the one field:
  *
  *   - The ROOT pane (the main tab that holds the agent stream) drops its
  *     background entirely, so the conversation column floats directly on the
  *     frosted, grainy field. No backdrop-filter here on purpose — this is the
  *     hottest streaming surface, and a blur would repaint on every token.
- *   - SPLIT panes (terminal / editor / git) keep their translucent
- *     `bg-background` tint and gain a backdrop blur, so each reads as a frosted
- *     glass card over the field. Their Tailwind `shadow-md` is untouched. */
-:root[data-theme="frost-dark"] [data-pane-root],
-:root[data-theme="frost-light"] [data-pane-root] {
+ *   - SPLIT panes (terminal / editor / git) ALSO drop their `bg-background`
+ *     tint so they sit on the exact same field as the main tab — they no longer
+ *     paint a surface of their own. What lifts them off it is purely the glass:
+ *     a backdrop blur frosting the field behind the card, plus the glassy inset
+ *     rim and a soft *colourless* drop shadow (`--glass-shadow-pane` — no azure
+ *     glow). The result is a frosted-glass card floating above the same field as
+ *     the agent stream, instead of a separately-tinted slab. The card's readable
+ *     interior comes from the tab content (terminal / editor / diff) painting
+ *     its own translucent surface on top. */
+:root[data-theme="frost-dark"] [data-pane-id],
+:root[data-theme="frost-light"] [data-pane-id] {
   background-color: transparent;
 }
-
-/* Split panes (terminal / editor / git) get the frosted-card treatment: the
- * backdrop blur plus the prompt's glassy inset rim, lifted by a soft neutral
- * (colourless) drop shadow so each split tab feels like it floats very slightly
- * — without any blue glow behind it. */
 :root[data-theme="frost-dark"] [data-pane-id]:not([data-pane-root]),
 :root[data-theme="frost-light"] [data-pane-id]:not([data-pane-root]) {
   backdrop-filter: var(--glass-backdrop);
   box-shadow: var(--glass-shadow-pane);
+  /* Drop the opaque `border-border` line `PaneChrome` paints — in Frost the
+   * card is edged by the glassy white inset rim above, not a dark outline. */
+  border-color: transparent;
 }
 
 /* Pierre's file tree paints its own background from the `--trees-bg` custom
