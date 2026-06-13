@@ -607,6 +607,11 @@ export interface Feature {
   type: string;
 }
 
+export interface FeatureActivity {
+  feature_id: number;
+  shell_count: number;
+}
+
 export interface FeatureAgentStateResponse {
   sessions: SessionState[];
 }
@@ -1860,6 +1865,11 @@ first and then merge in the `exclude_gitignored=false` response.
 };
 
 export type ListFeaturesParams = {
+  project_id: number;
+  include_archived?: boolean;
+};
+
+export type ListFeatureActivityParams = {
   project_id: number;
   include_archived?: boolean;
 };
@@ -4855,6 +4865,65 @@ export const useCreateFeature = <TError = ErrorType<unknown>, TContext = unknown
 
   return useMutation(mutationOptions);
 };
+
+export const listFeatureActivity = (params: ListFeatureActivityParams, signal?: AbortSignal) => {
+  return customInstance<FeatureActivity[]>({
+    url: `/api/features/activity`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getListFeatureActivityQueryKey = (params?: ListFeatureActivityParams) => {
+  return [`/api/features/activity`, ...(params ? [params] : [])] as const;
+};
+
+export const getListFeatureActivityQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFeatureActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListFeatureActivityParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listFeatureActivity>>, TError, TData>;
+  },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListFeatureActivityQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listFeatureActivity>>> = ({ signal }) =>
+    listFeatureActivity(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFeatureActivity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListFeatureActivityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listFeatureActivity>>
+>;
+export type ListFeatureActivityQueryError = ErrorType<unknown>;
+
+export function useListFeatureActivity<
+  TData = Awaited<ReturnType<typeof listFeatureActivity>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListFeatureActivityParams,
+  options?: {
+    query?: UseQueryOptions<Awaited<ReturnType<typeof listFeatureActivity>>, TError, TData>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFeatureActivityQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
 
 export const getFeatureAgentState = (
   featureId: number,

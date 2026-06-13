@@ -3,11 +3,14 @@ import {
   TrashIcon,
   ArchiveIcon,
   BotIcon,
+  GlobeIcon,
   MessageCircleQuestionIcon,
   GitBranchIcon,
+  TerminalIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -45,6 +48,8 @@ interface ProjectFeatureRowProps {
   hasWorktree: boolean;
   /** True only when the worktree directory still exists on disk (stats query). */
   hasLiveWorktree: boolean;
+  shellCount: number;
+  browserCount: number;
   isEditingLabel: boolean;
   labelDraft: string;
   labelSuggestions: readonly string[];
@@ -72,6 +77,8 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   isAutoNaming,
   hasWorktree,
   hasLiveWorktree,
+  shellCount,
+  browserCount,
   isEditingLabel,
   labelDraft,
   labelSuggestions,
@@ -108,7 +115,8 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
   const { navRef, badgeRef } = useNavShortcutHint<HTMLDivElement>();
   const hasStats = gitStats != null && (gitStats.insertions > 0 || gitStats.deletions > 0);
   const hasLabel = !!feature.label;
-  const showMetaLine = isEditingLabel || hasLabel || hasStats;
+  const hasActivity = shellCount > 0 || browserCount > 0;
+  const showMetaLine = isEditingLabel || hasLabel || hasStats || hasActivity;
   const isArchived = feature.status === "archived";
   const archiveActionLabel = isArchived ? "Delete" : "Archive";
   const markStartLabelEditAfterMenuClose = (): void => {
@@ -178,7 +186,10 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
               )}
             </div>
             {showMetaLine && (
-              <div className="flex items-center gap-2 text-[11px] leading-tight">
+              <div
+                data-feature-meta-line
+                className="flex min-w-0 items-center gap-2 text-[11px] leading-tight"
+              >
                 {isEditingLabel ? (
                   <FeatureLabelEditor
                     value={labelDraft}
@@ -207,6 +218,7 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
                     className="text-[11px] leading-tight"
                   />
                 )}
+                <FeatureActivityIndicators shellCount={shellCount} browserCount={browserCount} />
               </div>
             )}
           </div>
@@ -249,6 +261,58 @@ export const ProjectFeatureRow = memo(function ProjectFeatureRow({
     </ContextMenu>
   );
 });
+
+function FeatureActivityIndicators({
+  shellCount,
+  browserCount,
+}: {
+  shellCount: number;
+  browserCount: number;
+}): ReactElement | null {
+  if (shellCount <= 0 && browserCount <= 0) return null;
+  return (
+    <span data-feature-activity-indicators className="inline-flex shrink-0 items-center gap-1">
+      <FeatureActivityBadge
+        count={shellCount}
+        labelSingular="shell command running"
+        labelPlural="shell commands running"
+        icon={<TerminalIcon className="size-3" />}
+      />
+      <FeatureActivityBadge
+        count={browserCount}
+        labelSingular="browser tab open"
+        labelPlural="browser tabs open"
+        icon={<GlobeIcon className="size-3" />}
+      />
+    </span>
+  );
+}
+
+function FeatureActivityBadge({
+  count,
+  labelSingular,
+  labelPlural,
+  icon,
+}: {
+  count: number;
+  labelSingular: string;
+  labelPlural: string;
+  icon: ReactElement;
+}): ReactElement | null {
+  if (count <= 0) return null;
+  const label = `${count} ${count === 1 ? labelSingular : labelPlural}`;
+  return (
+    <Badge
+      variant="outline"
+      aria-label={label}
+      title={label}
+      className="h-5 gap-0.5 rounded border-border/60 bg-background/40 px-1 font-mono text-[10px] leading-none text-muted-foreground"
+    >
+      {icon}
+      <span>{count}</span>
+    </Badge>
+  );
+}
 
 export function shouldIgnoreFeatureRowKeyDown(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;

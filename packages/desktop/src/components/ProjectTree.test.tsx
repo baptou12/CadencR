@@ -47,6 +47,7 @@ vi.mock("../api/generated", () => ({
       },
     ],
   })),
+  useListFeatureActivity: vi.fn(() => ({ data: [], error: null })),
   useCreateFeature: vi.fn((opts?: { onSuccess?: (r: unknown) => void }) => ({
     mutate: (data: unknown) => {
       mockCreateFeature(data);

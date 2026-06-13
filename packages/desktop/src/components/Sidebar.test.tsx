@@ -49,6 +49,7 @@ vi.mock("../api/generated", () => ({
   useDeleteProject: vi.fn(() => ({ mutate: vi.fn() })),
   getListProjectsQueryKey: vi.fn(() => ["projects"]),
   useListFeatures: vi.fn(() => ({ data: [] })),
+  useListFeatureActivity: vi.fn(() => ({ data: [], error: null })),
   useCreateFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useDeleteFeature: vi.fn(() => ({ mutate: vi.fn() })),
   useUpdateFeatureStatus: vi.fn(() => ({ mutate: vi.fn() })),

@@ -12,6 +12,7 @@ use crate::domain::features::worktree_settings::{
 };
 use crate::domain::features::worktree_validation::validate_worktree_mode;
 use crate::domain::settings_allowlist;
+use crate::domain::terminal::activity::foreground_command_counts_by_feature;
 use crate::domain::workflow::ws_sender::{
     send_feature_renamed_envelope, send_feature_updated_envelope,
 };
@@ -27,6 +28,13 @@ pub struct ListFeaturesParams {
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct ResolveWorkingDirParams {
     pub project_id: i64,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct ListFeatureActivityParams {
+    pub project_id: i64,
+    #[serde(default)]
+    pub include_archived: bool,
 }
 
 #[utoipa::path(get, path = "/api/features",
@@ -88,6 +96,27 @@ pub async fn get_feature_handler(
         .await?
         .map(Json)
         .ok_or_else(|| AppError::NotFound(format!("feature {id} not found")))
+}
+
+#[utoipa::path(get, path = "/api/features/activity",
+    params(ListFeatureActivityParams),
+    responses((status = 200, body = Vec<FeatureActivity>)))]
+pub async fn list_feature_activity_handler(
+    State(state): State<AppState>,
+    Query(params): Query<ListFeatureActivityParams>,
+) -> Result<Json<Vec<FeatureActivity>>, AppError> {
+    let terminal_counts = foreground_command_counts_by_feature(&state.pty_manager);
+    let custom_action_counts = state.custom_action_runs.counts_by_feature().await;
+    Ok(Json(
+        service::list_activity(
+            &state.read_pool,
+            params.project_id,
+            params.include_archived,
+            terminal_counts,
+            custom_action_counts,
+        )
+        .await?,
+    ))
 }
 
 #[utoipa::path(delete, path = "/api/features/{id}",
@@ -294,6 +323,7 @@ pub fn features_router() -> Router<AppState> {
             "/api/features",
             get(list_features_handler).post(create_feature_handler),
         )
+        .route("/api/features/activity", get(list_feature_activity_handler))
         .route(
             "/api/features/{id}",
             get(get_feature_handler).delete(delete_feature_handler),

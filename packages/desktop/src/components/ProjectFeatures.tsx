@@ -28,6 +28,7 @@ import { isInCodeMirrorEditor } from "@/lib/shortcuts/dom-targets";
 import { invalidateFeatureQueries } from "@/lib/featureUpdated";
 import { getFocusedTabForFeature } from "@/lib/feature-focus-handoff";
 import { getFileName } from "@/lib/file-language";
+import { useFeatureActivityCounts } from "@/hooks/useFeatureActivityCounts";
 import {
   deleteFeatureDialogTitle,
   getPendingFeatureArchiveAction,
@@ -79,6 +80,7 @@ export function ProjectFeatures({
     }
     return { worktreeFeatureIds: all, liveWorktreeFeatureIds: live };
   }, [featureWorktrees]);
+  const { shellCountsByFeatureId, browserCountsByFeatureId } = useFeatureActivityCounts(projectId);
 
   const worktreeByFeatureId = useMemo(() => {
     const map = new Map<number, FeatureWorktreeInfo>();
@@ -276,6 +278,8 @@ export function ProjectFeatures({
       isAutoNaming={isAutoNaming(feature.id)}
       hasWorktree={worktreeFeatureIds.has(feature.id)}
       hasLiveWorktree={liveWorktreeFeatureIds.has(feature.id)}
+      shellCount={shellCountsByFeatureId.get(feature.id) ?? 0}
+      browserCount={browserCountsByFeatureId[feature.id] ?? 0}
       isEditingLabel={editingLabelFeatureId === feature.id}
       labelDraft={editingLabelFeatureId === feature.id ? labelDraft : ""}
       labelSuggestions={labelSuggestions}
