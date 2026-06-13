@@ -5,16 +5,13 @@ import {
   ChevronRight,
   Plus,
   Minus,
-  GitCommit,
-  Circle,
   PanelLeft,
   BookmarkCheck,
 } from "lucide-react";
 import { CopyButton } from "./CopyButton";
-import { AutoScrollText, CommitItemHoverCard, formatRelativeDate } from "./DiffFileTreeHelpers";
 
-export type { ChangedFileEntry, CommitEntry } from "./DiffFileTreeHelpers";
-import type { ChangedFileEntry, CommitEntry } from "./DiffFileTreeHelpers";
+export type { ChangedFileEntry } from "./DiffFileTreeHelpers";
+import type { ChangedFileEntry } from "./DiffFileTreeHelpers";
 
 interface TreeNode {
   name: string;
@@ -111,11 +108,6 @@ interface DiffFileTreeProps {
   viewedFiles?: Set<string>;
   onToggleExpand: (filePath: string) => void;
   onSelectFile: (filePath: string) => void;
-  commits?: CommitEntry[];
-  selectedCommit: string | null;
-  onSelectCommit: (sha: string | null) => void;
-  isOnBaseBranch?: boolean;
-  onLoadMoreCommits?: () => void;
   onCollapse?: () => void;
 }
 
@@ -126,11 +118,6 @@ export function DiffFileTree({
   viewedFiles,
   onToggleExpand,
   onSelectFile,
-  commits = [],
-  selectedCommit,
-  onSelectCommit,
-  isOnBaseBranch = true,
-  onLoadMoreCommits,
   onCollapse,
 }: DiffFileTreeProps) {
   const [filter, setFilter] = useState("");
@@ -273,72 +260,6 @@ export function DiffFileTree({
           <p className="px-3 py-2 text-xs text-muted-foreground">No changed files</p>
         )}
       </div>
-
-      {/* Commit list */}
-      {commits.length > 0 && (
-        <div className="flex h-1/3 shrink-0 flex-col border-t border-border">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            <GitCommit className="h-3 w-3" />
-            <span>Commits ({commits.length})</span>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {/* Working Changes entry (only on feature branches) */}
-            {!isOnBaseBranch && (
-              <button
-                className={`flex w-full items-center gap-2 px-3 py-1 text-left text-xs hover:bg-accent ${
-                  selectedCommit === null ? "bg-accent text-foreground" : "text-muted-foreground"
-                }`}
-                onClick={() => onSelectCommit(null)}
-              >
-                <Circle className="h-2.5 w-2.5 shrink-0 fill-[var(--acc-yellow)] text-[var(--acc-yellow)]" />
-                <span className="truncate">Working Changes</span>
-              </button>
-            )}
-            {/* Commits — feature branch: newest first; base branch: already newest-first from git log */}
-            {(isOnBaseBranch ? commits : commits.toReversed()).map((commit) => {
-              const relDate = formatRelativeDate(commit.date);
-              return (
-                <CommitItemHoverCard key={commit.sha} commit={commit}>
-                  <button
-                    className={`flex w-full items-start gap-1.5 px-3 py-0.5 text-left text-xs hover:bg-accent ${
-                      selectedCommit === commit.sha ? "bg-accent" : ""
-                    }`}
-                    onClick={() =>
-                      onSelectCommit(selectedCommit === commit.sha ? null : commit.sha)
-                    }
-                  >
-                    <Circle
-                      className={`mt-0.5 h-2.5 w-2.5 shrink-0 ${
-                        commit.isPushed
-                          ? "fill-[var(--numstat-add-fg)] text-[var(--numstat-add-fg)]"
-                          : "fill-[var(--acc-orange)] text-[var(--acc-orange)]"
-                      }`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="shrink-0 font-mono text-primary">{commit.shortSha}</span>
-                        <AutoScrollText text={commit.message} className="text-foreground" />
-                      </div>
-                      <div className="text-[10px] leading-tight text-muted-foreground">
-                        {commit.author} · {relDate}
-                      </div>
-                    </div>
-                  </button>
-                </CommitItemHoverCard>
-              );
-            })}
-            {/* Load more button (only on base branch where we paginate) */}
-            {isOnBaseBranch && onLoadMoreCommits && (
-              <button
-                className="flex w-full items-center justify-center py-1.5 text-xs text-primary hover:bg-accent"
-                onClick={onLoadMoreCommits}
-              >
-                Load more...
-              </button>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

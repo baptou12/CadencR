@@ -128,6 +128,22 @@ fn strip_remote_prefix(branch: &str) -> &str {
     b.strip_prefix("origin/").unwrap_or(b)
 }
 
+/// Build the provider-specific URL for viewing a single commit in the browser.
+///
+/// - GitHub / Bitbucket-on-`github`-style: `{web_base}/commit/{sha}`
+/// - GitLab: `{web_base}/-/commit/{sha}`
+/// - Bitbucket: `{web_base}/commits/{sha}` (note the plural path segment)
+/// - Other: `None` — same provider-boundary policy as [`compare_url`]; we
+///   refuse to guess for self-hosted/unknown hosts.
+pub fn commit_url(info: &RemoteInfo, sha: &str) -> Option<String> {
+    match info.host {
+        GitHost::GitHub => Some(format!("{}/commit/{}", info.web_base, sha)),
+        GitHost::GitLab => Some(format!("{}/-/commit/{}", info.web_base, sha)),
+        GitHost::Bitbucket => Some(format!("{}/commits/{}", info.web_base, sha)),
+        GitHost::Other => None,
+    }
+}
+
 /// Provider-specific label for the "open the proposal page" action.
 pub fn pr_label(host: &GitHost) -> &'static str {
     match host {
@@ -349,6 +365,27 @@ mod tests {
             url,
             "https://github.com/owner/repo/compare/release/2026.1...feature/x?expand=1"
         );
+    }
+
+    #[test]
+    fn commit_url_per_host() {
+        let gh = detect_remote("git@github.com:owner/repo.git").unwrap();
+        assert_eq!(
+            commit_url(&gh, "abc123").unwrap(),
+            "https://github.com/owner/repo/commit/abc123"
+        );
+        let gl = detect_remote("https://gitlab.com/group/sub/repo.git").unwrap();
+        assert_eq!(
+            commit_url(&gl, "abc123").unwrap(),
+            "https://gitlab.com/group/sub/repo/-/commit/abc123"
+        );
+        let bb = detect_remote("https://bitbucket.org/owner/repo").unwrap();
+        assert_eq!(
+            commit_url(&bb, "abc123").unwrap(),
+            "https://bitbucket.org/owner/repo/commits/abc123"
+        );
+        let other = detect_remote("https://example.com/foo/bar.git").unwrap();
+        assert!(commit_url(&other, "abc123").is_none());
     }
 
     #[test]

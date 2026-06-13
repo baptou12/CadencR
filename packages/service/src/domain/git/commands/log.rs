@@ -61,7 +61,7 @@ fn parse_git_log(output: &str) -> Vec<CommitLogEntry> {
 /// no-upstream snapshot path. **Argument order matters**: `--not` flips
 /// the polarity of every ref token that *follows*, so `HEAD` must come
 /// first (positive) and `--remotes` after `--not` (negative).
-async fn get_unpushed_shas(repo_path: &Path) -> Option<HashSet<String>> {
+pub(super) async fn get_unpushed_shas(repo_path: &Path) -> Option<HashSet<String>> {
     match run_git(&["rev-list", "HEAD", "--not", "--remotes"], repo_path).await {
         Ok(stdout) => Some(
             stdout

@@ -220,6 +220,47 @@ export interface CommitBody {
   message: string;
 }
 
+/**
+ * One commit row in the graph view. Carries `parents` so the frontend can
+compute lane positions, `refs` (decorating branch/tag labels), and the
+`--shortstat` summary (`files_changed` / `additions` / `deletions`).
+ */
+export interface CommitGraphEntry {
+  additions: number;
+  author: string;
+  body: string;
+  date: string;
+  deletions: number;
+  files_changed: number;
+  is_pushed: boolean;
+  message: string;
+  parents: string[];
+  refs: string[];
+  sha: string;
+  short_sha: string;
+}
+
+export type CommitGraphResponseCurrentBranch = string | null;
+
+/**
+ * The *local* target branch the graph is unioned with (`None` when the
+feature sits on its target). Remote-tracking targets are mapped to
+their local branch when one exists.
+ */
+export type CommitGraphResponseTargetBranch = string | null;
+
+export interface CommitGraphResponse {
+  commits: CommitGraphEntry[];
+  current_branch?: CommitGraphResponseCurrentBranch;
+  /** `true` when the requested page was full, i.e. more commits may exist
+past `skip + limit`. Drives the frontend's infinite-scroll fetch. */
+  has_more: boolean;
+  /** The *local* target branch the graph is unioned with (`None` when the
+feature sits on its target). Remote-tracking targets are mapped to
+their local branch when one exists. */
+  target_branch?: CommitGraphResponseTargetBranch;
+}
+
 export interface CommitLogEntry {
   author: string;
   body: string;
@@ -233,6 +274,16 @@ export interface CommitLogEntry {
 export interface CommitLogResponse {
   commits: CommitLogEntry[];
   is_on_base_branch: boolean;
+}
+
+/**
+ * Response for `GET /api/git/commit-url`. `available = false` (with an empty
+`url`) means the host couldn't be classified or there's no remote, so the
+frontend hides the "open commit online" action.
+ */
+export interface CommitUrlResponse {
+  available: boolean;
+  url: string;
 }
 
 /**
@@ -1867,9 +1918,20 @@ export type GetChangedFilesParams = {
   target_branch?: string;
 };
 
+export type GetCommitGraphParams = {
+  feature_id: number;
+  skip?: number;
+  limit?: number;
+};
+
 export type GetCommitLogParams = {
   feature_id: number;
   limit?: number;
+};
+
+export type GetCommitUrlParams = {
+  feature_id: number;
+  sha: string;
 };
 
 export type GetCompareUrlParams = {
@@ -6933,6 +6995,59 @@ export const useCommit = <TError = ErrorType<unknown>, TContext = unknown>(optio
   return useMutation(mutationOptions);
 };
 
+export const getCommitGraph = (params: GetCommitGraphParams, signal?: AbortSignal) => {
+  return customInstance<CommitGraphResponse>({
+    url: `/api/git/commit-graph`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetCommitGraphQueryKey = (params?: GetCommitGraphParams) => {
+  return [`/api/git/commit-graph`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetCommitGraphQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCommitGraph>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCommitGraphParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitGraph>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCommitGraphQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommitGraph>>> = ({ signal }) =>
+    getCommitGraph(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCommitGraph>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCommitGraphQueryResult = NonNullable<Awaited<ReturnType<typeof getCommitGraph>>>;
+export type GetCommitGraphQueryError = ErrorType<unknown>;
+
+export function useGetCommitGraph<
+  TData = Awaited<ReturnType<typeof getCommitGraph>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCommitGraphParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitGraph>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCommitGraphQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
 export const getCommitLog = (params: GetCommitLogParams, signal?: AbortSignal) => {
   return customInstance<CommitLogResponse>({
     url: `/api/git/commit-log`,
@@ -6978,6 +7093,59 @@ export function useGetCommitLog<
   options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitLog>>, TError, TData> },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetCommitLogQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey;
+
+  return query;
+}
+
+export const getCommitUrl = (params: GetCommitUrlParams, signal?: AbortSignal) => {
+  return customInstance<CommitUrlResponse>({
+    url: `/api/git/commit-url`,
+    method: "GET",
+    params,
+    signal,
+  });
+};
+
+export const getGetCommitUrlQueryKey = (params?: GetCommitUrlParams) => {
+  return [`/api/git/commit-url`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetCommitUrlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCommitUrl>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCommitUrlParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitUrl>>, TError, TData> },
+) => {
+  const { query: queryOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCommitUrlQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCommitUrl>>> = ({ signal }) =>
+    getCommitUrl(params, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCommitUrl>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCommitUrlQueryResult = NonNullable<Awaited<ReturnType<typeof getCommitUrl>>>;
+export type GetCommitUrlQueryError = ErrorType<unknown>;
+
+export function useGetCommitUrl<
+  TData = Awaited<ReturnType<typeof getCommitUrl>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetCommitUrlParams,
+  options?: { query?: UseQueryOptions<Awaited<ReturnType<typeof getCommitUrl>>, TError, TData> },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCommitUrlQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

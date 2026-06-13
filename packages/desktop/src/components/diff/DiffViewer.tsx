@@ -18,6 +18,12 @@ interface DiffViewerProps {
   featureId: number;
   mode: DiffMode;
   targetBranch?: string;
+  /**
+   * When set, render the full diff of this single commit instead of the
+   * working-tree / branch comparison. Drives the Git-tab Graph view's
+   * click-to-open-commit flow.
+   */
+  commitSha?: string | null;
   /** Optional controlled file-list collapsed state. */
   fileListCollapsed?: boolean;
   onFileListCollapsedChange?: (collapsed: boolean) => void;
@@ -30,6 +36,7 @@ export function DiffViewer({
   featureId,
   mode,
   targetBranch,
+  commitSha,
   fileListCollapsed,
   onFileListCollapsedChange,
   onOpenFileInEditor,
@@ -60,7 +67,7 @@ export function DiffViewer({
     : isFileListCollapseLoading || isFileListCollapsed;
 
   const { theme } = useTheme();
-  const data = useDiffData(featureId, mode, targetBranch);
+  const data = useDiffData(featureId, mode, targetBranch, commitSha);
 
   const commentLinesByFile = useMemo(() => {
     const map = new Map<string, CommentLineData[]>();
@@ -242,10 +249,6 @@ export function DiffViewer({
     [isControlled, onFileListCollapsedChange, persistFileListCollapsed],
   );
 
-  const loadMoreCommits = useCallback((): void => {
-    callbacksRef.current.data.setCommitLimit((l) => l + 20);
-  }, []);
-
   const collapseFileList = useCallback((): void => {
     setFileListCollapsed(true);
   }, [setFileListCollapsed]);
@@ -303,26 +306,16 @@ export function DiffViewer({
         viewedFiles={data.viewedFilesSet}
         onToggleExpand={toggleFile}
         onSelectFile={handleSelectFile}
-        commits={data.commits}
-        selectedCommit={data.selectedCommit}
-        onSelectCommit={data.setSelectedCommit}
-        isOnBaseBranch={data.isOnBaseBranch}
-        onLoadMoreCommits={loadMoreCommits}
         onCollapse={isControlled ? undefined : collapseFileList}
       />
     ),
     [
       changedFileEntries,
       collapseFileList,
-      data.commits,
-      data.isOnBaseBranch,
-      data.selectedCommit,
-      data.setSelectedCommit,
       data.viewedFilesSet,
       expandedFiles,
       handleSelectFile,
       isControlled,
-      loadMoreCommits,
       selectedFile,
       toggleFile,
     ],
@@ -346,30 +339,6 @@ export function DiffViewer({
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      {data.selectedCommit &&
-        (() => {
-          const commit = data.commits.find((c) => c.sha === data.selectedCommit);
-          return (
-            <div className="border-b border-border px-4 py-2 text-sm text-foreground">
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-primary">{data.selectedCommit.slice(0, 7)}</span>
-                <span className="min-w-0 flex-1 text-foreground">{commit?.message}</span>
-                <button
-                  className="shrink-0 rounded bg-accent px-2 py-0.5 text-xs text-foreground hover:bg-muted-foreground"
-                  onClick={() => data.setSelectedCommit(null)}
-                >
-                  Working Changes
-                </button>
-              </div>
-              {commit?.body && (
-                <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">
-                  {commit.body}
-                </p>
-              )}
-            </div>
-          );
-        })()}
-
       <DiffLayout
         collapsed={showFileListRail}
         controlled={isControlled}

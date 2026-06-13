@@ -7,6 +7,7 @@ import { SendIcon, Loader2Icon, PanelLeft, PanelLeftClose } from "lucide-react";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { useDebouncedSetting } from "@/hooks/useDebouncedSetting";
 import { DiffViewer } from "./diff/DiffViewer";
+import { GitGraphView } from "./diff/GitGraphView";
 import { GitTabToggle, type GitViewMode } from "./diff/GitTabToggle";
 import { NumStat } from "@/components/NumStat";
 import type { DiffMode } from "./diff/useDiffData";
@@ -32,7 +33,7 @@ interface FeatureGitTabProps {
 }
 
 function isGitViewMode(v: string | undefined): v is GitViewMode {
-  return v === "uncommitted" || v === "vs-target";
+  return v === "uncommitted" || v === "vs-target" || v === "graph";
 }
 
 export const FeatureGitTab = memo(function FeatureGitTab({
@@ -117,13 +118,19 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   // Translate the active toggle into the diff endpoints' `mode` parameter.
   // "uncommitted" hits the working-tree path on the server (alias of the legacy
   // "worktree" mode); "vs-target" pins the diff to the resolved target branch.
+  const isGraph = viewMode === "graph";
   const effectiveDiffMode: DiffMode = viewMode === "vs-target" ? "branch" : "uncommitted";
   const diffTargetBranch = viewMode === "vs-target" ? targetBranch : undefined;
-  const statsQuery = useGetStats({
-    feature_id: featureId,
-    mode: effectiveDiffMode,
-    target_branch: diffTargetBranch,
-  });
+  // The graph view has its own per-commit stats — skip the diff-wide stats
+  // query entirely while it's active so we don't fire a wasted request.
+  const statsQuery = useGetStats(
+    {
+      feature_id: featureId,
+      mode: effectiveDiffMode,
+      target_branch: diffTargetBranch,
+    },
+    { query: { enabled: !isGraph } },
+  );
 
   const { send, sending, buttonLabel, disabled, shouldRender } = useSendPendingComments({
     featureId,
@@ -157,41 +164,49 @@ export const FeatureGitTab = memo(function FeatureGitTab({
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-        <button
-          type="button"
-          onClick={handleToggleFileListCollapsed}
-          disabled={isFileListCollapseLoading}
-          aria-pressed={!fileListCollapsed}
-          aria-label={fileListCollapsed ? "Expand file list" : "Collapse file list"}
-          title={fileListCollapsed ? "Expand file list" : "Collapse file list"}
-          className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {fileListCollapsed ? (
-            <PanelLeft className="h-4 w-4" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4" />
-          )}
-        </button>
+        {!isGraph && (
+          <button
+            type="button"
+            onClick={handleToggleFileListCollapsed}
+            disabled={isFileListCollapseLoading}
+            aria-pressed={!fileListCollapsed}
+            aria-label={fileListCollapsed ? "Expand file list" : "Collapse file list"}
+            title={fileListCollapsed ? "Expand file list" : "Collapse file list"}
+            className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {fileListCollapsed ? (
+              <PanelLeft className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" />
+            )}
+          </button>
+        )}
         <GitTabToggle
           value={viewMode}
           onChange={handleViewModeChange}
           targetBranch={targetBranch}
         />
-        <GitToolbarNumStat
-          isLoading={statsQuery.isLoading}
-          isError={statsQuery.isError}
-          additions={statsQuery.data?.insertions}
-          deletions={statsQuery.data?.deletions}
-        />
+        {!isGraph && (
+          <GitToolbarNumStat
+            isLoading={statsQuery.isLoading}
+            isError={statsQuery.isError}
+            additions={statsQuery.data?.insertions}
+            deletions={statsQuery.data?.deletions}
+          />
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <DiffViewer
-          featureId={featureId}
-          mode={effectiveDiffMode}
-          targetBranch={diffTargetBranch}
-          fileListCollapsed={fileListCollapsed}
-          onFileListCollapsedChange={setFileListCollapsed}
-        />
+        {isGraph ? (
+          <GitGraphView featureId={featureId} />
+        ) : (
+          <DiffViewer
+            featureId={featureId}
+            mode={effectiveDiffMode}
+            targetBranch={diffTargetBranch}
+            fileListCollapsed={fileListCollapsed}
+            onFileListCollapsedChange={setFileListCollapsed}
+          />
+        )}
       </div>
       {shouldRender && (
         <div className="border-t px-4 py-3 flex justify-end">

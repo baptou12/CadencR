@@ -59,6 +59,30 @@ pub struct GetCommitLogParams {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+pub struct GetCommitGraphParams {
+    pub feature_id: i64,
+    #[serde(default)]
+    pub skip: i64,
+    #[serde(default = "default_graph_limit")]
+    pub limit: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct GetCommitUrlParams {
+    pub feature_id: i64,
+    pub sha: String,
+}
+
+/// Response for `GET /api/git/commit-url`. `available = false` (with an empty
+/// `url`) means the host couldn't be classified or there's no remote, so the
+/// frontend hides the "open commit online" action.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CommitUrlResponse {
+    pub url: String,
+    pub available: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct GetFileBlobShasParams {
     pub feature_id: i64,
 }
@@ -243,6 +267,38 @@ pub struct CommitLogEntry {
 pub struct CommitLogResponse {
     pub commits: Vec<CommitLogEntry>,
     pub is_on_base_branch: bool,
+}
+
+/// One commit row in the graph view. Carries `parents` so the frontend can
+/// compute lane positions, `refs` (decorating branch/tag labels), and the
+/// `--shortstat` summary (`files_changed` / `additions` / `deletions`).
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CommitGraphEntry {
+    pub sha: String,
+    pub short_sha: String,
+    pub message: String,
+    pub body: String,
+    pub author: String,
+    pub date: String,
+    pub parents: Vec<String>,
+    pub refs: Vec<String>,
+    pub files_changed: i32,
+    pub additions: i32,
+    pub deletions: i32,
+    pub is_pushed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct CommitGraphResponse {
+    pub commits: Vec<CommitGraphEntry>,
+    /// `true` when the requested page was full, i.e. more commits may exist
+    /// past `skip + limit`. Drives the frontend's infinite-scroll fetch.
+    pub has_more: bool,
+    pub current_branch: Option<String>,
+    /// The *local* target branch the graph is unioned with (`None` when the
+    /// feature sits on its target). Remote-tracking targets are mapped to
+    /// their local branch when one exists.
+    pub target_branch: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -455,6 +511,10 @@ fn default_worktree_mode() -> String {
 
 fn default_commit_limit() -> i64 {
     20
+}
+
+fn default_graph_limit() -> i64 {
+    50
 }
 
 #[cfg(test)]
