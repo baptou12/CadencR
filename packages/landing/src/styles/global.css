@@ -1,11 +1,15 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/figtree";
 
 @theme {
   --font-sans:
     "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --default-font-family: var(--font-sans);
+
+  /* Brand wordmark — Figtree (used for the "CADENCR" logotype). */
+  --font-brand: "Figtree Variable", var(--font-sans);
 
   /* Palette — mirrors packages/desktop/src/index.css. Keep in sync. */
   --color-background: oklch(0.22 0.022 277.497);

@@ -1,58 +1,334 @@
 ---
-import { Image } from "astro:assets";
 import DownloadIcon from "@/components/icons/DownloadIcon.astro";
 import CodeIcon from "@/components/icons/CodeIcon.astro";
 import Wrap from "@/components/ui/Wrap.astro";
-import Eyebrow from "@/components/ui/Eyebrow.astro";
 import Button from "@/components/ui/Button.astro";
+import { DISPLAY_VERSION } from "@/lib/downloads";
 import heroImage from "@/assets/hero.png";
+
 const base = import.meta.env.BASE_URL;
+// Fully-qualified tap form so it works without a separate `brew tap` step.
+const brewCommand = "brew install --cask merkr-software/cadencr/cadencr";
+
+// Eyebrow segments — rendered as a centered, dot-separated mono strip.
+// (License lives in the trust strip below, so it's not repeated here.)
+const eyebrow = ["Desktop IDE", "macOS", DISPLAY_VERSION];
 ---
-<section class="relative py-16 pb-14">
-  <div class="hero-orbits pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden="true"></div>
-  <Wrap>
-    <div
-      class="relative z-10 grid grid-cols-1 items-center gap-12 md:gap-14 md:[grid-template-columns:minmax(0,0.82fr)_minmax(0,1.18fr)]"
-    >
-      <div class="relative z-10 max-w-[520px]">
-        <Eyebrow>Desktop IDE · macOS today · Linux & Windows soon</Eyebrow>
-        <h1
-          class="mt-3.5 mb-3.5 text-[clamp(28px,3vw,38px)] font-semibold leading-[1.12] tracking-[-0.018em] [text-wrap:balance]"
+<section class="hero relative isolate overflow-hidden pt-16 pb-24 sm:pt-20">
+  <!-- Ambient backdrop: aurora glow + faded grid, purely decorative. -->
+  <div class="hero-aura pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+  <div class="hero-grid pointer-events-none absolute inset-0 -z-10" aria-hidden="true"></div>
+
+  <Wrap class="relative">
+    <div class="mx-auto flex max-w-[780px] flex-col items-center text-center">
+      <p class="hero-rise hero-eyebrow flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-medium uppercase tracking-[0.13em] text-muted-foreground">
+        <span class="hero-dot"></span>
+        {
+          eyebrow.map((seg, i) => (
+            <>
+              {i > 0 && <span class="text-border" aria-hidden="true">·</span>}
+              <span>{seg}</span>
+            </>
+          ))
+        }
+      </p>
+
+      <h1
+        class="hero-rise hero-rise-1 mt-5 text-[clamp(34px,6.2vw,62px)] font-semibold leading-[1.05] tracking-[-0.025em] [text-wrap:balance]"
+      >
+        Stop switching.<br />
+        <span class="hero-line2">
+          <span class="hero-feat" style="--i:0">Agent</span>,
+          <span class="hero-feat" style="--i:1">Git</span>,
+          <span class="hero-feat" style="--i:2">Browser</span>,
+          <span class="hero-feat" style="--i:3">Editor</span> &amp;
+          <span class="hero-feat" style="--i:4">Terminal</span><span class="hero-accent"> — one window.</span>
+        </span>
+      </h1>
+
+      <p
+        class="hero-rise hero-rise-2 mt-6 max-w-[620px] text-[15px] leading-[1.65] text-muted-foreground [text-wrap:pretty] [&_.em]:font-medium [&_.em]:text-foreground"
+      >
+        Cadencr is the surface you read, steer and ship from.
+        <span class="em">One workspace for everything</span>
+        — stop alt-tabbing between windows all day. Every running agent, every project, every tab
+        in one place, so context switching is cheap and your dev environment stays easy to manage.
+      </p>
+
+      <div class="hero-rise hero-rise-3 mt-8 flex flex-wrap items-center justify-center gap-3">
+        <Button href={`${base}download/`} size="lg" class="h-11 gap-2.5 px-5 text-sm shadow-lg shadow-primary/25">
+          <DownloadIcon />
+          Download for Mac
+        </Button>
+        <Button
+          href="https://github.com/merkr-software/cadencr"
+          variant="outline"
+          size="lg"
+          class="h-11 gap-2.5 px-5 text-sm"
         >
-          The IDE for the era of agents.<br />
-          <span class="text-muted-foreground">
-            One workspace — Claude, OpenCode, and Codex.
-          </span>
-        </h1>
-        <p class="text-sm leading-[1.6] text-muted-foreground [text-wrap:pretty] [&_.em]:text-foreground">
-          Cadencr is the surface you read, steer and ship from.
-          <span class="em">Your harness stays the same</span>
-          — the stream becomes readable, sessions can branch into their own worktree or terminal, and git stays where you can see it.
-        </p>
-        <div class="mt-5 flex flex-wrap items-center gap-2">
-          <Button href={`${base}download/`} size="lg">
-            <DownloadIcon />
-            Download for Mac
-          </Button>
-          <Button href="https://github.com/merkr-software/cadencr" variant="outline" size="lg">
-            <CodeIcon />
-            Source on GitHub
-          </Button>
-        </div>
+          <CodeIcon />
+          Source on GitHub
+        </Button>
       </div>
 
-      <div class="relative z-10 min-w-0">
-        <Image
-          src={heroImage}
-          alt="Cadencr desktop app showing a session with code, streaming agent output, and git worktree"
-          loading="eager"
-          decoding="async"
-          widths={[1200, 1600, 2048, 2400, 3200, 4336]}
-          sizes="(min-width: 1280px) 1024px, (min-width: 768px) 75vw, 100vw"
-          format="png"
-          class="block h-auto w-full max-w-none rounded-xl border border-border md:w-[calc(100%+16rem)] md:rounded-none md:border-none xl:w-[calc(100%+24rem)]"
-        />
+      <div class="hero-rise hero-rise-3 mt-4 flex items-center gap-2 text-[13px] text-muted-foreground">
+        <span>or</span>
+        <button
+          type="button"
+          class="hero-brew group inline-flex items-center gap-2 rounded-md border border-border bg-sidebar/60 px-2.5 py-1 font-mono text-[12.5px] text-foreground transition-colors hover:border-primary/50 hover:bg-accent"
+          data-copy={brewCommand}
+          aria-label={`Copy: ${brewCommand}`}
+        >
+          <span class="select-all">{brewCommand}</span>
+          <svg class="hero-brew-copy h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <svg class="hero-brew-check hidden h-3.5 w-3.5 text-drac-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </button>
       </div>
+
+      <p class="hero-rise hero-rise-4 mt-8 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted-foreground/85">
+        <span class="hero-dot hero-dot-live"></span>
+        <span>Open source</span>
+        <span class="text-border" aria-hidden="true">·</span>
+        <span>No telemetry</span>
+        <span class="text-border" aria-hidden="true">·</span>
+        <span>Apache 2.0</span>
+      </p>
     </div>
   </Wrap>
+
+  <!-- Product showcase — wider than the text column for a cinematic feel.
+       The hero <video> drops straight in here over the screenshot poster. -->
+  <div class="relative mt-16 px-6">
+    <div class="hero-rise hero-rise-5 hero-media relative mx-auto max-w-[1360px]">
+      <div class="hero-media-glow pointer-events-none absolute -inset-x-10 -top-10 bottom-0 -z-10" aria-hidden="true"></div>
+      <div class="hero-media-frame relative overflow-hidden rounded-xl border border-border/70 bg-sidebar shadow-2xl shadow-black/50">
+        <video
+          class="block h-auto w-full"
+          poster={heroImage.src}
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="metadata"
+          aria-label="Cadencr desktop app in action: streaming agent output, the project list, and an inline diff"
+        >
+          {/* AV1 first (Chrome, Firefox, M3+ Safari); H.264 fallback for
+              Safari/iOS on hardware without AV1 decode. */}
+          <source src={`${base}hero.av1.mp4`} type='video/mp4; codecs="av01.0.05M.08"' />
+          <source src={`${base}hero.h264.mp4`} type='video/mp4; codecs="avc1.640028"' />
+        </video>
+      </div>
+    </div>
+  </div>
 </section>
+
+<script>
+  // Copy the brew command to the clipboard with visible success/failure feedback.
+  const btn = document.querySelector<HTMLButtonElement>(".hero-brew");
+  if (btn) {
+    const copyIcon = btn.querySelector<SVGElement>(".hero-brew-copy");
+    const checkIcon = btn.querySelector<SVGElement>(".hero-brew-check");
+    const command = btn.dataset.copy ?? "";
+    let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const flash = (ok: boolean): void => {
+      if (resetTimer) clearTimeout(resetTimer);
+      if (ok) {
+        copyIcon?.classList.add("hidden");
+        checkIcon?.classList.remove("hidden");
+        resetTimer = setTimeout(() => {
+          copyIcon?.classList.remove("hidden");
+          checkIcon?.classList.add("hidden");
+        }, 1600);
+      } else {
+        // Surface the failure rather than swallowing it silently.
+        btn.setAttribute("title", "Couldn't copy — select the text and copy manually");
+        btn.classList.add("hero-brew-error");
+        resetTimer = setTimeout(() => {
+          btn.removeAttribute("title");
+          btn.classList.remove("hero-brew-error");
+        }, 2200);
+      }
+    };
+
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+        flash(true);
+      } catch {
+        flash(false);
+      }
+    });
+  }
+</script>
+
+<style>
+  /* Aurora glow behind the headline — brand purple with cyan/green hints. */
+  .hero-aura {
+    background:
+      radial-gradient(
+        60% 46% at 50% -4%,
+        color-mix(in oklch, var(--color-primary) 26%, transparent),
+        transparent 72%
+      ),
+      radial-gradient(
+        38% 40% at 16% 12%,
+        color-mix(in oklch, var(--color-drac-cyan) 12%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        40% 42% at 84% 8%,
+        color-mix(in oklch, var(--color-drac-green) 10%, transparent),
+        transparent 70%
+      );
+    filter: blur(8px);
+  }
+
+  /* Faint technical grid that fades toward the edges. */
+  .hero-grid {
+    background-image:
+      linear-gradient(
+        to right,
+        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklch, var(--color-border) 55%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 52px 52px;
+    opacity: 0.28;
+    -webkit-mask-image: radial-gradient(ellipse 78% 56% at 50% 0%, black 10%, transparent 72%);
+    mask-image: radial-gradient(ellipse 78% 56% at 50% 0%, black 10%, transparent 72%);
+  }
+
+  /* Gradient accent line in the headline. */
+  .hero-accent {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-primary) 78%, white 22%),
+      color-mix(in oklch, var(--color-primary) 62%, var(--color-drac-cyan) 38%)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* The five engineering surfaces. Punctuation between them stays muted; each
+     named feature shimmers brighter in sequence, so the breadth (this many
+     tools, one window) reads at a glance. */
+  .hero-line2 {
+    color: color-mix(in oklch, var(--color-muted-foreground) 80%, var(--color-foreground));
+  }
+  .hero-feat {
+    --feat-base: color-mix(in oklch, var(--color-foreground) 90%, transparent);
+    color: var(--feat-base);
+    animation: hero-feat-sweep 5s ease-in-out infinite;
+    /* Stagger the highlight so a single light travels across the list. */
+    animation-delay: calc(var(--i) * 1s);
+  }
+
+  @keyframes hero-feat-sweep {
+    0%,
+    18%,
+    100% {
+      color: var(--feat-base);
+      text-shadow: none;
+    }
+    7% {
+      color: color-mix(in oklch, var(--color-primary) 72%, white 28%);
+      text-shadow:
+        0 0 24px color-mix(in oklch, var(--color-primary) 55%, transparent),
+        0 0 6px color-mix(in oklch, var(--color-drac-cyan) 40%, transparent);
+    }
+  }
+
+  .hero-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 9999px;
+    background: var(--color-muted-foreground);
+  }
+  .hero-dot-live {
+    background: var(--color-drac-green);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-drac-green) 22%, transparent);
+  }
+
+  /* Soft colored halo behind the product window. */
+  .hero-media-glow {
+    background: radial-gradient(
+      50% 70% at 50% 0%,
+      color-mix(in oklch, var(--color-primary) 34%, transparent),
+      transparent 68%
+    );
+    filter: blur(58px);
+  }
+  /* Thin top light along the window's edge. */
+  .hero-media-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklch, var(--color-foreground) 22%, transparent),
+      transparent
+    );
+    z-index: 1;
+  }
+
+  .hero-brew-error {
+    border-color: var(--color-destructive);
+    color: var(--color-destructive);
+  }
+
+  /* Staggered entrance. */
+  .hero-rise {
+    animation: hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .hero-rise-1 {
+    animation-delay: 0.06s;
+  }
+  .hero-rise-2 {
+    animation-delay: 0.12s;
+  }
+  .hero-rise-3 {
+    animation-delay: 0.18s;
+  }
+  .hero-rise-4 {
+    animation-delay: 0.24s;
+  }
+  .hero-rise-5 {
+    animation-delay: 0.3s;
+    animation-duration: 0.9s;
+  }
+
+  @keyframes hero-rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-rise {
+      animation: none;
+    }
+    /* Hold the feature words bright instead of sweeping them. */
+    .hero-feat {
+      animation: none;
+      color: color-mix(in oklch, var(--color-foreground) 96%, transparent);
+    }
+  }
+</style>
